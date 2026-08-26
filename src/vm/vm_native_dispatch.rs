@@ -197,9 +197,10 @@ impl Interpreter {
                 "List" | "list" | "values" => {
                     Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
                 }
-                // `ll.lazy_pipe.is_some()` (checked above) is one of
-                // `is_genuinely_lazy()`'s disjuncts, so this always returns
-                // `Some`; the fallback just avoids relying on that invariant.
+                // A pipe over a provably-finite source is NOT genuinely lazy
+                // (`gather {...}.map(*+1)`), so `cache_lazy_view` can decline
+                // here and the pipeline is returned unchanged -- it is still
+                // pullable, it just carries no `...` placeholder.
                 "cache" => ll.cache_lazy_view().unwrap_or_else(|| target.clone()),
                 _ => target.clone(),
             };

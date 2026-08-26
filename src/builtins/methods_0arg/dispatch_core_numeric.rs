@@ -74,22 +74,17 @@ pub(super) fn dispatch(
     match method {
         "elems" => {
             if let ValueView::LazyList(list) = target.view() {
-                let from_gather = matches!(
-                    list.env
-                        .get("__mutsu_lazylist_from_gather")
-                        .map(Value::view),
-                    Some(ValueView::Bool(true))
-                );
-                // A plain `gather {...}` Seq is not lazy (raku: `.is-lazy` is
-                // False), so `.elems` reifies and counts. A `lazy gather` (or
-                // `gather.lazy`) is `lazy`-forced -- it carries the preserve-lazy
-                // marker -- and `.elems` must throw X::Cannot::Lazy like any
-                // other lazy list, rather than eagerly reifying.
-                let forced_lazy = list
-                    .env
-                    .get("__mutsu_preserve_lazy_on_array_assign")
-                    .is_some();
-                if from_gather && !forced_lazy {
+                // Only a GENUINELY lazy list refuses `.elems`; everything else
+                // reifies and counts. A plain `gather {...}` Seq is not lazy
+                // (raku: `.is-lazy` is False), nor is a `.map`/`.grep` pipe
+                // whose source chain bottoms out finite (`gather {...}.map(*+1)`),
+                // nor an `IO::CatHandle` pull. A `lazy gather` (or `gather.lazy`)
+                // carries the preserve-lazy marker and must still throw
+                // X::Cannot::Lazy. `is_genuinely_lazy` is the single authority
+                // for that question -- this arm used to re-derive a narrower
+                // "from a gather env marker" version of it, which threw on a
+                // pipe over a gather.
+                if !list.is_genuinely_lazy() {
                     return Some(None);
                 }
                 let mut ex_attrs = std::collections::HashMap::new();

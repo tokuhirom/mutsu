@@ -73,16 +73,33 @@ impl LazyList {
     /// materialize on gist/Str rather than render a placeholder.
     pub(crate) fn is_genuinely_lazy(&self) -> bool {
         self.sequence_spec.is_some()
-            || self.lazy_pipe.as_ref().is_some_and(|pipe| {
-                let pipe = pipe.lock().unwrap();
-                !matches!(pipe.index_transform, Some(IndexTransform::SkipFirst))
-                    || Self::value_is_genuinely_lazy(&pipe.source)
-            })
+            // A `.map`/`.grep`/index pipe is lazy exactly when its SOURCE is:
+            // Rakudo's `.is-lazy` on a map/grep Seq delegates to the source
+            // iterator, so `(1..3).map(*+1)` and `gather {...}.map(*+1)` are
+            // both `False` while `(1..Inf).map(*+1)` is `True`. Treating every
+            // non-`SkipFirst` pipe as lazy made a pipe over a `gather` render
+            // the `(...)` placeholder and refuse `.elems`.
+            // `pipe_bottoms_out_finite` is the conservative complement (it
+            // answers `false` for any source it cannot prove finite), so an
+            // unrecognized source keeps the old lazy answer and this can never
+            // turn an infinite pipe into a hang.
+            || self
+                .lazy_pipe
+                .as_ref()
+                .is_some_and(|_| !self.pipe_bottoms_out_finite())
             || self
                 .closure_seq
                 .as_ref()
                 .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || self.scan_spec.is_some()
+            // `LHS xx *` (and `xx <huge>`) is stored as a bounded cache plus a
+            // logical `elems_count` of `Inf` rather than a spec, so the spec
+            // arms above cannot see it -- but it is genuinely infinite and
+            // `(42 xx *).is-lazy` is `True` in Rakudo.
+            || self.elems_count.as_ref().is_some_and(|c| {
+                let f = c.to_f64();
+                f.is_infinite() && f.is_sign_positive()
+            })
             // The `__mutsu_preserve_lazy_on_array_assign` marker is set
             // exclusively by an explicit `lazy` prefix / `.lazy` method call
             // (see `dispatch_core_str.rs`), including on an already-finite
@@ -205,13 +222,6 @@ impl LazyList {
                 }
             }
             ValueView::Junction { values, .. } => values.iter().all(Self::value_source_is_finite),
-            _ => false,
-        }
-    }
-
-    fn value_is_genuinely_lazy(source: &Value) -> bool {
-        match source.view() {
-            ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
             _ => false,
         }
     }

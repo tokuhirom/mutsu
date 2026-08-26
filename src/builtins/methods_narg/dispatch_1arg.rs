@@ -1628,8 +1628,13 @@ pub(crate) fn native_method_1arg(
                     }
                     cached.extend(cycle);
                 }
+                // `.pick(**)` is a genuinely infinite lazy Seq (`.is-lazy` is
+                // True in Rakudo, and `.elems` on it throws X::Cannot::Lazy);
+                // the pre-generated cycles are only a cache. Record the logical
+                // count so `LazyList::is_genuinely_lazy` can see that -- a bare
+                // cache carries no other evidence of infiniteness.
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached(cached),
+                    crate::value::LazyList::new_cached_infinite(cached),
                 ))));
             }
             // NaN check for general .pick path
@@ -1800,7 +1805,7 @@ pub(crate) fn native_method_1arg(
                         }
                     }
                     return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_cached(out),
+                        crate::value::LazyList::new_cached_infinite(out),
                     ))));
                 }
                 let count = count.unwrap_or(0);
@@ -1825,7 +1830,7 @@ pub(crate) fn native_method_1arg(
                         }
                     }
                     return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_cached(out),
+                        crate::value::LazyList::new_cached_infinite(out),
                     ))));
                 }
                 let count = count.unwrap_or(0);
@@ -1857,7 +1862,7 @@ pub(crate) fn native_method_1arg(
                         out.push(items.typed_key(keys[idx]));
                     }
                     return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_cached(out),
+                        crate::value::LazyList::new_cached_infinite(out),
                     ))));
                 }
                 let count = count.unwrap_or(0);
@@ -1966,7 +1971,7 @@ pub(crate) fn native_method_1arg(
                         }
                     }
                     return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_cached(out),
+                        crate::value::LazyList::new_cached_infinite(out),
                     ))));
                 }
                 // A finite pool: `.roll(*)` is a genuinely infinite Seq (each

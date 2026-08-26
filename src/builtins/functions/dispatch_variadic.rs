@@ -152,8 +152,10 @@ pub(crate) fn native_function_variadic(
                 result.push(Value::array(row));
             }
             if all_lazy {
+                // Every column is infinite, so the zip is too: `result` is only
+                // a bounded prefix and `.is-lazy` must stay True.
                 Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached(result),
+                    crate::value::LazyList::new_cached_infinite(result),
                 ))))
             } else {
                 // `zip` returns a Seq (so `.^name` is Seq, `.raku` shows `.Seq`),

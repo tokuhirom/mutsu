@@ -827,8 +827,13 @@ impl Interpreter {
                 Some(n) => self.force_lazy_list_vm_n(&ll, n)?,
                 // A strict force of an infinite list (lazy pipeline / infinite
                 // sequence / closure spec) cannot terminate: raise
-                // X::Cannot::Lazy with this method's name.
-                None if ll.lazy_pipe.is_some() || ll.is_infinite_spec() => {
+                // X::Cannot::Lazy with this method's name. A pipe whose source
+                // chain provably bottoms out finite (`gather {...}.map(*+1)`)
+                // DOES terminate, so it forces like any other finite list --
+                // raku answers `.elems` there rather than throwing.
+                None if (ll.lazy_pipe.is_some() && !ll.pipe_bottoms_out_finite())
+                    || ll.is_infinite_spec() =>
+                {
                     return Err(RuntimeError::cannot_lazy(&method));
                 }
                 None => self.force_lazy_list_vm(&ll)?,
@@ -1324,7 +1329,24 @@ impl Interpreter {
         {
             skip_native = true;
         }
-        if skip_native {
+        // `skip_pseudo_method_native` exists for exactly one purpose: a *quoted*
+        // MOP pseudo-method call (`$obj."WHAT"()`) must dispatch a user-defined
+        // method of that name instead of the reflection macro
+        // (`dispatch_method_by_name_1` consumes it). It is NOT a general
+        // "this receiver skips native dispatch" signal, so it must be gated the
+        // same way its `CallMethod` twin gates it (`vm_call_method_ops.rs`).
+        // Setting it for every `skip_native` leaked the flag into the *first*
+        // nested dispatch of the same method name: `my $r = any("5","6");
+        // $r.raku` set it to `"raku"` (junction receiver), so the junction
+        // renderer's first `"5".raku` bypassed the native repr and fell to the
+        // stringifying catch-all, printing `any(5, "6")`.
+        if quoted
+            && skip_native
+            && matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            )
+        {
             self.skip_pseudo_method_native = Some(method.clone());
         }
         // Handle Match.make — must mutate the Match instance's `ast` attribute

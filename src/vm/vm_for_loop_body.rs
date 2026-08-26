@@ -38,6 +38,16 @@ impl Interpreter {
         Some((slot, self.locals.get(slot)?.clone()))
     }
 
+    /// Put the topic's read-only marking back to what it was before a `for`
+    /// loop that decides the marking per item (see the `take-rw` case in
+    /// `vm_for_loop_lazy.rs`).
+    pub(super) fn restore_topic_readonly(&mut self, saved: Option<crate::ast::ReadonlyKind>) {
+        match saved {
+            Some(kind) => self.mark_readonly_with("_", kind),
+            None => self.unmark_readonly("_"),
+        }
+    }
+
     /// Bind the loop's implicit topic: `env["_"]` plus the frame's topic slot
     /// when it has one (see [`Interpreter::save_loop_topic_local`]).
     pub(super) fn set_loop_topic(&mut self, topic_local: Option<usize>, val: Value) {

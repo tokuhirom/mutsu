@@ -549,14 +549,38 @@ impl Compiler {
                 target, name, args, ..
             } if name.resolve().as_str() == "lazy"
                 && args.is_empty()
-                && matches!(target.as_ref(), Expr::AnonSubParams { .. }) =>
+                && matches!(
+                    target.as_ref(),
+                    Expr::AnonSubParams { .. } | Expr::AnonSub { is_block: true, .. }
+                ) =>
             {
-                let Expr::AnonSubParams { body, .. } = target.as_ref() else {
-                    unreachable!()
+                let body = match target.as_ref() {
+                    Expr::AnonSubParams { body, .. } | Expr::AnonSub { body, .. } => body,
+                    _ => unreachable!(),
                 };
-                if !self.emit_block_placeholder_die(body) {
-                    self.compile_expr_method_generic(target, name, args, &None, false);
+                if self.emit_block_placeholder_die(body) {
+                    return;
                 }
+                // The `lazy BLOCK` statement prefix RUNS the block eagerly and
+                // marks its *result* lazy -- measured against raku:
+                // `lazy { say "run"; 1,2,3 }` prints `run` before the next
+                // statement, and the value is a lazy `Seq`. Compiling the block
+                // as a closure value and calling `.lazy` on that instead
+                // produced an opaque one-element `LazyThunk`, so
+                // `my @a = lazy { (^3).map(*²) }` stored `[lazy(...)]` and even
+                // `.eager` could not unwrap it. Lower to `(do BLOCK).lazy`,
+                // which reuses the ordinary list `.lazy` marking.
+                let do_block = Expr::DoBlock {
+                    body: body.clone(),
+                    label: None,
+                };
+                self.compile_expr(&Expr::MethodCall {
+                    target: Box::new(do_block),
+                    name: *name,
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                });
             }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {

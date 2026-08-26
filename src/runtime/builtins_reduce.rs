@@ -575,7 +575,7 @@ impl Interpreter {
         }
         if all_lazy {
             Ok(Value::lazy_list(crate::gc::Gc::new(
-                crate::value::LazyList::new_cached(result),
+                crate::value::LazyList::new_cached_infinite(result),
             )))
         } else {
             Ok(Value::array(result))

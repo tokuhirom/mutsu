@@ -707,7 +707,16 @@ impl Interpreter {
     /// Dispatch the "eager" method.
     fn dispatch_eager_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(list) = target.view() {
-            return Ok(Value::array(self.force_lazy_list_bridge(&list)?));
+            let items = self.force_lazy_list_bridge(&list)?;
+            // A lazy list that was assigned into an `@` variable IS that
+            // array's element store, so forcing it yields an Array
+            // (`my @a = lazy {...}; say @a.eager` is `[0 1 4]` in raku, not the
+            // List gist `(0 1 4)`). A bare lazy Seq stays a List.
+            return Ok(if list.in_array_context() {
+                Value::real_array(items)
+            } else {
+                Value::array(items)
+            });
         }
         if matches!(target.view(), ValueView::Array(..)) {
             let (items, kind) = target.into_array().unwrap();
@@ -754,7 +763,7 @@ impl Interpreter {
     /// Dispatch the "is-lazy" method.
     fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
         let value_is_lazy = |v: &Value| match v.view() {
-            ValueView::LazyList(list) => !list.has_finite_closure_endpoint() && !list.is_cat_pull(),
+            ValueView::LazyList(list) => list.is_genuinely_lazy(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
             ValueView::Range(_, end)
             | ValueView::RangeExcl(_, end)
