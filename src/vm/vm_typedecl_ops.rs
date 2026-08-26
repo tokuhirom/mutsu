@@ -759,6 +759,7 @@ impl Interpreter {
             parent_ops,
             body_plan,
             deferred_body_ops,
+            role_id,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -796,6 +797,7 @@ impl Interpreter {
                     parent_ops,
                     deferred_body_ops,
                     compiled_fns,
+                    *role_id,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible

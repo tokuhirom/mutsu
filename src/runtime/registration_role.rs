@@ -349,6 +349,7 @@ impl Interpreter {
         parent_ops: &[crate::opcode::RoleParentOp],
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         compiled_fns: &crate::opcode::CompiledFns,
+        role_id: u64,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -394,7 +395,13 @@ impl Interpreter {
             is_rw: role_is_rw,
             captured_env: None,
             wildcard_handles: Vec::new(),
-            role_id: super::next_role_id(),
+            // Minted once per declaration site at compile time (see
+            // `CompiledRoleDeclPlan::role_id`), not fresh on every runtime
+            // registration — a role body inside a repeatedly-invoked
+            // sub/block must keep the same identity across calls, matching
+            // Rakudo (two `mk()` calls composing the same anon/named role
+            // literal share one `.WHAT`).
+            role_id,
             attribute_conflicts: Vec::new(),
             own_attribute_names: HashSet::new(),
             deferred_body: deferred_body_ops.to_vec(),
