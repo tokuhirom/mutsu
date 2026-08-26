@@ -92,6 +92,20 @@ impl Interpreter {
                         idx = next_idx.max(idx + 1);
                         continue;
                     }
+                    if target == "code" {
+                        // `=for code` is a verbatim code paragraph, not a named
+                        // block: its lines must not be re-wrapped into a Para.
+                        let (numbered, inline_after) = Self::extract_numbered_alias(inline);
+                        let (mut config, leftover) = Self::parse_pod_config(inline_after);
+                        if numbered {
+                            config.insert("numbered".to_string(), Value::TRUE);
+                        }
+                        let (code_lines, next_idx) =
+                            Self::collect_pod_code_paragraph(&lines, idx + 1, leftover, None);
+                        entries.push(Self::make_pod_code_block(code_lines, config));
+                        idx = next_idx.max(idx + 1);
+                        continue;
+                    }
                     let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                     let (mut config, leftover) = Self::parse_pod_config(inline_after);
                     if numbered {
@@ -146,7 +160,7 @@ impl Interpreter {
                             raw.push('\n');
                             idx += 1;
                         }
-                        entries.push(Self::make_pod_block(vec![Value::str(raw)]));
+                        entries.push(Self::make_pod_comment(raw));
                         continue;
                     }
                     if target == "defn" {
@@ -175,25 +189,10 @@ impl Interpreter {
                             code_lines.push(lines[idx]);
                             idx += 1;
                         }
-                        let min_indent = code_lines
-                            .iter()
-                            .filter(|l| !l.trim().is_empty())
-                            .map(|l| l.len() - l.trim_start().len())
-                            .min()
-                            .unwrap_or(0);
-                        let text: String = code_lines
-                            .iter()
-                            .map(|l| {
-                                if l.len() >= min_indent {
-                                    &l[min_indent..]
-                                } else {
-                                    l.trim_start()
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        let text = text.trim_end_matches('\n').to_string();
-                        entries.push(Self::make_pod_code_with_config(text, code_config));
+                        entries.push(Self::make_pod_code_block(
+                            Self::dedent_pod_code_lines(&code_lines),
+                            code_config,
+                        ));
                         continue;
                     }
                     if target == "table" {
@@ -271,6 +270,19 @@ impl Interpreter {
                     idx = next_idx.max(idx + 1);
                     continue;
                 }
+                if directive == "code" {
+                    // Abbreviated `=code`: a verbatim code paragraph.
+                    let (numbered, rest_after) = Self::extract_numbered_alias(rest);
+                    let (mut config, leftover) = Self::parse_pod_config(rest_after);
+                    if numbered {
+                        config.insert("numbered".to_string(), Value::TRUE);
+                    }
+                    let (code_lines, next_idx) =
+                        Self::collect_pod_code_paragraph(&lines, idx + 1, leftover, None);
+                    entries.push(Self::make_pod_code_block(code_lines, config));
+                    idx = next_idx.max(idx + 1);
+                    continue;
+                }
 
                 let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                 let mut config = HashMap::new();
@@ -295,7 +307,8 @@ impl Interpreter {
             }
             idx += 1;
         }
-        self.env.insert("=pod".to_string(), Value::array(entries));
+        self.env
+            .insert("=pod".to_string(), Value::real_array(entries));
         if let Some(err) = Self::take_pod_config_error() {
             return Err(err);
         }

@@ -381,8 +381,12 @@ impl Compiler {
             Expr::Grouped(inner) => inner.as_ref(),
             other => other,
         };
+        // A `$=...` Pod document variable is bound, not a Scalar container, so
+        // `my @a = $=pod` copies the blocks rather than nesting the document
+        // in one element (see `scalar_var_is_item_container`).
         if name.starts_with('@')
             && let Expr::Var(var_name) = unwrapped
+            && !var_name.starts_with('=')
         {
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::ItemizeVar(name_idx));

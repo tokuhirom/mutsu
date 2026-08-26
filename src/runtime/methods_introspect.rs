@@ -714,6 +714,7 @@ impl Interpreter {
             },
         );
         attrs.insert("WHEREFORE".to_string(), wherefore);
+        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         // contents is leading + trailing joined by newline
         let contents = doc.contents();
         attrs.insert("contents".to_string(), Value::str(contents));

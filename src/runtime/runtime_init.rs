@@ -1290,156 +1290,127 @@ impl Interpreter {
                 class_level_attrs: HashMap::new(),
             },
         );
-        classes.insert(
-            "Pod::Block".to_string(),
-            ClassDef {
-                parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
+        // Pod object model (rakudo `src/core.c/Pod.pm6`). The declared
+        // attribute list is what `.raku`/`.gist` enumerate, so it must carry
+        // the same names, sigils and ORDER rakudo emits -- e.g.
+        // `Pod::Heading.new(level => 1, config => {}, contents => [...])`.
+        // `collect_class_attributes` walks the MRO base-first and moves a
+        // redeclared name to the end, so repeating `config`/`contents` after
+        // each subclass's own attributes reproduces rakudo's order exactly.
+        // A `%`/`@` sigil also keeps the rendered value un-itemized
+        // (`config => {}`, not `config => ${}`).
+        /// `(class name, parent names, declared `(attribute, sigil)` pairs)`.
+        type PodClassDecl = (
+            &'static str,
+            &'static [&'static str],
+            &'static [(&'static str, char)],
         );
-        classes.insert(
-            "Pod::Block::Code".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block::Code", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::FormattingCode".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::FormattingCode", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Block::Comment".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block::Comment", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Block::Para".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block::Para", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Block::Named".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block::Named", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Heading".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Heading", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Block::Table".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Block::Table", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Config".to_string(),
-            ClassDef {
-                parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Config"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
-        classes.insert(
-            "Pod::Item".to_string(),
-            ClassDef {
-                parents: vec!["Pod::Block".to_string()],
-                attributes: Vec::new(),
-                native_methods: HashSet::new(),
-                mro: sym_mro(&["Pod::Item", "Pod::Block"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
+        const POD_CLASSES: &[PodClassDecl] = &[
+            ("Pod::Block", &[], &[("config", '%'), ("contents", '@')]),
+            (
+                "Pod::Block::Code",
+                &["Pod::Block"],
+                &[("config", '%'), ("contents", '@')],
+            ),
+            (
+                "Pod::Block::Comment",
+                &["Pod::Block"],
+                &[("config", '%'), ("contents", '@')],
+            ),
+            // `leading`/`trailing` are `$`-sigil here because that is what the
+            // accessors return in rakudo too (`.leading` is the joined text,
+            // not the private `@!leading` buffer), and `contents` likewise
+            // holds the newline-joined doc text the `.WHY` consumers compare
+            // against (roast S26 `is $thing.WHY.contents, "$leading\n$trailing"`).
+            (
+                "Pod::Block::Declarator",
+                &["Pod::Block"],
+                &[
+                    ("WHEREFORE", '$'),
+                    ("leading", '$'),
+                    ("trailing", '$'),
+                    ("config", '%'),
+                    ("contents", '$'),
+                ],
+            ),
+            (
+                "Pod::Block::Named",
+                &["Pod::Block"],
+                &[("name", '$'), ("config", '%'), ("contents", '@')],
+            ),
+            (
+                "Pod::Block::Para",
+                &["Pod::Block"],
+                &[("config", '%'), ("contents", '@')],
+            ),
+            (
+                "Pod::Block::Table",
+                &["Pod::Block"],
+                &[
+                    ("caption", '$'),
+                    ("headers", '@'),
+                    ("config", '%'),
+                    ("contents", '@'),
+                ],
+            ),
+            ("Pod::Config", &[], &[("type", '$'), ("config", '%')]),
+            (
+                "Pod::Defn",
+                &["Pod::Block"],
+                &[("term", '$'), ("config", '%'), ("contents", '@')],
+            ),
+            (
+                "Pod::FormattingCode",
+                &["Pod::Block"],
+                &[
+                    ("type", '$'),
+                    ("meta", '@'),
+                    ("config", '%'),
+                    ("contents", '@'),
+                ],
+            ),
+            (
+                "Pod::Heading",
+                &["Pod::Block"],
+                &[("level", '$'), ("config", '%'), ("contents", '@')],
+            ),
+            (
+                "Pod::Item",
+                &["Pod::Block"],
+                &[("level", '$'), ("config", '%'), ("contents", '@')],
+            ),
+        ];
+        for (name, parents, attrs) in POD_CLASSES {
+            let mut mro_names: Vec<&str> = vec![name];
+            mro_names.extend_from_slice(parents);
+            classes.insert(
+                (*name).to_string(),
+                ClassDef {
+                    parents: parents.iter().map(|p| (*p).to_string()).collect(),
+                    attributes: attrs
+                        .iter()
+                        .map(|(attr, sigil)| ClassAttributeDef {
+                            name: (*attr).to_string(),
+                            is_public: true,
+                            default: None,
+                            is_rw: false,
+                            is_required: None,
+                            sigil: *sigil,
+                            where_constraint: None,
+                            declared_shape: None,
+                        })
+                        .collect(),
+                    native_methods: HashSet::new(),
+                    mro: sym_mro(&mro_names),
+                    attribute_types: HashMap::new(),
+                    attribute_smileys: HashMap::new(),
+                    attribute_built: HashMap::new(),
+                    wildcard_handles: Vec::new(),
+                    alias_attributes: HashSet::new(),
+                    class_level_attrs: HashMap::new(),
+                },
+            );
+        }
         classes.insert(
             "Exception".to_string(),
             ClassDef {

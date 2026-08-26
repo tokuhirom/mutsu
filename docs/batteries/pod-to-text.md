@@ -64,6 +64,32 @@ Three interpreter bugs, all general — none of them specific to Pod:
    the masking blanks lines rather than dropping them precisely to keep
    declarator line numbers intact.
 
+## The object model behind it — measured again 2026-08-26
+
+Running the module was only half of it: it renders whatever `$=pod` hands it,
+so its output is only as faithful as mutsu's `Pod::*` objects. Three
+`todo/tickets/` Pod reports were closed together by re-deriving the whole
+object model from `raku` v2026.06, and the divergences that fell out were not
+the ones the tickets predicted:
+
+- `=begin comment` built a bare `Pod::Block`, so `when Pod::Block::Comment {
+  '' }` did not match and the renderer printed a literal `Pod::Block()` line
+  into the document.
+- `=for code` / `=code` built a `Pod::Block::Named` whose body had been
+  re-wrapped into a paragraph, folding the code's newlines into spaces.
+- An explicit code block's `contents` was one joined string instead of
+  rakudo's per-line elements each followed by `"\n"`, so `code2text`'s
+  `$pod.contents>>.&pod2text.join` dropped the block's trailing newline.
+- `Pod::Heading.level` was a `Str`, which `heading2text`'s
+  `given $pod.level { when 1 {...} }` depends on being an `Int`.
+- `Pod::Defn` was not a `Pod::Block` subclass.
+
+With those fixed, `pod2text` output on a document exercising headings,
+formatting codes, items, code blocks, comments, definitions and tables is
+byte-identical to `raku`. See `news/2026-08/dollar-equals-pod-item-not-
+iterable-block-object.md` and its two siblings; `t/pod-object-model.t` pins
+the object model itself (and passes under `raku` too).
+
 Remaining gap, deliberately not fixed here:
 `todo/tickets/doc-init-pod-variable.md` (`DOC INIT` blocks still do not see
 `$=pod`, because doing so exposes that a declarator's `WHEREFORE` is a type-name

@@ -10,15 +10,15 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         let contents = rows
             .into_iter()
-            .map(|row| Value::array(row.into_iter().map(Value::str).collect::<Vec<_>>()))
+            .map(|row| Value::real_array(row.into_iter().map(Value::str).collect::<Vec<_>>()))
             .collect::<Vec<_>>();
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         let header_vals = if headers.len() == 1 {
             headers[0].iter().map(|s| Value::str(s.clone())).collect()
         } else {
             Vec::new()
         };
-        attrs.insert("headers".to_string(), Value::array(header_vals));
+        attrs.insert("headers".to_string(), Value::real_array(header_vals));
         // Set caption from config if available, otherwise empty string
         let caption = config
             .get("caption")

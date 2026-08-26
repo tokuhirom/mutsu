@@ -3142,24 +3142,33 @@ impl Compiler {
         false
     }
 
+    /// Whether `$x` is a scalar *item container* — the thing that makes
+    /// `for $x` iterate once and `@a = $x` produce a one-element array.
+    /// `constant $x` and a `:=`-bind to a non-itemized value install no Scalar
+    /// container, and neither do the `$=...` Pod document variables: rakudo's
+    /// `$=pod` is an `Array` bound to the collected document, so `for $=pod`
+    /// iterates the `Pod::*` blocks rather than yielding the whole document
+    /// once (`todo/tickets/dollar-equals-pod-item-not-iterable-block-object`).
+    pub(super) fn scalar_var_is_item_container(&self, name: &str) -> bool {
+        !name.starts_with('=')
+            && !self.constant_vars.contains(name)
+            && !self.noncontainer_bound_vars.contains(name)
+    }
+
     fn normalize_for_iterable(&self, iterable: &Expr) -> Expr {
         match iterable {
             // Scalar variables are item containers in `for` and should not be flattened.
-            // Exception: `constant $x` and a `:=`-bound-to-non-itemized `$x` bind
-            // without a Scalar container, so `for $x` iterates the elements (like
-            // sigilless variables).
-            Expr::Var(name)
-                if !self.constant_vars.contains(name)
-                    && !self.noncontainer_bound_vars.contains(name) =>
-            {
+            // Exception: `constant $x`, a `:=`-bound-to-non-itemized `$x` and the
+            // `$=...` Pod document variables bind without a Scalar container, so
+            // `for $x` iterates the elements (like sigilless variables).
+            Expr::Var(name) if self.scalar_var_is_item_container(name) => {
                 Expr::ArrayLiteral(vec![iterable.clone()])
             }
             // A parenthesized single scalar (`for ($x)`) reaches here as
             // `Grouped(Var)`; iterate it once, exactly like the bare `for $x`.
             Expr::Grouped(inner)
                 if matches!(inner.as_ref(), Expr::Var(name)
-                    if !self.constant_vars.contains(name)
-                        && !self.noncontainer_bound_vars.contains(name)) =>
+                    if self.scalar_var_is_item_container(name)) =>
             {
                 Expr::ArrayLiteral(vec![(**inner).clone()])
             }
