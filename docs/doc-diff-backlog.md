@@ -262,7 +262,6 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Language/objects.rakudoc:1067` | a user class `is Str` (or other native type) doesn't inherit native stringification | [str-subclass-loses-native-stringify.md](../todo/tickets/str-subclass-loses-native-stringify.md) |
 | `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
 | `Language/objects.rakudoc:1185` | attribute order in a `.new`/gist under multiple inheritance is wrong (deterministic, not hash-order noise) | [multi-inheritance-attribute-gist-order.md](../todo/tickets/multi-inheritance-attribute-gist-order.md) |
-| `Language/objects.rakudoc:1457` | `but`-mixing a role onto a `List` breaks its `Positional` binding | [list-but-role-loses-positional-binding.md](../todo/tickets/list-but-role-loses-positional-binding.md) |
 | `Language/objects.rakudoc:1526` | `is default(0 but role :: {...})` on a typed Hash drops the role mixin on the default value | [hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md) |
 | `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
 | `Language/objects.rakudoc:1397` | a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message | [parametric-role-self-referential-attribute-typecheck.md](../todo/tickets/parametric-role-self-referential-attribute-typecheck.md) |
@@ -271,12 +270,16 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Language/typesystem.rakudoc:611` | a forward-declared role stub used by another role is never upgraded to its real body | [forward-declared-role-stub-not-upgraded.md](../todo/tickets/forward-declared-role-stub-not-upgraded.md) |
 | `Language/typesystem.rakudoc:644` | a role parameter's `fail(...)` default expression is never evaluated/enforced | [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md) |
 
-Three of these ([list-but-role-loses-positional-binding.md](../todo/tickets/list-but-role-loses-positional-binding.md),
-[hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md),
-[role-mixed-value-gist-skipped-in-array.md](../todo/tickets/role-mixed-value-gist-skipped-in-array.md))
-share a hypothesis — a `but`/`does`-mixed value's role metadata not surviving a generic
-storage/dispatch path — noted cross-links in each ticket; investigate together and merge into
-one PR if a single fix site is found.
+The "a `but`/`does`-mixed value's role metadata does not survive a generic storage/dispatch
+path" family was investigated together (2026-08-26) and the hypothesis was CONFIRMED: the shared
+mechanism is an interpreter site testing `ValueView::Instance` directly and therefore silently
+downgrading a `ValueView::Mixin`. It was present, independently, in five string-coercion sites,
+the `@`-sigil `:=` bind check, and the sink-context gate; `.sort` was the adjacent case of a
+list-ish helper (`mixin_iteration_target`) that `.map`/`.grep` already used and `.sort` did not.
+Written up in
+[array-but-role-mixin-name-suffix-and-join-str.md](../news/2026-08/array-but-role-mixin-name-suffix-and-join-str.md);
+[list-but-role-loses-positional-binding.md](../news/2026-08/list-but-role-loses-positional-binding.md)
+and five siblings landed with it.
 
 **Excluded from this sub-batch (already deferred/resolved/drift/false-positive):**
 - `Type/Any.rakudoc` [2], [6]-[11] — hash/Set/Bag iteration-order/address `raku-drift`.
@@ -349,8 +352,6 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 | `Type/IO/Handle.rakudoc:761` | `.open` stores the CWD-absolutized path instead of the path as given (`.Str`/`.path`) | [io-handle-open-stores-absolute-not-given-path.md](../todo/tickets/io-handle-open-stores-absolute-not-given-path.md) |
 | `Type/IO/Handle.rakudoc:959,1013` | custom `IO::Handle` subclasses overriding `WRITE`/`READ`/`EOF` are never dispatched to by native print/say/read | [custom-io-handle-write-read-not-dispatched.md](../todo/deep/custom-io-handle-write-read-not-dispatched.md) |
 | `Language/structures.rakudoc:233` | calling an undefined `Any`-typed value as a function throws instead of returning the args | [undefined-any-called-as-sub-throws.md](../todo/tickets/undefined-any-called-as-sub-throws.md) |
-| `Language/structures.rakudoc:258` | `but Associative[Int, Int]` (built-in parametric role) fails as "non-composable" | [builtin-parametric-role-mixin-not-composable.md](../todo/tickets/builtin-parametric-role-mixin-not-composable.md) |
-| `Language/structures.rakudoc:281` | `.sort` on a role-mixed (`but`) Hash returns the whole hash unsorted in a 1-element list | [role-mixed-hash-sort-method-dispatch-broken.md](../todo/tickets/role-mixed-hash-sort-method-dispatch-broken.md) |
 | `Language/structures.rakudoc:26`, `Language/mop.rakudoc:120` | `$(LIST).VAR.^name` reports `List` instead of `Scalar` (item contextualizer doesn't itemize) | [item-contextualized-list-var-name-not-scalar.md](../todo/tickets/item-contextualized-list-var-name-not-scalar.md) |
 | `Language/structures.rakudoc:458` | `$metadata.can($metadata, "uc")` returns `()` instead of `(uc uc)` when the invocant-arg is a `.HOW` | [metaclass-can-with-metaclass-as-invocant-arg-empty.md](../todo/tickets/metaclass-can-with-metaclass-as-invocant-arg-empty.md) |
 | `Language/mop.rakudoc:329` | a grammar's `method ^parameterize` + parametric role application stack-overflows | [grammar-metaclass-parameterize-stack-overflow.md](../todo/deep/grammar-metaclass-parameterize-stack-overflow.md) |
@@ -493,8 +494,6 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
 | `Type/Code.rakudoc:81` | `$:name` named-placeholder variable fails to interpolate inside a double-quoted string (bare form already works) | [named-placeholder-var-interpolation-in-string-fails.md](../todo/tickets/named-placeholder-var-interpolation-in-string-fails.md) |
 | `Type/DateTime.rakudoc:137` | a `DateTime` day-range-check throws the generic `X::OutOfRange` instead of the already-registered, more specific `X::Temporal::OutOfRange` | [datetime-day-out-of-range-uses-generic-outofrange.md](../todo/tickets/datetime-day-out-of-range-uses-generic-outofrange.md) |
 | `Type/DateTime.rakudoc:281,302` | `.julian-date`/`.modified-julian-date` return `Num` (float noise) instead of an exact `Rat` | [datetime-julian-date-returns-num-not-rat.md](../todo/tickets/datetime-julian-date-returns-num-not-rat.md) |
-| `Language/perl-func.rakudoc:2281` | `Array but role {...}` keeps the mixin now, but `.^name` drops the `+{...}` suffix and `join` ignores the mixin's `Str` | [array-but-role-mixin-name-suffix-and-join-str.md](../todo/tickets/array-but-role-mixin-name-suffix-and-join-str.md) |
-| `Language/perl-func.rakudoc:2310` | a role-mixed `.sink` method is never invoked when the value is used in sink context | [role-mixed-sink-method-not-invoked-in-sink-context.md](../todo/tickets/role-mixed-sink-method-not-invoked-in-sink-context.md) |
 | `Type/Formatter.rakudoc:16,32` | `Formatter.new(FORMAT_STRING)` is unimplemented | [formatter-new-unimplemented.md](../todo/tickets/formatter-new-unimplemented.md) |
 | `Type/X/Cannot/Empty.rakudoc:15` | `X::Cannot::Empty.new(:action, :what).message` returns an empty string instead of formatting "Cannot ACTION from an empty WHAT" | [x-cannot-empty-message-not-formatted.md](../todo/tickets/x-cannot-empty-message-not-formatted.md) |
 | `Language/nativetypes.rakudoc:172` | `Pointer[T].raku` uses a bare type-parameter name and a named-arg constructor call instead of raku's fully-qualified positional form | [nativecall-pointer-raku-format-mismatch.md](../todo/tickets/nativecall-pointer-raku-format-mismatch.md) |
@@ -515,7 +514,6 @@ Found in the 2026-08-22 batch-4 re-run of `operators`/`MixHash`/`Phaser::PrePost
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Language/operators.rakudoc:1991` | `42 but 'string'`'s `.^name` reports the `IntStr` allomorph type instead of raku's `Int+{<anon\|1>}` | [but-mixin-anon-name-uses-allomorph-instead-of-plus-anon.md](../todo/tickets/but-mixin-anon-name-uses-allomorph-instead-of-plus-anon.md) |
 | `Language/operators.rakudoc:3177` | `infix:<Z>(...)` function-call form dies at runtime ("Two terms in a row"), other `infix:<...>` ops work | [infix-z-function-call-form-parse-fails.md](../todo/tickets/infix-z-function-call-form-parse-fails.md) |
 | `Language/operators.rakudoc:482` | `«=»` hyper-assignment to a nested-tuple destructuring target silently no-ops | [Fixed](../news/2026-08/hyper-assign-nested-destructuring-target-not-applied.md) |
 | `Language/operators.rakudoc:567` | a hyper-operator wrapping another hyper-operator (`»>>+<<»`) fails to parse | [nested-hyper-operator-parse-fail.md](../todo/tickets/nested-hyper-operator-parse-fail.md) |
@@ -570,7 +568,6 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
 | file:line | one-line summary | ticket |
 |---|---|---|
 | `Type/Metamodel/Mixins.rakudoc:18,63` | `my Type:D $var .= new: ...;` fails — the `.=` implicit invocant keeps the `:D` definedness smiley baked into the type-name bareword | [dot-assign-target-keeps-definedness-smiley.md](../todo/tickets/dot-assign-target-keeps-definedness-smiley.md) |
-| `Type/Metamodel/Mixins.rakudoc:112` | `but`-mixing a role onto a class instance: `.^name` correctly shows `Foo+{Bar}`, but the default `.gist`/`say` output still shows plain `Foo.new` | [but-mixin-object-gist-missing-plus-suffix.md](../todo/tickets/but-mixin-object-gist-missing-plus-suffix.md) |
 | `Type/BagHash.rakudoc:112` | ~~`.add`/`.remove` methods are unimplemented on `BagHash` (subscript-based mutation already works)~~ FIXED | [news/2026-08/baghash-add-remove-methods.md](../news/2026-08/baghash-add-remove-methods.md) |
 | `Language/pod.rakudoc:908` | `$=pod` items are plain `List`s wrapping a generic `Pod::Block::Named`, not the flattened `Pod::Heading`/`Pod::Block::Para` objects raku produces; `.contents` fails | [dollar-equals-pod-item-not-iterable-block-object.md](../todo/tickets/dollar-equals-pod-item-not-iterable-block-object.md) |
 | `Type/Block.rakudoc:17` | `.signature` of a bare `{;}` block (implicit `$_` parameter) gists as the garbled `($$_?)` instead of `(;; $_? is raw = OUTER::<$_>)` | [implicit-topic-block-signature-gist-wrong.md](../todo/tickets/implicit-topic-block-signature-gist-wrong.md) |
@@ -663,7 +660,7 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
 | `Type/Sub.rakudoc:78` | `is foo[1,2,3]` custom variable-trait bracket-argument sugar is misparsed as `is Set[Int]`-style type parameterization, folding the args into the (bogus) trait name | [variable-trait-bracket-argument-misparsed-as-type-param.md](../todo/tickets/variable-trait-bracket-argument-misparsed-as-type-param.md) |
 | `Language/ipc.rakudoc:14` | `run`/`shell` discard the child's stdout/stderr by default (`Stdio::null()`) instead of inheriting the parent's | [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md) |
 | `Language/numerics.rakudoc:353` | calling `.^name` on a `MAIN`-bound `IntStr` argument corrupts a later, unrelated `IntStr.new(...).^name` (reports `Str`) | [main-allomorph-arg-name-corrupts-later-intstr-new.md](../todo/tickets/main-allomorph-arg-name-corrupts-later-intstr-new.md) |
-| `Language/contexts.rakudoc:45` | a bare sub-CALL statement (`foo;`) returning a fresh custom-`.sink`-method instance never invokes `.sink` — the existing function-call-return gap noted in [role-mixed-sink-method-not-invoked-in-sink-context.md](../todo/tickets/role-mixed-sink-method-not-invoked-in-sink-context.md)'s target code | (not re-filed — see Excluded below) |
+| `Language/contexts.rakudoc:45` | a bare sub-CALL statement (`foo;`) returning a fresh custom-`.sink`-method instance never invokes `.sink` — the function-call-return residue recorded in [role-mixed-sink-method-not-invoked-in-sink-context.md](../news/2026-08/role-mixed-sink-method-not-invoked-in-sink-context.md) | (not re-filed — see Excluded below) |
 | `Type/PositionalBindFailover.rakudoc:34` | `does PositionalBindFailover` fails with `X::InvalidType` — the role is missing from the `BUILTIN_PARENT_TYPES` allow-list | [positionalbindfailover-not-recognized-as-builtin-role.md](../todo/tickets/positionalbindfailover-not-recognized-as-builtin-role.md) |
 | `Language/using-modules/code.rakudoc:95` | a module's `EXPORT::DEFAULT` namespace isn't a real, symbolically-navigable package (`::("Test::EXPORT::DEFAULT::&ok")` fails) | [export-default-package-not-symbolically-navigable.md](../todo/deep/export-default-package-not-symbolically-navigable.md) |
 | `Language/haskell-to-p6.rakudoc:263` | `.signature` on a `proto` sub reports a generic `($arg0)` placeholder instead of the declared signature | [proto-sub-signature-reports-generic-placeholder.md](../todo/tickets/proto-sub-signature-reports-generic-placeholder.md) |
@@ -683,8 +680,8 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
   above).
 - `Language/contexts.rakudoc` [1] (line 45, `return [<a b c>] does role { method sink {...} }`)
   — see the ticket-column note above: this is the same `.sink`-in-sink-context gap already
-  filed as `role-mixed-sink-method-not-invoked-in-sink-context.md`, specifically its
-  documented "function-call return" residue (the `SinkPop` VM op's own code comment already
+  fixed for a mixin in `news/2026-08/role-mixed-sink-method-not-invoked-in-sink-context.md`;
+  what remains here is that entry's documented "function-call return" residue (the `SinkPop` VM op's own code comment already
   says a normal sub's fresh-instance return is conservatively not auto-sunk, pending
   first-class container identity) — not re-filed as a separate ticket.
 - `Type/Sequence.rakudoc` [1] (line 69, `$s.eager` twice on a `lazy 1..5` — should throw

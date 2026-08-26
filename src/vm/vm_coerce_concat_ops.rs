@@ -232,6 +232,12 @@ impl Interpreter {
                 Value::str(String::new()),
             );
         }
+        // A role-mixed value is NOT an `Instance` view, so it used to fall
+        // straight through to the `_` arm below and lose its composed
+        // `Stringy`/`Str` (see `mixin_user_stringifier`).
+        if let Some(r) = self.mixin_user_stringifier(&v) {
+            return Ok(Value::str(r?.to_string_value()));
+        }
         let (cn, is_type_object) = match v.view() {
             ValueView::Instance { class_name, .. } => (class_name.resolve().to_string(), false),
             ValueView::Package(name) => (name.resolve().to_string(), true),

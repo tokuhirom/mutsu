@@ -277,19 +277,15 @@ impl Interpreter {
         inner: &Arc<Value>,
         mixins: &crate::gc::Gc<crate::value::MixinOverrides>,
     ) -> Vec<TypeId> {
-        if mixins.contains_key("Str") {
-            let allomorph_name = match inner.view() {
-                ValueView::Int(_) | ValueView::BigInt(_) => Some("IntStr"),
-                ValueView::Num(_) => Some("NumStr"),
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
-                    Some("RatStr")
-                }
-                ValueView::Complex(_, _) => Some("ComplexStr"),
-                _ => None,
-            };
-            if let Some(name) = allomorph_name {
-                return self.catalog_chain_for_name(name);
-            }
+        // `allomorph_type_name` is the single oracle for "is this map an
+        // allomorph?"; this used to re-derive the answer from
+        // `mixins.contains_key("Str")` plus a local inner-type match, which
+        // meant a *value* mixin (`42 but "forty two"`, same map shape but a
+        // role composition in raku) got the whole `IntStr` MRO here and
+        // therefore smart-matched `Str` — even after the other type-identity
+        // sites had been taught to tell the two apart.
+        if let Some(name) = crate::value::types::allomorph_type_name(inner, mixins) {
+            return self.catalog_chain_for_name(&name);
         }
         // Mirrors dispatch_mixin_method_call's application-order precedence
         // (most-recently-applied role first) — see

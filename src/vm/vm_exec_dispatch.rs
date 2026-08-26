@@ -2972,7 +2972,20 @@ impl Interpreter {
                     // identity to tell an `is rw` (container) return from a plain
                     // one. Until then function-call returns are conservatively
                     // not auto-sunk.
-                    let sink_class = if !user_sink {
+                    // A `but`/`does` role mixin is a `ValueView::Mixin`, not an
+                    // `Instance`, so the class lookup below never saw one and a
+                    // composed `method sink` was silently skipped
+                    // (`(1) does R;` ran nothing). The composition is dispatched
+                    // through the role-aware path instead; the `STORE` exemption
+                    // applies to the wrapped class exactly as it does to a bare
+                    // instance.
+                    let mixin_sink = user_sink
+                        && val.is_mixin_value()
+                        && !matches!(val.view(), ValueView::Mixin(inner, _)
+                            if matches!(inner.view(), ValueView::Instance { class_name, .. }
+                                if self.has_user_method(&class_name.resolve(), "STORE")))
+                        && self.mixin_composes_method(&val, "sink");
+                    let sink_class = if !user_sink || mixin_sink {
                         None
                     } else if let ValueView::Instance { class_name, .. } = val.view() {
                         let cn = class_name.resolve();
@@ -2985,6 +2998,28 @@ impl Interpreter {
                     } else {
                         None
                     };
+                    if mixin_sink {
+                        // Same captured-outer writeback dance as the class arm
+                        // below: the doc idiom `($b + 1) does role { method sink
+                        // { $b++ } }` mutates a caller lexical from inside sink.
+                        let pre_env: Vec<Option<Value>> = code
+                            .locals
+                            .iter()
+                            .map(|n| {
+                                self.env().get(n).cloned().or_else(|| {
+                                    n.strip_prefix('$')
+                                        .or_else(|| n.strip_prefix('@'))
+                                        .or_else(|| n.strip_prefix('%'))
+                                        .or_else(|| n.strip_prefix('&'))
+                                        .and_then(|b| self.env().get(b).cloned())
+                                })
+                            })
+                            .collect();
+                        let _ = self.dispatch_mixin_method_call(&val, "sink", Vec::new());
+                        self.reconcile_locals_from_env(code, &pre_env);
+                        *ip += 1;
+                        return Ok(());
+                    }
                     if let Some(cn) = sink_class {
                         let attrs = match val.view() {
                             ValueView::Instance { attributes, .. } => attributes.to_map(),
@@ -3015,25 +3050,7 @@ impl Interpreter {
                             Vec::new(),
                             Some(val.clone()),
                         );
-                        for (i, name) in code.locals.iter().enumerate() {
-                            if name.starts_with('!')
-                                || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
-                            {
-                                continue;
-                            }
-                            let cur = self.env().get(name).cloned().or_else(|| {
-                                name.strip_prefix('$')
-                                    .or_else(|| name.strip_prefix('@'))
-                                    .or_else(|| name.strip_prefix('%'))
-                                    .or_else(|| name.strip_prefix('&'))
-                                    .and_then(|b| self.env().get(b).cloned())
-                            });
-                            if let Some(cur) = cur
-                                && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
-                            {
-                                self.locals[i] = cur;
-                            }
-                        }
+                        self.reconcile_locals_from_env(code, &pre_env);
                         *ip += 1;
                         return Ok(());
                     }
@@ -5161,5 +5178,31 @@ impl Interpreter {
     /// Type objects (Package) and Nil are undefined and count as failure.
     pub(crate) fn is_let_success(val: &Value) -> bool {
         crate::runtime::types::value_is_defined(val)
+    }
+
+    /// Pull back into the compiler-baked local slots any slot-backing env entry
+    /// an internally-dispatched method changed (`pre_env` is the snapshot taken
+    /// before the dispatch). Used by the sink-context arms, which run user code
+    /// with no surrounding call op to drain the captured-outer writeback.
+    fn reconcile_locals_from_env(&mut self, code: &CompiledCode, pre_env: &[Option<Value>]) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if name.starts_with('!')
+                || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
+            {
+                continue;
+            }
+            let cur = self.env().get(name).cloned().or_else(|| {
+                name.strip_prefix('$')
+                    .or_else(|| name.strip_prefix('@'))
+                    .or_else(|| name.strip_prefix('%'))
+                    .or_else(|| name.strip_prefix('&'))
+                    .and_then(|b| self.env().get(b).cloned())
+            });
+            if let Some(cur) = cur
+                && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
+            {
+                self.locals[i] = cur;
+            }
+        }
     }
 }

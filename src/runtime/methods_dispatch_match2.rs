@@ -751,6 +751,12 @@ impl Interpreter {
         {
             return Ok(Value::seq(vec![target]));
         }
+        // A role mixin over a list-ish value sorts the inner elements, the same
+        // way `.map`/`.grep` iterate them. Without this the `Mixin` view fell
+        // through `sort_value_generic`'s final "any non-list value sorts as a
+        // one-element list of itself" arm, so `(%h but R).sort` answered a
+        // 1-element list holding the whole unsorted hash.
+        let target = Self::mixin_iteration_target(target);
         let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
         crate::runtime::methods_collection_ops::sort::sort_value_generic(&mut caller, target, &args)
     }

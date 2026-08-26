@@ -2,9 +2,67 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// The user-visible `.Stringy`/`.Str` of a role-mixed (`but`/`does`) value,
+    /// when the composition — or the wrapped value's own class — supplies one.
+    /// `None` means "nothing user-defined here", so the caller must keep its
+    /// native rendering (an `Array but R` with no `Str` still stringifies as a
+    /// plain list).
+    ///
+    /// This exists because every interpreter-level string-coercion site
+    /// (prefix `~`, infix `~`, `"$x"` interpolation, `eq`/`lt`, `join`) used to
+    /// test `ValueView::Instance` directly and therefore silently downgraded a
+    /// `ValueView::Mixin` to its native stringification — while `print`/`put`,
+    /// which go through `render_str_value`'s method dispatch, got it right.
+    /// That split is what made `print $r` show the mixin's `Str` and
+    /// `join(">", $r)` / `~$r` / `"$r"` show the base list.
+    pub(crate) fn mixin_user_stringifier(
+        &mut self,
+        value: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Mixin(inner, _) = value.view() else {
+            return None;
+        };
+        // A composed role's own `Stringy`/`Str` (and, for a value mixin like
+        // `1 but "hi"`, the stored override) wins.
+        if let Some(r) = self.dispatch_mixin_method_call(value, "Stringy", vec![]) {
+            return Some(r);
+        }
+        if let Some(r) = self.dispatch_mixin_method_call(value, "Str", vec![]) {
+            return Some(r);
+        }
+        // The composition supplies neither, so fall through to a user
+        // stringifier on the wrapped value's own class (`C.new but R` where
+        // `C` declares `method Str`). Dispatch on the mixin itself so `self`
+        // inside the method is the mixed value, as raku has it.
+        let class_name = match inner.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve().to_string(),
+            _ => return None,
+        };
+        for method in ["Stringy", "Str"] {
+            if self.has_user_method(&class_name, method) {
+                return Some(self.call_method_with_values(value.clone(), method, vec![]));
+            }
+        }
+        None
+    }
+
+    /// Does one of the roles composed onto this `Mixin` declare `method_name`?
+    /// A cheap registry lookup with no dispatch, for sites that must *decide*
+    /// whether to run a composed method (sink context) rather than just try it.
+    pub(crate) fn mixin_composes_method(&self, value: &Value, method_name: &str) -> bool {
+        let ValueView::Mixin(_, mixins) = value.view() else {
+            return false;
+        };
+        mixins
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+            .any(|role_name| self.role_has_method(role_name, method_name))
+    }
+
     /// Dispatch method calls on Mixin targets.
     /// Returns Some(result) if the method was handled, None if not.
-    pub(super) fn dispatch_mixin_method_call(
+    pub(crate) fn dispatch_mixin_method_call(
         &mut self,
         target: &Value,
         method: &str,

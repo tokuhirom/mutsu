@@ -1534,7 +1534,15 @@ impl Interpreter {
             if self.type_matches_value(constraint, inner) {
                 return true;
             }
-            if mixins.contains_key(constraint) {
+            // A value mixin's override key is the *value's* type name, but
+            // composing a value never makes the object do that type in raku:
+            // `1 but "hi" ~~ Str` is `False` (only a genuine allomorph such as
+            // `<42>` is `~~ Str`), and likewise for `1 but True ~~ Bool` and
+            // `1 but C.new ~~ C`. So the by-key match only applies to maps
+            // that are NOT value mixins.
+            if !mixins.contains_key(crate::value::types::VALUE_MIXIN_MARKER)
+                && mixins.contains_key(constraint)
+            {
                 return true;
             }
             // A mixed-in role may itself compose other roles

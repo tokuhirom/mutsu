@@ -197,6 +197,19 @@ impl Interpreter {
             self.stack.push(s);
             return Ok(());
         }
+        // A role-mixed value (`~(@a but R)`) is not an `Instance` view, so the
+        // arm below never saw it and prefix `~` silently rendered the base
+        // value instead of the composition's `Str` (see
+        // `mixin_user_stringifier`).
+        {
+            let caller_code = self.current_code;
+            let mixed = self.mixin_user_stringifier(&val);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            if let Some(result) = mixed {
+                self.stack.push(Value::str(result?.to_string_value()));
+                return Ok(());
+            }
+        }
         // If the value is an Instance, try calling the Stringy method, then Str
         if let ValueView::Instance { .. } = val.view() {
             // Slice F: a user `Stringy`/`Str` method can mutate a captured-outer

@@ -1,5 +1,33 @@
 use super::*;
 
+/// The built-in roles mutsu models natively rather than as a registered
+/// `RoleDef`. They are still roles: in Rakudo each carries a
+/// `ParametricRoleGroupHOW`, is composable with `but`/`does`, and shows up in
+/// a mixed value's `+{...}` name suffix. This is the single list every
+/// "is this name a role?" site consults; before it existed the
+/// `but`-composition path and the `but`-on-a-type-object error path each kept
+/// their own copy and disagreed, which is why `%h but Associative[Int,Int]`
+/// died as "non-composable".
+pub(crate) const BUILTIN_ROLE_NAMES: &[&str] = &[
+    "Positional",
+    "Associative",
+    "Callable",
+    "Iterable",
+    "Numeric",
+    "Real",
+    "Stringy",
+    "Mixy",
+    "Setty",
+    "Baggy",
+    "Blob",
+    "Buf",
+];
+
+/// Is `name` one of [`BUILTIN_ROLE_NAMES`]?
+pub(crate) fn is_builtin_role_name(name: &str) -> bool {
+    BUILTIN_ROLE_NAMES.contains(&name)
+}
+
 impl Interpreter {
     pub(in crate::runtime) fn init_endian_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         let variants = vec![

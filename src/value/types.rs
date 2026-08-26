@@ -1,5 +1,11 @@
 use super::*;
 
+/// Marks a `Mixin` overrides map produced by `but`/`does` with a *concrete
+/// value* on the right (`1 but "hi"`, `$obj does 42`, `Method but True`)
+/// rather than by role composition or by allomorph construction. See
+/// `Interpreter::apply_single_mixin` for why raku needs the two apart.
+pub(crate) const VALUE_MIXIN_MARKER: &str = "__mutsu_value_mixin__";
+
 /// Returns the Raku type name for a value (used in error messages).
 pub(crate) fn what_type_name(val: &Value) -> String {
     match val.view() {
@@ -74,7 +80,12 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Uni(_) => "Uni".to_string(),
         ValueView::Mixin(inner, mixins) => {
             if let Some(name) = allomorph_type_name(inner, mixins) {
-                name
+                // An allomorph with a role composed onto it keeps both halves:
+                // `<42> but R` is `IntStr+{R}` in raku.
+                match role_mixin_suffix_excluding(mixins, &name) {
+                    Some(suffix) => format!("{name}+{{{suffix}}}"),
+                    None => name,
+                }
             } else {
                 let base = what_type_name(inner);
                 // A punned role (`R.new`) is `Mixin(Instance{R}, {__mutsu_role__R})`
@@ -111,22 +122,62 @@ pub(crate) fn role_mixin_suffix_excluding(
     mixins: &std::collections::HashMap<String, Value>,
     base: &str,
 ) -> Option<String> {
-    let mut names: Vec<&str> = mixins
+    let mut names: Vec<String> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .filter(|n| *n != base)
-        // Anonymous roles (`but role { }`) carry a compiler-internal
-        // `__ANON_ROLE_{id}__` name; raku would show `<anon|N>` but mutsu's id
-        // does not match, so leave anon mixins un-suffixed (reporting the base
-        // type) rather than leaking the internal name.
-        .filter(|n| !n.starts_with("__ANON_ROLE_"))
+        .map(|n| role_mixin_suffix_entry(mixins, n))
         .collect();
+    // `but`-mixing a plain value composes an anonymous role too, recorded under
+    // its own marker rather than as a `__mutsu_role__` entry (see
+    // `Interpreter::apply_single_mixin`); it still shows in the name suffix.
+    if let Some(anon) = mixins.get(VALUE_MIXIN_MARKER) {
+        names.push(crate::value::user_facing_type_name(&anon.to_string_value()).into_owned());
+    }
     if names.is_empty() {
         return None;
     }
     // HashMap iteration order is non-deterministic; sort for a stable name.
     names.sort_unstable();
     Some(names.join(","))
+}
+
+/// Render one `+{...}` suffix entry for the composed role `role_name`.
+///
+/// Two things beyond the bare name matter here, both because raku shows them:
+///
+/// * An anonymous role (`but role { }`) is stored under a compiler-internal
+///   `__ANON_ROLE_{id}__` key. Rakudo names it `<anon|N>`, and
+///   [`crate::value::user_facing_type_name`] already knows that mapping (it is
+///   the same one an anonymous `class`/`grammar` gets in a `.gist`). mutsu's
+///   `N` is its own counter and will not equal Rakudo's, but the *shape* is
+///   what identifies a mixin as anonymous -- this used to filter anon roles
+///   out entirely, so `(@a but role { ... }).^name` reported a bare `Array`
+///   and lost every trace of the composition.
+/// * A parameterised role keeps its type arguments in the name
+///   (`Int+{G[Int]}`, `Hash+{Associative[Int,Int]}`), read back from the
+///   `__mutsu_role_typeargs__{name}` marker recorded alongside the role marker.
+fn role_mixin_suffix_entry(
+    mixins: &std::collections::HashMap<String, Value>,
+    role_name: &str,
+) -> String {
+    let display = crate::value::user_facing_type_name(role_name).into_owned();
+    // An already-parameterised spelling (a role registered under a bracketed
+    // name) must not get a second `[...]` appended.
+    if display.contains('[') {
+        return display;
+    }
+    let Some(args) = mixins.get(&format!("__mutsu_role_typeargs__{role_name}")) else {
+        return display;
+    };
+    let ValueView::Array(items, _) = args.view() else {
+        return display;
+    };
+    if items.is_empty() {
+        return display;
+    }
+    let rendered: Vec<String> = items.items().iter().map(what_type_name).collect();
+    format!("{display}[{}]", rendered.join(","))
 }
 
 /// Build the stable composition key for a role-mixed value's `.WHAT` identity
@@ -228,6 +279,15 @@ pub(crate) fn allomorph_type_name(
     mixins: &std::collections::HashMap<String, Value>,
 ) -> Option<String> {
     if !mixins.contains_key("Str") {
+        return None;
+    }
+    // `1 but "hi"` has the same `{Str => ...}` shape as an allomorph but is a
+    // role composition in raku (`Int+{<anon|1>}`, and NOT `~~ Str`), so a map
+    // carrying the value-mixin marker is never an allomorph. A genuine
+    // allomorph that later gets a role mixed in keeps its allomorph identity
+    // (`<42> but R` is `IntStr+{R}`), which is why the test is for this marker
+    // rather than for "any role marker present".
+    if mixins.contains_key(VALUE_MIXIN_MARKER) {
         return None;
     }
     match inner.view() {

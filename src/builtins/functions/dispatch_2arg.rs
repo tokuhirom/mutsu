@@ -186,8 +186,13 @@ pub(crate) fn native_function_2arg(
         // The previous inline version ignored the separator for a `Range` arg
         // (`join("-", 1..4)` -> "1 2 3 4"); the shared `join_flat` fixes it.
         // Returns `None` for an un-realized lazy list -> the interpreter forces it.
-        "join" => join_flat(&arg1.to_string_value(), std::slice::from_ref(arg2))
-            .map(|joined| Ok(Value::str(joined))),
+        // Returns `None` too when an element may carry a user-defined `.Str`,
+        // so the interpreter's `builtin_join` dispatches it (see
+        // `join_needs_interpreter`).
+        "join" if !super::flat::join_needs_interpreter(arg2) => {
+            join_flat(&arg1.to_string_value(), std::slice::from_ref(arg2))
+                .map(|joined| Ok(Value::str(joined)))
+        }
         "rotate" => {
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg1) {
                 if shape.len() > 1 {

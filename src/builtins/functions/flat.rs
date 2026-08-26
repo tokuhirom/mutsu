@@ -158,6 +158,23 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     }
 }
 
+/// Does joining `v` need the interpreter, because some element it contributes
+/// may carry a *user-defined* `.Str` (a class instance, or a `but`/`does`
+/// role-mixed value)? [`join_flat`] can only call `to_str_context`, so those
+/// must be routed to `Interpreter::builtin_join`, which dispatches the method
+/// first. Without this gate the pure two-argument `join(sep, $obj)` fast path
+/// answered before the interpreter ever saw the call, so a role mixin's `Str`
+/// was skipped for `join` while `print` on the same value honoured it.
+pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Instance { .. } | ValueView::Mixin(..) => true,
+        ValueView::Array(items, kind) if !kind.is_itemized() => {
+            items.iter().any(join_needs_interpreter)
+        }
+        _ => false,
+    }
+}
+
 /// Join `rest` with `sep`, flattening with `flat`/slurpy semantics (the single
 /// shared `join` body for both `native_function("join", ..)` and the
 /// interpreter's `builtin_join`). Returns `None` when an un-realized lazy list is

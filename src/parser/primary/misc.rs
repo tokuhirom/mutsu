@@ -13,6 +13,7 @@ mod lambda;
 mod lambda_tests;
 mod reduction;
 
+pub(crate) use anon_decl::next_anon_role_name;
 pub(super) use anon_decl::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, indirect_method_call,
 };

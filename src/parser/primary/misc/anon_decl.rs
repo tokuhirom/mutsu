@@ -10,6 +10,16 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Mint the internal registry name for a fresh anonymous role. Shared with the
+/// runtime, because `but`-mixing a plain *value* (`1 but "hi"`) also composes
+/// an anonymous role in raku (`Int+{<anon|1>}`) even though no `role { }`
+/// literal was ever parsed — and both kinds must draw from the same counter so
+/// their rendered `<anon|N>` ids stay distinct within a process.
+pub(crate) fn next_anon_role_name() -> String {
+    let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("__ANON_ROLE_{id}__")
+}
+
 fn parse_qualified_ident_with_hyphens(input: &str) -> PResult<'_, String> {
     let (mut rest, first) = parse_ident_with_hyphens(input)?;
     let mut full = first.to_string();
@@ -192,8 +202,7 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
         rest
     };
     let (rest, name) = if rest.starts_with('{') {
-        let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        (rest, format!("__ANON_ROLE_{id}__"))
+        (rest, next_anon_role_name())
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Not just uppercase/`_`: a role name in expression/argument position
         // (e.g. `.^mixin(role is-marked { ... })`) is a plain identifier and

@@ -9,7 +9,11 @@ plan 6;
 class Foo { has $.x = 1; }
 
 my $obj = Foo.new but role :: { has $.tag = 'hello' };
-is $obj.^name, 'Foo', 'mixed-in object reports its base name before set_name';
+# Before set_name the composition names itself `Foo+{<anon|N>}` (rakudo's own
+# anonymous-role rendering); the generated id is not stable across
+# implementations, so assert the shape.
+like $obj.^name, /^ 'Foo+{<anon|' \d+ '>}' $/,
+    'mixed-in object reports its composed anonymous-role name before set_name';
 
 my $ret = $obj.^set_name('MyFriendlyName');
 is $ret, 'MyFriendlyName', 'set_name returns the new name';

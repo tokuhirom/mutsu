@@ -84,60 +84,78 @@ impl Interpreter {
         raw_popped: &Value,
     ) -> Result<Value, RuntimeError> {
         let decontained_popped = raw_popped.deref_container();
-        let is_positional = match decontained_popped.view() {
-            ValueView::Array(..)
-            | ValueView::LazyList(_)
-            | ValueView::Seq(_)
-            | ValueView::Slip(_)
-            | ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. }
-            | ValueView::Uni { .. }
-            | ValueView::Nil => true,
-            // A Positional TYPE OBJECT binds too (`my @x := Positional[Dog]`,
-            // JSON::Unmarshal's attribute-type flow): raku accepts it and
-            // `.of` reads the parametric element type.
-            ValueView::Package(name) => {
-                let n = name.resolve();
-                let base = n.split('[').next().unwrap_or(&n);
-                matches!(
-                    base,
-                    "Positional" | "Array" | "List" | "Seq" | "Slip" | "Range" | "Buf" | "Blob"
-                ) || self
-                    .class_composed_roles(base)
-                    .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+        // `but`/`does` wraps the value in a `Mixin` view, which none of the
+        // arms below matched — so `my @p := <a b> but R` failed the bind even
+        // though `$p ~~ Positional` (a different oracle) answered True. A
+        // composition can only ADD to what the wrapped value does, so a mixin
+        // is Positional exactly when its inner value is, or when one of the
+        // composed roles is/does `Positional`.
+        let mut mixin_composes_positional = false;
+        let decontained_popped = match decontained_popped.view() {
+            ValueView::Mixin(inner, mixins) => {
+                mixin_composes_positional = mixins.keys().any(|k| {
+                    k.strip_prefix("__mutsu_role__")
+                        .is_some_and(|role| role == "Positional")
+                });
+                inner.as_ref().clone()
             }
-            // Instance objects are Positional only if they implement
-            // the Positional role (or Array subclass etc.), but not
-            // Failure or arbitrary classes.
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } => {
-                let cn = class_name.resolve();
-                matches!(
-                    cn.as_str(),
-                    "Array"
-                        | "List"
-                        | "Slip"
-                        | "Seq"
-                        | "Range"
-                        | "Buf"
-                        | "Blob"
-                        | "utf8"
-                        | "buf8"
-                        | "buf16"
-                        | "buf32"
-                ) || self
-                    .class_composed_roles(&cn)
-                    .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
-                    || attributes.contains_key("__mutsu_array_storage")
-            }
-            _ => false,
+            _ => decontained_popped,
         };
+        let is_positional = mixin_composes_positional
+            || match decontained_popped.view() {
+                ValueView::Array(..)
+                | ValueView::LazyList(_)
+                | ValueView::Seq(_)
+                | ValueView::Slip(_)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::Uni { .. }
+                | ValueView::Nil => true,
+                // A Positional TYPE OBJECT binds too (`my @x := Positional[Dog]`,
+                // JSON::Unmarshal's attribute-type flow): raku accepts it and
+                // `.of` reads the parametric element type.
+                ValueView::Package(name) => {
+                    let n = name.resolve();
+                    let base = n.split('[').next().unwrap_or(&n);
+                    matches!(
+                        base,
+                        "Positional" | "Array" | "List" | "Seq" | "Slip" | "Range" | "Buf" | "Blob"
+                    ) || self
+                        .class_composed_roles(base)
+                        .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+                }
+                // Instance objects are Positional only if they implement
+                // the Positional role (or Array subclass etc.), but not
+                // Failure or arbitrary classes.
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } => {
+                    let cn = class_name.resolve();
+                    matches!(
+                        cn.as_str(),
+                        "Array"
+                            | "List"
+                            | "Slip"
+                            | "Seq"
+                            | "Range"
+                            | "Buf"
+                            | "Blob"
+                            | "utf8"
+                            | "buf8"
+                            | "buf16"
+                            | "buf32"
+                    ) || self
+                        .class_composed_roles(&cn)
+                        .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+                        || attributes.contains_key("__mutsu_array_storage")
+                }
+                _ => false,
+            };
         if !is_positional {
             let got_type = crate::runtime::utils::value_type_name(raw_popped);
             let mut attrs = std::collections::HashMap::new();

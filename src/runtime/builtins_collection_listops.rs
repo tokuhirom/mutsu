@@ -99,9 +99,68 @@ impl Interpreter {
                 rest.push(v.clone());
             }
         }
+        // `join_flat` is a pure helper, so it can only render an element with
+        // `to_string_value` — a user-defined or role-composed `.Str` needs the
+        // interpreter. Pre-render exactly those elements (and nothing else, so
+        // Pair/Match/built-in rendering is untouched) before handing the list
+        // over. Without this, `join(">", @a but role { method Str {...} })`
+        // rendered the base list while `print` on the same value rendered the
+        // role's `Str`.
+        let mut rendered = Vec::with_capacity(rest.len());
+        for v in &rest {
+            match self.join_prerender_user_stringifier(v)? {
+                Some(replacement) => rendered.push(replacement),
+                None => rendered.push(v.clone()),
+            }
+        }
         Ok(Value::str(
-            crate::builtins::join_flat(&sep, &rest).unwrap_or_default(),
+            crate::builtins::join_flat(&sep, &rendered).unwrap_or_default(),
         ))
+    }
+
+    /// Replace every element `join` will stringify that carries a *user*
+    /// stringifier (a class-declared `Str`/`Stringy`, or one composed by a
+    /// `but`/`does` role mixin) with its dispatched string, recursing into the
+    /// non-itemized arrays `join_flat` itself flattens. `None` means "nothing
+    /// here needs the interpreter" — the value is then left completely alone so
+    /// the pure path keeps its exact identity, kind, and built-in rendering
+    /// (Pair, Match, Range, ... are untouched).
+    fn join_prerender_user_stringifier(
+        &mut self,
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        match value.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
+                let originals: Vec<Value> = items.iter().cloned().collect();
+                let mut mapped = Vec::with_capacity(originals.len());
+                let mut changed = false;
+                for v in &originals {
+                    match self.join_prerender_user_stringifier(v)? {
+                        Some(replacement) => {
+                            changed = true;
+                            mapped.push(replacement);
+                        }
+                        None => mapped.push(v.clone()),
+                    }
+                }
+                Ok(changed.then(|| Value::array(mapped)))
+            }
+            ValueView::Mixin(..) => match self.mixin_user_stringifier(value) {
+                Some(r) => Ok(Some(Value::str(r?.to_string_value()))),
+                None => Ok(None),
+            },
+            ValueView::Instance { class_name, .. } => {
+                let cn = class_name.resolve().to_string();
+                for method in ["Stringy", "Str"] {
+                    if self.has_user_method(&cn, method) {
+                        let r = self.call_method_with_values(value.clone(), method, vec![])?;
+                        return Ok(Some(Value::str(r.to_string_value())));
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
     }
 
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {

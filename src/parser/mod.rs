@@ -4,6 +4,10 @@ mod expr;
 // predicates, so re-export them at crate visibility without making the whole
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
 pub(crate) use expr::{contains_whatever, is_whatever, should_wrap_whatevercode};
+// `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
+// draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
+// literal (see `Interpreter::apply_single_mixin`).
+pub(crate) use primary::next_anon_role_name;
 pub(crate) mod helpers;
 mod memo;
 mod outer_redecl;
