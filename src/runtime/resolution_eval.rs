@@ -47,9 +47,10 @@ impl Interpreter {
         }
         // Run PRE phasers
         for pre in &pre_ph {
-            let result = self.eval_block_value(std::slice::from_ref(pre))?;
+            let (pre_body, condition) = Self::phaser_body_and_condition(pre);
+            let result = self.eval_block_value(&[Stmt::Block(pre_body.to_vec())])?;
             if !result.truthy() {
-                return Err(crate::runtime::phaser_prepost_error(true, ""));
+                return Err(crate::runtime::phaser_prepost_error(true, condition));
             }
         }
         // Run main body
@@ -62,13 +63,14 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), ret_val);
         for post in &post_ph {
-            let post_result = self.eval_block_value(std::slice::from_ref(post));
+            let (post_body, condition) = Self::phaser_body_and_condition(post);
+            let post_result = self.eval_block_value(&[Stmt::Block(post_body.to_vec())]);
             match post_result {
                 Ok(v) if !v.truthy() => {
                     if let Some(t) = saved_topic {
                         self.env.insert("_".to_string(), t);
                     }
-                    return Err(crate::runtime::phaser_prepost_error(false, ""));
+                    return Err(crate::runtime::phaser_prepost_error(false, condition));
                 }
                 Err(e) => {
                     if let Some(t) = saved_topic {

@@ -463,6 +463,12 @@ fn run_main() {
             // human-readable backtrace.
             if interpreter.exceptions_handler().as_deref() == Some("JSON") {
                 eprintln!("{}", err.to_json_exception());
+            } else if let Some(gist) = interpreter.render_uncaught(&err) {
+                // rakudo renders an uncaught exception by calling `.gist` on
+                // it, so a `method gist` override decides what stderr shows.
+                // `render_uncaught` declines for a parse diagnosis or an error
+                // with no exception object, which the pure renderer handles.
+                eprintln!("{}", gist);
             } else {
                 print_error("Runtime error", &err, Some(&input), Some(&program_name));
             }

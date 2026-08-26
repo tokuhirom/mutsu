@@ -154,6 +154,7 @@ impl Interpreter {
             "shape" if args.is_empty() => self.dispatch_shape(&target),
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),
+            "snitch" if args.len() <= 1 => self.dispatch_snitch(&target, &args),
             "return-rw" if args.is_empty() => Some(Ok(target)),
             "encode" if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") => {
                 Some(self.dispatch_encode(&target, &args))

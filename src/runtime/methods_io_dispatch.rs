@@ -110,6 +110,30 @@ impl Interpreter {
         Ok(Value::TRUE)
     }
 
+    /// `.snitch` — raku 6.e's mid-expression debugging probe (`Type/Any.rakudoc`,
+    /// `method snitch(\snitchee: &snitcher = &note)`). It hands the invocant to
+    /// a logger (`note` by default) and then returns it **unchanged**, so it can
+    /// be spliced into the middle of a chain without disturbing it:
+    /// `(1..3).Seq.snitch.map(*+2)`.
+    ///
+    /// `None` below language version 6.e, so the method is simply not there —
+    /// rakudo reports `No such method 'snitch'` without the pragma, exactly as
+    /// falling through to ordinary dispatch does here.
+    pub(super) fn dispatch_snitch(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !crate::parser::current_language_version().starts_with("6.e") {
+            return None;
+        }
+        let logged = match args.first() {
+            None => self.dispatch_note(target),
+            Some(snitcher) => self.call_sub_value(snitcher.clone(), vec![target.clone()], false),
+        };
+        Some(logged.map(|_| target.clone()))
+    }
+
     /// Apply a Unicode normalization form before encoding. Accepts the short
     /// names (`C`/`D`/`KC`/`KD`) and the full `NF*` names; an unrecognized value
     /// is left as-is (encode as written), so a non-form second positional never

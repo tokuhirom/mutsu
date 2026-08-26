@@ -205,12 +205,22 @@ impl RuntimeError {
         self.exception_value_with_backtrace(None)
     }
 
-    /// `exception_value`, plus a `backtrace` attribute for a legacy error that
-    /// only carries its backtrace as a string. Ignored when the error already
-    /// has a structured exception, which carries its own.
+    /// `exception_value`, plus a `backtrace` attribute for an error that only
+    /// carries its backtrace as a string (or none at all). A structured
+    /// exception normally carries its own, stamped at the throw site; one that
+    /// does not — a compile-time diagnosis, which is raised before there is a
+    /// runtime stack to capture — is given the supplied one so `.backtrace`
+    /// answers a real `Backtrace` instead of the empty-string placeholder.
     pub(crate) fn exception_value_with_backtrace(&self, backtrace: Option<Value>) -> Value {
         if let Some(ex) = self.exception.as_ref() {
-            return (**ex).clone();
+            let ex = (**ex).clone();
+            if let Some(bt) = backtrace
+                && let super::ValueView::Instance { attributes, .. } = ex.view()
+                && !attributes.as_map().contains_key("backtrace")
+            {
+                attributes.insert("backtrace".to_string(), bt);
+            }
+            return ex;
         }
         let (class_name, text) = Self::split_typed_message_convention(&self.message)
             .unwrap_or((self.untyped_exception_class(), self.message.as_str()));

@@ -3466,6 +3466,7 @@ impl Compiler {
             if let Stmt::Phaser {
                 kind: PhaserKind::Enter,
                 body,
+                ..
             } = s
             {
                 // ADR-0048 Phase 2: `ENTER {}` does not take a signature in
@@ -3577,7 +3578,7 @@ impl Compiler {
         {
             let mut prev_guard: Option<usize> = None;
             for s in stmts.iter().rev() {
-                if let Stmt::Phaser { kind, body } = s
+                if let Stmt::Phaser { kind, body, .. } = s
                     && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
                 {
                     if let Some(pg) = prev_guard {
@@ -3602,7 +3603,7 @@ impl Compiler {
         {
             let mut prev_guard: Option<usize> = None;
             for s in stmts.iter().rev() {
-                if let Stmt::Phaser { kind, body } = s
+                if let Stmt::Phaser { kind, body, .. } = s
                     && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                 {
                     if let Some(pg) = prev_guard {

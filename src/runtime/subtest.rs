@@ -164,7 +164,7 @@ impl Interpreter {
         let mut last = Vec::new();
         let mut quit = Vec::new();
         for stmt in body {
-            if let Stmt::Phaser { kind, body } = stmt {
+            if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
                     PhaserKind::Last => last.push(body.clone()),
                     PhaserKind::Quit => quit.push(body.clone()),

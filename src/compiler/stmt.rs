@@ -3759,6 +3759,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::Check,
                 body,
+                ..
             } => {
                 // CHECK phasers run at compile time. If an error occurs inside
                 // a CHECK phaser, Raku wraps it in X::Comp::BeginTime.
@@ -3767,6 +3768,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
+                ..
             } => {
                 // BEGIN runs at compile time; an error thrown inside it is wrapped
                 // in X::Comp::BeginTime (same mechanism as CHECK — the
@@ -3778,6 +3780,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::Init | PhaserKind::Enter,
                 body,
+                ..
             } => {
                 // INIT runs at run start, ENTER on block entry — neither is a
                 // compile-time phaser, so their errors are NOT X::Comp::BeginTime.
@@ -3791,11 +3794,13 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::End,
                 body,
+                ..
             } => {
                 // END: store body in stmt pool for deferred execution
                 let end_stmt = Stmt::Phaser {
                     kind: PhaserKind::End,
                     body: body.clone(),
+                    condition: None,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id =
@@ -3805,6 +3810,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::Pre,
                 body,
+                condition,
             } => {
                 // PRE phaser inline: compile body, check truthiness
                 for (i, inner) in body.iter().enumerate() {
@@ -3820,7 +3826,7 @@ impl Compiler {
                         self.compile_stmt(inner);
                     }
                 }
-                let condition_idx = self.phaser_condition_idx(body);
+                let condition_idx = self.phaser_condition_idx(condition.as_ref());
                 self.code.emit(OpCode::CheckPhaser {
                     is_pre: true,
                     condition_idx,
@@ -3829,6 +3835,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::Post,
                 body,
+                condition,
             } => {
                 // POST phaser inline: compile body, check truthiness
                 for (i, inner) in body.iter().enumerate() {
@@ -3844,7 +3851,7 @@ impl Compiler {
                         self.compile_stmt(inner);
                     }
                 }
-                let condition_idx = self.phaser_condition_idx(body);
+                let condition_idx = self.phaser_condition_idx(condition.as_ref());
                 self.code.emit(OpCode::CheckPhaser {
                     is_pre: false,
                     condition_idx,
@@ -4468,6 +4475,7 @@ impl Compiler {
                     if let Stmt::Phaser {
                         kind: PhaserKind::Last | PhaserKind::Quit,
                         body: phaser_body,
+                        ..
                     } = stmt
                     {
                         analysis_body.extend(phaser_body.iter().cloned());
@@ -4701,28 +4709,16 @@ impl Compiler {
 
     /// Compile PRE phasers in forward source order.
     /// Add the source text of a PRE/POST phaser's condition as a constant and
-    /// return its index, for the X::Phaser::PrePost `condition`/message. The
-    /// condition is the phaser body's final expression (e.g. `0`); block-form
-    /// bodies and non-trivial expressions yield `None`.
-    fn phaser_condition_idx(&mut self, body: &[Stmt]) -> Option<u32> {
-        let last = body.last()?;
-        let Stmt::Expr(expr) = last else { return None };
-        let src = Self::deparse_phaser_condition(expr)?;
+    /// return its index, for the X::Phaser::PrePost `condition`/message.
+    ///
+    /// The text is the verbatim source slice the parser captured
+    /// (`Stmt::Phaser::condition`) — raku quotes the phaser's argument exactly
+    /// as written, braces and line breaks included, which no deparse of the
+    /// AST can reproduce. `None` only for a synthesized phaser node that never
+    /// came from source.
+    fn phaser_condition_idx(&mut self, condition: Option<&Symbol>) -> Option<u32> {
+        let src = condition?.resolve();
         Some(self.code.add_constant(Value::str(src)))
-    }
-
-    /// Best-effort source reconstruction of a phaser condition expression,
-    /// covering the common literal/variable forms (e.g. statement-form
-    /// `PRE 0`). Non-trivial expressions yield `None`.
-    fn deparse_phaser_condition(expr: &Expr) -> Option<String> {
-        match expr {
-            Expr::Literal(v) => Some(v.to_string_value()),
-            Expr::Var(name) => Some(format!("${}", name)),
-            Expr::ArrayVar(name) => Some(format!("@{}", name)),
-            Expr::HashVar(name) => Some(format!("%{}", name)),
-            Expr::BareWord(name) => Some(name.to_string()),
-            _ => None,
-        }
     }
 
     /// Each PRE body is compiled, followed by a CheckPhaser { is_pre: true }.
@@ -4731,6 +4727,7 @@ impl Compiler {
             if let Stmt::Phaser {
                 kind: PhaserKind::Pre,
                 body,
+                condition,
             } = s
             {
                 // ADR-0048 Phase 2: `PRE {}` does not take a signature in
@@ -4756,7 +4753,7 @@ impl Compiler {
                         compiler.compile_stmt(inner);
                     }
                 }
-                let condition_idx = compiler.phaser_condition_idx(body);
+                let condition_idx = compiler.phaser_condition_idx(condition.as_ref());
                 compiler.code.emit(OpCode::CheckPhaser {
                     is_pre: true,
                     condition_idx,
@@ -4772,6 +4769,7 @@ impl Compiler {
             if let Stmt::Phaser {
                 kind: PhaserKind::Post,
                 body,
+                condition,
             } = s
             {
                 // ADR-0048 Phase 2: `POST {}` does not take a signature in
@@ -4792,7 +4790,7 @@ impl Compiler {
                         compiler.compile_stmt(inner);
                     }
                 }
-                let condition_idx = compiler.phaser_condition_idx(body);
+                let condition_idx = compiler.phaser_condition_idx(condition.as_ref());
                 compiler.code.emit(OpCode::CheckPhaser {
                     is_pre: false,
                     condition_idx,

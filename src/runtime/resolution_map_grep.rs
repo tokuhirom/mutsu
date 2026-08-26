@@ -401,6 +401,7 @@ impl Interpreter {
                 if let crate::ast::Stmt::Phaser {
                     kind: crate::ast::PhaserKind::Last,
                     body,
+                    ..
                 } = stmt
                 {
                     last_phaser_bodies.push(body.clone());

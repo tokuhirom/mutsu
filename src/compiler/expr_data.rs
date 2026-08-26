@@ -307,6 +307,7 @@ impl Compiler {
                 let end_stmt = Stmt::Phaser {
                     kind: crate::ast::PhaserKind::End,
                     body: body.to_vec(),
+                    condition: None,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id =

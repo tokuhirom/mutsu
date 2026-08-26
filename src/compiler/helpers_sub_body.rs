@@ -344,6 +344,7 @@ impl Compiler {
                     Stmt::Phaser {
                         kind: PhaserKind::Enter,
                         body: enter_body,
+                        ..
                     } => {
                         enter_bodies.push(enter_body.clone());
                     }
@@ -417,7 +418,7 @@ impl Compiler {
             {
                 let mut prev_guard: Option<usize> = None;
                 for stmt in body.iter().rev() {
-                    if let Stmt::Phaser { kind, body } = stmt
+                    if let Stmt::Phaser { kind, body, .. } = stmt
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
                     {
                         if let Some(pg) = prev_guard {
@@ -438,7 +439,7 @@ impl Compiler {
             {
                 let mut prev_guard: Option<usize> = None;
                 for stmt in body.iter().rev() {
-                    if let Stmt::Phaser { kind, body } = stmt
+                    if let Stmt::Phaser { kind, body, .. } = stmt
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                     {
                         if let Some(pg) = prev_guard {
@@ -744,6 +745,7 @@ impl Compiler {
                     Stmt::Phaser {
                         kind: crate::ast::PhaserKind::Enter,
                         body: ph_body,
+                        ..
                     } => {
                         sub_compiler.compile_block_inline(ph_body);
                         continue;
@@ -754,6 +756,7 @@ impl Compiler {
                     Stmt::Phaser {
                         kind: crate::ast::PhaserKind::Begin,
                         body: ph_body,
+                        ..
                     } => {
                         sub_compiler.compile_check_phaser_value(ph_body);
                         continue;
@@ -1080,6 +1083,7 @@ impl Compiler {
                 if let Stmt::Phaser {
                     kind: PhaserKind::Enter,
                     body: ph_body,
+                    ..
                 } = stmt
                 {
                     if last_is_enter && i == enter_last_idx {
@@ -1244,6 +1248,7 @@ impl Compiler {
                     if let Stmt::Phaser {
                         kind,
                         body: ph_body,
+                        ..
                     } = s
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Keep)
                     {
@@ -1268,6 +1273,7 @@ impl Compiler {
                     if let Stmt::Phaser {
                         kind,
                         body: ph_body,
+                        ..
                     } = s
                         && matches!(kind, PhaserKind::Leave | PhaserKind::Undo)
                     {

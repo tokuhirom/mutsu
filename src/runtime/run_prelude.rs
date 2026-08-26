@@ -479,7 +479,7 @@ impl Interpreter {
     /// dependency cases keep working exactly as before.
     pub(crate) fn run_toplevel_begin_phasers(&mut self, body_main: &mut Vec<Stmt>) {
         let has_candidate = body_main.iter().any(|s| {
-            matches!(s, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, body }
+            matches!(s, Stmt::Phaser { kind: crate::ast::PhaserKind::Begin, body, .. }
                 if Self::begin_body_is_hoistable(body))
         });
         if !has_candidate {
@@ -492,6 +492,7 @@ impl Interpreter {
                 Stmt::Phaser {
                     kind: crate::ast::PhaserKind::Begin,
                     body,
+                    ..
                 } if Self::begin_body_is_hoistable(body) => Some(body),
                 _ => None,
             };

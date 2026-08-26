@@ -304,7 +304,7 @@ fn extract_phasers_from_stmts(
         ) {
             let temp_name = next_temp_name();
             let old = std::mem::replace(stmt, Stmt::Expr(Expr::Var(temp_name.clone())));
-            if let Stmt::Phaser { kind, body } = old {
+            if let Stmt::Phaser { kind, body, .. } = old {
                 let var_decl = Stmt::VarDecl {
                     name: temp_name.clone(),
                     expr: Expr::Literal(crate::value::Value::NIL),
@@ -363,6 +363,7 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
             if let Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
+                ..
             } = old
             {
                 let var_decl = Stmt::VarDecl {
@@ -785,7 +786,7 @@ fn reorder_at_level(
     }
 
     for (idx, stmt) in stmts.drain(..).enumerate() {
-        if let Stmt::Phaser { kind, body } = &stmt {
+        if let Stmt::Phaser { kind, body, .. } = &stmt {
             match kind {
                 PhaserKind::Begin => {
                     // BEGIN phasers are kept as whole Stmt::Phaser nodes
@@ -925,6 +926,7 @@ fn reorder_at_level(
         stmts.push(Stmt::Phaser {
             kind: PhaserKind::Check,
             body: body.clone(),
+            condition: None,
         });
     }
     // Extra CHECK from lifted phasers.
@@ -1057,7 +1059,7 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         | Stmt::Package { body, .. } => {
             reorder_recursive(body, false);
         }
-        Stmt::Phaser { kind, body } => {
+        Stmt::Phaser { kind, body, .. } => {
             // A statement-form loop phaser is marked as `[SyntheticBlock([stmt])]`
             // (see phaser_stmt): it shares the enclosing block's lexical scope,
             // and `expand_loop_phasers` reads the marker to splice it scope-less.

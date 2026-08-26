@@ -1281,6 +1281,13 @@ pub(crate) enum Stmt {
     Phaser {
         kind: PhaserKind,
         body: Vec<Stmt>,
+        /// Verbatim source text of a `PRE`/`POST` phaser's condition — the
+        /// block including its braces (`{ $x ~~ Int }`), or the bare statement
+        /// of the `PRE 0` form. `X::Phaser::PrePost.condition` is exactly this
+        /// text, and its message quotes it ("Precondition '...' failed"), so it
+        /// has to be captured while the source slice is still in hand. `None`
+        /// for every other phaser kind, which has no condition.
+        condition: Option<Symbol>,
     },
     ProtoDecl {
         name: Symbol,

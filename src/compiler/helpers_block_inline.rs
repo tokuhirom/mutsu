@@ -69,6 +69,7 @@ impl Compiler {
             Stmt::Phaser {
                 kind: crate::ast::PhaserKind::Begin,
                 body,
+                ..
             } => {
                 self.compile_check_phaser_value(body);
                 true
@@ -389,6 +390,7 @@ impl Compiler {
                     Stmt::Phaser {
                         kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
                         body,
+                        ..
                     } => {
                         // Phasers in block-final position should leave their
                         // last expression value on the stack (e.g. when used
