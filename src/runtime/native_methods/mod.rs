@@ -1,4 +1,5 @@
 // Native method dispatch submodules, split from the original native_methods.rs
+mod compiler_config;
 mod concurrency;
 mod encoding;
 pub(crate) mod interval_timer;
@@ -364,6 +365,7 @@ impl Interpreter {
                 | "Distro"
                 | "Kernel"
                 | "Perl"
+                | "Raku"
                 | "Compiler"
                 | "Promise"
                 | "Promise::Vow"
@@ -407,6 +409,7 @@ impl Interpreter {
                             | "Distro"
                             | "Kernel"
                             | "Perl"
+                            | "Raku"
                             | "Compiler"
                             | "Promise"
                             | "Promise::Vow"
@@ -459,8 +462,8 @@ impl Interpreter {
             "Lock::ConditionVariable" => self.native_condition_variable(attributes, method, args),
             "Distro" => self.native_distro(attributes, method),
             "Kernel" => self.native_kernel(attributes, method, args),
-            "Perl" => Ok(self.native_perl(attributes, method)),
-            "Compiler" => Ok(self.native_perl(attributes, method)),
+            "Perl" | "Raku" => Ok(self.native_perl(attributes, method)),
+            "Compiler" => self.native_compiler(attributes, method),
             "Promise" => self.native_promise(attributes, method, args),
             "Promise::Vow" => self.native_promise_vow(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),

@@ -217,6 +217,15 @@ pub(crate) fn reset_user_subs() {
             }
         });
     });
+    // The constant-term twin of the type preseed: a sigilless `constant Foo`
+    // / `my \x` from the calling unit is a complete nullary term, so an EVAL'd
+    // snippet must see it as declared rather than as an undeclared bareword.
+    EVAL_USER_VALUE_TERM_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        for name in names.iter() {
+            super::user_ops::register_user_term_symbol(name);
+        }
+    });
     CURRENT_LANGUAGE_VERSION.with(|v| {
         // Default to 6.d (rakudo's default for a file with no `use vX` pragma).
         // Version-gated behaviors (subset Nil-reset nominalization, grammar

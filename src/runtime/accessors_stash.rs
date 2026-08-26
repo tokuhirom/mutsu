@@ -17,6 +17,38 @@ impl Interpreter {
         format!("${rest}")
     }
 
+    /// Whether `name` is a package that actually holds something — i.e. some
+    /// symbol is stored under `name::`. This is what makes an *implicitly*
+    /// created package findable: `my $foo::bar = 1` declares no package
+    /// anywhere, it just stores the env key `foo::bar`, and `foo` is a package
+    /// precisely because that key exists.
+    pub(crate) fn package_namespace_exists(&self, name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+        let prefix = format!("{name}::");
+        self.env.keys().any(|k| k.resolve().starts_with(&prefix))
+            || self
+                .registry()
+                .classes
+                .keys()
+                .any(|k| k.starts_with(&prefix))
+            || self
+                .registry()
+                .functions
+                .keys()
+                .any(|k| k.resolve().starts_with(&prefix))
+    }
+
+    /// Whether an env-key tail component carries a variable sigil, in which
+    /// case it names a variable rather than a package component.
+    fn env_tail_has_sigil(component: &str) -> bool {
+        component.starts_with('$')
+            || component.starts_with('@')
+            || component.starts_with('%')
+            || component.starts_with('&')
+    }
+
     fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let package = package.trim_end_matches("::");
         if package == "GLOBAL" {
@@ -488,6 +520,23 @@ impl Interpreter {
                 continue;
             }
             if let Some(rest) = Self::stash_member_tail(&key_s, &package_name) {
+                // A member whose tail is itself qualified (`foo::bar` seen from
+                // GLOBAL) does not name a symbol of THIS package -- it names a
+                // symbol of a *sub-package*. The stash member is that
+                // sub-package, exactly once, as a package value whose own
+                // `.WHO` carries the members (`my $foo::bar = 1` gives
+                // `OUR::.keys` == `(foo)` and `OUR::<foo>.WHO.keys` == `($bar)`,
+                // not a flat `foo::bar` key).
+                if let Some((head, _)) = rest.split_once("::") {
+                    if head.is_empty() || Self::env_tail_has_sigil(head) {
+                        continue;
+                    }
+                    let qualified = Self::qualify_stash_name(&package_name, head);
+                    symbols
+                        .entry(head.to_string())
+                        .or_insert_with(|| Value::package(Symbol::intern(&qualified)));
+                    continue;
+                }
                 let stash_key = Self::stash_symbol_key_from_env_tail(rest);
                 symbols.insert(stash_key, val.clone());
             }

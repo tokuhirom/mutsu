@@ -856,6 +856,29 @@ impl Interpreter {
                     "install" => {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
                     }
+                    // Repository stringification: bare prefix for `.Str`,
+                    // `<short-id>#<prefix>` for `.gist` (so `.say` prints
+                    // `file#/path`, not the generic `TypeName.new`).
+                    "Str" | "gist" => {
+                        let prefix = attributes
+                            .as_map()
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        return Ok(Value::str(if method == "Str" {
+                            prefix
+                        } else {
+                            format!("file#{prefix}")
+                        }));
+                    }
+                    "files" => {
+                        let prefix = attributes
+                            .as_map()
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        return self.cur_fs_files(&prefix, &args);
+                    }
                     "need" => {
                         // A depspec may arrive either as the native `CompUnitDepSpec`
                         // value (short-name only) or as a full

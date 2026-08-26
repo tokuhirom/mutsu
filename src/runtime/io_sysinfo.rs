@@ -321,7 +321,9 @@ impl Interpreter {
                 Value::str_from("browser"),
             ]),
         );
-        Value::make_instance(Symbol::intern("Perl"), attrs)
+        // The compiler-identity object's type is `Raku`, not the pre-rename
+        // `Perl` (rakudo: `$*RAKU.^name` and `$*PERL.^name` are both `Raku`).
+        Value::make_instance(Symbol::intern("Raku"), attrs)
     }
 
     /// Update `$*RAKU.version` to reflect `use v6.x` after parsing.

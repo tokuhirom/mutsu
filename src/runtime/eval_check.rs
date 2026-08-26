@@ -575,6 +575,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
         let user_type_names = self.collect_eval_user_type_names();
+        let user_value_term_names = self.collect_eval_user_value_term_names();
         match crate::parser::parse_program_with_operators_and_user_subs(
             src,
             op_names,
@@ -582,6 +583,7 @@ impl Interpreter {
             imported_names,
             &user_sub_names,
             &user_type_names,
+            &user_value_term_names,
         ) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;

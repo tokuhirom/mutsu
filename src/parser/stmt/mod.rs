@@ -109,6 +109,10 @@ pub(super) fn set_eval_user_type_preseed(names: Vec<String>) {
     simple::set_eval_user_type_preseed(names);
 }
 
+pub(super) fn set_eval_user_value_term_preseed(names: Vec<String>) {
+    simple::set_eval_user_value_term_preseed(names);
+}
+
 pub(super) fn set_eval_user_sub_preseed(names: Vec<String>) {
     simple::set_eval_user_sub_preseed(names);
 }

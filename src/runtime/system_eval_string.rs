@@ -235,6 +235,29 @@ impl Interpreter {
             .collect()
     }
 
+    /// Collect the sigilless *value* term names (`constant Foo = 1`, `my \\x`)
+    /// the calling unit has declared, so an EVAL'd snippet parses them as
+    /// declared terms. The type-name twin above reads the class/role/enum
+    /// registry; constants have no such registry, but every one of them leaves a
+    /// `__mutsu_constant_var::<name>` marker in the environment when it is
+    /// declared, which is exactly the set the parser wants back.
+    ///
+    /// Sigiled constants (`constant $x = 1`) are skipped: they are read through
+    /// their sigil, never as a bareword term, so they are not term symbols.
+    pub(crate) fn collect_eval_user_value_term_names(&self) -> Vec<String> {
+        const MARKER: &str = "__mutsu_constant_var::";
+        self.env
+            .keys()
+            .filter_map(|key| {
+                let name = key.resolve();
+                let bare = name.strip_prefix(MARKER)?;
+                let first = bare.chars().next()?;
+                (!matches!(first, '$' | '@' | '%' | '&') && !bare.contains(':'))
+                    .then(|| bare.to_string())
+            })
+            .collect()
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let roles_snapshot = self.registry().roles.clone();

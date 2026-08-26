@@ -339,7 +339,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 | `Language/variables.rakudoc:1551` | ~~`».&?BLOCK` (hyper-call with a block self-reference) dispatches an empty method name~~ | [resolved](../news/2026-08/hyper-call-block-self-reference-empty-method.md) |
 | `Language/variables.rakudoc:134` | `my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift) | [paren-single-var-decl-var-scalar-name.md](../todo/tickets/paren-single-var-decl-var-scalar-name.md) |
 | `Language/variables.rakudoc:768` | `anon class`/`anon sub` with a non-ASCII name fails to parse; `anon sub NAME` also gists without the `&` sigil | [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md) |
-| `Language/variables.rakudoc:1765` | `$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification | [dollar-raku-wrong-metaclass-and-stringify.md](../todo/tickets/dollar-raku-wrong-metaclass-and-stringify.md) |
+| `Language/variables.rakudoc:1765` | ~~`$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification~~ (`.put` also ignored a custom `.Str` -- a general bug) | [resolved](../news/2026-08/dollar-raku-wrong-metaclass-and-stringify.md) |
 | `Language/variables.rakudoc:318` | ~~`$?FILE` reports the relative invocation path instead of an absolute path~~ | [resolved](../news/2026-08/dollar-question-file-relative-not-absolute.md) |
 
 **Excluded from this sub-batch (already deferred/resolved/drift/false-positive/environment):**
@@ -373,7 +373,7 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 | `Language/mop.rakudoc:329` | a grammar's `method ^parameterize` + parametric role application stack-overflows | [grammar-metaclass-parameterize-stack-overflow.md](../todo/deep/grammar-metaclass-parameterize-stack-overflow.md) |
 | `Language/mop.rakudoc:34` | `constant NAME := Metamodel::ClassHOW.new_type(name => 'NAME')` immediately errors as "immutable" | [direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md) |
 | `Language/mop.rakudoc:93` | `.HOW.^name` on a hash literal is missing the `+{<anon>}` mixin suffix | [how-gist-missing-anon-mixin-suffix.md](../todo/tickets/how-gist-missing-anon-mixin-suffix.md) |
-| `Type/independent-routines.rakudoc:110` | `EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg | [eval-dollar-question-file-not-synthesized.md](../todo/tickets/eval-dollar-question-file-not-synthesized.md) |
+| `Type/independent-routines.rakudoc:110` | ~~`EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg~~ | [resolved](../news/2026-08/eval-dollar-question-file-not-synthesized.md) |
 | `Type/independent-routines.rakudoc:148` | `repl()` global routine is unimplemented (mutsu already has REPL machinery to reuse) | [repl-routine-unimplemented.md](../todo/tickets/repl-routine-unimplemented.md) |
 | `Type/independent-routines.rakudoc:473` | `open(:w, PATH)` — a named adverb before the positional path breaks argument parsing | [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md) |
 | `Type/independent-routines.rakudoc:312` | hyper method call (`».method`) / `.map` on a `gather {...}` Seq returns empty instead of forcing it | [gather-hyper-method-call-empty-result.md](../todo/tickets/gather-hyper-method-call-empty-result.md) |
@@ -408,7 +408,7 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
 | `Language/grammars.rakudoc:387` | ~~a grammar-embedded custom assertion method (`<.method>`) sees `self` as an uninstantiated type object~~ (the parse result's type is still `Match`, not the grammar -- [split out](../todo/tickets/grammar-parse-result-is-a-match-not-a-grammar-cursor.md)) | [resolved](../news/2026-08/grammar-embedded-custom-assertion-method-self-type-object.md) |
 | `Language/grammars.rakudoc:289` | ~~`.tail ~= ...` on a private class-attribute array silently no-ops instead of mutating the last element~~ (the rw write-back rebuilt the array and rebound it by *name*, which only ever reached a plain lexical) | [resolved](../news/2026-08/tail-lvalue-compound-assign-attribute-array-noop.md) |
 | `Language/syntax.rakudoc:384` | adverb values needing BEGIN-time evaluation don't resolve (`$a:foo«$c»` for a `constant $c`, `$foo:bar(1+1)`) — the key-less form (`:354`) is fixed, see [news](../news/2026-08/keyless-colon-pair-variable-names.md) | [begin-time-adverb-value-interpolation.md](../todo/deep/begin-time-adverb-value-interpolation.md) |
-| `Language/syntax.rakudoc:429` | `OUR::` pseudo-package doesn't expose file-scope `our`-declared package symbols | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
+| `Language/syntax.rakudoc:429` | `OUR::` pseudo-package: sub-package members and `OUR::name` lookup fixed; `.keys` still carries builtin/dynamic-var noise | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
 | `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
 | `Language/experimental.rakudoc:32` | ~~`Buf`/`Blob.contents` method is missing~~ | [resolved](../news/2026-08/buf-contents-method-missing.md) |
 | `Language/experimental.rakudoc:144` | ~~a user-defined custom infix's RHS operand fails to parse when followed by `??...!!`~~ (a trait-less custom infix had list-infix, not additive, precedence) | [resolved](../news/2026-08/custom-infix-rhs-operand-rejects-ternary.md) |
@@ -463,7 +463,7 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 | file:line | one-line summary | ticket |
 |---|---|---|
 | `Type/Backtrace.rakudoc:15` | `$!.backtrace[N]` positional indexing always returns `Nil` | [backtrace-frame-indexing-returns-nil.md](../todo/tickets/backtrace-frame-indexing-returns-nil.md) |
-| `Language/perl-var.rakudoc:154` | `CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>` | [compunit-repository-gist-missing-inst-prefix.md](../todo/tickets/compunit-repository-gist-missing-inst-prefix.md) |
+| `Language/perl-var.rakudoc:154` | ~~`CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>`~~ | [resolved](../news/2026-08/compunit-repository-gist-missing-inst-prefix.md) |
 | `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
 | `Type/IO/Path/Parts.rakudoc:71` | `$parts[]` (empty postcircumfix index) on `IO::Path::Parts` shows the whole-object gist instead of iterating its 3 positional elements | [io-path-parts-empty-subscript-not-positional.md](../todo/tickets/io-path-parts-empty-subscript-not-positional.md) |
 | `Type/Metamodel/TypePretense.rakudoc:15,47` | `Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented | [role-type-pretense-cool-incomplete.md](../todo/tickets/role-type-pretense-cool-incomplete.md) |
@@ -493,7 +493,7 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
 | `Type/DateTime.rakudoc:281,302` | `.julian-date`/`.modified-julian-date` return `Num` (float noise) instead of an exact `Rat` | [datetime-julian-date-returns-num-not-rat.md](../todo/tickets/datetime-julian-date-returns-num-not-rat.md) |
 | `Type/Formatter.rakudoc:16,32` | `Formatter.new(FORMAT_STRING)` is unimplemented | [formatter-new-unimplemented.md](../todo/tickets/formatter-new-unimplemented.md) |
 | `Type/X/Cannot/Empty.rakudoc:15` | ~~`X::Cannot::Empty.new(:action, :what).message` returns an empty string instead of formatting "Cannot ACTION from an empty WHAT"~~ | [resolved](../news/2026-08/x-cannot-empty-message-not-formatted.md) |
-| `Type/Compiler.rakudoc:58` | `$*RAKU.compiler.verbose-config` is unimplemented (low priority — the real output is exhaustively MoarVM-build-specific) | [compiler-verbose-config-unimplemented.md](../todo/tickets/compiler-verbose-config-unimplemented.md) |
+| `Type/Compiler.rakudoc:58` | ~~`$*RAKU.compiler.verbose-config` is unimplemented~~ (mutsu reports its own truthful config; the key set is build-specific, and the doc's own repro dies in rakudo too) | [resolved](../news/2026-08/compiler-verbose-config-unimplemented.md) |
 | `Type/IO/ArgFiles.rakudoc:34` | `$*ARGFILES.eof`/`.get` loops forever instead of terminating once stdin is exhausted (no file args given) | [argfiles-eof-infinite-loop-on-empty-stdin.md](../todo/tickets/argfiles-eof-infinite-loop-on-empty-stdin.md) |
 
 **Excluded from this batch-4 sub-run:**
@@ -565,7 +565,7 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
 |---|---|---|
 | `Type/BagHash.rakudoc:112` | ~~`.add`/`.remove` methods are unimplemented on `BagHash` (subscript-based mutation already works)~~ FIXED | [news/2026-08/baghash-add-remove-methods.md](../news/2026-08/baghash-add-remove-methods.md) |
 | `Type/Block.rakudoc:17` | `.signature` of a bare `{;}` block (implicit `$_` parameter) gists as the garbled `($$_?)` instead of `(;; $_? is raw = OUTER::<$_>)` | [implicit-topic-block-signature-gist-wrong.md](../todo/tickets/implicit-topic-block-signature-gist-wrong.md) |
-| `Type/CompUnit/Repository/FileSystem.rakudoc:45` | `.files(name, :ver)` introspection method is unimplemented | [compunit-repository-filesystem-files-method-missing.md](../todo/tickets/compunit-repository-filesystem-files-method-missing.md) |
+| `Type/CompUnit/Repository/FileSystem.rakudoc:45` | ~~`.files(name, :ver)` introspection method is unimplemented~~ | [resolved](../news/2026-08/compunit-repository-filesystem-files-method-missing.md) |
 
 **Excluded from this batch-5 sub-run (already deferred/resolved/drift/false-positive/duplicate):**
 - `Type/SetHash.rakudoc` [1], [2] (lines 88, 99, `.keys`/`.values` order after `.new`/`.SetHash`

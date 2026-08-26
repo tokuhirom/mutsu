@@ -175,6 +175,12 @@ impl Interpreter {
             }
             "path-spec" => Some(Ok(Value::str(format!("inst#{prefix}")))),
             "short-id" => Some(Ok(Value::str_from("inst"))),
+            // A repository stringifies as its bare prefix and gists as
+            // `<short-id>#<prefix>` (`inst#/home/user/.raku`), which is what
+            // `.say for $*REPO.repo-chain` prints. Without these the generic
+            // instance fallback rendered `CompUnit::Repository::Installation.new`.
+            "Str" => Some(Ok(Value::str(prefix))),
+            "gist" => Some(Ok(Value::str(format!("inst#{prefix}")))),
             "id" => {
                 // A stable, non-empty identifier derived from the repo prefix.
                 Some(Ok(Value::str(format!("{:X}", hash_strings(&[&prefix])))))

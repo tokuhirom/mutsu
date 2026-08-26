@@ -92,7 +92,14 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_put(&mut self, target: &Value) -> Result<Value, RuntimeError> {
-        self.write_to_named_handle("$*OUT", &target.to_string_value(), true)?;
+        // `put` is `print` plus a newline, so it must go through the same
+        // string-context rendering: `render_str_value` honors a user-defined or
+        // native `.Str` method, while the raw `to_string_value()` this used to
+        // call only ever saw the built-in stringification. That made
+        // `$obj.put` print `ClassName()` for any object with a custom `.Str`
+        // (e.g. `$*RAKU.put` printed `Perl()` instead of `Raku`).
+        let content = self.render_str_value(target);
+        self.write_to_named_handle("$*OUT", &content, true)?;
         Ok(Value::TRUE)
     }
 

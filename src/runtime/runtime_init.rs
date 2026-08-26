@@ -1085,40 +1085,47 @@ impl Interpreter {
                 class_level_attrs: HashMap::new(),
             },
         );
-        classes.insert(
-            "Perl".to_string(),
-            ClassDef {
-                parents: Vec::new(),
-                attributes: Vec::new(),
-                native_methods: [
-                    "DISTROnames",
-                    "KERNELnames",
-                    "compiler",
-                    "backend",
-                    "name",
-                    "auth",
-                    "version",
-                    "signature",
-                    "desc",
-                    "gist",
-                    "raku",
-                    "Str",
-                    "release",
-                    "codename",
-                    "id",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-                mro: sym_mro(&["Perl"]),
-                attribute_types: HashMap::new(),
-                attribute_smileys: HashMap::new(),
-                attribute_built: HashMap::new(),
-                wildcard_handles: Vec::new(),
-                alias_attributes: HashSet::new(),
-                class_level_attrs: HashMap::new(),
-            },
-        );
+        // The compiler-identity object is `Raku` (`$*RAKU.^name` is `Raku`, and
+        // `Raku.^name` is `Raku` in rakudo). `Perl` is the pre-rename spelling,
+        // which rakudo still keeps as a distinct type name (`Perl.^name` is
+        // `Perl`) and still answers `$*PERL` with; both share one native method
+        // table, and `make_perl_instance` builds the `Raku` one.
+        for identity_name in ["Raku", "Perl"] {
+            classes.insert(
+                identity_name.to_string(),
+                ClassDef {
+                    parents: Vec::new(),
+                    attributes: Vec::new(),
+                    native_methods: [
+                        "DISTROnames",
+                        "KERNELnames",
+                        "compiler",
+                        "backend",
+                        "name",
+                        "auth",
+                        "version",
+                        "signature",
+                        "desc",
+                        "gist",
+                        "raku",
+                        "Str",
+                        "release",
+                        "codename",
+                        "id",
+                    ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                    mro: sym_mro(&[identity_name]),
+                    attribute_types: HashMap::new(),
+                    attribute_smileys: HashMap::new(),
+                    attribute_built: HashMap::new(),
+                    wildcard_handles: Vec::new(),
+                    alias_attributes: HashSet::new(),
+                    class_level_attrs: HashMap::new(),
+                },
+            );
+        }
         classes.insert(
             "Kernel".to_string(),
             ClassDef {
@@ -1201,6 +1208,7 @@ impl Interpreter {
                     "codename",
                     "id",
                     "backend",
+                    "verbose-config",
                 ]
                 .iter()
                 .map(|s| s.to_string())
