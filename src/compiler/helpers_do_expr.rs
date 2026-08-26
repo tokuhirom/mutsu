@@ -94,6 +94,12 @@ impl Compiler {
         if import_scoped {
             self.code.emit(OpCode::PushImportScope);
         }
+        // A value-position block (`do { … }`, a routine's tail `{ … }`, a
+        // string-interpolation `{ … }`) is a block literal re-cloned every time
+        // its ENCLOSING block runs, so its own `state` restarts per execution —
+        // see `OpCode::ResetStateLocals`. This is what makes raku's documented
+        // trap `sub count-it { say "Count is {$++}" }` print `0` every call.
+        let state_reset = self.emit_value_block_state_reset(body);
         let idx = self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),
@@ -102,12 +108,26 @@ impl Compiler {
         });
         self.compile_block_inline(body);
         self.code.patch_body_end(idx);
+        self.patch_nested_block_state_reset(state_reset);
         if import_scoped {
             self.code.emit(OpCode::PopImportScope);
         }
     }
 
+    /// [`Compiler::emit_nested_block_state_reset`] for a value-position block,
+    /// honouring the sole-block loop-body suppression the statement form
+    /// consumes in `Stmt::Block` (`do { state $n … } for @xs` is the loop's own
+    /// body, cloned once for the whole loop).
+    fn emit_value_block_state_reset(&mut self, body: &[Stmt]) -> Option<usize> {
+        let suppress = std::mem::take(&mut self.suppress_loop_block_state_reset);
+        (!suppress)
+            .then(|| self.emit_nested_block_state_reset(body))
+            .flatten()
+    }
+
     pub(super) fn compile_do_block_expr_scoped(&mut self, body: &[Stmt], label: &Option<String>) {
+        // Same per-execution `state` restart as the unscoped sibling above.
+        let state_reset = self.emit_value_block_state_reset(body);
         let idx = self.code.emit(OpCode::DoBlockExpr {
             body_end: 0,
             label: label.clone(),
@@ -137,6 +157,7 @@ impl Compiler {
             }
         }
         self.code.patch_body_end(idx);
+        self.patch_nested_block_state_reset(state_reset);
     }
 
     /// Compile an `if`/`elsif` chain in value (expression) position, honouring an

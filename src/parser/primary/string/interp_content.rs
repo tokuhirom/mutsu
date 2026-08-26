@@ -84,10 +84,58 @@ pub(crate) fn interpolate_string_content_with_modes(
 /// the `$( … )` interpolation path: try a statement list first (so multi-statement
 /// blocks and statement-modifiers work), then fall back to a single expression.
 pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Option<Expr> {
-    if let Ok((leftover, stmts)) = crate::parser::stmt::stmt_list_pub(inner)
+    // The `{ … }` is its OWN block, so a bare `$` inside it is a `state`
+    // variable of *that* block, not of the enclosing routine. Parsing it in a
+    // fresh lexical scope is what puts the implicit
+    // `state $__ANON_STATE_<id>__;` declaration inside the interpolation block,
+    // where the block's per-execution clone restarts it — raku's documented
+    // trap `sub count-it { say "Count is {$++}" }` prints `0` on every call
+    // (Language/traps.rakudoc, "Using a block to interpolate anon state vars").
+    crate::parser::stmt::simple::push_scope();
+    let parsed = parse_braced_closure_body_scoped(inner);
+    crate::parser::stmt::simple::pop_scope();
+    parsed
+}
+
+/// Parse the body of a `"…{ … }…"` interpolation block into the scope-isolated
+/// `DoStmt(Block(…))` the double-quote parser wraps it in.
+///
+/// Shares [`parse_braced_closure_body`]'s lexical-scope discipline: the block is
+/// its own block, so a bare `$` in it is a `state` of that block and its
+/// implicit declaration belongs inside the returned statement list, not hoisted
+/// into the enclosing routine.
+pub(in crate::parser::primary) fn parse_interpolation_block(block_src: &str) -> Option<Expr> {
+    crate::parser::stmt::simple::push_scope();
+    let stmts = parse_interpolation_block_stmts(block_src);
+    crate::parser::stmt::simple::pop_scope();
+    stmts.map(|stmts| Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))))
+}
+
+/// [`parse_interpolation_block`]'s body, with the block's scope already pushed.
+fn parse_interpolation_block_stmts(block_src: &str) -> Option<Vec<crate::ast::Stmt>> {
+    let mut stmts = if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
+        && sr.trim().is_empty()
+    {
+        stmts
+    } else if let Ok((expr_rest, expr)) = expression(block_src)
+        && expr_rest.trim().is_empty()
+    {
+        vec![crate::ast::Stmt::Expr(expr)]
+    } else {
+        return None;
+    };
+    crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
+    Some(stmts)
+}
+
+/// [`parse_braced_closure_body`]'s body, run with the block's own lexical scope
+/// already pushed so the anonymous-`state` declarations it mints land inside it.
+fn parse_braced_closure_body_scoped(inner: &str) -> Option<Expr> {
+    if let Ok((leftover, mut stmts)) = crate::parser::stmt::stmt_list_pub(inner)
         && leftover.trim().is_empty()
         && !stmts.is_empty()
     {
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         return Some(if stmts.len() == 1 {
             Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap()))
         } else {
@@ -100,7 +148,18 @@ pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Opti
     if let Ok((leftover, expr)) = expression(inner)
         && leftover.trim().is_empty()
     {
-        return Some(expr);
+        let mut stmts = vec![crate::ast::Stmt::Expr(expr)];
+        crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
+        if stmts.len() == 1 {
+            let Some(crate::ast::Stmt::Expr(expr)) = stmts.into_iter().next() else {
+                unreachable!("single-element vec built from Stmt::Expr");
+            };
+            return Some(expr);
+        }
+        return Some(Expr::DoBlock {
+            body: stmts,
+            label: None,
+        });
     }
     None
 }

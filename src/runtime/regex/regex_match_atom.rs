@@ -855,11 +855,23 @@ impl Interpreter {
             return None;
         }
         // Run the method in a scratch interpreter (mirrors `eval_regex_code_assertion`).
-        // The invocant is the grammar type object so method resolution finds the
-        // grammar's own method (a Match cursor would resolve against `Match` and
-        // miss it). Full Cursor-self semantics are a deeper feature; a method used
-        // purely for its side effect / exception (`<.panic>`) does not need it.
-        let invocant = Value::package(crate::symbol::Symbol::intern(pkg));
+        //
+        // The invocant is an INSTANCE of the grammar carrying the cursor state
+        // (`from`/`pos`/`to`/`orig`), not the bare type object: raku hands such a
+        // method the in-progress cursor, which is what makes the documented
+        // `method mark(--> ::?CLASS:D) { $!invalid = True; self }` idiom work. A
+        // type object made every attribute touch die with "Cannot look up
+        // attributes in a G type object", and returning `self` (a type object) read
+        // as "no match", which failed the whole parse. Method resolution still
+        // finds the grammar's own method because the instance's class IS the
+        // grammar.
+        let mut cursor_attrs = crate::value::AttrMap::new();
+        let orig: String = chars.iter().collect();
+        cursor_attrs.insert("orig", Value::str(orig));
+        cursor_attrs.insert("from", Value::int(pos as i64));
+        cursor_attrs.insert("pos", Value::int(pos as i64));
+        cursor_attrs.insert("to", Value::int(pos as i64));
+        let invocant = Value::make_instance(crate::symbol::Symbol::intern(pkg), cursor_attrs);
         let mut interp = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(pkg.to_string())),
@@ -881,6 +893,27 @@ impl Interpreter {
                 Some(Vec::new())
             }
             Ok(v) => {
+                // A returned grammar cursor (typically `self`) reports an
+                // ABSOLUTE position in `pos`, so the parse resumes there — the
+                // idiomatic `{ …; self }` is a zero-width success at `pos`.
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = v.view()
+                    && class_name == pkg
+                {
+                    let end = attributes
+                        .as_map()
+                        .get("pos")
+                        .and_then(|p| p.as_int())
+                        .filter(|p| *p >= 0)
+                        .map(|p| p as usize)
+                        .unwrap_or(pos);
+                    return (end <= chars.len())
+                        .then(|| vec![(end, RegexCaptures::default())])
+                        .or(Some(Vec::new()));
+                }
                 // A defined Match/Cursor return advances the parse by its extent.
                 // (Match goes through the seam; a non-Match cursor-like instance
                 // with a `to` attribute also counts.)

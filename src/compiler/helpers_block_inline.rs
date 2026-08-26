@@ -116,9 +116,17 @@ impl Compiler {
     /// (`Stmt::SyntheticBlock`) and non-block inline bodies (do/sub/if-branch)
     /// must keep using [`compile_block_inline`] directly — they are not frames.
     pub(super) fn compile_bare_block_inline(&mut self, stmts: &[Stmt]) {
+        // A genuine source `{ … }` in tail (value) position is still a block
+        // literal re-cloned every time its enclosing block runs, so its own
+        // `state` restarts per execution — the statement-position arm gets this
+        // from `Stmt::Block`, this flattened one needs its own
+        // `OpCode::ResetStateLocals` (`sub f { { state $c = 0; say $c++ } }`
+        // says `0` on every call).
+        let state_reset = self.emit_nested_block_state_reset(stmts);
         self.code.emit(OpCode::PushBlockFrame);
         self.compile_block_inline(stmts);
         self.code.emit(OpCode::PopBlockFrame);
+        self.patch_nested_block_state_reset(state_reset);
     }
 
     /// Compile a block inline (for blocks without placeholders).

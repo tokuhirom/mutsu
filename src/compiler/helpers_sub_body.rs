@@ -707,7 +707,15 @@ impl Compiler {
                         {
                             continue;
                         }
+                        // The block is a literal re-cloned on every call of this
+                        // routine, so its own `state` restarts per call — the
+                        // statement-position `Stmt::Block` arm gets that from its
+                        // own `OpCode::ResetStateLocals`, and flattening it here
+                        // must not lose it (`sub f { { state $c = 0; say $c++ } }`
+                        // says `0` every call).
+                        let state_reset = sub_compiler.emit_nested_block_state_reset(stmts);
                         sub_compiler.compile_block_inline(stmts);
+                        sub_compiler.patch_nested_block_state_reset(state_reset);
                         continue;
                     }
                     Stmt::SyntheticBlock(stmts) => {

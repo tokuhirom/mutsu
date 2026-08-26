@@ -233,12 +233,12 @@ impl Interpreter {
         // engine exit).
         let live_target = super::regex_helpers::current_match_target()
             .unwrap_or_else(|| MatchTarget::new(matched_so_far));
-        // Set positional capture variables ($0, $1, etc.)
+        // Set positional capture variables ($0, $1, etc.). They are `Match`
+        // objects, exactly as `$/[0]` is once the match finishes — raku's
+        // `/ (\d) { say $0 } \d+ /` prints `｢1｣`, not the bare `1` a `Str`
+        // binding produced here.
         for (i, slot) in caps.positional.iter().enumerate() {
-            env.push((
-                i.to_string(),
-                Value::str(live_target.span_str(slot.from, slot.to)),
-            ));
+            env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
         }
         // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
         // matched-so-far text (not just an array of positional captures). A
@@ -289,17 +289,13 @@ impl Interpreter {
                 env.push((format!("<{}>", k), m.clone()));
                 continue;
             }
-            let texts: Vec<String> = slot
-                .nodes
-                .iter()
-                .map(|n| live_target.span_str(n.from, n.to))
-                .collect();
-            let value = if texts.len() == 1 {
-                Value::str(texts.into_iter().next().unwrap())
-            } else {
-                Value::array(texts.into_iter().map(Value::str).collect())
-            };
-            env.push((format!("<{}>", k), value));
+            // Like `$0` above: a named capture read mid-match is the same
+            // `Match` the finished `$/<name>` holds, so `.from`/`.made`/`.hash`
+            // all answer rather than dying on a `Str`.
+            env.push((
+                format!("<{}>", k),
+                Value::named_slot_value(slot, &live_target),
+            ));
         }
         // The assertion's own `my` declarations are lexical to it, so scope them
         // alongside the regex bindings. `eval_block_value` does not scope plain
@@ -408,26 +404,19 @@ impl Interpreter {
             .unwrap_or_else(|| MatchTarget::new(&matched_so_far));
         let mut env: Vec<(String, Value)> = Vec::new();
         for (i, slot) in caps.positional.iter().enumerate() {
-            env.push((
-                i.to_string(),
-                Value::str(live_target.span_str(slot.from, slot.to)),
-            ));
+            env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
         }
         for (k, slot) in &caps.named {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
             }
-            let texts: Vec<String> = slot
-                .nodes
-                .iter()
-                .map(|n| live_target.span_str(n.from, n.to))
-                .collect();
-            let value = if texts.len() == 1 {
-                Value::str(texts.into_iter().next().unwrap())
-            } else {
-                Value::array(texts.into_iter().map(Value::str).collect())
-            };
-            env.push((format!("<{}>", k), value));
+            // Like `$0` above: a named capture read mid-match is the same
+            // `Match` the finished `$/<name>` holds, so `.from`/`.made`/`.hash`
+            // all answer rather than dying on a `Str`.
+            env.push((
+                format!("<{}>", k),
+                Value::named_slot_value(slot, &live_target),
+            ));
         }
         let cursor = Value::make_match_object_full(
             caps.match_from as i64,

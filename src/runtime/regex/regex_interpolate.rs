@@ -341,6 +341,15 @@ impl Interpreter {
                 continue;
             }
             if ch == '$' {
+                // `$$` is the end-of-line anchor (see the sibling guard in
+                // `interpolate_regex_scalars`); the `{` that may follow it opens a
+                // code block, not a `${name}` reference.
+                if i + 1 < chars.len() && chars[i + 1] == '$' {
+                    out.push('$');
+                    out.push('$');
+                    i += 2;
+                    continue;
+                }
                 let start = i;
                 let mut j = i + 1;
                 let parsed = if j < chars.len() && chars[j] == '{' {
