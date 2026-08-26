@@ -829,20 +829,11 @@ impl Interpreter {
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
             "end" => self.builtin_end(&args),
-            "Set" if !args.is_empty() => self.builtin_set(&args),
-            "Bag" if !args.is_empty() => self.builtin_bag(&args),
-            "Mix" if !args.is_empty() => self.builtin_mix(&args),
-            // The mutable `*Hash` coercion functions share the immutable
-            // builders, then flip the mutability flag on the result.
-            "SetHash" if !args.is_empty() => self
-                .builtin_set(&args)
-                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
-            "BagHash" if !args.is_empty() => self
-                .builtin_bag(&args)
-                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
-            "MixHash" if !args.is_empty() => self
-                .builtin_mix(&args)
-                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
+            // The capitalised spellings are *coercions* (`Mix(+@a) { @a.Mix }`),
+            // not `.new` constructors — see `builtin_quanthash_coerce`.
+            "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash" if !args.is_empty() => {
+                self.builtin_quanthash_coerce(name, &args)
+            }
             "set" => self.builtin_set(&args),
             "bag" => self.builtin_bag(&args),
             "mix" => self.builtin_mix(&args),

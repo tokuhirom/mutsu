@@ -190,6 +190,49 @@ impl Interpreter {
         Ok(Value::set_typed(elems, original_keys))
     }
 
+    /// The *capitalised* QuantHash coercion functions — `Set(...)`,
+    /// `SetHash(...)`, `Bag(...)`, `BagHash(...)`, `Mix(...)`, `MixHash(...)`.
+    ///
+    /// Rakudo spells these `multi sub Mix(+@a) { @a.Mix }`: the arguments are
+    /// slurped into a list and that *list is coerced*, so a positional `Pair`
+    /// argument contributes `key => weight` and a nested QuantHash spills its
+    /// own pairs. That is deliberately NOT the lowercase `mix(+@a) {
+    /// Mix.new(@a) }` family, where every element (`Pair`s included) stays an
+    /// opaque key of weight 1 — which is what `builtin_set` / `builtin_bag` /
+    /// `builtin_mix` implement, and which stays correct for `set`/`bag`/`mix`.
+    ///
+    /// Sharing the `new`-flavoured builders between both spellings is what made
+    /// `MixHash(2 => 2, 4)` read as the two opaque keys `2 => 2` and `4`
+    /// instead of `2(2) 4(1)` — which in turn made every weighted set operator
+    /// over such an operand produce garbage. Routing the coercion spelling
+    /// through the same `quanthash_coerce` builders the `.Mix`/`.Bag`/`.Set`
+    /// *methods* already use keeps one implementation per operation.
+    pub(super) fn builtin_quanthash_coerce(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let args = self.reify_finite_closure_args(args)?;
+        // `+@a` slurps the arguments into a List, and it is that List which is
+        // coerced — so a lone `Mix(@a)` still flattens `@a` (a List element
+        // spills in list context) while `Mix($p)` keeps an itemized Pair whole.
+        let list = Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(args)),
+            crate::value::ArrayKind::List,
+        );
+        use crate::builtins::quanthash_coerce;
+        match name {
+            "Set" => quanthash_coerce::to_set(list, "Set"),
+            "SetHash" => quanthash_coerce::to_set(list, "SetHash")
+                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
+            "Bag" => quanthash_coerce::to_bag(list, "Bag"),
+            "BagHash" => quanthash_coerce::to_bag(list, "BagHash")
+                .map(|v| crate::runtime::utils::with_set_mutability(v, true)),
+            "Mix" => quanthash_coerce::to_mix(list, "Mix"),
+            _ => quanthash_coerce::to_mixhash(list),
+        }
+    }
+
     pub(super) fn builtin_bag(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let args = self.reify_finite_closure_args(args)?;
         // Check for lazy inputs

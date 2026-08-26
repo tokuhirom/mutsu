@@ -53,6 +53,9 @@ pub(crate) fn block_keeps_outer_topic(data: &SubData) -> bool {
 pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
     data.env.contains_key("__mutsu_routine_name")
         || data.env.contains_key("__mutsu_compose_left")
+        || data
+            .env
+            .contains_key(crate::runtime::utils::IDENTITY_CALLABLE_MARKER)
         || data.env.contains_key("__mutsu_multi_dispatch_candidates")
 }
 

@@ -233,6 +233,34 @@ pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
     )
 }
 
+/// Env marker identifying the identity-function carrier Sub built by
+/// [`identity_callable`]. Resolved by `call_sub_value` the same way a
+/// `__mutsu_compose_left`/`right` composition carrier is.
+pub(crate) const IDENTITY_CALLABLE_MARKER: &str = "__mutsu_identity_callable";
+
+/// The identity function `-> $x { $x }`, as a `Callable` value.
+///
+/// This is `infix:<∘>`'s zero-argument value: composing nothing leaves its
+/// argument unchanged. It is built as a marker carrier rather than an AST
+/// closure so it needs neither a compiler round-trip nor an interpreter
+/// handle — `reduction_identity` is a pure function of the operator name.
+pub(crate) fn identity_callable() -> Value {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static IDENTITY_ID: AtomicU64 = AtomicU64::new(2_000_000);
+    let mut env = crate::env::Env::new();
+    env.insert(IDENTITY_CALLABLE_MARKER.to_string(), Value::TRUE);
+    Value::make_sub_with_id(
+        Symbol::intern(""),
+        Symbol::intern("<identity>"),
+        vec!["arg0".to_string()],
+        Vec::new(),
+        Vec::new(),
+        false,
+        env,
+        IDENTITY_ID.fetch_add(1, Ordering::Relaxed),
+    )
+}
+
 pub(crate) fn reduction_identity(op: &str) -> Value {
     if is_chain_comparison_op(op) {
         return Value::TRUE;
@@ -264,6 +292,10 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         ),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
         "Z" => Value::seq(Vec::new()),
+        // Function composition: the identity element of `∘` is the identity
+        // FUNCTION, so `[∘]` over an empty operand list is a working `Callable`
+        // (`my &composed = [∘]; composed("foo")` returns `"foo"`), not a scalar.
+        "o" | "\u{2218}" => identity_callable(),
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
             if let Some(inner) = strip_hyper_delimiters_for_identity(op) {
