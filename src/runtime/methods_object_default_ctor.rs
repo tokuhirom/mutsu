@@ -79,7 +79,8 @@ impl Interpreter {
                         }
                         // Coerce exactly as the interpreter's shared helper does
                         // (List/Range -> Array, array-of-Pairs -> Hash, …).
-                        let coerced = Self::coerce_attr_value_by_sigil(val.clone(), sigil_of(key));
+                        let coerced =
+                            Self::coerce_provided_attr_value_by_sigil(val.clone(), sigil_of(key));
                         match key_sym {
                             Some(s) => attrs.insert(s, coerced),
                             None => attrs.insert(key.clone(), coerced),

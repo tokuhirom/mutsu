@@ -233,8 +233,16 @@ impl Compiler {
         // A method argument is normally passed to the callee, not stored in the
         // caller frame, so a closure argument is conservatively NON-escaping
         // (the #2746 guard). `tap`/`act` override this with `escaping = true`.
+        // A non-bareword-keyed fat-arrow written directly as an argument
+        // (`@a.push: "k$i" => $i`) parses to `PositionalPair` — it is *data*,
+        // not a named argument, so the Pair it builds keeps its value's
+        // container exactly like the standalone literal `my $p = ("k" => $v)`
+        // does (S02:1704). `suppress_pair_capture` exists for the named-argument
+        // case only (see its field doc); suppressing it here made every pushed
+        // pair snapshot its value instead of aliasing it.
+        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
         self.with_escape(escaping, |s| {
-            s.with_suppress_pair_capture(true, |s| {
+            s.with_suppress_pair_capture(suppress_pairs, |s| {
                 // An `AssignExpr` in argument position is always a real
                 // assignment, evaluating to the assigned value
                 // (`@r.push($x += 5)` pushes the assigned value, not a Pair).
@@ -355,8 +363,11 @@ impl Compiler {
         if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow) {
             self.mint_named_pair = true;
         }
+        // See `compile_method_arg_with_escape`: a `PositionalPair` argument is
+        // data, not a named argument, so its value keeps its container.
+        let suppress_pairs = !matches!(arg, Expr::PositionalPair(_));
         self.with_escape(escaping, |c| {
-            c.with_suppress_pair_capture(true, |c| c.compile_expr(arg))
+            c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });
         if Self::needs_decont(arg) {
             self.code.emit(OpCode::Decont);

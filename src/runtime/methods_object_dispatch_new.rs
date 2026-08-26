@@ -1852,7 +1852,8 @@ impl Interpreter {
                                 {
                                     value = self.coerce_value_for_constraint(tc, value);
                                 }
-                                let coerced = Self::coerce_attr_value_by_sigil(value, sigil);
+                                let coerced =
+                                    Self::coerce_provided_attr_value_by_sigil(value, sigil);
                                 // A `%`-sigil attribute bound to a non-Hash object
                                 // list-contextualizes it (Raku's Hash.STORE): an
                                 // object with a custom `.iterator`/`.list` (e.g.

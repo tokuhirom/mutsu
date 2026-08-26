@@ -2782,8 +2782,21 @@ impl Interpreter {
                             "callmethodmutwithvalues",
                             "accessor",
                         );
-                        let mut updated = attributes.to_map();
                         let assigned = args[0].clone();
+                        // An `@`/`%` attribute IS a container: `$obj.attr = (…)`
+                        // assigns into the container the attribute already holds
+                        // rather than rebinding the slot to a fresh one. Storing
+                        // a new container here severed every other share of the
+                        // old one — including the `Array`/`Hash` attribute
+                        // containers `Mu.clone` deliberately shares between the
+                        // original and the clone (raku: "Hash and Array attribute
+                        // modifications in clone appear in original as well").
+                        if let Some(existing) = attributes.as_map().get(method)
+                            && existing.replace_container_contents(&assigned)
+                        {
+                            return Ok(existing.clone());
+                        }
+                        let mut updated = attributes.to_map();
                         updated.insert(method.to_string(), assigned.clone());
                         self.env.insert(
                             target_var.to_string(),

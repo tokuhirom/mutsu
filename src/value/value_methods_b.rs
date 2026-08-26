@@ -26,6 +26,109 @@ impl Value {
         }
     }
 
+    /// Write `val` into array element `idx` in place, through the shared `Gc`.
+    ///
+    /// The counterpart of [`array_push_in_place`](Self::array_push_in_place) for
+    /// an *existing* slot. Every holder of the same container — an instance
+    /// attribute slot, a closure capture, a `.clone`d object that shares the
+    /// attribute's container — observes the write, because the container is the
+    /// one canonical cell rather than a value that has to be rebound by name.
+    /// When the slot already holds a `ContainerRef` cell the write goes
+    /// *through* the cell (via [`assign_element_slot`](Self::assign_element_slot)),
+    /// so a `:=` binding to that element sees it too.
+    ///
+    /// Returns `false` (writing nothing) when `self` is not an Array or `idx`
+    /// is out of range.
+    pub fn array_set_in_place(&self, idx: usize, val: Value) -> bool {
+        if let ValueView::Array(arc, _) = self.view() {
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `gc_contents_mut`. No borrow into the items is live across the write.
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
+            let items = data.items_mut();
+            if idx >= items.len() {
+                return false;
+            }
+            Value::assign_element_slot(&mut items[idx], val);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// A copy of this `Array`/`Hash` that shares nothing with the original: a
+    /// fresh `Gc` holding cloned data (elements, and the container's own
+    /// metadata). `None` for anything that is not a real `Array`/`Hash`.
+    ///
+    /// Used where a value must become a container the receiver *owns* — an
+    /// `@`/`%` attribute initialized from a supplied named argument, which in
+    /// Raku gets its own container so later mutation through the attribute
+    /// cannot reach the caller's array (`C.new(x => @src); $o.x.push(9)` leaves
+    /// `@src` alone).
+    pub fn detached_container_copy(&self) -> Option<Value> {
+        match self.view() {
+            ValueView::Array(arc, kind) => Some(Value::array_with_kind(
+                crate::gc::Gc::new((**arc).clone()),
+                kind,
+            )),
+            ValueView::Hash(arc) => Some(Value::hash_with_data_itemized(
+                crate::gc::Gc::new((**arc).clone()),
+                self.hash_is_itemized(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// Replace the *contents* of an `Array`/`Hash` container in place with
+    /// those of `src`, keeping this container's identity.
+    ///
+    /// This is what Raku's `@a = (…)` / `%h = (…)` means: a list assignment
+    /// clears and refills the **existing** container rather than rebinding the
+    /// name to a fresh one. mutsu's public-accessor assignment
+    /// (`$obj.array-attr = (…)`) used to store a brand-new container in the
+    /// attribute slot, which silently severed every share of the old one — most
+    /// visibly the `Array`/`Hash` attributes that `Mu.clone` deliberately shares
+    /// between the original and the clone.
+    ///
+    /// Container *metadata* (element/key type constraints, `is default`,
+    /// declared type, descriptor name) belongs to the container being assigned
+    /// into and is deliberately preserved; only the elements come from `src`.
+    /// Returns `false` when the two values are not the same container kind, in
+    /// which case the caller must fall back to replacing the slot.
+    pub fn replace_container_contents(&self, src: &Value) -> bool {
+        match (self.view(), src.view()) {
+            (ValueView::Array(dst_arc, _), ValueView::Array(src_items, _)) => {
+                if crate::gc::Gc::ptr_eq(&dst_arc, &src_items) {
+                    return true;
+                }
+                let new_items = src_items.items().clone();
+                // SAFETY: aliased in-place mutation of a shared container; see
+                // `gc_contents_mut`. No borrow into the items is live across
+                // the replacement.
+                let data = unsafe { crate::value::gc_contents_mut(&dst_arc) };
+                // The old element vector is authoritative for the reconstruction;
+                // a stale native payload would decode back over the new elements.
+                data.clear_native_storage();
+                *data.items_mut() = new_items;
+                true
+            }
+            (ValueView::Hash(dst_arc), ValueView::Hash(src_map)) => {
+                if crate::gc::Gc::ptr_eq(&dst_arc, &src_map) {
+                    return true;
+                }
+                let new_map = src_map.map.clone();
+                let new_original_keys = src_map.original_keys.clone();
+                // SAFETY: aliased in-place mutation of a shared container; see
+                // `gc_contents_mut`. No borrow into the map is live across the
+                // replacement.
+                let data = unsafe { crate::value::gc_contents_mut(&dst_arc) };
+                data.map = new_map;
+                data.original_keys = new_original_keys;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Ensure array element `idx` exists and is a descendable Array, creating
     /// it (and filling any gap with the element type object) when missing or a
     /// scalar hole. Returns the child Array value (sharing the inner `Arc`, so a

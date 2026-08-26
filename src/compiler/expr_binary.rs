@@ -703,12 +703,12 @@ impl Compiler {
         // are captured; literals and other expressions stay by-value.
         if matches!(op, TokenKind::FatArrow)
             && !self.suppress_pair_capture
-            && let Expr::Var(name) = right
-            && !name.contains("::")
+            && let Some(name) = Self::scalar_container_alias_name(right)
         {
+            let name = name.to_string();
             self.compile_expr(left);
             self.compile_expr(right);
-            self.emit_wrap_var_ref(name);
+            self.emit_wrap_var_ref(&name);
             self.code.emit(if mint_named_pair {
                 OpCode::MakeNamedArg
             } else {

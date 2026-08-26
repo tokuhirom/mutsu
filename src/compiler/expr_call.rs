@@ -27,6 +27,34 @@ impl Compiler {
     /// binding actually in scope — a by-name slot search would pick the LAST
     /// same-named slot, i.e. an inner shadow's slot (`{ my $x }` after/inside
     /// the site), and box that dead slot's stale value into the shared cell.
+    /// The plain scalar-lexical name an expression *denotes the container of*,
+    /// for the container-capturing sites (List literal element, fat-arrow Pair
+    /// value, Capture item).
+    ///
+    /// `$x` denotes its own container, and so does `$x.item`: Raku's
+    /// `method item(Mu \SELF:) is raw { SELF }` hands the invocant's container
+    /// straight back (`$x.item =:= $x` is `True`), so `.item` only stops list
+    /// flattening — it never copies. Compiling `$x.item` as an ordinary method
+    /// call lost that, because the invocant is decontainerized before the
+    /// native method sees it, so `($a.item, $b.item)` snapshotted `$a`/`$b`
+    /// where raku aliases them (traps.rakudoc's Fibonacci "trap").
+    pub(super) fn scalar_container_alias_name(expr: &Expr) -> Option<&str> {
+        match expr {
+            Expr::Var(name) if !name.contains("::") => Some(name),
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                ..
+            } if name == "item" && args.is_empty() => match target.as_ref() {
+                Expr::Var(n) if !n.contains("::") => Some(n),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);

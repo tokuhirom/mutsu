@@ -295,11 +295,11 @@ impl Compiler {
                         // boxes the named local into a shared `ContainerRef` cell.
                         // Consumers that decontainerize (`@arr = (...)`, param
                         // binding, single-scalar push) deref the cell to its value.
-                        if let Expr::Var(name) = elem
-                            && !name.contains("::")
+                        if let Some(name) = Self::scalar_container_alias_name(elem)
                             && !c.suppress_list_var_alias
                         {
-                            c.emit_wrap_var_ref(name);
+                            let name = name.to_string();
+                            c.emit_wrap_var_ref(&name);
                         } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
                         }
