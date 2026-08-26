@@ -3139,7 +3139,7 @@ architectural outcome.
   The remaining clause — no regression from the four named ADR-0019 mechanisms — was investigated
   by direct A/B (worktree builds of the pre-Phase-E commit `426b36cd1` vs current `main`,
   `MUTSU_JIT=off`, order-swap-verified) in
-  `todo/deep/adr0019-g3-diffuse-bless-allocation-cost.md`. That surfaced real regressions on
+  `todo/perf/adr0019-g3-diffuse-bless-allocation-cost.md`. That surfaced real regressions on
   `time-parts`, `debug-guard`, `bench-ctor`, and `bench-class`, but **every regression that was
   actually traced to a cause turned out to be unrelated to ADR-0019's own mechanisms**:
   - `time-parts` bisected to a single commit, `0448be29a` (ADR-0022 Slice 5, an unconditional
@@ -3175,7 +3175,7 @@ architectural outcome.
   about. The `bench-ctor`/`bench-class` diffuse allocation cost that remains is real but
   orthogonal (general construction-path cost, not an ADR-0019-introduced mechanism) and continues
   to be tracked as ordinary perf work outside the ADR's scope
-  (`todo/tickets/bench-ctor-construction-parity.md`), to be picked up opportunistically rather than
+  (`todo/perf/bench-ctor-construction-parity.md`), to be picked up opportunistically rather than
   gating ADR-0019's closure. **This closes G3.**
 - [x] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
   ANALYSIS §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
