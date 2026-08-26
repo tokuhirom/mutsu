@@ -62,8 +62,16 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_printf(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+        // No-arg method form `$format.printf`, the `print`-ing twin of
+        // `dispatch_sprintf`: the stringified invocant is the format, consumed
+        // against zero arguments, so a format carrying any directive
+        // (`"%s".printf`) is an arg-count mismatch exactly as `printf("%s")` is,
+        // while a directive-free string (`"plain".printf`, `42.printf`) writes
+        // itself and `%%` collapses to a literal `%`.
         let content = self.render_str_value(target);
-        self.write_to_named_handle("$*OUT", &content, false)?;
+        crate::runtime::sprintf::validate_sprintf_directives(&content, 0)?;
+        let formatted = crate::runtime::format_sprintf_args(&content, &[]);
+        self.write_to_named_handle("$*OUT", &formatted, false)?;
         Ok(Value::TRUE)
     }
 

@@ -237,7 +237,7 @@ impl Interpreter {
         if let Some(x) = &x_count
             && !Self::is_valid_match_x_arg(x)
         {
-            return Err(Self::str_match_x_error("subst", x));
+            return Err(Self::str_match_x_error(x));
         }
         // `.subst` with no matcher at all resolves to no candidate — Rakudo
         // throws X::Multi::NoMatch (roast .../multi-no-match.t). (A bare pattern

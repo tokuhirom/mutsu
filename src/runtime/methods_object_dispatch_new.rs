@@ -1972,6 +1972,25 @@ impl Interpreter {
                 {
                     attrs.insert("__mutsu_int_value".to_string(), Value::int(int_ctor_val));
                 }
+                // A subclass of native `Str` (`class Foo is Str {}`) inherits the
+                // parent's single `$!value` attribute, which `Mu.new` fills from
+                // the `:value` named argument -- `Foo.new(:value("hi")).Str` is
+                // `"hi"` and `Foo.new.Str` is `""`. Stored in the reserved
+                // `__mutsu_str_value` slot, the string twin of the
+                // `__mutsu_int_value` payload above, so every stringification
+                // path can find it without a class-registry lookup.
+                if class_mro.iter().any(|name| name == "Str")
+                    && !attrs.contains_key("__mutsu_str_value")
+                {
+                    let payload = args
+                        .iter()
+                        .find_map(|a| match a.view() {
+                            ValueView::Pair(k, v) if k == "value" => Some(v.to_str_context()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    attrs.insert("__mutsu_str_value".to_string(), Value::str(payload));
+                }
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
                 // Restore role parameter bindings so that default expressions

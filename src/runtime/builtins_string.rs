@@ -14,9 +14,20 @@ impl Interpreter {
         args: &[Value],
         z_mode: bool,
     ) -> Result<Value, RuntimeError> {
-        let fmt = match args.first().map(Value::view) {
-            Some(ValueView::Str(s)) => s.to_string(),
-            _ => String::new(),
+        // `sprintf`/`printf` declare the format as `Str(Cool) $format`, so a
+        // non-`Str` format is *coerced*, dispatching a user `.Str` where there
+        // is one (`sprintf(42)` is `"42"`, and a `Cool` subclass with its own
+        // `.Str` formats through it). This used to fall back to an EMPTY format
+        // for anything that was not already a `Str`, silently producing "".
+        let fmt = match args.first() {
+            None => String::new(),
+            Some(v) => match v.view() {
+                ValueView::Str(s) => s.to_string(),
+                // A bare type object keeps the existing "" (rakudo rejects it
+                // outright); everything else is a real `Cool` value.
+                ValueView::Package(_) => String::new(),
+                _ => self.render_str_value(v),
+            },
         };
         // Raku's `sprintf($format, *@args)` slurps its arguments, so every
         // list-like argument (Array, List/Seq/Slip, Range) flattens into a single

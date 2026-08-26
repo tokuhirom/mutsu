@@ -20,9 +20,15 @@ pub(crate) fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Valu
     ) {
         return None;
     }
+    // The format parameter is `Str(Cool) $format`, so a non-`Str` format has to
+    // be *coerced* -- possibly through a user `.Str` -- which this pure native
+    // path cannot dispatch. Defer to `Interpreter::builtin_sprintf`, which can.
+    // (A bare type object keeps the native path: it formats as "" there too.)
     let fmt = match args.first().map(Value::view) {
+        None => String::new(),
         Some(ValueView::Str(s)) => s.to_string(),
-        _ => String::new(),
+        Some(ValueView::Package(_)) => String::new(),
+        Some(_) => return None,
     };
     let rest: &[Value] = if args.is_empty() { &[] } else { &args[1..] };
     // Raku's `sprintf($format, *@args)` slurps its arguments, so every list-like
