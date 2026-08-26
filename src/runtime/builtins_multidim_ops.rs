@@ -3,7 +3,7 @@ use crate::value::ArrayKind;
 
 use super::builtins_multidim::{
     array_to_list, has_multi_indices, leaf_key_tuple, make_key_tuple, multidim_collect_leaves,
-    multidim_delete, multidim_index,
+    multidim_delete, multidim_index, multidim_index_with_hole,
 };
 
 impl Interpreter {
@@ -57,9 +57,12 @@ impl Interpreter {
             return self.multidim_subscript_adverb_multi(target, &adverb, &indices);
         }
 
-        let value = multidim_index(target, &indices);
+        let (value, is_hole) = multidim_index_with_hole(target, &indices);
         let key = make_key_tuple(&indices);
-        let exists = !value.is_nil();
+        // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5): a leaf
+        // "exists" only if it is neither a missing Hash key (`Nil`) nor an
+        // Array hole per `ArrayData::hole_at`.
+        let exists = !value.is_nil() && !is_hole;
 
         match adverb.as_str() {
             "k" => Ok(if exists { key } else { Value::NIL }),
@@ -137,8 +140,11 @@ impl Interpreter {
         multidim_collect_leaves(target, indices, &[], &mut leaves);
 
         let mut out = Vec::new();
-        for (path, value) in leaves {
-            let exists = !value.is_nil();
+        for (path, value, is_hole) in leaves {
+            // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5): a leaf
+            // "exists" only if it is neither a missing Hash key (`Nil`) nor
+            // an Array hole per `ArrayData::hole_at`.
+            let exists = !value.is_nil() && !is_hole;
             let key = leaf_key_tuple(path);
             match adverb {
                 "k" => {
@@ -271,11 +277,15 @@ impl Interpreter {
             return self.multidim_exists_adverb_multi(target, negated, &adverb, &indices);
         }
 
-        let value = multidim_index(target, &indices);
-        // An unassigned shaped cell holds its unset seed — Nil or the Any
-        // type object — and does not exist yet.
-        let raw_exists = !(value.is_nil()
-            || crate::runtime::utils::is_shaped_array(target) && value.is_any_type_object());
+        let (value, is_hole) = multidim_index_with_hole(target, &indices);
+        // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5): an unassigned
+        // array cell (per `ArrayData::hole_at`, which recognizes both the
+        // untyped `Any` marker and a typed array's own element-type marker,
+        // and consults `initialized` so an explicitly-assigned `Any`/type
+        // object is NOT a hole) or a missing Hash key (`Value::NIL`) does not
+        // exist yet -- for shaped AND non-shaped (autoviv) multidim arrays
+        // alike.
+        let raw_exists = !value.is_nil() && !is_hole;
         let exists = if negated { !raw_exists } else { raw_exists };
         let key = make_key_tuple(&indices);
 
@@ -411,12 +421,14 @@ impl Interpreter {
         multidim_collect_leaves(target, indices, &[], &mut leaves);
 
         let mut out = Vec::new();
-        for (path, value) in leaves {
-            // A deleted/uninitialized array slot holds the `Package("Any")`
-            // hole mark (same convention as `nested_exists_slice`), so
-            // `@a[...]:exists` after `:delete` reports False, not True.
-            let raw_exists = !value.is_nil()
-                && !matches!(value.view(), ValueView::Package(name) if name == "Any");
+        for (path, value, is_hole) in leaves {
+            // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5): a
+            // deleted/uninitialized array slot (per `ArrayData::hole_at`,
+            // which also recognizes a typed array's own element-type gap
+            // marker and consults `initialized` so an explicitly-assigned
+            // `Any`/type-object value is NOT treated as a hole) or a missing
+            // Hash key (`Value::NIL`) reports False, not True.
+            let raw_exists = !value.is_nil() && !is_hole;
             let exists = if negated { !raw_exists } else { raw_exists };
             let key = leaf_key_tuple(path);
             match adverb {
@@ -481,7 +493,10 @@ impl Interpreter {
                 multidim_delete(t, &indices);
                 self.writeback_multidim_var_to_local(&var_name);
             }
-            let values: Vec<Value> = leaves.into_iter().map(|(_, v)| array_to_list(v)).collect();
+            let values: Vec<Value> = leaves
+                .into_iter()
+                .map(|(_, v, _)| array_to_list(v))
+                .collect();
             return Ok(Value::array(values));
         }
         // A non-existent (out-of-range) element deletes to `Nil`, not the `Any`
@@ -684,8 +699,10 @@ impl Interpreter {
                     multidim_delete(t, &indices);
                     self.writeback_multidim_var_to_local(&var_name);
                 }
-                let values: Vec<Value> =
-                    leaves.into_iter().map(|(_, v)| array_to_list(v)).collect();
+                let values: Vec<Value> = leaves
+                    .into_iter()
+                    .map(|(_, v, _)| array_to_list(v))
+                    .collect();
                 return Ok(Value::array(values));
             }
             // A non-existent (out-of-range) element deletes to `Nil`, not the
@@ -736,8 +753,10 @@ impl Interpreter {
                 self.writeback_multidim_var_to_local(&var_name);
             }
             let mut out = Vec::new();
-            for (path, value) in leaves {
-                let exists = !value.is_nil();
+            for (path, value, is_hole) in leaves {
+                // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5) -- see
+                // `multidim_exists_adverb_multi` above.
+                let exists = !value.is_nil() && !is_hole;
                 let key = leaf_key_tuple(path);
                 match adverb.as_str() {
                     "k" => {
@@ -768,10 +787,11 @@ impl Interpreter {
         }
 
         // Determine existence from a pre-delete read: a non-existent element
-        // reads as `Nil`, whereas `multidim_delete` returns the `Any` hole-value
+        // reads as `Nil` or an `ArrayData::hole_at` hole (ADR-0049 §1.6/§4
+        // slice 5), whereas `multidim_delete` returns the `Any` hole-value
         // for an out-of-range slot, which would wrongly look "present".
-        let read_value = multidim_index(&target, &indices);
-        let exists = !read_value.is_nil();
+        let (read_value, read_is_hole) = multidim_index_with_hole(&target, &indices);
+        let exists = !read_value.is_nil() && !read_is_hole;
         let value = if do_delete {
             if exists && let Some(target) = self.env.get_mut(&var_name) {
                 let r = multidim_delete(target, &indices);
@@ -851,8 +871,10 @@ impl Interpreter {
                 self.writeback_multidim_var_to_local(&var_name);
             }
             let mut out = Vec::new();
-            for (path, value) in leaves {
-                let raw_exists = !value.is_nil();
+            for (path, value, is_hole) in leaves {
+                // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5) -- see
+                // `multidim_exists_adverb_multi` above.
+                let raw_exists = !value.is_nil() && !is_hole;
                 let exists = if negated { !raw_exists } else { raw_exists };
                 let key = leaf_key_tuple(path);
                 match adverb.as_str() {
@@ -879,14 +901,16 @@ impl Interpreter {
             return Ok(Value::array(out));
         }
 
-        let value = multidim_index(&target_val, &indices);
+        let (value, is_hole) = multidim_index_with_hole(&target_val, &indices);
         // Then delete if requested
         if do_delete && let Some(target) = self.env.get_mut(&var_name) {
             multidim_delete(target, &indices);
             self.writeback_multidim_var_to_local(&var_name);
         }
 
-        let raw_exists = !value.is_nil();
+        // Canonical hole predicate (ADR-0049 §1.6/§4 slice 5) -- see
+        // `multidim_exists_adverb_multi` above.
+        let raw_exists = !value.is_nil() && !is_hole;
         let exists = if negated { !raw_exists } else { raw_exists };
         let key = make_key_tuple(&indices);
 
