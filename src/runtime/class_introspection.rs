@@ -340,6 +340,18 @@ impl Interpreter {
                 if has_native {
                     return Some(UserMethodOrAccessor::Method);
                 }
+                // "Class entities beat role entities" only applies when the
+                // attribute really IS a class entity. When BOTH the accessor
+                // and the method were contributed by composed roles
+                // (`role R { has Str $.n; method n { ... } }`), the role's
+                // explicit method wins — raku answers from `method n`, not from
+                // the accessor. Without this, the role method became
+                // unreachable as soon as the composing class had any body at
+                // all (an empty body never syncs the accessor column, which is
+                // why `class J does R { }` accidentally behaved correctly).
+                if has_role_method && self.attribute_is_role_contributed(cn.as_str(), method_name) {
+                    return Some(UserMethodOrAccessor::Method);
+                }
                 return Some(UserMethodOrAccessor::Accessor);
             }
             if has_role_method {
@@ -347,6 +359,28 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// Whether `class_name`'s public attribute `attr_name` was contributed by a
+    /// composed role rather than declared in the class body. Used to break the
+    /// accessor-vs-role-method tie in
+    /// [`Self::resolve_user_method_or_accessor`]: a class-declared attribute
+    /// outranks a role method ("Class prioritization", 6.c
+    /// `S14-roles/attributes.t`), but a role-contributed one does not.
+    fn attribute_is_role_contributed(&self, class_name: &str, attr_name: &str) -> bool {
+        let registry = self.registry();
+        let Some(roles) = registry.class_composed_roles.get(class_name) else {
+            return false;
+        };
+        roles.iter().any(|composed| {
+            let base = composed
+                .split_once('[')
+                .map_or(composed.as_str(), |(base, _)| base);
+            registry
+                .roles
+                .get(base)
+                .is_some_and(|role| role.attributes.iter().any(|a| a.name == attr_name))
+        })
     }
 
     /// Accessor-slot promotion gate: when `method_name` is a public `is rw`

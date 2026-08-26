@@ -498,17 +498,23 @@ impl Interpreter {
                 | "Promise"
                 // NativeCall aggregate type (a contiguous C array).
                 | "CArray"
-        ) || {
-            // Handle parameterized types like Buf[uint8], Array[Int], etc.
-            if let Some(open) = name.find('[')
-                && name.ends_with(']')
-                && open > 0
-            {
-                Self::is_builtin_type(&name[..open])
-            } else {
-                false
+        )
+        // Every core ROLE is a core type name too. Consulting the single
+        // core-role oracle instead of re-listing them here is what makes
+        // `Sequence` / `PositionalBindFailover` (which have no registry entry of
+        // any kind) resolve to their type objects as barewords.
+            || crate::runtime::types::is_builtin_role_name(name)
+            || {
+                // Handle parameterized types like Buf[uint8], Array[Int], etc.
+                if let Some(open) = name.find('[')
+                    && name.ends_with(']')
+                    && open > 0
+                {
+                    Self::is_builtin_type(&name[..open])
+                } else {
+                    false
+                }
             }
-        }
     }
 
     /// Resolve type aliases (e.g., Cursor -> Match).

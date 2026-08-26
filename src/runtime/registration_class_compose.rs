@@ -149,13 +149,17 @@ impl Interpreter {
                     .or_default()
                     .push(base_role_name.to_string());
             } else if does_parents.contains(parent)
-                && BUILTIN_TYPES.contains(&base_role_name)
+                && (BUILTIN_TYPES.contains(&base_role_name)
+                    || crate::runtime::types::is_builtin_role_name(base_role_name))
                 && !self.registry().roles.contains_key(base_role_name)
                 && !cx.out.composed_roles_list.contains(&resolved_parent_name)
             {
                 // Built-in type used as a role via `does` (e.g., `does Numeric`,
                 // `does Real`): record in composed_roles_list so that role-based
                 // method dispatch (e.g., .Numeric on type objects) works correctly.
+                // `is_builtin_role_name` covers the core roles that are NOT also
+                // legal `is` parents and so are absent from `BUILTIN_TYPES`
+                // (`PositionalBindFailover`, `Sequence`, `QuantHash`).
                 cx.out
                     .composed_roles_list
                     .push(resolved_parent_name.clone());

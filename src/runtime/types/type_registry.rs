@@ -8,24 +8,59 @@ use super::*;
 /// `but`-composition path and the `but`-on-a-type-object error path each kept
 /// their own copy and disagreed, which is why `%h but Associative[Int,Int]`
 /// died as "non-composable".
+///
+/// Some of these names ALSO have a real `RoleDef` in the registry (`Iterable`,
+/// `Iterator`, `Dateish`, ... are pre-registered by the prelude). Listing them
+/// here anyway is deliberate: every consumer ORs the two sources, so the list
+/// can be read as "the complete set of core role names" without a caller having
+/// to know which half of the model any given one lives in. `.HOW` reporting
+/// (`methods_introspect`) and the class-header `does` validation both consult it
+/// for exactly that reason — before they did, `Blob.HOW` said `ClassHOW` and
+/// `class C does PositionalBindFailover {}` died as `X::InvalidType`.
 pub(crate) const BUILTIN_ROLE_NAMES: &[&str] = &[
     "Positional",
     "Associative",
     "Callable",
     "Iterable",
+    "Iterator",
+    "PredictiveIterator",
     "Numeric",
     "Real",
+    "Rational",
     "Stringy",
     "Mixy",
     "Setty",
     "Baggy",
+    "QuantHash",
     "Blob",
     "Buf",
+    "Dateish",
+    "Scheduler",
+    "Sequence",
+    "PositionalBindFailover",
 ];
 
 /// Is `name` one of [`BUILTIN_ROLE_NAMES`]?
 pub(crate) fn is_builtin_role_name(name: &str) -> bool {
     BUILTIN_ROLE_NAMES.contains(&name)
+}
+
+/// The types every role type object "pretends to be" (Rakudo's
+/// `Metamodel::TypePretense`, mixed into `ParametricRoleGroupHOW` /
+/// `ParametricRoleHOW` / `CurriedRoleHOW`). An un-composed role type-checks
+/// against this chain — `role R {}; R ~~ Cool` is `True` — and
+/// `R.HOW.pretending_to_be` lists exactly these, in this order.
+pub(crate) const ROLE_PRETENDS_TO_BE: &[&str] = &["Cool", "Any", "Mu"];
+
+impl Interpreter {
+    /// Is `name` a role TYPE (a user-declared role, an individual candidate's
+    /// declaration-site key, or one of the natively-modelled core roles)? A
+    /// role type object carries a `ParametricRoleGroupHOW` rather than a
+    /// `ClassHOW`, which is what decides `but` on a type object, `.HOW`
+    /// reporting, and Raku's type pretense.
+    pub(crate) fn is_role_type_name(&self, name: &str) -> bool {
+        self.has_role(name) || is_builtin_role_name(name)
+    }
 }
 
 impl Interpreter {

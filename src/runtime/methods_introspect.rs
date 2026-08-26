@@ -365,23 +365,11 @@ impl Interpreter {
             }
         } else if is_type_object
             && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
-                || matches!(
-                    type_name.as_str(),
-                    "Numeric"
-                        | "Real"
-                        | "Rational"
-                        | "Stringy"
-                        | "Positional"
-                        | "Associative"
-                        | "Callable"
-                        | "Setty"
-                        | "Baggy"
-                        | "Mixy"
-                        | "Dateish"
-                        | "Iterable"
-                        | "Iterator"
-                        | "PositionalBindFailover"
-                ))
+                // The core roles mutsu models natively have no `RoleDef`; ask the
+                // single core-role oracle rather than keeping a private copy of
+                // the list here (which had drifted: it omitted `Blob`/`Buf`/
+                // `Sequence`/`QuantHash`/`Scheduler`, so those reported `ClassHOW`).
+                || crate::runtime::types::is_builtin_role_name(&type_name))
         {
             "Perl6::Metamodel::ParametricRoleGroupHOW"
         } else if self.registry().enum_types.contains_key(&type_name) {

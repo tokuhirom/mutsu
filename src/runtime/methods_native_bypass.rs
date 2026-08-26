@@ -116,6 +116,8 @@ impl Interpreter {
                 // ever see the `Perl6::Metamodel::ClassHOW` instance itself.
                 | "WHY"
                 | "trusts"
+                // `Metamodel::TypePretense`, on the role metaclasses only.
+                | "pretending_to_be"
                 | "mro"
                 | "mro_unhidden"
                 | "methods"

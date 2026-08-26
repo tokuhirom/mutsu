@@ -29,6 +29,42 @@ impl Interpreter {
             self.stack.push(Value::package(Symbol::intern(&resolved)));
             return Ok(());
         }
+        // A bareword naming a PARAMETERISED type whose arguments are generic
+        // type parameters bound in this scope (`Box[Type]` inside
+        // `role Box[::Type]` composed with `Type => Int`) names the concrete
+        // `Box[Int]`. The compiler synthesizes exactly this bareword as an
+        // uninitialised typed attribute's type-object default, so without the
+        // substitution a self-referential parametric-role attribute
+        // (`has Box[Type] $.child`) defaulted to the UNBOUND `Box[Type]` type
+        // object and then failed the type check against its own concrete
+        // `Box[Int]` constraint. Unbound (or non-parametric) names resolve to
+        // themselves and fall through untouched.
+        // `resolved_type_capture_name` also NORMALIZES the spelling (it re-joins
+        // the arguments without spaces), so "the resolution differs from the
+        // written name" is NOT the right test: it fires on `Hash[Array,
+        // Some::Key]` purely because of the space, retargeting the bareword to a
+        // differently-spelled type object that then fails its own attribute type
+        // check (Cro::HTTP::Router's `$!flattened-plugin-config`). Compare
+        // against the same normalization instead, so only a REAL substitution
+        // counts.
+        if let Some(open) = name.find('[')
+            && name.ends_with(']')
+        {
+            let normalized = format!(
+                "{}[{}]",
+                &name[..open],
+                name[open + 1..name.len() - 1]
+                    .split(',')
+                    .map(str::trim)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let resolved = self.resolved_type_capture_name(name);
+            if resolved != name && resolved != normalized {
+                self.stack.push(Value::package(Symbol::intern(&resolved)));
+                return Ok(());
+            }
+        }
         let val = if name == "Bool::True" {
             Value::TRUE
         } else if name == "Bool::False" {

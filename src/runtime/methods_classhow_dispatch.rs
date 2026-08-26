@@ -623,6 +623,43 @@ impl Interpreter {
                     Ok(Value::array(values))
                 }
             }
+            // `Metamodel::TypePretense`: the chain a role type object pretends
+            // to belong to. Rakudo mixes it into the three role metaclasses
+            // only, so a `ClassHOW`/`EnumHOW`/`SubsetHOW` receiver must keep
+            // throwing X::Method::NotFound. Ask the metaobject itself (the same
+            // shape the `trusts` arm above uses) rather than re-deriving the
+            // taxonomy, so a new HOW kind cannot silently gain the method.
+            "pretending_to_be" if args.len() == 1 => {
+                // The receiver may be the role group (`R`), an individual
+                // candidate's declaration-site key, or a curried role
+                // (`R[Int]`, which arrives as a `ParametricRole` rather than a
+                // `Package`). All three carry TypePretense; a class/enum/subset
+                // does not.
+                let type_name = match args[0].view() {
+                    ValueView::ParametricRole { base_name, .. } => base_name.resolve(),
+                    _ => self.mop_receiver_owner(&args[0]),
+                };
+                let base = type_name
+                    .split_once('[')
+                    .map_or(type_name.as_str(), |(base, _)| base);
+                if !self.is_role_type_name(base) {
+                    let how = self.dispatch_how(&args[0], &[])?;
+                    let how_name = match how.view() {
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
+                        _ => "Mu".to_string(),
+                    };
+                    return Err(RuntimeError::method_not_found(
+                        "pretending_to_be",
+                        &how_name,
+                    ));
+                }
+                Ok(Value::array(
+                    crate::runtime::types::ROLE_PRETENDS_TO_BE
+                        .iter()
+                        .map(|n| Value::package(Symbol::intern(n)))
+                        .collect(),
+                ))
+            }
             "archetypes" if !args.is_empty() => {
                 let invocant_name = self.mop_receiver_owner(&args[0]);
                 let base_name = invocant_name

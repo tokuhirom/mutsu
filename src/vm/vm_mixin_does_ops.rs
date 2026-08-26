@@ -220,14 +220,6 @@ impl Interpreter {
         }
     }
 
-    /// Is `name` a role type — a user-declared role or one of the built-in
-    /// roles? A role type object carries a `ParametricRoleGroupHOW`, which is the
-    /// distinction that matters for `but` on a type object (see
-    /// `but_on_type_object_error`).
-    fn is_role_type_name(&self, name: &str) -> bool {
-        self.is_role(name) || crate::runtime::types::is_builtin_role_name(name)
-    }
-
     /// Error for `but` applied to a *type object* invocant. A role type object
     /// (e.g. `Callable but role {...}`) carries a `ParametricRoleGroupHOW`, which
     /// has no `mixin` metamethod, so raku reports X::Method::NotFound. A non-role

@@ -1223,6 +1223,16 @@ impl Interpreter {
             ) => {
                 let rhs_resolved = rhs_name.resolve();
                 let lhs_base_resolved = lhs_base.resolve();
+                // Raku's `Metamodel::TypePretense`: a CURRIED role type object
+                // pretends to be part of the `Cool`/`Any`/`Mu` chain exactly
+                // like the role group does, so `role R[::T] {}; R[Int] ~~ Mu`
+                // is True. This arm short-circuits the generic Package handling
+                // that answers those for a plain role, so assert it here.
+                if crate::runtime::types::ROLE_PRETENDS_TO_BE.contains(&rhs_resolved.as_str())
+                    && self.is_role_type_name(&lhs_base_resolved)
+                {
+                    return true;
+                }
                 if lhs_base_resolved == rhs_resolved
                     || self
                         .role_parent_args_for(&lhs_base_resolved, lhs_args, &rhs_resolved)
