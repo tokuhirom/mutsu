@@ -1158,19 +1158,29 @@ impl Interpreter {
                     // Type-check splice replacement values against the array's
                     // declared element type (`my Int @a` splice must reject a Str),
                     // mirroring the element check applied to typed-array assignment.
+                    //
+                    // The check runs on the values `do_splice` will actually
+                    // store — i.e. **after** `flatten_splice_replacement_args`,
+                    // not on the raw `args[2..]`. That ordering matters twice:
+                    // ADR-0049 decays a `Nil` replacement to plain `Any` there,
+                    // and checking beforehand let the `Nil` through as a
+                    // "reset to default" marker so the `Any` it became was
+                    // never validated (`my Int @a; @a.splice(1,0,Nil)` silently
+                    // stored an `Any`; `raku` rejects it); and splice's one-arg
+                    // rule means a *lone* `Positional` contributes its elements
+                    // while several contribute themselves, so flattening every
+                    // `Array` argument here wrongly accepted
+                    // `@a.splice(1,0,@b,@c)`, which `raku` rejects with
+                    // "expected Int but got Array".
+                    let splice_new_items = crate::runtime::flatten_splice_replacement_args(
+                        args.get(2..).unwrap_or(&[]),
+                    );
                     if let Some(constraint) = self.element_constraint_for(&key, &target)
                         && !matches!(constraint.as_str(), "" | "Any" | "Mu")
                     {
-                        for arg in args.iter().skip(2) {
-                            let candidates: Vec<Value> = match arg.view() {
-                                ValueView::Array(items, _) => items.iter().cloned().collect(),
-                                _ => vec![arg.clone()],
-                            };
-                            for v in &candidates {
-                                if !matches!(v.view(), ValueView::Nil)
-                                    && !self.type_matches_value(&constraint, v)
-                                {
-                                    let expected_name = self
+                        for v in &splice_new_items {
+                            if !self.type_matches_value(&constraint, v) {
+                                let expected_name = self
                                         .container_type_metadata(&target)
                                         .and_then(|info| info.declared_type)
                                         .or_else(|| {
@@ -1184,23 +1194,29 @@ impl Interpreter {
                                                 format!("Array[{constraint}]")
                                             }
                                         });
-                                    return Err(RuntimeError::typed(
+                                return Err(RuntimeError::typed(
                                         "X::TypeCheck::Splice",
                                         [
                                             (
+                                                // `raku`'s own wording names the
+                                                // operation and repeats the type
+                                                // object's `.raku` in parentheses;
+                                                // the generic element-store message
+                                                // ("for an element of @a") is a
+                                                // different exception's text.
                                                 "message".to_string(),
                                                 Value::str(format!(
-                                                    "Type check failed for an element of @{}; expected {} but got {}",
-                                                    key.trim_start_matches('@'),
+                                                    "Type check failed in splice; expected {} but got {} ({})",
                                                     constraint,
-                                                    crate::runtime::utils::value_type_name(v)
+                                                    crate::runtime::utils::got_type_name(v),
+                                                    crate::runtime::utils::got_type_name(v)
                                                 )),
                                             ),
                                             ("action".to_string(), Value::str_from("splice")),
                                             (
                                                 "got".to_string(),
                                                 Value::package(crate::symbol::Symbol::intern(
-                                                    crate::runtime::utils::value_type_name(v),
+                                                    &crate::runtime::utils::got_type_name(v),
                                                 )),
                                             ),
                                             (
@@ -1217,7 +1233,6 @@ impl Interpreter {
                                         .into_iter()
                                         .collect(),
                                     ));
-                                }
                             }
                         }
                     }
@@ -1235,14 +1250,9 @@ impl Interpreter {
                         && !matches!(info.value_type.as_str(), "" | "Any" | "Mu")
                     {
                         let constraint = info.value_type;
-                        for arg in args.iter().skip(2) {
-                            let candidates: Vec<Value> = match arg.view() {
-                                ValueView::Array(items, ..) => items.to_vec(),
-                                _ => vec![arg.clone()],
-                            };
-                            for v in &candidates {
-                                if !v.is_nil() && !self.type_matches_value(&constraint, v) {
-                                    let expected_name = info
+                        for v in &splice_new_items {
+                            if !self.type_matches_value(&constraint, v) {
+                                let expected_name = info
                                         .declared_type
                                         .clone()
                                         .unwrap_or_else(|| {
@@ -1252,25 +1262,30 @@ impl Interpreter {
                                                 format!("Array[{constraint}]")
                                             }
                                         });
-                                    return Err(RuntimeError::typed(
-                                        "X::TypeCheck::Splice",
-                                        [
-                                            ("action".to_string(), Value::str_from("splice")),
-                                            (
-                                                "got".to_string(),
-                                                Value::package(crate::symbol::Symbol::intern(
-                                                    crate::runtime::utils::value_type_name(v),
-                                                )),
-                                            ),
-                                            (
-                                                "expected".to_string(),
-                                                Value::str(expected_name.clone()),
-                                            ),
-                                        ]
-                                        .into_iter()
-                                        .collect(),
-                                    ));
-                                }
+                                return Err(RuntimeError::typed(
+                                    "X::TypeCheck::Splice",
+                                    [
+                                        (
+                                            "message".to_string(),
+                                            Value::str(format!(
+                                                "Type check failed in splice; expected {} but got {} ({})",
+                                                constraint,
+                                                crate::runtime::utils::got_type_name(v),
+                                                crate::runtime::utils::got_type_name(v)
+                                            )),
+                                        ),
+                                        ("action".to_string(), Value::str_from("splice")),
+                                        (
+                                            "got".to_string(),
+                                            Value::package(crate::symbol::Symbol::intern(
+                                                &crate::runtime::utils::got_type_name(v),
+                                            )),
+                                        ),
+                                        ("expected".to_string(), Value::str(expected_name.clone())),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ));
                             }
                         }
                     }

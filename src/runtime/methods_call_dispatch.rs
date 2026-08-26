@@ -2616,7 +2616,22 @@ impl Interpreter {
                         keys.sort();
                         let parts: Vec<String> = keys
                             .iter()
-                            .map(|k| format!("{} => {}", k, gist_item(interp, &map[*k])))
+                            .map(|k| {
+                                // An object hash stores `.WHICH` strings as its
+                                // keys; the gist must show the original typed
+                                // key (`True`, not `Bool|1`). The pure gist path
+                                // already does this — this dispatching one, which
+                                // takes over as soon as *any* value in the
+                                // subtree is an instance with a custom `.gist`,
+                                // was rendering the raw stored key instead, so
+                                // `%h{True} = Foo.new` gisted as `Bool|1 => ...`
+                                // while `%h{True} = 1` gisted correctly.
+                                format!(
+                                    "{} => {}",
+                                    gist_item(interp, &map.typed_key(k)),
+                                    gist_item(interp, &map[*k])
+                                )
+                            })
                             .collect();
                         format!("{{{}}}", parts.join(", "))
                     }

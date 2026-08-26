@@ -314,7 +314,8 @@ impl Interpreter {
             result_groups.push(Value::array(current_group));
         }
 
-        Ok(Value::array(result_groups))
+        // `snip` yields a `Seq` of `List`s (`.snip(...).raku` is `(...).Seq`).
+        Ok(Value::seq(result_groups))
     }
 
     /// Check if a value matches a snip matcher (Callable or type object).
