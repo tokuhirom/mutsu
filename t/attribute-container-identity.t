@@ -9,7 +9,7 @@ use Test;
 # index/accessor expression is involved -- a test that only checks one order can
 # pass by luck.
 
-plan 60;
+plan 65;
 
 # ---------------------------------------------------------------------------
 # Mu.clone shares Array/Hash attribute containers, copies scalar ones
@@ -230,6 +230,19 @@ plan 60;
     @q[0] = $y;
     nok @q[0] =:= $y, 'element assignment copies rather than aliases';
     nok $y =:= @q[0], 'element assignment copies rather than aliases (reversed)';
+}
+
+# A container operand is transparent to comparison: a Pair value that captured
+# its source variable must compare as the number it holds, not as an opaque
+# container (which numified to 0 and made every comparison against it wrong).
+{
+    my $n = 5e0;
+    my $p = (1 => $n);
+    nok $p.value <= 1, 'a captured Pair value compares as its number (lhs)';
+    ok  $p.value <= 9, 'a captured Pair value compares as its number (lhs, true)';
+    ok  1 <= $p.value, 'a captured Pair value compares as its number (rhs)';
+    nok 9 <= $p.value, 'a captured Pair value compares as its number (rhs, false)';
+    is  $p.value + 1, 6, 'a captured Pair value adds as its number';
 }
 
 # A Hash value is a container of its own too.

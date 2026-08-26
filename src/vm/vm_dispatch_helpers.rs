@@ -242,6 +242,13 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // A container operand is transparent to arithmetic and comparison: a
+        // `ContainerRef` reaching here is an aliased cell (a Pair value that
+        // captured its source variable, an `is raw` binding, a promoted element)
+        // and must be read through, not coerced as an opaque object — which
+        // numified to 0 and made every comparison against it wrong
+        // (`(1 => $x).value <= 1` was True for `$x = 5e0`).
+        let value = value.into_deref();
         // Slice F (compiled-method redispatch coherence): a user `Numeric`/`Bridge`
         // method run by this internal coercion can mutate a captured-outer caller
         // lexical (`my $c; method Numeric { $c++; ... }`). `call_compiled_method`

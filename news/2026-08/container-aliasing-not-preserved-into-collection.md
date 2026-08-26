@@ -76,6 +76,20 @@ The bareword form stays a named argument, which is also what raku does — and i
 raku `@a.push(k => $x)` therefore pushes *nothing at all*, since `push` has no
 named parameters.
 
+## A latent leak this made reachable, also fixed
+
+Capturing the Pair value's container exposed a pre-existing hole in the numeric
+operand path: a `ContainerRef` reaching `coerce_numeric_bridge_value`
+(`src/vm/vm_dispatch_helpers.rs`) was coerced as an opaque object rather than
+read through, so **every** comparison against a captured Pair value was wrong —
+`(1 => $x).value <= 1` was `True` for `$x = 5e0`, and `1 <= (1 => $x).value` was
+`False`. Arithmetic already deconted (`.value + 1` was right), which is why this
+had gone unnoticed. The bug was already reachable on `main` through the
+standalone Pair literal (`my $p = (1 => $x)`); the bundled Text::CSV suite found
+it, because `RangeSet.in()` compares `$i <= $r.value` over exactly such pairs.
+Fixed by reading through the container at that one chokepoint, which covers
+every numeric operator and comparator that funnels through it.
+
 ## Verified
 
 `t/attribute-container-identity.t` (green under both `raku` and mutsu) pins:
