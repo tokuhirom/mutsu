@@ -360,6 +360,16 @@ impl Interpreter {
                 .0
                 .to_string();
             if !self.has_user_method_including_role(&base, "ACCEPTS") {
+                // An `enum E does Weird` composes the role's `ACCEPTS` onto the
+                // enum type object too. The enum has no ClassDef, so
+                // `has_user_method_including_role` cannot see it — try the
+                // composed candidates here, before the type-check fallback that
+                // would otherwise swallow the override. When none of them binds
+                // the argument (`"x" ~~ F` against a `multi ACCEPTS(Int:D)`),
+                // fall through to the type check, which is `Mu.ACCEPTS`.
+                if let Some(result) = self.dispatch_enum_role_method(&target, "ACCEPTS", &args) {
+                    return result;
+                }
                 let matched = self.smart_match(&args[0], &target);
                 return Ok(Value::truth(matched));
             }
