@@ -126,6 +126,13 @@ impl Interpreter {
                 handles_take: control_handles_take,
             });
         }
+        // Saved so a `succeed` this try absorbs (below) can reset the flag:
+        // an enclosing `given`'s body breaks early on `when_matched()` after
+        // every statement, and without the reset it would wrongly treat a
+        // `when` this `try` already caught as its OWN match and end early too
+        // (`given 5 { try { when 5 { ... } }; say "after" }` must still run
+        // `say "after"`).
+        let saved_when_matched = self.when_matched();
         // Guard the protected body with a panic->X:: boundary so an internal
         // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
         // catchable exception routed to the CATCH handler, instead of crashing.
@@ -202,13 +209,27 @@ impl Interpreter {
                     Err(e)
                 }
             }
-            Err(e)
-                if e.return_value.is_some()
-                    && !e.is_succeed()
-                    && !e.is_warn()
-                    && !e.is_take()
-                    && !e.is_emit() =>
-            {
+            // A `when`/`default` succeed with nothing closer inside this
+            // `try`'s own body to catch it is absorbed HERE, exactly like a
+            // bare block: `given 5 { try { when 5 { "x" } }; say "after" }`
+            // still runs `say "after"` in real Raku — the succeed never
+            // reaches the outer `given` because `try` is the nearer
+            // boundary, taking precedence over it the same way a bare block
+            // does. This is deliberately its own arm, ahead of (and no
+            // longer part of) the "control signals propagate through try"
+            // arms below: `succeed` is not an exception
+            // (`is_exceptional_block_exit` already treats it as an ordinary
+            // completion), so it is not routed through this try's own
+            // CATCH/CONTROL either — it simply ends the try, like a normal
+            // fall-off.
+            Err(e) if e.is_succeed() => {
+                self.discard_let_saves(let_mark);
+                self.stack.truncate(saved_depth);
+                loan_env!(self, set_when_matched(saved_when_matched));
+                *ip = end;
+                Ok(())
+            }
+            Err(e) if e.return_value.is_some() && !e.is_warn() && !e.is_take() && !e.is_emit() => {
                 self.discard_let_saves(let_mark);
                 Err(e)
             }
@@ -219,7 +240,6 @@ impl Interpreter {
                     || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
-                    || e.is_succeed()
                     || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
@@ -241,7 +261,6 @@ impl Interpreter {
                     || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
-                    || e.is_succeed()
                     || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
