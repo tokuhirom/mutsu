@@ -71,6 +71,16 @@ impl Interpreter {
         if !known_numeric && !has_numeric_method {
             return Ok(value);
         }
+        // For an object that does `Real`, rakudo's generic infix candidates are
+        // written in terms of `.Bridge` (`multi sub infix:<+>(Real \a, Real \b)
+        // { a.Bridge + b.Bridge }`), NOT `.Numeric` — a `Real` subclass that
+        // defines both is added through `Bridge`. Everything else (a plain
+        // object with a user `method Numeric`) keeps `Numeric` first.
+        if self.type_matches_value("Real", &value)
+            && let Ok(bridged) = self.call_method_with_values(value.clone(), "Bridge", vec![])
+        {
+            return Ok(bridged);
+        }
         self.call_method_with_values(value.clone(), "Numeric", vec![])
             .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
             .or(Ok(value))

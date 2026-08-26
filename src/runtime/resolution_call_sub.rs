@@ -398,6 +398,29 @@ impl Interpreter {
                     return self.call_sub_value(candidate.clone(), call_args, false);
                 }
             }
+            // The identity function `[∘]` yields for an empty operand list.
+            // Rakudo's is a one-positional block, so it rejects a wrong arity
+            // exactly as `-> $x { $x }` would.
+            if data
+                .env
+                .contains_key(crate::runtime::utils::IDENTITY_CALLABLE_MARKER)
+            {
+                let mut positionals = call_args.into_iter().filter(|a| {
+                    !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                });
+                let first = positionals.next();
+                let extra = positionals.count();
+                return match (first, extra) {
+                    (Some(v), 0) => Ok(v),
+                    (None, _) => Err(RuntimeError::new(
+                        "Too few positionals passed; expected 1 argument but got 0",
+                    )),
+                    (Some(_), n) => Err(RuntimeError::new(format!(
+                        "Too many positionals passed; expected 1 argument but got {}",
+                        n + 1
+                    ))),
+                };
+            }
             if let (Some(left), Some(right)) = (
                 data.env.get("__mutsu_compose_left").cloned(),
                 data.env.get("__mutsu_compose_right").cloned(),

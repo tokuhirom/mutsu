@@ -198,6 +198,50 @@ impl Interpreter {
                 return Ok(Value::truth(result));
             }
         }
+        // `apply_reduction_op` is a pure function of two `Value`s, so it cannot
+        // dispatch a user `Numeric`/`Bridge` method: an `Instance` operand (a
+        // `Match` included) fell through its `to_num`/type-match arms to the
+        // `0` default. That is why `[+] @objects` was `0` while `$a + $b`,
+        // `.reduce(&infix:<+>)` and `.reduce({$^a + $^b})` all gave the right
+        // answer — those three route through the operand bridge first. Give
+        // the same two-step dispatch (user `infix:<op>` candidate, then the
+        // numeric bridge) first refusal here for the genuinely-numeric
+        // operators, mirroring how Junction operands are handled just above.
+        //
+        // A `ContainerRef` is in the same boat and for the same reason as
+        // `coerce_numeric_bridge_value`'s decont: an aliased cell numified to
+        // `0` rather than reading through to the value it holds.
+        if Interpreter::reduction_op_is_numeric(normalized_op)
+            && (Self::value_needs_numeric_bridge(left) || Self::value_needs_numeric_bridge(right))
+        {
+            let infix_name = format!("infix:<{}>", normalized_op);
+            if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                return Ok(v);
+            }
+            let (l, r) = self.coerce_numeric_bridge_pair(left.clone(), right.clone())?;
+            return Interpreter::apply_reduction_op(normalized_op, &l, &r);
+        }
+        // Same gap, string side: the table's string arms only know `.gist`, so
+        // `[~] @objects` rendered `Foo()Foo()` and `[lt]` compared those
+        // renderings, while the plain `$a ~ $b` / `$a lt $b` operators dispatch
+        // the operand's user `Stringy`/`Str` through `coerce_stringy_operand`.
+        // As above, a user `infix:<op>` candidate wins over the coercion.
+        if Interpreter::reduction_op_is_stringy(normalized_op)
+            && (Self::value_needs_stringy_bridge(left) || Self::value_needs_stringy_bridge(right))
+        {
+            let infix_name = format!("infix:<{}>", normalized_op);
+            if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                return Ok(v);
+            }
+            // An internal redispatch with no surrounding CallMethod op: drain
+            // any captured-outer writeback the user stringifier recorded into
+            // the caller's slot, exactly as `exec_concat_op` does.
+            let caller_code = self.current_code;
+            let l = self.coerce_stringy_operand(left.clone());
+            let r = self.coerce_stringy_operand(right.clone());
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            return Interpreter::apply_reduction_op(normalized_op, &l?, &r?);
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
@@ -265,15 +309,89 @@ impl Interpreter {
         r
     }
 
+    /// Whether `coerce_numeric_bridge_value` would do anything to this operand
+    /// — i.e. whether it is an object that must be numified through a method
+    /// (`Numeric`/`Bridge`, or a `Match`'s matched text) or a container cell
+    /// that must be read through first. Every other operand (the hot
+    /// `Int`/`Num`/`Rat` path) the bridge hands straight back.
+    pub(super) fn value_needs_numeric_bridge(value: &Value) -> bool {
+        matches!(
+            value.view(),
+            ValueView::Instance { .. } | ValueView::ContainerRef(_)
+        )
+    }
+
+    /// The string-context counterpart: an object whose class may define a user
+    /// `Stringy`/`Str`. `coerce_stringy_operand` hands every other shape back
+    /// untouched, so there is nothing to gain by routing them through it.
+    pub(super) fn value_needs_stringy_bridge(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Instance { .. })
+    }
+
     pub(super) fn coerce_numeric_bridge_pair(
         &mut self,
         left: Value,
         right: Value,
     ) -> Result<(Value, Value), RuntimeError> {
+        // Rakudo's generic candidate for two `Real`s is
+        // `multi sub infix:<+>(Real \a, Real \b) { a.Bridge + b.Bridge }`, and
+        // every built-in numeric type's `Bridge` is `self.Num` (only `Num`
+        // itself returns self). So as soon as ONE operand is a user object
+        // doing `Real`, the OTHER operand is numified through `.Num` too, and
+        // the result is a `Num` unless both sides bridge to something exact:
+        // `T + T` (two `Bridge`s returning `Rat`) stays an exact `Rat`, but
+        // `Rat + T` is a `Num`. Deciding this per-operand — as the plain
+        // `coerce_numeric_bridge_value` does — kept `Rat + T` exact and made
+        // the doc's `Temperature` sum an exact `Rat` where rakudo prints a
+        // `Num`. A non-`Real` object with a user `Numeric` method is NOT part
+        // of this rule: it is numified by `.Numeric` and leaves the other
+        // operand alone (`F.new + 1/4` is an exact `Rat` in rakudo too).
+        let left_real = self.is_real_role_object(&left);
+        let right_real = self.is_real_role_object(&right);
+        let bridge_pair = left_real || right_real;
+        let l = self.coerce_numeric_bridge_value(left)?;
+        let r = self.coerce_numeric_bridge_value(right)?;
+        if !bridge_pair {
+            return Ok((l, r));
+        }
         Ok((
-            self.coerce_numeric_bridge_value(left)?,
-            self.coerce_numeric_bridge_value(right)?,
+            if left_real {
+                l
+            } else {
+                Self::bridge_builtin_numeric(l)
+            },
+            if right_real {
+                r
+            } else {
+                Self::bridge_builtin_numeric(r)
+            },
         ))
+    }
+
+    /// A user-defined object that does the `Real` role — the operand that makes
+    /// rakudo pick the generic `(Real, Real)` infix candidate over a built-in
+    /// numeric one. Deliberately restricted to `Instance` values: the built-in
+    /// numeric `Value` variants are handled by their own candidates.
+    fn is_real_role_object(&mut self, value: &Value) -> bool {
+        matches!(value.view(), ValueView::Instance { .. })
+            && !Self::is_buf_value(value)
+            && value.match_str_value().is_none()
+            && self.type_matches_value("Real", value)
+    }
+
+    /// `Real.Bridge` for the built-in numeric types is `self.Num`; `Num.Bridge`
+    /// is `self`. Anything that is not a built-in real number is handed back
+    /// untouched (it has already been through the operand bridge).
+    fn bridge_builtin_numeric(value: Value) -> Value {
+        match value.view() {
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Bool(_) => Value::num(value.to_f64()),
+            _ => value,
+        }
     }
 
     /// Like [`coerce_numeric_bridge_pair`], but additionally raises

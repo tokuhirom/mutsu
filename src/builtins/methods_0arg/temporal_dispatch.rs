@@ -248,12 +248,10 @@ pub fn datetime_method_0arg(
             Some(Ok(Value::array(vec![Value::int(wy), Value::int(wn)])))
         }
         "weekday-of-month" => Some(Ok(Value::int((day - 1) / 7 + 1))),
-        "julian-date" => Some(Ok(Value::num(julian_date(
-            year, month, day, hour, minute, second,
-        )))),
-        "modified-julian-date" => Some(Ok(Value::num(modified_julian_date(
-            year, month, day, hour, minute, second,
-        )))),
+        "julian-date" => Some(julian_date(year, month, day, hour, minute, second)),
+        "modified-julian-date" => {
+            Some(modified_julian_date(year, month, day, hour, minute, second))
+        }
         "day-fraction" => {
             let (n, d) = day_fraction_rational(year, month, day, hour, minute, second);
             Some(Ok(crate::value::make_rat(n, d)))

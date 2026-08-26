@@ -301,6 +301,21 @@ impl Interpreter {
         names
     }
 
+    /// One `MAIN` argument as it arrives from the command line.
+    ///
+    /// Rakudo runs every command-line argument through `val()` before binding
+    /// it (`Rakudo::Internals::PROCESS-ARGS`), so a numeric-looking argument
+    /// reaches `MAIN` as the matching allomorph — `42` is an `IntStr`, `3.5` a
+    /// `RatStr`, `1e3` a `NumStr` — and anything else stays a plain `Str`.
+    /// That is what makes `sub MAIN($x) { say $x.^name }` print `IntStr`, and
+    /// what lets an untyped parameter be used as both a number and a string.
+    /// Applies to positional arguments and to named-option *values*; a bare
+    /// flag (`--verbose`, `--/verbose`, `--no-verbose`) is a `Bool`, not text,
+    /// and is unaffected.
+    fn cli_value(arg: &str) -> Value {
+        crate::runtime::builtins_collection::builtin_val(&[Value::str(arg.to_string())])
+    }
+
     pub(super) fn parse_cli_args(
         raw_args: &[String],
         named_info: &[NamedParamInfo],
@@ -315,7 +330,7 @@ impl Interpreter {
             let arg = &raw_args[i];
 
             if positional_started && !opts.named_anywhere {
-                positional.push(Value::str(arg.clone()));
+                positional.push(Self::cli_value(arg));
                 i += 1;
                 continue;
             }
@@ -355,19 +370,16 @@ impl Interpreter {
                             let old = std::mem::replace(&mut existing.1, Value::NIL);
                             if let Some((items, ..)) = old.into_array() {
                                 let mut v: Vec<Value> = items.to_vec();
-                                v.push(Value::str(val.to_string()));
+                                v.push(Self::cli_value(val));
                                 existing.1 = Value::array(v);
                             }
                         } else {
-                            named.push((
-                                key.to_string(),
-                                Value::array(vec![Value::str(val.to_string())]),
-                            ));
+                            named.push((key.to_string(), Value::array(vec![Self::cli_value(val)])));
                         }
                         i += 1;
                         continue;
                     }
-                    named.push((key.to_string(), Value::str(val.to_string())));
+                    named.push((key.to_string(), Self::cli_value(val)));
                     i += 1;
                     continue;
                 }
@@ -382,7 +394,7 @@ impl Interpreter {
                         continue;
                     }
                     if ni.requires_value && i + 1 < raw_args.len() {
-                        named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
+                        named.push((key.to_string(), Self::cli_value(&raw_args[i + 1])));
                         i += 2;
                         continue;
                     }
@@ -396,7 +408,7 @@ impl Interpreter {
                 if let Some(eq_pos) = rest.find('=') {
                     let key = &rest[..eq_pos];
                     let val = &rest[eq_pos + 1..];
-                    named.push((key.to_string(), Value::str(val.to_string())));
+                    named.push((key.to_string(), Self::cli_value(val)));
                     i += 1;
                     continue;
                 }
@@ -436,7 +448,7 @@ impl Interpreter {
                         continue;
                     }
                     if ni.requires_value && i + 1 < raw_args.len() {
-                        named.push((key.to_string(), Value::str(raw_args[i + 1].clone())));
+                        named.push((key.to_string(), Self::cli_value(&raw_args[i + 1])));
                         i += 2;
                         continue;
                     }
@@ -445,7 +457,7 @@ impl Interpreter {
                 i += 1;
                 continue;
             }
-            positional.push(Value::str(arg.clone()));
+            positional.push(Self::cli_value(arg));
             positional_started = true;
             i += 1;
         }

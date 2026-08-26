@@ -110,6 +110,58 @@ impl Interpreter {
         }
     }
 
+    /// Reduction/meta-op names whose `apply_reduction_op` arm numifies both
+    /// operands (via `to_num`/`arith_*`). These are the ones that must run the
+    /// operand through the `Numeric`/`Bridge` dispatch first when it is an
+    /// object — the pure table cannot call a method, so an un-bridged operand
+    /// silently numified to `0`.
+    ///
+    /// Deliberately excludes the `cmp`-flavoured comparators (`cmp`, `leg`,
+    /// `min`, `max`, `minmax`, `before`/`after`) — rakudo compares those with
+    /// `cmp` semantics rather than numification, so coercing their operands
+    /// would change what they order.
+    pub(crate) fn reduction_op_is_numeric(op: &str) -> bool {
+        matches!(
+            op,
+            "+" | "-"
+                | "*"
+                | "/"
+                | "div"
+                | "%"
+                | "mod"
+                | "**"
+                | "+&"
+                | "+|"
+                | "+^"
+                | "+<"
+                | "+>"
+                | "gcd"
+                | "lcm"
+                | "=="
+                | "!="
+                | "!=="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<=>"
+        )
+    }
+
+    /// Reduction/meta-op names whose `apply_reduction_op` arm stringifies both
+    /// operands. Like [`Self::reduction_op_is_numeric`], the pure table can
+    /// only reach `.gist` for an object, so these need the operand run through
+    /// the user `Stringy`/`Str` dispatch first.
+    ///
+    /// `cmp`/`before`/`after` are excluded for the same reason as above: they
+    /// are structural comparators, not string ones.
+    pub(crate) fn reduction_op_is_stringy(op: &str) -> bool {
+        matches!(
+            op,
+            "~" | "~|" | "~^" | "~&" | "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg"
+        )
+    }
+
     pub(crate) fn apply_reduction_op(
         op: &str,
         left: &Value,

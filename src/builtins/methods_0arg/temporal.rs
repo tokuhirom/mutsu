@@ -627,14 +627,34 @@ pub fn daycount(year: i64, month: i64, day: i64) -> i64 {
     civil_to_epoch_days(year, month, day) + 40587
 }
 
-/// Julian Date from DateTime.
-pub fn julian_date(year: i64, month: i64, day: i64, hour: i64, minute: i64, second: f64) -> f64 {
-    let dc = daycount(year, month, day) as f64;
-    let day_fraction = (hour as f64 * 3600.0 + minute as f64 * 60.0 + second) / 86400.0;
-    dc + day_fraction + 2400000.5
+/// Julian Date from DateTime, as an exact `Rat`.
+///
+/// Rakudo computes `julian-date` as `modified-julian-date + 2_400_000.5`, and
+/// `2_400_000.5` is a `Rat` literal, so the whole expression stays rational.
+/// Computing it in `f64` instead produced binary-float noise
+/// (`2459573.015977199` where rakudo prints the exact `2459573.0159772`) and
+/// reported the result as `Num` rather than `Rat`.
+pub fn julian_date(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: f64,
+) -> Result<Value, RuntimeError> {
+    crate::builtins::arith_add(
+        modified_julian_date(year, month, day, hour, minute, second)?,
+        crate::value::make_rat(4_800_001, 2),
+    )
 }
 
-/// Modified Julian Date from DateTime.
+/// Modified Julian Date from DateTime, as an exact `Rat`.
+///
+/// Rakudo: `self.daycount + (($hour * 60 + $minute) * 60 + $second) / 86400`,
+/// where `$second` is itself a `Rat` — the day fraction is exactly what
+/// [`day_fraction_rational`] already computes for `.day-fraction`, so both
+/// methods share it and the sum is done with the ordinary `Rat` arithmetic
+/// (which promotes to big rationals rather than overflowing).
 pub fn modified_julian_date(
     year: i64,
     month: i64,
@@ -642,10 +662,12 @@ pub fn modified_julian_date(
     hour: i64,
     minute: i64,
     second: f64,
-) -> f64 {
-    let dc = daycount(year, month, day) as f64;
-    let day_fraction = (hour as f64 * 3600.0 + minute as f64 * 60.0 + second) / 86400.0;
-    dc + day_fraction
+) -> Result<Value, RuntimeError> {
+    let (n, d) = day_fraction_rational(year, month, day, hour, minute, second);
+    crate::builtins::arith_add(
+        Value::int(daycount(year, month, day)),
+        crate::value::make_rat(n, d),
+    )
 }
 
 /// Number of seconds in the given UTC date. Normally 86400, but 86401 on a

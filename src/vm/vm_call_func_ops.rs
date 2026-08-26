@@ -43,6 +43,42 @@ impl Interpreter {
         }
     }
 
+    /// Core type names whose bareword call form `Name(...)` is the type's
+    /// COERCION rather than a call to a routine — the set `call_function`
+    /// implements a coercion arm for. In Raku a user `sub Int(Str $s) {...}`
+    /// does not occlude `Int('42')`; the declaration is reachable only through
+    /// the explicitly `&`-sigiled `&Int('42')`.
+    ///
+    /// Restricted to the core coercers on purpose: a bareword call to a *user*
+    /// class's name is also a coercion in rakudo (and dies with
+    /// `X::Coerce::Impossible` when the class has no coercion method), but
+    /// mutsu has no such coercion protocol yet, so those names keep resolving
+    /// to whatever routine is declared.
+    pub(super) fn name_is_core_type_coercer(name: &str) -> bool {
+        matches!(
+            name,
+            "Int"
+                | "Num"
+                | "Str"
+                | "Bool"
+                | "Uni"
+                | "Rat"
+                | "FatRat"
+                | "Complex"
+                | "Real"
+                | "Numeric"
+                | "Array"
+                | "List"
+                | "Hash"
+                | "Set"
+                | "SetHash"
+                | "Bag"
+                | "BagHash"
+                | "Mix"
+                | "MixHash"
+        )
+    }
+
     /// Control-flow / dispatch-control names that must never be taken over by
     /// the lexical `&`-var Interpreter dispatch: the interpreter's call_function match
     /// implements their non-local semantics (loop control, gather/take,
@@ -873,6 +909,21 @@ impl Interpreter {
             // env values through to this caller's local slots so they stay coherent
             // without the reverse `sync_locals_from_env` pull.
             self.apply_pending_rw_writeback(code);
+            return Ok(());
+        }
+
+        // A bareword call to a core type's name is that type's COERCION, and a
+        // same-named user sub does not shadow it. Rakudo parses `Int('42')` as
+        // the coercer even with `sub Int(Str $s) {...}` in scope; only the
+        // `&`-sigiled `&Int('42')` reaches the sub — and that spelling compiles
+        // to `CallOnCodeVar`, a different opcode, so gating the bareword funnel
+        // here reproduces exactly rakudo's split. This must sit ahead of every
+        // user-sub resolution path below; the name-keyed light-call caches
+        // above can never hold one of these names because they are only
+        // populated further down, past this gate.
+        if Self::name_is_core_type_coercer(&name) && !args.is_empty() {
+            let result = self.vm_call_function(&name, args)?;
+            self.stack.push(result);
             return Ok(());
         }
 

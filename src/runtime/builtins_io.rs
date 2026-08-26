@@ -35,6 +35,13 @@ pub(super) fn io_exception_failure(class_name: &str, message: String) -> Value {
 #[cfg(unix)]
 pub(super) fn has_required_mode_bits(path: &Path, read: bool, write: bool, execute: bool) -> bool {
     use std::os::unix::fs::PermissionsExt;
+    // With no mode bits requested the conjunction below is vacuously true, so
+    // do not stat at all: a caller that also skipped the existence test
+    // (`indir :!d, $nonexistent`) would otherwise be rejected as "permission
+    // denied" purely because `metadata` could not find the path.
+    if !read && !write && !execute {
+        return true;
+    }
     let mode = match fs::metadata(path) {
         Ok(meta) => meta.permissions().mode() & 0o777,
         Err(_) => return false,
