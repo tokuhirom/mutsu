@@ -307,6 +307,22 @@ impl Interpreter {
             "grab" => self.dispatch_grab_method(target, args),
             "grabpairs" => self.dispatch_grabpairs_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
+            "run" if args.is_empty() => {
+                // `Thread.run` starts a `Thread.new`-constructed thread. Handled
+                // here (rather than in `native_thread`) because it must return
+                // the invocant itself, not a rebuilt copy.
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = target.view()
+                    && class_name == "Thread"
+                {
+                    let attrs = attributes.as_map().clone();
+                    return Some(self.dispatch_thread_run(&target, &attrs));
+                }
+                None
+            }
             "join" if args.len() <= 1 => {
                 // `.join` on a Thread blocks until the thread completes and syncs
                 // its shared captured variables back to the parent (Raku

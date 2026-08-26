@@ -439,6 +439,14 @@ fn run_main() {
     }
     match interpreter.run(&input) {
         Ok(_output) => {
+            // A `Thread` created without `:app_lifetime` keeps the process
+            // alive until it finishes (`Type/Thread.rakudoc`), so the mainline
+            // running out of statements is not the end of the program. Only on
+            // the normal-completion path: rakudo's `exit` (and an uncaught
+            // exception, handled in the Err arm below) terminates immediately.
+            if !interpreter.exit_requested() {
+                interpreter.join_outstanding_threads();
+            }
             // Output is written directly to stdout during execution.
             // Subtest-indented output is also flushed here.
             interpreter.flush_all_handles();

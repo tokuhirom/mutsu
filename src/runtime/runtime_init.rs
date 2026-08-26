@@ -2849,6 +2849,8 @@ impl Interpreter {
             last_block_my_declared: Vec::new(),
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
+            lock_async_recursion: Vec::new(),
+            lock_async_deferred: Vec::new(),
             carrier_compile_cache: HashMap::new(),
             subst_repl_plans: HashMap::new(),
             map_grep_compile_cache: HashMap::new(),

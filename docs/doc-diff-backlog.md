@@ -443,8 +443,6 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
 | `Type/Mu.rakudoc:531` | `take-rw` doesn't preserve a mutable container alias through `gather` | [take-rw-loses-mutable-container-alias.md](../todo/tickets/take-rw-loses-mutable-container-alias.md) |
 | `Language/subscripts.rakudoc:418` | a chained hash-then-array autovivification (`$h{"k"}[0] = v`) leaves the root variable showing `Any` on `.raku` | [nested-autovivification-then-raku-shows-any.md](../todo/tickets/nested-autovivification-then-raku-shows-any.md) |
 | `Language/subscripts.rakudoc:964` | `my @var is CustomClass = ...` never dispatches the class's `STORE`/overridden `Str` methods (custom Proxy-like container binding) | [is-typename-custom-container-store-protocol-unimplemented.md](../todo/deep/is-typename-custom-container-store-protocol-unimplemented.md) |
-| `Language/concurrency.rakudoc:703` | `Thread.new(code => {...}).run` — `.run` method is unimplemented | [thread-new-run-method-missing.md](../todo/tickets/thread-new-run-method-missing.md) |
-| `Language/concurrency.rakudoc:709` | `Thread.start({...})`'s block never runs — the main program exits before the spawned thread completes | [thread-start-block-not-awaited-before-process-exit.md](../todo/tickets/thread-start-block-not-awaited-before-process-exit.md) |
 
 **Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
 - `Type/Parameter.rakudoc` [3] (line 176) — `raku-drift` (the doc's stated `# OUTPUT` omits the
@@ -468,7 +466,6 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 |---|---|---|
 | `Type/Backtrace.rakudoc:15` | `$!.backtrace[N]` positional indexing always returns `Nil` | [backtrace-frame-indexing-returns-nil.md](../todo/tickets/backtrace-frame-indexing-returns-nil.md) |
 | `Language/perl-var.rakudoc:154` | `CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>` | [compunit-repository-gist-missing-inst-prefix.md](../todo/tickets/compunit-repository-gist-missing-inst-prefix.md) |
-| `Type/Lock/Async.rakudoc:162,202` | `Lock::Async` is missing `.protect-or-queue-on-recursion` and `.with-lock-hidden-from-recursion-check` | [lock-async-recursion-methods-missing.md](../todo/tickets/lock-async-recursion-methods-missing.md) |
 | `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
 | `Type/IO/Path/Parts.rakudoc:71` | `$parts[]` (empty postcircumfix index) on `IO::Path::Parts` shows the whole-object gist instead of iterating its 3 positional elements | [io-path-parts-empty-subscript-not-positional.md](../todo/tickets/io-path-parts-empty-subscript-not-positional.md) |
 | `Type/Metamodel/TypePretense.rakudoc:15,47` | `Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented | [role-type-pretense-cool-incomplete.md](../todo/tickets/role-type-pretense-cool-incomplete.md) |
