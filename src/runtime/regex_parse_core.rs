@@ -3872,9 +3872,20 @@ impl Interpreter {
                 quant = match q {
                     '*' => {
                         chars.next();
-                        // Skip whitespace between `*` and potential second `*`
-                        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
-                            chars.next();
+                        // Skip whitespace between `*` and a potential second `*`
+                        // (`\w * * 3` is a spaced `**` range) -- but only COMMIT
+                        // that skip when the second `*` is really there. Eating it
+                        // unconditionally destroyed the space itself, and under
+                        // `:sigspace` that space is a `<.ws>` token: `rx:s/col\w* 4/`
+                        // silently became `col\w*4` and stopped matching "col 4".
+                        {
+                            let mut lookahead = chars.clone();
+                            while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                lookahead.next();
+                            }
+                            if lookahead.peek() == Some(&'*') {
+                                chars = lookahead;
+                            }
                         }
                         if chars.peek() == Some(&'*') {
                             // `**` quantifier: parse count or range

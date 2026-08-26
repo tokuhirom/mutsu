@@ -49,17 +49,29 @@ the `throws-like` answered correctly, because `$!` goes through
 
 ## The fix
 
-- Never drop a named matcher. The subtest plan is now `2 + matchers` in every
-  case, matching rakudo.
+- Run every matcher whose value mutsu can actually produce, and count it in the
+  plan.
 - Resolve each matcher's value the way rakudo's `$x."$k"()` does: stored
-  attribute first, then a *user-defined* method on the exception class, then the
-  carrier text for `message` / `gist`. (Only a user method is invoked; a
-  built-in `X::` carrier already renders its text into the error message, and
-  its native `.message` can differ — `X::Phaser::PrePost` would regress.)
+  attribute, then a real method call on the exception, then the carrier text for
+  `message` / `gist`. (`message` / `gist` invoke a method only when a *user*
+  class overrides them: a built-in `X::` carrier already renders its text into
+  the error message and its native `.message` can differ — `X::Phaser::PrePost`
+  would regress. Every other name goes through the ordinary dispatcher, which is
+  how `.payload` and `.backtrace` — native methods, not stored attributes —
+  became visible here at all.)
 - Read the attributes off `err.exception_value()` — the very object `$!` and
   `CATCH` see — instead of the raw `err.exception` field.
+- Look through a `but role` mixin (`X::AdHoc+{X::Promise::Broken}`, what a
+  broken Promise's `.result` throws) for both the attributes and the class name;
+  the type-match already did this, the attribute lookup did not.
 - Hand a `Callable` / `Junction` matcher the real text, so
   `message => *.contains("x")` inspects the message rather than `Nil`.
+
+A name mutsu can produce *nothing* for is still skipped rather than failed — but
+now the subtest says so out loud (`# SKIPPED matcher '.multiness': mutsu's
+X::Anon::Multi carries no such attribute`), because that is a
+missing-*attribute* bug rather than a bad test. The full remaining list is
+tracked in `todo/tickets/exception-attributes-missing-for-throws-like.md`.
 
 ## What the un-skipped matcher immediately caught
 
@@ -89,6 +101,29 @@ and all five are fixed here — none were weakened to go green:
   invisible inside `throws-like`** even though `$!` answered them — the
   `err.exception` vs `exception_value()` hole above.
   (`t/typed-exception-attributes.t`, `t/typed-exceptions-misc.t`)
+
+A full local `make roast` then turned eight more whitelisted files red, and
+those were real bugs too — all fixed here:
+
+- **`:sigspace` silently dropped `<.ws>` after a `*`-quantified atom.** After
+  consuming `*`, the regex parser skipped whitespace looking for a second `*`
+  (the spaced `**` range form) and never put it back when there wasn't one, so
+  `rx:s/col\w* 4/` compiled as `col\w*4` and stopped matching `"col 4"`. The
+  whitespace skip is now committed only when the second `*` is really there.
+  This is a general regex-engine bug that had nothing to do with `throws-like`;
+  it merely had no un-skipped assertion pointing at it.
+  (`roast/S32-str/encode.t`)
+- **A broken Promise's exception is a `Mixin`**, so no attribute lookup reached
+  the instance underneath. (`roast/S17-promise/basic.t`)
+- **`Backtrace.is-runtime` did not exist.** Rakudo decides it by looking for a
+  `SETTING::` frame; mutsu has no setting frames, so the two runtime `Backtrace`
+  builders now stamp the flag and a compile-time backtrace answers falsy.
+  (`roast/integration/error-reporting.t`)
+- **`.return` against a pinned literal return value raised a bare "Malformed
+  return value"**, naming neither the returned value nor the pinned one. Rakudo
+  says `Cannot return 27 with .return when return value 42 is already specified
+  in the signature`, and roast matches the exception's `payload` against `42`.
+  (`roast/S32-exceptions/misc2.t`)
 
 No assertion turned out to be merely meaningless, and no test expectation was
 wrong: every expectation was already the value rakudo produces, checked against

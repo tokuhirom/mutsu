@@ -410,6 +410,11 @@ impl Interpreter {
         let mut bt_attrs = HashMap::new();
         bt_attrs.insert("frames".to_string(), Value::array(frames));
         bt_attrs.insert("text".to_string(), Value::str(text));
+        // Built from the live call stack, so this is a RUNTIME backtrace --
+        // what rakudo's `Backtrace.is-runtime` reports True for. A compile-time
+        // diagnosis never reaches either of these builders, so its backtrace
+        // (synthesized from the error's file/line metadata) answers False.
+        bt_attrs.insert("is-runtime".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Backtrace"), bt_attrs)
     }
 
@@ -482,6 +487,9 @@ impl Interpreter {
         let mut bt_attrs = HashMap::new();
         bt_attrs.insert("frames".to_string(), Value::array(frames));
         bt_attrs.insert("text".to_string(), Value::str(bt_str.to_string()));
+        // Parsed from a captured runtime backtrace string -- see the sibling
+        // builder above for why this marks the Backtrace as runtime.
+        bt_attrs.insert("is-runtime".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Backtrace"), bt_attrs)
     }
 

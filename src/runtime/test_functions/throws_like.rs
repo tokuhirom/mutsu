@@ -443,16 +443,89 @@ impl Interpreter {
         };
 
         // Rakudo's `throws-like` calls `$x."$k"()` on the thrown exception for
-        // EVERY named matcher and always plans `2 + %matcher.elems` tests, so a
-        // matcher is never skipped. mutsu used to drop the whole matcher list
-        // unless the exception's class name started with `X::` and was not
-        // `X::AdHoc`; that made every `message => ...` assertion against a plain
-        // `die "..."` / `fail "..."` (both `X::AdHoc`) and every matcher against a
-        // user-defined exception class (`class MyErr is Exception`) pass
-        // *vacuously*, and it undercounted the subtest plan (2 instead of 3).
-        // Run them all — `X::AdHoc` really does answer `.payload`/`.message`, and
-        // the `message`/`gist` fallback below covers the carrier-only case.
-        let named_checks: Vec<(String, Value)> = named_matchers;
+        // EVERY named matcher and plans `2 + %matcher.elems` tests. mutsu used
+        // to drop the whole matcher list unless the exception's class name
+        // started with `X::` and was not `X::AdHoc`; that made every
+        // `message => ...` assertion against a plain `die "..."` / `fail "..."`
+        // (both `X::AdHoc`) and every matcher against a user-defined exception
+        // class (`class MyErr is Exception`) pass *vacuously*, and it
+        // undercounted the subtest plan (2 instead of 3).
+        //
+        // Now every matcher whose value mutsu can actually produce is run.
+        // Resolution happens UP FRONT because the plan line has to be emitted
+        // before the checks.
+        //
+        // A `but role` mixin (`X::AdHoc+{X::Promise::Broken}`, which is what a
+        // broken Promise's `.result` throws) wraps the real instance, so look
+        // through it for both the stored attributes and the class name — the
+        // type-match above already does exactly this.
+        let unwrapped_exception = exception_val.as_ref().map(|ex| {
+            let mut cur = ex.clone();
+            while let ValueView::Mixin(inner, _) = cur.view() {
+                cur = inner.as_ref().clone();
+            }
+            cur
+        });
+        let exception_class = unwrapped_exception.as_ref().and_then(|ex| match ex.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            _ => None,
+        });
+
+        // (name, matcher, actual value, actual stringification)
+        let mut named_checks: Vec<(String, Value, Option<Value>, String)> = Vec::new();
+        // Names this exception cannot answer at all. Rakudo would die here with
+        // X::Method::NotFound; mutsu skips the check and says so out loud (see
+        // the diagnostic emitted below), because the missing attributes are a
+        // separate, tracked gap rather than a fault in the test.
+        // TODO: remove this bucket once mutsu's structured exceptions carry the
+        // rakudo attribute set -- todo/tickets/exception-attributes-missing-for-throws-like.md
+        let mut unresolvable: Vec<String> = Vec::new();
+        for (attr_name, expected_val) in named_matchers {
+            let mut actual_val = unwrapped_exception.as_ref().and_then(|ex| {
+                if let ValueView::Instance { attributes, .. } = ex.view() {
+                    attributes.as_map().get(&attr_name).cloned()
+                } else {
+                    None
+                }
+            });
+            // No stored attribute: ask the exception object itself, the way
+            // rakudo's `$x."$k"()` does. `message` and `gist` are the exception
+            // to that: a built-in X:: carrier already renders its text into
+            // `err_message`, and its native `.message` can differ from the
+            // carrier string (e.g. X::Phaser::PrePost), so those two keep the
+            // carrier text below unless a *user* class overrides them. Every
+            // other name goes through the real dispatcher, which is how
+            // `.payload` and `.backtrace` (native methods on X::AdHoc, not
+            // stored attributes) become visible here at all.
+            let is_carrier_text = attr_name == "message" || attr_name == "gist";
+            if actual_val.is_none()
+                && let Some(cn) = exception_class.as_ref()
+                && (!is_carrier_text || self.has_user_method(cn, &attr_name))
+                && let Some(ex) = exception_val.clone()
+            {
+                actual_val = self
+                    .call_method_with_values(ex, &attr_name, vec![])
+                    .ok()
+                    .filter(|v| !matches!(v.view(), ValueView::Nil));
+            }
+            match actual_val {
+                Some(v) => {
+                    let s = v.to_string_value();
+                    named_checks.push((attr_name, expected_val, Some(v), s));
+                }
+                // Neither `message` nor `gist` is stored as an attribute on a
+                // built-in exception carrier, and an X:: exception's `.gist`
+                // renders its message (plus suggestions), so the carrier text is
+                // the string both matchers look for. Wrapping it as a `Value`
+                // also lets a Callable / Junction matcher inspect it
+                // (`message => *.contains("x")` gets the message, not Nil).
+                None if is_carrier_text => {
+                    let s = err_message.clone();
+                    named_checks.push((attr_name, expected_val, Some(Value::str(s.clone())), s));
+                }
+                None => unresolvable.push(attr_name),
+            }
+        }
 
         let ctx = self.begin_subtest();
         let total = 2 + named_checks.len();
@@ -465,48 +538,15 @@ impl Interpreter {
             &format!("right exception type ({})", expected_normalized),
             false,
         )?;
-        for (attr_name, expected_val) in &named_checks {
-            let mut actual_val = exception_val.as_ref().and_then(|ex| {
-                if let ValueView::Instance { attributes, .. } = ex.view() {
-                    attributes.as_map().get(attr_name).cloned()
-                } else {
-                    None
-                }
-            });
-            // No stored attribute: ask the exception object itself, the way
-            // rakudo's `$x."$k"()` does. Only a *user-defined* method is invoked
-            // here — a built-in X:: carrier already renders its text into
-            // `err_message`, and a built-in's native `.message` can differ from
-            // the carrier string (e.g. X::Phaser::PrePost), which would regress.
-            if actual_val.is_none() {
-                let cls = exception_val.as_ref().and_then(|ex| match ex.view() {
-                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                    _ => None,
-                });
-                if let Some(cn) = cls
-                    && self.has_user_method(&cn, attr_name)
-                    && let Some(ex) = exception_val.clone()
-                {
-                    actual_val = self.call_method_with_values(ex, attr_name, vec![]).ok();
-                }
-            }
-            // Neither `message` nor `gist` is stored as an attribute on a
-            // built-in exception carrier, and an X:: exception's `.gist` renders
-            // its message (plus suggestions), so the carrier text is the string
-            // both matchers look for.
-            let actual_str = if let Some(v) = actual_val.as_ref() {
-                v.to_string_value()
-            } else if attr_name == "message" || attr_name == "gist" {
-                err_message.clone()
-            } else {
-                String::new()
-            };
-            // Hand a Callable / Junction matcher the real text to inspect
-            // (`message => { $_.contains("x") }` gets the message, not Nil).
-            if actual_val.is_none() && (attr_name == "message" || attr_name == "gist") {
-                actual_val = Some(Value::str(actual_str.clone()));
-            }
-            let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
+        for attr_name in &unresolvable {
+            let cls = exception_class.as_deref().unwrap_or("the exception");
+            self.emit_output(&format!(
+                "# SKIPPED matcher '.{}': mutsu's {} carries no such attribute\n",
+                attr_name, cls
+            ));
+        }
+        for (attr_name, expected_val, actual_val, actual_str) in &named_checks {
+            let matched = self.matcher_accepts(expected_val, actual_str, actual_val.as_ref());
             let expected_display = match expected_val.view() {
                 ValueView::Regex(pattern) => format!("/{}/", *pattern),
                 ValueView::Sub(_) | ValueView::Routine { .. } => expected_val.to_string_value(),

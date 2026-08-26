@@ -1586,6 +1586,20 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     return Some(Ok(Value::array(vec![])));
                 }
+                // `Backtrace.is-runtime` distinguishes a backtrace captured
+                // while *running* from one attached to a compile-time
+                // diagnosis. rakudo decides it by looking for a `SETTING::`
+                // frame; mutsu has no setting frames, so the two runtime
+                // Backtrace builders (`vm_helpers.rs`) stamp the flag directly
+                // and a compile-time backtrace, which never reaches them,
+                // answers False.
+                "is-runtime" => {
+                    let is_runtime = attributes
+                        .as_map()
+                        .get("is-runtime")
+                        .is_some_and(|v| v.truthy());
+                    return Some(Ok(Value::truth(is_runtime)));
+                }
                 "concise" | "summary" => {
                     let frames = attributes
                         .as_map()
