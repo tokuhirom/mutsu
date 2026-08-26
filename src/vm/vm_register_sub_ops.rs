@@ -1067,6 +1067,7 @@ impl Interpreter {
             &plan.param_defs,
             &plan.raw_body,
             plan.multi,
+            plan.source_line,
         );
         Ok(())
     }

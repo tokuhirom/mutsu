@@ -191,6 +191,7 @@ impl Interpreter {
                         &plan.param_defs,
                         &plan.raw_body,
                         plan.multi,
+                        plan.source_line,
                     );
                 }
                 crate::opcode::ClassBodyOp::ClassSub {
@@ -351,6 +352,7 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             source_file: self.current_source_file(),
+            source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),

@@ -365,6 +365,7 @@ impl Interpreter {
                             is_default: decl.is_default_candidate,
                             deprecated_message: None,
                             source_file: self.current_source_file(),
+                            source_line: None,
                             decl_order: crate::runtime::resolution::next_decl_order(),
                             compiled: None,
                             body_fp_cache: std::sync::OnceLock::new(),
@@ -397,6 +398,7 @@ impl Interpreter {
                             is_default: decl.is_default_candidate,
                             deprecated_message: None,
                             source_file: self.current_source_file(),
+                            source_line: None,
                             decl_order: crate::runtime::resolution::next_decl_order(),
                             compiled: None,
                             body_fp_cache: std::sync::OnceLock::new(),
@@ -1341,6 +1343,15 @@ impl Interpreter {
             }
             let r = match &op.chunk {
                 Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                // See the identical branch in
+                // `run_composed_role_deferred_body`: recompiling a `TokenRule`
+                // op's raw statement through `run_block_raw` would silently
+                // lose `Code.line`/`Code.file` (a fresh `Compiler::new()` has
+                // no line history), so register directly instead.
+                None if op.kind == crate::opcode::DeferredBodyOpKind::TokenRule => {
+                    self.register_token_decl_from_stmt(&op.raw, op.source_line);
+                    Ok(())
+                }
                 None => self.run_block_raw(std::slice::from_ref(&op.raw)),
             };
             if body_pkg.is_some() {

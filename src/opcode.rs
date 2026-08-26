@@ -3080,6 +3080,12 @@ pub(crate) enum ClassBodyOp {
 /// append nested-sub `has` declarations as more `Attr` ops. Since D6-4,
 /// this is the sole source `run_class_body` walks — there is no separate
 /// runtime-side flatten/append pass to mirror any more.
+///
+/// Also tracks the running `Stmt::SetLine` value while walking the flattened
+/// list, exactly like `Compiler::compile_method_body_keys` does for a method
+/// declaration's own line: a class body's `token`/`rule` statement carries no
+/// line of its own (see [`CompiledTokenDeclPlan::source_line`]), only the
+/// `SetLine` marker immediately preceding it in the body does.
 pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = body
         .iter()
@@ -3089,9 +3095,15 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
         })
         .collect();
     collect_nested_has_decl_stmts(body, &mut flattened);
+    let mut decl_line: Option<i64> = None;
     flattened
         .iter()
-        .map(|stmt| classify_class_body_stmt(stmt))
+        .map(|stmt| {
+            if let Stmt::SetLine(line) = stmt {
+                decl_line = Some(*line);
+            }
+            classify_class_body_stmt(stmt, decl_line)
+        })
         .collect()
 }
 
@@ -3117,7 +3129,7 @@ fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>)
     }
 }
 
-fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
+fn classify_class_body_stmt(stmt: &Stmt, decl_line: Option<i64>) -> ClassBodyOp {
     match stmt {
         Stmt::Phaser {
             kind: crate::ast::PhaserKind::Leave,
@@ -3154,7 +3166,7 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
             is_compile_time_phaser: is_compile_time_phaser_stmt(stmt),
         },
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => ClassBodyOp::TokenRule {
-            plan: build_token_decl_plan(stmt),
+            plan: build_token_decl_plan(stmt, decl_line),
         },
         _ => ClassBodyOp::Other {
             chunk: None,
@@ -3350,6 +3362,14 @@ pub(crate) struct DeferredBodyOp {
     /// statement for this same fact. Empty for every other statement kind.
     pub(crate) declared_vars: Vec<Symbol>,
     pub(crate) raw: Stmt,
+    /// `Some` only for `TokenRule`: the `SetLine` marker immediately
+    /// preceding this declaration in the role body, for `Code.line`/
+    /// `Code.file` (see `CompiledTokenDeclPlan::source_line`, which this
+    /// mirrors). A `TokenRule` op's `chunk` stays `None` above because the
+    /// COMPOSING package is unknown at role-declaration time, but the line
+    /// is a role-declaration-time fact regardless of who composes the role,
+    /// so it is captured here rather than lost the way `chunk` is.
+    pub(crate) source_line: Option<i64>,
 }
 
 pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind {
@@ -3501,15 +3521,27 @@ pub(crate) struct CompiledTokenDeclPlan {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) multi: bool,
     pub(crate) raw_body: Vec<Stmt>,
+    /// The declarator keyword's source line (`Code.line`/`Code.file`), fed
+    /// into the registered `FunctionDef`. Unlike `Sub`/`Method` (whose line
+    /// rides on their own compiled body), a token/rule has no compiled body
+    /// at all (ADR-0009), so this is the only place to carry it: a
+    /// `SetLine`-tracking scan over the enclosing statement list, done by
+    /// `CompiledCode::add_token_decl_plan` (top level) and `class_body_plan`
+    /// (class body) — never read off `stmt` itself, which carries no line of
+    /// its own. `None` when no `SetLine` preceded this declaration (e.g. a
+    /// role's deferred body, recompiled standalone at composition time with
+    /// no line history — see `run_composed_role_deferred_body`).
+    pub(crate) source_line: Option<i64>,
 }
 
 /// Build a [`CompiledTokenDeclPlan`] from a `Stmt::TokenDecl`/`RuleDecl`.
 /// Shared by `CompiledCode::add_token_decl_plan` (the top-level
 /// `RegisterDecl(Token)` path, ADR-0019 F7 slice 1) and
 /// `classify_class_body_stmt` (`ClassBodyOp::TokenRule`, slice 2) — a pure
-/// function of the raw statement, needing no compiler state, since a
-/// token/rule declaration has no computed name/trait to compile.
-fn build_token_decl_plan(stmt: &Stmt) -> CompiledTokenDeclPlan {
+/// function of the raw statement plus a precomputed source line, needing no
+/// further compiler state, since a token/rule declaration has no computed
+/// name/trait to compile.
+fn build_token_decl_plan(stmt: &Stmt, source_line: Option<i64>) -> CompiledTokenDeclPlan {
     let (name, params, param_defs, body, multi) = match stmt {
         Stmt::TokenDecl {
             name,
@@ -3534,6 +3566,7 @@ fn build_token_decl_plan(stmt: &Stmt) -> CompiledTokenDeclPlan {
         param_defs: param_defs.clone(),
         multi,
         raw_body: body.clone(),
+        source_line,
     }
 }
 
@@ -6945,9 +6978,13 @@ impl CompiledCode {
     /// an opaque payload — a token/rule body is never bytecode-compiled, that
     /// stays interpreter-executed by ADR-0009's own design — mirroring
     /// `add_proto_decl_plan`'s `legacy_body` precedent for the same reason.
-    pub(crate) fn add_token_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+    /// `source_line` is the caller's `last_source_line` at the point this
+    /// top-level declaration compiles (the `SetLine` marker the parser always
+    /// emits right before it), feeding `Code.line`/`Code.file`.
+    pub(crate) fn add_token_decl_plan(&mut self, stmt: &Stmt, source_line: Option<i64>) -> u32 {
         let plan_idx = self.token_decl_plans.len() as u32;
-        self.token_decl_plans.push(build_token_decl_plan(stmt));
+        self.token_decl_plans
+            .push(build_token_decl_plan(stmt, source_line));
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Token(plan_idx));
         idx

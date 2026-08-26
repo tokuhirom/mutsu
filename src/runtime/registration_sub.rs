@@ -975,6 +975,7 @@ impl Interpreter {
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
             source_file: self.current_source_file(),
+            source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             // Seed the structural fingerprint eagerly from the plan (ADR-0019
@@ -1580,6 +1581,7 @@ impl Interpreter {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_token_decl(
         &mut self,
         name: &str,
@@ -1587,6 +1589,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         body: &[Stmt],
         multi: bool,
+        source_line: Option<i64>,
     ) {
         let def = FunctionDef {
             is_cached: false,
@@ -1605,6 +1608,7 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             source_file: self.current_source_file(),
+            source_line,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),
@@ -1612,6 +1616,46 @@ impl Interpreter {
             rw_tail_expr: None,
         };
         self.insert_token_def(name, def, multi);
+    }
+
+    /// [`Self::register_token_decl`], extracting its arguments from a raw
+    /// `Stmt::TokenDecl`/`RuleDecl` directly instead of an already-compiled
+    /// plan. Used by `run_composed_role_deferred_body`/
+    /// `run_role_body_for_composition` for a role's `TokenRule` deferred op:
+    /// unlike every other op kind, a `TokenRule` has no compiled `chunk`
+    /// (the composing package is unknown until composition — see
+    /// `DeferredBodyOp::chunk`'s doc comment), so recompiling `raw` through
+    /// `run_block_raw` would lose `source_line` (a *fresh* `Compiler::new()`
+    /// has no line history of its own). Calling straight through, under
+    /// `current_package` already set to the composing class, is equivalent
+    /// to what that recompile does at runtime and keeps the line.
+    pub(crate) fn register_token_decl_from_stmt(&mut self, stmt: &Stmt, source_line: Option<i64>) {
+        let (name, params, param_defs, body, multi) = match stmt {
+            Stmt::TokenDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+                ..
+            }
+            | Stmt::RuleDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            } => (name, params, param_defs, body, *multi),
+            _ => unreachable!("register_token_decl_from_stmt expects TokenDecl/RuleDecl"),
+        };
+        self.register_token_decl(
+            &name.resolve(),
+            params,
+            param_defs,
+            body,
+            multi,
+            source_line,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1683,6 +1727,7 @@ impl Interpreter {
                 is_default: false,
                 deprecated_message: None,
                 source_file: self.current_source_file(),
+                source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: compiled.cloned().map(std::sync::Arc::new),
                 body_fp_cache: std::sync::OnceLock::new(),
@@ -1748,6 +1793,7 @@ impl Interpreter {
                 is_default: false,
                 deprecated_message: None,
                 source_file: self.current_source_file(),
+                source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
                 compiled: compiled.cloned().map(std::sync::Arc::new),
                 body_fp_cache: std::sync::OnceLock::new(),

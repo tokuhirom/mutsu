@@ -208,6 +208,16 @@ pub(crate) struct FunctionDef {
     /// can report the module file (integration/error-reporting.t test 15).
     #[serde(default)]
     pub(crate) source_file: Option<String>,
+    /// The declarator keyword's source line (`sub`/`method`/`token`/`rule`/...),
+    /// mirroring `source_file` above. A `Sub`/`Method` already carries its line
+    /// on its own compiled body (`CompiledCode::source_line`), so this field's
+    /// primary consumer is a `token`/`rule` declaration, which has no compiled
+    /// body at all by design (ADR-0009) and therefore nowhere else to keep it
+    /// -- see `register_token_decl`. Also makes the sub/method path robust
+    /// should `compiled` ever be `None`. `None` when the declaration site is
+    /// not known (e.g. a synthetic/prelude definition).
+    #[serde(default)]
+    pub(crate) source_line: Option<i64>,
     /// Monotonic declaration/registration order, stamped by
     /// `runtime::resolution::next_decl_order()` at every registration site.
     /// Two tie-breaks read it, both matching Rakudo's "first declared wins":
