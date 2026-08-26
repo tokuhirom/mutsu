@@ -12,7 +12,7 @@ $ raku  -e 'grammar G { token foo { \d+ } }; say G.^lookup("foo").line.raku'
 1
 ```
 
-## Why it needed a new field, not a three-line stamp
+## The new field: `FunctionDef::source_line` now exists
 
 `Sub`/`Method` both carry their declaration line on their own compiled body
 (`CompiledCode::source_line`). A `token`/`rule` has no compiled body at all by
@@ -22,11 +22,18 @@ nowhere on the routine to hang the line. The fix adds a new, symmetric home:
 alongside its existing `source_file`. `Sub`/`Method` don't need to read it back
 (they already have their own slot), but a `token`/`rule` — whose `FunctionDef`
 lives in `Registry::token_defs` with `compiled: None` — has nowhere else to put
-it. This is also the same declaration-location slot the open
-`Backtrace::Frame` tickets want, so it is now available for that work too.
+it.
 
-Getting the value into that field required a `SetLine`-tracking scan at every
-place a token/rule declaration is classified, mirroring the scan
+**This is the same declaration-location slot the open `Backtrace::Frame`
+tickets want** (they already read the sibling `source_file` field for frame
+attribution). `FunctionDef::source_line` did not exist before this change; it
+does now, and any future `Backtrace::Frame` work can read it directly instead
+of growing a second, parallel channel.
+
+## How the value gets into that field
+
+Getting the value into `source_line` required a `SetLine`-tracking scan at
+every place a token/rule declaration is classified, mirroring the scan
 `Compiler::compile_method_body_keys` already does for a method's own
 declaration line — a token/rule statement carries no line of its own; only the
 `Stmt::SetLine` marker immediately preceding it in the enclosing statement list
@@ -41,18 +48,6 @@ does:
   value across the flattened body the same way `compile_method_body_keys`
   does, so a `token`/`rule` declared directly in a `grammar`/`class` body gets
   its own line.
-- A role's deferred body (`compile_role_deferred_body`) filtered `SetLine`
-  markers out entirely before this change (deliberately, to keep
-  `deferred_body_ops` empty when a role body has no real deferred statement).
-  It now tracks the same running line first, then still drops the `SetLine`
-  entries — so a `token`/`rule` declared inside a role, later composed into a
-  grammar, keeps the role's own declaration line. The runtime side
-  (`run_composed_role_deferred_body`/`run_role_body_for_composition`) used to
-  recompile the raw statement fresh at composition time (`Compiler::new()`
-  has no line history), which would have silently discarded this value again;
-  both now call the token straight through `register_token_decl_from_stmt`
-  instead, extracting the declaration from the raw `Stmt` plus the
-  precomputed line.
 - `register_token_decl` threads the new `source_line` parameter into the
   registered `FunctionDef`; `make_native_method_object_ex_loc` (the `Regex`
   `Instance` builder `.^lookup` returns for a grammar token) reads it back off
@@ -66,20 +61,46 @@ does:
   (subs), so it now falls back to `Registry::token_defs` when no sub candidate
   carries a location.
 
-## A second, adjacent bug found and fixed along the way
+## Beyond the ticket's own sketch: two findings worth calling out separately
 
-Mapping the full surface (grammar token/rule, top-level declaration, role
-composition, and grammar inheritance) surfaced a genuine, separate defect:
-`.^lookup` on an *inherited* grammar token answered `(Mu)` — not `Nil`, not a
-missing line, but nothing at all — even though the token dispatches correctly
-at parse time (`Child.parse(..., :rule<inherited-tok>)` worked fine). The
-"check grammar token/rule/regex definitions" step of `classhow_lookup_impl`
-looked the token up only under the receiver's own class name, unlike the
-class-methods check just above it, which already walks the full MRO. It now
-walks the same MRO, so `Child.^lookup("inherited-tok")` finds the definition
-registered under the declaring parent grammar — and reports that parent's
-`.line`/`.file`, matching how an inherited *method* reports the declaring
-class's location.
+The original ticket's fix sketch covered the class-body and top-level cases
+above. Mapping the *full* surface (grammar token/rule, top-level declaration,
+role composition, and grammar inheritance) turned up two more things, neither
+of which the ticket asked for by name.
+
+**1. A role-composed token would otherwise have silently kept `Nil`.**
+A role's deferred body (`compile_role_deferred_body`) filtered `SetLine`
+markers out entirely *before* this change — deliberately, to keep
+`deferred_body_ops` empty when a role body has no real deferred statement at
+all. Wiring only the class-body/top-level happy path would have left a
+`token` declared inside a `role`, later composed into a `grammar`, still
+answering `Nil`: the runtime side
+(`run_composed_role_deferred_body`/`run_role_body_for_composition`) recompiles
+the raw statement fresh at composition time, and a fresh `Compiler::new()` has
+no line history to draw on. So `compile_role_deferred_body` now tracks the
+running `SetLine` value first, then still drops the marker entries as before;
+both composition consumers now call the token straight through a new
+`register_token_decl_from_stmt` helper instead of recompiling, extracting the
+declaration from the raw `Stmt` plus the precomputed line. Without this, the
+role-composition row of the surface table below would still read `Nil`/file
+only.
+
+**2. `.^lookup` on an inherited grammar token was a pre-existing, independent
+bug**, unrelated to line/file. It answered `(Mu)` — not `Nil`, not a missing
+line, but nothing at all — even though the token dispatches correctly at parse
+time (`Child.parse(..., :rule<inherited-tok>)` worked fine before this PR and
+still does). The "check grammar token/rule/regex definitions" step of
+`classhow_lookup_impl` looked the token up only under the receiver's own class
+name, unlike the class-methods check just above it, which already walks the
+full MRO. This bug existed regardless of the line/file work — it would have
+blocked `Child.^lookup("inherited-tok")` from returning anything at all, line
+or no line. It is now fixed alongside (walking the same MRO the class-methods
+check uses), since it was the only way to actually verify the "inherited
+token" row of the surface table, but it is a separate defect from — and would
+be worth fixing even without — the `Code.line`/`Code.file` work in this PR.
+`Child.^lookup("inherited-tok")` now finds the definition registered under the
+declaring parent grammar, and reports that parent's `.line`/`.file`, matching
+how an inherited *method* reports the declaring class's location.
 
 ## What was deliberately left unmatched
 
@@ -96,8 +117,8 @@ covered by the new test.
 |---|---|---|---|
 | grammar `token`/`rule` (class body) | declarator line/file | `Nil`/`Nil` | matches |
 | top-level `my token`/`my regex` | declarator line/file | `Nil`/`Nil` | matches |
-| `token` in a role, composed into a grammar | role's declaration line/file | `Nil`/file only | matches |
-| `token` inherited from a parent grammar | parent's declaration line/file | `.^lookup` itself returned `(Mu)` | matches |
+| `token` in a role, composed into a grammar | role's declaration line/file | `Nil`/file only | matches (finding 1 above) |
+| `token` inherited from a parent grammar | parent's declaration line/file | `.^lookup` itself returned `(Mu)` | matches (finding 2 above) |
 | bare `/.../` literal | line 1, null `Str` file | `Nil`/`Nil` | `Nil`/`Nil` (unchanged, out of scope) |
 
 ## Coverage
