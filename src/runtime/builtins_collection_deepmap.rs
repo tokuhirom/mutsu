@@ -84,6 +84,53 @@ impl Interpreter {
         }
     }
 
+    /// The `rotor` **subroutine** (`Type/List.rakudoc`: "From language version
+    /// 6.e onward, there is also a subroutine `rotor`"). Its signature puts the
+    /// list LAST and the cycle spec first —
+    /// `rotor(**@cycle, \thing, Bool() :$partial)` — so it is exactly
+    /// `thing.rotor(@cycle, :$partial)` with the arguments rotated. Delegating
+    /// to the `.rotor` method keeps one implementation of the cycle semantics
+    /// (`Pair` gaps/overlaps, cycling, `:partial`).
+    ///
+    /// Rakudo gates it on `use v6.e.PREVIEW`; without the pragma a bare `rotor`
+    /// is an undeclared routine. mutsu applies the same gate here, at the call.
+    pub(super) fn builtin_rotor(&mut self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
+        if !crate::parser::current_language_version().starts_with("6.e") {
+            return Err(RuntimeError::new(
+                "Undeclared routine: rotor -- the rotor subroutine needs `use v6.e.PREVIEW`",
+            ));
+        }
+        let mut partial: Option<Value> = None;
+        let mut positional: Vec<Value> = Vec::with_capacity(raw_args.len());
+        for arg in raw_args {
+            let named_partial = match arg.view() {
+                ValueView::Pair(key, value) if key == "partial" => Some(value.clone()),
+                ValueView::ValuePair(key, value) if key.to_string_value() == "partial" => {
+                    Some(value.clone())
+                }
+                _ => None,
+            };
+            match named_partial {
+                Some(value) => partial = Some(value),
+                None => positional.push(arg.clone()),
+            }
+        }
+        let Some(thing) = positional.pop() else {
+            return Err(RuntimeError::new(
+                "Calling rotor() will never work with declared signature (**@cycle, \\thing, Bool() :$partial)",
+            ));
+        };
+        if positional.is_empty() {
+            return Err(RuntimeError::new(
+                "Calling rotor(\\thing) will never work with declared signature (**@cycle, \\thing, Bool() :$partial)",
+            ));
+        }
+        if let Some(partial) = partial {
+            positional.push(Value::pair("partial".to_string(), partial));
+        }
+        self.call_method_with_values(thing, "rotor", positional)
+    }
+
     pub(super) fn builtin_roundrobin(&self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
         // Split off the `:slip` adverb (a `slip => Bool` named arg); the rest are
         // the lists-of-lists streams. With `:slip`, the tuples are concatenated

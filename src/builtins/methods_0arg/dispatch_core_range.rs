@@ -501,67 +501,19 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
-        "minmax" => Some(match target.view() {
-            ValueView::Range(a, b) => Some(Ok(Value::array(vec![Value::int(a), Value::int(b)]))),
-            ValueView::RangeExcl(a, b) => {
-                Some(Ok(Value::array(vec![Value::int(a), Value::int(b - 1)])))
-            }
-            ValueView::RangeExclStart(a, b) => {
-                Some(Ok(Value::array(vec![Value::int(a + 1), Value::int(b)])))
-            }
-            ValueView::RangeExclBoth(a, b) => {
-                Some(Ok(Value::array(vec![Value::int(a + 1), Value::int(b - 1)])))
-            }
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } => {
-                let s_is_special = matches!(start.as_ref().view(), ValueView::Num(f) if f.is_infinite() || f.is_nan())
-                    || matches!(
-                        start.as_ref().view(),
-                        ValueView::Whatever | ValueView::HyperWhatever
-                    );
-                let e_is_special = matches!(end.as_ref().view(), ValueView::Num(f) if f.is_infinite() || f.is_nan())
-                    || matches!(
-                        end.as_ref().view(),
-                        ValueView::Whatever | ValueView::HyperWhatever
-                    );
-                if (excl_start && s_is_special) || (excl_end && e_is_special) {
-                    return Some(Some(Err(RuntimeError::new(
-                        "Cannot determine minmax with excluded infinite endpoints",
-                    ))));
-                }
-                let min_val = if excl_start {
-                    match start.as_ref().view() {
-                        ValueView::Int(i) => Value::int(i + 1),
-                        _ => start.as_ref().clone(),
-                    }
-                } else {
-                    match start.as_ref().view() {
-                        ValueView::Whatever | ValueView::HyperWhatever => {
-                            Value::num(f64::NEG_INFINITY)
-                        }
-                        _ => start.as_ref().clone(),
-                    }
-                };
-                let max_val = if excl_end {
-                    match end.as_ref().view() {
-                        ValueView::Int(i) => Value::int(i - 1),
-                        _ => end.as_ref().clone(),
-                    }
-                } else {
-                    match end.as_ref().view() {
-                        ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
-                        _ => end.as_ref().clone(),
-                    }
-                };
-                Some(Ok(Value::array(vec![min_val, max_val])))
-            }
-            ValueView::Array(..) | ValueView::Hash(_) => None,
-            _ => None,
-        }),
+        // `Range.minmax` folds an excluded end into the returned bound, but only
+        // when the range is `is-int` — an excluded *non-integer* end (`1.1..^5.2`,
+        // `'a'..^'z'`, `1..^Inf`) has no nameable concrete bound, and raku fails
+        // with `X::AdHoc: Cannot return minmax on Range with excluded ends`.
+        "minmax" => Some(
+            match crate::builtins::range_bounds_int::range_minmax(target) {
+                Some(Ok((min_val, max_val))) => Some(Ok(Value::array(vec![min_val, max_val]))),
+                Some(Err(())) => Some(Err(RuntimeError::new(
+                    "Cannot return minmax on Range with excluded ends",
+                ))),
+                None => None,
+            },
+        ),
         "infinite" => Some(match target.view() {
             ValueView::Range(..)
             | ValueView::RangeExcl(..)

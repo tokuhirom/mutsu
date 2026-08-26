@@ -76,6 +76,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "map",
     "grep",
     "roundrobin",
+    "rotor",
     "push",
     "pop",
     "shift",
@@ -861,6 +862,7 @@ impl Interpreter {
             "minmax" => self.builtin_minmax(&args),
             "cross" => self.builtin_cross(args),
             "roundrobin" => self.builtin_roundrobin(&args),
+            "rotor" => self.builtin_rotor(&args),
             // List operations
             "join" => self.builtin_join(&args),
             "item" => {

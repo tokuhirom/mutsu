@@ -268,6 +268,7 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "cross"
             | "zip"
             | "roundrobin"
+            | "rotor"
             | "await"
             | "sleep"
             | "sleep-timer"

@@ -200,6 +200,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "rotate",
     "round",
     "roundrobin",
+    "rotor",
     "run",
     "samecase",
     "samemark",

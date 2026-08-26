@@ -125,7 +125,15 @@ impl Interpreter {
                 | "candidates"
                 | "concretization"
                 | "curried_role"
+                // EnumHOW introspection. `elems` is listed here even though it
+                // is also an ordinary value method: on a HOW *instance* the two
+                // are distinct, and without this entry `C.^elems` fell through
+                // to the generic `.elems` handler, which has no implementation
+                // for a HOW and recursed until the stack overflowed.
                 | "enum_value_list"
+                | "enum_values"
+                | "enum_from_value"
+                | "elems"
                 | "coerce"
                 | "parameterize"
                 | "pun"

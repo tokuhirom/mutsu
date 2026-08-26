@@ -695,10 +695,22 @@ impl Interpreter {
         // short-circuit to an identity check and never reach the dispatch. Junction
         // LHS is excluded so junction autothreading still applies. Mirrors the
         // interpreter `smart_match` arm (the grep/given paths reach that one).
-        if let ValueView::Instance { class_name, .. } = right.view()
-            && !matches!(left.view(), ValueView::Junction { .. })
-            && self.has_user_method(&class_name.resolve(), "ACCEPTS")
-        {
+        // A role composed onto the matcher supplies `ACCEPTS` just as a class
+        // does — whether it was mixed in at runtime (`5 but Weird`) or composed
+        // by an `enum Flags does Weird (...)` declaration. Both used to fall
+        // straight into `pure_smart_match`, which compares the underlying
+        // values and never reaches the override.
+        let right_has_user_accepts = match right.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method(&class_name.resolve(), "ACCEPTS")
+            }
+            ValueView::Mixin(..) => self.mixin_composes_method(right, "ACCEPTS"),
+            ValueView::Enum { .. } | ValueView::Package(_) => {
+                self.enum_composes_role_method(right, "ACCEPTS")
+            }
+            _ => false,
+        };
+        if right_has_user_accepts && !matches!(left.view(), ValueView::Junction { .. }) {
             match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                 Ok(v) => return v.truthy(),
                 Err(e) => {

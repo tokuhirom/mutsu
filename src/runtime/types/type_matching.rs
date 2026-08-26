@@ -532,6 +532,22 @@ impl Interpreter {
             if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
                 return true;
             }
+            // An `enum Flags does Weird (...)` value does the composed role, the
+            // same way an instance of a class that composes it does.
+            let constraint_base = constraint.split('[').next().unwrap_or(constraint);
+            if self
+                .registry()
+                .class_composed_roles
+                .get(&enum_name)
+                .is_some_and(|roles| {
+                    roles.iter().any(|role| {
+                        role == constraint
+                            || role.split('[').next().unwrap_or(role) == constraint_base
+                    })
+                })
+            {
+                return true;
+            }
         }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);

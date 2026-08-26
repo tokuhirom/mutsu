@@ -470,6 +470,8 @@ mod methods_distribution_cur_inst;
 mod methods_distribution_cur_resolve;
 mod methods_distribution_helpers;
 mod methods_enum_dispatch;
+mod methods_enum_roles;
+mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
 mod methods_instance_ops;

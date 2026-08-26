@@ -2088,109 +2088,30 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // so `.int-bounds` must throw — matching raku, where both `(1..*).int-bounds`
     // and `(1..Inf).int-bounds` fail with "Cannot determine integer bounds".
     // GenericRange handles true Inf/NaN endpoints below.
-    if method == "int-bounds" {
-        // The i64::MIN/MAX sentinel marks an OPEN end (`1..Inf`, `1..*`) only
-        // when it appears alone: an open-above range has `end == i64::MAX` with
-        // a finite start, an open-below range `start == i64::MIN` with a finite
-        // end. When BOTH extremes are present the range is the genuine full-i64
-        // bound (`int64.Range` is `-9223372036854775808..9223372036854775807`),
-        // so it has concrete bounds and must NOT throw. Hence the XOR.
-        if let ValueView::Range(s, e)
-        | ValueView::RangeExcl(s, e)
-        | ValueView::RangeExclStart(s, e)
-        | ValueView::RangeExclBoth(s, e) = target.view()
-            && ((s == i64::MIN) ^ (e == i64::MAX))
-        {
-            let range_repr = crate::runtime::utils::gist_value(target);
-            return Some(Err(crate::value::RuntimeError::new(format!(
-                "Cannot determine integer bounds of {range_repr}"
-            ))));
-        }
-        match target.view() {
-            ValueView::Range(start, end) => {
-                return Some(Ok(Value::array(vec![Value::int(start), Value::int(end)])));
-            }
-            ValueView::RangeExcl(start, end) => {
-                return Some(Ok(Value::array(vec![
-                    Value::int(start),
-                    Value::int(end - 1),
-                ])));
-            }
-            ValueView::RangeExclStart(start, end) => {
-                return Some(Ok(Value::array(vec![
-                    Value::int(start + 1),
-                    Value::int(end),
-                ])));
-            }
-            ValueView::RangeExclBoth(start, end) => {
-                return Some(Ok(Value::array(vec![
-                    Value::int(start + 1),
-                    Value::int(end - 1),
-                ])));
-            }
-            ValueView::GenericRange {
-                start,
-                end,
-                excl_start,
-                excl_end,
-            } => {
-                // Check if endpoints contain Inf, -Inf, or NaN — these cannot
-                // have integer bounds.
-                let has_non_int_endpoint = |v: &Value| -> bool {
-                    match v.view() {
-                        ValueView::Num(f) => f.is_infinite() || f.is_nan(),
-                        ValueView::Str(_) => true,
-                        _ => false,
-                    }
-                };
-                if has_non_int_endpoint(start.as_ref()) || has_non_int_endpoint(end.as_ref()) {
-                    let range_repr = crate::runtime::utils::gist_value(target);
-                    return Some(Err(crate::value::RuntimeError::new(format!(
-                        "Cannot determine integer bounds of {range_repr}"
-                    ))));
-                }
-                let s = if excl_start {
-                    match start.as_ref().view() {
-                        ValueView::Int(n) => Value::int(n + 1),
-                        ValueView::BigInt(n) => Value::bigint(n.as_ref() + 1),
-                        ValueView::Rat(n, d) => {
-                            Value::int(((n as f64 / d as f64).floor() as i64) + 1)
-                        }
-                        _ => Value::int(start.as_ref().to_f64() as i64 + 1),
-                    }
-                } else {
-                    match start.as_ref().view() {
-                        ValueView::Int(_) | ValueView::BigInt(_) => start.as_ref().clone(),
-                        ValueView::Rat(n, d) => {
-                            let f = n as f64 / d as f64;
-                            Value::int(f.ceil() as i64)
-                        }
-                        _ => Value::int(start.as_ref().to_f64().ceil() as i64),
-                    }
-                };
-                let e = if excl_end {
-                    match end.as_ref().view() {
-                        ValueView::Int(n) => Value::int(n - 1),
-                        ValueView::BigInt(n) => Value::bigint(n.as_ref() - 1),
-                        ValueView::Rat(n, d) => {
-                            Value::int(((n as f64 / d as f64).ceil() as i64) - 1)
-                        }
-                        _ => Value::int(end.as_ref().to_f64() as i64 - 1),
-                    }
-                } else {
-                    match end.as_ref().view() {
-                        ValueView::Int(_) | ValueView::BigInt(_) => end.as_ref().clone(),
-                        ValueView::Rat(n, d) => {
-                            let f = n as f64 / d as f64;
-                            Value::int(f.floor() as i64)
-                        }
-                        _ => Value::int(end.as_ref().to_f64().floor() as i64),
-                    }
-                };
-                return Some(Ok(Value::array(vec![s, e])));
-            }
-            _ => {}
-        }
+    if method == "int-bounds"
+        && matches!(
+            target.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        )
+    {
+        // The zero-argument candidate: raku returns the `(from, to)` List and
+        // fails with `Cannot determine integer bounds` when the range has none
+        // (an infinite / `Whatever` end, a `Str` range, or a fractional lower
+        // bound). The two-argument `int-bounds($from is rw, $to is rw --> Bool)`
+        // candidate needs the caller's containers, so it is served by the VM
+        // (`vm/vm_range_int_bounds.rs`), not by this pure arity cascade.
+        return Some(
+            match crate::builtins::range_bounds_int::range_int_bounds(target) {
+                Some((from, to)) => Ok(Value::array(vec![from, to])),
+                None => Err(crate::value::RuntimeError::new(
+                    "Cannot determine integer bounds",
+                )),
+            },
+        );
     }
     // Kernel type object methods
     if let ValueView::Package(name) = target.view()
