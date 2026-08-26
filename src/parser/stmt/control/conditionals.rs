@@ -122,6 +122,25 @@ fn lower_if_clause_binding(
         // and resolves the name as a bare word — see
         // `Compiler::compile_if_binding_decl`.
         let p = &param_defs[0];
+        if !p.sigilless && p.name.trim_start_matches('$') == "_" {
+            // `if COND -> $_ { BODY }` binds a FRESH topic for the block, not an
+            // ordinary lexical: declaring it as one (`my $_ = COND`) writes the
+            // enclosing scope's topic slot and leaves the bound value behind
+            // after the branch. Evaluate the condition once into a hidden temp
+            // and topicalize the body through `given`, whose own topic opcodes
+            // establish and restore the scope — the same reason the `orwith`
+            // arm below lowers through `given`.
+            let source_binding = next_if_bind_tmp_name();
+            let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
+            return (
+                Some(source_binding),
+                vec![Stmt::Given {
+                    topic: source_expr,
+                    body: then_branch,
+                    is_statement_modifier: false,
+                }],
+            );
+        }
         let name = if p.sigilless {
             format!("\\{}", p.name)
         } else {
@@ -179,6 +198,15 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
         return else_clause.body;
     }
     if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
+        if param_defs[0].name.trim_start_matches('$') == "_" && !param_defs[0].sigilless {
+            // `else -> $_ { }` topicalizes through `given` for the same reason
+            // as the then-branch form — see `lower_if_clause_binding`.
+            return vec![Stmt::Given {
+                topic: Expr::Var(source_binding.trim_start_matches('$').to_string()),
+                body: else_clause.body,
+                is_statement_modifier: false,
+            }];
+        }
         let mut body = Vec::with_capacity(else_clause.body.len() + 1);
         body.push(Stmt::VarDecl {
             name: param_defs[0].name.clone(),

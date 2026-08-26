@@ -445,13 +445,19 @@ impl Interpreter {
         // (`my $r := $obj.ro-attr` — a non-rw accessor result) is bound to that
         // value itself, not a container: a later `$r = v` is "Cannot assign to
         // an immutable value" in raku. Literal binds (`my $x := 5`) get this
-        // from the parser's MarkReadonly; this covers the runtime-only cases.
+        // from the parser's MarkReadonly too; this covers the runtime-only
+        // cases.
         // Deliberately an ALLOWLIST of pure immutable scalar kinds: anything
         // container-like or writable-through (ContainerRef, Proxy STORE,
         // HashEntryRef deferred binds, `is raw` results, ...) must stay
         // writable, and an overlooked kind here turns into a hard runtime
         // error, so the conservative direction is to mark less.
-        if scalar_bind
+        //
+        // Only the *decision* is made here; the marking itself is applied
+        // AFTER the declaration bookkeeping below, which now unconditionally
+        // clears any stale readonly marking left by an earlier same-named
+        // binding (see the `unmark_readonly` call in the `is_vardecl` block).
+        let bind_marks_immutable = scalar_bind
             && bind_source.is_none()
             && matches!(
                 raw_popped.view(),
@@ -462,15 +468,7 @@ impl Interpreter {
                     | ValueView::Bool(_)
                     | ValueView::Rat(..)
                     | ValueView::Complex(..)
-            )
-        {
-            let bare = code.locals[idx].trim_start_matches(['$', '@', '%', '&']);
-            let bare = bare.to_string();
-            // A `$` name bound straight to a literal has no container of its
-            // own, so rakudo's assignment error is X::AdHoc "Cannot assign to
-            // an immutable value".
-            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
-        }
+            );
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -539,20 +537,25 @@ impl Interpreter {
             {
                 self.env_mut().remove_sym(sym);
             }
-            // Clear any readonly-parameter flag inherited from a caller/outer
-            // scope. `readonly_vars` is keyed by bare name and is NOT cleared on
-            // function entry, so a caller's readonly param (`sub f(Str $x){...}`)
-            // would otherwise make a callee's freshly-declared `my $x` readonly
-            // ("Cannot assign to a readonly variable (x)"). A plain `my $x = ...`
-            // always creates a new writable binding (a readonly trait, if any, is
-            // re-applied by the trait op that follows). EXCLUDE `:=` binds: a
-            // literal-bound scalar (`my $y := 5`) is genuinely readonly and that
-            // marking is set as part of the bind — unmarking it here would let a
-            // subsequent `$y = 6` slip through. Strip the sigil to match the bare
-            // key form used by check_readonly_for_modify.
+            // Clear any readonly flag inherited from an earlier binding of this
+            // bare name — a caller/outer-scope readonly param
+            // (`sub f(Str $x){...}` vs. a callee's own `my $x`), or a previous
+            // `my $x := <literal>` whose scope has already been left.
+            // `readonly_vars` is keyed by bare name and is NOT cleared on
+            // function entry or block exit, so without this a *fresh*
+            // declaration inherits a marking that no longer describes it.
+            //
+            // This runs for `:=` declarations too. A declaration is the point
+            // at which the name's readonly state is (re)established from
+            // scratch: the bind's own marking is applied right AFTER this block
+            // (`bind_marks_immutable` below) and by the trait/`MarkVarReadonly`
+            // ops the parser now emits after the declaration, so clearing here
+            // can no longer erase THIS declaration's own marking — only a stale
+            // one. Strip the sigil to match the bare key form used by
+            // `check_readonly_for_modify`.
             // Nothing is readonly yet: skip the sigil-strip + `Symbol::intern` of
             // the bare name (this runs on every declaration).
-            if !is_bind && !scalar_bind && !self.no_readonly_vars() {
+            if !self.no_readonly_vars() {
                 let bare = name.trim_start_matches(['$', '@', '%', '&']);
                 self.unmark_readonly(bare);
             }
@@ -620,6 +623,18 @@ impl Interpreter {
             {
                 self.env_mut().remove_sym(sym);
             }
+        }
+
+        // Apply the `:=`-to-immutable-literal marking decided above, now that
+        // the declaration bookkeeping has cleared any stale marking for this
+        // bare name. A `$` name bound straight to a literal has no container of
+        // its own, so rakudo's assignment error is X::AdHoc "Cannot assign to
+        // an immutable value".
+        if bind_marks_immutable {
+            let bare = code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .to_string();
+            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.

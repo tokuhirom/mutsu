@@ -2969,6 +2969,37 @@ impl Compiler {
         bind_stmts
     }
 
+    /// Whether every item a `for` over `iterable` yields is provably a bare
+    /// value with no container of its own — see
+    /// [`crate::opcode::ForLoopSpec::source_items_are_bare`]. Conservative: it
+    /// answers `true` only for shapes that can never produce a container.
+    pub(crate) fn for_iterable_yields_bare_items(iterable: &Expr) -> bool {
+        match iterable {
+            Expr::Grouped(inner) => Self::for_iterable_yields_bare_items(inner),
+            // A single literal (`for 5 { $_ = 1 }`) aliases the literal itself.
+            // A container-valued literal is excluded: its elements are the
+            // items, and those are containers (`for [1,2]` parses as
+            // `BracketArray`, but a folded constant could reach here).
+            Expr::Literal(v) => !matches!(
+                v.view(),
+                crate::value::ValueView::Array(..) | crate::value::ValueView::Hash(..)
+            ),
+            // A list built entirely out of literals (`for 1, 2`, `for <a b>`).
+            Expr::ArrayLiteral(items) => {
+                !items.is_empty() && items.iter().all(|i| matches!(i, Expr::Literal(_)))
+            }
+            // `.keys` on a container yields freshly built keys, never the
+            // container's element cells. Restricted to `@`/`%` variables so a
+            // user-defined `keys` method returning containers is not affected.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty() && *name == "keys" => {
+                matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
+            }
+            _ => false,
+        }
+    }
+
     fn for_iterable_source_name(iterable: &Expr) -> Option<String> {
         match iterable {
             Expr::Var(name) => Some(name.clone()),

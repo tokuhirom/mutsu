@@ -50,6 +50,32 @@ autovivification.
   Its failure mode has also changed since this file was written: it now dies with
   `Cannot assign to a readonly variable (a) or a value` rather than silently no-opping.
 
+## Downstream tickets that are blocked on this (measured 2026-08-26)
+
+Three open tickets were re-measured against `raku` v2026.06 and each reduces to
+this file's store-side half. Do not try to close them locally:
+
+- `todo/tickets/array-literal-nested-element-itemization-lost-in-raku.md` —
+  `say .raku for [3,2,[1,0]]` prints `$[1, 0]` in raku because Rakudo's
+  `List.raku` takes its invocant raw and tests `nqp::iscont`. It is the same
+  property as `@c[0].raku`, not an array-literal constructor quirk.
+- `todo/tickets/range-assigned-to-named-scalar-not-itemized-as-subscript.md` —
+  the ticket's own analysis already says so.
+- The topic rows of
+  `todo/tickets/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md`.
+  Raku decides "is `$_` writable?" per item, by whether the item is a container:
+  `for @a`, `for @a.values`, `for $a, $b`, `for @a[0..1]` and `for @a.map({…})`
+  all yield `Scalar`, while `for 1,2`, `for <a b>`, `for %h.keys` and `for %h`
+  yield the bare value's own type. `vm_for_loop_lazy.rs` already applies the
+  right runtime test (`item.is_container_ref()`); the eager path cannot, because
+  elements are stored bare — the test would mark the slice and `.map` rows
+  read-only and invent throws raku does not have. Only the *provably* bare
+  shapes were closed, via a compile-time `ForLoopSpec::source_items_are_bare`
+  flag (`news/2026-08/topic-var-name-still-scalar-for-literal-alias.md`); the
+  rest wait for ADR-0040. When ADR-0040's slice 5 lands, that compile-time flag
+  should be replaced by the same per-item `is_container_ref()` test the lazy
+  path uses, and the divergence table above re-run.
+
 ## Verification once fixed
 
 ```

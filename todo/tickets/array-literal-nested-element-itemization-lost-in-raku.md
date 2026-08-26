@@ -40,6 +40,28 @@ say .raku for [3,2,[1,0]];
   [1, 0]
   ```
 
+## Re-measured 2026-08-26: this is ADR-0040, not a local array-literal fix
+
+The hypothesis above ("nested array-literal elements need to be item-contained
+the way a plain scalar element already is") is the right *description* but the
+wrong *scope*. Rakudo's `List.raku` takes its invocant raw (`\SELF`) and prefixes
+`$` when `nqp::iscont(SELF)` — i.e. `.raku` is reporting whether the value it was
+called on sits in a container, and `for [3,2,[1,0]]` aliases `$_` to the
+element's Scalar container. The `$` prefix is therefore not a property of
+"nested array literal" at all; it is the same property as
+
+```
+$ mutsu -e 'my @c = [<a b>],[<c d>]; say @c[0].raku'   # ["a", "b"]   raku: $["a", "b"]
+$ mutsu -e 'my @c = [<a b>],; for @c { say .raku }'    # ["a", "b"]   raku: $["a", "b"]
+```
+
+which is exactly `todo/deep/element-itemization-lost-in-scalar-binding.md` /
+[ADR-0040](../../docs/adr/0040-array-hash-elements-are-itemized-at-the-store.md).
+Special-casing the array-literal constructor would fix the one printed line
+while leaving `@c[0].raku` wrong, and would put a second, competing itemization
+rule next to the one ADR-0040 designs. **Close this ticket with ADR-0040's slice
+work, not before it.**
+
 ## Affected files (starting point)
 
 - Array-literal (`[...]`) construction/compilation — likely `src/compiler/expr.rs` or

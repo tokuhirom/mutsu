@@ -73,6 +73,16 @@ tests. It is also the same underlying gap as the one recorded at the end of
 `news/2026-08/clone-array-hash-attribute-containers-not-shared.md`: mutsu's
 accessors return attribute **values** where Rakudo returns their **containers**.
 
+## Re-confirmed 2026-08-26 (second pass)
+
+Re-measured again as part of the itemization/readonly batch: `$.x = 9` still
+mutates and `$.x *= 2` still throws `X::Assignment::RO: method 'x' is not rw`.
+Deferred a second time for the reason recorded above — step 1 below (accessors
+returning containers) is a real semantic change to every attribute read, it
+changes `$obj.attr.VAR`, `=:=`-on-clones and `is rw` writeback at once, and the
+ticket itself asks for an ADR first. It is **not** blocked on ADR-0040 (element
+itemization); it is its own decision about what a public accessor returns.
+
 ## The right fix
 
 Make the accessor return the container, then let itemization do the rest — i.e.

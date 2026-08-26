@@ -52,6 +52,15 @@ entry `".attr"` from the *instance's* attribute map
 (reads `Nil`, hence the `0` from `++`) and the write-back has no destination —
 it dies with the call frame.
 
+## Re-confirmed 2026-08-26 (second pass)
+
+`say Foo.imm for ^5` still prints `0 0 0 0 0`. Left open deliberately: piece 2
+below (routing `$.x` inside a method at the class-level store) is the one that
+must NOT be built as a fourth seed-and-writeback site on the `".attr"` env
+mirror, and building it the right way — a canonical cell per ADR-0013/ADR-0039 —
+is a self-contained design slice that deserves its own agent rather than being
+bolted onto an unrelated readonly/topic batch.
+
 ## Why this is more than a one-line fix
 
 Three separate pieces are needed, and the middle one touches the dual-store
