@@ -27,7 +27,7 @@ pub(in crate::runtime) use signature::{
 pub(crate) use signature::{
     decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
 };
-pub(crate) use type_registry::is_builtin_role_name;
+pub(crate) use type_registry::{ROLE_PRETENDS_TO_BE, is_builtin_role_name};
 // Internal re-exports used by submodules via `use super::*`
 use signature::code_signature_matches_value;
 

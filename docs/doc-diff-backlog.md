@@ -281,13 +281,13 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Type/Any.rakudoc:1525` | ~~`.snip` with multiple positional predicates silently drops all but the first~~ | [resolved](../news/2026-08/snip-multiple-positional-matchers-dropped.md) |
 | `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
 | `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
-| `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
+| `Language/objects.rakudoc:1132` | ~~a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute~~ (nothing was truncated: the role's own method was outranked by the accessor of the role's own attribute) | [resolved](../news/2026-08/role-multi-method-trailing-literal-dropped.md) |
 | `Language/objects.rakudoc:1526` | `is default(0 but role :: {...})` on a typed Hash drops the role mixin on the default value | [hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md) |
 | `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
-| `Language/objects.rakudoc:1397` | a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message | [parametric-role-self-referential-attribute-typecheck.md](../todo/tickets/parametric-role-self-referential-attribute-typecheck.md) |
+| `Language/objects.rakudoc:1397` | ~~a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message~~ | [resolved](../news/2026-08/parametric-role-self-referential-attribute-typecheck.md) |
 | `Language/typesystem.rakudoc:657` | a custom `.gist` on a role-mixed native value is skipped when gisted inside an array/list | [role-mixed-value-gist-skipped-in-array.md](../todo/tickets/role-mixed-value-gist-skipped-in-array.md) |
 | `Language/typesystem.rakudoc:611` | a forward-declared role stub used by another role is never upgraded to its real body | [forward-declared-role-stub-not-upgraded.md](../todo/tickets/forward-declared-role-stub-not-upgraded.md) |
-| `Language/typesystem.rakudoc:644` | a role parameter's `fail(...)` default expression is never evaluated/enforced | [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md) |
+| `Language/typesystem.rakudoc:644` | ~~a role parameter's `fail(...)` default expression is never evaluated/enforced~~ (the `does` mixin path never evaluated role parameter defaults at all) | [resolved](../news/2026-08/role-parameter-fail-default-not-enforced.md) |
 
 The "a `but`/`does`-mixed value's role metadata does not survive a generic storage/dispatch
 path" family was investigated together (2026-08-26) and the hypothesis was CONFIRMED: the shared
@@ -312,9 +312,9 @@ and five siblings landed with it.
 - `Language/typesystem.rakudoc` [3] — `raku-drift` (object hex-address text, inherently
   non-reproducible).
 - `Language/typesystem.rakudoc` [6] — the exception *type* text is drift (`X::AdHoc` vs. real
-  raku's `X::Role::Instantiation`), but mutsu not throwing at all is real — filed as
-  [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md)
-  above.
+  raku's `X::Role::Instantiation`), but mutsu not throwing at all was real — fixed, see
+  [role-parameter-fail-default-not-enforced.md](../news/2026-08/role-parameter-fail-default-not-enforced.md)
+  above (mutsu now throws `X::Role::Instantiation` too).
 
 Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 `Language/traps.rakudoc` / `Language/variables.rakudoc`:
@@ -466,7 +466,7 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 | `Language/perl-var.rakudoc:154` | ~~`CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>`~~ | [resolved](../news/2026-08/compunit-repository-gist-missing-inst-prefix.md) |
 | `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
 | `Type/IO/Path/Parts.rakudoc:71` | `$parts[]` (empty postcircumfix index) on `IO::Path::Parts` shows the whole-object gist instead of iterating its 3 positional elements | [io-path-parts-empty-subscript-not-positional.md](../todo/tickets/io-path-parts-empty-subscript-not-positional.md) |
-| `Type/Metamodel/TypePretense.rakudoc:15,47` | `Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented | [role-type-pretense-cool-incomplete.md](../todo/tickets/role-type-pretense-cool-incomplete.md) |
+| `Type/Metamodel/TypePretense.rakudoc:15,47` | ~~`Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented~~ | [resolved](../news/2026-08/role-type-pretense-cool-incomplete.md) |
 
 **Excluded from this batch-4 sub-run (already deferred/resolved/drift/false-positive/environment):**
 - `Type/Scalar.rakudoc` [2] (line 53, `[1, 2, 3][0].VAR.^name` should be `Scalar`, mutsu gives
@@ -654,7 +654,7 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
 | `Language/ipc.rakudoc:14` | `run`/`shell` discard the child's stdout/stderr by default (`Stdio::null()`) instead of inheriting the parent's | [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md) |
 | `Language/numerics.rakudoc:353` | calling `.^name` on a `MAIN`-bound `IntStr` argument corrupts a later, unrelated `IntStr.new(...).^name` (reports `Str`) | [main-allomorph-arg-name-corrupts-later-intstr-new.md](../todo/tickets/main-allomorph-arg-name-corrupts-later-intstr-new.md) |
 | `Language/contexts.rakudoc:45` | a bare sub-CALL statement (`foo;`) returning a fresh custom-`.sink`-method instance never invokes `.sink` — the function-call-return residue recorded in [role-mixed-sink-method-not-invoked-in-sink-context.md](../news/2026-08/role-mixed-sink-method-not-invoked-in-sink-context.md) | (not re-filed — see Excluded below) |
-| `Type/PositionalBindFailover.rakudoc:34` | `does PositionalBindFailover` fails with `X::InvalidType` — the role is missing from the `BUILTIN_PARENT_TYPES` allow-list | [positionalbindfailover-not-recognized-as-builtin-role.md](../todo/tickets/positionalbindfailover-not-recognized-as-builtin-role.md) |
+| `Type/PositionalBindFailover.rakudoc:34` | ~~`does PositionalBindFailover` fails with `X::InvalidType` — the role is missing from the `BUILTIN_PARENT_TYPES` allow-list~~ (the shallow "recognize the type name" half only; the iterator-consultation behaviour stays with the Deferred custom-`Iterable`/`Iterator` cluster) | [resolved](../news/2026-08/positionalbindfailover-not-recognized-as-builtin-role.md) |
 | `Language/using-modules/code.rakudoc:95` | a module's `EXPORT::DEFAULT` namespace isn't a real, symbolically-navigable package (`::("Test::EXPORT::DEFAULT::&ok")` fails) | [export-default-package-not-symbolically-navigable.md](../todo/deep/export-default-package-not-symbolically-navigable.md) |
 | `Language/haskell-to-p6.rakudoc:263` | `.signature` on a `proto` sub reports a generic `($arg0)` placeholder instead of the declared signature | [proto-sub-signature-reports-generic-placeholder.md](../todo/tickets/proto-sub-signature-reports-generic-placeholder.md) |
 

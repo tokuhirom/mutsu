@@ -225,8 +225,14 @@ impl Interpreter {
                 );
                 return Err(RuntimeError::typed("X::Inheritance::SelfInherit", attrs));
             }
+            // A core role mutsu models natively rather than as a registered
+            // `RoleDef` (`PositionalBindFailover`, `Sequence`, `QuantHash`) is a
+            // legal `does` parent even though it appears in neither the class
+            // registry nor `BUILTIN_TYPES`. Consult the single core-role oracle
+            // instead of growing a fourth private list here.
             if !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
+                && !crate::runtime::types::is_builtin_role_name(base_parent)
                 && !self.registry().roles.contains_key(base_parent)
                 && !self.registry().enum_types.contains_key(base_parent)
             {

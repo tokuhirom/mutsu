@@ -244,11 +244,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
+        // A NAMED parameter may follow the pseudo-type just as a positional one
+        // can: `method create(::?ROLE:D :from(:$for)!)` constrains the named
+        // parameter, it does not declare an invocant (an invocant's `:` is
+        // attached directly to the type and was already consumed above). The
+        // marker is only a named parameter when an identifier or sigil follows
+        // it immediately — `::?CLASS:D : $x` keeps its invocant reading.
+        let starts_named_param = r
+            .strip_prefix(':')
+            .and_then(|after| after.chars().next())
+            .is_some_and(|c| matches!(c, '$' | '@' | '%' | '&') || c.is_alphabetic() || c == '_');
         if r.starts_with('$')
             || r.starts_with('@')
             || r.starts_with('%')
             || r.starts_with('&')
             || r.starts_with('\\')
+            || starts_named_param
         {
             type_constraint = Some(tc);
             rest = r;

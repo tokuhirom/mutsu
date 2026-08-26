@@ -445,6 +445,91 @@ impl Interpreter {
             .then(|| (resolved, Vec::new()))
     }
 
+    /// Bind a parameterised role's type parameters to their DEFAULTS, for a
+    /// composition that supplied no explicit arguments (`1 does R` where
+    /// `role R[$p = 5]`). Rakudo instantiates the role at composition time, so
+    /// the defaults are evaluated even when nothing reads them — which is what
+    /// makes a default that raises (`role R[$p = fail("boom")]`) reject the
+    /// composition with X::Role::Instantiation instead of silently leaving the
+    /// parameter unbound.
+    ///
+    /// Returns `(declared parameter name, value)` pairs; empty when the role
+    /// takes no type parameters or they are not all defaulted (an unsatisfiable
+    /// parameterisation is left to the candidate search to report).
+    ///
+    /// This is the mixin-path counterpart of what the class-header path already
+    /// does through `resolve_role_candidate` and what `.new` does through
+    /// `materialize_default_parametric_role`.
+    fn role_default_type_param_bindings(
+        &mut self,
+        role_name: &str,
+    ) -> Result<Vec<(String, Value)>, RuntimeError> {
+        let Some(candidates) = self.registry().role_candidates.get(role_name).cloned() else {
+            return Ok(Vec::new());
+        };
+        let Some(candidate) = candidates.into_iter().find(|candidate| {
+            !candidate.type_param_defs.is_empty()
+                && candidate
+                    .type_param_defs
+                    .iter()
+                    .all(|pd| pd.default.is_some() || pd.optional_marker)
+        }) else {
+            return Ok(Vec::new());
+        };
+        let sig_names: Vec<String> = candidate
+            .type_param_defs
+            .iter()
+            .map(|pd| pd.name.clone())
+            .collect();
+        let saved_env = self.env.clone();
+        let bound = self.bind_function_args_values(&candidate.type_param_defs, &sig_names, &[]);
+        let mut bindings = Vec::new();
+        if bound.is_ok() {
+            for (i, sig_name) in sig_names.iter().enumerate() {
+                // A TYPE-CAPTURE parameter (`role E[::T = Int]`) binds its
+                // signature slot under the generated `__type_capture__T` name
+                // and the captured type under the bare capture name; the role
+                // body reads the latter. Same lookup `materialize_default_
+                // parametric_role` performs for the `.new` path.
+                let capture = candidate.type_param_defs[i]
+                    .type_constraint
+                    .as_deref()
+                    .and_then(|constraint| constraint.strip_prefix("::"));
+                let Some(value) = self
+                    .env
+                    .get(capture.unwrap_or(sig_name.as_str()))
+                    .or_else(|| self.env.get(sig_name))
+                    .cloned()
+                else {
+                    continue;
+                };
+                // Key by the role's declared parameter spelling (what the role
+                // body reads), recording the signature spelling too when they
+                // differ — the same convention `bind_role_type_params` uses.
+                let declared = candidate.type_params.get(i).unwrap_or(sig_name);
+                bindings.push((declared.clone(), value.clone()));
+                if declared != sig_name {
+                    bindings.push((sig_name.clone(), value));
+                }
+            }
+        }
+        self.env = saved_env;
+        match bound {
+            Ok(_) => Ok(bindings),
+            // `fail(...)` in a default is an exception-like signal, not a scope
+            // transfer: raku reports it as X::Role::Instantiation wrapping the
+            // X::AdHoc, exactly like a plain `die`. Any other control signal
+            // (a `return`/`last` escaping the default) travels on untouched.
+            Err(err)
+                if err.control.is_none()
+                    || matches!(err.control, Some(crate::value::Control::Fail)) =>
+            {
+                Err(RuntimeError::role_instantiation(role_name, err))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     fn compose_role_on_value(
         &mut self,
         left: Value,
@@ -542,6 +627,14 @@ impl Interpreter {
                     format!("__mutsu_role_param__{}", param_name),
                     type_arg.clone(),
                 );
+            }
+        } else if role.is_some() {
+            // No explicit arguments: instantiate the role at its defaults. The
+            // composed name stays the unparameterised `Int+{R}` (raku agrees),
+            // but the parameters ARE bound — and a default that raises rejects
+            // the composition right here.
+            for (param_name, value) in self.role_default_type_param_bindings(role_name)? {
+                mixins.insert(format!("__mutsu_role_param__{}", param_name), value);
             }
         }
         // Store the role's unique ID so that different lexical roles with the

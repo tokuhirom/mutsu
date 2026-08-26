@@ -596,6 +596,27 @@ impl Interpreter {
             let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
             return target_ok || source_ok;
         }
+        // Raku's `Metamodel::TypePretense`: an un-composed role type object
+        // "pretends" to be part of the `Cool`/`Any`/`Mu` chain, so
+        // `role R {}; R ~~ Cool` is True even though a role has no MRO of its
+        // own. `Any`/`Mu` already answer True through the universal arms in
+        // `type_matches`; `Cool` is the level that needs asserting here.
+        // Only the role type OBJECT pretends — an instance of a class that
+        // composes the role is judged by that class's own MRO.
+        if constraint == "Cool" {
+            let role_type_name = match value.view() {
+                ValueView::Package(package_name) => Some(package_name.resolve()),
+                // A curried role (`R[Int]`) is a role type object too.
+                ValueView::ParametricRole { base_name, .. } => Some(base_name.resolve()),
+                _ => None,
+            };
+            if let Some(name) = role_type_name {
+                let base = name.split_once('[').map_or(name.as_str(), |(base, _)| base);
+                if self.is_role_type_name(base) {
+                    return true;
+                }
+            }
+        }
         if let ValueView::Package(package_name) = value.view()
             && package_matches_type(&package_name.resolve(), constraint)
         {

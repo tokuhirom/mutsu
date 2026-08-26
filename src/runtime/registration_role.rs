@@ -216,6 +216,13 @@ impl Interpreter {
             self.eval_role_arg_values(&arg_exprs)?
         };
 
+        // When NO arguments were supplied and a candidate's parameters are all
+        // defaulted, a binding failure can only come from evaluating one of
+        // those defaults — `role R[$p = fail("boom")]` — which raku reports as
+        // X::Role::Instantiation wrapping the original, not as "no candidate".
+        // Remember the first such error so the empty-match path below can
+        // report the real cause instead of swallowing it.
+        let mut default_eval_error: Option<RuntimeError> = None;
         let mut matches: Vec<(RoleCandidateDef, i32, usize)> = candidates
             .into_iter()
             .enumerate()
@@ -227,15 +234,29 @@ impl Interpreter {
                     .collect::<Vec<_>>();
                 let ok = if self.role_candidate_arity_ok(&arg_values, &candidate.type_param_defs) {
                     let saved_env = self.env.clone();
-                    let ok = self
-                        .bind_function_args_values(
-                            &candidate.type_param_defs,
-                            &candidate_param_names,
-                            &arg_values,
-                        )
-                        .is_ok();
+                    let bound = self.bind_function_args_values(
+                        &candidate.type_param_defs,
+                        &candidate_param_names,
+                        &arg_values,
+                    );
                     self.env = saved_env;
-                    ok
+                    match bound {
+                        Ok(_) => true,
+                        Err(err) => {
+                            let all_defaulted = !candidate.type_param_defs.is_empty()
+                                && candidate
+                                    .type_param_defs
+                                    .iter()
+                                    .all(|pd| pd.default.is_some() || pd.optional_marker);
+                            if arg_values.is_empty()
+                                && all_defaulted
+                                && default_eval_error.is_none()
+                            {
+                                default_eval_error = Some(err);
+                            }
+                            false
+                        }
+                    }
                 } else {
                     false
                 };
@@ -252,6 +273,9 @@ impl Interpreter {
             .collect();
 
         if matches.is_empty() {
+            if let Some(err) = default_eval_error {
+                return Err(RuntimeError::role_instantiation(base_role_name, err));
+            }
             return Err(RuntimeError::typed_msg(
                 "X::Role::Parametric::NoSuchCandidate",
                 "No matching candidate found for the parametric role",

@@ -170,9 +170,37 @@ impl Interpreter {
         Some(shape)
     }
 
+    /// Split `Base[Arg, ...]` into its base name and argument spellings, or
+    /// `None` when `name` is not a single parameterisation.
+    ///
+    /// The bracket that opens the parameterisation must be closed by the FINAL
+    /// character; a name that merely starts with a parameterisation and
+    /// continues afterwards (`Box[Int]::Box[Int]`, which
+    /// `resolve_type_name_for_owner` builds by concatenating an owner and a
+    /// short name) is not a parametric type at all. Without the balance check
+    /// that string parsed as base `Box` with the junk argument `Int]::Box[Int`,
+    /// so `has_type_direct` accepted it as a real type and a self-referential
+    /// parametric-role attribute (`role Box[::T] { has Box[T] $.child }`) was
+    /// type-checked against the doubled name.
     pub(super) fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
         let base_end = name.find('[')?;
         if !name.ends_with(']') {
+            return None;
+        }
+        let mut depth = 0usize;
+        for (offset, ch) in name[base_end..].char_indices() {
+            match ch {
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth == 0 && base_end + offset != name.len() - 1 {
+                        return None;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
             return None;
         }
         let base = name[..base_end].trim().to_string();

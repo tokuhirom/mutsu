@@ -222,7 +222,11 @@ say "loaded ok";
 
 `raku`: `loaded ok`. `mutsu`: `Invalid typename 'from' in parameter declaration.`
 
-Ticket: [`todo/tickets/role-meta-invocant-nested-colonpair-alias-param.md`](../../todo/tickets/role-meta-invocant-nested-colonpair-alias-param.md)
+**Fixed 2026-08-26** — `::?ROLE:D` there is not an invocant at all; it constrains the
+named parameter that follows, and the parser's pseudo-type arm only recognised a *sigil*
+(not a named-parameter marker) as "a parameter follows".
+See [`news/2026-08/role-meta-invocant-nested-colonpair-alias-param.md`](../../news/2026-08/role-meta-invocant-nested-colonpair-alias-param.md).
+The remaining `LibXML` blocker below (the NativeCall `$CLIB` gap) is unaffected.
 
 None of these bugs (the two above, plus the two `LibXML` bugs below) are XML-specific —
 they are general grammar-dynamic-scoping, parser, and NativeCall gaps that happened to
