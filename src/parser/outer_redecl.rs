@@ -263,7 +263,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &mut Ctx) {
             walk_expr(topic, ctx);
             walk_scoped_body(body, ctx);
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             walk_expr(cond, ctx);
             walk_scoped_body(body, ctx);
         }

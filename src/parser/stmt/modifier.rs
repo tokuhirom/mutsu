@@ -409,7 +409,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
         let cond_input = r;
-        let (r, cond) = expression(r).map_err(|err| PError {
+        let (r, cond) = parse_comma_or_expr(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected condition expression after 'if'",
                 &err.messages,
@@ -443,7 +443,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     if let Some(r) = keyword("unless", rest) {
         let (r, _) = ws1(r)?;
         let cond_input = r;
-        let (r, cond) = expression(r).map_err(|err| PError {
+        let (r, cond) = parse_comma_or_expr(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected condition expression after 'unless'",
                 &err.messages,
@@ -671,7 +671,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
 
     if let Some(r) = keyword("when", rest) {
         let (r, _) = ws1(r)?;
-        let (r, cond) = expression(r).map_err(|err| PError {
+        let (r, cond) = parse_comma_or_expr(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected match expression after 'when'",
                 &err.messages,
@@ -693,6 +693,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 body: vec![Stmt::When {
                     cond,
                     body: vec![stmt],
+                    is_statement_modifier: true,
                 }],
                 is_statement_modifier: true,
             },

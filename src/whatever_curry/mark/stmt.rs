@@ -73,7 +73,7 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
             super::expr::mark_expr(topic);
             mark_stmts(body);
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             super::expr::mark_expr(cond);
             mark_stmts(body);
         }

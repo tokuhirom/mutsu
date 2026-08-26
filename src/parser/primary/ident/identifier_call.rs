@@ -595,6 +595,28 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        // `when COND { ... }` / `default { ... }` used as a TERM. Raku's `(...)`
+        // holds a semilist of statements, so a control clause is legal there:
+        // `$_ == 42 and (default { "b".say; 43 })` (control.rakudoc) runs the
+        // block and then unwinds the enclosing topicalizer via `succeed`,
+        // exactly like the statement form. The `ws1` guard keeps a user-defined
+        // `sub when` callable as `when()`; `default` additionally requires its
+        // block, since a bare `default` is a common routine/named-argument name.
+        "when" => {
+            if ws1(rest).is_ok()
+                && let Ok((r, stmt)) = crate::parser::stmt::when_stmt_pub(input)
+            {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
+        "default" => {
+            let after = rest.trim_start();
+            if after.starts_with('{')
+                && let Ok((r, stmt)) = crate::parser::stmt::default_stmt_pub(input)
+            {
+                return Ok((r, Expr::DoStmt(Box::new(stmt))));
+            }
+        }
         "while" => {
             if let Ok((r, stmt)) = crate::parser::stmt::while_stmt_pub(input) {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));

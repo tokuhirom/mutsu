@@ -694,6 +694,10 @@ impl Compiler {
             .as_deref()
             .map(Self::control_block_is_resume_safe)
             .unwrap_or(false);
+        let control_handles_take = control_stmts
+            .as_deref()
+            .map(Self::control_block_handles_take)
+            .unwrap_or(false);
         // Emit TryCatch placeholder. Mark it a bare-block callframe only when the
         // `Stmt::Block` arm requested it for a genuine source `{ ...; CATCH { } }`.
         let is_bare_block = std::mem::take(&mut self.next_try_is_bare_block);
@@ -703,6 +707,7 @@ impl Compiler {
             body_end: 0,
             explicit_catch: has_explicit_catch,
             resume_safe,
+            control_handles_take,
             is_bare_block,
             traps,
         });
@@ -949,7 +954,7 @@ impl Compiler {
             let mut warn_arm_seen = false;
             for s in &meaningful {
                 match s {
-                    Stmt::When { cond, body } => match Self::when_cond_warn_class(cond) {
+                    Stmt::When { cond, body, .. } => match Self::when_cond_warn_class(cond) {
                         WhenWarnClass::Warn => {
                             warn_arm_seen = true;
                             if !Self::control_block_body_resumes(body) {
@@ -1036,6 +1041,20 @@ impl Compiler {
             }
             _ => WhenWarnClass::Unknown,
         }
+    }
+
+    /// Whether a CONTROL block has an arm that can match a `CX::Take`: an
+    /// explicit `when CX::Take` clause or a catch-all `default`. Anything else
+    /// (a `when` for a different `CX::` type, or an unclassifiable matcher)
+    /// does not count — a `when` whose matcher we cannot read stays
+    /// conservative (`false`), keeping `take`'s direct fast path.
+    fn control_block_handles_take(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| match s {
+            Stmt::SetLine(_) => false,
+            Stmt::Default(_) => true,
+            Stmt::When { cond, .. } => matches!(cond, Expr::BareWord(n) if n == "CX::Take"),
+            _ => false,
+        })
     }
 
     fn expr_is_resume_call(e: &Expr) -> bool {

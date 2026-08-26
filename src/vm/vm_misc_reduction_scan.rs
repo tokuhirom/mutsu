@@ -248,6 +248,19 @@ impl Interpreter {
             val = Value::seq(items);
         }
         if self.gather_items_len() > 0 {
+            // Raku's `take` ALWAYS raises a `CX::Take` control exception, and
+            // `gather` is only its outermost handler: a lexically nearer
+            // `CONTROL { when CX::Take {...} }` (or a catch-all `default`)
+            // intercepts it first and may `.resume` it, which discards the
+            // value. mutsu appends straight into the gather buffer for speed,
+            // so route through the control exception only when the innermost
+            // active CONTROL handler actually declares an arm that can match a
+            // `CX::Take` (`OpCode::TryCatch::control_handles_take`). Handlers
+            // that cannot match it keep the direct path, so the common
+            // `gather`+`CATCH`/`CONTROL` combination is unaffected.
+            if self.control_handlers.last().is_some_and(|h| h.handles_take) {
+                return Err(RuntimeError::take_signal(val));
+            }
             self.take_value(val)
         } else {
             // No enclosing gather — raise a CX::Take control exception so a

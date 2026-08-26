@@ -1647,10 +1647,22 @@ pub(crate) enum OpCode {
     },
     When {
         body_end: u32,
+        /// True for the postfix `STMT when COND` spelling. Rakudo lowers that
+        /// to a plain conditional, so it is not a `when` *clause*: a `proceed`
+        /// raised inside it must keep unwinding to the nearest real `when`
+        /// clause instead of being consumed here. See `Stmt::When`'s field.
+        statement_modifier: bool,
     },
     Default {
         body_end: u32,
     },
+    /// Push the value a *non-matching* `when` clause evaluates to when the
+    /// clause is used as a TERM (`say (when 42 { 43 })`). A matching clause
+    /// never reaches this op — it unwinds via `succeed` carrying its own value.
+    /// Raku boxes a type-object matcher's `nqp::istype` result as `Int 0` and
+    /// everything else as `Bool::False`; `exec_when_op` already records which,
+    /// so this consumes that one-shot record (defaulting to `False`).
+    PushWhenNonmatch,
 
     // -- Repeat loop (compound opcode) --
     RepeatLoop {
@@ -1900,6 +1912,16 @@ pub(crate) enum OpCode {
         /// what enables cross-frame resumable warns. Computed at compile time
         /// from the CONTROL block AST (the runtime cannot see the AST).
         resume_safe: bool,
+        /// True when this block's CONTROL handler has an arm that can match a
+        /// `CX::Take` — an explicit `when CX::Take` or a catch-all `default`.
+        /// Raku's `take` ALWAYS raises a `CX::Take` control exception, which
+        /// `gather` is merely the outermost handler of; a lexically nearer
+        /// CONTROL block sees it first and can `.resume` it (discarding the
+        /// value) or handle it without resuming (abandoning the block). mutsu
+        /// takes directly into the gather buffer for speed, so this flag marks
+        /// the rare blocks where the control-exception route must be taken
+        /// instead. Computed at compile time from the CONTROL block AST.
+        control_handles_take: bool,
         /// True when this try/catch frame is a genuine bare block statement
         /// (`{ ...; CATCH { } }`) from source. Like `BlockScope::is_bare_block`,
         /// such a block is a callframe and contributes an anonymous backtrace

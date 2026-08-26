@@ -240,7 +240,7 @@ fn check_bare_var_stmt(stmt: &Stmt, var_name: &str, found: &mut bool) {
                 }
             }
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             check_bare_var_expr(cond, var_name, found);
             if matches!(
                 placeholder_body_kind(stmt),
@@ -589,7 +589,7 @@ fn order_check_stmt(stmt: &Stmt, state: &mut OrderState) {
                 }
             }
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             order_check_expr(cond, state);
             if matches!(
                 placeholder_body_kind(stmt),

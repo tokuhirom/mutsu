@@ -288,7 +288,7 @@ pub(crate) fn auto_signature_uses(stmts: &[Stmt]) -> (bool, bool) {
                     scan_stmt(s, positional, named);
                 }
             }
-            Stmt::When { cond, body } => {
+            Stmt::When { cond, body, .. } => {
                 scan_expr(cond, positional, named);
                 for s in body {
                     scan_stmt(s, positional, named);

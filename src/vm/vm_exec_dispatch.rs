@@ -4082,13 +4082,21 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            OpCode::When { body_end } => {
+            OpCode::When {
+                body_end,
+                statement_modifier,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_when_op(code, *body_end, ip, compiled_fns)?;
+                self.exec_when_op(code, *body_end, *statement_modifier, ip, compiled_fns)?;
             }
             OpCode::Default { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_default_op(code, *body_end, ip, compiled_fns)?;
+            }
+            OpCode::PushWhenNonmatch => {
+                let v = self.when_nonmatch_value.take().unwrap_or(Value::FALSE);
+                self.stack.push(v);
+                *ip += 1;
             }
 
             // -- Repeat loop --
@@ -4108,6 +4116,7 @@ impl Interpreter {
                 body_end,
                 explicit_catch,
                 resume_safe,
+                control_handles_take,
                 is_bare_block,
                 traps,
             } => {
@@ -4119,6 +4128,7 @@ impl Interpreter {
                     *body_end,
                     *explicit_catch,
                     *resume_safe,
+                    *control_handles_take,
                     *is_bare_block,
                     *traps,
                     ip,
@@ -4381,6 +4391,14 @@ impl Interpreter {
                     // loop in a different code object never claims it.
                     if e.message == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL {
                         e.set_take_suspend_site(Some((code.ops.as_ptr() as usize, *ip)));
+                    }
+                    // A `CX::Take` a CONTROL block may `.resume`: record where
+                    // execution continues (the statement after this take), the
+                    // same way every resumable call site does. Without it a
+                    // `CONTROL { when CX::Take { .resume } }` silently
+                    // abandoned the rest of the block.
+                    if e.is_take() && self.resume_ip.is_none() {
+                        self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                     }
                     return Err(e);
                 }
