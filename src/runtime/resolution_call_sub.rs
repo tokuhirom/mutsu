@@ -101,6 +101,89 @@ impl Interpreter {
         }
     }
 
+    /// Resolve `name`'s `is native` C-FFI descriptor, if any, honoring Raku's
+    /// lexical-shadowing rule: a same-file (or otherwise more locally
+    /// declared) plain sub of the same bare name always wins over an
+    /// imported/needed native descriptor.
+    ///
+    /// A package-qualified `name` (`Foo::Bar::baz`) is unambiguous — it
+    /// always resolves straight to `native_call_specs[name]` (falling back to
+    /// the short name, for a descriptor registered before this qualified key
+    /// existed).
+    ///
+    /// A *bare* `name` walks the same package chain ordinary bare-name
+    /// routine lookup uses (`bare_name_packages()`, innermost scope first,
+    /// ending at `GLOBAL`). At each enclosing package, whichever of these is
+    /// found FIRST decides that scope:
+    ///
+    /// - A native descriptor registered directly under `pkg::name` — this is
+    ///   the native routine's own declaring scope, so dispatch natively.
+    /// - A registered `FunctionDef` under `pkg::name` (a plain sub, or a
+    ///   `multi` candidate keyed `pkg::name/<arity...>`) — trace it to its
+    ///   TRUE declaring package via `FunctionDef::package`: `use`/`import`
+    ///   re-exporting an already-registered routine into a new package
+    ///   aliases the exact same `Arc<FunctionDef>` under the new qualified
+    ///   key (`import_module`) without rewriting `package`, so a re-exported
+    ///   NativeCall sub (e.g. `use NCTypeAliasMod;` pulling `alloc` into the
+    ///   importing script's `GLOBAL` scope) still traces back to its real
+    ///   native home and dispatches natively — it is the SAME routine, not a
+    ///   shadow (regression: `t/nativecall-constant-type-alias.t`). If the
+    ///   true owner carries no native descriptor for `name`, this is a
+    ///   genuinely different (non-native) routine — whether declared locally
+    ///   or imported from a third module — so stop the walk and return
+    ///   `None`, letting ordinary dispatch reach that exact `FunctionDef`.
+    ///   `native_call_specs` is otherwise a single flat, unscoped table, so
+    ///   without this walk a call would keep routing to whichever native
+    ///   descriptor happened to share the bare name, no matter how it was
+    ///   registered relative to a same-file local wrapper; see
+    ///   `Compress::Zlib.pm6`'s local 2-arg `compress` wrapper (imported into
+    ///   a caller's `GLOBAL` scope exactly like `alloc` above, but tracing
+    ///   back to `Compress::Zlib`, which has no native `compress` of its
+    ///   own) around `Compress::Zlib::Raw`'s 4-arg native `compress`,
+    ///   `news/2026-08/native-call-local-sub-shadows-imported-same-name.md`.
+    /// - Neither: continue to the next enclosing package.
+    ///
+    /// Finding neither at any enclosing package falls back to the historic
+    /// flat bare-name entry for backward compatibility.
+    pub(crate) fn resolve_native_call_spec(
+        &self,
+        name: &str,
+    ) -> Option<crate::runtime::nativecall::NativeCallSpec> {
+        if name.contains("::") {
+            return self.native_call_specs.get(name).cloned().or_else(|| {
+                name.rsplit_once("::")
+                    .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
+            });
+        }
+        // Trace a `FunctionDef` to its declaring package's native descriptor
+        // for `name`, if it has one — see the doc comment above.
+        let native_of_true_owner = |def: &FunctionDef| {
+            let owner = def.package.resolve();
+            self.native_call_specs
+                .get(&format!("{owner}::{name}"))
+                .cloned()
+        };
+        for pkg in self.bare_name_packages() {
+            let qualified = format!("{pkg}::{name}");
+            if let Some(spec) = self.native_call_specs.get(&qualified) {
+                return Some(spec.clone());
+            }
+            if let Some(def) = self.registry().functions.get(&Symbol::intern(&qualified)) {
+                return native_of_true_owner(def);
+            }
+            let multi_prefix = format!("{qualified}/");
+            if let Some((_, def)) = self
+                .registry()
+                .functions
+                .iter()
+                .find(|(k, _)| k.resolve().starts_with(&multi_prefix))
+            {
+                return native_of_true_owner(def);
+            }
+        }
+        self.native_call_specs.get(name).cloned()
+    }
+
     /// Dispatch `name` over C FFI if it is a registered `is native` sub.
     /// `Ok(None)` means "not a native sub" — the caller continues normally.
     ///
@@ -113,10 +196,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
-        let Some(mut spec) = self.native_call_specs.get(name).cloned().or_else(|| {
-            name.rsplit_once("::")
-                .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
-        }) else {
+        let Some(mut spec) = self.resolve_native_call_spec(name) else {
             return Ok(None);
         };
         self.resolve_native_ret_struct(&mut spec);

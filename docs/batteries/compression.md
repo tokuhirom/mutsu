@@ -55,7 +55,7 @@ not for standalone `.xz` streams).
 | Candidate | Version | Released | License | Runtime deps | GitHub | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **`Compress::Zlib::Raw`** | 1.0.1 | 2018-04-26 | MIT² | none | [retupmoca/P6-Compress-Zlib-Raw](https://github.com/retupmoca/P6-Compress-Zlib-Raw) — ★3, last push 2024-03-22, not archived | 3 | **1/1** (7 tests) | **1/1** ✅ (7/7) |
-| **`Compress::Zlib`** | 1.1.0 | 2019-03-11 | MIT² | `Compress::Zlib::Raw` | [retupmoca/P6-Compress-Zlib](https://github.com/retupmoca/P6-Compress-Zlib) — ★4, last push 2022-03-16, not archived | 9 | **3/3** (18 tests) | **0/3** ❌ — 2 distinct blockers, see below |
+| **`Compress::Zlib`** | 1.1.0 | 2019-03-11 | MIT² | `Compress::Zlib::Raw` | [retupmoca/P6-Compress-Zlib](https://github.com/retupmoca/P6-Compress-Zlib) — ★4, last push 2022-03-16, not archived | 9 | **3/3** (18 tests) | **1/3** ❌ — 1 remaining blocker, see below |
 | **`Compress::Bzip2::Raw`** | 0.2.2 | 2021-03-31 | Artistic-2.0 | none | [Altai-man/perl6-Compress-Bzip2-Raw](https://github.com/Altai-man/perl6-Compress-Bzip2-Raw) — ★1, last push 2023-09-16, not archived | 1 | **1/1** (9 tests) | **1/1** ✅ (9/9) |
 | **`Compress::Bzip2`** | 0.4.1 | 2021-03-31 | Artistic-2.0 | `Compress::Bzip2::Raw` | [Altai-man/perl6-Compress-Bzip2](https://github.com/Altai-man/perl6-Compress-Bzip2) — ★2, last push 2023-09-16, not archived | 3 | **1/1** (10 tests) | **0/1** ❌ — parse failure, see below |
 | `Compress::Zstd` | 0.0.3 | 2019-09-12 | Artistic-2.0 | none | [timo/Compress-Zstd](https://github.com/timo/Compress-Zstd) — ★0, last push 2019-09-12, not archived | 0 | **2/2**³ (12 tests) | not measured⁴ |
@@ -145,19 +145,25 @@ to target.
 
 ## What blocks mutsu today
 
-Every ergonomic (non-`::Raw`) candidate in both tables is blocked by a real,
+Every ergonomic (non-`::Raw`) candidate in both tables was blocked by a real,
 reproducible mutsu bug — the low-level `::Raw`/`Bzip2::Raw` 1:1 C bindings
 work perfectly, but the moment a higher-level Raku wrapper adds its own logic
-on top, something breaks. Four distinct, independently-filed bugs (two of
+on top, something breaks. Four distinct, independently-filed bugs (three of
 which have since been fixed — see their entries):
 
-1. **[`nativecall-local-sub-shadows-imported-same-name.md`](../../todo/tickets/nativecall-local-sub-shadows-imported-same-name.md)**
-   — `Compress::Zlib.pm6` declares its own `sub compress(Blob $data, Int
+1. ~~`nativecall-local-sub-shadows-imported-same-name.md`~~ — **FIXED**
+   ([news](../../news/2026-08/native-call-local-sub-shadows-imported-same-name.md)).
+   `Compress::Zlib.pm6` declares its own `sub compress(Blob $data, Int
    $level = 6)`, which should shadow the 4-arg `sub compress(...)` imported
    from `Compress::Zlib::Raw` (Raku's own-file-declaration-shadows-import
-   rule). mutsu resolves the *imported* symbol instead, so every call
-   fails with an arity mismatch (`NativeCall: 'compress' expects 4
-   argument(s), got 1`). Blocks `Compress::Zlib` entirely (0/3 files).
+   rule); mutsu resolved the *imported* symbol instead, so every call
+   failed with an arity mismatch (`NativeCall: 'compress' expects 4
+   argument(s), got 1`). The root cause was a general dispatch bug: the
+   `native_call_specs` C-FFI descriptor table was a single flat, unscoped
+   map keyed by bare name, consulted before any lexical resolution.
+   `Compress::Zlib`'s `t/01-basic.t` is now 5/5 (raku: 5/5). `t/02-stream.t`
+   and `t/03-wrap.t` still fail, now for an unrelated `z_stream`
+   CStruct/out-parameter issue.
 2. ~~`nativecall-sizeof-cstruct-repr-unsupported.md`~~ — **FIXED 2026-08-26**
    ([news](../../news/2026-08/nativecall-sizeof-cstruct-repr-unsupported.md)).
    The repr trait was recorded correctly all along; the struct *layout* aborted
@@ -268,8 +274,11 @@ If/when those are fixed, the shape of a future decision:
 
 1. **For stream compression**, `Compress::Zlib` (zlib/gzip, 9 dependents,
    MIT) and `Compress::Bzip2` (bzip2, 3 dependents, Artistic-2.0) are both
-   well-tested, actively-reasonable candidates once bugs 1+2 (Zlib) and bug 4
-   (Bzip2) are fixed. There is no live `lzma`/`xz` candidate in the
+   well-tested, actively-reasonable candidates. Bugs 1 and 2 (Zlib) are now
+   fixed — `Compress::Zlib`'s `t/01-basic.t` is 5/5 — but its `t/02-stream.t`
+   and `t/03-wrap.t` still hit a separate, not-yet-filed `z_stream`
+   CStruct/out-parameter issue; `Compress::Bzip2` still needs bug 4 fixed.
+   There is no live `lzma`/`xz` candidate in the
    ecosystem at all — that part of the Python gap (`lzma`) cannot be closed
    by adopting an existing module; only `Archive::Libarchive`'s internal xz
    support (for *archives*, not raw `.xz` streams) touches it.
@@ -286,11 +295,12 @@ If/when those are fixed, the shape of a future decision:
    chain: `Compress::Zlib` + `::Raw` + `IO::Glob` + `CompUnit::Util`, versus
    `Archive::Libarchive`'s 2-dist chain) and has its own separate parser
    blocker (bug 4b) to clear too.
-3. Bugs 2 and 3 are **fixed** (2026-08-26) — see their entries above. The next
+3. Bugs 1, 2, and 3 are all **fixed** — see their entries above. The next
    NativeCall pick for this slot is
    **[`nativecall-callback-parameter-marshalling.md`](../../todo/tickets/nativecall-callback-parameter-marshalling.md)**,
-   the last blocker on `Archive::Libarchive::Raw`'s own suite, and bug 1
-   (the local-sub-shadows-import rule) for `Compress::Zlib`.
+   the last blocker on `Archive::Libarchive::Raw`'s own suite; `Compress::Zlib`'s
+   remaining `t/02-stream.t`/`t/03-wrap.t` failures still need their own
+   `z_stream` CStruct/out-parameter investigation.
 
 Re-run this survey (or at least re-measure the four filed bugs) before acting
 on any of the above — per selection-method.md, a readiness claim nobody just
