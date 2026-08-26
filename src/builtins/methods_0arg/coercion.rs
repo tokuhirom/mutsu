@@ -486,6 +486,22 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => Some(Ok(target.clone())),
         },
+        // `Blob`/`Buf.contents` — the buffer's elements as a `List`, the same
+        // shape `.list` yields. This is a plain `Blob` method (the `use
+        // experimental :pack` doc example merely happens to demonstrate it),
+        // so it is gated on the buffer classes only: anything else declines so
+        // an instance attribute named `contents` (`Pod::Block.contents`) still
+        // resolves through its own accessor.
+        "contents" => match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => Some(Ok(
+                Value::array(crate::value::value_buf::buf_elems_or_empty(&attributes)),
+            )),
+            _ => None,
+        },
         "list" | "Array" => {
             // `.Array` yields a real `@`-sigiled Array; `.list` yields a List.
             let want_array = method == "Array";

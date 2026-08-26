@@ -383,6 +383,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "of", 1, 8),
     ("Blob", "reverse", 1, 8),
     ("Blob", "list", 1, 8),
+    ("Blob", "contents", 1, 8),
     ("Blob", "Blob", 1, 8),
     ("Blob", "Buf", 1, 8),
     ("Blob", "Bool", 1, 8),

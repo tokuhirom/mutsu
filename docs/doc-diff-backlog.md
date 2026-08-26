@@ -277,8 +277,8 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Type/Any.rakudoc:961` | `.categorize`/`.classify` into an untyped Hash mis-renders a non-Str bucket key when the source array holds class instances | [categorize-into-hash-instance-bool-key-corruption.md](../todo/tickets/categorize-into-hash-instance-bool-key-corruption.md) |
-| `Type/Any.rakudoc:1525` | `.snip` with multiple positional predicates silently drops all but the first | [snip-multiple-positional-matchers-dropped.md](../todo/tickets/snip-multiple-positional-matchers-dropped.md) |
+| `Type/Any.rakudoc:961` | ~~`.categorize`/`.classify` into an untyped Hash mis-renders a non-Str bucket key when the source array holds class instances~~ (the real bug was hash-gist rendering: the dispatching gist path ignored object-hash typed keys) | [resolved](../news/2026-08/categorize-into-hash-instance-bool-key-corruption.md) |
+| `Type/Any.rakudoc:1525` | ~~`.snip` with multiple positional predicates silently drops all but the first~~ | [resolved](../news/2026-08/snip-multiple-positional-matchers-dropped.md) |
 | `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
 | `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
 | `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
@@ -410,7 +410,7 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
 | `Language/syntax.rakudoc:384` | adverb values needing BEGIN-time evaluation don't resolve (`$a:foo«$c»` for a `constant $c`, `$foo:bar(1+1)`) — the key-less form (`:354`) is fixed, see [news](../news/2026-08/keyless-colon-pair-variable-names.md) | [begin-time-adverb-value-interpolation.md](../todo/deep/begin-time-adverb-value-interpolation.md) |
 | `Language/syntax.rakudoc:429` | `OUR::` pseudo-package doesn't expose file-scope `our`-declared package symbols | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
 | `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
-| `Language/experimental.rakudoc:32` | `Buf`/`Blob.contents` method is missing | [buf-contents-method-missing.md](../todo/tickets/buf-contents-method-missing.md) |
+| `Language/experimental.rakudoc:32` | ~~`Buf`/`Blob.contents` method is missing~~ | [resolved](../news/2026-08/buf-contents-method-missing.md) |
 | `Language/experimental.rakudoc:144` | ~~a user-defined custom infix's RHS operand fails to parse when followed by `??...!!`~~ (a trait-less custom infix had list-infix, not additive, precedence) | [resolved](../news/2026-08/custom-infix-rhs-operand-rejects-ternary.md) |
 | `Language/unicode.rakudoc:190,212,224` | ~~`\c[NAME]` fails to resolve Unicode NameAlias corrections and multi-codepoint named sequences~~ | [resolved](../news/2026-08/c-bracket-character-name-lookup-gaps.md) |
 
@@ -605,8 +605,8 @@ Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamod
 | `Type/Routine.rakudoc:144` | `is cached` (`use experimental :cached`) doesn't memoize — every call re-executes the body | [is-cached-trait-not-caching.md](../todo/tickets/is-cached-trait-not-caching.md) |
 | `Type/Routine.rakudoc:231` | `sub ... is rw` returning an array/hash element as the implicit last statement doesn't produce a mutable container back to the caller (broad blast radius — narrowed to a 3-line minimal repro) | [is-rw-sub-implicit-return-element-not-mutable.md](../todo/deep/is-rw-sub-implicit-return-element-not-mutable.md) |
 | `Type/Cool.rakudoc:932` | `(0..0x1FFFF).sort(*.uniname.chars)` is ~18x slower than raku and times out under the harness's 10s budget (correct result, just too slow) | [uniname-sort-performance-gap.md](../todo/tickets/uniname-sort-performance-gap.md) |
-| `Type/Baggy.rakudoc:197` | `classify-list` with an array mapper renders an out-of-range key as `Nil` instead of `(Any)` (plain `.classify` with a block mapper already gets this right) | [classify-list-array-mapper-out-of-range-shows-nil.md](../todo/tickets/classify-list-array-mapper-out-of-range-shows-nil.md) |
-| `Type/Buf.rakudoc:84` | `subbuf-rw($buf, from, len) = value` (bare function-call form) silently doesn't mutate; the method-call form (`$buf.subbuf-rw(from, len) = value`) already works | [subbuf-rw-function-form-lvalue-not-mutating.md](../todo/tickets/subbuf-rw-function-form-lvalue-not-mutating.md) |
+| `Type/Baggy.rakudoc:197` | ~~`classify-list` with an array mapper renders an out-of-range key as `Nil` instead of `(Any)` (plain `.classify` with a block mapper already gets this right)~~ | [resolved](../news/2026-08/classify-list-array-mapper-out-of-range-shows-nil.md) |
+| `Type/Buf.rakudoc:84` | ~~`subbuf-rw($buf, from, len) = value` (bare function-call form) silently doesn't mutate; the method-call form (`$buf.subbuf-rw(from, len) = value`) already works~~ (the fix was mutating the buffer in place instead of rebuild-and-write-back) | [resolved](../news/2026-08/subbuf-rw-function-form-lvalue-not-mutating.md) |
 
 **Excluded from this batch-5 sub-run:**
 - `Type/Metamodel/Documenting.rakudoc` [1] (line 16, `#\|[...]`/`#=[...]` class-level declarator

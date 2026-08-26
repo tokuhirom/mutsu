@@ -110,44 +110,79 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        let mut items = if let ValueView::Instance { attributes, .. } = target.view() {
-            buf_elems_or_empty(&attributes)
-        } else {
-            Vec::new()
-        };
-
-        let from = (method_args
-            .first()
-            .map(crate::runtime::to_int)
-            .unwrap_or(0)
-            .max(0) as usize)
-            .min(items.len());
-        // With no explicit length (or a `*` Whatever), `subbuf-rw($from)` spans
-        // from `$from` to the end of the buffer — replacing the whole tail, not
-        // inserting at `$from`.
-        let len = match method_args.get(1) {
-            Some(v) if matches!(v.view(), ValueView::Whatever) => items.len() - from,
-            Some(v) => crate::runtime::to_int(v).max(0) as usize,
-            None => items.len() - from,
-        };
-
         let new_bytes = if let ValueView::Instance { attributes, .. } = value.view() {
             buf_elems_or_empty(&attributes)
         } else {
             Vec::new()
         };
 
-        // splice: remove `len` items at `from`, insert `new_bytes`
-        let end = (from + len).min(items.len());
-        items.splice(from..end, new_bytes);
-
-        let class_name = if let ValueView::Instance { class_name, .. } = target.view() {
-            class_name.resolve().to_string()
-        } else {
-            "Buf".to_string()
+        // Splice `new_bytes` over the `[from, from+len)` window. Shared by the
+        // in-place and the rebuild path below, so the two cannot drift.
+        //
+        // With no explicit length (or a `*` Whatever), `subbuf-rw($from)` spans
+        // from `$from` to the end of the buffer — replacing the whole tail, not
+        // inserting at `$from`.
+        let splice_window = |items: &mut Vec<Value>, new_bytes: Vec<Value>| {
+            let from = (method_args
+                .first()
+                .map(crate::runtime::to_int)
+                .unwrap_or(0)
+                .max(0) as usize)
+                .min(items.len());
+            let len = match method_args.get(1) {
+                Some(v) if matches!(v.view(), ValueView::Whatever) => items.len() - from,
+                Some(v) => crate::runtime::to_int(v).max(0) as usize,
+                None => items.len() - from,
+            };
+            let end = (from + len).min(items.len());
+            items.splice(from..end, new_bytes);
         };
-        let new_buf = make_buf(Symbol::intern(&class_name), items);
 
+        // Mutate the buffer's storage node **in place**, through the shared
+        // attribute cell, rather than rebuilding a fresh `Buf` and writing it
+        // back over the variable. `subbuf-rw` is an lvalue on the buffer
+        // itself, so every alias of it must see the write — and a rebuild only
+        // reaches the one name the caller managed to identify. The
+        // function-call form (`subbuf-rw($b, 2, 1) = Buf.new(42)`) has no such
+        // name to work from: it recovers `$b` by scanning `self.env` for a
+        // value identical to `call_args[0]`, and when that scan misses (a
+        // caller-local slot that never reached `env`) the whole assignment used
+        // to be a silent no-op. Writing through the node makes the mutation
+        // independent of whether the name was found at all.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        {
+            if crate::value::value_buf::with_buf_elems_mut(&attributes, |items| {
+                splice_window(items, new_bytes.clone());
+            })
+            .is_some()
+            {
+                // Keep the dual store coherent for a caller holding a stale
+                // copy under this name; the in-place write above is what makes
+                // the aliases (and the nameless function form) correct.
+                if let Some(var) = target_var {
+                    self.env.insert(var.to_string(), target.clone());
+                }
+                return Ok(target);
+            }
+
+            // No storage node (a `Buf`-shaped instance built some other way):
+            // fall back to rebuilding and writing back over the name.
+            let mut items = buf_elems_or_empty(&attributes);
+            splice_window(&mut items, new_bytes);
+            let new_buf = make_buf(class_name, items);
+            if let Some(var) = target_var {
+                self.env.insert(var.to_string(), new_buf.clone());
+            }
+            return Ok(new_buf);
+        }
+
+        let mut items = Vec::new();
+        splice_window(&mut items, new_bytes);
+        let new_buf = make_buf(Symbol::intern("Buf"), items);
         if let Some(var) = target_var {
             self.env.insert(var.to_string(), new_buf.clone());
         }

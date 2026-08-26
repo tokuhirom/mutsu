@@ -153,6 +153,17 @@ pub(crate) fn flatten_splice_replacement_args(args: &[Value]) -> Vec<Value> {
             {
                 out.extend(crate::runtime::utils::value_to_list(arg))
             }
+            // A `Blob`/`Buf` does `Positional` too, so a lone one binds the
+            // same `(..., @new)` candidate an `Array`/`List`/`Range` does and
+            // contributes its *elements*. It reaches here as an `Instance`
+            // rather than as a list-shaped view, which is why it needs its own
+            // arm: `value_to_list` deliberately keeps a buffer whole (list
+            // *assignment*, `my @a = $buf`, is one element), so the decode goes
+            // through the buffer's own element accessor instead.
+            ValueView::Instance { .. } if single => match Interpreter::buf_as_byte_items(arg) {
+                Some(items) => out.extend(items),
+                None => out.push(arg.clone()),
+            },
             _ => out.push(arg.clone()),
         }
     }

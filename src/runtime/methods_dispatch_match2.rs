@@ -813,7 +813,16 @@ impl Interpreter {
             return Some(self.dispatch_supply_transform(target, method, &args));
         }
         if !args.is_empty() {
-            let matcher = args[0].clone();
+            // `Any.snip`'s signature is a bare capture (`($:: |)`), so every
+            // positional is a matcher: `.snip(* < 10, * < 20)` means the same
+            // as `.snip((* < 10, * < 20))`. Passing only `args[0]` silently
+            // dropped every matcher after the first, collapsing the round-robin
+            // advance `eval_snip` already implements down to a single snip.
+            let matcher = if args.len() == 1 {
+                args[0].clone()
+            } else {
+                Value::array(args.clone())
+            };
             let items = crate::runtime::utils::value_to_list(&target);
             return Some(self.eval_snip(matcher, items));
         }

@@ -19,6 +19,13 @@ impl Interpreter {
             as_items(&value).unwrap_or_else(|| vec![value])
         }
 
+        /// The classifier key an array/hash mapper yields for an index or key
+        /// it does not hold: the `Any` type object, which is what the
+        /// equivalent subscript read (`@mapper[6]`, `%mapper<z>`) answers.
+        fn mapper_miss() -> Value {
+            Value::package(crate::symbol::Symbol::intern("Any"))
+        }
+
         /// Returns (paths, is_multi_level).
         /// `is_multi_level` is true when the mapper returned a list whose
         /// elements are themselves lists (multi-level paths), as opposed to
@@ -287,16 +294,27 @@ impl Interpreter {
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                     self.call_sub_value(mapper.clone(), vec![callable_item(item)], true)?
                 }
+                // A mapper miss is whatever the corresponding *subscript* read
+                // would yield, which is the `Any` type object — `@mapper[6]`
+                // and `%mapper<z>` both answer `(Any)`, and `raku` keys the
+                // bucket by exactly that. Substituting a literal `Nil` here
+                // made an out-of-range classifier key gist as `Nil` instead of
+                // `(Any)` (only in this array/hash-as-mapper form; the
+                // block-mapper form, which really does read the subscript, was
+                // always right).
                 ValueView::Hash(map) => map
                     .get(&item.to_string_value())
                     .cloned()
-                    .unwrap_or(Value::NIL),
+                    .unwrap_or_else(mapper_miss),
                 ValueView::Array(values, ..) => {
                     let idx = crate::runtime::to_int(item);
                     if idx < 0 {
-                        Value::NIL
+                        mapper_miss()
                     } else {
-                        values.get(idx as usize).cloned().unwrap_or(Value::NIL)
+                        values
+                            .get(idx as usize)
+                            .cloned()
+                            .unwrap_or_else(mapper_miss)
                     }
                 }
                 _ => Value::NIL,

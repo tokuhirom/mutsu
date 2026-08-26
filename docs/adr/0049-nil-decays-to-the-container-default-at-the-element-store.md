@@ -722,7 +722,9 @@ Slices 0-2 landed:
   mutators: `my @a is default(42); @a.splice(1,0,Nil)` stores `Any` in raku too. `.splice` previously
   stored a raw, undecayed `Nil` there (mutsu-only, since the target array itself was untyped in every
   case tested); fixed the decay without adding the type-check `.splice` still lacks entirely (a
-  separate, pre-existing gap, recorded as `todo/tickets/splice-insert-not-type-checked.md`).
+  separate, pre-existing gap, since closed --
+  `news/2026-08/splice-insert-not-type-checked.md`; the check now runs on the post-decay values, so
+  a `Nil` spliced into a typed array is rejected as the `Any` it becomes).
 
 - **Slice 5** (retire the `Nil` hole sentinel): converted the five `Value::NIL` fill sites named in
   §1.6 to `Package("Any")` (`vm_var_assign_computed_attr.rs`'s `assign_into_computed_target`,
