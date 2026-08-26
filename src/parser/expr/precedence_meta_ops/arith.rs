@@ -420,6 +420,11 @@ fn autoincrement_expr(
         parse_prefix_unary_op(input)
     {
         let rest = &input[len..];
+        // Raku allows (but doesn't require) whitespace between a prefix
+        // ++/-- and its operand, e.g. `++ $count` is equivalent to
+        // `++$count`. Consume it before checking for the hyper-prefix
+        // marker or recursing into the operand.
+        let (rest, _) = ws(rest)?;
         // Check for hyper prefix: ++<< / --<< / ++« / --«
         {
             let hm_len = if rest.starts_with('\u{00AB}') {
