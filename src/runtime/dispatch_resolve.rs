@@ -130,18 +130,18 @@ impl Interpreter {
         name: &str,
     ) -> Vec<(String, Arc<FunctionDef>)> {
         let prefix = format!("{}/", name);
-        let mut candidates: Vec<(String, Arc<FunctionDef>)> =
-            self.registry()
-                .functions
-                .iter()
-                .filter(|(k, def)| {
-                    k.resolve().starts_with(&prefix)
-                        && def.param_defs.iter().any(|p| {
-                            !p.named && (p.optional_marker || p.default.is_some() || p.slurpy)
-                        })
-                })
-                .map(|(k, def)| (k.resolve(), def.clone()))
-                .collect();
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
+            .registry()
+            .functions
+            .iter()
+            .filter(|(k, def)| {
+                k.resolve().starts_with(&prefix)
+                    && def.param_defs.iter().any(|p| {
+                        !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
+                    })
+            })
+            .map(|(k, def)| (k.resolve(), def.clone()))
+            .collect();
         self.sort_candidates_by_specificity(&mut candidates);
         candidates
     }
@@ -462,7 +462,7 @@ impl Interpreter {
                     && def
                         .param_defs
                         .iter()
-                        .any(|p| p.slurpy || p.is_capture_subsignature())
+                        .any(|p| p.is_variadic() || p.is_capture_subsignature())
             })
             .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();
@@ -592,7 +592,7 @@ impl Interpreter {
                     && def
                         .param_defs
                         .iter()
-                        .any(|p| p.slurpy || p.is_capture_subsignature())
+                        .any(|p| p.is_variadic() || p.is_capture_subsignature())
             })
             .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();

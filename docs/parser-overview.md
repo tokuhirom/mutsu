@@ -59,6 +59,15 @@ In `src/parser/expr.rs`, `expression()` starts at ternary/fat-arrow level and de
 
 `expression()` also handles `=>` specially and auto-quotes bareword LHS into a string literal.
 
+## User-defined operators
+
+- **Infix.** A `sub infix:<...>` with no precedence trait has **additive** precedence, like rakudo — it is handled by `additive_expr` (`expr/precedence_meta_ops/arith.rs`) via the shared `custom_infix::try_custom_infix_word`, so it binds tighter than `~`, `..`, `&&` and `?? !!`. `is tighter`/`is looser`/`is equiv` route to their own level; only an operator explicitly pushed down to (or below) `PREC_SEQUENCE` reaches the list-infix loop. `parse_custom_infix_word` is deliberately *permissive* (any non-reserved word may be a runtime-installed `my &infix:<...>`), so the additive level is granted only to operators the parser has seen **declared** — an undeclared speculative word keeps the loose last-resort level, or `42 but Str` would parse as `infix:<but>`.
+- **Circumfix / postcircumfix.** `declared_circumfix_op` runs early in `primary()` (before the variable parsers). The declared-**post**circumfix check runs in the postfix loop *before* the built-in `(...)`/`[...]`/`{...}` subscripts, under the longest-token rule: a multi-character opener like `[-` beats the built-in `[`, while a one-character opener that is itself a built-in subscript opener ties and the built-in keeps it. A postcircumfix bracket holds ONE argument parsed at comma (list) precedence, not a positional argument list. A registered closing delimiter is never taken as an infix word (`is_circumfix_close_delimiter_word`).
+
+## Quote languages vs declared symbols
+
+Raku's named quote constructs (`Q`, `q`, `qq`, `qw`, `qx`, `m`, `s`, `S`, `tr`, `TR`, `rx`, ...) are spelled as ordinary identifiers, and a **declared** symbol of that name unconditionally removes the quote language spelled that way. `src/parser/quote_shadow.rs` is the single, name-agnostic implementation; every named quote entry point (`big_q_string`, `q_string`, `qx_string`, and `regex_lit` once at the top) calls `quote_lang_shadowed()`. Do NOT add a per-letter guard. The one exception is an explicit adverb (`s:g/…/…/`, `m:i/…/`, `q:w/…/`), which is unambiguously the quote language and wins over any declaration.
+
 ## Token/operator model
 
 - Shared token/operator enum: `src/token_kind.rs` (`TokenKind`)

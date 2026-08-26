@@ -548,9 +548,20 @@ fn parse_variable_traits<'a>(
                 }
                 first_type_trait = Some(trait_name.clone());
             }
-            // Handle parameterized type traits like `is Set[Int]`, `is Foo[Int,Str]`
+            // `is foo[1,2,3]` on a LOWERCASE trait name is argument sugar, not a
+            // type parameterization: it calls the `trait_mod:<is>` candidate for
+            // `foo` with a single Array-literal argument, exactly like the
+            // explicit `is foo([1,2,3])` spelling (and like the `is foo<a b>`
+            // word-list sugar handled below). Only an uppercase name — a real
+            // type — parameterizes, as in `is Array[Int]`.
             let mut trait_name = trait_name;
-            let r2 = if r2.starts_with('[') {
+            let mut bracket_arg: Option<Expr> = None;
+            let r2 = if r2.starts_with('[') && !is_uppercase_start {
+                let (r3, arg) = crate::parser::primary::container::array_literal(r2)?;
+                let (r3, _) = ws(r3)?;
+                bracket_arg = Some(arg);
+                r3
+            } else if r2.starts_with('[') {
                 // Find matching ']', respecting nested brackets
                 let mut depth = 0usize;
                 let mut end = 0;
@@ -584,7 +595,12 @@ fn parse_variable_traits<'a>(
                 || is_buf_trait
                 || is_list_trait
                 || is_uppercase_start;
-            if let Some(r3) = r2.strip_prefix('(') {
+            if let Some(arg) = bracket_arg {
+                if include_in_traits {
+                    custom_traits.push((trait_name.clone(), Some(arg)));
+                }
+                r = r2;
+            } else if let Some(r3) = r2.strip_prefix('(') {
                 let (r3, _) = ws(r3)?;
                 let (r3, trait_arg) = expression(r3)?;
                 let (r3, _) = ws(r3)?;

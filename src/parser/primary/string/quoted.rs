@@ -67,9 +67,11 @@ pub(crate) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
         // `\u{2018}`/`\u{2019}` both report as plain curly single quotes.
         _ => ("curly single quotes", "'\u{2019}'"),
     };
+    let nests = quote_pair_nests(first, closers);
     let input = &input[first.len_utf8()..];
     let mut rest = input;
     let start = input;
+    let mut depth: usize = 0;
     loop {
         if rest.is_empty() {
             return Err(crate::parser::primary::container::fail_goal_error_at(
@@ -80,14 +82,31 @@ pub(crate) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         let ch = rest.chars().next().unwrap();
         if closers.contains(&ch) {
-            let content = &start[..start.len() - rest.len()];
-            return Ok((
-                &rest[ch.len_utf8()..],
-                Expr::Literal(literal_str(content.to_string())),
-            ));
+            if depth == 0 {
+                let content = &start[..start.len() - rest.len()];
+                return Ok((
+                    &rest[ch.len_utf8()..],
+                    Expr::Literal(literal_str(content.to_string())),
+                ));
+            }
+            depth -= 1;
+        } else if nests && ch == first {
+            depth += 1;
         }
         rest = &rest[ch.len_utf8()..];
     }
+}
+
+/// Whether a Unicode smart-quote pair nests, i.e. whether an inner occurrence of
+/// the *opening* character raises the nesting depth instead of being literal
+/// text. Raku's directional quote pairs (`“…”`, `„…”`, `‘…’`, `‚…’`) are
+/// brackets and do nest — `“here: “no problem” at all!”` is one string, as
+/// `raku-doc/doc/Language/unicode_entry.rakudoc` shows ("You can nest them!").
+/// The reversed-direction spellings (`”…”`, `’…’`) open and close with the same
+/// character, so like `/…/` they have no nesting to track and any occurrence of
+/// that character closes the string.
+fn quote_pair_nests(opener: char, closers: &[char]) -> bool {
+    !closers.contains(&opener)
 }
 
 /// Parse corner bracket string literal: ｢...｣ (no interpolation, supports nesting)
@@ -331,10 +350,12 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         // `\u{201C}`/`\u{201D}` both report as plain curly double quotes.
         _ => ("curly double quotes", "'\u{201D}'"),
     };
+    let nests = quote_pair_nests(first, closers);
     let input = &input[first.len_utf8()..];
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = input;
+    let mut depth: usize = 0;
 
     loop {
         if rest.is_empty() {
@@ -347,7 +368,20 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         let next_ch = rest.chars().next().unwrap();
         if closers.contains(&next_ch) {
             rest = &rest[next_ch.len_utf8()..];
-            break;
+            if depth == 0 {
+                break;
+            }
+            // A nested closer is literal text; only the one that brings the
+            // depth back to zero ends the string.
+            depth -= 1;
+            current.push(next_ch);
+            continue;
+        }
+        if nests && next_ch == first {
+            depth += 1;
+            current.push(next_ch);
+            rest = &rest[next_ch.len_utf8()..];
+            continue;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
             match process_escape_sequence(rest, &mut current, &['\u{201D}', '{', '}']) {

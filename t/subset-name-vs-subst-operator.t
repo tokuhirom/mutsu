@@ -8,19 +8,23 @@ use Test;
 
 plan 6;
 
-{
-    role R { };
-    subset S of R;
-    nok 1 ~~ S,  'a role-based subset name after ~~ is a type, not S///';
-    ok  R ~~ S,  'the role type object matches its subset';
-}
-
-# A real S/// still parses as a substitution when S is not a declared type.
+# A real S/// parses as a substitution as long as `S` is not declared. This
+# block must come FIRST: a non-`my` `subset S` is installed package-scoped, so
+# from its declaration onwards `S` is a term everywhere and the `S///` quote
+# language spelled `S` is gone — rakudo parses `S/b/X/` after such a declaration
+# as the division `S / b / X /` and reports `b` as an undeclared routine.
 {
     my $x = 'abc';
     my $y = S/b/X/ given $x;
     is $x, 'abc', 'S/// is non-destructive (source unchanged)';
     is $y, 'aXc', 'S/// returns the substituted copy';
+}
+
+{
+    role R { };
+    subset S of R;
+    nok 1 ~~ S,  'a role-based subset name after ~~ is a type, not S///';
+    ok  R ~~ S,  'the role type object matches its subset';
 }
 
 # `my subset` name is also a term after ~~.

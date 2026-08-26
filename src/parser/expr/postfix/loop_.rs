@@ -1558,6 +1558,60 @@ fn postfix_expr_loop_from(
             continue;
         }
 
+        // User-declared postcircumfix operators: `expr⌊arg⌋` →
+        // `postcircumfix:<⌊ ⌋>(expr, arg)`.
+        //
+        // Tried BEFORE the built-in `(...)` / `[...]` / `{...}` / `<...>`
+        // subscripts, under the longest-token rule: `'0123456789'[- 1..3, 8]`
+        // with `postcircumfix:<[- ]>` declared opens with the two-character
+        // `[-`, which beats the built-in one-character `[` subscript. A
+        // one-character opener that IS a built-in subscript opener ties, and the
+        // built-in keeps it (mutsu does not let a user redefine the core
+        // `postcircumfix:<[ ]>`), so those fall through untouched.
+        if let Some((name, open_len, close_delim)) =
+            crate::parser::stmt::simple::match_user_declared_postcircumfix_op(rest)
+            && !(open_len == 1 && rest.starts_with(['(', '[', '{', '<']))
+        {
+            let open = &rest[..open_len];
+            let r = &rest[open_len..];
+            let (r, _) = ws(r)?;
+            let mut args = vec![expr.clone()];
+            // The bracket content is ONE argument parsed at comma (list)
+            // precedence, not a positional argument list: rakudo reports the
+            // call `'0123456789'[- 1..3, 8]` as `postcircumfix:<[- ]>(Str:D,
+            // List:D)` — a single `(1..3, 8)` List, which is what makes the
+            // operator's `+@indices` single-arg-rule slurpy see `[1..3, 8]`.
+            // Parsing it with plain `expression()` stopped at the comma and
+            // dropped everything after it.
+            let r = if r.starts_with(close_delim.as_str()) {
+                r
+            } else {
+                let (r2, arg) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+                args.push(arg);
+                r2
+            };
+            let (r, _) = ws(r)?;
+            if let Some(after) = r.strip_prefix(close_delim.as_str()) {
+                expr = Expr::Call {
+                    name: Symbol::intern(&name),
+                    args,
+                };
+                rest = after;
+                continue;
+            }
+            // Opener matched and an argument parsed, but the closing delimiter is
+            // missing (e.g. `$a⟨5;`): the custom postcircumfix bracket is committed,
+            // so this is a hard parse failure — X::Comp::FailGoal carrying the
+            // operator's `dba` (`postcircumfix:sym<open close>`) and its `goal`.
+            let dba = format!("postcircumfix:sym<{} {}>", open, close_delim);
+            let goal = format!("'{}'", close_delim);
+            return Err(crate::parser::primary::fail_goal_error_at(
+                &dba,
+                &goal,
+                Some(r),
+            ));
+        }
+
         // CallOn: expr(args) — invoke any callable expression.
         if rest.starts_with('(') {
             let (r, _) = parse_char(rest, '(')?;
@@ -3170,37 +3224,6 @@ fn postfix_expr_loop_from(
                 rest = r_name;
                 continue;
             }
-        }
-
-        // User-declared postcircumfix operators: expr⌊arg⌋ → postcircumfix:<⌊ ⌋>(expr, arg)
-        if let Some((name, open_len, close_delim)) =
-            crate::parser::stmt::simple::match_user_declared_postcircumfix_op(rest)
-        {
-            let open = &rest[..open_len];
-            let r = &rest[open_len..];
-            let (r, _) = ws(r)?;
-            let (r, arg) = expression(r)?;
-            let (r, _) = ws(r)?;
-            if r.starts_with(close_delim.as_str()) {
-                let r = &r[close_delim.len()..];
-                expr = Expr::Call {
-                    name: Symbol::intern(&name),
-                    args: vec![expr, arg],
-                };
-                rest = r;
-                continue;
-            }
-            // Opener matched and an argument parsed, but the closing delimiter is
-            // missing (e.g. `$a⟨5;`): the custom postcircumfix bracket is committed,
-            // so this is a hard parse failure — X::Comp::FailGoal carrying the
-            // operator's `dba` (`postcircumfix:sym<open close>`) and its `goal`.
-            let dba = format!("postcircumfix:sym<{} {}>", open, close_delim);
-            let goal = format!("'{}'", close_delim);
-            return Err(crate::parser::primary::fail_goal_error_at(
-                &dba,
-                &goal,
-                Some(r),
-            ));
         }
 
         // Atomic postfix updates: $x⚛++ / $x⚛--

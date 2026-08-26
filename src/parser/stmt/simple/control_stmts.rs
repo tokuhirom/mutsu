@@ -68,7 +68,7 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: last LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
+    if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
         && is_loop_label_name(&label)
     {
@@ -81,7 +81,7 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: next LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
+    if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
         && is_loop_label_name(&label)
     {
@@ -94,7 +94,7 @@ pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
     let (rest, _) = ws(rest)?;
     // Check for label: redo LABEL
-    if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
+    if rest.starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r, label)) = ident(rest)
         && is_loop_label_name(&label)
     {

@@ -478,10 +478,7 @@ impl Interpreter {
     fn candidate_optional_positional_count(def: &FunctionDef) -> usize {
         Self::dispatch_visible_params(def)
             .iter()
-            .filter(|p| {
-                !p.named
-                    && (p.slurpy || p.double_slurpy || p.optional_marker || p.default.is_some())
-            })
+            .filter(|p| !p.named && (p.is_variadic() || p.optional_marker || p.default.is_some()))
             .count()
     }
 

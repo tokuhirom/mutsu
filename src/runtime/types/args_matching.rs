@@ -140,7 +140,7 @@ impl Interpreter {
             for pd in &positional_params {
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.is_capture_subsignature();
-                if pd.slurpy || is_capture_param || is_subsig_capture {
+                if pd.is_variadic() || is_capture_param || is_subsig_capture {
                     has_variadic_positional = true;
                     continue;
                 }
@@ -167,7 +167,7 @@ impl Interpreter {
                 let arg_idx = positional_indices.get(p).copied();
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.is_capture_subsignature();
-                let mut arg_for_checks: Option<Value> = if pd.slurpy || is_capture_param {
+                let mut arg_for_checks: Option<Value> = if pd.is_variadic() || is_capture_param {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
@@ -766,7 +766,7 @@ impl Interpreter {
         let mut has_positional_slurpy = false;
         let mut has_hash_slurpy = false;
         for pd in &positional_params {
-            if pd.slurpy {
+            if pd.is_variadic() {
                 if pd.sigilless {
                     // Capture parameter (|c) absorbs both positional and named args
                     has_positional_slurpy = true;
@@ -780,7 +780,10 @@ impl Interpreter {
                 required += 1;
             }
         }
-        let max_positional = positional_params.iter().filter(|p| !p.slurpy).count();
+        let max_positional = positional_params
+            .iter()
+            .filter(|p| !p.is_variadic())
+            .count();
         if has_positional_slurpy {
             if positional_arg_count < required {
                 return false;

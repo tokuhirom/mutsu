@@ -8,6 +8,11 @@ use super::helpers::literal_str;
 /// qx executes with single-quote (backslash) interpolation.
 /// qqx executes with full interpolation.
 pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
+    // A declared `qx`/`qqx` wins over the quote language (see
+    // `crate::parser::quote_shadow`).
+    if crate::parser::quote_shadow::quote_lang_shadowed(input) {
+        return Err(PError::expected("qx string"));
+    }
     // Try qqx first, then qx
     let (after_qx, is_qq) = if let Some(r) = input.strip_prefix("qqx") {
         (r, true)

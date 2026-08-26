@@ -27,7 +27,19 @@ pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
         let is_compound_assign = input[end..].starts_with('=')
             && !input[end..].starts_with("==")
             && !input[end..].starts_with("=>");
-        if !is_reserved_infix_word(name) && !is_declared_term && !is_compound_assign {
+        // The closing delimiter of an in-scope `circumfix:<open close>` /
+        // `postcircumfix:<open close>` is never an infix operator: in
+        // `foo 5 bar` (or `α 5 ω`) the `bar` terminates the circumfix, and
+        // claiming it as a speculative infix word leaves the circumfix
+        // unclosed. Uppercase closers (`FOO 5 BAR`) were only ever safe by
+        // accident, via `is_reserved_infix_word`'s uppercase rule.
+        let is_circumfix_closer =
+            crate::parser::stmt::simple::is_circumfix_close_delimiter_word(name);
+        if !is_reserved_infix_word(name)
+            && !is_declared_term
+            && !is_compound_assign
+            && !is_circumfix_closer
+        {
             word_match = Some((name.to_string(), end));
         }
     }
@@ -157,6 +169,132 @@ pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
             | "xx"
             | "o"
     )
+}
+
+/// Parse one application of a user-declared `infix:<word>` operator, folding it
+/// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
+/// word whose precedence level falls in `(min_level, max_level]` — with `None`
+/// (no precedence trait) counted as [`PREC_ADDITIVE`], rakudo's default for a
+/// trait-less operator.
+///
+/// The whole custom-infix application — its operand, its `is assoc` folding and
+/// its trailing colonpair adverbs — is implemented once here so it behaves
+/// identically wherever it is invoked. It is called from two precedence layers:
+/// the additive layer (`additive_expr`, for the default level) and the
+/// list-infix layer (for operators explicitly pushed down to or below
+/// [`PREC_SEQUENCE`] with `is looser`).
+///
+/// `operand` parses the right-hand operand at the calling layer's tighter level.
+pub(crate) fn try_custom_infix_word<'a>(
+    r: &'a str,
+    left: &mut Expr,
+    min_level: i32,
+    max_level: i32,
+    operand: &dyn Fn(&str) -> PResult<'_, Expr>,
+) -> Result<Option<&'a str>, PError> {
+    use crate::parser::stmt::simple::{PREC_ADDITIVE, PREC_SEQUENCE};
+    let Some((name, len)) = parse_custom_infix_word(r) else {
+        return Ok(None);
+    };
+    // `parse_custom_infix_word` is deliberately permissive: it accepts ANY
+    // non-reserved word, because an infix can also be installed at runtime
+    // (`my &infix:<same-in-Int> = ...`) with nothing for the parser to consult.
+    // Such a speculative match may only be taken at the loosest, last-resort
+    // list-infix level — claiming it at additive precedence would swallow every
+    // ordinary bareword that follows a term (`42 but Str` would become
+    // `infix:<but>`). Only an operator the parser has actually SEEN declared
+    // gets rakudo's real default precedence for a trait-less infix, additive.
+    let level = crate::parser::stmt::simple::lookup_custom_infix_precedence(&name).unwrap_or({
+        if crate::parser::stmt::simple::is_user_defined_infix(&name) {
+            PREC_ADDITIVE
+        } else {
+            PREC_SEQUENCE
+        }
+    });
+    if level <= min_level || level > max_level {
+        return Ok(None);
+    }
+    let mut rest = &r[len..];
+    let (r2, _) = ws(rest)?;
+    let (r2, right) = operand(r2).map_err(|err| {
+        enrich_expected_error(err, "expected expression after infix operator", rest.len())
+    })?;
+    let assoc = crate::parser::stmt::simple::lookup_user_infix_assoc(&name)
+        .unwrap_or_else(|| "left".to_string());
+    let mut args = vec![left.clone(), right];
+    rest = r2;
+    // Only genuine associativity values collect the full operand run here:
+    // `list` (pass all to the routine), `right` (right-fold), `non` (reject
+    // >2), and `chain` (expanded pairwise downstream). The precedence-trait
+    // placeholders `equiv`/`tighter`/`looser` are NOT associativity and must
+    // fold left-associatively via the caller's loop like `left`: a user operator
+    // never chains merely because `is equiv(&infix:<==>)` copied a built-in
+    // chain op's precedence — rakudo keeps it non-chaining, so `6 op 4 op 2`
+    // is `(6 op 4) op 2`, not one n-ary `op(6,4,2)` call.
+    if matches!(assoc.as_str(), "list" | "right" | "non" | "chain") {
+        loop {
+            let (r_ws, _) = ws(rest)?;
+            let ws_between = &rest[..rest.len() - r_ws.len()];
+            if ws_between.contains('\n') {
+                break;
+            }
+            let Some((next_name, next_len)) = parse_custom_infix_word(r_ws) else {
+                break;
+            };
+            if next_name != name {
+                break;
+            }
+            let r_after_op = &r_ws[next_len..];
+            let (r_after_op, _) = ws(r_after_op)?;
+            let (r_after_arg, arg) = operand(r_after_op).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after infix operator",
+                    r_after_op.len(),
+                )
+            })?;
+            args.push(arg);
+            rest = r_after_arg;
+        }
+    }
+    // Collect trailing colonpair adverbs (e.g., `3 zin 4 :x(5)`)
+    loop {
+        let (r_ws, _) = ws(rest)?;
+        if r_ws.starts_with(':')
+            && !r_ws.starts_with("::")
+            && let Ok((r3, adverb)) = crate::parser::primary::colonpair_expr(r_ws)
+        {
+            args.push(adverb);
+            rest = r3;
+        } else {
+            break;
+        }
+    }
+    *left = match assoc.as_str() {
+        "right" => {
+            let mut iter = args.into_iter().rev();
+            let mut acc = iter
+                .next()
+                .unwrap_or(Expr::Literal(crate::value::Value::NIL));
+            for lhs in iter {
+                acc = Expr::InfixFunc {
+                    name: name.clone(),
+                    left: Box::new(lhs),
+                    right: vec![acc],
+                    modifier: None,
+                };
+            }
+            acc
+        }
+        "non" if args.len() > 2 => return Err(non_associative_error(&name)),
+        _ => Expr::InfixFunc {
+            name: name.clone(),
+            left: Box::new(args[0].clone()),
+            right: args[1..].to_vec(),
+            modifier: None,
+        },
+    };
+    Ok(Some(rest))
 }
 
 /// Parse a comma-separated list of range_expr, returning (rest, items).
