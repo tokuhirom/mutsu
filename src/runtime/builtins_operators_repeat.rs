@@ -234,6 +234,16 @@ impl Interpreter {
                         ));
                     };
                     let n = n_raw.max(0) as usize;
+                    // Infix `x` stringifies its LEFT operand via `.Str` (the
+                    // right operand is a repeat count and must stay numeric,
+                    // so it is NOT run through this) — mirrors
+                    // `exec_string_repeat_op` / `exec_concat_op`. This is an
+                    // internal redispatch with no surrounding CallMethod op,
+                    // so drain any captured-outer writeback into the caller's
+                    // slot.
+                    let caller_code = self.current_code;
+                    acc = self.coerce_stringy_operand(acc)?;
+                    self.reconcile_caller_after_internal_dispatch(caller_code);
                     let repeated = crate::runtime::utils::coerce_to_str(&acc).repeat(n);
                     // NFC-normalize after repetition: combining marks from the end
                     // of one copy may interact with the start of the next copy

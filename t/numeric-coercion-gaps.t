@@ -5,7 +5,7 @@ use Test;
 # below asserts the *type* as well as the value: several of these bugs produced
 # a right-looking number of the wrong type.
 
-plan 67;
+plan 79;
 
 # --------------------------------------------------------------------------
 # 1. Generic `Real` arithmetic goes through `.Bridge` on BOTH operands.
@@ -116,6 +116,40 @@ is ([+] 2, 3), 5, '[+] over plain Ints still works';
 is ([~] "a", "b"), "ab", '[~] over Strs still works';
 is ([~] 1, 2, 3), "123", '[~] over Ints still works';
 is ([max] 2, 5, 3), 5, '[max] still works';
+
+# --------------------------------------------------------------------------
+# 2b. Infix `x` (string repetition) has the identical gap: it stringifies
+# its LEFT operand via `.Str`, and a pure Value function cannot dispatch a
+# user method. Unlike `~`/`eq`/etc, `x` is ASYMMETRIC -- the right operand
+# is a repeat COUNT and must stay numeric, never stringified.
+# --------------------------------------------------------------------------
+
+is ($sab x 2), 'abab', 'binary x dispatches a user Str';
+is ([x] $sab, 2), 'abab', '[x] dispatches a user Str';
+is (&infix:<x>($sab, 2)), 'abab', '&infix:<x> dispatches a user Str';
+
+my $sab2 = $sab;
+$sab2 x= 2;
+is $sab2, 'abab', 'x= (assignment metaop) dispatches a user Str';
+
+class SCount { has $.s; has $.calls = 0; method Str { $!calls++; $!s } }
+my $counted = SCount.new(s => 'ab');
+is ($counted x 3), 'ababab', 'x with a side-effecting Str repeats the STRING, not the call';
+is $counted.calls, 1, 'x calls the user Str exactly once regardless of repeat count';
+
+# `xx` (list repetition) must NOT stringify -- it repeats the LHS as-is.
+my @rep = $sab xx 2;
+is @rep.elems, 2, 'xx produces the right element count';
+isa-ok @rep[0], S, 'xx does not stringify its LHS';
+
+is ($sab x 0), '', 'x with a zero count is the empty string';
+is ($sab x -1), '', 'x with a negative count is the empty string';
+
+# Cross/zip meta-op forms already dispatched correctly (via infix ~) before
+# this fix -- pinned here so a future regression in the shared coercion
+# helper is caught alongside the `x`-specific fix.
+is-deeply ("a" X~ ($sab, $sab)).list, ('aab', 'aab'), 'X~ dispatches a user Str';
+is-deeply (($sab,) Z~ ($sab,)).list, ('abab',), 'Z~ dispatches a user Str';
 
 # --------------------------------------------------------------------------
 # 3. `[∘]` over an empty operand list is the identity FUNCTION.

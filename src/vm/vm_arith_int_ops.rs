@@ -441,6 +441,16 @@ impl Interpreter {
             ));
         };
         let n = n_raw.max(0) as usize;
+        // Infix `x` stringifies its LEFT operand via `.Str` (the right operand is
+        // a repeat count and must stay numeric, so it is NOT run through this),
+        // so an operand whose class defines a user `Str` must dispatch it —
+        // `coerce_to_str` alone only knows `.gist` (rendering `Foo()`). This is
+        // an internal redispatch with no surrounding CallMethod op, so drain any
+        // captured-outer writeback into the caller's slot, mirroring
+        // `exec_concat_op`.
+        let caller_code = self.current_code;
+        let left = self.coerce_stringy_operand(left)?;
+        self.reconcile_caller_after_internal_dispatch(caller_code);
         let src = crate::runtime::utils::coerce_to_str(&left);
         // Guard the allocation: `str::repeat` aborts the process via
         // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which

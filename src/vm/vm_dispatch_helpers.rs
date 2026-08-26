@@ -242,6 +242,20 @@ impl Interpreter {
             self.reconcile_caller_after_internal_dispatch(caller_code);
             return Interpreter::apply_reduction_op(normalized_op, &l?, &r?);
         }
+        // Same gap, `x`: the table's `x` arm stringifies its LEFT operand only —
+        // the right operand is a repeat COUNT and must stay numeric, so unlike
+        // the symmetric string ops above it must NOT be coerced. Mirrors
+        // `exec_string_repeat_op` / `call_repeat_infix`.
+        if normalized_op == "x" && Self::value_needs_stringy_bridge(left) {
+            let infix_name = "infix:<x>";
+            if let Some(v) = self.try_user_infix(infix_name, left, right)? {
+                return Ok(v);
+            }
+            let caller_code = self.current_code;
+            let l = self.coerce_stringy_operand(left.clone())?;
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            return Interpreter::apply_reduction_op(normalized_op, &l, right);
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {

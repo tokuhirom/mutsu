@@ -217,7 +217,7 @@ impl Interpreter {
     /// instances without a user stringifier pass through unchanged (the pure
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
-    pub(super) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
         // Unhandled Failure throws in string context (infix `~`, `eq`/…),
         // matching Rakudo: `(sub { ... }).() ~ ""` dies with X::StubCode.
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {
