@@ -359,7 +359,7 @@ impl Compiler {
         let mut post_ph = Vec::new();
         let mut body_main = Vec::new();
         for stmt in body {
-            if let Stmt::Phaser { kind, body } = stmt {
+            if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),

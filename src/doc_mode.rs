@@ -377,6 +377,7 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
             && let Stmt::Phaser {
                 kind: PhaserKind::Init,
                 body,
+                ..
             } = &stmts[i + 1]
         {
             interpreter.eval_block_value(body)?;

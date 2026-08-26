@@ -130,6 +130,7 @@ impl Compiler {
                     Stmt::Phaser {
                         kind: crate::ast::PhaserKind::Begin,
                         body,
+                        ..
                     } => {
                         self.compile_check_phaser_value(body);
                     }

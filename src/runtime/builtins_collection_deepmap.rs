@@ -94,6 +94,32 @@ impl Interpreter {
     ///
     /// Rakudo gates it on `use v6.e.PREVIEW`; without the pragma a bare `rotor`
     /// is an undeclared routine. mutsu applies the same gate here, at the call.
+    /// The `snitch` **subroutine** (`Type/Any.rakudoc`:
+    /// `multi snitch(\snitchee)` / `multi snitch(&snitcher, \snitchee)`), the
+    /// sub form of the `.snitch` debugging probe. The snitchee is the LAST
+    /// argument so the feed operator reads naturally
+    /// (`(1..3).Seq ==> snitch() ==> map(*+2)`); an optional leading `Callable`
+    /// replaces the default `note` logger. Delegates to `.snitch` so there is
+    /// one implementation, including the 6.e gate.
+    pub(super) fn builtin_snitch(&mut self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
+        if !crate::parser::current_language_version().starts_with("6.e") {
+            return Err(RuntimeError::new(
+                "Undeclared routine: snitch -- the snitch subroutine needs `use v6.e.PREVIEW`",
+            ));
+        }
+        let Some((snitchee, rest)) = raw_args.split_last() else {
+            return Err(RuntimeError::new(
+                "Too few positionals passed to 'snitch'; expected 1 or 2 arguments but got 0",
+            ));
+        };
+        match self.dispatch_snitch(snitchee, rest) {
+            Some(result) => result,
+            // Unreachable: the 6.e gate above already passed, which is the only
+            // reason `dispatch_snitch` declines.
+            None => Ok(snitchee.clone()),
+        }
+    }
+
     pub(super) fn builtin_rotor(&mut self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
         if !crate::parser::current_language_version().starts_with("6.e") {
             return Err(RuntimeError::new(

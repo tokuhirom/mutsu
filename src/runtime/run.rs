@@ -492,6 +492,7 @@ impl Interpreter {
                 if let Stmt::Phaser {
                     kind: crate::ast::PhaserKind::End,
                     body,
+                    ..
                 } = stmt
                 {
                     self.push_end_phaser_main(body.clone());
@@ -516,6 +517,7 @@ impl Interpreter {
                         Stmt::Phaser {
                             kind: crate::ast::PhaserKind::Enter,
                             body,
+                            condition: None,
                         }
                     } else {
                         s
@@ -538,37 +540,16 @@ impl Interpreter {
         // ones textually preceding it) and a `POST` runs after all of them
         // (even ones textually following it), so both are repositioned to
         // the block boundary rather than left at their textual position.
+        //
+        // `split_block_phasers` hands PRE/POST back as their original
+        // `Stmt::Phaser` nodes (not a bare `Stmt::Block`) precisely so the
+        // captured `condition` source text survives to the compiler, which
+        // quotes it in `X::Phaser::PrePost`'s message.
         if !pre_ph.is_empty() {
-            let pre_stmts: Vec<Stmt> = pre_ph
-                .into_iter()
-                .map(|s| {
-                    if let Stmt::Block(body) = s {
-                        Stmt::Phaser {
-                            kind: crate::ast::PhaserKind::Pre,
-                            body,
-                        }
-                    } else {
-                        s
-                    }
-                })
-                .collect();
-            body_main.splice(0..0, pre_stmts);
+            body_main.splice(0..0, pre_ph);
         }
         if !post_ph.is_empty() {
-            let post_stmts: Vec<Stmt> = post_ph
-                .into_iter()
-                .map(|s| {
-                    if let Stmt::Block(body) = s {
-                        Stmt::Phaser {
-                            kind: crate::ast::PhaserKind::Post,
-                            body,
-                        }
-                    } else {
-                        s
-                    }
-                })
-                .collect();
-            body_main.extend(post_stmts);
+            body_main.extend(post_ph);
         }
         // Run top-level BEGIN phasers at compile time (before the mainline), so
         // reads textually preceding a BEGIN see its side effects. Removes the
@@ -754,9 +735,10 @@ impl Interpreter {
             self.split_block_phasers(stmts);
         // Run PRE phasers (before ENTER)
         for pre in &pre_ph {
-            let result = self.eval_block_value(std::slice::from_ref(pre))?;
+            let (body, condition) = Self::phaser_body_and_condition(pre);
+            let result = self.eval_block_value(&[Stmt::Block(body.to_vec())])?;
             if !result.truthy() {
-                return Err(crate::runtime::phaser_prepost_error(true, ""));
+                return Err(crate::runtime::phaser_prepost_error(true, condition));
             }
         }
         self.run_block_raw(&enter_ph)?;
@@ -800,9 +782,10 @@ impl Interpreter {
     /// is checked; if falsy, an X::Phaser::PrePost error is returned immediately.
     fn run_post_phasers(&mut self, post_ph: &[Stmt]) -> Result<(), RuntimeError> {
         for post in post_ph {
-            let result = self.eval_block_value(std::slice::from_ref(post))?;
+            let (body, condition) = Self::phaser_body_and_condition(post);
+            let result = self.eval_block_value(&[Stmt::Block(body.to_vec())])?;
             if !result.truthy() {
-                return Err(crate::runtime::phaser_prepost_error(false, ""));
+                return Err(crate::runtime::phaser_prepost_error(false, condition));
             }
         }
         Ok(())

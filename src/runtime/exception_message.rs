@@ -75,6 +75,25 @@ impl Interpreter {
         None
     }
 
+    /// True when this value is an instance of a class the MRO identifies as an
+    /// exception. The name-gated native arms (`methods_0arg`) only recognise
+    /// `Exception`/`X::*`/`CX::*` spellings, so a user `class E is Exception`
+    /// needs the class registry to be seen as one at all.
+    pub(crate) fn value_is_exception_instance(&mut self, target: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let cn = class_name.resolve();
+        cn == "Exception"
+            || cn.starts_with("X::")
+            || cn.starts_with("CX::")
+            || cn.ends_with("Exception")
+            || self
+                .class_mro(&cn)
+                .iter()
+                .any(|p| p == "Exception" || p == "Failure")
+    }
+
     /// True when rendering `method` on this exception instance must go through
     /// the interpreter instead of the pure-value native fast path.
     ///

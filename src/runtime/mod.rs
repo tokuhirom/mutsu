@@ -45,7 +45,12 @@ pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeErro
     } else {
         "Postcondition"
     };
-    let message = format!("{} '{}' failed", kind, condition);
+    // The MESSAGE quotes the condition trimmed, while `.condition` keeps the
+    // raw source slice: raku reports `Precondition '0' failed` for a
+    // `PRE 0` whose `.condition` is `"0 "` (the parser's slice runs to the
+    // enclosing `}`). A block-form condition is unaffected — `{ ... }` has no
+    // surrounding whitespace to trim.
+    let message = format!("{} '{}' failed", kind, condition.trim());
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("phaser".to_string(), Value::str(phaser.to_string()));
     attrs.insert("condition".to_string(), Value::str(condition.to_string()));
@@ -535,6 +540,7 @@ mod methods_trans;
 mod methods_type_coerce;
 mod methods_walk;
 mod native_io;
+mod uncaught_render;
 pub(crate) use native_io::{path_is_executable, path_is_readable, path_is_writable};
 mod native_io_special;
 pub(crate) mod native_methods;

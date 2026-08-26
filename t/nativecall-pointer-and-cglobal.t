@@ -88,8 +88,9 @@ is strlen-nolib('hello'), 5, 'is native(Str) binds against the process namespace
 # `('name', version)` is the documented ABI/API-version spelling; the version
 # has to reach the file name, which a failed lookup reports verbatim. The
 # message is inspected directly rather than through `throws-like`'s
-# `message => /.../` matcher, which mutsu currently drops for X::AdHoc (see
-# todo/tickets/throws-like-message-matcher-skipped-for-adhoc.md).
+# `message => /.../` matcher because two separate substrings have to be
+# present; the matcher itself is no longer skipped for X::AdHoc (see
+# news/2026-08/throws-like-named-matchers-no-longer-silently-skipped.md).
 constant MISSING = ('mutsu_no_such_lib', v99);
 sub missing-listform() is native(MISSING) { * }
 try missing-listform();

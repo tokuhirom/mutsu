@@ -854,6 +854,7 @@ impl Interpreter {
             "cross" => self.builtin_cross(args),
             "roundrobin" => self.builtin_roundrobin(&args),
             "rotor" => self.builtin_rotor(&args),
+            "snitch" => self.builtin_snitch(&args),
             // List operations
             "join" => self.builtin_join(&args),
             "item" => {

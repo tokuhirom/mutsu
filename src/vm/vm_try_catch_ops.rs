@@ -460,8 +460,24 @@ impl Interpreter {
         self.stack.truncate(saved_depth);
         // Build a Backtrace object from the string for legacy errors
         // that only have a string backtrace.
-        let err_val =
-            e.exception_value_with_backtrace(e.backtrace().map(Self::backtrace_value_from_string));
+        //
+        // A *compile-time* diagnosis (anything doing `X::Comp`) reaches here
+        // with no backtrace at all, which used to leave `.backtrace` answering
+        // the empty-string placeholder — a `Str`, so `.is-runtime` could not be
+        // asked of it. rakudo always hands back a real `Backtrace` there, with
+        // `is-runtime` False; synthesize one from the live stack of the code
+        // that triggered the compilation (an `EVAL`, a `use`), which is exactly
+        // the non-setting frame rakudo's own compile-time backtrace ends with.
+        let is_comp = e
+            .exception
+            .as_deref()
+            .is_some_and(|ex| self.type_matches_value("X::Comp", ex));
+        let bt_value = match e.backtrace() {
+            Some(bt) => Some(Self::backtrace_value_from_string_with_runtime(bt, !is_comp)),
+            None if is_comp => Some(self.build_backtrace_value_with_runtime(false)),
+            None => None,
+        };
+        let err_val = e.exception_value_with_backtrace(bt_value);
         let saved_topic = self.env().get("_").cloned();
         // Per Raku semantics `$!` is only *updated* to the exception when it
         // propagates out of the `try` unhandled (swallowed by the implicit

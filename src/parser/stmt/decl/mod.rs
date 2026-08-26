@@ -100,6 +100,7 @@ fn wrap_with_will_leave(
         stmts.push(Stmt::Phaser {
             kind,
             body: phaser_body,
+            condition: None,
         });
     }
     Stmt::SyntheticBlock(stmts)

@@ -283,6 +283,7 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "take"
             | "take-rw"
             | "snip"
+            | "snitch"
             | "set"
             | "bag"
             | "mix"

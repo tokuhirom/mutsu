@@ -1194,12 +1194,29 @@ impl Interpreter {
                     // `method != "message"`, which made a user `method message`
                     // unreachable through this path: an exception that computes
                     // its message reported the literal text `(Any)`.)
+                    // raku's `Exception.gist` is the message *plus the
+                    // backtrace*; `.Str`/`.message` are the bare message. The
+                    // native `X::*` arm in `methods_0arg` already appends it —
+                    // this is the same rule for the classes only the
+                    // interpreter can recognise as exceptions (a user
+                    // `class E is Exception`).
+                    let with_backtrace = |target: &Value, msg: String| -> Value {
+                        if method != "gist" {
+                            return Value::str(msg);
+                        }
+                        match Self::exception_backtrace_text(target) {
+                            Some(bt) => Value::str(format!("{}\n{}", msg, bt)),
+                            None => Value::str(msg),
+                        }
+                    };
                     if self.has_user_method(&cn, method) {
                         // fall through to user-method dispatch
                     } else if method != "message" && self.has_user_method(&cn, "message") {
                         // For .Str/.gist, prefer a user-defined `message` method
                         // (it may interpolate attributes).
-                        return self.call_method_with_values(target.clone(), "message", vec![]);
+                        let msg =
+                            self.call_method_with_values(target.clone(), "message", vec![])?;
+                        return Ok(with_backtrace(&target, msg.to_string_value()));
                     } else if let Some(msg) = attributes.as_map().get("message")
                         // A declared-but-undefined `has $.message` is not a
                         // message; rendering it would print the literal `(Any)`.
@@ -1209,21 +1226,23 @@ impl Interpreter {
                         && !msg.is_nil()
                         && !matches!(msg.view(), ValueView::Package(_))
                     {
-                        return Ok(Value::str(msg.to_string_value()));
+                        let msg = msg.to_string_value();
+                        return Ok(with_backtrace(&target, msg));
                     } else if cn == "X::AdHoc"
                         // `X::AdHoc` (what `die "..."` builds) carries its text in
                         // `payload`, not `message`.
                         && let Some(payload) = attributes.as_map().get("payload")
                         && !payload.to_string_value().is_empty()
                     {
-                        return Ok(Value::str(payload.to_string_value()));
+                        let msg = payload.to_string_value();
+                        return Ok(with_backtrace(&target, msg));
                     } else if let Some(formatted) =
                         crate::builtins::exception_message::format_exception_message(
                             &cn,
                             &(attributes).as_map(),
                         )
                     {
-                        return Ok(Value::str(formatted));
+                        return Ok(with_backtrace(&target, formatted));
                     } else if method != "message" {
                         // raku's `Exception.gist` for an exception with nothing
                         // to say: it names the class instead of stringifying the
@@ -1233,13 +1252,31 @@ impl Interpreter {
                         // (`X::AdHoc`'s payload and the class-specific formatted
                         // messages were already tried above.)
                         let thrown = attributes.as_map().contains_key("backtrace");
-                        return Ok(Value::str(if thrown {
+                        let msg = if thrown {
                             format!("Died with {}", cn)
                         } else {
                             format!("Unthrown {} with no message", cn)
-                        }));
+                        };
+                        return Ok(with_backtrace(&target, msg));
                     }
                 }
+            }
+            // `Exception.backtrace` for a class only the MRO identifies as an
+            // exception (`class E is Exception`): the native `X::*` arm in
+            // `methods_0arg` is name-gated and never sees it, so `$!.backtrace`
+            // used to die with "No such method". `.throw` stamps the attribute;
+            // an exception that was merely constructed answers `Nil`, as raku's
+            // does.
+            if args.is_empty()
+                && method == "backtrace"
+                && !self.has_user_method(&class_name.resolve(), "backtrace")
+                && self.value_is_exception_instance(&target)
+            {
+                return Ok(attributes
+                    .as_map()
+                    .get("backtrace")
+                    .cloned()
+                    .unwrap_or(Value::NIL));
             }
             // Default `.gist` of a user instance matches its `.raku` (raku:
             // `say F.new(:z(5))` → `F.new(z => 5)`), unless the class defines its

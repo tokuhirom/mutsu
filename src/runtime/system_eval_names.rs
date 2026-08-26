@@ -222,6 +222,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "slip",
     "slurp",
     "snip",
+    "snitch",
     "so",
     "sort",
     "split",
@@ -303,6 +304,7 @@ impl Interpreter {
                 Stmt::Phaser {
                     kind: PhaserKind::Begin,
                     body,
+                    ..
                 } => {
                     let mut calls: HashSet<String> = HashSet::new();
                     Self::collect_call_names_in_stmts(body, &mut calls);

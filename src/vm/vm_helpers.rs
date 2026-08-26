@@ -260,6 +260,25 @@ impl Interpreter {
         self.build_backtrace_value_with_leading(None)
     }
 
+    /// [`Self::build_backtrace_value`] with an explicit `is-runtime` stamp.
+    /// Only a *compile-time* diagnosis passes `false`: rakudo's
+    /// `Backtrace.is-runtime` distinguishes a backtrace captured while the
+    /// program was running from one describing a compilation failure, and the
+    /// live routine stack of the code that triggered the compilation is the
+    /// best frame set mutsu can offer for the latter.
+    pub(crate) fn build_backtrace_value_with_runtime(&self, is_runtime: bool) -> Value {
+        let bt = self.build_backtrace_value_with_leading(None);
+        Self::stamp_backtrace_runtime(bt, is_runtime)
+    }
+
+    /// Overwrite a freshly built `Backtrace`'s `is-runtime` attribute.
+    fn stamp_backtrace_runtime(bt: Value, is_runtime: bool) -> Value {
+        if let ValueView::Instance { attributes, .. } = bt.view() {
+            attributes.insert("is-runtime".to_string(), Value::truth(is_runtime));
+        }
+        bt
+    }
+
     /// Build a `Backtrace` value from the current routine stack, optionally
     /// prepending a synthetic leading routine frame (e.g. `throw`).
     ///
@@ -436,7 +455,12 @@ impl Interpreter {
 
     /// Build a Backtrace Value from a pre-formatted backtrace string.
     /// Parses the string lines to extract frame info (best-effort).
-    pub(super) fn backtrace_value_from_string(bt_str: &str) -> Value {
+    /// `is_runtime` stamps the result — see
+    /// [`Self::build_backtrace_value_with_runtime`].
+    pub(super) fn backtrace_value_from_string_with_runtime(
+        bt_str: &str,
+        is_runtime: bool,
+    ) -> Value {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
@@ -493,9 +517,9 @@ impl Interpreter {
         let mut bt_attrs = HashMap::new();
         bt_attrs.insert("frames".to_string(), Value::array(frames));
         bt_attrs.insert("text".to_string(), Value::str(bt_str.to_string()));
-        // Parsed from a captured runtime backtrace string -- see the sibling
-        // builder above for why this marks the Backtrace as runtime.
-        bt_attrs.insert("is-runtime".to_string(), Value::TRUE);
+        // Parsed from a captured backtrace string -- runtime unless the caller
+        // says otherwise (a compile-time diagnosis; see the sibling builder).
+        bt_attrs.insert("is-runtime".to_string(), Value::truth(is_runtime));
         Value::make_instance(Symbol::intern("Backtrace"), bt_attrs)
     }
 

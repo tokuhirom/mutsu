@@ -284,6 +284,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
         Stmt::Phaser {
             kind: crate::ast::PhaserKind::Close,
             body,
+            ..
         } => Stmt::Expr(Expr::MethodCall {
             target: Box::new(Expr::Var(emitter_name.to_string())),
             name: Symbol::intern("__mutsu_register_close_phaser"),
@@ -294,9 +295,14 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
         // Phaser bodies (LAST/QUIT/FIRST/NEXT/...) inside a supply/whenever
         // can also `emit`/`done`; rewrite them to the emitter just like the
         // main body so e.g. `LAST { emit "done" }` forwards to the supply.
-        Stmt::Phaser { kind, body } => Stmt::Phaser {
+        Stmt::Phaser {
+            kind,
+            body,
+            condition,
+        } => Stmt::Phaser {
             kind,
             body: rewrite_supply_body(body, emitter_name),
+            condition,
         },
         Stmt::Label { name, stmt } => Stmt::Label {
             name,

@@ -301,6 +301,12 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("phaser keyword"));
     }
     let (rest, _) = ws(rest)?;
+    // `X::Phaser::PrePost.condition` is the *verbatim source text* of the
+    // phaser's argument — the block with its braces (`{ $x ~~ Int }`), or the
+    // bare statement of the `PRE 0` form, exactly as written across however
+    // many lines. No deparse of the AST can reproduce that, so the slice is
+    // taken here, where the source is still in hand.
+    let condition_src = rest;
     let (rest, body) = if rest.starts_with('{') {
         block(rest)?
     } else {
@@ -333,7 +339,18 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         return Ok((rest, Stmt::Expr(Expr::Literal(v))));
     }
-    Ok((rest, Stmt::Phaser { kind, body }))
+    let condition = matches!(kind, PhaserKind::Pre | PhaserKind::Post).then(|| {
+        let consumed = condition_src.len() - rest.len();
+        crate::symbol::Symbol::intern(&condition_src[..consumed])
+    });
+    Ok((
+        rest,
+        Stmt::Phaser {
+            kind,
+            body,
+            condition,
+        },
+    ))
 }
 
 /// Fold `$*RAKU.version` / `$*PERL.version` to a Version literal of the current

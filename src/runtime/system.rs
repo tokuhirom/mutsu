@@ -391,6 +391,7 @@ impl Interpreter {
             if let Stmt::Phaser {
                 kind: PhaserKind::Begin,
                 body,
+                ..
             } = stmt
             {
                 let _ = self.eval_block_value(body);

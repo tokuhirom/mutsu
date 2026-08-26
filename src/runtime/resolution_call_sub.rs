@@ -19,9 +19,13 @@ impl Interpreter {
         let mut failure_queue = Vec::new();
         let mut post_ph = Vec::new();
         for stmt in stmts {
-            if let Stmt::Phaser { kind, body } = stmt {
+            if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
-                    PhaserKind::Pre => pre_ph.push(Stmt::Block(body.clone())),
+                    // PRE/POST keep their original `Stmt::Phaser` node so the
+                    // captured `condition` source text survives — every other
+                    // kind is reduced to its body, which is all its consumers
+                    // need. `phaser_body_and_condition` unwraps them again.
+                    PhaserKind::Pre => pre_ph.push(stmt.clone()),
                     PhaserKind::Enter => enter_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Post | PhaserKind::Leave | PhaserKind::Keep | PhaserKind::Undo => {}
                     _ => body_main.push(stmt.clone()),
@@ -32,7 +36,7 @@ impl Interpreter {
         }
         // POST phasers in reverse source order
         for stmt in stmts.iter().rev() {
-            if let Stmt::Phaser { kind, body } = stmt {
+            if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
                     PhaserKind::Leave => {
                         success_queue.push(Stmt::Block(body.clone()));
@@ -40,7 +44,7 @@ impl Interpreter {
                     }
                     PhaserKind::Keep => success_queue.push(Stmt::Block(body.clone())),
                     PhaserKind::Undo => failure_queue.push(Stmt::Block(body.clone())),
-                    PhaserKind::Post => post_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::Post => post_ph.push(stmt.clone()),
                     _ => {}
                 }
             }
@@ -53,6 +57,23 @@ impl Interpreter {
             post_ph,
             body_main,
         )
+    }
+
+    /// Unwrap a phaser statement as `split_block_phasers` hands it back: the
+    /// body to evaluate, plus a `PRE`/`POST` phaser's verbatim condition source
+    /// text (the empty string when there is none — an old AST, or a body that
+    /// arrived as a bare `Stmt::Block`).
+    pub(super) fn phaser_body_and_condition(stmt: &Stmt) -> (&[Stmt], &str) {
+        match stmt {
+            Stmt::Phaser {
+                body, condition, ..
+            } => (
+                body,
+                condition.as_ref().map(Symbol::as_str).unwrap_or_default(),
+            ),
+            Stmt::Block(body) => (body, ""),
+            other => (std::slice::from_ref(other), ""),
+        }
     }
 
     pub(super) fn make_promise_instance(&self, status: &str, result: Value) -> Value {
