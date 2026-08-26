@@ -44,6 +44,16 @@ pub(crate) fn builtin_val(args: &[Value]) -> Value {
     }
     let original = arg.to_string_value();
     let word = original.trim();
+    // Whitespace *around* a number is fine (`val(" 42 ")` is `IntStr.new(42, " 42 ")`),
+    // but a non-empty all-whitespace string is not numeric at all — rakudo
+    // returns a plain `Str` for `val(" ")`, `val("\t")`, `val("\n")`. Only the
+    // genuinely EMPTY string numifies, to `IntStr.new(0, "")`. Without this
+    // guard the trim above turned every whitespace argument into that same
+    // `0`, which `sub MAIN(:$y)` then reported for `-y= ` (roast
+    // S06-other/main-usage.t).
+    if word.is_empty() && !original.is_empty() {
+        return Value::str(original.to_string());
+    }
 
     fn make_allomorphic(val: Value, original: &str) -> Value {
         let mut mixins = StdHashMap::new();

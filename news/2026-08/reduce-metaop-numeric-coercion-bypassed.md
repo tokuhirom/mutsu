@@ -69,3 +69,35 @@ Two details worth keeping:
 Pinned by `t/numeric-coercion-gaps.t` (`[+]`/`[*]`/`[-]`/`[<]` over objects, a
 `[+]` over `Match` captures, `[+]` mixing an object with a plain `Int`, and the
 plain-value and `[~]`/`[max]` cases that must be unaffected).
+
+## What it flushed out: `indir :!d`
+
+An unhandled `Failure` is an `Instance`, so it now reaches the bridge and
+*throws* in numeric context — which is what the plain binary `+` has always
+done. `roast/S32-io/indir.t` promptly went red, and the reduce change was not
+the bug: the file's 1000-iteration race check reduces a list of results from
+
+```raku
+indir :!d, 'foo'.IO, { ... }   # 'foo' does not exist
+```
+
+and mutsu was returning a `Failure` from every one of them. `[+]` had been
+silently numifying those to `0`, so the assertion `$failures == 0` passed for
+entirely the wrong reason.
+
+The real bug: the `:d` adverb (default `True`) is what requests the directory
+test, and *existence is part of that test*. Raku's `$*CWD` is a virtual working
+directory, so `indir :!d, $path, {...}` legitimately runs its block against a
+path that does not exist — verified against rakudo, which returns normally.
+`builtin_indir` tested existence unconditionally. Two fixes:
+
+* the existence test is now gated on `:d`, alongside the is-a-directory test it
+  already gated;
+* `has_required_mode_bits` returns `true` without stat'ing when no `:r`/`:w`/`:x`
+  bits were requested — otherwise a nonexistent path was rejected as
+  "permission denied" purely because `metadata` could not find it.
+
+`chdir` has the same `:!d` gap *plus* a second bug (it takes the adverb itself
+as the path); it performs a real process chdir, so it was split off to
+[`todo/tickets/chdir-adverbs-parsed-as-the-path.md`](../../todo/tickets/chdir-adverbs-parsed-as-the-path.md)
+rather than changed blind.

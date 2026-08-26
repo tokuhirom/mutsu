@@ -601,11 +601,16 @@ pub(crate) fn native_method_0arg(
         // For allomorphic types, string-oriented methods should use the Str part.
         if let Some(str_val) = mixins.get("Str") {
             match method {
+                // `ord`/`ords` belong here for the same reason as `comb`: they
+                // read the *characters*, so on an allomorph they must read the
+                // Str part. Without them the generic mixin delegation below
+                // handed them the inner NUMBER, so `IntStr.new(0, "zero").ords`
+                // was `(48,)` — the codepoint of "0" — instead of "zero"'s.
                 "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
                 | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
-                | "flip" | "samemark" | "samespace" | "uniname" | "uninames" | "unival"
-                | "univals" | "uniprop" | "uniprops" | "uniparse" | "parse-names" | "NFC"
-                | "NFD" | "NFKC" | "NFKD" | "encode" => {
+                | "flip" | "ord" | "ords" | "samemark" | "samespace" | "uniname" | "uninames"
+                | "unival" | "univals" | "uniprop" | "uniprops" | "uniparse" | "parse-names"
+                | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
                     return native_method_0arg(str_val, method_sym);
                 }
                 _ => {}

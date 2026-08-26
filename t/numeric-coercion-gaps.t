@@ -5,7 +5,7 @@ use Test;
 # below asserts the *type* as well as the value: several of these bugs produced
 # a right-looking number of the wrong type.
 
-plan 61;
+plan 67;
 
 # --------------------------------------------------------------------------
 # 1. Generic `Real` arithmetic goes through `.Bridge` on BOTH operands.
@@ -186,6 +186,19 @@ is-deeply [Int, Int('42'), &Int('42')], [Int, 42, 'what?'],
 # --------------------------------------------------------------------------
 # 7. `MAIN` binds its command-line arguments through `val()`.
 # --------------------------------------------------------------------------
+
+# `val()` treats whitespace AROUND a number as insignificant, but a non-empty
+# all-whitespace string is not numeric at all. Only the genuinely empty string
+# numifies (to 0) -- this is what a `-y= ` MAIN option relies on.
+is val(" 42 ").^name, 'IntStr', 'val() sees through whitespace around a number';
+is val(" ").^name, 'Str', 'val(" ") is a plain Str';
+is val("\t").^name, 'Str', 'val("\t") is a plain Str';
+is val("").^name, 'IntStr', 'val("") is IntStr.new(0, "")';
+
+# An allomorph's character-reading methods read its Str part, not its number.
+is IntStr.new(0, "zero").ords.List, (122, 101, 114, 111),
+    '.ords on an allomorph reads the Str part';
+is IntStr.new(0, "").ords.elems, 0, '.ords on an empty-Str allomorph is empty';
 
 my $prog = $*TMPDIR.add("numeric-coercion-main-{$*PID}.raku");
 $prog.spurt: 'sub MAIN($pos, :$named) { say $pos.^name; say $named.^name; say $pos + 1 }';

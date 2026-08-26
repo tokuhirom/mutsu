@@ -101,6 +101,15 @@ impl Interpreter {
             }
         }
         let path_arg = path_arg.ok_or_else(|| RuntimeError::new("indir requires a path"))?;
+        // The `:d` adverb (default `True`) is what asks for the directory
+        // test, and existence is part of that test: `indir :!d, $path, {...}`
+        // runs its block against a path that need not exist at all, because
+        // `$*CWD` is a *virtual* working directory rather than a process
+        // chdir. Testing existence unconditionally (`skip_existence_test`
+        // false below) made every `:!d` call return a Failure instead —
+        // invisible until `[+]` stopped silently numifying an unhandled
+        // Failure to `0` (roast S32-io/indir.t reduces exactly such a list).
+        let skip_existence_test = !require_dir;
         let mut requested = path_arg.to_string_value();
         let mut requested_cwd_opt: Option<String> = None;
         if let ValueView::Instance {
@@ -130,7 +139,7 @@ impl Interpreter {
         } else {
             self.resolve_path(&Self::stringify_path(&path_buf))
         };
-        if !absolute_target.exists() {
+        if !skip_existence_test && !absolute_target.exists() {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(

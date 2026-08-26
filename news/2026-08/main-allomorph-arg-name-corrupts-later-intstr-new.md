@@ -49,6 +49,28 @@ Pinned by `t/numeric-coercion-gaps.t`, which runs a `sub MAIN($pos, :$named)`
 script in a subprocess under `$*EXECUTABLE` and asserts `IntStr`/`RatStr` plus
 that the allomorph still behaves as a number.
 
+## Two pre-existing bugs it flushed out
+
+Binding real allomorphs into `MAIN` turned `roast/S06-other/main-usage.t` red,
+which was correct of it — both causes were real:
+
+**`val()` mis-read whitespace.** It trimmed before parsing, so every
+all-whitespace string numified: `val(" ")` was `IntStr.new(0, " ")`. Rakudo
+treats whitespace *around* a number as insignificant (`val(" 42 ")` is
+`IntStr.new(42, " 42 ")`) but a non-empty all-whitespace string as plain text;
+only the genuinely EMPTY string numifies, to `IntStr.new(0, "")`. `builtin_val`
+now returns the string unchanged when it is non-empty but trims to empty.
+
+**`.ord`/`.ords` on an allomorph read its number, not its string.**
+`IntStr.new(0, "zero").ords` was `(48,)` — the codepoint of `"0"` — because
+those two were missing from the allomorph string-method list in
+`builtins/methods_0arg/mod.rs`, so the generic mixin delegation handed them the
+inner `Int`. They read characters exactly as `comb`/`chars` do, and are now in
+that list. (`.uc`, `.trim`, `.flip`, `.comb`, `.chars`, `.NFC` and friends were
+already correct; `.wordcase` remains divergent for a reason that needs its own
+decision — split off to
+[`todo/tickets/allomorph-wordcase-reads-the-numeric-part.md`](../../todo/tickets/allomorph-wordcase-reads-the-numeric-part.md).)
+
 ## The ticket's secondary finding was already fixed elsewhere
 
 The same doc example also noted `< 1/2>.^name` (a *space-padded*
