@@ -1628,9 +1628,14 @@ pub(crate) fn native_method_1arg(
                     }
                     cached.extend(cycle);
                 }
-                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached(cached),
-                ))));
+                // `.pick(**)` is a genuinely infinite lazy Seq (`.is-lazy` is
+                // True in Rakudo, and `.elems` on it throws X::Cannot::Lazy);
+                // the pre-generated cycles are only a cache. Record the logical
+                // count so `LazyList::is_genuinely_lazy` can see that -- a bare
+                // cache carries no other evidence of infiniteness.
+                let mut ll = crate::value::LazyList::new_cached(cached);
+                ll.elems_count = Some(Value::num(f64::INFINITY));
+                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
             // NaN check for general .pick path
             if let ValueView::Num(f) = arg.view()

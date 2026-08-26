@@ -531,14 +531,22 @@ impl Compiler {
             )
         };
 
-        // FIRST runs before ENTER on the first iteration (per Raku spec)
+        // FIRST runs before ENTER on the first iteration (per Raku spec).
+        // The "already ran" flag is cleared BEFORE the phaser body, not after:
+        // a `next`/`last`/`return` thrown out of the FIRST body would otherwise
+        // skip the trailing assignment and leave the flag set, so FIRST fired
+        // again on EVERY later iteration. `for 1..3 { FIRST next; say $_ }`
+        // then printed nothing at all instead of `2`,`3`, and
+        // `gather for <a b c> { FIRST .take, next; take slip ":", .item }`
+        // re-ran the FIRST `.take` each time, yielding `(a b c)` instead of
+        // `(a : b : c)`.
         if !first_ph.is_empty() {
-            let mut then_branch = first_ph;
-            then_branch.push(Stmt::Assign {
+            let mut then_branch = vec![Stmt::Assign {
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::FALSE),
                 op: AssignOp::Assign,
-            });
+            }];
+            then_branch.extend(first_ph);
             loop_body.push(Stmt::If {
                 cond: Expr::Var(first_var.clone()),
                 then_branch,

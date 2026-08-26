@@ -529,6 +529,19 @@ impl Interpreter {
             let body = std::sync::Arc::clone(&body);
             self.take_seq_body(&body)?;
         }
+        // A not-yet-forced lazy list (`gather { take 1 }`, a finite `.map` pipe)
+        // carries an EMPTY cache, and `hyper_source_items` below is a static
+        // reader that cannot run the VM -- so it read zero elements and the
+        // whole hyper silently answered `()`. Force it here first. Only lists
+        // that are not genuinely lazy (a plain `gather` is `.is-lazy` False in
+        // Rakudo) or whose pipe provably bottoms out in a finite source are
+        // forced, so a genuinely-infinite list still cannot hang.
+        let target = match target.view() {
+            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() || ll.pipe_bottoms_out_finite() => {
+                Value::seq(self.force_lazy_list_vm(&ll)?)
+            }
+            _ => target,
+        };
         // `$b>>++` / `$b>>--` on a Bag/Mix/Set applies the postfix op to each
         // *weight* (treating the QuantHash like a Hash of weights): it returns
         // the *original* QuantHash and writes the in/decremented weights back to
@@ -1287,6 +1300,14 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic target")
         })?;
         let (target, _target_was_itemized) = Self::hyper_target(target);
+        // Force a not-yet-cached lazy list before reading its items (mirrors
+        // the non-dynamic `exec_hyper_method_call_op`; see its comment).
+        let target = match target.view() {
+            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() || ll.pipe_bottoms_out_finite() => {
+                Value::seq(self.force_lazy_list_vm(&ll)?)
+            }
+            _ => target,
+        };
         // Hyper on a Hash applies to each *value*, preserving the keys, and
         // yields a Hash (mirrors the non-dynamic `exec_hyper_method_call_op`).
         let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {

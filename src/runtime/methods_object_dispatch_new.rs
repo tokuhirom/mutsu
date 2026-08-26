@@ -1307,13 +1307,19 @@ impl Interpreter {
                         _ => JunctionKind::Any,
                     };
                     let values_arg = positional.first().copied();
+                    // Rakudo binds `\values` and stores `values.list` as the
+                    // eigenstates, so EVERY iterable flattens -- a `Range`
+                    // (`Junction.new("one", 1..6)` is a six-eigenstate junction),
+                    // a `Hash`/`Set`/`Bag`/`Mix` (which list as their pairs), a
+                    // `Seq`, and an itemized list (`$(1,2)`) alike -- while a
+                    // `Str`/`Int` stays a single eigenstate. Enumerating only
+                    // Array/Seq/Slip wrapped a `Range` as ONE (truthy) element,
+                    // so `Junction.new("one", 1..6).Bool` answered True instead
+                    // of False. `value_to_list_for_receiver` is precisely
+                    // `.list` on the argument itself (it ignores the argument's
+                    // own itemization, which `\values` does too).
                     let elems: Vec<Value> = match values_arg {
-                        Some(v) => match v.view() {
-                            ValueView::Array(items, ..) => items.to_vec(),
-                            ValueView::Seq(items) => items.to_vec(),
-                            ValueView::Slip(items) => items.to_vec(),
-                            _ => vec![v.clone()],
-                        },
+                        Some(v) => crate::runtime::utils::value_to_list_for_receiver(v),
                         None => vec![],
                     };
                     return Ok(Value::junction(kind, elems));

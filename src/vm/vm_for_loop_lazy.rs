@@ -51,20 +51,24 @@ impl Interpreter {
         let saved_topic_local = self.save_loop_topic_local(spec);
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
-        let was_topic_readonly = self.is_readonly("_");
+        let saved_topic_readonly = self.readonly_kind("_");
 
-        if !spec.is_rw {
-            if let Some(ref name) = param_name {
-                if !name.starts_with('@') && !name.starts_with('%') {
-                    self.mark_readonly(name);
-                }
-            } else if spec.multi_param_names.is_empty() {
-                // A multi-param loop binds through `$_`; the body's bind statements
-                // must stay writable, so `$_` is not the read-only topic here.
-                // The topic aliases the item directly (no container of its own),
-                // so `$_ = ...` is rakudo's "Cannot assign to an immutable value".
-                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
-            }
+        // A multi-param loop binds through `$_`; the body's bind statements
+        // must stay writable, so `$_` is not the read-only topic there.
+        // Otherwise the topic is read-only PER ITEM (decided in the loop): it
+        // usually aliases the item directly, with no container of its own, so
+        // `$_ = ...` is rakudo's "Cannot assign to an immutable value" -- but an
+        // item that IS a live container (a `take-rw`'d cell in a `gather`
+        // sequence) must stay assignable, and the write goes through the cell
+        // to the original variable/element.
+        let topic_readonly_per_item =
+            !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty();
+        if !spec.is_rw
+            && let Some(ref name) = param_name
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+        {
+            self.mark_readonly(name);
         }
 
         // `for $lazy -> $a, $b, $c` consumes `arity` elements per iteration and binds
@@ -119,6 +123,13 @@ impl Interpreter {
             self.topic_source_var = None;
             if param_name.is_none() {
                 self.set_loop_topic(topic_local, item.clone());
+            }
+            if topic_readonly_per_item {
+                if item.is_container_ref() {
+                    self.unmark_readonly("_");
+                } else {
+                    self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+                }
             }
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
@@ -239,9 +250,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        if !was_topic_readonly {
-                            self.unmark_readonly("_");
-                        }
+                        self.restore_topic_readonly(saved_topic_readonly);
                         self.topic_source_var = saved_topic_source;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         return Err(e);
@@ -252,9 +261,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        if !was_topic_readonly {
-                            self.unmark_readonly("_");
-                        }
+                        self.restore_topic_readonly(saved_topic_readonly);
                         self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         return Err(e);
                     }
@@ -270,9 +277,7 @@ impl Interpreter {
         {
             self.unmark_readonly(name);
         }
-        if !was_topic_readonly {
-            self.unmark_readonly("_");
-        }
+        self.restore_topic_readonly(saved_topic_readonly);
         self.topic_source_var = saved_topic_source;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {

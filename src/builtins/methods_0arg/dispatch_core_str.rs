@@ -118,9 +118,11 @@ pub(super) fn dispatch(
                 if is_gather && crate::value::lazylist_is_consumed(&ll) {
                     return Some(Some(Err(crate::value::seq_consumed_error())));
                 }
-                return Some(Some(Ok(Value::truth(
-                    !ll.has_finite_closure_endpoint() && !ll.is_cat_pull(),
-                ))));
+                // `is_genuinely_lazy` is the single authority for "is this
+                // `.is-lazy`". The former hand-rolled predicate here answered
+                // True for a plain `gather {...}` (raku: False) and for a
+                // finite `.map` pipe.
+                return Some(Some(Ok(Value::truth(ll.is_genuinely_lazy()))));
             }
             Some(Some(Ok(Value::truth(is_value_lazy(target)))))
         }
