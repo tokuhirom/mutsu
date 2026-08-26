@@ -87,4 +87,4 @@ where Rakudo returns its `Scalar` **container** — so `$o1.foo.VAR.^name` is
 (comparing two distinct `Scalar`s). The value-level behaviour is already correct
 either way; making the rw accessor hand back the container is a separate,
 larger change, and it is the same root gap behind
-`todo/tickets/dollar-dot-attr-compound-assign-spurious-ro-error.md`.
+`todo/deep/dollar-dot-attr-compound-assign-spurious-ro-error.md`.

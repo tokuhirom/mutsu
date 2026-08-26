@@ -1,5 +1,14 @@
 # A user `multi prefix:<++>` candidate wins over the builtin for `Int`/`Bool`/`Num`
 
+> **Moved from `todo/tickets/multi-is-default-loses-to-user-candidate-over-builtin.md` to
+> `todo/deep/` on 2026-08-26, and renamed.** Two reasons. First, the old slug named `is default`
+> as the mechanism, which the 2026-08-26 re-measurement below disproves — the slug was actively
+> misleading whoever picked the ticket up. Second, the fix requires making native operator
+> implementations participate in candidate ranking: the parse-time prefix-op rewrite has to move
+> to the site that owns the lvalue, and the builtin's candidate types have to be modelled
+> somewhere. The ticket's own "Why this was deferred" section describes an architectural change,
+> not a self-contained slice, so `deep/` is where it belongs.
+
 Found by the doc-diff harness (`docs/doc-diff-backlog.md`, `Language/js-nutshell.rakudoc:384`).
 
 ```raku
