@@ -17,34 +17,15 @@ impl Interpreter {
         // illegal (no instance); mixing a concrete value (`Method but True`) is
         // allowed, so this only guards the role / type-object-RHS branches.
         let left_type_object = self.does_invocant_type_object(&left);
-        let role_composed = match right.view() {
-            ValueView::Pair(name, boxed)
-                if self.has_role(name) && matches!(boxed.view(), ValueView::Array(..)) =>
-            {
-                Some(loan_env!(
-                    self,
-                    eval_does_values(left.clone(), right.clone())
-                ))
-            }
-            ValueView::Package(name) if self.has_role(&name.resolve()) => Some(loan_env!(
-                self,
-                eval_does_values(left.clone(), right.clone())
-            )),
-            ValueView::Str(name) if self.has_role(&name) => Some(loan_env!(
-                self,
-                eval_does_values(left.clone(), right.clone())
-            )),
-            // A parameterised role (`5 but G[Int]`). `does` reaches this through
-            // `extract_role_application`; without the arm here `but` fell all the
-            // way to `apply_but_mixin`, which composed nothing at all.
-            ValueView::ParametricRole { base_name, .. } if self.has_role(&base_name.resolve()) => {
-                Some(loan_env!(
-                    self,
-                    eval_does_values(left.clone(), right.clone())
-                ))
-            }
-            _ => None,
-        };
+        // `but` and `does` compose the same set of RHS role spellings, so both
+        // ask the same oracle. This used to be a hand-rolled `has_role` match
+        // that knew only about *registered* roles and only about three of the
+        // spellings, so `%h but Associative[Int,Int]` (a built-in parametric
+        // role, no `RoleDef`, and a bracketed type-object spelling) fell all the
+        // way through to `mixin_not_composable_error`.
+        let role_composed = self
+            .is_role_application(&right)
+            .then(|| loan_env!(self, eval_does_values(left.clone(), right.clone())));
         if let Some(composed) = role_composed {
             // A role type object invocant has a ParametricRoleGroupHOW with no
             // `mixin` metamethod (X::Method::NotFound). A *class* type object
@@ -170,18 +151,38 @@ impl Interpreter {
     }
 
     /// Apply a single mixin with the given type name.
+    ///
+    /// raku models `$obj but <some value>` as composing a fresh *anonymous
+    /// role* that supplies one method named after the value's type, so
+    /// `(1 but "hi").^name` is `Int+{<anon|1>}` — it is emphatically NOT the
+    /// `IntStr` allomorph, and `1 but "hi" ~~ Str` is `False` (whereas
+    /// `<42> ~~ Str` is `True`). mutsu keeps the flat `{type_name => value}`
+    /// override map as the *mechanism* (that is what makes `.Str` answer
+    /// "hi"), but records the composition alongside it so identity and display
+    /// follow raku:
+    ///
+    /// A single `__mutsu_value_mixin__` key holds the minted anonymous-role
+    /// name. It does double duty: it names the composition for display
+    /// (`role_mixin_suffix_excluding` renders it as `<anon|N>`), and its mere
+    /// presence distinguishes this map from a *genuine* allomorph (`<42>`,
+    /// `val("42")`), which is built directly by `Value::mixin` and must keep
+    /// reporting `IntStr` and doing `Str`. Deliberately NOT spelled as a
+    /// `__mutsu_role__` marker: those drive real role-method lookup, role-body
+    /// composition, and several `.clone`/dispatch gates, none of which apply to
+    /// a role that has no declaration behind it.
     fn apply_single_mixin(left: Value, mixin_type: String, right: Value) -> Value {
+        let mut mixins = match left.view() {
+            ValueView::Mixin(_, existing_mixins) => (**existing_mixins).clone(),
+            _ => std::collections::HashMap::new(),
+        };
+        mixins.insert(mixin_type, right);
+        mixins.insert(
+            crate::value::types::VALUE_MIXIN_MARKER.to_string(),
+            Value::str(crate::parser::next_anon_role_name()),
+        );
         match left.view() {
-            ValueView::Mixin(inner, existing_mixins) => {
-                let mut mixins = (**existing_mixins).clone();
-                mixins.insert(mixin_type, right);
-                Value::mixin(inner.as_ref().clone(), mixins)
-            }
-            _ => {
-                let mut mixins = std::collections::HashMap::new();
-                mixins.insert(mixin_type, right);
-                Value::mixin(left, mixins)
-            }
+            ValueView::Mixin(inner, _) => Value::mixin(inner.as_ref().clone(), mixins),
+            _ => Value::mixin(left, mixins),
         }
     }
 
@@ -224,21 +225,7 @@ impl Interpreter {
     /// distinction that matters for `but` on a type object (see
     /// `but_on_type_object_error`).
     fn is_role_type_name(&self, name: &str) -> bool {
-        const BUILTIN_ROLES: &[&str] = &[
-            "Positional",
-            "Associative",
-            "Callable",
-            "Iterable",
-            "Numeric",
-            "Real",
-            "Stringy",
-            "Mixy",
-            "Setty",
-            "Baggy",
-            "Blob",
-            "Buf",
-        ];
-        self.is_role(name) || BUILTIN_ROLES.contains(&name)
+        self.is_role(name) || crate::runtime::types::is_builtin_role_name(name)
     }
 
     /// Error for `but` applied to a *type object* invocant. A role type object

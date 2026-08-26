@@ -50,13 +50,34 @@ impl Interpreter {
                 ValueView::Package(name) => (Some(name.resolve().to_string()), true),
                 _ => (None, false),
             };
-            let Some(cn) = class_name else { continue };
             let method = match spec.to_ascii_lowercase() {
                 's' => "Str",
                 'd' | 'i' | 'u' | 'b' | 'o' | 'x' | 'c' => "Int",
                 'e' | 'f' | 'g' => "Numeric",
                 _ => continue,
             };
+            // A role-mixed value is neither an `Instance` nor a `Package` view,
+            // so it used to skip this coercion entirely and the pure formatter
+            // rendered its base value (`sprintf("%s", @a but R)` printed the
+            // list, not the role's `Str`).
+            if arg.is_mixin_value() {
+                let coerced = if method == "Str" {
+                    self.mixin_user_stringifier(arg)
+                } else {
+                    let arg = arg.clone();
+                    self.dispatch_mixin_method_call(&arg, method, vec![])
+                };
+                if let Some(v) = coerced {
+                    let v = v?;
+                    actual_args[idx] = if method == "Str" {
+                        Value::str(v.to_string_value())
+                    } else {
+                        v
+                    };
+                }
+                continue;
+            }
+            let Some(cn) = class_name else { continue };
             // `%s` on an instance is plain string context: dispatch `.Str` the
             // same way `~$obj` does, whether or not the class spells the method
             // out itself. Gating this on an *own* `Str` method rendered every

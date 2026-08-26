@@ -65,6 +65,31 @@ my $o2 = mk();
 say $o1.WHAT === $o2.WHAT;   # raku: True, mutsu: False
 ```
 
+## Re-verified 2026-08-26 — still open, but now narrowed to identity alone
+
+Re-measured on `main` after the role-mixin family sweep
+(`news/2026-08/array-but-role-mixin-name-suffix-and-join-str.md` and its five siblings). The
+repro still prints `False`, so this is NOT fixed. What changed is that the display half is now
+settled and can be used as evidence:
+
+```
+mutsu -e 'class Foo { has $.x = 1; }; sub mk() { Foo.new but role :: { has $.tag = "hello" } };
+          my $o1 = mk(); my $o2 = mk();
+          say $o1.WHAT === $o2.WHAT;  # False   (raku: True)
+          say $o1.^name;              # Foo+{<anon|1>}
+          say $o2.^name;              # Foo+{<anon|1>}   -- SAME id'
+```
+
+`role_mixin_suffix_excluding` no longer masks anonymous roles (it renders them as raku's
+`<anon|N>`), and both evaluations report the *same* `<anon|1>` — i.e. the anonymous role's
+**name** already is declaration-site stable, minted once by the parser
+(`ANON_ROLE_COUNTER` in `src/parser/primary/misc/anon_decl.rs`, per literal, not per evaluation).
+So the remaining divergence is narrower than the ticket originally guessed: it is not the anon
+name/id that is per-evaluation, it is whatever `__mutsu_role_id__{name}` gets on each
+composition, or the `mixin_composition_key`/`values_identical` comparison downstream of it.
+Start by dumping the two values' `overrides` maps and diffing them — the differing key is the
+whole bug.
+
 ## Affected files (where to start)
 
 - Wherever an anonymous role literal (`role :: { ... }` / `but role { ... }`) is registered and

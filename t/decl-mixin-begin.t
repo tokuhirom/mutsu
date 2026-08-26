@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 9;
+plan 11;
 
 # `my @array does R1` applies the role to the container as a compile-time
 # declaration effect, so a following BEGIN block (which runs before the block's
@@ -34,9 +34,15 @@ plan 9;
     is $x.^name, 'Int+{Bar}', '.^name after `does` on a scalar';
 }
 
-# Allomorphic mixins (`but True`, `<5>`) are unaffected by the role suffix.
-is (0 but True).^name, 'Int', '.^name of a value mixin is not role-suffixed';
+# `but`-mixing a plain VALUE composes an anonymous role in raku, so it does get
+# a `+{<anon|N>}` suffix (the generated id is not stable across
+# implementations, so assert the shape). A genuine allomorph literal is a
+# different thing and keeps its allomorph type name.
+like (0 but True).^name, /^ 'Int+{<anon|' \d+ '>}' $/,
+    '.^name of a value mixin names its anonymous role';
 is <5>.^name, 'IntStr', '.^name of an allomorph is unchanged';
+nok (0 but True) ~~ Bool, 'a value mixin does NOT do the mixed value type';
+ok <5> ~~ Str, 'a genuine allomorph still does Str';
 
 # Indexing a role-mixed positional value delegates to the inner container when
 # the role supplies no AT-POS of its own.

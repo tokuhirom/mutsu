@@ -769,6 +769,16 @@ impl Compiler {
     fn stmt_value_may_user_sink(expr: &Expr) -> bool {
         match expr {
             Expr::MethodCall { .. } => true,
+            // `$x but R` / `$x does R` freshly composes a new mixin value, so
+            // it is an rvalue by construction — never a container return the
+            // exclusion above is guarding against. Raku sinks it, and the
+            // documented "increment on sink, copy on assignment" idiom
+            // (`($b + 1) does role { method sink { $b++ } }` as the body of a
+            // `multi`) depends on exactly this.
+            Expr::Binary { op, .. } => {
+                matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
+            }
+            Expr::Grouped(inner) => Self::stmt_value_may_user_sink(inner),
             Expr::DoStmt(inner) => match inner.as_ref() {
                 // `do { ... }` carries the value of its last statement.
                 Stmt::Expr(e) => Self::stmt_value_may_user_sink(e),

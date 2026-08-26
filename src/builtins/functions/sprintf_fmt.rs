@@ -38,9 +38,16 @@ pub(crate) fn native_sprintf(args: &[Value], z_mode: bool) -> Option<Result<Valu
     // X in string context" warning (matching `~Int` / `Int.Str`) instead of
     // rendering the `(Int)` gist. Fall back to `builtin_sprintf`, which can emit
     // the warning. (Instance args already bail in `try_native_function`.)
+    // A role-mixed (`but`/`does`) argument needs the same interpreter-aware
+    // coercion: its `.Str`/`.Int`/`.Numeric` may come from a composed role, and
+    // the pure formatter can only see the wrapped base value. Unlike an
+    // `Instance` arg (which bails earlier, in `try_native_function`), a `Mixin`
+    // reached here and silently rendered its base — the same "tested
+    // `ValueView::Instance`, forgot `ValueView::Mixin`" split that made
+    // `join`/`~`/interpolation skip a mixin's `Str`.
     if actual_args
         .iter()
-        .any(|a| matches!(a.view(), ValueView::Package(_)))
+        .any(|a| matches!(a.view(), ValueView::Package(_) | ValueView::Mixin(..)))
     {
         return None;
     }

@@ -369,22 +369,44 @@ impl Interpreter {
     }
 
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
+        // A *built-in* role (`Positional`, `Associative[Int,Int]`, ...) has no
+        // `RoleDef` in the registry — mutsu models its behaviour natively — but
+        // it is still a role and still composes, so every arm below accepts it
+        // alongside a registered one (`compose_role_on_value` already tolerates
+        // a body-less builtin role name).
+        let is_role = |n: &str| {
+            self.registry().roles.contains_key(n) || super::type_registry::is_builtin_role_name(n)
+        };
         match rhs.view() {
             ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } if self.registry().roles.contains_key(&base_name.resolve()) => {
-                Some((base_name.resolve(), type_args.clone()))
-            }
-            ValueView::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
+            } if is_role(&base_name.resolve()) => Some((base_name.resolve(), type_args.clone())),
+            ValueView::Pair(name, boxed) if is_role(name) => {
                 if let ValueView::Array(args, ..) = boxed.view() {
                     Some((name.clone(), args.as_ref().clone().into_items()))
                 } else {
                     None
                 }
             }
-            ValueView::Package(name) if self.registry().roles.contains_key(&name.resolve()) => {
+            ValueView::Package(name) if is_role(&name.resolve()) => {
                 Some((name.resolve(), Vec::new()))
+            }
+            // A parameterised role that arrives as a bracketed *type object*
+            // name rather than a `ParametricRole` view — which is how the
+            // built-in parametric roles are represented
+            // (`Associative[Int,Int]`, `Positional[Dog]`).
+            ValueView::Package(name)
+                if Self::parse_parametric_type_name(&name.resolve())
+                    .is_some_and(|(base, _)| is_role(&base)) =>
+            {
+                let (base, args) = Self::parse_parametric_type_name(&name.resolve())?;
+                Some((
+                    base,
+                    args.iter()
+                        .map(|arg| self.type_arg_value_from_name(arg))
+                        .collect(),
+                ))
             }
             // An INDIVIDUAL parametric role (what a `role` declaration
             // expression evaluates to) applies as its group: composition is
@@ -392,9 +414,7 @@ impl Interpreter {
             ValueView::Package(name) if self.role_candidate_group(&name.resolve()).is_some() => {
                 Some((self.role_group_name(&name.resolve()), Vec::new()))
             }
-            ValueView::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
-                Some((name.to_string(), Vec::new()))
-            }
+            ValueView::Str(name) if is_role(name.as_str()) => Some((name.to_string(), Vec::new())),
             // A module-scoped role referenced by its short name at runtime
             // (`$a does NamedAttribute` inside `module NameTrait`'s
             // trait_mod:<is>, where the role registered as
@@ -433,10 +453,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let role = self.registry().roles.get(role_name).cloned();
         if role.is_none()
-            && !matches!(
-                role_name,
-                "Real" | "Numeric" | "Cool" | "Any" | "Mu" | "Positional" | "Associative"
-            )
+            && !matches!(role_name, "Cool" | "Any" | "Mu")
+            && !super::type_registry::is_builtin_role_name(role_name)
         {
             return Err(RuntimeError::new(format!("Unknown role: {}", role_name)));
         }

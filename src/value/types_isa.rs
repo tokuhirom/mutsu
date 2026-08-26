@@ -152,7 +152,14 @@ impl Value {
                 if inner.isa_or_does_check(type_name, allow_roles) {
                     return true;
                 }
-                // Also check mixin type keys (e.g., allomorphic "Str" mixin)
+                // Also check mixin type keys (e.g., allomorphic "Str" mixin) —
+                // but NOT for a value mixin, where the key merely names the
+                // mixed-in value's type: raku composes an anonymous role there,
+                // so `1 but "hi" ~~ Str` and `1 but True ~~ Bool` are both
+                // `False` while the genuine allomorph `<42> ~~ Str` is `True`.
+                if mixins.contains_key(crate::value::types::VALUE_MIXIN_MARKER) {
+                    return false;
+                }
                 return mixins.contains_key(type_name);
             }
             ValueView::Proxy { .. } => "Proxy",

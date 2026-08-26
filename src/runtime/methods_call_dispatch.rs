@@ -4196,6 +4196,29 @@ impl Interpreter {
                     return Ok(result);
                 }
             }
+            // The default object representation names its type
+            // (`Foo.new(x => 1)`), and raku names the *composition* there:
+            // `Foo+{Bar}.new(x => 1)`. Delegating straight to `inner` renders
+            // the bare base class, so retarget the leading type name to the
+            // mixin-aware one that `.^name` already reports. Only the leading
+            // occurrence is touched, and only when the delegate really did
+            // start with the base type's own name (a class with a custom
+            // `gist`/`raku`, or one gisting as its backing array/hash, is left
+            // exactly as it rendered).
+            if matches!(method, "gist" | "raku" | "perl") && args.is_empty() {
+                let rendered =
+                    self.call_method_with_values(inner.as_ref().clone(), method, args)?;
+                let base = crate::value::types::what_type_name(inner.as_ref());
+                let composed = crate::value::types::what_type_name(&target);
+                if composed != base
+                    && let ValueView::Str(text) = rendered.view()
+                    && let Some(tail) = text.strip_prefix(base.as_str())
+                    && (tail.starts_with(".new") || tail.starts_with('<'))
+                {
+                    return Ok(Value::str(format!("{composed}{tail}")));
+                }
+                return Ok(rendered);
+            }
             return self.call_method_with_values(inner.as_ref().clone(), method, args);
         }
 

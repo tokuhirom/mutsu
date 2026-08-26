@@ -9,6 +9,7 @@ pub(crate) use container::{lift_list_infix_in_arg_list, try_parse_sequence_arg_l
 pub(crate) use container::angle_list;
 pub(in crate::parser) mod ident;
 pub(in crate::parser) mod misc;
+pub(crate) use misc::next_anon_role_name;
 mod number;
 pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;

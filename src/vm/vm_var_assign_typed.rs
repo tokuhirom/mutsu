@@ -697,6 +697,13 @@ impl Interpreter {
                 result.push_str(&str_result.to_string_value());
                 continue;
             }
+            // A role-mixed value is not an `Instance` view, so the arm below
+            // never saw it and `"$r"` rendered the base value instead of the
+            // composition's `Str` (see `mixin_user_stringifier`).
+            if let Some(mixed) = self.mixin_user_stringifier(&v) {
+                result.push_str(&mixed?.to_string_value());
+                continue;
+            }
             // For non-Buf instances, try .Stringy() for string context (Raku spec:
             // string interpolation calls .Str which delegates to .Stringy).
             if let ValueView::Instance { .. } = v.view() {
