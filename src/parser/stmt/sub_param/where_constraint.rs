@@ -40,6 +40,35 @@ pub(crate) fn malformed_double_closure_error() -> PError {
 /// when they appear as a signature parameter. `input` is the remaining param
 /// text, positioned at the sigil. Returns `Ok(())` when the param is not one of
 /// these forms (the caller proceeds with normal parsing).
+/// Reject a numeric parameter (`sub f($0) { }`). rakudo diagnoses this with the
+/// same `X::Syntax::Variable::Numeric` it uses for `my $0`, distinguishing the
+/// two through `.what` ("parameter" vs "variable") — which
+/// `roast/S32-exceptions/misc2.t` matches on. Its message IS
+/// `Cannot declare a numeric {what}`, so `.what` is derived from the text
+/// rather than stored twice. Without this the signature parser merely failed to
+/// find a name and the whole declaration was reported as the generic
+/// `X::Syntax::Confused` parse-error blob.
+///
+/// Like the `my $0` twin, the rule is about the digit *property*, not ASCII.
+pub(crate) fn reject_numeric_param(input: &str) -> Result<(), PError> {
+    let mut chars = input.chars();
+    if !matches!(chars.next(), Some('$' | '@' | '%' | '&')) {
+        return Ok(());
+    }
+    if !chars.next().is_some_and(char::is_numeric) {
+        return Ok(());
+    }
+    let msg = "Cannot declare a numeric parameter".to_string();
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("what".to_string(), Value::str("parameter".to_string()));
+    let ex = Value::make_instance(Symbol::intern("X::Syntax::Variable::Numeric"), attrs);
+    Err(PError::fatal_with_exception(
+        format!("X::Syntax::Variable::Numeric: {msg}"),
+        Box::new(ex),
+    ))
+}
+
 pub(crate) fn reject_placeholder_or_twigil_param(input: &str) -> Result<(), PError> {
     let bytes = input.as_bytes();
     if bytes.len() < 3 || !matches!(bytes[0], b'$' | b'@' | b'%' | b'&') {

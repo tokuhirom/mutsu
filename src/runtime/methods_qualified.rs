@@ -786,10 +786,12 @@ impl Interpreter {
                         })
                 });
             if !in_mro && !in_composed_roles {
-                return Some(Err(RuntimeError::new(format!(
-                    "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
-                    actual_method, qualifier, inst_cn_str
-                ))));
+                return Some(Err(RuntimeError::invalid_qualifier(
+                    actual_method,
+                    qualifier,
+                    target.clone(),
+                    &inst_cn_str,
+                )));
             }
             if let Some((_owner, def)) =
                 self.resolve_method_with_owner(qualifier, actual_method, &args)
@@ -889,10 +891,12 @@ impl Interpreter {
                         })
                 });
             if !in_mro && !in_composed_roles {
-                return Some(Err(RuntimeError::new(format!(
-                    "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
-                    actual_method, qualifier, pkg_name
-                ))));
+                return Some(Err(RuntimeError::invalid_qualifier(
+                    actual_method,
+                    qualifier,
+                    target.clone(),
+                    &pkg_name,
+                )));
             }
             if let Some((_owner, def)) =
                 self.resolve_method_with_owner(qualifier, actual_method, &args)
@@ -968,10 +972,12 @@ impl Interpreter {
         if type_matches {
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }
-        Some(Err(RuntimeError::new(format!(
-            "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
-            actual_method, qualifier, type_name
-        ))))
+        Some(Err(RuntimeError::invalid_qualifier(
+            actual_method,
+            qualifier,
+            target.clone(),
+            type_name,
+        )))
     }
 
     /// Route a qualified call `self.Builtin::method` to the native handler for

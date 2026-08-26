@@ -267,6 +267,21 @@ impl RuntimeError {
                 attrs.insert("reason".to_string(), Value::str_from(reason));
             }
         }
+        // `X::Anon::Multi`'s message IS `An anonymous {routine-type} may not
+        // take a {multiness} declarator` in rakudo, so both attributes the
+        // roast tests match on (`multiness => 'multi'`,
+        // `routine-type => 'method'`) come straight out of the text rather than
+        // being spelled twice — the same derive-don't-duplicate rule as above.
+        // The diagnosis is raised as a plain fatal parse error from several
+        // parser sites, so deriving here covers all of them at once.
+        if class_name == "X::Anon::Multi"
+            && let Some(rest) = text.strip_prefix("An anonymous ")
+            && let Some((routine_type, rest)) = rest.split_once(" may not take a ")
+            && let Some(multiness) = rest.strip_suffix(" declarator")
+        {
+            attrs.insert("routine-type".to_string(), Value::str_from(routine_type));
+            attrs.insert("multiness".to_string(), Value::str_from(multiness));
+        }
         // `X::Syntax::InfixInTermPosition`'s message IS
         // `Preceding context expects a term, but found infix {infix} instead.`
         // in rakudo. The parser builds this diagnosis with a real `infix`

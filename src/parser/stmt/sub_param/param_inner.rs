@@ -1035,6 +1035,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // ($!x / $.x are attribute twigils, handled separately as X::Syntax::NoSelf
     // or accessor params; $*x is a dynamic variable and is legal.)
     super::where_constraint::reject_placeholder_or_twigil_param(rest)?;
+    // `sub f($0) { }` — numeric parameters cannot be declared, the signature
+    // twin of the `my $0` check in `decl/my_decl.rs`.
+    super::where_constraint::reject_numeric_param(rest)?;
 
     // Capture the original sigil before var_name strips it
     let original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');

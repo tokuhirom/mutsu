@@ -50,6 +50,10 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         | ValueView::RangeExclBoth(_, _)
         | ValueView::GenericRange { .. } => "Range".to_string(),
         ValueView::Nil => "Nil".to_string(),
+        // Without this arm a Capture fell through to the `_ => "Any"` default,
+        // so `(\(1, 2) but R).^name` answered `Any+{R}` where rakudo says
+        // `Capture+{R}` (the shape `X::AdHoc.from-slurpy` produces).
+        ValueView::Capture { .. } => "Capture".to_string(),
         // ADR-0047: a lexically-scoped `my class`/`my grammar` (including a
         // nested one, e.g. `my monitor Store { my class Session {...} }`)
         // registers its instances/type object under a mangled storage name

@@ -475,10 +475,18 @@ impl Interpreter {
         let mut named_checks: Vec<(String, Value, Option<Value>, String)> = Vec::new();
         // Names this exception cannot answer at all. Rakudo would die here with
         // X::Method::NotFound; mutsu skips the check and says so out loud (see
-        // the diagnostic emitted below), because the missing attributes are a
-        // separate, tracked gap rather than a fault in the test.
-        // TODO: remove this bucket once mutsu's structured exceptions carry the
-        // rakudo attribute set -- todo/tickets/exception-attributes-missing-for-throws-like.md
+        // the diagnostic emitted below), because a missing attribute is a
+        // missing-*attribute* bug rather than a fault in the test.
+        //
+        // The ten attributes this bucket was opened to track are all
+        // implemented (`news/2026-08/exception-attributes-missing-for-throws-like.md`),
+        // and it now fires NOWHERE in either suite: a full `make roast` over
+        // the whitelist and a full `prove t/` both emit zero `SKIPPED matcher`
+        // lines. It stays as a loud safety net for the non-whitelisted files.
+        // TODO: raise `X::Method::NotFound` here the way rakudo's `$x."$k"()`
+        // does, instead of skipping. That is a behaviour change for every
+        // exception in the suite at once, so it wants its own slice rather
+        // than riding along with an attribute fix.
         let mut unresolvable: Vec<String> = Vec::new();
         for (attr_name, expected_val) in named_matchers {
             let mut actual_val = unwrapped_exception.as_ref().and_then(|ex| {

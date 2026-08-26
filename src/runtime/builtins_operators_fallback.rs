@@ -897,6 +897,19 @@ impl Interpreter {
                     Err(err) => return Err(err),
                 }
             }
+            // Coercing to a type the value ALREADY conforms to is the identity
+            // — there is nothing to convert. rakudo answers `Any(1, 2, 3)` with
+            // `(1 2 3)` and `Mu("z")` with `"z"` on exactly this rule, which is
+            // what an undefined variable called as a function
+            // (`my $x; $x("hi")` — `$x` is the `Any` type object) relies on.
+            // Checked LAST, so a real `COERCE` / `new` / `.<Target>` still
+            // wins for a value that happens to satisfy the target type.
+            // (`$x()` with no arguments never gets here: the whole branch is
+            // gated on a non-empty argument list, so it falls through to
+            // `CALL-ME` and dies, as rakudo does.)
+            if self.type_matches_value(name, &coercee[0]) {
+                return Ok(coercee[0].clone());
+            }
             let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
             // `name` may be a lexical class's mangled storage name
             // (ADR-0047 P1: `Foo\u{0}<decl-id>`) resolved above via

@@ -12,11 +12,17 @@ throws-like { my &f = sub (Int $x) {}; f("hello") },
     X::TypeCheck::Binding,
     "binding type check - parent type matches";
 
-# X::TypeCheck::Binding::Parameter with attribute matchers
+# X::TypeCheck::Binding::Parameter with attribute matchers.
+#
+# raku exposes `.expected` as the expected TYPE OBJECT and `.got` as the
+# offending VALUE -- not their names -- so the matchers are `Int` and `"hello"`,
+# not `/Int/` and `/Str/`. (The regex spellings were mutsu-shaped: they failed
+# under `raku t/exception-types.t` too, and only passed here while mutsu stored
+# the got TYPE NAME instead of the value.)
 throws-like { my &f = sub (Int $x) {}; f("hello") },
     X::TypeCheck::Binding::Parameter,
-    expected => /Int/,
-    got => /Str/,
+    expected => Int,
+    got => "hello",
     "binding parameter type check with attribute matchers";
 
 # X::AdHoc - a `:=`-bound literal has no container at all, so rakudo reports

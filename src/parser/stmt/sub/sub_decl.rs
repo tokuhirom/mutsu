@@ -57,9 +57,17 @@ pub(crate) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
         if let Some(after_kw) = keyword(declarator, input) {
             // After the declarator, optionally consume whitespace + routine type
             let after_kw_ws = ws(after_kw).map(|(r, _)| r).unwrap_or(after_kw);
+            // rakudo's message IS `An anonymous {routine-type} may not take a
+            // {multiness} declarator`, and `roast/S32-exceptions/misc2.t`
+            // matches `routine-type => 'method'` on the `multi method` form —
+            // so the routine type has to be the real one, not always
+            // "routine". (Verified against
+            // `raku -e 'class { multi method () { }}'`.)
+            let mut routine_type = "routine";
             let after_type = if let Some(r) = keyword("sub", after_kw_ws) {
                 ws(r).map(|(r, _)| r).unwrap_or(r)
             } else if let Some(r) = keyword("method", after_kw_ws) {
+                routine_type = "method";
                 ws(r).map(|(r, _)| r).unwrap_or(r)
             } else {
                 after_kw_ws
@@ -67,8 +75,8 @@ pub(crate) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
             // If what follows is `{`, this is an anonymous routine — fatal error.
             if after_type.starts_with('{') {
                 return Err(PError::fatal(format!(
-                    "X::Anon::Multi: An anonymous routine may not take a {} declarator",
-                    declarator
+                    "X::Anon::Multi: An anonymous {} may not take a {} declarator",
+                    routine_type, declarator
                 )));
             }
             // If followed by `(`, it could be a function call like `multi()` after
@@ -78,8 +86,8 @@ pub(crate) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
             // type IS present (e.g. `multi sub (...)`), it's definitely a declaration.
             if after_type.starts_with('(') && after_type != after_kw_ws {
                 return Err(PError::fatal(format!(
-                    "X::Anon::Multi: An anonymous routine may not take a {} declarator",
-                    declarator
+                    "X::Anon::Multi: An anonymous {} may not take a {} declarator",
+                    routine_type, declarator
                 )));
             }
             // `(` directly after the declarator keyword could be a function call;

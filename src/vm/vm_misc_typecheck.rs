@@ -386,13 +386,20 @@ impl Interpreter {
             if let Some(fail) = self.subset_where_fail.take() {
                 return Err(*fail);
             }
+            // A generic type capture (`sub c(::T $x, ...) { my T $zz = ... }`)
+            // is checked against the type `::T` was BOUND to, so the error has
+            // to name that type too: rakudo says "expected Int but got Str",
+            // not "expected T". `resolved_type_capture_name` is the same
+            // resolution the check above performs internally, and it returns
+            // the constraint unchanged when no capture of that name is bound.
+            let reported = self.resolved_type_capture_name(constraint);
             if bind_mode {
                 return Err(crate::runtime::utils::type_check_binding_typed_error(
-                    constraint, &value,
+                    &reported, &value,
                 ));
             }
             return Err(RuntimeError::typecheck_assignment(
-                constraint, &value, var_name,
+                &reported, &value, var_name,
             ));
         }
         if !value.is_nil() {

@@ -307,10 +307,7 @@ pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usiz
         Some((MultiplicativeOp::Mul, 1))
     } else if r.starts_with('/') && !r.starts_with("//") && !r.starts_with("/=") {
         Some((MultiplicativeOp::Div, 1))
-    } else if r.starts_with('%')
-        && !r.starts_with("%%")
-        && !could_start_var_name(r.as_bytes().get(1).copied())
-    {
+    } else if r.starts_with('%') && !r.starts_with("%%") && !could_start_var_name(&r[1..]) {
         Some((MultiplicativeOp::Mod, 1))
     } else if r.starts_with("%%") {
         Some((MultiplicativeOp::DivisibleBy, 2))
