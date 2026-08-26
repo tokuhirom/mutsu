@@ -342,7 +342,7 @@ impl Interpreter {
         failure
     }
 
-    fn malformed_return_value_error(&self, value: &Value) -> RuntimeError {
+    fn malformed_return_value_error(&self, value: &Value, spec: &str) -> RuntimeError {
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -353,7 +353,26 @@ impl Interpreter {
         {
             return Self::failure_value_to_error(ex);
         }
-        RuntimeError::new("Malformed return value")
+        // rakudo names both the returned value and the pinned return value here
+        // ("Cannot return 27 with .return when return value 42 is already
+        // specified in the signature"), and roast matches the exception's
+        // `payload` against the pinned value. The bare "Malformed return value"
+        // this used to raise carried neither, so a `payload => /42/` matcher had
+        // nothing to find (roast S32-exceptions/misc2.t).
+        let message = format!(
+            "Cannot return {} with .return when return value {} is already specified in the signature",
+            value.to_string_value(),
+            spec.trim()
+        );
+        let mut err = RuntimeError::new(&message);
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message.clone()));
+        attrs.insert("payload".to_string(), Value::str(message));
+        err.exception = Some(Box::new(Value::make_instance(
+            Symbol::intern("X::AdHoc"),
+            attrs,
+        )));
+        err
     }
 
     fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
@@ -443,7 +462,7 @@ impl Interpreter {
             Err(e) if e.return_value.is_some() => {
                 let explicit = e.return_value.unwrap();
                 if !explicit.is_nil() {
-                    return Err(self.malformed_return_value_error(&explicit));
+                    return Err(self.malformed_return_value_error(&explicit, spec));
                 }
                 self.evaluate_definite_return_value(spec)
             }
