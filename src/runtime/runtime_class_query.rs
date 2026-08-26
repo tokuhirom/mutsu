@@ -134,6 +134,37 @@ impl Interpreter {
             && (self.has_class(name) || self.is_declared_package(name))
     }
 
+    /// The element type a `$`-sigil variable's declared constraint implies for
+    /// an element assignment (`$a[0] = v`), or `None` when it implies none.
+    ///
+    /// A container type on a `$` variable describes the *container*
+    /// (`my Hash $h; $h<k> = 1` stores an Int into a Hash, it does not store a
+    /// Hash), so a bare container name constrains nothing here. A
+    /// *parameterised* one does: Rakudo checks each element of a
+    /// `my array[uint8] $a` / `my Array[Int] $x` against the parameter. Any
+    /// non-container constraint is returned unchanged — it is the element type.
+    ///
+    /// A multi-parameter spelling (`Hash[Int,Str]`, where the second parameter
+    /// is the KEY type) is left unconstrained rather than checked against the
+    /// whole parameter list.
+    pub(crate) fn scalar_container_element_constraint(&self, constraint: &str) -> Option<String> {
+        const CONTAINER_TYPES: &[&str] = &[
+            "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
+            "Seq", "array", "Buf", "Blob",
+        ];
+        let base = constraint.split('[').next().unwrap_or(constraint);
+        if !CONTAINER_TYPES.contains(&base) && !self.is_container_subclass(base) {
+            return Some(constraint.to_string());
+        }
+        let param = constraint
+            .split_once('[')
+            .and_then(|(_, rest)| rest.strip_suffix(']'))?;
+        if param.contains(',') {
+            return None;
+        }
+        Some(param.to_string())
+    }
+
     pub(crate) fn is_container_subclass(&self, name: &str) -> bool {
         const CONTAINER_TYPES: &[&str] = &[
             "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",

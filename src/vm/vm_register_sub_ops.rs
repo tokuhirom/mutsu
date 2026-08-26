@@ -739,16 +739,16 @@ impl Interpreter {
                             } else {
                                 val
                             };
-                            // An UNDEFINED library is "no library" — Rakudo's
-                            // `guess_library_name` maps it to a NULL handle, i.e.
-                            // this process's own symbol space. It is written
-                            // deliberately: `DBDish::mysql::Native` declares
-                            // `constant LIB = Rakudo::Internals.IS-WIN ?? 'mysql' !! Str`
-                            // and every one of its subs `is native(LIB)`, having
-                            // dlopened the client library itself first.
-                            // Stringifying the type object instead produced the
-                            // nonsense name `lib(Str).so`.
-                            if !crate::runtime::types::value_is_defined(&resolved) {
+                            // `library_name_from_value` maps an UNDEFINED
+                            // argument to "no library" (this process's own
+                            // symbol space) and a `(name, version)` List to the
+                            // one versioned file name it denotes. Both forms
+                            // are written deliberately by real bindings — see
+                            // that function's documentation. The `symbol` trait
+                            // takes neither, so it keeps plain stringification.
+                            if trait_name == "native" {
+                                crate::runtime::nativecall::library_name_from_value(&resolved)
+                            } else if !crate::runtime::types::value_is_defined(&resolved) {
                                 None
                             } else {
                                 Some(resolved.to_string_value())
@@ -883,17 +883,31 @@ impl Interpreter {
             // A returned `CArray[T]` has no length to reify into a Raku array,
             // so it is surfaced as the raw `Pointer` it carries.
             Some(rt) if rt.starts_with("CArray[") => CType::Pointer,
-            Some(rt) => match CType::from_type_name(&self.resolve_native_type_alias(rt)) {
-                Some(ct) => ct,
-                // A CStruct return (opaque native handle): wrap the returned
-                // pointer in an instance of the declared class so it round-trips
-                // as that handle type (`ret_struct` carries the class name).
-                None if self.is_native_struct_type(rt) => {
-                    ret_struct = Some(self.registered_native_class_name(rt));
-                    CType::Pointer
+            Some(rt) => {
+                let resolved = self.resolve_native_type_alias(rt);
+                match CType::from_type_name(&resolved) {
+                    Some(ct) => ct,
+                    // A parameterised `--> Pointer[T]` return. `ret_struct`
+                    // carries the whole `Pointer[T]` spelling so the marshaller
+                    // can build a *typed* pointer — one that answers `.of` and
+                    // `.deref` — instead of an opaque handle tagged with the
+                    // literal class name "Pointer[T]", which resolves neither.
+                    None if crate::runtime::cstruct_layout::pointer_parameter(&resolved)
+                        .is_some() =>
+                    {
+                        ret_struct = Some(resolved);
+                        CType::Pointer
+                    }
+                    // A CStruct return (opaque native handle): wrap the returned
+                    // pointer in an instance of the declared class so it round-trips
+                    // as that handle type (`ret_struct` carries the class name).
+                    None if self.is_native_struct_type(rt) => {
+                        ret_struct = Some(self.registered_native_class_name(rt));
+                        CType::Pointer
+                    }
+                    None => return Ok(()),
                 }
-                None => return Ok(()),
-            },
+            }
         };
 
         let spec = NativeCallSpec {
@@ -933,22 +947,26 @@ impl Interpreter {
 
     /// A native parameter / return type name that is not one of the mapped
     /// scalar C types is treated as an opaque native handle (a pointer) when it
-    /// is a `is repr('CStruct')` class — or, failing an exact registry match,
-    /// when it has the shape of a class name: it starts with an uppercase letter
-    /// or is package-qualified (`Foo::Bar`). This matches Rakudo NativeCall,
-    /// where a `CStruct` type used directly is passed by pointer. The registry
-    /// check catches lowercase CStruct classes (e.g. `evp_cipher_st`) that the
-    /// shape heuristic would miss; the heuristic catches structs declared in
-    /// another compilation unit not visible in this registry. A lowercase,
-    /// unqualified, non-CStruct name (a likely typo'd scalar type) is rejected so
-    /// a real mistake still surfaces rather than being silently mis-marshalled.
+    /// is a class C holds by reference — one declared `is repr('CStruct')`,
+    /// `'CPointer'` or `'CUnion'` — or, failing a registry match, when it has
+    /// the shape of a class name: it starts with an uppercase letter or is
+    /// package-qualified (`Foo::Bar`). This matches Rakudo NativeCall, where
+    /// such a type used directly is passed by pointer. The registry check
+    /// catches lowercase repr classes (`evp_cipher_st`, and libarchive's
+    /// `class archive is repr('CPointer')`) that the shape heuristic would
+    /// miss; the heuristic catches structs declared in another compilation
+    /// unit not visible in this registry. A lowercase, unqualified,
+    /// non-native-handle name (a likely typo'd scalar type) is rejected so a
+    /// real mistake still surfaces rather than being silently mis-marshalled.
+    ///
+    /// Consulting all three repr sets (not just CStruct) is load-bearing: a
+    /// lowercase `repr('CPointer')` handle used as a parameter type made the
+    /// whole declaration skip native registration, leaving the `{ * }` stub
+    /// body — which returns `Whatever` and then fails the sub's own
+    /// `--> int32` return check.
     fn is_native_struct_type(&self, name: &str) -> bool {
-        let short = Self::native_struct_class_name(name);
-        {
-            let reg = self.registry();
-            if reg.cstruct_classes.contains(name) || reg.cstruct_classes.contains(&short) {
-                return true;
-            }
+        if self.is_native_handle_class(name) {
+            return true;
         }
         name.contains("::") || name.starts_with(|c: char| c.is_ascii_uppercase())
     }

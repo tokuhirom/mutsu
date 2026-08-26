@@ -56,6 +56,14 @@ fn anon_type_display_name(name: &str) -> Option<String> {
 /// just the first, or a display would keep only `Store` and silently drop
 /// `::Session`.
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    // `:_` is the "either" smiley — it constrains nothing, and Rakudo does not
+    // keep it in the type object's name (`(Int:_).^name` is `Int`, while `:D`
+    // and `:U` ARE kept). Normalising it here — a display-only site, like the
+    // NativeCall qualification below — leaves constraint matching, which reads
+    // the real name through `strip_type_smiley`, untouched.
+    if let Some(base) = name.strip_suffix(":_") {
+        return std::borrow::Cow::Owned(user_facing_type_name(base).into_owned());
+    }
     if !name.contains('\u{0}') {
         // Fast path: nothing mangled anywhere, no allocation needed. NativeCall
         // type names never carry the `\u{0}` lexical-scope mangling (they are
@@ -122,11 +130,18 @@ const NATIVECALL_TYPE_NAMES: &[&str] = &[
 fn qualify_nativecall_type_name(base: &str) -> Option<String> {
     let split_at = base.find('[').unwrap_or(base.len());
     let (head, rest) = base.split_at(split_at);
-    if NATIVECALL_TYPE_NAMES.contains(&head) {
-        Some(format!("NativeCall::Types::{head}{rest}"))
-    } else {
-        None
+    if !NATIVECALL_TYPE_NAMES.contains(&head) {
+        return None;
     }
+    // The type PARAMETER is a type name too, so it gets the same treatment:
+    // Rakudo renders `Pointer[void]` as
+    // `NativeCall::Types::Pointer[NativeCall::Types::void]` while leaving a
+    // core type (`Pointer[Str]`) alone.
+    let rest = match rest.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
+        Some(param) => format!("[{}]", user_facing_type_name(param)),
+        None => rest.to_string(),
+    };
+    Some(format!("NativeCall::Types::{head}{rest}"))
 }
 
 /// Format a value for display inside a Capture gist.

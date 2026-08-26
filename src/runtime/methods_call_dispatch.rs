@@ -345,6 +345,25 @@ impl Interpreter {
             let matched = self.smart_match(&args[0], &target);
             return Ok(Value::truth(matched));
         }
+        // `Int.ACCEPTS(5)` / `(Int:D).ACCEPTS(5)` — a TYPE OBJECT's `.ACCEPTS`
+        // is the type check `$y ~~ $x`, smiley included. The smartmatch operator
+        // already implements it; only the explicit method spelling threw
+        // X::Method::NotFound. Unlike the scalar arm above this defers to a
+        // user-declared `method ACCEPTS` on the class (a `subset`-like type that
+        // defines its own), which must keep winning.
+        if method == "ACCEPTS"
+            && args.len() == 1
+            && let ValueView::Package(name) = target.view()
+        {
+            let resolved = name.resolve();
+            let base = crate::runtime::types::strip_type_smiley(&resolved)
+                .0
+                .to_string();
+            if !self.has_user_method_including_role(&base, "ACCEPTS") {
+                let matched = self.smart_match(&args[0], &target);
+                return Ok(Value::truth(matched));
+            }
+        }
         // `.self` ignores any arguments (e.g. the fake-infix adverbs on
         // `$x .= self :42moews`); it always returns the invocant.
         if method == "self" && !args.is_empty() {

@@ -60,7 +60,11 @@ impl FieldType {
             "num32" => FieldType::F32,
             "num64" | "num" => FieldType::F64,
             "Str" => FieldType::Str,
-            "Pointer" | "OpaquePointer" => FieldType::Pointer,
+            // A bare, unparameterised `CArray` field is still just a pointer in
+            // C (`Compress::Zlib::Raw`'s `z_stream` declares `has CArray
+            // $.next-in`). Missing it aborted the whole struct layout, which
+            // surfaced as `nativesizeof` reporting the class as a P6opaque.
+            "Pointer" | "OpaquePointer" | "CArray" => FieldType::Pointer,
             other => {
                 // `CArray[T]`, a typed `Pointer[T]`, and any class C holds by
                 // reference (another CStruct, possibly package-qualified:
@@ -184,7 +188,7 @@ pub(crate) fn short_base_name(type_name: &str) -> &str {
 /// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
 /// the parameter is returned exactly as written, since every consumer resolves
 /// a qualified type name by its last component anyway.
-fn pointer_parameter(type_name: &str) -> Option<&str> {
+pub(crate) fn pointer_parameter(type_name: &str) -> Option<&str> {
     short_base_name(type_name)
         .strip_prefix("Pointer[")
         .and_then(|rest| rest.strip_suffix(']'))
@@ -657,42 +661,10 @@ impl crate::runtime::Interpreter {
             }
         };
         let addr = crate::runtime::nativecall::value_c_address(&args[1]);
-        let short = short_base_name(&target);
-        // `nativecast(Str, $ptr)` reads the pointer as a NUL-terminated C
-        // string (the same marshalling a `--> Str` native return uses), not as
-        // an opaque handle tagged `Str`.
-        if short == "Str" {
-            if addr == 0 {
-                return Some(Ok(crate::value::Value::NIL));
-            }
-            let cstr = unsafe { std::ffi::CStr::from_ptr(addr as *const std::ffi::c_char) };
-            return Some(Ok(crate::value::Value::str(
-                cstr.to_string_lossy().into_owned(),
-            )));
-        }
-        // `Pointer[T]` stays an ordinary `Pointer` object and remembers `T` in
-        // an `of` attribute, rather than becoming an instance of a class named
-        // "Pointer[T]" — every `Pointer` method (`.Int`, `.gist`, the
-        // marshalling layer's `address` read) keeps working unchanged, and `.of`
-        // / `.deref` read the parameter from there.
-        if let Some(of) = pointer_parameter(short) {
-            return Some(Ok(crate::runtime::nativecall::make_typed_pointer(addr, of)));
-        }
-        // Tag the handle with the class's **registered** name, not the short
-        // one. A CStruct/CPointer/CUnion declared inside a module is registered
-        // as `M::BB` while `short_base_name` says `BB`, and a handle carrying
-        // the short name matches neither its own class for method resolution
-        // (`MoarVM::Guts::REPRs`' hand-written `MVMArrayB.realstart` was
-        // unreachable) nor raku's `.^name`. The shortening still applies to the
-        // *parameter* forms above, which is what it was introduced for.
-        let tag = match self.cstruct_class_name(&target) {
-            Some(registered) => registered,
-            None if self.registry().classes.contains_key(&target) => target.clone(),
-            None => short.to_string(),
-        };
-        Some(Ok(crate::runtime::nativecall::make_native_handle(
-            &tag, addr,
-        )))
+        // The address-to-value half is shared with `Pointer[T].deref`, which
+        // Rakudo defines as `nativecast(self.of, self)` — see
+        // `runtime::nativecall_cast`.
+        Some(Ok(self.nativecast_address(&target, addr)))
     }
 
     /// `.REPR` / `.WHERE` for a **native handle** — an instance whose whole
@@ -852,89 +824,6 @@ impl crate::runtime::Interpreter {
         } else {
             None
         }
-    }
-
-    /// `$ptr.of` — what a typed `Pointer[T]` points at, `void` for an untyped
-    /// one, as in Rakudo. `NativeHelpers::Blob`'s `blob-from-pointer` branches
-    /// on exactly this (`ptr.of ~~ void ?? $type.of !! ptr.of`).
-    ///
-    /// `$ptr.deref` — the thing at the address. A pointer to a struct yields a
-    /// handle onto that same address (C holds structs by reference, so
-    /// `nativecast(Pointer[SomeStruct], $p).deref.field` reads the struct in
-    /// place); a pointer to a native scalar reads the value there, which is
-    /// element 0 of the equivalent `CArray[T]`.
-    pub(crate) fn try_pointer_method(
-        &mut self,
-        target: &crate::value::Value,
-        method: &str,
-    ) -> Option<Result<crate::value::Value, crate::value::RuntimeError>> {
-        use crate::value::{RuntimeError, Value, ValueView};
-        if !matches!(method, "of" | "deref") {
-            return None;
-        }
-        let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        else {
-            return None;
-        };
-        // The prelude's `Pointer` picks up the enclosing package when it is
-        // prepended inside a module (`Foo::Pointer`), so match on the last `::`
-        // component — the same "one class, several spellings" problem
-        // `cstruct_class_name` documents.
-        if class_name.as_str().rsplit("::").next() != Some("Pointer") {
-            return None;
-        }
-        let of: Option<String> = attributes
-            .as_map()
-            .get("of")
-            .map(|v| match v.view() {
-                ValueView::Package(n) => n.resolve(),
-                _ => v.to_string_value(),
-            })
-            .filter(|n| !n.is_empty() && n != "void");
-        if method == "of" {
-            return Some(Ok(Value::package(crate::symbol::Symbol::intern(
-                of.as_deref().unwrap_or("void"),
-            ))));
-        }
-        let addr = attributes
-            .as_map()
-            .get("address")
-            .map(|v| crate::runtime::to_int(v) as usize)
-            .unwrap_or(0);
-        let Some(of) = of else {
-            // Rakudo: "Internal error: unhandled target type".
-            return Some(Err(RuntimeError::new(
-                "Cannot dereference an untyped Pointer (no `of` type to read)",
-            )));
-        };
-        if self.is_cstruct_class(&of) || self.is_native_handle_class(&of) {
-            // Tag with the class's **registered** name, exactly as `nativecast`
-            // does (see `try_nativecast`): a CStruct declared inside a module is
-            // registered as `M::BB`, and a handle carrying the short `BB`
-            // resolves neither its own class's hand-written methods nor raku's
-            // `.^name`. `NativeHelpers::Blob` reaches its `MVMArrayB` through
-            // `nativecast(Pointer[type], …).deref`, so `.realstart` was
-            // unreachable on this path even after the `nativecast` path was
-            // fixed — only the *generated* accessors worked, via their
-            // short-name fallback.
-            let tag = self
-                .cstruct_class_name(&of)
-                .unwrap_or_else(|| of.rsplit("::").next().unwrap_or(&of).to_string());
-            return Some(Ok(crate::runtime::nativecall::make_native_handle(
-                &tag, addr,
-            )));
-        }
-        Some(match self.native_carray_element(&of, addr, 0) {
-            Some(v) => Ok(v),
-            None => Err(RuntimeError::new(format!(
-                "Cannot dereference a Pointer[{}]: not a type NativeCall can read",
-                of
-            ))),
-        })
     }
 }
 

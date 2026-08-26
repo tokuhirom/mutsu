@@ -127,31 +127,119 @@ pub struct NativeCallSpec {
 /// system, while the versioned runtime object (`libfoo.so.N`) is present.
 #[cfg(feature = "libffi")]
 pub(crate) fn resolve_library_candidates(library: &Option<String>) -> Vec<String> {
+    let c_runtime: &[&str] = if cfg!(target_os = "macos") {
+        &["libSystem.dylib", "libSystem.B.dylib"]
+    } else {
+        &["libc.so.6"]
+    };
+    let to_owned = |v: &[&str]| v.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
     let stem = match library {
         // No argument, or the conventional "c" alias → the C runtime.
-        None => return vec!["libc.so.6".to_string()],
-        Some(name) if name == "c" => return vec!["libc.so.6".to_string()],
+        None => return to_owned(c_runtime),
+        Some(name) if name == "c" => return to_owned(c_runtime),
         Some(name) if name == "m" => {
-            // libm is merged into glibc; prefer the versioned objects.
-            return vec![
-                "libm.so.6".to_string(),
-                "libc.so.6".to_string(),
-                "libm.so".to_string(),
-            ];
+            // libm is merged into the C runtime on both glibc and macOS;
+            // prefer the versioned objects.
+            let mut v = if cfg!(target_os = "macos") {
+                vec!["libm.dylib".to_string()]
+            } else {
+                vec!["libm.so.6".to_string()]
+            };
+            v.extend(to_owned(c_runtime));
+            if !cfg!(target_os = "macos") {
+                v.push("libm.so".to_string());
+            }
+            return v;
         }
         Some(name) => name,
     };
     // An explicit path or already-decorated name is used verbatim.
-    if stem.contains('/') || stem.contains(".so") || stem.contains(".dylib") {
+    if is_decorated_library_name(stem) {
         return vec![stem.clone()];
     }
     // A bare stem like "sqlite3" → try the dev symlink and common runtime sonames.
-    vec![
-        format!("lib{stem}.so"),
-        format!("lib{stem}.so.0"),
-        format!("lib{stem}.so.1"),
-        format!("lib{stem}.so.2"),
-    ]
+    if cfg!(target_os = "macos") {
+        vec![
+            format!("lib{stem}.dylib"),
+            format!("lib{stem}.0.dylib"),
+            format!("lib{stem}.1.dylib"),
+            format!("lib{stem}.2.dylib"),
+        ]
+    } else {
+        vec![
+            format!("lib{stem}.so"),
+            format!("lib{stem}.so.0"),
+            format!("lib{stem}.so.1"),
+            format!("lib{stem}.so.2"),
+        ]
+    }
+}
+
+/// Whether a library-name argument already names a file rather than a bare
+/// stem, so no `lib`/`.so` decoration should be applied to it.
+pub(crate) fn is_decorated_library_name(name: &str) -> bool {
+    name.contains('/')
+        || name.contains('\\')
+        || name.contains(".so")
+        || name.contains(".dylib")
+        || name.contains(".dll")
+}
+
+/// The single library file name `is native('foo', v1.2)` denotes.
+///
+/// The `native` trait "allows you to specify the API/ABI version"
+/// (`Language/nativecall.rakudoc`), and the point of writing it is precisely
+/// that the undecorated `libfoo.so` is often absent on a runtime-only system —
+/// so the version, when given, selects one exact file rather than adding a
+/// candidate. The version may be spelled as a `Version` literal (`v1`, whose
+/// `.Str` has already dropped the `v`) or as a plain string (`'v1'`), so a
+/// leading `v` and a trailing `+` are stripped defensively.
+pub(crate) fn versioned_library_file_name(stem: &str, version: &str) -> String {
+    let version = version.strip_prefix('v').unwrap_or(version);
+    let version = version.strip_suffix('+').unwrap_or(version);
+    if version.is_empty() || is_decorated_library_name(stem) {
+        return stem.to_string();
+    }
+    if cfg!(target_os = "macos") {
+        format!("lib{stem}.{version}.dylib")
+    } else if cfg!(target_os = "windows") {
+        format!("{stem}.dll")
+    } else {
+        format!("lib{stem}.so.{version}")
+    }
+}
+
+/// The library name a `is native(...)` trait argument or a `cglobal` first
+/// argument denotes, once it has been evaluated to a value.
+///
+/// `None` means "this process's own symbol space". An **undefined** argument is
+/// the documented way to say that — `DBDish::mysql::Native` declares
+/// `constant LIB = Rakudo::Internals.IS-WIN ?? 'mysql' !! Str` and `LibXML`'s
+/// `Defs` declares `our $CLIB ... !! Str` for `malloc`/`memcpy`/`free` — and
+/// stringifying the type object instead produced the nonsense file name
+/// `lib(Str).so`.
+///
+/// A `(name, version)` **List** is the documented ABI-version form
+/// (`my List $lib = ('foo', 'v1'); sub f is native($lib)`), used by
+/// `Archive::Libarchive::Raw` as `constant LIB = ('archive', v13)`. Only this
+/// layer can know the version, so it is decorated into the exact file name here.
+pub(crate) fn library_name_from_value(v: &Value) -> Option<String> {
+    if !crate::runtime::types::value_is_defined(v) {
+        return None;
+    }
+    if let ValueView::Array(items, _) = v.view() {
+        let mut it = items.iter();
+        let stem = it.next()?.to_string_value();
+        if stem.is_empty() {
+            return None;
+        }
+        return Some(match it.next() {
+            Some(version) => versioned_library_file_name(&stem, &version.to_string_value()),
+            None => stem,
+        });
+    }
+    let name = v.to_string_value();
+    if name.is_empty() { None } else { Some(name) }
 }
 
 /// This process's own symbol space — `dlopen(NULL)`, which resolves a symbol
@@ -388,7 +476,15 @@ pub fn call_native_with_out_args(
                     Value::package(crate::symbol::Symbol::intern(class))
                 } else {
                     match &spec.ret_struct {
-                        Some(class) => make_struct_value(class, addr),
+                        // `--> Pointer[T]`: a typed pointer, so `.of`/`.deref`
+                        // work on the result (ADR-0056 keeps `T` in an `of`
+                        // attribute, not in the class name).
+                        Some(class) => {
+                            match crate::runtime::cstruct_layout::pointer_parameter(class) {
+                                Some(of) => make_typed_pointer(addr, of),
+                                None => make_struct_value(class, addr),
+                            }
+                        }
                         None => make_pointer_value(addr),
                     }
                 }
@@ -529,6 +625,36 @@ pub(crate) fn make_typed_pointer(addr: usize, of: &str) -> Value {
         attributes.insert("of", Value::package(crate::symbol::Symbol::intern(of)));
     }
     ptr
+}
+
+/// The `[T]` a typed `Pointer[T]` object should display, or `None` for a plain
+/// `Pointer` (and for anything that is not a `Pointer` at all).
+///
+/// ADR-0056 keeps the parameterisation in an `of` attribute rather than in the
+/// class name, so that every `Pointer` method and the marshalling layer's
+/// `address` read keep working on a typed pointer. The consequence is that the
+/// human-facing name has to re-attach it: `.^name` does, and the prelude's
+/// `gist`/`raku` are written in terms of `.^name`, so all three agree.
+pub(crate) fn pointer_display_suffix(target: &Value) -> Option<String> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if class_name.as_str().rsplit("::").next() != Some("Pointer") {
+        return None;
+    }
+    let of = attributes.as_map().get("of").map(|v| match v.view() {
+        ValueView::Package(n) => n.resolve(),
+        _ => v.to_string_value(),
+    })?;
+    if of.is_empty() {
+        return None;
+    }
+    Some(format!("[{}]", crate::value::user_facing_type_name(&of)))
 }
 
 /// A plain `Pointer` holding `addr`, **defined even at 0** — `Pointer.new(0)` is
@@ -1118,6 +1244,59 @@ pub fn call_native_with_out_args(
         "NativeCall is not available in this build (cannot call '{}')",
         spec.symbol
     )))
+}
+
+#[cfg(test)]
+mod library_name_tests {
+    use super::*;
+
+    /// `is native('foo', v1)` names one exact file — the whole point of
+    /// spelling the ABI version is that the undecorated `libfoo.so` is often
+    /// absent on a runtime-only system, so the version replaces the candidate
+    /// list rather than extending it.
+    #[test]
+    fn a_version_selects_one_decorated_file_name() {
+        let expected = if cfg!(target_os = "macos") {
+            "libfoo.1.dylib"
+        } else if cfg!(target_os = "windows") {
+            "foo.dll"
+        } else {
+            "libfoo.so.1"
+        };
+        assert_eq!(versioned_library_file_name("foo", "1"), expected);
+        // A `Version` literal's `.Str` has already dropped the `v`, but the
+        // documented `('foo', 'v1')` string spelling has not; `v1+` is a valid
+        // Version literal too.
+        assert_eq!(versioned_library_file_name("foo", "v1"), expected);
+        assert_eq!(versioned_library_file_name("foo", "v1+"), expected);
+    }
+
+    #[test]
+    fn a_multi_part_version_is_kept_whole() {
+        let expected = if cfg!(target_os = "macos") {
+            "libfoo.1.2.3.dylib"
+        } else if cfg!(target_os = "windows") {
+            "foo.dll"
+        } else {
+            "libfoo.so.1.2.3"
+        };
+        assert_eq!(versioned_library_file_name("foo", "v1.2.3"), expected);
+    }
+
+    /// An already-decorated name or a path is what the user meant; there is no
+    /// stem to hang a version off.
+    #[test]
+    fn a_decorated_name_is_left_alone() {
+        assert!(is_decorated_library_name("./lib/libfoo.so.3"));
+        assert!(is_decorated_library_name("libfoo.dylib"));
+        assert!(is_decorated_library_name("foo.dll"));
+        assert!(!is_decorated_library_name("foo"));
+        assert_eq!(
+            versioned_library_file_name("libfoo.so.3", "9"),
+            "libfoo.so.3"
+        );
+        assert_eq!(versioned_library_file_name("foo", ""), "foo");
+    }
 }
 
 #[cfg(all(test, feature = "libffi"))]

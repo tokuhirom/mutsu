@@ -68,7 +68,13 @@ impl Interpreter {
             None => (CType::Void, None),
             Some(rt) => {
                 let spec = self.param_spec_for_native_type(rt, false)?;
-                let ret_struct = if spec.ct == CType::Pointer && self.is_cstruct_class(rt) {
+                let ret_struct = if spec.ct != CType::Pointer {
+                    None
+                } else if crate::runtime::cstruct_layout::pointer_parameter(rt).is_some() {
+                    // `--> Pointer[T]`: carry the whole parameterised spelling
+                    // so the marshaller builds a typed pointer (`.of`/`.deref`).
+                    Some(rt.to_string())
+                } else if self.is_cstruct_class(rt) {
                     Some(rt.rsplit("::").next().unwrap_or(rt).to_string())
                 } else {
                     None

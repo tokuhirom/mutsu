@@ -743,11 +743,20 @@ impl Interpreter {
             }
             ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
-                self.type_metadata
+                let base = self
+                    .type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
                     .map(Value::to_string_value)
-                    .unwrap_or_else(|| crate::value::user_facing_type_name(&resolved).to_string())
+                    .unwrap_or_else(|| crate::value::user_facing_type_name(&resolved).to_string());
+                // A typed NativeCall `Pointer[T]` keeps `T` in an `of`
+                // attribute, not in its class name (ADR-0056), so the
+                // parameterisation has to be re-attached for the human-facing
+                // name — which `.raku`/`.gist` are then derived from.
+                match crate::runtime::nativecall::pointer_display_suffix(target) {
+                    Some(suffix) => format!("{base}{suffix}"),
+                    None => base,
+                }
             }
             // An enum VALUE names its enum type (`Bob.^name` is `Names`), not the
             // underlying storage type — `value_type_name` reports "Int" for the
