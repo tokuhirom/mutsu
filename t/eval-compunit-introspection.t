@@ -11,7 +11,7 @@ use Test;
 # *shape* rather than the value. Path assertions are relative (`.ends-with`,
 # `.IO.basename`) so the file survives being moved.
 
-plan 47;
+plan 62;
 
 # ---------------------------------------------------------------------------
 # EVAL synthesizes a per-call compilation-unit name for $?FILE
@@ -100,6 +100,61 @@ is OUR::ourpkg.WHO.keys.sort.join(','), '$member',
     'the sub-package\'s own stash carries its symbols';
 is OUR::ourpkg.HOW.^name.split('::').tail, 'PackageHOW',
     'an implicitly created package reports PackageHOW, not ClassHOW';
+
+# ---------------------------------------------------------------------------
+# GLOBAL::/OUR:: enumerate only the package's own symbols, not every
+# builtin class, dynamic variable, and `my` lexical mutsu happens to keep
+# in the same flat env store.
+# ---------------------------------------------------------------------------
+
+my $lex-only = 1;
+our $global-scalar = 2;
+class StashKlass {}
+role StashRole {}
+enum StashColor <StashRed StashGreen>;
+constant StashConst = 5;
+
+my @global-keys = GLOBAL::.keys;
+ok @global-keys.grep(* eq '$global-scalar'),
+    'GLOBAL:: contains a root-scope our scalar';
+ok @global-keys.grep(* eq 'StashKlass'),
+    'GLOBAL:: contains a user-declared class';
+ok @global-keys.grep(* eq 'StashRole'),
+    'GLOBAL:: contains a user-declared role';
+ok @global-keys.grep(* eq 'StashColor') && @global-keys.grep(* eq 'StashRed'),
+    'GLOBAL:: contains an enum type and its variants';
+ok @global-keys.grep(* eq 'StashConst'),
+    'GLOBAL:: contains a constant';
+
+ok !@global-keys.grep(* eq '$lex-only'),
+    'GLOBAL:: excludes a `my` lexical';
+ok !@global-keys.grep(* eq 'Any'),
+    'GLOBAL:: excludes a builtin type (Any)';
+ok !@global-keys.grep(* eq 'Int'),
+    'GLOBAL:: excludes a builtin type (Int)';
+ok !@global-keys.grep({ .contains('*CWD') }),
+    'GLOBAL:: excludes a dynamic variable ($*CWD)';
+ok !@global-keys.grep({ .contains('?FILE') }),
+    'GLOBAL:: excludes a compile-time magical ($?FILE)';
+ok !@global-keys.grep({ .contains('__mutsu_') }),
+    'GLOBAL:: excludes internal bookkeeping keys';
+
+is GLOBAL::.keys.sort.join(','), OUR::.keys.sort.join(','),
+    'GLOBAL:: and OUR:: agree at file scope (same root stash)';
+
+# Inside a named package, OUR:: is scoped to that package while GLOBAL::
+# stays the root -- neither vacuums up the other's `our` declarations.
+package StashPkg {
+    our $pkg-scalar = 3;
+    my @pkg-our-keys = OUR::.keys;
+    my @pkg-global-keys = GLOBAL::.keys;
+    ok @pkg-our-keys.grep(* eq '$pkg-scalar'),
+        'inside a package, OUR:: contains that package\'s own our-var';
+    ok !@pkg-global-keys.grep(* eq '$pkg-scalar'),
+        '... but GLOBAL:: does not (it belongs to the sub-package, not root)';
+    ok @pkg-global-keys.grep(* eq 'StashPkg'),
+        'GLOBAL:: from inside the package still sees the package itself';
+}
 
 # ---------------------------------------------------------------------------
 # CompUnit::Repository stringification and .files
