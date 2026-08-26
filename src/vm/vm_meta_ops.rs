@@ -128,9 +128,12 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
-                        results,
-                    )))
+                    // At least one operand is infinite, so the cross product is
+                    // too: the collected `results` are only a bounded prefix and
+                    // `(1..* X 42).is-lazy` must stay `True`.
+                    Value::lazy_list(crate::gc::Gc::new(
+                        crate::value::LazyList::new_cached_infinite(results),
+                    ))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
                     Value::seq(results)
@@ -206,9 +209,11 @@ impl Interpreter {
                     }
                 }
                 if all_lazy {
-                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
-                        results,
-                    )))
+                    // Every operand is lazy/infinite, so the zip is too (see the
+                    // `X` arm above).
+                    Value::lazy_list(crate::gc::Gc::new(
+                        crate::value::LazyList::new_cached_infinite(results),
+                    ))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
                     Value::seq(results)
@@ -376,9 +381,12 @@ impl Interpreter {
                     }
                 }
                 if lazy_inputs {
-                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
-                        results,
-                    )))
+                    // See the binary `X` arm: an infinite operand makes the whole
+                    // cross product infinite, so the collected `results` are only
+                    // a bounded prefix.
+                    Value::lazy_list(crate::gc::Gc::new(
+                        crate::value::LazyList::new_cached_infinite(results),
+                    ))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
                     Value::seq(results)
@@ -417,9 +425,10 @@ impl Interpreter {
                     results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
                 }
                 if all_lazy {
-                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList::new_cached(
-                        results,
-                    )))
+                    // Every operand is lazy/infinite, so the zip is too.
+                    Value::lazy_list(crate::gc::Gc::new(
+                        crate::value::LazyList::new_cached_infinite(results),
+                    ))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
                     Value::seq(results)

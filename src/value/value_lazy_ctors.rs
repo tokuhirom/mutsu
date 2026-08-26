@@ -28,6 +28,17 @@ impl LazyList {
         }
     }
 
+    /// Create a pre-cached lazy list that is *logically infinite*: the cache is
+    /// only a bounded prefix, and `.is-lazy` must answer `True`
+    /// (`LHS xx *`, `.pick(**)`, an `X`/`Z` with an infinite operand). Without
+    /// the recorded `Inf` count nothing in the value distinguishes such a list
+    /// from an ordinary finite cache, so `is_genuinely_lazy` could not see it.
+    pub(crate) fn new_cached_infinite(items: Vec<Value>) -> Self {
+        let mut ll = Self::new_cached(items);
+        ll.elems_count = Some(Value::num(f64::INFINITY));
+        ll
+    }
+
     /// Create an infinite sequence lazy list that can generate elements on demand.
     pub(crate) fn new_sequence(seeds: Vec<Value>, spec: SequenceSpec) -> Self {
         Self {

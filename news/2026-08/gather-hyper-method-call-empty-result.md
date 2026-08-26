@@ -44,6 +44,16 @@ call `is_genuinely_lazy` instead of re-deriving it, and the VM's
 finite. The hyper opcodes (plain and dynamic) force a lazy list before reading
 its items, under the same "not genuinely lazy, or provably finite" gate.
 
+One consequence had to be paid for: several lazy values are represented as a
+**bounded cache with no spec at all** — `LHS xx *`, `.pick(**)`/`.roll(*)` over a
+range, an `X`/`Z` with an infinite operand, an un-spec'd infinite `...` sequence —
+and nothing in such a value says it is infinite, so the unified predicate answered
+`False` for them. They now build through a new
+`LazyList::new_cached_infinite`, which records a logical `elems_count` of `Inf`.
+(`roast/S03-metaops/cross.t`, `zip.t`, `S32-list/pick.t` and `t/hyper-assign.t`
+caught every one of these during the local sweep — which is exactly why a shared
+predicate gets the full roast run.)
+
 Measured against `raku` afterwards, every case agrees: `gather` and
 `gather.map` are `.is-lazy` `False`, `(1..Inf).map` is `True` and still gists
 `(...)`, `$g>>.Str` and `$g.map`/`$g.grep` yield their elements, and

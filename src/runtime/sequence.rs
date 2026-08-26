@@ -1749,7 +1749,7 @@ impl Interpreter {
                 Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
             } else {
                 Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached(result),
+                    crate::value::LazyList::new_cached_infinite(result),
                 )))
             }
         } else {

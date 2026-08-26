@@ -122,7 +122,7 @@ pub(crate) fn native_function_2arg(
                     out.push(items[idx].clone());
                 }
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached(out),
+                    crate::value::LazyList::new_cached_infinite(out),
                 ))));
             }
             let count = count.unwrap_or(0);

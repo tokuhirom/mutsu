@@ -5,7 +5,7 @@ use Test;
 # `raku` first; where rakudo does not promise an order (hyper dispatch,
 # Junction eigenstate rendering) the assertion is deliberately order-free.
 
-plan 34;
+plan 40;
 
 # ---------------------------------------------------------------------------
 # `lazy { BLOCK }` statement prefix
@@ -34,6 +34,15 @@ ok !(gather { take 1; take 2 }).is-lazy, 'a plain gather Seq is not .is-lazy';
 ok !(gather { take 1; take 2 }).map(* + 1).is-lazy,
         'a .map pipe over a gather is not .is-lazy either';
 ok (1..Inf).map(* + 1).is-lazy, 'a .map pipe over an infinite source stays lazy';
+
+# A cached-but-logically-infinite lazy list still reports .is-lazy: there is
+# nothing else in such a value to say it is infinite.
+ok (42 xx *).is-lazy, 'an infinite `xx *` repetition is .is-lazy';
+nok (42 xx 3).is-lazy, 'a finite `xx N` repetition is not';
+ok (1..* X 42).is-lazy, 'a cross product with an infinite operand is .is-lazy';
+nok (1..5 X 42).is-lazy, 'a cross product of finite operands is not';
+ok (1..* Z 1..* Z 1..*).is-lazy, 'an all-infinite n-ary zip is .is-lazy';
+ok <a b c>.pick(**).is-lazy, '.pick(**) is .is-lazy';
 
 # Hyper dispatch does not promise an order, so compare order-insensitively.
 my $hyper-src = gather { take 1; take 2; take 3 };

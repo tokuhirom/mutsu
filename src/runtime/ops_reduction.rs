@@ -814,9 +814,14 @@ impl Interpreter {
                 };
                 let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
                 if lazy {
-                    Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_cached(items),
-                    )))
+                    // Record the LOGICAL element count (`Inf` for `xx *`), the
+                    // way the infix `xx` operator does: the cache is only a
+                    // bounded prefix, and `is_genuinely_lazy` has nothing else
+                    // to go on.
+                    Ok(Self::make_repeat_lazy_cache_counted(
+                        items,
+                        Self::repeat_logical_count(right),
+                    ))
                 } else {
                     Ok(Value::seq(items))
                 }
