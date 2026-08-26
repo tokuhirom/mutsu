@@ -1,6 +1,6 @@
 use Test;
 
-plan 45;
+plan 54;
 
 # ---------------------------------------------------------------------------
 # Metamodel::MethodContainer -- .^lookup / .^find_method / .^can
@@ -156,5 +156,98 @@ dies-ok {
           class Prier { method poke() { Closed.new()!Closed::secret() } };
           Prier.poke'
 }, 'an untrusted caller cannot reach a private method';
+
+# A `my class` nested in another class body must have its `trusts` honored.
+# The nested class registers under a mangled lexical storage name
+# (`Outer::Inner\0<decl-id>`, ADR-0047 P1), and by the time `Outer`'s method
+# runs, the bare name `Inner` is no longer bound in the env the private-call
+# permission check consults -- so the owner written in `$o!Inner::secret` has
+# to be canonicalized against the invocant's own MRO instead.
+class Outer {
+    my class Inner {
+        trusts Outer;
+        method !secret() { 'from Inner' }
+    }
+    method poke() { Inner.new()!Inner::secret() }
+}
+is Outer.poke, 'from Inner', 'a nested lexical class honors its `trusts`';
+
+class OuterOur {
+    our class InnerOur {
+        trusts OuterOur;
+        method !secret() { 'from InnerOur' }
+    }
+    method poke() { InnerOur.new()!InnerOur::secret() }
+}
+is OuterOur.poke, 'from InnerOur', 'a nested `our` class honors its `trusts`';
+
+# Trust is not blanket permission: without `trusts`, the same shape is refused.
+dies-ok {
+    EVAL 'class Nest {
+              my class Shut { method !secret() { 1 } }
+              method poke() { Shut.new()!Shut::secret() }
+          };
+          Nest.poke'
+}, 'a nested lexical class without `trusts` still refuses an outer caller';
+
+# ---------------------------------------------------------------------------
+# Regression: a `trusts` declaration inside a nested class body must not
+# package-qualify every OTHER class in the same compilation unit
+# (todo/tickets/nested-trusts-decl-qualifies-sibling-class-names.md).
+#
+# Root cause: `Interpreter::run_class_body` sets the runtime's current
+# package to the class being registered, walks the class body, then restores
+# the saved package -- but an error from anywhere in that walk (e.g.
+# `validate_private_access_in_stmts` rejecting a qualified private call to a
+# nested class that has not registered yet, which happens when a hoisted
+# forward-reference *shell* registration runs a `poke`-shaped method early)
+# propagated straight past the restore via `?`. `exec_register_decl_op`
+# swallows that error for a hoisted shell and keeps going, but the
+# interpreter's runtime package stayed wrongly stuck on the half-registered
+# class for the rest of the compilation unit, silently mis-qualifying every
+# class registered afterward. This was not specific to `trusts` bodies --
+# any class-body statement that can fail mid-walk had the same bug -- so the
+# fix restores the package (and rolls back the env) unconditionally on every
+# exit path out of the body walk, not just the successful one.
+# ---------------------------------------------------------------------------
+
+class NestedTrustPlain { }
+is NestedTrustPlain.^name, 'NestedTrustPlain',
+   'an unrelated sibling class keeps its bare, unqualified name';
+
+class NestedTrustOuter {
+    our class NestedTrustInner {
+        trusts NestedTrustOuter;
+        method !secret() { 'from NestedTrustInner' }
+    }
+    method poke() { NestedTrustInner.new()!NestedTrustInner::secret() }
+}
+is NestedTrustPlain.^name, 'NestedTrustPlain',
+   'the sibling class name is still unqualified after a nested `trusts` class registers';
+is NestedTrustOuter.poke, 'from NestedTrustInner',
+   'the qualified private call into the nested `trusts` class still works';
+
+# Dropping any one leg of the trigger (nesting, `trusts`, or the qualified
+# call) never mis-qualified `Plain` -- but the general fix above stops the
+# leak regardless, so this stays correct too.
+class NestedNoTrustPlain { }
+class NestedNoTrustOuter {
+    our class NestedNoTrustInner {
+        method !secret() { 'from NestedNoTrustInner' }
+        method callit() { self!secret() }
+    }
+    method poke() { NestedNoTrustInner.new().callit() }
+}
+is NestedNoTrustPlain.^name, 'NestedNoTrustPlain',
+   'no `trusts` + an unqualified private call: the sibling name stays unqualified';
+is NestedNoTrustOuter.poke, 'from NestedNoTrustInner',
+   'the unqualified private call inside the nested class still works';
+
+# The mis-qualified name was the KEY other metadata is stored under, so it
+# silently broke `:ver`/`:auth`/`:api` lookups on any class declared later in
+# the same file as a nested `trusts` class.
+class NestedTrustVerD:ver<1.2.3> { }
+is NestedTrustVerD.^ver, v1.2.3,
+   ':ver on a class declared after a nested `trusts` class is still readable';
 
 done-testing;

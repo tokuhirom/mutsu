@@ -143,105 +143,135 @@ impl Interpreter {
         // i.e. once all body statements have been processed. Collect them here
         // and run them (LIFO) after the loop instead of executing them inline.
         let mut class_leave_phasers: Vec<ClassBodyLeavePhaser> = Vec::new();
-        for op in body_plan {
-            match op {
-                crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } => {
-                    let Stmt::Phaser { body, .. } = raw else {
-                        unreachable!("LeavePhaser op's raw statement must be Stmt::Phaser");
-                    };
-                    class_leave_phasers.push(ClassBodyLeavePhaser {
-                        body: body.clone(),
-                        chunk: chunk.clone(),
-                    });
-                    continue;
-                }
-                crate::opcode::ClassBodyOp::Attr { name } => {
-                    if matches!(
-                        self.class_body_has_decl(&mut cx, *name)?,
-                        ClassBodyFlow::SkipTail
-                    ) {
+        // The whole walk below (the per-op loop, LEAVE phasers, statics) is
+        // wrapped in this closure purely so every early exit -- success OR
+        // any `?`-propagated error from deep inside a single op (a qualified
+        // private-method-access check, an attribute validation, a duplicate
+        // method definition, ...) -- funnels through ONE unconditional
+        // cleanup below instead of relying on every call site to remember to
+        // restore `current_package`/`env` itself before returning `Err`.
+        // Without this, an error thrown midway (e.g. `validate_private_access_in_stmts`
+        // rejecting a qualified private call to a not-yet-registered nested
+        // class during a hoisted forward-reference shell's registration --
+        // `t/nested-trusts-decl-qualifies-sibling-class-names.t`) left the
+        // `self.set_current_package(name.to_string())` from the top of this
+        // function permanently in effect: `exec_register_decl_op` swallows
+        // the error for a `__hoisted` shell and carries on, but the
+        // interpreter's runtime package stayed wrongly set to this class for
+        // the rest of the compilation unit, silently mis-qualifying every
+        // class registered afterward (`Plain` inside `Outer.new()!Inner::secret()`'s
+        // enclosing file reported `Outer::Plain` instead of `Plain`).
+        let walk_result: Result<(), RuntimeError> = (|| {
+            for op in body_plan {
+                match op {
+                    crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } => {
+                        let Stmt::Phaser { body, .. } = raw else {
+                            unreachable!("LeavePhaser op's raw statement must be Stmt::Phaser");
+                        };
+                        class_leave_phasers.push(ClassBodyLeavePhaser {
+                            body: body.clone(),
+                            chunk: chunk.clone(),
+                        });
                         continue;
                     }
-                }
-                crate::opcode::ClassBodyOp::Method => {
-                    self.class_body_method_decl(&mut cx)?;
-                }
-                crate::opcode::ClassBodyOp::Does {
-                    name: role_name,
-                    args,
-                } => {
-                    if matches!(
-                        self.class_body_does_decl(&mut cx, *role_name, args.as_deref())?,
-                        ClassBodyFlow::SkipTail
-                    ) {
-                        continue;
+                    crate::opcode::ClassBodyOp::Attr { name } => {
+                        if matches!(
+                            self.class_body_has_decl(&mut cx, *name)?,
+                            ClassBodyFlow::SkipTail
+                        ) {
+                            continue;
+                        }
                     }
-                }
-                // our &baz ::= &bar  — alias a method under a new name
-                crate::opcode::ClassBodyOp::CodeAlias { chunk, raw } => {
-                    self.class_body_code_alias(&mut cx, raw, chunk.as_ref())?;
-                }
-                crate::opcode::ClassBodyOp::ProtoMethod { raw, .. } => {
-                    self.class_body_proto_method_decl(&mut cx, raw)?;
-                }
-                crate::opcode::ClassBodyOp::TokenRule { plan } => {
-                    self.register_token_decl(
-                        &plan.name.resolve(),
-                        &plan.params,
-                        &plan.param_defs,
-                        &plan.raw_body,
-                        plan.multi,
-                        plan.source_line,
-                    );
-                }
-                crate::opcode::ClassBodyOp::ClassSub {
-                    chunk,
-                    raw,
-                    is_swallowable,
-                    is_compile_time_phaser,
-                    ..
-                }
-                | crate::opcode::ClassBodyOp::Other {
-                    chunk,
-                    raw,
-                    is_swallowable,
-                    is_compile_time_phaser,
-                } => {
-                    self.class_body_other_stmt(
-                        &mut cx,
+                    crate::opcode::ClassBodyOp::Method => {
+                        self.class_body_method_decl(&mut cx)?;
+                    }
+                    crate::opcode::ClassBodyOp::Does {
+                        name: role_name,
+                        args,
+                    } => {
+                        if matches!(
+                            self.class_body_does_decl(&mut cx, *role_name, args.as_deref())?,
+                            ClassBodyFlow::SkipTail
+                        ) {
+                            continue;
+                        }
+                    }
+                    // our &baz ::= &bar  — alias a method under a new name
+                    crate::opcode::ClassBodyOp::CodeAlias { chunk, raw } => {
+                        self.class_body_code_alias(&mut cx, raw, chunk.as_ref())?;
+                    }
+                    crate::opcode::ClassBodyOp::ProtoMethod { raw, .. } => {
+                        self.class_body_proto_method_decl(&mut cx, raw)?;
+                    }
+                    crate::opcode::ClassBodyOp::TokenRule { plan } => {
+                        self.register_token_decl(
+                            &plan.name.resolve(),
+                            &plan.params,
+                            &plan.param_defs,
+                            &plan.raw_body,
+                            plan.multi,
+                            plan.source_line,
+                        );
+                    }
+                    crate::opcode::ClassBodyOp::ClassSub {
+                        chunk,
                         raw,
-                        chunk.as_ref(),
-                        *is_swallowable,
-                        *is_compile_time_phaser,
-                    )?;
+                        is_swallowable,
+                        is_compile_time_phaser,
+                        ..
+                    }
+                    | crate::opcode::ClassBodyOp::Other {
+                        chunk,
+                        raw,
+                        is_swallowable,
+                        is_compile_time_phaser,
+                    } => {
+                        self.class_body_other_stmt(
+                            &mut cx,
+                            raw,
+                            chunk.as_ref(),
+                            *is_swallowable,
+                            *is_compile_time_phaser,
+                        )?;
+                    }
                 }
-            }
-            // Check if any new functions were registered under the class package
-            // during body processing (e.g., class-scoped subs).
-            // Only count functions that are actual subs (not methods, which are
-            // registered via MethodDecl and stored in the class methods table).
-            if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
-                let fq = format!("{}::{}", cx.name, sub_name);
-                if self.registry().functions.contains_key(&Symbol::intern(&fq))
-                    && !saved_functions_keys.contains(&fq)
-                {
-                    self.registry_mut()
-                        .class_subs
-                        .entry(cx.name.to_string())
-                        .or_default()
-                        .insert(fq, Value::TRUE);
+                // Check if any new functions were registered under the class package
+                // during body processing (e.g., class-scoped subs).
+                // Only count functions that are actual subs (not methods, which are
+                // registered via MethodDecl and stored in the class methods table).
+                if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
+                    let fq = format!("{}::{}", cx.name, sub_name);
+                    if self.registry().functions.contains_key(&Symbol::intern(&fq))
+                        && !saved_functions_keys.contains(&fq)
+                    {
+                        self.registry_mut()
+                            .class_subs
+                            .entry(cx.name.to_string())
+                            .or_default()
+                            .insert(fq, Value::TRUE);
+                    }
                 }
+                self.registry_mut()
+                    .classes
+                    .insert(cx.name.to_string(), cx.class_def.clone());
+                self.registry_mut()
+                    .sync_accessor_entries(Symbol::intern(cx.name));
             }
-            self.registry_mut()
-                .classes
-                .insert(cx.name.to_string(), cx.class_def.clone());
-            self.registry_mut()
-                .sync_accessor_entries(Symbol::intern(cx.name));
-        }
-        self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
-        self.persist_class_body_statics(&cx, declared_static_names);
-        self.restore_nested_type_short_names(&cx);
+            self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
+            self.persist_class_body_statics(&cx, declared_static_names);
+            self.restore_nested_type_short_names(&cx);
+            Ok(())
+        })();
+        // Unconditional cleanup (see the comment above `walk_result`): restore
+        // the interpreter's runtime package no matter how the walk ended.
         self.set_current_package(cx.saved_package.clone());
+        if let Err(e) = walk_result {
+            // Mirror the class_own_attrs/BUILD-TWEAK early-return precedent
+            // above: an aborted class body also rolls back any lexical env
+            // mutations the partial walk made, not just the package.
+            self.env = cx.saved_env.clone();
+            return Err(e);
+        }
         Ok(cx.class_def)
     }
 
