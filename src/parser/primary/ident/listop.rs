@@ -230,32 +230,12 @@ pub(crate) fn try_parse_no_paren_invocant_colon_call<'a>(
         return Ok((rest_after_first_arg, None));
     }
     // If the first arg is a colonpair (FatArrow Pair like :r, :!d, :name(val)),
-    // a following ':' is another colonpair, not an invocant colon.
-    if matches!(
-        &first_arg,
-        Expr::Binary {
-            op: crate::token_kind::TokenKind::FatArrow,
-            ..
-        }
-    ) {
+    // a following ':' is another colonpair, not an invocant colon. Likewise if
+    // the colon itself opens a colonpair (`:r`, `:!d`, `:$var`).
+    if expr_is_colonpair(&first_arg) || colon_starts_colonpair(r_ws) {
         return Ok((rest_after_first_arg, None));
     }
-
     let after_colon = &r_ws[1..];
-
-    // If the colon is immediately followed by an identifier char, `!`, or a sigil,
-    // it's a colonpair (e.g. `:r`, `:!d`, `:$var`), not an invocant colon.
-    if let Some(c) = after_colon.chars().next()
-        && (c.is_alphabetic()
-            || c == '_'
-            || c == '!'
-            || c == '$'
-            || c == '@'
-            || c == '%'
-            || c == '&')
-    {
-        return Ok((rest_after_first_arg, None));
-    }
     let (mut r, _) = ws(after_colon)?;
 
     if let Some(after_comma) = r.strip_prefix(',') {
@@ -347,6 +327,40 @@ pub(crate) fn try_adjacent_colonpair_arg(input: &str) -> Option<(&str, Expr)> {
         return None;
     }
     parse_listop_arg(input).ok()
+}
+
+/// Does the `:` at the head of `at_colon` open a colonpair (`:r`, `:!d`,
+/// `:$var`) rather than an *invocant* colon (`f $obj: @args`,
+/// `say $*OUT: "hi"`)?
+///
+/// The two are told apart by what directly follows the colon: a colonpair binds
+/// its name or sigil tightly with no space, while an invocant colon is followed
+/// by whitespace, the end of the argument list, or a non-name term. Every place
+/// that reads a `:` after a completed argument as an invocant colon must ask
+/// this first, or `f :a:b, $x` is misread as `(:a).f(b, $x)`.
+pub(crate) fn colon_starts_colonpair(at_colon: &str) -> bool {
+    let Some(after_colon) = at_colon.strip_prefix(':') else {
+        return false;
+    };
+    if after_colon.starts_with(':') {
+        return false;
+    }
+    after_colon.chars().next().is_some_and(|c| {
+        c.is_alphabetic() || c == '_' || c == '!' || c == '$' || c == '@' || c == '%' || c == '&'
+    })
+}
+
+/// Is this expression a colonpair (`:a`, `:!d`, `:name(val)`), which the parser
+/// represents as a fatarrow `Binary`? A `:` that follows one is necessarily the
+/// start of another colonpair, never an invocant colon.
+pub(crate) fn expr_is_colonpair(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary {
+            op: crate::token_kind::TokenKind::FatArrow,
+            ..
+        }
+    )
 }
 
 pub(crate) fn make_call_expr_from_listop_args<'a>(
