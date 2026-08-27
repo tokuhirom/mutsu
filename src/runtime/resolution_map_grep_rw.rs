@@ -3,11 +3,19 @@ use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Returns the mapped result and whether any element of `list_items` was
+    /// actually written back (Raku's rw binding of `$_` / an `is rw` param).
+    /// The caller must only refresh the source array when that flag is set: a
+    /// read-only block leaves the source untouched, and rebuilding it anyway
+    /// would drop the container's per-slot metadata — most visibly the
+    /// `initialized` bitmap, so a `:delete`d slot stopped reading as a hole and
+    /// a later trailing-element `:delete` could no longer truncate the array
+    /// (roast/S32-array/delete.t).
     pub(super) fn eval_map_over_items_rw(
         &mut self,
         func: Option<Value>,
         list_items: &mut [Value],
-    ) -> Result<Value, RuntimeError> {
+    ) -> Result<(Value, bool), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -15,6 +23,7 @@ impl Interpreter {
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let topic_key = "__mutsu_rw_map_topic__";
+        let wrote_back = std::cell::Cell::new(false);
         if let Some(func_ref) = func.as_ref()
             && let ValueView::Sub(data) = func_ref.view()
         {
@@ -91,6 +100,7 @@ impl Interpreter {
                             false,
                         )?;
                         list_items[i] = cell.lock().unwrap().clone();
+                        wrote_back.set(true);
                         res.deref_container()
                     } else {
                         let chunk: Vec<Value> = if arity == 1 {
@@ -105,6 +115,7 @@ impl Interpreter {
                             && let Some(mutated) = self.env.get(topic_key).cloned()
                         {
                             list_items[i] = mutated;
+                            wrote_back.set(true);
                         }
                         v
                     };
@@ -117,7 +128,7 @@ impl Interpreter {
                     i += arity;
                 }
                 self.env.remove(topic_key);
-                return Ok(Value::array(result));
+                return Ok((Value::array(result), wrote_back.get()));
             }
 
             let arity = if !data.params.is_empty() {
@@ -188,6 +199,18 @@ impl Interpreter {
                 }
             }
 
+            // A `$_`-referencing WhateverCode (`@a.map(* eq $_)`) binds the
+            // element to its `*` placeholder, so `$_` must keep referring to the
+            // CALLER's topic — only a bare block topicalizes `$_` to the element.
+            // The List sibling (`eval_map_over_items`) and the grep loop below
+            // both route their topic bind through `bind_loop_topic` for this;
+            // this loop used to insert the element unconditionally, so
+            // `@a.map(* eq $_)` compared each element against itself
+            // (t/whatever-code-topic.t). When the topic is the caller's it is
+            // NOT an alias for the element either, so it must not write back.
+            let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
+            let outer_topic = self.env.get("_").cloned();
+
             // CP-3 collapse: run the rw map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
             // returns the loop's Result; `with_nested_registers` restores the
@@ -246,18 +269,19 @@ impl Interpreter {
                                     vm.env_mut().insert(p.clone(), item.clone());
                                 }
                             }
-                            vm.env_mut().insert(underscore.clone(), item.clone());
-                            vm.env_mut().insert(dollar_topic.clone(), item);
+                            bind_loop_topic(vm.env_mut(), &item, keeps_outer_topic, &outer_topic);
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if i + idx < list_items.len() {
                                     vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
                                 }
                             }
-                            vm.env_mut()
-                                .insert(underscore.clone(), list_items[i].clone());
-                            vm.env_mut()
-                                .insert(dollar_topic.clone(), list_items[i].clone());
+                            bind_loop_topic(
+                                vm.env_mut(),
+                                &list_items[i],
+                                keeps_outer_topic,
+                                &outer_topic,
+                            );
                         }
                     }
                     let writeback = |list_items: &mut [Value], vm: &Interpreter| {
@@ -265,9 +289,18 @@ impl Interpreter {
                             return;
                         }
                         if let Some(cell) = &rw_cell {
+                            // An explicit `is rw` param aliases the element
+                            // regardless of where `$_` points.
                             list_items[i] = cell.lock().unwrap().clone();
-                        } else if let Some(mutated) = vm.env().get(topic_key).cloned() {
+                            wrote_back.set(true);
+                        } else if !keeps_outer_topic
+                            && let Some(mutated) = vm.env().get(topic_key).cloned()
+                        {
+                            // Only a block that topicalizes `$_` to the element
+                            // rw-aliases it; when `$_` is the caller's topic a
+                            // write to it must not reach the source array.
                             list_items[i] = mutated;
+                            wrote_back.set(true);
                         }
                     };
                     let saved_when_matched = vm.when_matched();
@@ -347,10 +380,11 @@ impl Interpreter {
                 };
             }
             self.env.remove(topic_key);
-            return loop_result;
+            return loop_result.map(|v| (v, wrote_back.get()));
         }
-        // Non-Sub func: delegate to regular map
+        // Non-Sub func: delegate to regular map (which never writes back)
         self.eval_map_over_items(func, list_items.to_vec())
+            .map(|v| (v, false))
     }
 
     pub(super) fn eval_grep_over_items_with_mutated(
