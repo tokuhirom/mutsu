@@ -1,6 +1,7 @@
 # ADR-0055: A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (slice 1 implemented 2026-08-28; slices 2-5 not started, and
+  §7 records two prerequisites this ADR did not originally anticipate)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
   0054 belongs to the argument-list-interpolation ADR)
@@ -322,3 +323,149 @@ them `persist_closure_env`, `get/set/clear_closure_captured_state`, the
   (the ticket's 2.4x trap), measured against the bench CI series, not locally.
 - Slice 5: `closure_env_overrides` and `closure_captured_state` are gone and
   `git grep` finds no reader.
+
+## 7. Implementation status
+
+### 7.1 Premises re-measured before implementing (2026-08-28, `main` @ `239c3b818`)
+
+Every premise slice 1 rests on was re-measured rather than trusted.
+
+**All three residual families were still open.** Each was probed with the
+liveness shape (`my $v = <kind>; my $f = { read $v }; $v = <new>;`) crossed with
+the §1.2(b) hijack shape, and the verdict confirmed by a `rust-gdb -batch`
+breakpoint on the boxing site (`vm_register_ops.rs`, the
+`cur.clone().into_container_ref()` line), which fired for none of them:
+
+| family | probe | mutsu before | raku |
+| --- | --- | --- | --- |
+| type/`where`-constrained scalar (`my Foo $x`) | hijack | dies, `No such method 'v' for invocant of type 'Str'` | `42` |
+| `$`-held Array (`my $a = [1,2]`) | hijack | `1` (the decoy's `.elems`) | `3` |
+| Package-valued scalar (`my $p = A`) | hijack | `Str` (the decoy) | `B` |
+
+The liveness direction passed on `main` for all three — but only by accident,
+through the caller-priority merge, since the creating frame *was* the calling
+chain. That is exactly the residue §4 warns closure-wins cannot tolerate, so
+the measurement confirms slice 1 as a genuine prerequisite rather than
+bookkeeping.
+
+**Both halves of slice 1's own stated prerequisite had in fact closed.** The
+type-constraint skip existed because a `ContainerRef` write-through bypassed
+the constraint re-check and because `cas` resolved its target by name. ADR-0042
+made the constraint a property of the *container* (`my Str $s; my $t := $s; $t
+= 42` dies correctly today), and ADR-0062 anchored the atomic lane to the
+published value with the root store as the sole mapping authority. Retiring
+the skip cost nothing on `roast/S17-lowlevel/cas.t` (green, 0.73 s).
+
+### 7.2 What slice 1 landed
+
+- The `type_constrained_unboxable` refusal is gone from `box_captured_lexicals`,
+  and `Package`/`Array`/`Hash` left the value-kind skip list there and in
+  `box_decl_local_cell`. `Sub`, `Proxy` and the `Seq`/`HyperSeq`/`RaceSeq`/`Slip`
+  family keep theirs (`Proxy` permanently — FETCH/STORE must not be hidden
+  behind a cell).
+- **New refusal: `legacy_atomic_lane_owns`** (`builtins_atomic_shared.rs`), the
+  one regression the relaxation flushed out. `t/atomic-cell-shape-refusal-symmetry.t`
+  test 4 sequences a legacy-lane `cas` on an Array-valued scalar (which refused
+  a cell, parking the authoritative value in `__mutsu_atomic_value::N`) and then
+  a thread capturing the same name. With `Array` newly boxable, the capture
+  seeded a cell from the now-stale slot and forked the binding — precisely the
+  mid-sequence promotion hazard
+  `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md` documents. The
+  seed-and-retire protocol that makes promotion safe is confined to
+  `atomic_scalar_cell` for a documented reason (it alone runs synchronously in
+  the thread owning the atomic op), so the two capture/declaration boxing sites
+  simply DECLINE while the lane is live. A refusal can only cost an
+  optimisation, never correctness, and the process-global "any atomic seen"
+  flag makes it free in programs that use no atomics.
+
+Effect: all three residual families are closed in **both** directions. Their
+liveness stops being accidental (it no longer depends on the calling chain
+containing the creating frame), and — because a `ContainerRef` capture takes the
+merge's existing force-overwrite branch — the caller-hijack direction is fixed
+for them too, with no change to the merge policy.
+
+### 7.3 What did NOT land, and why it matters more than what did
+
+The invariant slices 2-5 actually need is ADR-0025 slice 2's: **every
+escaping-captured plain scalar is either authoritative or a shared cell.** Slice
+1's three families are a *subset* of the gap. The rest is the population the
+vouch refuses but the mutation analysis never saw: a capture of a name that was
+handed to a call (`own_call_arg_sources`), or one mutated in place as a
+container (`own_container_writes`). That population has neither defence, and it
+is exactly ADR-0055 §1.2(b).
+
+The mechanism that closes it — one compile-time set computed as the exact
+complement of the vouch within the escaping-captured set, wired into
+`box_captured_lexicals` as an independent trigger — was implemented and
+validated during this slice. It fixes §1.2(b)'s env-resident repro outright
+(`OUTER`, not `CALLER`), with `entry_or_insert_sym` still the merge default and
+no perf movement on the #2749 canary. `make test` and a full local `make roast`
+both stayed green with it in.
+
+It was nonetheless **removed from the shipped slice**, because it drops six
+whitelisted Cro::HTTP suites in the bundled-library gate (a CI step `make test`
+does not run): state leaks between sequential requests on one client, visible as
+an accumulating request path. A three-way bisect over the vouch-refusal shapes
+showed the breaking population is *precisely* the read-only call-arg-source
+population §1.2(b) needs, so there is no narrowing that keeps the fix and drops
+the regression. Full record, including the boxed-name trace pointing at
+`Cro::HTTP::Client.request`'s parameters and its recursive redirect call:
+`todo/deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md`.
+
+**Consequence for §3.** Slice 2's prerequisite list should read: slice 1 (done)
+**and** ADR-0025 slice 2's mechanism (open, blocked on that ticket). §1.2(b)
+therefore remains open in its env-resident form; the slot-resident form is
+pinned and passing.
+
+### 7.4 Slice 2 was prototyped, measured, and reverted — what it still needs
+
+The merge flip itself was implemented exactly as §3 specifies
+(`entry_or_insert_sym` → `insert_sym` in `call_compiled_closure_with_topic`,
+keeping the dynamic and `__mutsu_*` exclusions) and run against the full `t/`
+suite. Two things were learned:
+
+1. **A trap for whoever lands it.** The dynamic-variable exclusion must use the
+   sigil-tolerant predicate the `ContainerRef` branch already uses
+   (`s.trim_start_matches(['$','@','%','&']).starts_with('*')`), NOT
+   `env::is_dynamic_var_name`. Env keys reach the merge both bare (`*OUT`) and
+   sigilled (`$*OUT`) depending on the write path, and `is_dynamic_var_name`
+   returns `false` for the sigilled form — so the closure's captured `$*OUT`
+   overwrote the caller's live dynamic binding and every `is captured({...})`
+   style test lost its output.
+
+2. **The remaining cell-coverage gap is wider than §3 recorded.** With the flip
+   in, the trap fixed, *and* the §7.3 mechanism in place, exactly nine `t/` files
+   still failed, and every one of them is a single family: *a capture the creator
+   mutates later, for which the escape/ownership analysis produces no cell*.
+   Three shapes:
+
+   - **Escape through a NON-escaping intermediate frame.** `my $shared = 0; for
+     1..3 { @cbs.push({ $shared }) }; $shared = 42` — the inner closure escapes,
+     but the `for` body that owns the capture chain does not, and `$shared` is
+     owned two frames up. `needs_cell_free_vars` bubbles only *mutated* captures
+     upward, so a read-only inner capture of a later-mutated outer lexical
+     bubbles nothing (`t/closure-upvalue.t` 8,
+     `t/closure-capture-instance-cell.t` 6, `t/loop-bind-closure-capture.t` 5).
+   - **A closure created inside `EVAL`** (`t/eval-read-caller-lexicals.t` 13).
+   - **A resume-safe CONTROL handler's write into an installing frame**
+     (`t/control-warn-resume-caller-var-name-collision.t` 1).
+
+   Closing these needs decl-site boxing plus bubbling the cell requirement
+   through non-escaping intermediates — ADR-0025 slice 2's *full* design. Note
+   that ADR-0025 slice 2 was closed out on 2026-08-20 as "already resolved by
+   intervening work": that close-out was correct about its *motivating
+   examples*, but the mechanism it specified was never built, and the merge flip
+   is what makes the difference observable.
+
+### 7.5 Not addressed
+
+Two findings routed to this ADR do not fall out of slice 1, and were re-measured
+to confirm it (both still diverge from `raku` on this branch):
+
+- `todo/deep/sigilless-alias-closure-capture-skips-typecheck.md` — a `:=`-bound
+  alias stops aliasing when the write happens inside a *stored* closure. Not a
+  merge-policy or cell-population problem: the alias identity itself is lost.
+- `todo/tickets/free-var-read-in-callee-resolves-through-dynamic-caller-chain.md`
+  — a callee's free variable resolves through the dynamic caller chain. Making
+  free-variable resolution genuinely lexical is an env-model change and needs
+  its own ADR; it is the same principle as this one seen from the read side.

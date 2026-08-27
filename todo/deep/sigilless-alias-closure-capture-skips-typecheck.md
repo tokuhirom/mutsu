@@ -1,5 +1,34 @@
 # Writing through a sigilless bind alias captured into a closure still skips the type check
 
+## Re-measured 2026-08-28: NOT a closure-capture-cell problem — ADR-0055 slice 1 does not touch it
+
+This file was routed to ADR-0055 on the theory that it is closure capture. It
+is not the *cell population* half of closure capture: ADR-0055 slice 1 (which
+completed the vouch/cell dichotomy — every escaping-captured plain scalar is now
+either authoritative or a shared `ContainerRef` cell) leaves every row of the
+table below exactly as it was. Neither does the closure-wins merge: the slice-2
+merge flip was prototyped in the same session and D2/D5 still lost the write
+under it.
+
+Two further measurements taken at the same time, both new:
+
+* **D6, the original repro, is fully re-confirmed**: `my Int $a = 5; my \x := $a;
+  my &blk = sub { x = "not an int" }; blk()` prints `a=5` with **no error** under
+  mutsu, where raku dies with `X::TypeCheck::Assignment`. So the write-through is
+  lost *and* the type check never runs, exactly as the top section says.
+* **D4's agreement is narrower than recorded.** `my $s = "a"; my \x := $s;
+  { x = 42 }(); say $s` prints `42` only at mainline top level. Wrap the same
+  three statements in a bare block and it prints `a` like D2 and D5. So the
+  discriminator "stored/deferred closure vs. immediate invocation" is not the
+  whole story either — an immediately-invoked block loses the alias too as soon
+  as it is not in the mainline frame.
+
+The remaining suspect is the alias identity itself (how a `:=` binding is
+represented and where the write-through consults it), not how a closure's
+captured env is merged. Whoever picks this up should start there rather than in
+`vm_closure_dispatch.rs`.
+
+
 ## Measured 2026-08-27 (`main` @ `10ac4d450`): the title is wrong — this is a write-through bug, and it is not sigilless-specific
 
 The "Root cause (not yet investigated)" section below guessed correctly that

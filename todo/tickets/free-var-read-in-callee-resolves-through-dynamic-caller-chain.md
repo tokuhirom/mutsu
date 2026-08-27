@@ -47,6 +47,21 @@ local slot. So there are (at least) two interacting mechanisms here: the
 dynamic-chain resolution, and a local/env dual-store coherence gap for a
 routine-level `my` that is never written by name.
 
+## Re-measured 2026-08-28: unchanged by ADR-0055 slice 1, and unchanged by the slice-2 merge flip
+
+The repro was re-run against ADR-0055 slice 1 (the vouch/cell dichotomy — every
+escaping-captured plain scalar is now either authoritative or a shared cell) and
+against a prototype of slice 2 (the closure-wins merge). Both leave it at
+`f sees 1 / alias 200`.
+
+That is the expected result, and it sharpens the scope: ADR-0055 is about how a
+*captured env* is merged into a closure's frame, whereas this is about how a
+*named sub's* frame is chained to its caller in the first place
+(`Env::scoped_child(caller_env)`). A merge policy cannot fix a frame whose
+parent is the wrong frame. This needs its own ADR — "a routine's env parent is
+its lexical scope, not its caller" — and ADR-0055 §7.5 now records it as
+out of scope for that ADR.
+
 ## Why this is not a small slice
 
 Making free-variable resolution genuinely lexical (resolve through the
