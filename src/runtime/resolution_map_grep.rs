@@ -552,6 +552,21 @@ impl Interpreter {
                     }
                     let saved_when_matched = vm.when_matched();
                     vm.when_nonmatch_value = None;
+                    // This loop binds the block's params directly into `env`
+                    // (above) instead of going through the normal call
+                    // machinery (`bind_function_args_values`/`push_call_frame`),
+                    // so `readonly_frames` is never incremented here. A
+                    // compiled body that marks itself readonly at runtime --
+                    // e.g. a single-param pointy block's `Stmt::MarkReadonly`
+                    // prologue (`compiler/expr_closure.rs`) -- would otherwise
+                    // mark `readonly_vars` with `readonly_frames == 0`, which
+                    // skips the undo journal entirely (see
+                    // `mark_readonly_sym_with`) and leaks the mark PERMANENTLY
+                    // into every later, unrelated same-named lexical in the
+                    // program (see the sibling fix + comment in
+                    // `resolution_map_grep_rw.rs`).
+                    let _readonly_guard =
+                        crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
@@ -618,6 +633,7 @@ impl Interpreter {
                             return Err(e);
                         }
                     }
+                    drop(_readonly_guard);
                     i += arity;
                 }
 

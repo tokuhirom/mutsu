@@ -3789,6 +3789,19 @@ pub(crate) struct CompiledCode {
     /// Pointy blocks are NOT routine boundaries — `return` propagates through
     /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
     pub(crate) is_pointy_block: bool,
+    /// Whether this is a single-`$`-sigiled-parameter pointy block (`-> $v {
+    /// }`, compiled via `Expr::Lambda`) whose one parameter must be marked
+    /// readonly (`ReadonlyKind::Alias`) at the call site. Set only for the
+    /// plain, trait-less, non-sigilless, non-WhateverCode shape — a traited
+    /// (`is rw`/`is copy`) or multi-param pointy block instead carries a real
+    /// `ParamDef` and is marked by the ordinary signature-binding path
+    /// (`binding_signature.rs`). Consumed by `call_compiled_closure_with_topic`,
+    /// NOT by an injected body prologue statement — see the comment on
+    /// `Compiler::compile_expr_lambda`'s `pointy_alias_param` for why a
+    /// prologue statement is unsafe here (it also runs inside several
+    /// `push_call_frame`-bypassing "fast native loop" paths, which would leak
+    /// the mark permanently).
+    pub(crate) pointy_alias_param: bool,
     /// Whether this code contains opcodes that write to env (SetGlobal,
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
@@ -4509,6 +4522,7 @@ impl CompiledCode {
             uses_dispatcher: false,
             source_line: None,
             is_pointy_block: false,
+            pointy_alias_param: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),

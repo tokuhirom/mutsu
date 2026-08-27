@@ -589,6 +589,25 @@ impl Interpreter {
             }
         };
 
+        // A plain `$`-sigiled single pointy-block parameter (`-> $v { }`,
+        // `cc.pointy_alias_param`) reached `bind_function_args_values`'s
+        // legacy path above (empty `param_defs`), which carries no trait
+        // information and so cannot mark it readonly itself -- unlike a
+        // multi-param/traited pointy block (a real `ParamDef`, marked by
+        // `binding_signature.rs`'s "correct" branch). Marked HERE (the call
+        // site), not via a body-prologue statement: `push_call_frame` above
+        // already opened this call's readonly scope, so the mark is properly
+        // journaled and rolled back by `pop_call_frame` on every exit path
+        // (see `Compiler::compile_expr_lambda`'s `pointy_alias_param` comment
+        // for why a prologue statement is unsound here — it would also run
+        // inside several `push_call_frame`-bypassing "fast native loop" paths
+        // and leak permanently).
+        if cc.pointy_alias_param
+            && let Some(name) = data.params.first()
+        {
+            self.mark_readonly(name);
+        }
+
         // Handle implicit $_ for bare blocks (no explicit params, single arg)
         let uses_positional = data.params.iter().any(|p| p != "_" && !p.starts_with(':'));
         // A plain bare block (`data.params` empty, no placeholder/pointy

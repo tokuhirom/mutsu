@@ -97,7 +97,7 @@ pub(super) fn make_method_not_found_error(
 }
 
 /// Create a structured X::Immutable error.
-pub(super) fn make_x_immutable_error(method_name: &str, typename: &str) -> RuntimeError {
+pub(crate) fn make_x_immutable_error(method_name: &str, typename: &str) -> RuntimeError {
     let msg = format!(
         "Cannot call '{}' on an immutable '{}'",
         method_name, typename
