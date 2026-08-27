@@ -304,3 +304,34 @@ pub(crate) fn allomorph_type_name(
         _ => None,
     }
 }
+
+/// Build the result of `.wordcase` on an allomorph: rakudo's `Cool.wordcase`
+/// on an `IntStr`/`NumStr`/`RatStr`/`ComplexStr` returns ANOTHER allomorph of
+/// the same type, with the numeric part unconditionally reset to the type's
+/// zero value (0 / 0e0 / 0+0i) rather than the original number — an artifact
+/// of how the allomorph gets reconstructed internally (verified across all
+/// four types; only the wordcased STRING carries real information). rakudo's
+/// own `RatStr` reset is additionally broken: the reconstructed Rat's
+/// numerator/denominator are genuinely uninitialized, so `.raku`/any numeric
+/// op on the result crashes. mutsu uses the sane 0/1 zero Rat there instead of
+/// replicating that crash. See
+/// news/2026-08/allomorph-wordcase-reads-the-numeric-part.md.
+///
+/// `inner` is the allomorph's numeric component (used only to pick which
+/// "zero" shape to build); `wordcased` is the already-wordcased string.
+pub(crate) fn allomorph_wordcase_result(inner: &Value, wordcased: String) -> Value {
+    let zero_numeric = match inner.view() {
+        ValueView::Num(_) => Value::num(0.0),
+        ValueView::Rat(_, _) => make_rat(0, 1),
+        ValueView::FatRat(_, _) => Value::fat_rat_raw(0, 1),
+        ValueView::BigRat(_, _) => {
+            make_big_rat(num_bigint::BigInt::from(0), num_bigint::BigInt::from(1))
+        }
+        ValueView::Complex(_, _) => Value::complex(0.0, 0.0),
+        // Int / BigInt allomorph (IntStr).
+        _ => Value::int(0),
+    };
+    let mut new_mixins = std::collections::HashMap::new();
+    new_mixins.insert("Str".to_string(), Value::str(wordcased));
+    Value::mixin(zero_numeric, new_mixins)
+}
