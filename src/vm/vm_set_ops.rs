@@ -135,6 +135,14 @@ impl Interpreter {
     }
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
+        // ADR-0040 slices 1-2: the container is the RECEIVER of this membership
+        // test, so its own element-itemization is not part of the question --
+        // `my @e = 2, 1..2` makes `@e[1]` a `Scalar(Range)`, and
+        // `@e[0] (elem) @e[1]` must still decompose it as a Range. (The NEEDLE
+        // is deliberately left alone: a `Set`'s members keep their itemization
+        // in raku -- `Set.new($[1, 2])` -- so membership by `.WHICH` has to see
+        // the value exactly as it was stored.)
+        let container = container.descalarize();
         // Set/Bag/Mix stores are `.WHICH`-keyed: membership is element
         // identity (`===`), so `<1> ∈ (1,).Set` is False (IntStr vs Int)
         // and `"1" ∈ (1,).Set` is False (Str vs Int) — matching Rakudo.

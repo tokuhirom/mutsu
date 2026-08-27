@@ -214,10 +214,13 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
             let deconted: HashMap<String, Value> = map
                 .iter()
                 .map(|(k, v)| {
-                    let deconted = match v.view() {
-                        ValueView::Scalar(inner) => inner.clone(),
-                        _ => v.clone(),
-                    };
+                    // ADR-0040 slices 1-2: a Hash value that is an aggregate
+                    // carries its itemization as an `ArrayKind`/flag, not only
+                    // as a `Scalar` wrapper, so the decont has to cover those
+                    // kinds too (`my %h = a => [1,2]; %h.Map<a>.raku` is
+                    // `[1, 2]`, and `Foo.new(|%args.Map)` must bind `@.a` to
+                    // three elements, not to one itemized array).
+                    let deconted = v.clone().deitemize_element();
                     let key = if typed {
                         map.typed_key(k).to_string_value()
                     } else {

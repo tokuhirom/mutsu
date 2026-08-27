@@ -432,6 +432,47 @@ impl Value {
         }
     }
 
+    /// ADR-0040 slice 2: would [`Value::itemize_for_element_store`] actually
+    /// change this value? The construction-site hooks (list-assign into
+    /// `@a`/`%h`, real-container literal construction) scan a whole element
+    /// vector with this *before* touching it, so the overwhelmingly common
+    /// cases — a flat array of scalars, and `my @a = @b` where `@b`'s
+    /// elements a previous store already itemized — keep sharing the source
+    /// `Gc` with no rebuild (ADR-0040 §5.2).
+    ///
+    /// `Shaped`/`Lazy` arrays are excluded because `ArrayKind::itemize()` is
+    /// a no-op on them, so `itemize_for_element_store` would return them
+    /// unchanged anyway.
+    pub fn needs_element_itemization(&self) -> bool {
+        match self.view() {
+            ValueView::Array(_, kind) => matches!(kind, ArrayKind::List | ArrayKind::Array),
+            ValueView::Hash(_) => !self.hash_is_itemized(),
+            ValueView::Seq(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// The inverse of [`Value::itemize_for_element_store`], for the few
+    /// readers that hand out an element's *value* rather than its container.
+    /// Measured on raku: `Array.List` decontainerizes (`@c.List[0].VAR.^name`
+    /// is `Array`), while `Array.list` keeps the containers
+    /// (`@c.list[0].VAR.^name` is `Scalar`) — see ADR-0040 §8.
+    pub fn deitemize_element(self) -> Value {
+        match self.view() {
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
+            }
+            ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
+            ValueView::Scalar(inner) => (*inner).clone(),
+            _ => self,
+        }
+    }
+
     /// Read through a `ContainerRef` and apply `f` to the inner value WITHOUT
     /// cloning it. Non-ContainerRef values are passed to `f` as-is. This is the
     /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of

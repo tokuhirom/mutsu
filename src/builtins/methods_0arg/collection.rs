@@ -94,7 +94,16 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
         .enumerate()
-        .map(|(idx, value)| Value::value_pair(value.clone(), Value::int(idx as i64)))
+        // ADR-0040: `.antipairs` is `self.pairs.map: *.antipair`, and
+        // `Pair.antipair` READS `$!value` to build the new key -- an attribute
+        // read decontainerizes. So an element that is itemized because it is a
+        // real `Array`/`Hash` element (slices 1-2) becomes a BARE key here,
+        // while `.pairs` keeps it itemized as the pair's value. Measured:
+        // `my @c; @c[0]=[1,2]; @c.antipairs.raku` is `([1, 2] => 0,).Seq` but
+        // `@c.pairs.raku` is `(0 => $[1, 2],).Seq`.
+        .map(|(idx, value)| {
+            Value::value_pair(value.clone().deitemize_element(), Value::int(idx as i64))
+        })
         .collect()
 }
 
@@ -117,6 +126,15 @@ fn should_expand_invert_value(value: &Value) -> bool {
 }
 
 fn extend_inverted_pairs(out: &mut Vec<Value>, key: Value, value: &Value) {
+    // ADR-0040 slices 1-2: a `Hash` value (and an `Array` element) that holds
+    // an aggregate is itemized at the store. `.invert` is `self.map: *.antipair`
+    // over the pairs, and `Pair.antipair` READS `$!value` — an attribute read
+    // decontainerizes — so the value expands into its OWN elements here
+    // whatever itemization it carries as an element:
+    // `{a => (1,2), b => 3..4}.invert` is `(1 => "a", 2 => "a", 3 => "b",
+    // 4 => "b").Seq`. This is the same "receiver decomposition vs element
+    // flattening" distinction `value_to_list_for_receiver` draws.
+    let value = &value.clone().deitemize_element();
     let values = match value.view() {
         ValueView::Str(_) => vec![value.clone()],
         _ if should_expand_invert_value(value) => crate::runtime::utils::value_to_list(value),
@@ -679,7 +697,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A bare type object listifies to nothing, so `Range.pairup` is `()`.
             ValueView::Package(_) => Some(Ok(Value::seq(Vec::new()))),
             _ => {
-                let items = crate::runtime::utils::value_to_list(target);
+                // ADR-0040 slices 1-2: `target` is `.pairup`'s own RECEIVER,
+                // decomposed into ITS elements -- a question the itemization it
+                // carries as an element of some other container has no say in.
+                // (`[[2,3],[4,[5,6]]]».pairup` hands each itemized `$[2, 3]` to
+                // `.pairup`, which must still see two elements.)
+                let items = crate::runtime::utils::value_to_list_for_receiver(target);
                 let mut pairs: Vec<Value> = Vec::new();
                 let mut i = 0;
                 while i < items.len() {

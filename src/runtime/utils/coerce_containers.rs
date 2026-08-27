@@ -26,6 +26,74 @@ fn decay_nil_hash_value(v: Value) -> Value {
     }
 }
 
+/// ADR-0040 slice 2 (the Hash half): a `Hash` value is a `Scalar` container,
+/// so an aggregate stored as a hash value is one item and renders itemized
+/// (`%h<a>.raku` is `$[1, 2]`). Composed with the ADR-0049 `Nil` decay, which
+/// runs first (a decayed `Nil` becomes `Any`, which never itemizes).
+fn hash_stored_value(v: Value) -> Value {
+    decay_nil_hash_value(v).itemize_for_element_store()
+}
+
+/// ADR-0040 slice 2 (the Array half): itemize every element of a
+/// freshly-constructed REAL `Array`. A `List`/`Seq`/`Lazy` result is left
+/// alone — a `List` literal's elements are *not* containers (§1.6), which is
+/// what keeps `((1,2),(3,4))[0]` a bare `(1, 2)`.
+///
+/// Scan-then-rebuild-only-if-needed (§5.2): the scan is a cheap discriminant
+/// test per element and the `Gc` keeps being shared whenever nothing needs
+/// itemizing, so the common `my @a = @b` path costs a refcount bump exactly
+/// as before. Once the whole construction surface itemizes, a re-assignment
+/// of an already-itemized array is itself a no-op, so the rebuild is paid at
+/// most once per aggregate, at the point it first enters a real container.
+pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
+    let needs = match value.view() {
+        ValueView::Array(items, ArrayKind::Array | ArrayKind::Shaped | ArrayKind::ItemArray) => {
+            items.iter().any(Value::needs_element_itemization)
+        }
+        _ => false,
+    };
+    if !needs {
+        return value;
+    }
+    value.with_array_mut(|items, _kind| {
+        let data = crate::gc::Gc::make_mut(items);
+        for item in data.items_mut() {
+            if item.needs_element_itemization() {
+                *item = item.clone().itemize_for_element_store();
+            }
+        }
+    });
+    value
+}
+
+/// The mirror of [`itemize_real_array_elements`], for the one container that
+/// must NOT carry the property: the list-destructuring desugar's synthetic
+/// staging temp, which is the RHS list rather than a user `Array` (see
+/// `Interpreter::itemize_elements_for_var_assign`). Same
+/// scan-then-rebuild-only-if-needed shape.
+pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
+    let needs = match value.view() {
+        ValueView::Array(items, ArrayKind::Array | ArrayKind::Shaped | ArrayKind::ItemArray) => {
+            items.iter().any(|v| {
+                matches!(v.view(), ValueView::Array(_, k) if k.is_itemized())
+                    || matches!(v.view(), ValueView::Scalar(_))
+                    || (matches!(v.view(), ValueView::Hash(_)) && v.hash_is_itemized())
+            })
+        }
+        _ => false,
+    };
+    if !needs {
+        return value;
+    }
+    value.with_array_mut(|items, _kind| {
+        let data = crate::gc::Gc::make_mut(items);
+        for item in data.items_mut() {
+            *item = item.clone().deitemize_element();
+        }
+    });
+    value
+}
+
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();
@@ -58,10 +126,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     // `ContainerRef`; storing into a Hash decontainerizes (copies
                     // the value), matching Raku (`%h = k => $v; $v = 2` leaves
                     // `%h<k>` unchanged).
-                    map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
+                    map.insert(k.clone(), hash_stored_value(v.deref_container()));
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = flat[i].view() {
-                    let dv = decay_nil_hash_value(v.deref_container());
+                    let dv = hash_stored_value(v.deref_container());
                     for kk in hash_pair_keys(k) {
                         let str_key = kk.to_string_value();
                         if !matches!(kk.view(), ValueView::Str(_)) {
@@ -88,7 +156,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     } else {
                         Value::package(crate::symbol::Symbol::intern("Any"))
                     };
-                    map.insert(str_key, val);
+                    map.insert(str_key, val.itemize_for_element_store());
                     i += 2;
                 }
             }
@@ -102,10 +170,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut i = 0;
             while i < items.len() {
                 if let ValueView::Pair(k, v) = items[i].view() {
-                    map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
+                    map.insert(k.clone(), hash_stored_value(v.deref_container()));
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = items[i].view() {
-                    let dv = decay_nil_hash_value(v.deref_container());
+                    let dv = hash_stored_value(v.deref_container());
                     for kk in hash_pair_keys(k) {
                         let str_key = kk.to_string_value();
                         if !matches!(kk.view(), ValueView::Str(_)) {
@@ -127,7 +195,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     } else {
                         Value::package(crate::symbol::Symbol::intern("Any"))
                     };
-                    map.insert(str_key, val);
+                    map.insert(str_key, val.itemize_for_element_store());
                     i += 2;
                 }
             }
@@ -135,13 +203,13 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         ValueView::Pair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
+            map.insert(k.clone(), hash_stored_value(v.deref_container()));
             Value::hash(map)
         }
         ValueView::ValuePair(k, v) => {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
-            let dv = decay_nil_hash_value(v.deref_container());
+            let dv = hash_stored_value(v.deref_container());
             for kk in hash_pair_keys(k) {
                 let str_key = kk.to_string_value();
                 if !matches!(kk.view(), ValueView::Str(_)) {
@@ -309,7 +377,7 @@ where
     while let Some(item) = iter.next() {
         match item.view() {
             ValueView::Pair(key, boxed_val) => {
-                map.insert(key.clone(), decay_nil_hash_value(boxed_val.clone()));
+                map.insert(key.clone(), hash_stored_value(boxed_val.clone()));
             }
             // A bare (non-itemized) hash in list context flattens into its
             // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
@@ -327,11 +395,11 @@ where
                         if !matches!(key_obj.view(), ValueView::Str(_)) {
                             original_keys.insert(str_key.clone(), key_obj);
                         }
-                        map.insert(str_key, v.clone());
+                        map.insert(str_key, hash_stored_value(v.clone()));
                     }
                 } else {
                     for (k, v) in h.iter() {
-                        map.insert(k.clone(), v.clone());
+                        map.insert(k.clone(), hash_stored_value(v.clone()));
                     }
                 }
             }
@@ -339,7 +407,7 @@ where
             // storing the value under each of its members (`%h<a> == %h<b> == 1`),
             // matching Rakudo. Every other non-Str key stringifies as usual.
             ValueView::ValuePair(key, boxed_val) => {
-                let boxed_val = decay_nil_hash_value(boxed_val.clone());
+                let boxed_val = hash_stored_value(boxed_val.clone());
                 for kk in hash_pair_keys(key) {
                     let (str_key, record_original) = encode_key(&kk)?;
                     if record_original {
@@ -370,14 +438,26 @@ where
                 if record_original {
                     original_keys.insert(str_key.clone(), item.clone());
                 }
-                map.insert(str_key, decay_nil_hash_value(value));
+                map.insert(str_key, hash_stored_value(value));
             }
         }
     }
     Ok(set_hash_original_keys(Value::hash(map), original_keys))
 }
 
+/// Coerce a value into a real `Array` (the list-assign / `.Array` tail).
+///
+/// ADR-0040 slice 2: every element of the resulting real `Array` is a
+/// `Scalar` container, so aggregates are itemized on the way in — this is the
+/// single hook that turns §1.3's rows 01-18 and 23 green, because every
+/// downstream element producer (`[i]`, slices, `.head`/`.tail`/`.first`,
+/// `map`/`grep`/`sort`/`reverse`, `.pairs`/`.kv`, the implicit topic) simply
+/// copies the flag along (§1.6.3).
 pub(crate) fn coerce_to_array(value: Value) -> Value {
+    itemize_real_array_elements(coerce_to_array_inner(value))
+}
+
+fn coerce_to_array_inner(value: Value) -> Value {
     fn metadata_shape_for_items(
         items: &crate::gc::Gc<crate::value::ArrayData>,
     ) -> Option<Vec<usize>> {

@@ -158,6 +158,10 @@ impl Interpreter {
             // This AssignExpr form is never a bind, so no `!is_bind` guard is
             // needed here.
             assigned = self.decay_nil_elements_for_var_assign(name, assigned);
+            // ADR-0040 slice 2: see the SetLocal sibling — covers the arms
+            // that bypass `coerce_to_array` (here, the reified-LazyList
+            // gather).
+            assigned = Self::itemize_elements_for_var_assign(name, assigned);
             let class_name = match self.locals[idx].view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 ValueView::Package(class_name) => Some(class_name),

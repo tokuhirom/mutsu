@@ -191,6 +191,12 @@ impl Interpreter {
         // `typed_container_default` returns `Nil` (meaning "no decay") for a
         // non-real-array container.
         let result = self.decay_nil_container_elements(result);
+        // ADR-0040 slice 2: a real `[...]` literal's elements are `Scalar`
+        // containers, so aggregates itemize; a `(...)` List literal's are not
+        // (§1.6), which `itemize_real_array_elements` discriminates by kind.
+        // Applied AFTER the per-element one-arg/Slip flattening decision
+        // above, so arity is untouched (§2 part 3).
+        let result = runtime::utils::itemize_real_array_elements(result);
         self.stack.push(result);
         Ok(())
     }
@@ -216,6 +222,8 @@ impl Interpreter {
         self.explode_if_fatal_failure_in_composite(&elems)?;
         let result = Value::real_array(elems);
         let result = self.decay_nil_container_elements(result);
+        // ADR-0040 slice 2: see `exec_make_array_op`.
+        let result = runtime::utils::itemize_real_array_elements(result);
         self.stack.push(result);
         Ok(())
     }
@@ -238,7 +246,9 @@ impl Interpreter {
             } else {
                 Value::hash_key_encode(&pair[0])
             };
-            let val = pair[1].clone();
+            // ADR-0040 slice 2: a `%(...)` literal's values are `Scalar`
+            // containers, so an aggregate value itemizes on the way in.
+            let val = pair[1].clone().itemize_for_element_store();
             map.insert(key, val);
         }
         let result = self.decay_nil_container_elements(Value::hash(map));
@@ -258,13 +268,16 @@ impl Interpreter {
         let mut map = HashMap::new();
         for item in items {
             match item.view() {
+                // ADR-0040 slice 2: a `%(...)` literal's values are `Scalar`
+                // containers, so an aggregate value itemizes on the way in.
                 ValueView::Pair(k, v) => {
-                    map.insert(k.clone(), v.clone());
+                    map.insert(k.clone(), v.clone().itemize_for_element_store());
                 }
                 // A Junction key (`%( "a"|"b" => 1 )`) threads: it stores the value
                 // under each member key (`%h<a> == %h<b> == 1`), not under the
                 // junction's stringification. Matches Rakudo.
                 ValueView::ValuePair(k, v) => {
+                    let v = v.clone().itemize_for_element_store();
                     for kk in crate::runtime::utils::hash_pair_keys(k) {
                         map.insert(kk.to_string_value(), v.clone());
                     }

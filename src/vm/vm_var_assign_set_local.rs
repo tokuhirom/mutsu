@@ -1041,6 +1041,14 @@ impl Interpreter {
             // untouched.
             if !is_bind {
                 assigned = self.decay_nil_elements_for_var_assign(name, assigned);
+                // ADR-0040 slice 2: a real `Array`'s elements are `Scalar`
+                // containers. `coerce_to_array` already itemizes on its own
+                // tail, but the arms above bypass it (the reified-LazyList
+                // gather, the iterable-instance reify, the infinite-range
+                // LazyList); hooking here covers the whole `@`-assign entry
+                // with one call. A `:=` bind is deliberately excluded -- a
+                // bound `List`'s elements are NOT containers (§1.6/row 24).
+                assigned = Self::itemize_elements_for_var_assign(name, assigned);
             }
             // `@a = Nil` resets to the *outgoing container's* own
             // `is default(...)` -- see `array_assign_nil_container_default`.

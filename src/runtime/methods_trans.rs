@@ -110,6 +110,13 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
         ValueView::Array(items, ..) => {
             let mut result = Vec::new();
             for item in items.iter() {
+                // ADR-0040 slices 1-2: a grouped `trans` operand
+                // (`'a'..'z' => ['n'..'z','a'..'m']`) is an array literal whose
+                // `Range` elements are itemized at the store; the grouping only
+                // means "expand each of these in turn", so the element's own
+                // itemization must be stripped before deciding how to expand it
+                // (otherwise the whole Range stringifies as one replacement).
+                let item = &item.clone().deitemize_element();
                 match item.view() {
                     ValueView::Array(..)
                     | ValueView::Range(..)

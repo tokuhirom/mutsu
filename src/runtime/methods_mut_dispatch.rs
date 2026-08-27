@@ -750,7 +750,18 @@ impl Interpreter {
             && !target_var.starts_with('&')
             && matches!(
                 target.view(),
-                ValueView::Array(_, crate::value::ArrayKind::Array)
+                // ADR-0040 slices 1-2: a real `Array` held as an ELEMENT of
+                // another `Array`/`Hash` is itemized (`ItemArray`), and
+                // `@w[0].splice(...)` binds it to a scalar-named temp. It is
+                // still a real array for `splice`'s purposes — the itemization
+                // describes how it behaves as an element of `@w`, not what it
+                // is — so accept both kinds here. (Without `ItemArray` the
+                // whole block is skipped and `*-2` is resolved against the
+                // wrong length; `t/index-method-no-writeback.t` is the pin.)
+                ValueView::Array(
+                    _,
+                    crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
+                )
             );
         if (target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array))
             && !self.mixin_role_has_method(&target, method)

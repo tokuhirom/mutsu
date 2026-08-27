@@ -450,7 +450,12 @@ impl Interpreter {
             | ValueView::BigRat(..)
             | ValueView::Complex(..)
             | ValueView::Nil => vec![target.clone()],
-            _ => crate::runtime::utils::value_to_list(&target),
+            // ADR-0040 slices 1-2: `target` is `.toggle`'s own RECEIVER, so it
+            // is decomposed into ITS elements — a question the itemization it
+            // may carry as an element of some other container has no say in.
+            // (`my @t = %(),; for @t -> \v { v.toggle }` must yield the empty
+            // Seq, not a one-element Seq holding the itemized empty hash.)
+            _ => crate::runtime::utils::value_to_list_for_receiver(&target),
         };
 
         let mut result: Vec<Value> = Vec::new();

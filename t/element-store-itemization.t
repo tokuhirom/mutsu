@@ -8,94 +8,77 @@ use Test;
 # This file is the acceptance oracle from ADR-0040 SS1.3 (the 25-row
 # divergence matrix, measured on `main` 52631889f 2026-08-20) plus SS1.6's
 # agreeing rows, the SS2 arity invariants, and the SS2 negative (non-)
-# itemization list. Slice 1 (this PR) fixes the *mutation* sites only --
-# element assign, autovivification, and push/unshift/append/prepend for a
-# real Array/Hash -- so rows 19-22 (plus a few Slice-1-specific extras below
-# them) turn green. Rows 01-18, 23, 24 stay `todo`-marked: they depend on
-# itemizing at *construction* (list-assign, literal construction), which is
-# Slice 2's job. Row 25 (and the SS1.6 rows) are invariants that must NOT
-# move -- they are what stops a later slice from "fixing" the divergence by
-# over-itemizing.
+# itemization list. Slice 1 fixed the *mutation* sites (element assign,
+# autovivification, push/unshift/append/prepend/splice for a real
+# Array/Hash), turning rows 19-22 green. Slice 2 fixes the *construction*
+# sites (list-assign into `@a`/`%h`, real-container literal construction,
+# `.Array`/`.Hash` coercion), turning rows 01-18 and 23 green -- every
+# downstream element producer inherits the flag (SS1.6.3). Only row 24
+# (`.VAR` reflection) is still `todo`-marked; it is Slice 3. Row 25 (and the
+# SS1.6 rows) are invariants that must NOT move -- they are what stops a
+# later slice from "fixing" the divergence by over-itemizing.
 
 # === SS1.3 divergent rows (25) ===
-# Rows 01-18, 23, 24 are read/construction-side and still diverge (Slice 2/3).
+# Row 24 is the `.VAR` reflection side and still diverges (Slice 3).
 
 my @c = [<a b>],[<c d>];
 my %h = a => [1,2];
 sub takes(*@a) { @a.elems }
 
 {
-    todo 'row 01: construction-side itemization is ADR-0040 slice 2';
     is @c[0].raku, '$["a", "b"]', 'row 01: my @c = [<a b>],[<c d>]; @c[0].raku';
 }
 {
-    todo 'row 02: construction-side itemization is ADR-0040 slice 2';
     is %h<a>.raku, '$[1, 2]', 'row 02: my %h = a => [1,2]; %h<a>.raku';
 }
 {
-    todo 'row 03: construction-side itemization is ADR-0040 slice 2';
     is @c[0,1].raku, '($["a", "b"], $["c", "d"])', 'row 03: @c[0,1].raku';
 }
 {
-    todo 'row 04: construction-side itemization is ADR-0040 slice 2';
     is @c.head.raku, '$["a", "b"]', 'row 04: @c.head.raku';
 }
 {
-    todo 'row 05: construction-side itemization is ADR-0040 slice 2';
     is @c.tail.raku, '$["c", "d"]', 'row 05: @c.tail.raku';
 }
 {
-    todo 'row 06: construction-side itemization is ADR-0040 slice 2';
     is @c.first(*.so).raku, '$["a", "b"]', 'row 06: @c.first(*.so).raku';
 }
 {
-    todo 'row 07: construction-side itemization is ADR-0040 slice 2';
     is @c.sort.raku, '($["a", "b"], $["c", "d"]).Seq', 'row 07: @c.sort.raku';
 }
 {
-    todo 'row 08: construction-side itemization is ADR-0040 slice 2';
     is @c.reverse.raku, '($["c", "d"], $["a", "b"]).Seq', 'row 08: @c.reverse.raku';
 }
 {
-    todo 'row 09: construction-side itemization is ADR-0040 slice 2';
     is @c.map({$_}).raku, '($["a", "b"], $["c", "d"]).Seq', 'row 09: @c.map({$_}).raku';
 }
 {
-    todo 'row 10: construction-side itemization is ADR-0040 slice 2';
     is @c.pairs[0].value.raku, '$["a", "b"]', 'row 10: @c.pairs[0].value.raku';
 }
 {
-    todo 'row 11: construction-side itemization is ADR-0040 slice 2';
     is @c.Slip.raku, 'slip($["a", "b"], $["c", "d"])', 'row 11: @c.Slip.raku';
 }
 {
-    todo 'row 12: construction-side itemization is ADR-0040 slice 2';
     is takes(@c[0]), 1, 'row 12: takes(@c[0])';
 }
 {
-    todo 'row 13: construction-side itemization is ADR-0040 slice 2';
     is takes(%h<a>), 1, 'row 13: takes(%h<a>)';
 }
 {
-    todo 'row 14: construction-side itemization is ADR-0040 slice 2';
     is takes(@c.head), 1, 'row 14: takes(@c.head)';
 }
 {
-    todo 'row 15: construction-side itemization is ADR-0040 slice 2';
     my $n;
     for @c { $n = takes($_) }
     is $n, 1, 'row 15: for @c { takes($_) }';
 }
 {
-    todo 'row 16: construction-side itemization is ADR-0040 slice 2';
     is (my @z = @c[0]).elems, 1, 'row 16: (my @z = @c[0]).elems';
 }
 {
-    todo 'row 17: construction-side itemization is ADR-0040 slice 2';
     is [@c[0]].elems, 1, 'row 17: [@c[0]].elems';
 }
 {
-    todo 'row 18: construction-side itemization is ADR-0040 slice 2';
     is join('|', @c[0]), 'a b', "row 18: join('|', \@c[0])";
 }
 
@@ -124,7 +107,6 @@ sub takes(*@a) { @a.elems }
 }
 
 {
-    todo 'row 23: construction-side itemization is ADR-0040 slice 2';
     my @a23 = (1..3), (4..6);
     is takes(@a23[0]), 1, 'row 23: my @a = (1..3),(4..6); takes(@a[0])';
 }
@@ -304,6 +286,287 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     @a2.push([1, 2, 3]);
     is @a2[0].head, 1, 'head on itemized Array element returns its first element';
     is @a2[0].tail, 3, 'tail on itemized Array element returns its last element';
+}
+
+# === Slice 2: the construction sites ===
+
+{
+    # A plain (non-declaring) list-assign itemizes exactly like the `my`
+    # declaration form.
+    my @a;
+    @a = [1, 2], [3, 4];
+    is @a[0].raku, '$[1, 2]', 'slice 2: @a = [1,2],[3,4] (non-decl assign)';
+    my %h;
+    %h = a => [1, 2];
+    is %h<a>.raku, '$[1, 2]', 'slice 2: %h = a => [1,2] (non-decl assign)';
+}
+{
+    # An array/hash LITERAL's elements itemize too (the `[...]` / `%(...)`
+    # construction ops), while a `(...)` List literal's do NOT (SS1.6).
+    is [[1, 2], [3, 4]][0].raku, '$[1, 2]', 'slice 2: [[1,2],[3,4]][0].raku';
+    is ((1, 2), (3, 4))[0].raku, '(1, 2)',
+        'slice 2: a List literal element stays bare (invariant)';
+    is %(a => [1, 2])<a>.raku, '$[1, 2]', 'slice 2: %(a => [1,2])<a>.raku';
+}
+{
+    # `.Array` builds a real Array (elements are containers); `.list` and
+    # `.List` do not build one -- and `.List` on a real Array hands out each
+    # element's VALUE, so it decontainerizes (measured against raku:
+    # `@c.List[0].VAR.^name` is `Array`, `@c.list[0].VAR.^name` is `Scalar`).
+    is ((1, 2), (3, 4)).Array[0].raku, '$(1, 2)', 'slice 2: .Array itemizes';
+    my @c2 = [1, 2], [3, 4];
+    is @c2.List[0].raku, '[1, 2]', 'slice 2: .List on a real Array de-itemizes';
+    is @c2.list[0].raku, '$[1, 2]', 'slice 2: .list keeps the containers';
+    is ($[1, 2],).List[0].raku, '$[1, 2]',
+        'slice 2: .List on a List is identity (invariant)';
+}
+{
+    # A copy of an array whose elements are already itemized is a no-op --
+    # this is the path SS5.2 protects (`my @a = @b` keeps sharing the Gc).
+    my @a = [1, 2], [3, 4];
+    my @b = @a;
+    is @b[0].raku, '$[1, 2]', 'slice 2: my @b = @a keeps the itemization';
+    is @b.raku, '[[1, 2], [3, 4]]', 'slice 2: ...and @b.raku stays bare';
+}
+{
+    # Every stored aggregate KIND the ADR SS2 names, at a construction site.
+    my @s = (1, 2).Seq, (3, 4).Seq;
+    is @s[0].raku, '$((1, 2).Seq)', 'slice 2: a stored Seq itemizes';
+    my @r = (1 .. 3), (4 .. 6);
+    is takes(@r[0]), 1, 'slice 2: a stored Range is one item';
+    my @h = {a => 1}, {b => 2};
+    is @h[0].raku, '${:a(1)}', 'slice 2: a stored Hash itemizes';
+}
+{
+    # A hash built from a flat list (the `build_hash_from_items` path used by
+    # `.Hash` and by an odd/even list assign) itemizes its values too.
+    my %h = ('a', [1, 2], 'b', [3, 4]);
+    is %h<a>.raku, '$[1, 2]', 'slice 2: flat-list hash construction itemizes';
+    my %g = (a => [1, 2]).List.Hash;
+    is %g<a>.raku, '$[1, 2]', 'slice 2: .Hash coercion itemizes';
+}
+{
+    # A gather/take reified into an array goes through the LazyList arm that
+    # bypasses `coerce_to_array`; it must itemize too.
+    my @g = gather { take [1, 2]; take [3, 4] };
+    is @g[0].raku, '$[1, 2]', 'slice 2: a reified gather itemizes its elements';
+}
+{
+    # A `:=` bind must NOT itemize -- a bound List's elements are not
+    # containers (SS1.6 / row 24's model, seen from the value side).
+    my @l := 1, (1, 2), [3, 4];
+    is @l[1].raku, '(1, 2)', 'slice 2: a bound List element stays bare (invariant)';
+    is @l[2].raku, '[3, 4]', 'slice 2: ...including an Array element of a bound List';
+}
+{
+    # Arity is untouched by the construction hook (SS2 part 3).
+    my @f = flat [1, 2], [3, 4];
+    is @f.elems, 4, 'slice 2: flat still flattens to 4 elements';
+    my @n = (1, 2), (3, 4);
+    is @n.elems, 2, 'slice 2: a two-element list-assign is still 2 elements';
+    my @one = [1, 2];
+    is @one.elems, 2, 'slice 2: the one-arg rule still flattens a lone Array';
+}
+{
+    # A native array's storage must not be disturbed by the scan.
+    my int @n = 1, 2, 3;
+    is @n[0].raku, '1', 'slice 2: native int array elements stay plain';
+    is @n.elems, 3, 'slice 2: native int array keeps its elements';
+}
+
+# === Slice 2 counter-currents: sites that ask a question about the VALUE
+# while holding something itemized because it is an ELEMENT. Same family as
+# Slice 1's `value_to_list_for_receiver` discovery; every one of these was
+# found by the local test suite, not by reading. ===
+
+{
+    # `.antipairs` is `self.pairs.map: *.antipair`, and `Pair.antipair` READS
+    # `$!value` to build the new key -- an attribute read decontainerizes. So
+    # the same element is itemized as a pair's VALUE and bare as its KEY.
+    my @c;
+    @c[0] = [1, 2];
+    is @c.pairs.raku, '(0 => $[1, 2],).Seq', 'counter-current: .pairs keeps the value itemized';
+    is @c.antipairs.raku, '([1, 2] => 0,).Seq', 'counter-current: .antipairs de-itemizes the key';
+}
+{
+    # `.invert` expands an iterable value into one pair per member -- the
+    # element's own itemization must not stop that.
+    # (sorted: hash iteration order is not specified)
+    is {a => (1, 2), b => 3 .. 4}.invert.sort.raku,
+        '(1 => "a", 2 => "a", 3 => "b", 4 => "b").Seq',
+        'counter-current: .invert expands an itemized hash value';
+}
+{
+    # An array's own `.raku` de-itemizes its elements (row 25) -- including
+    # through a `:=`-bound element's ContainerRef cell, so a bound element and
+    # its un-bound sibling agree.
+    my @a = {p => 1}, {q => 2};
+    my $w := @a[0];
+    $w<p> = 100;
+    is @a.raku, '[{:p(100)}, {:q(2)}]',
+        'counter-current: row 25 sees through a bound element cell';
+}
+{
+    # deepmap's leaf-vs-descend test is about what the value IS; a stored
+    # Range is itemized but still descends. (The RESULT is itemized because
+    # its parent is a Hash, which is decided separately.)
+    is %(a => 1, b => (2 .. 3)).deepmap(* + 1).raku, '{:a(2), :b($(3, 4))}',
+        'counter-current: deepmap descends into an itemized Range element';
+}
+{
+    # Binding an element to an `@` sub-signature parameter reads the element's
+    # VALUE, so it decontainerizes -- the same rule as `my @a := @c[0]`.
+    my &g = -> [@a, $b] { "{@a.^name}:{@a.elems}" };
+    is g([(1, 2).Seq, 9]), 'List:2',
+        'counter-current: a Seq element binds to an @ sub-parameter';
+    is g([[7, 8], 9]), 'Array:2',
+        'counter-current: an Array element binds to an @ sub-parameter';
+}
+{
+    # An itemized array is still a real array AS A RECEIVER: `*-2` resolves
+    # against its own element count.
+    my @w = [1, 2, 3, 4],;
+    my @r = @w[0].splice(*-2, 1);
+    is @r.raku, '[3]', 'counter-current: splice(*-2) on an itemized element receiver';
+    is @w.raku, '[[1, 2, 4],]', 'counter-current: ...and it mutates the right slot';
+}
+{
+    # `my (@a, @b) := (...)` BINDS each target to the staged element (which the
+    # construction hook itemized), so it decontainerizes; the `=` form assigns
+    # and keeps raku's greedy-slurp semantics.
+    my @x = 1, 2;
+    my @y = 5;
+    my (@a, @b) := (@x, @y);
+    is @a.raku, '[1, 2]', 'counter-current: := destructure binds the element';
+    is @b.raku, '[5]', 'counter-current: ...including the trailing target';
+    my (@c3, @d) = (@x, @y);
+    is @c3.raku, '[[1, 2], [5]]', 'counter-current: = destructure still slurps greedily';
+    is @d.raku, '[]', 'counter-current: ...leaving later targets empty';
+}
+
+{
+    # A reduction's operands are the element VALUES of its source list, so an
+    # element itemized *because it is an element* is handed to the operator
+    # decontainerized -- while the explicit infix form receives the elements
+    # themselves and does NOT zip them. Both measured against raku.
+    my @m = [1, 2], [3, 4];
+    is ([Z] @m).raku, '((1, 3), (2, 4)).Seq',
+        'counter-current: [Z] reads the element values';
+    is (@m[0] Z @m[1]).raku, '(($[1, 2], $[3, 4]),).Seq',
+        'counter-current: ...while an explicit Z receives the elements';
+    is ([+] @m[0]).raku, '2',
+        'counter-current: a lone itemized operand keeps its itemization';
+}
+{
+    # `.Array` builds a NEW real Array, which is not an element of anything --
+    # so an itemized receiver's own itemization is dropped, exactly as `.list`
+    # already drops it, while the new array's own elements itemize.
+    my @a = [1, 2], [3, 4];
+    is @a[0].Array.raku, '[1, 2]', 'counter-current: .Array drops the receiver itemization';
+    is ((1, 2), (3, 4)).Array[0].raku, '$(1, 2)',
+        'counter-current: ...and still itemizes the new array elements';
+}
+{
+    # A decoded JSON object/array is a real Hash/Array, so its aggregate
+    # values/elements are containers.
+    use JSON::Fast;
+    my $d = from-json('{"a":[1,2],"b":{"c":3}}');
+    is $d<a>.raku, '$[1, 2]', 'slice 2: from-json object values itemize';
+    is $d<b>.raku, '${:c(3)}', 'slice 2: ...including a nested object';
+    my $l = from-json('[[1,2],[3,4]]');
+    is $l[0].raku, '$[1, 2]', 'slice 2: from-json array elements itemize';
+    is to-json($l, :!pretty), '[[1,2],[3,4]]', 'slice 2: ...and to-json round-trips unchanged';
+}
+
+{
+    # Set-operator membership: the CONTAINER is the receiver of the test, so
+    # its own element-itemization is not part of the question. (The needle is
+    # deliberately NOT decontainerized -- a Set's members keep their
+    # itemization, so `.WHICH` membership must see what was stored.)
+    my @e = 2, 1 .. 2;
+    ok (@e[0] (elem) @e[1]), 'counter-current: (elem) decomposes an itemized Range container';
+    ok (@e[1] (cont) @e[0]), 'counter-current: ...and (cont) likewise';
+}
+{
+    # `.Map` decontainerizes its values (a Map's values are not containers),
+    # including the kind/flag form of itemization, not just a Scalar wrapper.
+    my %h = a => [1, 2];
+    my %m := %h.Map;
+    is %m<a>.raku, '[1, 2]', 'counter-current: .Map deconts an itemized hash value';
+    my class Foo { has @.a }
+    my %args = a => [1, 2, 3];
+    is Foo.new(|%args.Map).a.raku, '[1, 2, 3]',
+        'counter-current: ...so |%args.Map binds an @ attribute element-wise';
+}
+{
+    # `is-deeply` normalizes a Seq to a List before comparing; it has to see
+    # through an element's itemization to find the Seq.
+    is-deeply (1, 2).Seq, $((1, 2).Seq),
+        'counter-current: is-deeply sees through a Scalar-wrapped Seq';
+}
+{
+    # `.toggle` decomposes its own RECEIVER; a Hash element carries its
+    # itemization as a flag, which must not make an empty hash look like one
+    # item. And `<>` clears that flag, like it already cleared an ArrayKind's.
+    my @t = %(), Map.new;
+    is @t[0].toggle.raku, '().Seq', 'counter-current: .toggle decomposes an itemized Hash receiver';
+    is @t[1].toggle.raku, '().Seq', 'counter-current: ...and an itemized Map receiver';
+    my %h;
+    is ($%h)<>.raku, '{}', 'counter-current: <> clears the hash itemization flag';
+}
+
+{
+    # Smartmatch is `$matcher.ACCEPTS($topic)`, and both sides decontainerize
+    # on the way in -- so an itemized element is transparent on both.
+    my @t = [<42+0i>, 10 .. 50],;
+    ok (@t[0][0] ~~ @t[0][1]), 'counter-current: smartmatch sees through an itemized matcher';
+}
+{
+    # The `...` operator DECOMPOSES its seed operand into deduction seeds.
+    is ($(1, 2) ... 10).head(5).List.raku, '(1, 2, 3, 4, 5)',
+        'counter-current: ... decomposes an itemized seed';
+    my @s = [(1/4, 1/2, 1), (8, 9)];
+    @s.push(*);
+    is infix:<...>(|@s).head(6).List.raku, '(0.25, 0.5, 1.0, 2.0, 4.0, 8)',
+        'counter-current: ...and a chained one staged in an Array';
+}
+{
+    # The n-arg receiver family: `.pairup`, `.head(n)`, `.pick(*)`,
+    # `.combinations` all decompose their own receiver.
+    is [[2, 3], [4, [5, 6]]]».pairup.gist, '((2 => 3) (4 => [5 6]))',
+        'counter-current: .pairup decomposes an itemized receiver';
+    is [[2, 3], [4, [5, 6]]]».pick(*)».sort.gist, '((2 3) (4 [5 6]))',
+        'counter-current: .pick(*) is nodal over itemized elements';
+    is [[2, 3], [4, [5, 6]]]».head(1).gist, '((2) (4))',
+        'counter-current: .head(n) likewise';
+    my @n := %(:42foo, :70bar),;
+    is-deeply combinations(@n[0], 1).sort, @n[0].combinations(1).sort,
+        'counter-current: &combinations(Iterable, k) matches the method form';
+}
+{
+    # A grouped `.trans` operand means "expand each of these in turn", so an
+    # itemized Range element still expands.
+    is "Whfg".trans('a' .. 'z' => ['n' .. 'z', 'a' .. 'm']), 'Wust',
+        'counter-current: .trans expands itemized Range group members';
+}
+{
+    # The list-destructuring staging temp is NOT a user Array: every target
+    # reads a VALUE out of it. A `%` target must still flatten the staged hash,
+    # a `:=` `@` target binds (and so aliases), and a `*@rest` slurpy gets an
+    # Array.
+    sub named_and_slurp(:$grass, *%rest) { return ($grass, %rest) }
+    my ($grass, %rest) = named_and_slurp(sky => 'blue', grass => 'green', fire => 'red');
+    is $grass, 'green', 'staging temp: explicit named arg survives';
+    is +%rest, 2, 'staging temp: a % target still flattens the staged hash';
+    my ($x, @y, *@r) := (42, [13, 17], 5, 6, 7);
+    is @y.raku, '[13, 17]', 'staging temp: a := @ target binds the element';
+    is @r.raku, '[5, 6, 7]', 'staging temp: a slurpy *@rest is still an Array';
+    my @xs = 1, 2;
+    my (@a2,) := (@xs,);
+    @a2.push(3);
+    is @xs.raku, '[1, 2, 3]', 'staging temp: a := @ target aliases its source';
+    my ($b) = ();
+    is $b.^name, 'Any', 'staging temp: a missing untyped target is Any, not Nil';
 }
 
 done-testing;

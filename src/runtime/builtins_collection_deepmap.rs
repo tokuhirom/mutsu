@@ -8,6 +8,27 @@ use crate::value::ValueView;
 /// without this every arm below treats a range as a *leaf* and hands the whole
 /// Range to the block, which silently answers a Range (`2..8`) instead of
 /// calling the block per element.
+/// Is this `Array`/`Hash` element a deepmap *leaf* (hand it to the block) or a
+/// container to descend into?
+///
+/// ADR-0040 slices 1-2: a `Range`/`Seq` stored as a real `Array`/`Hash` element
+/// is itemized as `Scalar(inner)`, so the test has to see through the element's
+/// own itemization — the question is what the value IS, not whether it sits in
+/// a container. Without this, `%(a => 1, b => (2..3)).deepmap(*+1)` treats the
+/// Range as a leaf and answers `{:a(2), :b(3..4)}` where raku answers
+/// `{:a(2), :b($(3, 4))}`. (An itemized `Array`/`Hash` element needs no
+/// unwrapping: its itemization is a kind/flag, so it still matches the
+/// `ValueView::Array`/`ValueView::Hash` arms.) The *result*'s itemization is
+/// decided separately, by `deepmap_iterate_inner`'s `itemize_result`.
+fn deepmap_element_is_leaf(v: &Value) -> bool {
+    let v = v.descalarize();
+    !v.is_range()
+        && !matches!(
+            v.view(),
+            ValueView::Package(_) | ValueView::Array(..) | ValueView::Seq(_) | ValueView::Hash(_)
+        )
+}
+
 fn range_as_list(value: &Value) -> Option<Value> {
     value
         .is_range()
@@ -382,6 +403,14 @@ impl Interpreter {
         target: &Value,
         itemize_result: bool,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0040 slices 1-2: a `Range`/`Seq` stored as a real `Array`/`Hash`
+        // element is itemized as `Scalar(inner)`. The leaf-vs-descend decision
+        // is about the VALUE, not about whether it sits in a container, so see
+        // through the element's own itemization — the *result*'s itemization is
+        // decided independently by `itemize_result`. (An itemized `Array`/
+        // `Hash` element needs no unwrapping: its itemization is a kind/flag,
+        // so it still matches `ValueView::Array`/`ValueView::Hash`.)
+        let target = target.descalarize();
         if let Some(list) = range_as_list(target) {
             return self.deepmap_iterate_inner(block, &list, itemize_result);
         }
@@ -402,14 +431,7 @@ impl Interpreter {
                 let child_itemize = !kind.is_real_array();
                 let mut result = Vec::new();
                 for (idx, item) in items.iter().enumerate() {
-                    let is_leaf = !item.is_range()
-                        && !matches!(
-                            item.view(),
-                            ValueView::Package(_)
-                                | ValueView::Array(..)
-                                | ValueView::Seq(_)
-                                | ValueView::Hash(_)
-                        );
+                    let is_leaf = deepmap_element_is_leaf(item);
                     if is_leaf {
                         match self.deepmap_leaf_call(block, item) {
                             Ok((v, new_src)) => {
@@ -484,14 +506,7 @@ impl Interpreter {
             ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
-                    let is_leaf = !v.is_range()
-                        && !matches!(
-                            v.view(),
-                            ValueView::Package(_)
-                                | ValueView::Array(..)
-                                | ValueView::Seq(_)
-                                | ValueView::Hash(_)
-                        );
+                    let is_leaf = deepmap_element_is_leaf(v);
                     if is_leaf {
                         match self.deepmap_leaf_call(block, v) {
                             Ok((val, new_src)) => {

@@ -87,6 +87,40 @@ impl Interpreter {
         self.tag_container_default(replaced, def)
     }
 
+    /// ADR-0040 slice 2: itemize every element of a freshly built real `Array`
+    /// on its way into the `@`-sigiled variable `name`, unless `name` is the
+    /// list-destructuring desugar's synthetic staging container.
+    ///
+    /// `@__destructure_tmp__` / `%__destructure_tmp__` are NOT user containers:
+    /// they hold the RHS list itself, and `my ($a, @b) = …` reads one *value*
+    /// per target out of them (`src/parser/stmt/decl/destructure.rs`). Raku
+    /// stages that in a `Capture`/`List`, whose elements are not `Scalar`s, so
+    /// itemizing here would be modelling the desugar rather than the language:
+    /// a `%`-sigiled target would read an itemized hash and die "Odd number of
+    /// elements", and an `@`-sigiled one would wrap (`my @a = $[1, 2]` is
+    /// `[[1, 2],]`). Two other passes already key on this same name for the
+    /// same "this is a compiler artifact, not a user container" reason
+    /// (`parser/sink_warn.rs`, `compiler/expr_block.rs`). Retiring the name
+    /// check means changing the desugar to stage a Capture — the work
+    /// ADR-0040 §1.7 files as its own ticket.
+    pub(crate) fn itemize_elements_for_var_assign(name: &str, value: Value) -> Value {
+        if Self::is_destructure_staging_temp(name) {
+            // `coerce_to_array`'s own tail already itemized on the way here, so
+            // this actively strips it back off rather than merely skipping.
+            return crate::runtime::utils::deitemize_real_array_elements(value);
+        }
+        crate::runtime::utils::itemize_real_array_elements(value)
+    }
+
+    /// True for the list-destructuring desugar's synthetic staging container,
+    /// with or without its sigil.
+    pub(crate) fn is_destructure_staging_temp(name: &str) -> bool {
+        matches!(
+            name,
+            "@__destructure_tmp__" | "%__destructure_tmp__" | "__destructure_tmp__"
+        )
+    }
+
     /// ADR-0049 slice 3: replaces the narrow, hardcoded-`Any`
     /// `nil_elems_to_any` fixup that used to run only for a whole-array
     /// (list-)assignment to an UNTYPED `@` variable (gated on

@@ -910,6 +910,19 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         // binds the element at its position; a scalar there is a binding error
         // (e.g. `foo <1 2 3>` -> `@rest` gets the IntStr `2`).
         if !sub_pd.named {
+            // ADR-0040 slices 1-2: an `Array`/`Hash` element that holds an
+            // aggregate is itemized at the store, and a destructuring
+            // sub-signature reads elements out of its argument. Binding one to
+            // an `@`/`%` sub-parameter reads the element's VALUE, not its
+            // container, so it decontainerizes -- the same rule as
+            // `my @a := @c[0]`, which yields `[1, 2]` and not `[[1, 2],]`.
+            // Without this, `-> [@a, $b]` given `[(1,2).Seq, 9]` sees a
+            // `Scalar(Seq)` and fails the Positional check below
+            // (`Digest::RIPEMD`'s `-> [&f, $r, @K, $s]` is the real-world
+            // case; `t/sub-signature-array-param-iterable.t` is the pin).
+            if sub_pd.name.starts_with('@') || sub_pd.name.starts_with('%') {
+                candidate = candidate.deitemize_element();
+            }
             if sub_pd.name.starts_with('@')
                 && !matches!(
                     candidate.view(),

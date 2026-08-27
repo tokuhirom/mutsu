@@ -45,6 +45,26 @@ correct). Confirmed as a member of
 `todo/deep/element-itemization-lost-in-scalar-binding.md` — that file now names
 this ticket as one of its blocked dependents. Do not patch the subscript site.
 
+## Status after ADR-0040 slice 2 (2026-08-27): still open, and now clearly out of scope
+
+ADR-0040's slices 1-2 put itemization at the `Array`/`Hash` **element** store, which is a
+different store from the one this ticket is about. Re-measured on the slice-2 build:
+
+```
+my @n = <4 8 15 16 23 42>; my $assigned = 1..3; say @n[$assigned].raku
+  raku : IntStr.new(16, "16")
+  mutsu: (IntStr.new(8, "8"), IntStr.new(15, "15"), IntStr.new(16, "16"))   # unchanged
+```
+
+The value here never enters an `Array`/`Hash` element, so no hook ADR-0040 places can see
+it: what is missing is itemization at the **named `$` scalar assignment** store. The
+primitive ADR-0040 shipped (`Value::itemize_for_element_store`, which already covers every
+`Range` shape) is directly reusable, so the remaining work is the store site plus the
+consumer audit the "Why it is not a one-liner" section describes — not new machinery.
+Note that ADR-0040's `Range` arm confirms the itemization of a stored `Range` is
+observable and correct, which removes the "is this even the right model?" half of the
+question.
+
 ## Affected files
 
 - `src/vm/vm_var_index_ops.rs` (`exec_index_op_with_positional`, the itemized-subscript

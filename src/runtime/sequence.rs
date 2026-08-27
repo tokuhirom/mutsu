@@ -469,6 +469,17 @@ impl Interpreter {
         // `element == 1` then never matches the initial cell and the sequence
         // overruns (`(1, {…} ... 1)` yielded `1 4 2 1` instead of `1`). Deref any
         // cell in the left seeds and the right endpoint up front.
+        //
+        // ADR-0040 slices 1-2: the `...` operator DECOMPOSES its seed operand
+        // into deduction seeds, so an operand that is itemized only because it
+        // came out of an `Array`/`Hash` element must be seen through — raku's
+        // `$(1,2) ... 10` is `(1, 2, 3, 4, 5, …)`, not a sequence whose first
+        // element is the whole itemized list. (`roast/S03-sequence/exhaustive.t`
+        // stages its seeds as `my @tests = …, [(1/4,1/2,1),(8,9)], …` and calls
+        // `infix:<...>(|seed)`.) This is the same receiver-vs-element
+        // distinction `value_to_list_for_receiver` draws.
+        let left = left.deitemize_element();
+        let right = right.deitemize_element();
         let left = match left.view() {
             ValueView::Array(items, kind) if items.iter().any(Value::is_container_ref) => {
                 Value::array_with_kind(
@@ -1765,6 +1776,11 @@ impl Interpreter {
         args: &[Value],
         exclude_end: bool,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0040 slices 1-2: each argument is a seed/waypoint the operator
+        // DECOMPOSES, so strip the itemization an element carries. See the
+        // twin comment in `eval_sequence`.
+        let args: Vec<Value> = args.iter().map(|v| v.clone().deitemize_element()).collect();
+        let args = &args[..];
         if args.len() < 3 {
             // Not a chained sequence
             let left = args[0].clone();
