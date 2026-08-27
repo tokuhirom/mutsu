@@ -657,6 +657,55 @@ impl Interpreter {
             .push(Value::varref_slotted(sym, value, None, Some(slot)));
     }
 
+    /// Resolve a `WrapVarRef` tag to the named variable's shared `ContainerRef`
+    /// cell (ADR-0059 Slice 2), so a `return-rw $v` operand hands the caller
+    /// `$v`'s container rather than a decontainerized snapshot.
+    ///
+    /// This is `MakeArray`'s per-element capture (`capture_var_cell_inner` with
+    /// `box_type_objects`) spelled as a standalone opcode: the variable's own
+    /// local slot is boxed into the cell, so the callee frame's slot, the
+    /// caller's variable and the returned value are one container. A value that
+    /// is not a `VarRef` (the compiler only tags plain scalar lexicals) passes
+    /// through untouched.
+    pub(super) fn exec_capture_var_cell_op(&mut self, code: &CompiledCode) {
+        let val = self.stack.pop().unwrap_or(Value::NIL);
+        let ValueView::VarRef {
+            name, value: inner, ..
+        } = val.view()
+        else {
+            self.stack.push(val);
+            return;
+        };
+        let source_name = name.resolve();
+        let inner = inner.clone();
+        let slot_hint = val.varref_slot();
+        let captured =
+            self.capture_var_cell_inner(code, &source_name, inner.clone(), true, slot_hint);
+        if captured.is_container_ref() {
+            self.stack.push(captured);
+            return;
+        }
+        // The name has no local slot in THIS frame, so the slot-boxing above had
+        // nothing to box (it itemizes instead, which is right for a List element
+        // but not for an lvalue return). That happens for an env-resident
+        // declaration — `return-rw my $x = 1` compiles its `my` to `SetGlobal` —
+        // and for a free variable whose declaration site was not boxed. Promote
+        // the env entry itself to a shared cell and install it back under the
+        // name, so the returned container and the variable are one container.
+        let current = self
+            .env()
+            .get(&source_name)
+            .cloned()
+            .unwrap_or_else(|| inner.clone());
+        if current.is_container_ref() {
+            self.stack.push(current);
+            return;
+        }
+        let cell = current.into_descalarized().into_container_ref();
+        self.set_env_with_main_alias(&source_name, cell.clone());
+        self.stack.push(cell);
+    }
+
     /// Validate and coerce a value for native integer type assignment.
     /// Throws on: string values, non-integer numerics (floats), NaN, out-of-range values.
     pub(super) fn validate_native_int_assignment(

@@ -3093,6 +3093,7 @@ impl Compiler {
                 // this loop runs, so it still matches `is_closure_literal_arg`)
                 // escaping here regressed `t/bind-alias-chain.t`, so this
                 // narrower fix only touches the shape the bug report is about.
+                let wb_base = self.index_rw_writeback_base();
                 for arg in &rewritten_args {
                     match arg {
                         CallArg::Positional(expr) => self.compile_call_arg(expr),
@@ -3127,6 +3128,11 @@ impl Compiler {
                     arg_sources_idx,
                     keep_value: false,
                 });
+                // Same as the expression-position `ExecCallPairs` site: no
+                // writeback emit point here, so drop this call's own queued
+                // entries instead of letting the next call emit them around its
+                // result (see `index_rw_writeback_base`).
+                self.pending_index_rw_writebacks.truncate(wb_base);
             }
             // Loop control
             Stmt::Goto(expr) => {
