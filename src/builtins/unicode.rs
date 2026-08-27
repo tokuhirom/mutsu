@@ -915,18 +915,107 @@ fn is_control_char(cp: u32) -> bool {
     cp <= 0x1F || (0x7F..=0x9F).contains(&cp)
 }
 
+/// UCD ranges whose characters have *derived* names of the form
+/// `<prefix>-<codepoint in hex>` rather than an entry in `UnicodeData.txt`.
+///
+/// Rakudo/MoarVM derive these algorithmically; `unicode_names2` indexes a name
+/// table instead, so it covers whichever of them its (older) UCD snapshot
+/// happened to enumerate and misses the rest. Deriving them here makes
+/// `.uniname` independent of that snapshot: `TANGUT IDEOGRAPH-*` was absent
+/// entirely, and three CJK ranges stopped a handful of codepoints short of
+/// Rakudo's (`2B81E..2B81F`, `2EBE1..2EBEF`, `3134B..3134F`).
+///
+/// Only the families that actually diverged are listed. Hangul syllables,
+/// Nushu, Khitan Small Script, Egyptian Hieroglyph, CJK Compatibility Ideograph
+/// and Tangut Component already agree with Rakudo through `unicode_names2`, so
+/// they keep resolving there — duplicating them here would add a second, easily
+/// stale source of truth for no gain.
+const DERIVED_NAME_RANGES: &[(u32, u32, &str)] = &[
+    (0x3400, 0x4DBF, "CJK UNIFIED IDEOGRAPH"),
+    (0x4E00, 0x9FFF, "CJK UNIFIED IDEOGRAPH"),
+    (0x17000, 0x187FF, "TANGUT IDEOGRAPH"),
+    (0x18D00, 0x18D1E, "TANGUT IDEOGRAPH"),
+    (0x20000, 0x2A6DF, "CJK UNIFIED IDEOGRAPH"),
+    (0x2A700, 0x2CEAD, "CJK UNIFIED IDEOGRAPH"),
+    (0x2CEB0, 0x2EE5D, "CJK UNIFIED IDEOGRAPH"),
+    (0x30000, 0x33479, "CJK UNIFIED IDEOGRAPH"),
+];
+
+/// The derived `<prefix>-<hex>` name for `cp`, when it falls in one of
+/// [`DERIVED_NAME_RANGES`].
+pub(crate) fn derived_char_name(cp: u32) -> Option<String> {
+    DERIVED_NAME_RANGES
+        .iter()
+        .find(|(lo, hi, _)| (*lo..=*hi).contains(&cp))
+        .map(|(_, _, prefix)| format!("{}-{:04X}", prefix, cp))
+}
+
+/// Name prefixes Rakudo parses *algorithmically* in the `uniparse` direction:
+/// `<prefix>-<hex>` yields that codepoint with **no range check**, so
+/// `uniparse('TANGUT IDEOGRAPH-99999')` returns U+99999 even though its
+/// `.uniname` is `<reserved-99999>`. Verified against `raku` prefix by prefix:
+/// these three are unranged, while every other derived family
+/// (`TANGUT COMPONENT`, `NUSHU CHARACTER`, `KHITAN SMALL SCRIPT CHARACTER`,
+/// `EGYPTIAN HIEROGLYPH`, …) *is* range-checked and resolves through the
+/// `unicode_names2` table instead.
+const UNRANGED_NAME_PREFIXES: &[&str] = &[
+    "CJK UNIFIED IDEOGRAPH",
+    "CJK COMPATIBILITY IDEOGRAPH",
+    "TANGUT IDEOGRAPH",
+];
+
+/// Parse a derived `<prefix>-<hex>` name back into its codepoint — the inverse
+/// of [`derived_char_name`], for `uniparse` / `\c[...]`. Consulted only after
+/// the `unicode_names2` table lookup, so it never shadows a real name.
+pub(crate) fn char_from_derived_name(name: &str) -> Option<char> {
+    let (prefix, hex) = name.rsplit_once('-')?;
+    if !UNRANGED_NAME_PREFIXES.contains(&prefix) {
+        return None;
+    }
+    // Reject a signed / `0x`-prefixed / overlong spelling: only plain hex digits
+    // name a codepoint.
+    if hex.is_empty() || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    char::from_u32(u32::from_str_radix(hex, 16).ok()?)
+}
+
+/// True for a Private Use Area codepoint (UCD `Co`). The two supplementary
+/// planes stop at `..FFFD`; their last two codepoints are noncharacters, which
+/// [`is_noncharacter`] already claims before this is consulted.
+fn is_private_use(cp: u32) -> bool {
+    (0xE000..=0xF8FF).contains(&cp)
+        || (0xF0000..=0xFFFFD).contains(&cp)
+        || (0x100000..=0x10FFFD).contains(&cp)
+}
+
 /// Return the Unicode character name for a codepoint (u32).
-/// Handles all special categories: control, noncharacter, reserved, etc.
+/// Handles all special categories: control, noncharacter, surrogate,
+/// private-use, algorithmically-derived names, reserved, etc.
 pub(crate) fn unicode_char_name_by_codepoint(cp: u32) -> String {
     // Noncharacters
     if is_noncharacter(cp) {
         return format!("<noncharacter-{:04X}>", cp);
+    }
+    // Surrogates have their own sentinel. This must precede the `char::from_u32`
+    // branch below, which rejects them (Rust chars cannot be surrogates) and
+    // would otherwise send them to the `<reserved-…>` fallback.
+    if (0xD800..=0xDFFF).contains(&cp) {
+        return format!("<surrogate-{:04X}>", cp);
+    }
+    if is_private_use(cp) {
+        return format!("<private-use-{:04X}>", cp);
     }
     // Try to convert to char
     if let Some(ch) = char::from_u32(cp) {
         // Try unicode_names2 first
         if let Some(name) = unicode_names2::name(ch) {
             return name.to_string();
+        }
+        // A ranged/derived name (`CJK UNIFIED IDEOGRAPH-4E00`) the name table
+        // does not enumerate.
+        if let Some(name) = derived_char_name(cp) {
+            return name;
         }
         // Control characters without a name
         if is_control_char(cp) {
@@ -935,7 +1024,7 @@ pub(crate) fn unicode_char_name_by_codepoint(cp: u32) -> String {
         // Has a char but no name and not control -> reserved/unassigned
         format!("<reserved-{:04X}>", cp)
     } else {
-        // Invalid char (surrogates etc.)
+        // Invalid char (out of range)
         format!("<reserved-{:04X}>", cp)
     }
 }

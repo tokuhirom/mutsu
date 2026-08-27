@@ -215,6 +215,15 @@ pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
     if let Some(c) = crate::builtins::unicode_name_alias_table::lookup_name_alias(&upper) {
         return Some(c);
     }
+    // Algorithmically-derived names (`TANGUT IDEOGRAPH-17000`), the inverse of
+    // `unicode::derived_char_name`. `unicode_names2::character` resolves the
+    // subset of these its name table enumerates, so without this the two
+    // directions disagreed: `uniparse('CJK UNIFIED IDEOGRAPH-4E00')` worked
+    // while `uniparse('TANGUT IDEOGRAPH-17000')` — a name `.uniname` itself
+    // produces — raised "Unrecognized character name".
+    if let Some(c) = crate::builtins::unicode::char_from_derived_name(&upper) {
+        return Some(c);
+    }
     match upper.as_str() {
         "NULL" | "NUL" => Some('\u{0000}'),
         "START OF HEADING" | "SOH" => Some('\u{0001}'),
