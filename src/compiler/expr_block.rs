@@ -620,9 +620,12 @@ impl Compiler {
                 param,
                 param_def,
                 params,
+                params_def,
                 body,
                 label,
                 mode,
+                rw_block,
+                explicit_zero_params,
                 ..
             } if *mode == crate::ast::ForMode::Lazy => {
                 self.compile_lazy_for_expr(
@@ -630,6 +633,9 @@ impl Compiler {
                     param,
                     param_def.as_ref(),
                     params,
+                    params_def,
+                    *rw_block,
+                    *explicit_zero_params,
                     body,
                     label,
                 );
@@ -643,6 +649,7 @@ impl Compiler {
                 body,
                 label,
                 rw_block,
+                explicit_zero_params,
                 is_statement_modifier,
                 ..
             } => {
@@ -653,6 +660,7 @@ impl Compiler {
                     params,
                     params_def,
                     *rw_block,
+                    *explicit_zero_params,
                     body,
                     label,
                     *is_statement_modifier,

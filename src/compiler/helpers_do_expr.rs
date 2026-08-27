@@ -286,6 +286,7 @@ impl Compiler {
         params: &[String],
         params_def: &[crate::ast::ParamDef],
         rw_block: bool,
+        explicit_zero_params: bool,
         body: &[Stmt],
         label: &Option<String>,
         is_statement_modifier: bool,
@@ -293,8 +294,11 @@ impl Compiler {
         // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
         // a dummy single-iteration `for Nil` with a label. Preserve block semantics
         // here so control flow like `LABEL.leave(...)` returns the block value.
+        // A real `for Nil -> { ... }` is NOT one of those: its explicit empty
+        // signature makes it an ordinary (and immediately failing) loop.
         if param.is_none()
             && params.is_empty()
+            && !explicit_zero_params
             && matches!(
                 iterable,
                 Expr::ArrayLiteral(items)
@@ -424,7 +428,12 @@ impl Compiler {
                 source_var_names,
                 source_var_locals,
                 autothread_junctions: false,
-                explicit_zero_params: false,
+                zero_positional_params: Self::for_zero_positional_params(
+                    explicit_zero_params,
+                    param,
+                    params,
+                    params_def,
+                ),
                 multi_param_names: params
                     .iter()
                     .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
@@ -499,12 +508,16 @@ impl Compiler {
 
     /// Compile `lazy for` expression: lower to `gather { for @items -> $param { take do { body } } }`.
     /// This defers execution of the body until the resulting Seq is consumed.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_lazy_for_expr(
         &mut self,
         iterable: &Expr,
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,
         params: &[String],
+        params_def: &[crate::ast::ParamDef],
+        rw_block: bool,
+        explicit_zero_params: bool,
         body: &[Stmt],
         label: &Option<String>,
     ) {
@@ -518,15 +531,12 @@ impl Compiler {
             param: param.clone(),
             param_def: Box::new(param_def.clone()),
             params: params.to_vec(),
-            // TODO: thread params_def through compile_lazy_for_expr so a
-            // `lazy for ... -> $a, $b = 7 { }` gets the same arity/default
-            // handling; empty here just preserves the pre-feature behavior.
-            params_def: Vec::new(),
+            params_def: params_def.to_vec(),
             body: take_body,
             label: label.clone(),
             mode: crate::ast::ForMode::Normal,
-            rw_block: false,
-            explicit_zero_params: false,
+            rw_block,
+            explicit_zero_params,
             // Placeholders were already resolved on the source `lazy for` node;
             // this synthesized loop wraps an ordinary block body.
             is_statement_modifier: false,

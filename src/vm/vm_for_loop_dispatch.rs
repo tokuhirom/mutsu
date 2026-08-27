@@ -288,11 +288,15 @@ impl Interpreter {
         } else {
             raw_items
         };
-        // When `-> {}` was used (explicit zero params), throw if any items would be passed.
-        if spec.explicit_zero_params && !items.is_empty() {
+        // A zero-positional-parameter signature (`-> { }`, `-> *%h { }`) still
+        // receives one chunk per iteration, so the FIRST invocation already
+        // fails and the loop body never runs. Report the size of that first
+        // chunk -- which is what rakudo passes and reports -- not the whole
+        // source length.
+        if spec.zero_positional_params && !items.is_empty() {
+            let first_chunk = (spec.arity.max(1) as usize).min(items.len());
             return Err(RuntimeError::new(format!(
-                "Too many positionals passed; expected 0 arguments but got {}",
-                items.len()
+                "Too many positionals passed; expected 0 arguments but got {first_chunk}"
             )));
         }
         let body_start = *ip + 1;

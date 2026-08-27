@@ -241,9 +241,14 @@ pub(crate) struct ForLoopSpec {
     /// When true, Junction items are expanded into their eigenstates
     /// (parameter type is Any or more specific, not Mu or Junction).
     pub(crate) autothread_junctions: bool,
-    /// When true, the block explicitly declared zero parameters (`-> {}`).
-    /// Passing any argument should throw "Too many positionals passed".
-    pub(crate) explicit_zero_params: bool,
+    /// When true, the loop block's explicit signature declares zero *positional*
+    /// parameters -- rakudo's `.count` is 0. Both `-> { ... }` and a signature
+    /// whose only parameters are named slurpies (`-> *%h { ... }`) qualify.
+    /// The loop still hands the block one element per iteration, so the first
+    /// invocation dies with "Too many positionals passed" as soon as the source
+    /// has any element at all (an empty source runs the block zero times and is
+    /// fine). Computed by `Compiler::for_zero_positional_params`.
+    pub(crate) zero_positional_params: bool,
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(crate) multi_param_names: Vec<String>,

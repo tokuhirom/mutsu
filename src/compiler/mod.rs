@@ -2610,6 +2610,42 @@ impl Compiler {
         positionals.max(1)
     }
 
+    /// Whether a `for` header's *explicit* signature declares zero positional
+    /// parameters, i.e. rakudo's `.count` for that block is 0.
+    ///
+    /// The loop still hands such a block one element per iteration, so rakudo
+    /// dies on the very first invocation -- before the body runs once -- with
+    /// "Too many positionals passed; expected 0 arguments but got 1". An empty
+    /// source invokes the block zero times and is therefore fine.
+    ///
+    /// Two spellings reach it. The parser flags `-> { ... }` directly
+    /// (`explicit_zero_params`, also set for the statement-modifier spelling's
+    /// `-> { ... } for LIST` and `sub () { ... } for LIST`). A signature whose
+    /// only parameters are *named* slurpies (`-> *%h { ... }`) binds named
+    /// arguments only and likewise never takes a positional; `for_chunk_arity`
+    /// already skips those for the same reason.
+    ///
+    /// A block with NO signature at all (`for LIST { ... }`, `{ ... } for LIST`)
+    /// is not zero-count: it binds the topic and has `.count` 1.
+    fn for_zero_positional_params(
+        explicit_zero_params: bool,
+        param: &Option<String>,
+        params: &[String],
+        params_def: &[crate::ast::ParamDef],
+    ) -> bool {
+        if explicit_zero_params {
+            return true;
+        }
+        if param.is_some() || params.is_empty() {
+            return false;
+        }
+        params.iter().enumerate().all(|(i, name)| {
+            params_def
+                .get(i)
+                .is_some_and(|def| Self::for_param_is_named_slurpy(name, def))
+        })
+    }
+
     fn build_for_bind_stmts(
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,
