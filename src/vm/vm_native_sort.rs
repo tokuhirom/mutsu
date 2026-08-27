@@ -44,6 +44,10 @@ impl SortCaller for VmSortCaller<'_> {
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
         self.0.sort_callable_arity(callable)
     }
+
+    fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>> {
+        crate::runtime::methods_collection_ops::sort::sort_keys_batched(self.0, callable, items)
+    }
 }
 
 impl Interpreter {
