@@ -55,8 +55,17 @@ impl Compiler {
     /// `content 'text/plain', 'Visit ' ~ ++$session.count`, so every session
     /// route answered with an empty body.
     ///
-    /// Returns `false` when `expr` is not a method call on a named variable, so
-    /// the caller keeps its existing fallback.
+    /// A `BareWord` target (`++Foo.counter`, the type object itself) is
+    /// accepted too: `Foo.counter += 1` already routes the same way through
+    /// `method_lvalue_roundtrip_assign_expr` (`compound_expr.rs`), which
+    /// re-evaluates the *original* target expression — `Expr::BareWord`, not
+    /// `Expr::Var` — to fetch the class-level-attribute accessor's Package
+    /// invocant. Reusing `Self::method_call_incdec_lvalue_target` here keeps
+    /// the increment/decrement forms consistent with that existing compound-
+    /// assignment behavior instead of only ever looking up an env variable.
+    ///
+    /// Returns `false` when `expr` is not a method call on a recognized
+    /// target, so the caller keeps its existing fallback.
     pub(super) fn compile_prefix_incdec_method_lvalue(&mut self, expr: &Expr, inc: bool) -> bool {
         let Expr::MethodCall {
             target, name, args, ..
@@ -64,12 +73,8 @@ impl Compiler {
         else {
             return false;
         };
-        let Some(target_var) = (match target.as_ref() {
-            Expr::Var(n) => Some(n.clone()),
-            Expr::ArrayVar(n) => Some(format!("@{}", n)),
-            Expr::HashVar(n) => Some(format!("%{}", n)),
-            _ => None,
-        }) else {
+        let Some((target_reeval, target_var)) = Self::method_call_incdec_lvalue_target(target)
+        else {
             return false;
         };
         let tmp_value_name = format!("__mutsu_tmp_method_preinc_{}", self.code.constants.len());
@@ -88,7 +93,7 @@ impl Compiler {
         let assign_expr = Expr::Call {
             name: Symbol::intern("__mutsu_assign_method_lvalue"),
             args: vec![
-                Expr::Var(target_var.clone()),
+                target_reeval,
                 Expr::Literal(Value::str(name.resolve())),
                 Expr::ArrayLiteral(args.clone()),
                 Expr::Var(tmp_value_name.clone()),
@@ -99,6 +104,37 @@ impl Compiler {
         self.code.emit(OpCode::Pop);
         self.compile_expr(&Expr::Var(tmp_value_name));
         true
+    }
+
+    /// Shared target extraction for postfix/prefix `++`/`--` on a method-call
+    /// lvalue (`$obj.count++`, `++$obj.count`, `Foo.counter++`).
+    ///
+    /// Returns `(expr-to-re-evaluate-the-invocant, name-string-for-writeback)`.
+    /// For a plain/array/hash variable the re-evaluation expression is an
+    /// `Expr::Var` under the sigil-prefixed name (matching the long-standing
+    /// convention here and in `method_lvalue_roundtrip_assign_expr`). For a
+    /// `BareWord` target — a package/type-object invocant such as `Foo` in
+    /// `Foo.counter++`, which is not itself a lexical variable — the
+    /// re-evaluation expression must stay `Expr::BareWord` so it resolves to
+    /// the package rather than failing an env lookup; the name string is only
+    /// ever used by the callee for an optional (and, for a type object,
+    /// unused) env write-back, so reusing the bareword text there is
+    /// harmless — the class-level-attribute arm of
+    /// `assign_method_lvalue_with_values` never consults it.
+    fn method_call_incdec_lvalue_target(target: &Expr) -> Option<(Expr, String)> {
+        match target {
+            Expr::Var(n) => Some((Expr::Var(n.clone()), n.clone())),
+            Expr::ArrayVar(n) => {
+                let name = format!("@{}", n);
+                Some((Expr::Var(name.clone()), name))
+            }
+            Expr::HashVar(n) => {
+                let name = format!("%{}", n);
+                Some((Expr::Var(name.clone()), name))
+            }
+            Expr::BareWord(n) => Some((Expr::BareWord(n.clone()), n.clone())),
+            _ => None,
+        }
     }
 
     /// Compile postfix ++ on variable/index/method target.
@@ -160,14 +196,12 @@ impl Compiler {
             quoted: _,
         } = expr
         {
-            // Extract the variable name from Var, ArrayVar, or HashVar targets
-            let target_var_name = match target.as_ref() {
-                Expr::Var(name) => Some(name.clone()),
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                _ => None,
-            };
-            if let Some(target_var) = target_var_name {
+            // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
+            // targets (`Foo.counter++` on a class-level attribute accessor's
+            // type object goes through the BareWord arm — see
+            // `method_call_incdec_lvalue_target`).
+            let target_info = Self::method_call_incdec_lvalue_target(target);
+            if let Some((target_reeval, target_var)) = target_info {
                 let tmp_value_name =
                     format!("__mutsu_tmp_method_inc_{}", self.code.constants.len());
                 let tmp_result_name = format!(
@@ -183,11 +217,11 @@ impl Compiler {
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
-                        Expr::Var(target_var.clone()),
+                        target_reeval,
                         Expr::Literal(Value::str(name.resolve())),
                         Expr::ArrayLiteral(args.clone()),
                         Expr::Var(tmp_value_name),
-                        Expr::Literal(Value::str(target_var.clone())),
+                        Expr::Literal(Value::str(target_var)),
                     ],
                 };
                 self.compile_expr(&assign_expr);
@@ -260,14 +294,10 @@ impl Compiler {
             quoted: _,
         } = expr
         {
-            // Extract the variable name from Var, ArrayVar, or HashVar targets
-            let target_var_name = match target.as_ref() {
-                Expr::Var(name) => Some(name.clone()),
-                Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                Expr::HashVar(name) => Some(format!("%{}", name)),
-                _ => None,
-            };
-            if let Some(target_var) = target_var_name {
+            // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
+            // targets (see `method_call_incdec_lvalue_target`).
+            let target_info = Self::method_call_incdec_lvalue_target(target);
+            if let Some((target_reeval, target_var)) = target_info {
                 let tmp_value_name =
                     format!("__mutsu_tmp_method_dec_{}", self.code.constants.len());
                 let tmp_result_name = format!(
@@ -283,11 +313,11 @@ impl Compiler {
                 let assign_expr = Expr::Call {
                     name: Symbol::intern("__mutsu_assign_method_lvalue"),
                     args: vec![
-                        Expr::Var(target_var.clone()),
+                        target_reeval,
                         Expr::Literal(Value::str(name.resolve())),
                         Expr::ArrayLiteral(args.clone()),
                         Expr::Var(tmp_value_name),
-                        Expr::Literal(Value::str(target_var.clone())),
+                        Expr::Literal(Value::str(target_var)),
                     ],
                 };
                 self.compile_expr(&assign_expr);

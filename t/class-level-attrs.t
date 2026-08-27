@@ -1,6 +1,6 @@
 use Test;
 
-plan 32;
+plan 43;
 
 # our $.bar creates a class-level (shared) attribute with accessor
 {
@@ -164,4 +164,76 @@ plan 32;
     ok 'counter' (elem) Introspect.^methods.map(*.name), 'my $.x shows up in .^methods';
     is Introspect.^can('counter').elems, 1, 'my $.x is visible to .^can';
     is Introspect.^attributes.elems, 0, 'my $.x is NOT an instance attribute (.^attributes stays empty)';
+}
+
+# Foo.counter++ / -- / prefix ++ on the class-level accessor CALL, from
+# OUTSIDE a method body (as opposed to $.counter++ inside one, already
+# covered above). The accessor is not `rw` (`.^lookup('counter').rw` is
+# False in both raku and mutsu), yet raku still lets ++ through it because
+# the read-modify-write is driven by the same lvalue-return machinery that
+# already backs plain assignment and OP=, not by the accessor's own rw-ness.
+{
+    class OutsideCounter {
+        my $.counter = 0;
+    }
+    OutsideCounter.counter++;
+    is OutsideCounter.counter, 1, 'Foo.counter++ from outside a method mutates the class-level slot';
+}
+
+{
+    class OutsideDec {
+        my $.counter = 0;
+    }
+    OutsideDec.counter--;
+    is OutsideDec.counter, -1, 'Foo.counter-- from outside a method mutates the class-level slot';
+}
+
+{
+    class OutsidePreInc {
+        my $.counter = 0;
+    }
+    is ++OutsidePreInc.counter, 1, 'prefix ++Foo.counter from outside a method returns the new value';
+    is OutsidePreInc.counter, 1, 'prefix ++Foo.counter mutates the class-level slot';
+}
+
+# our $.counter variant of the same outside-a-method increment.
+{
+    class OurOutsideCounter {
+        our $.counter = 0;
+    }
+    OurOutsideCounter.counter++;
+    is OurOutsideCounter.counter, 1, 'our $.counter++ from outside a method also works';
+}
+
+# ++ through an INSTANCE (not just the type object) of a class-level attribute.
+{
+    class InstanceCounter {
+        my $.counter = 0;
+    }
+    my $inst = InstanceCounter.new;
+    $inst.counter++;
+    is $inst.counter, 1, 'instance.counter++ mutates the (shared) class-level slot';
+    is InstanceCounter.counter, 1, 'the mutation through an instance is visible on the type object too';
+}
+
+# NEGATIVE CONTROL: an ORDINARY (per-instance, non-class-level) non-rw
+# attribute accessor must still reject ++/+=/plain assignment. The fix must
+# distinguish "class-level attribute accessor" from "ordinary non-rw
+# accessor" -- it must not blanket-allow every method-call lvalue to be
+# incremented.
+{
+    class PlainAttr {
+        has $.x = 0;
+    }
+    my $p = PlainAttr.new;
+    dies-ok { $p.x++ }, 'ordinary non-rw has $.x still rejects postfix ++';
+    dies-ok { $p.x += 5 }, 'ordinary non-rw has $.x still rejects +=';
+    dies-ok { $p.x = 5 }, 'ordinary non-rw has $.x still rejects plain assignment';
+
+    class PlainAttrRw {
+        has $.x is rw = 0;
+    }
+    my $r = PlainAttrRw.new;
+    $r.x++;
+    is $r.x, 1, 'an explicit is rw accessor still allows ++ (unaffected by this fix)';
 }
