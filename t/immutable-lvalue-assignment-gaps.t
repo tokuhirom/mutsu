@@ -168,6 +168,61 @@ throws-like { my \G = 5; ++G }, X::Multi::NoMatch,
 }
 
 {
+    # An uninitialized outer `my $str;` captured by a closure and assigned
+    # INSIDE the closure (`lives-ok { $str = 1 }, "..."`) must stay writable.
+    # `SetVarDynamic`'s closure-capture-by-reference support pre-seeds a
+    # not-yet-assigned captured variable's env slot with the placeholder
+    # `Package(Any)` regardless of the variable's own name, so this hit the
+    # exact same lowercase-native-type collision as the for-loop destructure
+    # leaf above, but via a different current-value shape (`Package(Any)`
+    # instead of `None`). `lives-ok` catches the resulting spurious
+    # X::Assignment::RO and reports a false test failure -- the outer `plan`
+    # below asserts the assignment itself is silently accepted, i.e. that
+    # `lives-ok`'s own inner test reports "ok".
+    my $str;
+    my $inner_ok = lives-ok { $str = 1 }, "assigning to a captured, uninitialized \$str";
+    ok $inner_ok, 'lives-ok on a captured uninitialized $str reports success (roast S02-types/set.t, sethash.t)';
+    is $str, 1, 'and the assignment actually took effect';
+}
+
+{
+    # The reduced repro that first caught this in CI, pinned verbatim.
+    my $str;
+    my $inner_ok = lives-ok { $str = 1 }, "x";
+    ok $inner_ok, 'reduced repro: my $str; lives-ok { $str = 1 } reports success';
+}
+
+{
+    # Same class of bug, checked against dies-ok/throws-like/plain try too --
+    # a spurious X::Assignment::RO would show up in all of them, since they
+    # all inspect the block's thrown-or-not outcome the same way lives-ok does.
+    my $str;
+    todo "dies-ok correctly reports false: the assignment is legal and does not die";
+    my $inner_ok = dies-ok { $str = 1 }, "should NOT die (assignment is legal)";
+    nok $inner_ok, 'dies-ok on a captured uninitialized $str correctly reports "did not die"';
+    is $str, 1, 'and the assignment still took effect';
+}
+
+{
+    my $str;
+    throws-like { $str = 1; die "boom" }, X::AdHoc,
+        message => /'boom'/,
+        'throws-like still sees the REAL exception, not a spurious one from the assignment';
+    is $str, 1, 'and the assignment before the real die still took effect';
+}
+
+{
+    my $str;
+    my $threw = False;
+    try {
+        $str = 1;
+        CATCH { default { $threw = True } }
+    }
+    nok $threw, 'a plain try{} around the same assignment does not set $!/CATCH';
+    is $str, 1, 'and the assignment took effect';
+}
+
+{
     # A plain single-param pointy block reused across an outer `for ^N {}`
     # AND a later `for ... -> ($x, $y) {}` sharing a variable name (the
     # digest-battery.t / SHA3 shape) must not leak a readonly mark from the

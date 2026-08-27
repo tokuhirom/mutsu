@@ -96,6 +96,35 @@ coverage lost (a lowercase native-type bareword's very first, never-yet-
 referenced assignment) is a deliberate, safe trade-off, and `Int`/`Nil`/a
 user class (all TitleCase by convention) keep working.
 
+**A fourth trap: the same lowercase collision recurs through a THIRD current-value
+shape, `Package(Any)`.** The `None` fix above did not cover `roast/S02-types/set.t`
+and `sethash.t`, which went red in CI with an unrelated-looking symptom:
+`lives-ok`/`dies-ok` false negatives, e.g. `my $str; lives-ok { $str = 1 },
+"x"` reported "not ok" even though the assignment itself succeeded and nothing
+threw. Root cause: `SetVarDynamic`'s closure-capture-by-reference support
+pre-seeds ANY not-yet-assigned closure-captured variable's env slot with the
+placeholder `ValueView::Package(Symbol::intern("Any"))` — regardless of the
+variable's own name — before its real value is ever assigned (the exact
+mechanism `exec_get_bare_word_op`'s own read-side fallback already special-
+cases: "A `my $Buf = Buf.new` declaration pre-seeds env[\"Buf\"] with the
+placeholder `Package(Any)`"). The original fix's `Package(_)` branch was left
+completely unconditional (trusted unconditionally, no TitleCase gate at all),
+so a captured `$str` — whose free-variable write inside the `lives-ok` block
+reaches the exact same `SetGlobal` bareword check — hit this placeholder and
+was misidentified as assigning to the lowercase native type `str`.
+`lives-ok`/`dies-ok` correctly caught the resulting spurious
+`X::Assignment::RO`, which is why the symptom looked like a `Test` bug rather
+than an assignment bug. **Fix:** `Package(Any)` (for any name other than the
+literal bareword `Any` itself) is now gated by the same TitleCase requirement
+as `None`/a real `Nil`; only a genuine `Package(SomeRealType)` — set
+exclusively by actual class/type registration, e.g. `class Foo {}` setting
+`env["Foo"] = Package("Foo")` directly — is trusted unconditionally. This is
+the third distinct "looks like an unbound type slot" shape found for this one
+underlying ambiguity (`None`, `Nil`, `Package(Any)`); all three are now gated
+the same way, and `t/immutable-lvalue-assignment-gaps.t` pins each of them (a
+`for`-loop destructure leaf, a `lives-ok`-captured uninitialized variable, and
+the direct `Int`/`Nil`/`Foo` cases) as its own regression control.
+
 ## What's still open
 
 **`my $s = { $_ = 5 }; $s(7)` (a bare block's implicit topic) is deliberately

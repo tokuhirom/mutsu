@@ -1172,32 +1172,62 @@ impl Interpreter {
                     // means the name was rebound to a real value and must NOT
                     // be treated as the type object anymore.
                     //
-                    // The "never referenced" (env has no entry at all) case is
-                    // trustworthy ONLY for a TitleCase name. A lowercase
-                    // bareword reaching `SetGlobal` with no prior env entry is
-                    // overwhelmingly more likely to be an ordinary variable's
-                    // first-ever write (e.g. a `for`-loop sub-signature
-                    // destructure leaf, which is bound directly by `SetGlobal`
-                    // rather than a local slot) than a genuine reference to a
-                    // lowercase native-type synonym (`int`, `str`, `num`,
-                    // `array`, `bool`, ...) -- `str = 5` as a bare statement is
-                    // not idiomatic Raku, while `$str`/`$int` are extremely
-                    // common variable names whose sigil-stripped storage key
-                    // is indistinguishable from the type name at this point.
-                    // `for @tests -> ($str, $expected, |args) {...}`
-                    // (roast S32-str/comb.t) hit exactly this: its `$str`
-                    // destructure leaf's very first (never-yet-referenced)
-                    // write was misidentified as assigning to the `str` type
-                    // object. A TitleCase name (`Int`, `Nil`, a user class) has
-                    // no such realistic collision — Raku convention never uses
-                    // a TitleCase bareword as an ordinary variable's storage
-                    // key.
+                    // The "never referenced" (env has no entry at all) AND the
+                    // "pre-seeded Nil slot" cases are trustworthy ONLY for a
+                    // TitleCase name. A lowercase bareword reaching `SetGlobal`
+                    // with `None`/`Nil` currently stored is overwhelmingly more
+                    // likely to be an ordinary variable's write than a genuine
+                    // reference to a lowercase native-type synonym (`int`,
+                    // `str`, `num`, `array`, `bool`, ...) -- `str = 5` as a bare
+                    // statement is not idiomatic Raku, while `$str`/`$int` are
+                    // extremely common variable names whose sigil-stripped
+                    // storage key is indistinguishable from the type name at
+                    // this point. TWO separate shapes hit this: a `for`-loop
+                    // sub-signature destructure leaf (`for @tests -> ($str,
+                    // $expected, |args) {...}`, roast S32-str/comb.t), which is
+                    // bound directly by `SetGlobal` rather than a local slot,
+                    // so its first-ever write sees `None`; and an uninitialized
+                    // outer `my $str;` (Nil) captured and assigned INSIDE a
+                    // closure (`my $str; lives-ok { $str = 1 }, "..."` --
+                    // `Test`'s `lives-ok` catches the resulting spurious
+                    // X::Assignment::RO and reports a false test failure,
+                    // caught by `t/immutable-lvalue-assignment-gaps.t`'s
+                    // regression control), whose free-variable write also
+                    // reaches `SetGlobal` and sees the captured `Some(Nil)`.
+                    // A TitleCase name (`Int`, `Nil`, a user class) has no such
+                    // realistic collision — Raku convention never uses a
+                    // TitleCase bareword as an ordinary variable's storage key
+                    // -- so the check requires it for those shapes; only a
+                    // REAL `Package(SomeType)` current value (set exclusively
+                    // by genuine class/type registration, e.g. `class Foo {}`
+                    // sets env["Foo"] = Package("Foo") directly) is trusted
+                    // unconditionally.
+                    //
+                    // `Package(Any)` is NOT that -- it is a generic "not yet
+                    // materialized" placeholder `SetVarDynamic` pre-seeds for
+                    // ANY closure-captured variable regardless of its name
+                    // (see the matching special case in
+                    // `exec_get_bare_word_op`, "A `my $Buf = Buf.new`
+                    // declaration pre-seeds env[\"Buf\"] with the placeholder
+                    // `Package(Any)`"), so it needs the SAME uppercase gate as
+                    // `None`/a genuine `Nil` slot: `my $str; lives-ok { $str =
+                    // 1 }, "..."` captures the outer, not-yet-assigned `$str`
+                    // this way, and without the gate its free-variable write
+                    // was misidentified as assigning to the lowercase native
+                    // type `str` (a spurious `X::Assignment::RO` that
+                    // `lives-ok` correctly caught and reported as a test
+                    // failure, even though nothing in the block actually
+                    // "died").
                     let current_view = self.env().get(&name).map(Value::view);
                     let first_letter_uppercase = name.starts_with(|c: char| c.is_uppercase());
-                    let unbound_type_slot = matches!(
-                        current_view,
-                        Some(ValueView::Package(_)) | Some(ValueView::Nil)
-                    ) || (current_view.is_none() && first_letter_uppercase);
+                    let unbound_type_slot = match current_view {
+                        Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
+                            first_letter_uppercase
+                        }
+                        Some(ValueView::Package(_)) => true,
+                        Some(ValueView::Nil) | None => first_letter_uppercase,
+                        _ => false,
+                    };
                     if unbound_type_slot && name == "Nil" {
                         return Err(RuntimeError::assignment_ro_nil());
                     }

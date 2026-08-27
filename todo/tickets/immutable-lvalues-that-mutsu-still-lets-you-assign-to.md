@@ -160,9 +160,30 @@ accepted trade-off — `Int`/`Nil`/a user class (TitleCase by convention) still
 work, and a genuinely ambiguous case would need the sigil-vs-bareword
 distinction preserved at compile time (the same class of fix the
 exception-taxonomy work made for `constant $PI` vs. `constant PI` via the
-parser-recorded `__constant_sigil` trait) to close soundly — not attempted
-here, since the current fix already covers every case this ticket's probe
-harness names.
+parser-recorded `__constant_sigil` trait) to close soundly.
+
+**This same ambiguity turned out to have a THIRD current-value shape, not just
+`None`/`Nil`: `Package(Any)`.** That one reached CI as `roast/S02-types/set.t`
+and `sethash.t` going red with an unrelated-looking symptom — `lives-ok`/
+`dies-ok` false negatives (`my $str; lives-ok { $str = 1 }, "x"` reported "not
+ok" even though the assignment succeeded and nothing threw). Root cause:
+`SetVarDynamic`'s closure-capture-by-reference support pre-seeds ANY not-yet-
+assigned closure-captured variable's env slot with the placeholder
+`Package(Any)`, regardless of the variable's own name (the same mechanism
+`exec_get_bare_word_op`'s read-side fallback already special-cases). The
+`Package(_)` branch of the original fix was left completely unconditional —
+no TitleCase gate at all — so a captured, not-yet-initialized `$str` hit this
+placeholder on its first (`lives-ok`-internal) write and was misidentified as
+assigning to the type `str`; `lives-ok` correctly caught the resulting
+spurious `X::Assignment::RO`, which is why the symptom looked like a `Test`
+bug rather than an assignment bug. Fixed the same way: `Package(Any)` (for any
+name other than the literal bareword `Any`) now requires the same TitleCase
+gate as `None`/a real `Nil`; only a genuine `Package(SomeRealType)` (set
+exclusively by actual class/type registration) is trusted unconditionally.
+`t/immutable-lvalue-assignment-gaps.t` pins all three shapes as separate
+regression controls (a `for`-loop destructure leaf, a `lives-ok`-captured
+uninitialized variable, and the direct `Int`/`Nil`/`Foo` cases) so a future
+change to this check has to keep all three honest at once.
 
 ## Still blocked: the topic rows (`for`-loop per-item container-ness)
 
