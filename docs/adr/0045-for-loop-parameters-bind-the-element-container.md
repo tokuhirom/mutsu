@@ -1,6 +1,7 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Accepted — partially implemented (slices 0 and 1 landed 2026-08-27; slices 2-6 open, see
+  §8 "Implementation status")
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (which names
@@ -477,5 +478,81 @@ the container (ADR-0042), which all three consume in their enforcement slice.
 
 ---
 
-*This ADR is Proposed. If the mechanism judgment changes later, supersede it rather than rewriting
-it.*
+## 8. Implementation status
+
+### Slices 0 and 1 — landed 2026-08-27
+
+**Slice 0.** `t/for-loop-element-alias.t` pins the whole surface of §1.3: every divergence row and
+every invariant row, plus §5 Q6's `Proxy`-element probe, §5 Q1's already-a-cell capture probe, and
+§1.5's bench probe as an O(n) assertion. The whole §1.3 table was re-measured against `raku` before
+any code was written and reproduced exactly as recorded, so §1.3 stands as measured.
+
+**Slice 1.** `exec_for_loop_body` (`src/vm/vm_for_loop_body.rs`) now binds `array_slot_ref(idx, true)`
+at the bind site when the parameter is a writable aliasing one (`is rw` / `<->` / `\v`), the loop has
+a single parameter bound natively, and the tagged source is a direct, real, mutable, plain `Array`
+(`@`-sigil, `!kv_mode`, `!values_mode`, `!loop_var_wraps_element`, `!container_reversed`). The
+per-iteration `write_back_for_rw_param` is retired for exactly those iterations. Two helpers carry
+the discriminator, `for_source_is_aliasable` and `for_element_alias`.
+
+**Rows that turned green:** 01, 02, 03, 04, 07, 11, 12, 13, 14, 20, 27, 36 and 41 as planned, plus
+**38** (the body rebinding the source array wholesale — the sharpest class-3 clobber) and **43** (the
+sigilless `\v` read-alias, which §4 had filed under the topic slice but which binds through this same
+native single-parameter site). Every invariant row still agrees.
+
+**Perf (§1.5).** Release build, same machine, best of three, `for @a <-> $x { $x = $x + 1 }`:
+
+| n | before | after |
+| --- | --- | --- |
+| 5 000 | 0.04 s | 0.01 s |
+| 10 000 | 0.15 s | 0.01 s |
+| 20 000 | 0.56 s | 0.02 s |
+| 40 000 | 2.17 s | 0.03 s |
+| 80 000 | 9.01 s | 0.05 s |
+| 160 000 | 39.44 s | 0.11 s |
+
+Before, each doubling multiplied the time by 3.7-4.4× — the quadratic §1.5 measured. After, it
+roughly doubles. The quadratic is gone, not merely reduced. These are local A/B numbers recorded for
+this ADR's own acceptance criterion; the bench CI series remains the source of truth for any headline
+figure.
+
+### Answers to the open questions, as measured by slice 1
+
+- **§5 Q1 (ADR-0027 composition)** — no conflict, for a reason worth writing down: an `is rw` loop's
+  parameter never enters `loop_local_vars` in the first place (`exec_for_loop_body` gates that set on
+  `!spec.is_rw`), so `compute_owned_captures`'s unguarded primary branch is not reached by a promoted
+  cell and `freeze_readonly_owned_captures` cannot value-freeze one. Rows 34/35 (per-iteration
+  identity) and rows 12/36 (sharing *within* an iteration) both hold, and `box_captured_lexicals`
+  already refuses to double-box (`if self.locals[idx].is_container_ref() { continue }`).
+- **§5 Q3 (ADR-0040 itemization)** — unchanged, deliberately: slice 1 flips a *local* writeback flag
+  and never touches `spec.do_writeback`, which is what the bind-side itemization carve-out keys off.
+  `t/param-bind-itemization.t` and `t/for-bind-typed-array-deitemize.t` pass unmodified.
+- **§5 Q4 (leaked cells)** — none observed. Row 40 is extended in the pin to `.raku`, `.elems`,
+  `.WHAT`, an element's own `.WHAT`, list context and interpolation; all decontainerize.
+- **§5 Q5 (shaped / native-backed)** — kept as an explicit, commented carve-out in
+  `for_source_is_aliasable`: `ArrayKind::Shaped`, an embedded `shape`, a `NativeBacking` payload and
+  `ArrayKind::Lazy` all stay on the metadata-preserving writeback. `t/cas-shaped-and-for-loop.t` and
+  row 26 pin it.
+- **§5 Q6 (`Proxy` elements)** — the hazard does not evaporate by itself, and the fix is per
+  *iteration*, not per loop. A `Proxy` element is skipped by the promotion, and because the writeback
+  is retired per iteration rather than for the whole loop, that iteration keeps its writeback.
+  Retiring it loop-wide silently dropped the `Proxy` element's write; the pin is the second Q6
+  assertion in `t/for-loop-element-alias.t`.
+
+### What slices 2-6 still own
+
+Rows 08 (slice 2); 21, 22, 42, 44 (slice 3); 16, 17, 24, 39 (slice 4); 19, 28, 30 (slice 5). They are
+`todo`-marked in `t/for-loop-element-alias.t` with the owning slice named in the reason string, so
+each later slice un-`todo`s exactly its own rows. `write_back_for_rw_param` still carries the hash,
+`kv_mode`, multi-param and scalar arms; only its direct-array single-parameter path is now dead code
+for the promoted shape.
+
+**Found along the way, unrelated:** after any `start` block, a later `for @m -> @row { ... }` loop
+rebinds the *previous* iteration's container. Pre-existing on `main` (verified at `f678b032b`) and
+independent of this ADR — recorded as
+`todo/tickets/at-sigil-for-param-rebinds-stale-container-after-start-block.md`. It is why
+`t/for-loop-element-alias.t` keeps its `start`-block row last.
+
+---
+
+*Slices 0 and 1 of this ADR are implemented; the decision stands. If the mechanism judgment changes
+later, supersede it rather than rewriting it.*

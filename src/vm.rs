@@ -162,6 +162,7 @@ mod vm_dispatch_helpers;
 mod vm_env_helpers;
 mod vm_exec_dispatch;
 pub(crate) mod vm_flipflop_ops;
+mod vm_for_loop_alias;
 mod vm_for_loop_body;
 mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
