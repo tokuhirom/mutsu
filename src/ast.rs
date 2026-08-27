@@ -169,6 +169,34 @@ impl ParamDef {
         self.slurpy || self.double_slurpy || self.onearg
     }
 
+    /// True when this parameter binds the CALLER's container rather than a value
+    /// copy: an explicit `is raw` / `is rw`, or a plain **sigilless** parameter
+    /// (`\p`), which Raku defines as implicitly raw.
+    ///
+    /// mutsu used to spell this as a bare `traits` scan, which left `\p` out of
+    /// every container-aliasing gate: the method fast path
+    /// (`vm_method_dispatch.rs`'s `has_rw_params`) skipped the binder entirely
+    /// for a `\p` method, and the binder's own shared-cell branch
+    /// (`binding_signature.rs`'s `rw_shared_cell_key`) never ran. `\p` was left
+    /// with only the by-name `__mutsu_sigilless_alias::p` bookkeeping, which
+    /// reconciles the caller through a one-shot VALUE writeback at return — so
+    /// any binding that OUTLIVES the call (`$!s := p` stored in an attribute, a
+    /// closure over `p`, a relay into a further raw parameter) never reached the
+    /// caller's variable. `value/signature.rs`'s introspection already reported
+    /// a sigilless parameter as `raw`; this is the same rule for the binder.
+    ///
+    /// Only the plain scalar form is implicitly raw. `|c` captures and
+    /// `+a` / `*@a` slurpies also carry `sigilless`, but they bind a freshly
+    /// built aggregate, not the caller's container.
+    pub(crate) fn binds_caller_container(&self) -> bool {
+        self.traits.iter().any(|t| t == "rw" || t == "raw")
+            || (self.sigilless
+                && !self.is_variadic()
+                && !self.named
+                && !self.is_invocant
+                && self.sub_signature.is_none())
+    }
+
     pub(crate) fn is_capture_subsignature(&self) -> bool {
         self.sub_signature.is_some()
             && self.type_constraint.is_none()

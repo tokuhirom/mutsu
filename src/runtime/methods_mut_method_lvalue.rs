@@ -1628,7 +1628,20 @@ impl Interpreter {
         // results, allowing the raw Proxy to flow back for STORE dispatch.
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
+        // The pending argument-source names still describe the ENCLOSING
+        // `__mutsu_assign_method_lvalue` call, whose first "argument" is the
+        // invocant, while `method_args` here holds only the method's own
+        // arguments — the two are off by one. A parameter that re-reads its
+        // argument by source name (a raw/`\c` parameter, which binds the
+        // caller's container) would therefore bind the INVOCANT into the
+        // method's first parameter: `method at(\k) is rw { ... %!store{k} }`
+        // keyed the hash by the Box object instead of by `'k'`. This call site
+        // supplies values, not source names, so clear them for the duration.
+        // Mirrors `try_rw_method_container_lvalue`, the type-object-invocant
+        // half of the same lvalue return, which already does this.
+        let saved_sources = self.take_pending_call_arg_sources();
         let method_result = self.call_method_with_values(target.clone(), method, method_args);
+        self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         let method_result = method_result?;
         if let ValueView::Proxy { storer, .. } = method_result.view() {

@@ -1,5 +1,5 @@
 use Test;
-plan 10;
+plan 11;
 
 # Regression pins for the `:=` ancestor-frame propagation gate
 # (`Interpreter::propagate_bind_to_ancestor_frames`,
@@ -144,9 +144,26 @@ is routine-local-bind(), 9,
 is $outer-q, 'OUT',
     'a routine-local := alias does not leak the write to a same-named caller lexical';
 
-# NOT covered here (still divergent, tracked in
-# todo/tickets/bind-alias-chain-through-raw-params-blocks-innermost-frame-splice.md):
-# the same bind performed from a CLOSURE nested inside the recursive routine.
-# The closure's own compiled code has no slot for `$v`, so the gate above
-# cannot see that the source is the enclosing invocation's own lexical, and the
-# splice falls back to the name match across every recursion level.
+# The bind performed from a CLOSURE nested inside the recursive routine. The
+# closure's own compiled code has no slot for `$v`, so the source really IS a
+# free variable there and the splice must happen -- but only into the innermost
+# ancestor frame (the recursion level that created the closure), never into
+# every outer level that declares the same name. This is the half of the
+# recursion clobber that needed the innermost-frame-only rule, which in turn
+# needed sigilless/raw parameters to genuinely bind the caller's container
+# (`ParamDef::binds_caller_container`) so that the blanket by-name splice was
+# no longer load-bearing for raw-parameter alias chains.
+my @closure-levels;
+sub rec-closure(Int $n) {
+    my $v = $n;
+    if $n > 0 {
+        rec-closure($n - 1);
+    } else {
+        my $c = { my $x := $v; $x = 999 };
+        $c();
+    }
+    @closure-levels.push($v);
+}
+rec-closure(3);
+is @closure-levels, (999, 1, 2, 3),
+    'a bind inside a closure nested in recursion reaches only the enclosing level';

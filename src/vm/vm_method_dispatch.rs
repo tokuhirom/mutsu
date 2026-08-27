@@ -58,10 +58,15 @@ impl Interpreter {
         // adds it to `rw_bindings`), and that writeback lives only on the merge
         // path — so a raw-param method must not take the fast path / skip the merge
         // (mirrors how the sub dispatch treats rw and raw alike).
+        // A sigilless `\p` is implicitly raw and aliases the caller's container
+        // exactly like `is raw`, so it must keep the full binder path too — see
+        // [`ParamDef::binds_caller_container`]. Skipping the binder for it is
+        // what made `method set(\p) { $!s := p }` bind a value copy, so a later
+        // `$!s = v` never reached the caller's variable.
         let has_rw_params = method_def
             .param_defs
             .iter()
-            .any(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
+            .any(|pd| pd.binds_caller_container());
         // A plain (non-`is copy`) `@`/`%` positional param binds the caller's
         // container by alias (Raku readonly-container semantics): `.push`,
         // element assign, and whole-container `=` all propagate to the caller.
