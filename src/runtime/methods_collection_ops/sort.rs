@@ -177,6 +177,63 @@ pub(crate) trait SortCaller {
     /// Resolve the arity of the sort callable (0 = none, 1 = mapper, >=2 =
     /// comparator). Delegates to the single shared `Interpreter::sort_callable_arity`.
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError>;
+    /// Extract every Schwartzian key in ONE batch, or `None` to fall back to a
+    /// [`Self::call_callable`] per element. See [`sort_keys_batched`].
+    fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>>;
+}
+
+/// Extract all sort keys with a single `.map` over `items`.
+///
+/// A 1-arity sort callable is a *key extractor*, so key extraction is exactly a
+/// `.map` with the same callable — and `eval_map_over_items` compiles the block
+/// body once and rebinds only the param/topic per iteration, where
+/// `call_callable` pays the whole closure-call machinery
+/// (`call_compiled_closure_with_topic`: a scoped env child, the captured-env
+/// merge, per-instance state lookups, an exit writeback diff) on *every*
+/// element. That is the same ~8x gap that made the native array `.map` loop
+/// slower than the shared one (see `docs/vm-decoupling.md` Step 6).
+///
+/// Returns `None` — meaning "use the per-element loop" — whenever the batch
+/// form would not faithfully stand in for it:
+///
+/// - a non-`Sub` callable, which `eval_map_over_items` treats as a smartmatch
+///   pattern rather than a mapper;
+/// - a `Pair`/`ValuePair` element, which `call_callable` feeds through
+///   `pair_as_positional` while the map loop topicalizes it instead;
+/// - a result that is not a concrete list of exactly `items.len()` values (a
+///   key extractor returning a `Slip` is flattened by the map loop, and a
+///   deferred/lazy map result is not a key vector at all);
+/// - an error, since the per-element loop turns a failing key into `Nil` rather
+///   than aborting the whole sort. Falling back re-runs the keys computed
+///   before the failure, so a key extractor that both errors *and* has side
+///   effects would see them twice — vanishingly rare, and the alternative is
+///   changing when `.sort` throws.
+pub(crate) fn sort_keys_batched(
+    interp: &mut Interpreter,
+    callable: &Value,
+    items: &[Value],
+) -> Option<Vec<Value>> {
+    if items.is_empty() {
+        return Some(Vec::new());
+    }
+    if !matches!(callable.view(), ValueView::Sub(_)) {
+        return None;
+    }
+    if items
+        .iter()
+        .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+    {
+        return None;
+    }
+    let mapped = interp
+        .eval_map_over_items(Some(callable.clone()), items.to_vec())
+        .ok()?;
+    let keys = match mapped.view() {
+        ValueView::Array(mapped_items, _) => mapped_items.to_vec(),
+        ValueView::Seq(mapped_items) => mapped_items.to_vec(),
+        _ => return None,
+    };
+    (keys.len() == items.len()).then_some(keys)
 }
 
 /// [`SortCaller`] backed by the tree-walking interpreter.
@@ -204,6 +261,10 @@ impl SortCaller for InterpCaller<'_> {
 
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
         self.0.sort_callable_arity(callable)
+    }
+
+    fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>> {
+        sort_keys_batched(self.0, callable, items)
     }
 }
 
@@ -335,10 +396,14 @@ pub(crate) fn sort_items_generic(
                 return;
             }
             let c = c.clone();
-            let keys: Vec<Value> = items
-                .iter()
-                .map(|item| caller.call_callable(&c, vec![item.clone()]))
-                .collect();
+            // One batched `.map` over the items when that is faithful, else a
+            // call per element. See `sort_keys_batched`.
+            let keys: Vec<Value> = caller.map_keys(&c, items).unwrap_or_else(|| {
+                items
+                    .iter()
+                    .map(|item| caller.call_callable(&c, vec![item.clone()]))
+                    .collect()
+            });
             schwartzian_by_keys(items, &keys);
         }
         None => items.sort_by(|a, b| compare_values(a, b).cmp(&0)),
@@ -401,10 +466,13 @@ pub(crate) fn sort_indices_generic(
                     .collect()
             } else {
                 let c = c.clone();
-                items
-                    .iter()
-                    .map(|item| caller.call_callable(&c, vec![item.clone()]))
-                    .collect()
+                // One batched `.map` when faithful, else a call per element.
+                caller.map_keys(&c, items).unwrap_or_else(|| {
+                    items
+                        .iter()
+                        .map(|item| caller.call_callable(&c, vec![item.clone()]))
+                        .collect()
+                })
             };
             perm.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
         }
