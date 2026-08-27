@@ -568,21 +568,29 @@ impl Interpreter {
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
         // so the method runs on the inner value (Raku container semantics). `.VAR`
         // is the one introspection method that wants the container itself, and
-        // `^name`/`WHAT` right after a `.VAR` report the container type (raku:
+        // `^name` right after a `.VAR` reports the container type (raku:
         // `$obj.attr.VAR.^name` is "Scalar", not the inner value's type).
+        //
+        // `WHAT` is deliberately NOT in that set: raku decontainerizes it, so a
+        // `Scalar`-containered `Int` answers `(Int)`, and only `.VAR.^name`
+        // answers `Scalar`. Claiming `Scalar` for a bare `.WHAT` was invisible
+        // while `ContainerRef` receivers were rare, but ADR-0036 slice 3 and
+        // ADR-0045 slice 4 hand elements out in bulk — `@a.pairs[0].value.WHAT`
+        // would have started answering `Scalar` where it answers `Int` today.
+        //
+        // The residual gap is that mutsu cannot tell a cell reached *through*
+        // `.VAR` from a cell that is simply an aliased value, so `.VAR.WHAT` and
+        // a bare `.^name` on a cell are still the container's, not the value's;
+        // see `todo/tickets/var-on-a-containerref-is-not-distinguishable.md`.
         let target = if method != "VAR" {
             match target.view() {
                 ValueView::ContainerRef(_) => {
-                    if args.is_empty() && matches!(method, "^name" | "WHAT") {
+                    if args.is_empty() && method == "^name" {
                         crate::vm::vm_stats::record_dispatch_entry_intercept(
                             "callmethod",
                             "containerref-scalar-meta",
                         );
-                        self.stack.push(if method == "^name" {
-                            Value::str("Scalar".to_string())
-                        } else {
-                            Value::package(crate::symbol::Symbol::intern("Scalar"))
-                        });
+                        self.stack.push(Value::str("Scalar".to_string()));
                         return Ok(());
                     }
                     target.deref_container()

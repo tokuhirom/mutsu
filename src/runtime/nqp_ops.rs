@@ -157,7 +157,18 @@ impl Interpreter {
 
             // -- type test --
             "istype" => {
-                let v = args.first().cloned().unwrap_or(Value::NIL);
+                // Decontainerize: a value can BE its element's `Scalar`
+                // container (ADR-0036/ADR-0045 hand these out from `for` loop
+                // bindings and the element producers), and a type test asks
+                // about what the container holds. Without this,
+                // `nqp::istype($_, Associative)` inside `encode($_) for @$_`
+                // answered False for a promoted element and CBOR::Simple
+                // encoded a Map as its element count (its `04-tags` Capture
+                // round-trips).
+                let v = args
+                    .first()
+                    .map(Value::deref_container)
+                    .unwrap_or(Value::NIL);
                 let type_name = match args.get(1).map(|t| t.view()) {
                     Some(ValueView::Package(p)) => p.resolve().to_string(),
                     Some(ValueView::Instance { class_name, .. }) => {

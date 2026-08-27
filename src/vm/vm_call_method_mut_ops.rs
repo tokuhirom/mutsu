@@ -2671,6 +2671,29 @@ impl Interpreter {
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this.
                 self.method_dispatch_pure = false;
+                // ADR-0036 slice 3 / ADR-0045 slice 4: `.pairs`/`.kv`/
+                // `.antipairs`/`.values`/`.reverse`/`.sort` on a real mutable
+                // container hand out the elements' own `Scalar` containers, not
+                // clones. This must run BEFORE the sentinel-resolved copy below,
+                // which is a fresh Hash and therefore has no identity to
+                // promote into. `try_element_container_producer` declines every
+                // receiver that must keep the snapshot producer.
+                if !skip_native
+                    // An `augment`ed native type's own `.sort`/`.pairs`/... must
+                    // still win: this routing changes how a *native* producer
+                    // builds its result, and there is no native producer to
+                    // change when the user has replaced the method.
+                    && !self.native_lever_a_user_override(&target, &method)
+                    && let Some(produced) = self.try_element_container_producer(&target, &method, &args)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome(
+                        "callmethodmut",
+                        "element-container-producer",
+                    );
+                    self.method_dispatch_pure = true;
+                    self.stack.push(produced);
+                    return Ok(());
+                }
                 let call_result = if !skip_native {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.

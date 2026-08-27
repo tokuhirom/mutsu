@@ -31,6 +31,13 @@ fn decay_nil_hash_value(v: Value) -> Value {
 /// (`%h<a>.raku` is `$[1, 2]`). Composed with the ADR-0049 `Nil` decay, which
 /// runs first (a decayed `Nil` becomes `Any`, which never itemizes).
 fn hash_stored_value(v: Value) -> Value {
+    // Decontainerize first. Building a Hash from a list of Pairs is an
+    // ASSIGNMENT of their values, not a bind — `%a = %reset.pairs` must copy
+    // what `%reset`'s elements hold, never adopt the elements themselves. Since
+    // ADR-0036 slice 3 makes `.pairs` hand out those elements' own `Scalar`
+    // containers, storing the pair value as-is aliased the two hashes together,
+    // so a later in-place mutation of one silently rewrote the other
+    // (roast/S03-metaops/infix.t's `%a = %reset.pairs` reset lines).
     decay_nil_hash_value(v).itemize_for_element_store()
 }
 

@@ -46,6 +46,13 @@ enum TokenReplacement {
 /// an Array so the list-form dispatch recognizes it (`"abc".comb => 1..2`).
 /// Any other value is returned unchanged (Arc-cheap clone).
 fn normalize_trans_operand(v: &Value) -> Value {
+    // Decontainerize first: `"...".trans(%matcher.pairs)` feeds `trans` pairs
+    // whose value is the hash element's own `Scalar` container (ADR-0036 slice
+    // 3), and every test below asks what the operand *is* — `is_closure`, the
+    // Regex/Array/Range shape match — which a `ContainerRef` would answer `no`
+    // to, silently turning a closure replacement into a stringified one
+    // (roast/S05-transliteration/with-closure.t).
+    let v = v.deref_container();
     match v.view() {
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             Value::array(items.to_vec())
@@ -207,6 +214,9 @@ impl Interpreter {
 
         for arg in &flat_args {
             if let ValueView::Pair(key, value) = arg.view() {
+                // Same decontainerization as the `ValuePair` arm below: the
+                // value may be an element's own container (ADR-0036 slice 3).
+                let value = &value.deref_container();
                 match key.as_str() {
                     "s" | "squash" => {
                         squash = value.truthy();

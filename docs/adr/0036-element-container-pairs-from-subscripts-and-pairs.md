@@ -1,6 +1,7 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
-- **Status**: Partially implemented — slices 1-2 landed (2026-08-20), slices 3-4 open
+- **Status**: Partially implemented — slices 1-2 landed (2026-08-20); slice 3's producer layer landed
+  2026-08-27 but `.pairs` itself is deferred (see "Implementation status — slice 3"); slice 4 open
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -333,6 +334,97 @@ syntax-specific rewrite.
   FatArrow's container capture to an Index RHS for row 10) and slice 4 (element type constraint on the
   promoted cell, then deleting the `methods_mut_method_lvalue.rs` env-scan compensator).
 
+## Implementation status — slice 3 (2026-08-27)
+
+**The producer layer landed; `.pairs` itself did not.** §4 required this slice to land with ADR-0045
+slice 4, and the mechanism they share does exist now: `src/vm/vm_element_producers.rs`, hooked into
+`exec_call_method_mut_op_impl` (`src/vm/vm_call_method_mut_ops.rs`) just before the native dispatch
+tail, with `builtins/methods_0arg/` kept as the fallback for every receiver it declines. ADR-0045
+slice 4's `.values`/`.reverse`/`.sort` ship through it. **`.pairs` was implemented, measured, and
+backed out**, so rows 3, 4 and 9 stay `todo`-marked.
+
+**Why `.pairs` was backed out — and why `.values`/`.reverse`/`.sort` were not.** Handing out a Pair
+whose *value* is a cell leaks into every consumer that reads a pair's value **as data**, and because
+`.pairs` promotes the source's elements in place, the exposure is not "consumers of the `.pairs`
+result" but "consumers of any container a producer has run over". Five distinct leaks were measured
+before the pattern was accepted as a class: `trans` type-testing the value
+(`roast/S05-transliteration/with-closure.t`), Hash-from-pairs aliasing two hashes together,
+BagHash-from-pairs collapsing every weight to 1 (`roast/S03-metaops/infix.t`, 396/5076 subtests),
+`.map({.key => .value})` carrying the cell forward, and `.antipairs` losing its key de-itemization.
+`set_coerce.rs` and `coerce_containers.rs` alone destructure a pair's value structurally in **15**
+places, with no accessor to route. `.values`/`.reverse`/`.sort` do not have the problem: they hand
+out a *flat list* of cells, and list consumers decontainerize. It is specifically the **Pair
+wrapper** that carries a cell into code that reads it structurally. Tracked in
+`todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md`.
+
+**This revises §5 Q4's answer.** `resolve_array_entry` is the only chokepoint for *element* reads,
+but bulk iteration (`h.iter()`, `items.iter()`) and `ValueView::Pair(k, v)` destructuring walk the
+storage directly and bypass it. That is the real blast radius, and it is why the `:p`/`:kv` adverbs
+(slice 2) have shipped happily since 2026-08-20 while `.pairs` cannot: they promote **one** element
+on demand, where `.pairs` promotes the whole container and is far likelier to be fed to a coercion.
+
+**Two corrections to §4's method list, both by measurement:**
+
+- **`.antipairs` must NOT be routed.** It puts the element in the Pair's *key*, and a Pair key is
+  never a container in raku: `my @a = <A B>; my $p = @a.antipairs[0]; @a[0] = "Q"; $p.key` is `A`,
+  and `$p.key.VAR.^name` is `Str`. Routing it made the key track later writes — a divergence, not a
+  fix. It keeps the snapshot producer, and both facts are now pinned.
+- **`.kv` is deferred, for a reason in the *consumer*.** A `.kv` loop is a **multi-parameter** loop,
+  and those bind through the bind-prefix `Stmt::Assign`s `build_for_bind_stmts` emits, each reading
+  its chunk element through the ordinary element chokepoint — which **decontainerizes**. A cell handed
+  out here arrives at `$v` as a plain value while the writeback that used to carry the mutation has
+  been retired for that iteration, so routing `.kv` *lost* the direct write
+  (`for @a.kv -> $i, $v is rw { $v += $i }`) instead of gaining the deferred one. It needs a raw bind
+  for an rw scalar multi-parameter first — the shape `@`/`%`-sigil multi-params already have via
+  `Stmt::MarkBind`. Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`.
+
+**Row 10 is deferred to a prerequisite, with a measured reason.** The fix itself is three lines —
+compile a FatArrow's Index RHS in the container-producing mode (`scalar_bind_autovivify` +
+`bind_terminal`) that the `=:=` and `return-rw` arms already use, next to the existing `WrapVarRef`
+capture in `compiler/expr_binary.rs`. But **`array_slot_ref` grows the array at bind time where raku
+defers until the write**: `my @a = 1,2; my $r := @a[5]; @a.elems` is `6` in mutsu and `2` in raku.
+`key => @a[i]` is ordinary, common code, so routing it through the primitive would spread that eager
+growth to every such pair. The hash side already has the deferred token (`hash_slot_ref` returns a
+lazy `HashEntryRef` for a missing key); the array side needs the same. Recorded as
+`todo/tickets/array-slot-ref-vivifies-eagerly-where-raku-defers.md` — a prerequisite for row 10
+rather than part of it.
+
+**Row 11 moves from slice 3 to slice 4.** Slice 3 does the half it owns: a `List` receiver keeps the
+snapshot producer, so its pair value is a bare item with nothing to alias, which §2.2 says is the
+whole of the immutability story. What still swallows `$l.pairs[0].value = 3` is the *other* half —
+the env-scan compensator finds `$l`'s own list as a candidate container, rebuilds it, and reports
+success. The read-only guard is only reachable once that scan is deleted, which is slice 4's job.
+
+**§5's open questions, as measured by slice 3:**
+
+- **Q1 (eager vs lazy promotion)** — eager, as recommended, and here is the cost. Release build, best
+  of three on an otherwise-idle machine, a *read-only* pass over a 200 000-element array:
+  `.values` 0.07 s → 0.18 s, `.reverse` 0.07 s → 0.18 s, `.sort` 0.05 s → 0.18 s. The two producers
+  that are NOT routed are the controls and stay flat: `.pairs` 0.23 → 0.25 s, `.kv` 0.73 → 0.77 s.
+  The repository's own benchmarks do not move
+  (`bench-array`/`bench-hash`/`bench-string`/`bench-fib` unchanged, `bench-class` 0.15 → 0.14,
+  `bench-ctor` 0.28 → 0.26), so this is a per-call cost on large containers rather than a corpus-wide
+  one. Lazy promotion at reification stays the option if a bench CI series shows it.
+- **Q4 (is `resolve_array_entry` the only read chokepoint?)** — **no, and this is the ADR's most
+  important correction.** It is the only chokepoint for *element* reads, but bulk iteration
+  (`h.iter()`, `items.iter()`) and `ValueView::Pair(k, v)` destructuring walk the storage directly.
+  For a flat list of cells that does not matter — list consumers decontainerize — which is why
+  `.values`/`.reverse`/`.sort` ship. For a Pair carrying a cell it matters a great deal, which is why
+  `.pairs` does not (above).
+- **Q5 (does anything depend on the pair being a snapshot?)** — **yes, and Q5 was right to single it
+  out as the likeliest slice-3 regression.** The first one found was
+  `"...".trans(%matcher.pairs)`, which asks what the pair *value* is (`is_closure`, then the
+  Regex/Array/Range shape match); a `ContainerRef` answered "no" to all of them, silently turning a
+  closure replacement into a stringified one. Four more followed. The lesson generalizes: the hazard
+  is not *reading* a promoted value, it is **type-testing** one — and the pair wrapper is what
+  carries it to code that does.
+- A related pre-existing leak was fixed on the way in: `.WHAT` on a `ContainerRef` receiver answered
+  `Scalar` instead of the value's type. Harmless while cells were rare; with slice 3 handing them out
+  in bulk, `@a.pairs[0].value.WHAT` would have started answering `Scalar` where it answers `Int`
+  today. `^name` still answers `Scalar`, because that is what `.VAR.^name` needs and mutsu cannot yet
+  tell a cell reached *through* `.VAR` from a bare aliased value —
+  `todo/tickets/var-on-a-containerref-is-not-distinguishable.md`.
+
 ---
 
 ## 5. Open questions (the forks for the deciders)
@@ -422,4 +514,5 @@ are recorded here so a future reader can see the shape of the whole and not re-d
 
 ---
 
-*This ADR is Proposed. If the mechanism judgment changes later, supersede it rather than rewriting it.*
+*Slices 1-3 of this ADR are implemented; the decision stands. If the mechanism judgment changes
+later, supersede it rather than rewriting it.*

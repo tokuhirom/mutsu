@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 64;
+plan 70;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -127,7 +127,7 @@ plan 64;
     for @a.kv -> $i, $v is rw { @c.push(-> { $v = $v + 1 }) }
     @c[0]();
     @c[1]();
-    todo 'ADR-0045 slice 4: .kv must hand out element containers';
+    todo 'row 16 needs a raw multi-param bind -- todo/tickets/for-kv-multi-param-bind-decontainerizes.md';
     is-deeply @a, [11, 21], 'row 16: escaping closure over a `.kv` rw param writes through';
 }
 
@@ -268,7 +268,6 @@ plan 64;
 {
     my @a = 10, 20;
     for @a.reverse -> $v is rw { $v = $v + 1 }
-    todo 'ADR-0045 slice 4: .reverse writes to the mirror-image index';
     is-deeply @a, [11, 21], 'row 17: `.reverse` aliases the elements, not the mirror index';
 }
 
@@ -276,7 +275,6 @@ plan 64;
 {
     my @a = 20, 10;
     for @a.sort -> $v is rw { $v = $v + 1 }
-    todo 'ADR-0045 slice 4: .sort has no index mapping to reconstruct';
     is-deeply @a, [21, 11], 'row 24: `.sort` aliases the elements in sorted order';
 }
 
@@ -284,8 +282,45 @@ plan 64;
 {
     my $s = [1, 2];
     for @$s <-> $x { $x = $x + 1 }
-    todo 'ADR-0045 slice 4: `@$s` must hand out element containers';
+    todo 'row 39 deferred: a promoted `for @$s` topic breaks `nqp::` type tests -- todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md';
     is-deeply $s, [2, 3], 'row 39: `for @$s <-> $x` aliases the inner array elements';
+}
+
+# The deferred-closure form of each derived producer. These are the rows that
+# prove the alias is the ITEM the producer handed out, not an index the loop
+# reconstructed: `.reverse` and `.sort` change the order, so anything assuming
+# "item i came from index i" is wrong twice over for them.
+{
+    my $s = [1, 2];
+    my @c;
+    for @$s <-> $x { @c.push(-> { $x = $x + 10 }) }
+    @c[0]();
+    @c[1]();
+    todo 'row 39b deferred with row 39 -- todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md';
+    is-deeply $s, [11, 12], 'row 39b: an escaping closure over a `for @$s` alias writes through';
+}
+{
+    my @a = 10, 20;
+    my @c;
+    for @a.reverse -> $v is rw { @c.push(-> { $v = $v + 1 }) }
+    @c[0]();
+    @c[1]();
+    is-deeply @a, [11, 21], 'row 17b: an escaping closure over a `.reverse` alias writes through';
+}
+{
+    my @a = 20, 10;
+    my @c;
+    for @a.sort -> $v is rw { @c.push(-> { $v = $v + 1 }) }
+    @c[0]();
+    @c[1]();
+    is-deeply @a, [21, 11], 'row 24b: an escaping closure over a `.sort` alias writes through';
+}
+# `.reverse`/`.sort` must still READ as values everywhere else.
+{
+    my @a = 3, 1, 2;
+    is @a.sort.raku, '(1, 2, 3).Seq', '.sort still renders values';
+    is @a.reverse.raku, '(2, 1, 3).Seq', '.reverse still renders values';
+    is-deeply @a, [3, 1, 2], 'and neither reorders the source';
 }
 
 # ---------------------------------------------------------------------------
