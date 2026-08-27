@@ -187,11 +187,23 @@ pub(crate) fn angle_word_is_numeric_literal(content: &str) -> bool {
 /// Raku's `bare_rat_number` production is `signed-integer '/' integer`: the
 /// numerator may carry a sign but the denominator may not, so `<+1/2>` is a
 /// literal `Rat` while `<1/+3>` is a `RatStr`.
+///
+/// Rakudo's actual grammar rule is `token bare_rat_number { <?before
+/// <.[-−+0..9<>:boxd]>+? '/'> <nu=.signed-integer> '/' <de=integer> }` -- a
+/// lookahead that scans only the numerator (up to the first `/`) through a
+/// character class that does not include `_`. So an underscore anywhere in
+/// the numerator disqualifies the literal (bare `Rat`) reading and the word
+/// falls through to the generic allomorph (`RatStr`) path, while an
+/// underscore in the denominator does not, since the lookahead never looks
+/// past the slash: `<1_0/2>` is a `RatStr` but `<1/1_0>` stays a plain `Rat`.
 fn is_angle_rat_literal(word: &str) -> bool {
     let Some((nu, de)) = word.split_once('/') else {
         return false;
     };
     if de.starts_with('+') || de.starts_with('-') {
+        return false;
+    }
+    if nu.contains('_') {
         return false;
     }
     is_angle_integer_literal(nu) && is_angle_integer_literal(de)
@@ -257,6 +269,16 @@ fn parse_angle_numeric(word: &str) -> Option<Value> {
     }
 }
 
+/// Underscores inside a numeral must be "isolated" (Raku's `decint` /
+/// `hexint` / etc. productions are all `[\d+]+ % '_'`): not leading, not
+/// trailing, and never doubled. `rest` is the numeral text after any sign
+/// has been stripped (a radix prefix, if present, is still attached, but
+/// that's fine -- a digit/letter is never adjacent to itself in a way that
+/// would falsely trip these checks).
+fn has_isolated_underscores(rest: &str) -> bool {
+    !rest.starts_with('_') && !rest.ends_with('_') && !rest.contains("__")
+}
+
 fn parse_angle_bigint(s: &str) -> Option<num_bigint::BigInt> {
     let (sign_neg, rest) = if let Some(rest) = s.strip_prefix('+') {
         (false, rest)
@@ -265,7 +287,7 @@ fn parse_angle_bigint(s: &str) -> Option<num_bigint::BigInt> {
     } else {
         (false, s)
     };
-    if rest.is_empty() {
+    if rest.is_empty() || !has_isolated_underscores(rest) {
         return None;
     }
     let clean: String = rest.chars().filter(|c| *c != '_').collect();
@@ -303,7 +325,7 @@ fn parse_angle_int(s: &str) -> Option<i64> {
     } else {
         (1i64, s)
     };
-    if rest.is_empty() {
+    if rest.is_empty() || !has_isolated_underscores(rest) {
         return None;
     }
     let clean: String = rest.chars().filter(|c| *c != '_').collect();
