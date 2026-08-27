@@ -266,6 +266,15 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
             }
             let (r, _) = skip_pointy_return_type(r)?;
             Ok((r, (None, None, params, params_def, any_rw, false)))
+        } else if first_def.is_variadic() && !first_def.sigilless {
+            // A lone sigil'd slurpy (`-> *@all`) still binds a *list* of the
+            // iteration chunk, not the chunk element itself, so it needs the
+            // multi-parameter shape whose binder knows about slurpies. (A
+            // sigilless capture keeps the single-param shape: it binds the raw
+            // element today and nothing here changes that.)
+            let (r, _) = skip_pointy_return_type(r)?;
+            let any_rw = rw_block || first_def.traits.iter().any(|t| t == "rw");
+            Ok((r, (None, None, vec![first], vec![first_def], any_rw, false)))
         } else {
             let (r, _) = skip_pointy_return_type(r)?;
             Ok((
@@ -387,6 +396,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             || r2.starts_with('@')
             || r2.starts_with('%')
             || r2.starts_with('&')
+            || r2.starts_with('*')
             || r2.starts_with('\\')
         {
             type_constraint = Some(tc);
@@ -394,6 +404,39 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         } else {
             rest
         }
+    } else {
+        rest
+    };
+
+    // Slurpy marker: `*@rest`, `*%named`, `**@rest`, `+@rest`. A `for` header's
+    // pointy signature accepts the same slurpies as any other pointy block (see
+    // `pointy_param::parse_pointy_param`); without this the leading `*` made
+    // `var_name` fail and the whole `for` statement fell back to being parsed as
+    // a comma-separated expression list.
+    let mut slurpy = false;
+    let mut double_slurpy = false;
+    let mut onearg = false;
+    let rest = if rest.starts_with("**")
+        && rest.len() > 2
+        && matches!(rest.as_bytes()[2], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        double_slurpy = true;
+        &rest[2..]
+    } else if rest.starts_with('*')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
+    {
+        slurpy = true;
+        &rest[1..]
+    } else if rest.starts_with('+')
+        && rest.len() > 1
+        && matches!(rest.as_bytes()[1], b'@' | b'%' | b'$' | b'&')
+    {
+        // Single-argument-rule slurpy: `for @a -> +@foo { ... }`.
+        slurpy = true;
+        onearg = true;
+        &rest[1..]
     } else {
         rest
     };
@@ -496,9 +539,9 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             multi_invocant: true,
             required: false,
             named: false,
-            slurpy: false,
-            double_slurpy: false,
-            onearg: false,
+            slurpy,
+            double_slurpy,
+            onearg,
             sigilless: false,
             type_constraint,
             literal_value: None,

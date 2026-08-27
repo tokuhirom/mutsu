@@ -123,8 +123,15 @@ impl Interpreter {
             });
 
         let arity = spec.arity.max(1) as usize;
-        let writes_back_topic =
-            spec.param_idx.is_none() && spec.param_local.is_none() && spec.arity <= 1;
+        // The implicit-topic loop (`for @a { $_ = ... }`). A multi-param
+        // signature binds named parameters out of the chunk instead, so `$_`
+        // holds the chunk, not a source element — writing it back would
+        // overwrite the element with the chunk. (Reachable at `arity == 1` only
+        // since a trailing slurpy started forcing one element per iteration.)
+        let writes_back_topic = spec.param_idx.is_none()
+            && spec.param_local.is_none()
+            && spec.arity <= 1
+            && spec.multi_param_names.is_empty();
         let mut rw_writeback = spec.do_writeback;
         // A plain (non-rw, non-copy) named loop variable aliases the source
         // element in Raku: `for @m -> @row { @row.push(9) }` and
@@ -142,7 +149,7 @@ impl Interpreter {
         // plain writeback here while keeping the source tag.
         let writes_back_loop_var =
             (writes_back_topic || writes_back_named_param) && !spec.loop_var_wraps_element;
-        let chunked_items: Vec<Value> = if arity > 1 {
+        let chunked_items: Vec<Value> = if spec.chunks_items() {
             items
                 .chunks(arity)
                 .map(|chunk| Value::array(chunk.to_vec()))

@@ -104,7 +104,7 @@ impl Interpreter {
             if idx >= items.len() {
                 break; // No more elements
             }
-            let item = if arity > 1 {
+            let item = if spec.chunks_items() {
                 let end = (idx + arity).min(items.len());
                 Value::array(items[idx..end].to_vec())
             } else {
