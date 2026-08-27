@@ -575,7 +575,7 @@ pub(crate) fn native_method_1arg(
                         let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
                         Some(Ok(ch.unwrap_or(Value::NIL)))
                     }
-                    ValueView::Instance { class_name, .. } if class_name == "Match" => {
+                    ValueView::Instance { .. } if target.is_match_instance() => {
                         let list_v = target.match_list();
                         if let Some(ValueView::Array(positional, ..)) =
                             list_v.as_ref().map(Value::view)
@@ -878,7 +878,7 @@ pub(crate) fn native_method_1arg(
                 // Match.join joins the POSITIONAL CAPTURES (`.list`), not the
                 // matched string: `($s ~~ /(..)(..)/).join("-")` is "ab-cd",
                 // and a captureless match joins to "" (its .list is empty).
-                ValueView::Instance { class_name, .. } if class_name == "Match" => {
+                ValueView::Instance { .. } if target.is_match_instance() => {
                     let sep = arg.to_string_value();
                     let items: Vec<Value> = target
                         .match_list()

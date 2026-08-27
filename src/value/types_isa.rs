@@ -277,14 +277,13 @@ impl Value {
                         | ValueView::Complex(_, _)
                         | ValueView::Array(..)
                         | ValueView::Hash(..)
-                ) || matches!(
-                    self.view(),
+                ) || (
                     // Match.^mro is (Match Capture Cool Any Mu) — Cool is a real
                     // ancestor of Match. Capture itself is NOT (Capture.^mro is
                     // (Capture Any Mu), no Cool): `Capture.new.isa(Cool)` is
-                    // False in real raku, verified 2026-08-22.
-                    ValueView::Instance { class_name, .. }
-                        if class_name == "Match"
+                    // False in real raku, verified 2026-08-22. A grammar cursor
+                    // is a Match subclass, so it is Cool too.
+                    matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance()
                 )
             }
             "Capture" => {
@@ -292,8 +291,19 @@ impl Value {
                     || matches!(
                         self.view(),
                         ValueView::Instance { class_name, .. }
-                            if class_name == "Match" || class_name == "Capture"
+                            if class_name == "Capture"
                     )
+                    || (matches!(self.view(), ValueView::Instance { .. })
+                        && self.is_match_instance())
+            }
+            // A grammar's parse cursor reports the GRAMMAR's class name (raku:
+            // `Grammar` IS a `Match` subclass), so the `my_type == type_name`
+            // identity above misses it. The registry MRO catches a named
+            // grammar (its `Grammar` parent reaches `Match` through the builtin
+            // type catalog), but not an anonymous one (`my grammar { ... }`,
+            // registered as `<anon|N>`) — and the shape test is exact anyway.
+            "Match" => {
+                matches!(self.view(), ValueView::Instance { .. }) && self.is_match_instance()
             }
             "FatRat" => {
                 matches!(self.view(), ValueView::FatRat(_, _))

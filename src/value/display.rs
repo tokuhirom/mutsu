@@ -791,7 +791,7 @@ impl Value {
                 .get("WHICH")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            ValueView::Instance { class_name, .. } if class_name == "Match" => self
+            ValueView::Instance { .. } if self.is_match_instance() => self
                 .match_str_value()
                 .map(|v| v.to_string_value())
                 .unwrap_or_default(),

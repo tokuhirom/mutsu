@@ -98,17 +98,41 @@ impl Interpreter {
         }
     }
 
+    /// Splice the `Match` chain onto a grammar cursor's owner chain when the
+    /// grammar's own registration does not already reach it.
+    ///
+    /// A cursor IS a `Match` (raku: `Grammar` IS a `Match` subclass), and a
+    /// grammar declared as a statement gets there through its `Grammar` parent
+    /// and the builtin type catalog. An ANONYMOUS grammar (`my grammar { … }`)
+    /// does not: it is registered as a bare package with no parents at all, so
+    /// its chain stops at itself and the cursor would relate to no type
+    /// whatsoever. Rather than leave that hole, assert the invariant here — the
+    /// one place a cursor's dispatch chain is computed.
+    fn ensure_match_in_chain(&mut self, mut chain: Vec<TypeId>) -> Vec<TypeId> {
+        if chain.iter().any(|t| t.as_str() == "Match") {
+            return chain;
+        }
+        let tail = self.class_chain("Match");
+        chain.retain(|t| !tail.contains(t));
+        chain.extend(tail);
+        chain
+    }
+
     /// The full ordered owner chain (self first, `Mu` last except `Junction`, which
     /// raku itself skips `Any` for — see the catalog's `Junction` row) for `value`'s
     /// dispatch receiver.
     pub(crate) fn dispatch_mro(&mut self, value: &Value) -> Vec<TypeId> {
-        // Tag probe first: a lazy `Match` always decodes to `ValueView::Instance
-        // { class_name: "Match", .. }` (see `value/nanbox/peek.rs`), which the
-        // `Instance` arm below would answer with `self.class_chain("Match")`
-        // anyway — checking the tag avoids forcing full materialization
-        // (`force_attrs()`) on every dispatch just to learn the class is "Match".
+        // Tag probe first: a lazy `Match` decodes to a `ValueView::Instance`
+        // (see `value/nanbox/peek.rs`), which the `Instance` arm below would
+        // answer with the same `class_chain` anyway — checking the tag avoids
+        // forcing full materialization (`force_attrs()`) on every dispatch just
+        // to learn the receiver's class.
         if value.is_lazy_match_value() {
-            return self.class_chain("Match");
+            // A grammar cursor answers the grammar's own chain, which reaches
+            // `Match` through the `Grammar` builtin-catalog row.
+            let owner = value.match_dispatch_class();
+            let chain = self.class_chain(owner);
+            return self.ensure_match_in_chain(chain);
         }
         match value.view() {
             // Transient wrappers: classify the held value.
@@ -137,7 +161,17 @@ impl Interpreter {
             // decision 3). A type object's chain is identical to an instance of the
             // same class — only `definedness` differs, computed separately in
             // `receiver_dispatch_class`.
-            ValueView::Instance { class_name, .. } => self.class_chain(class_name.as_str()),
+            ValueView::Instance { class_name, .. } => {
+                let chain = self.class_chain(class_name.as_str());
+                // A grammar cursor reduced to an eager `Instance` (the
+                // post-parse `.ast`/`actions` rebuild) still has to relate to
+                // `Match`. See `ensure_match_in_chain`.
+                if value.is_match_instance() {
+                    self.ensure_match_in_chain(chain)
+                } else {
+                    chain
+                }
+            }
             ValueView::Package(name) => self.class_chain(name.as_str()),
             ValueView::ParametricRole { base_name, .. } => self.class_chain(base_name.as_str()),
 

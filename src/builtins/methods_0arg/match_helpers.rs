@@ -61,11 +61,9 @@ pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
 /// Produce `.raku` representation for a value, recursing into Match objects.
 fn value_raku_repr(val: &Value) -> String {
     match val.view() {
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Match" => match_raku_repr(&(attributes).as_map()),
+        ValueView::Instance { attributes, .. } if val.is_match_instance() => {
+            match_raku_repr(&(attributes).as_map())
+        }
         ValueView::Array(items, ..) => {
             let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
             format!("[{}]", items_raku.join(", "))

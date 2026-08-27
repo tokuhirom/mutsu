@@ -184,7 +184,7 @@ impl Value {
                     .unwrap_or(0.0)
             }
             // Match coerces to Numeric via its matched string
-            ValueView::Instance { class_name, .. } if class_name == "Match" => self
+            ValueView::Instance { .. } if self.is_match_instance() => self
                 .match_str_value()
                 .map(|v| v.to_string_value().trim().parse::<f64>().unwrap_or(0.0))
                 .unwrap_or(0.0),

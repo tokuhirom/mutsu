@@ -893,15 +893,25 @@ impl Interpreter {
                 Some(Vec::new())
             }
             Ok(v) => {
-                // A returned grammar cursor (typically `self`) reports an
+                // A returned grammar INVOCANT (typically `self`) reports an
                 // ABSOLUTE position in `pos`, so the parse resumes there — the
                 // idiomatic `{ …; self }` is a zero-width success at `pos`.
+                //
+                // The class-name test alone is not enough: a grammar's parse
+                // cursors report the grammar's own class too (raku: `Grammar`
+                // IS a `Match` subclass), so a method that returns a real
+                // sub-match (`return self.subparse(...)`, `$str ~~ /re/`) would
+                // be misread as a zero-width `self` and swallow its extent.
+                // A Match carries its own from/to and belongs to the extent
+                // branch below; only a non-Match instance of the grammar is the
+                // invocant.
                 if let ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } = v.view()
                     && class_name == pkg
+                    && !v.is_match_instance()
                 {
                     let end = attributes
                         .as_map()

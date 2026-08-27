@@ -1184,9 +1184,21 @@ impl Interpreter {
                 {
                     return Ok(Value::FALSE);
                 }
+                if self
+                    .class_mro(&class_name.resolve())
+                    .contains(&crate::symbol::Symbol::intern(&target_name))
+                {
+                    return Ok(Value::TRUE);
+                }
+                // A grammar's parse cursor is a `Match` by SHAPE, whatever its
+                // grammar's registration looks like (raku: `Grammar` IS a
+                // `Match` subclass, so a cursor reports the grammar's own class
+                // name). The registry MRO gets there for a grammar declared as
+                // a statement, but an anonymous one (`my grammar { … }`) is a
+                // bare package with no parents — `isa_check` answers
+                // `Match`/`Capture`/`Cool` from the value's shape.
                 return Ok(Value::truth(
-                    self.class_mro(&class_name.resolve())
-                        .contains(&crate::symbol::Symbol::intern(&target_name)),
+                    target.is_match_instance() && target.isa_check(&target_name),
                 ));
             }
             // `X::AdHoc.payload` returns the value passed to `die` (mutsu stores

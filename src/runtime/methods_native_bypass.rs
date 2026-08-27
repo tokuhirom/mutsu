@@ -434,18 +434,23 @@ impl Interpreter {
         // can apply to it directly (the Supply/IO::Handle/Proc::Async/Stash
         // arms and the Real/Numeric bridge arm can never hit a Match).
         if target.is_lazy_match_value() {
+            // A grammar cursor dispatches under the grammar's own class (raku:
+            // `Grammar` IS a `Match` subclass), so a `method` the grammar body
+            // declares takes precedence over the native `Match` row. The
+            // lookups below all MRO-walk, so `Match`'s own rows still apply.
+            let owner = target.match_dispatch_class();
             return skip_pseudo
                 || method == "squish"
                 || method == "elems"
                 || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
-                    && self.exception_render_needs_interpreter(target, "Match"))
-                || self.is_native_method("Match", method)
-                || self.has_user_method("Match", "Bridge")
+                    && self.exception_render_needs_interpreter(target, owner))
+                || self.is_native_method(owner, method)
+                || self.has_user_method(owner, "Bridge")
                 || (!is_pseudo_method
-                    && (self.has_user_method("Match", method)
-                        || self.has_public_accessor("Match", method)
-                        || (self.has_class_level_attr("Match", method)
-                            && !self.has_public_accessor("Match", method))));
+                    && (self.has_user_method(owner, method)
+                        || self.has_public_accessor(owner, method)
+                        || (self.has_class_level_attr(owner, method)
+                            && !self.has_public_accessor(owner, method))));
         }
         if skip_pseudo || self.native_fastpath_receiver_state_guard(target, method, args) {
             return true;

@@ -98,7 +98,7 @@ impl Value {
                     return false;
                 }
                 // A failed `.subparse` Match is falsy (but still defined).
-                if class_name == "Match" && self.match_is_failed() {
+                if self.is_match_instance() && self.match_is_failed() {
                     return false;
                 }
                 // Buf/Blob: truthy when non-empty

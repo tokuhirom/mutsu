@@ -327,7 +327,7 @@ impl Interpreter {
             }
             ValueView::Slip(items) => Value::int(items.len() as i64),
             ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
-            ValueView::Instance { class_name, .. } if class_name == "Match" => {
+            ValueView::Instance { .. } if value.is_match_instance() => {
                 let list_v = value.match_list();
                 if let Some(ValueView::Array(items, _)) = list_v.as_ref().map(Value::view) {
                     Value::int(items.len() as i64)

@@ -882,7 +882,7 @@ impl Interpreter {
             ..
         } = target.view()
         {
-            if class_name == "Match" {
+            if target.is_match_instance() {
                 let key = args[0].to_string_value();
                 let named_v = target.match_named();
                 let exists = matches!(
@@ -1050,7 +1050,7 @@ impl Interpreter {
             // `$match.AT-KEY("name")` — named-capture lookup, mirroring the
             // `$match<name>` postcircumfix. Routed here by hyper method calls such
             // as `@<chars>».<spaces>`, which dispatch `.AT-KEY` per element.
-            (ValueView::Instance { class_name, .. }, idx) if class_name == "Match" => {
+            (ValueView::Instance { .. }, idx) if target.is_match_instance() => {
                 let key = idx.to_string_value();
                 let named_v = target.match_named();
                 if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {

@@ -70,10 +70,8 @@ impl Interpreter {
                         // That re-enters user code, which this native fast path
                         // must not do, so defer to the interpreter slow path.
                         if sigil_of(key) == '%'
-                            && matches!(
-                                val.view(),
-                                ValueView::Instance { class_name, .. } if class_name != "Match"
-                            )
+                            && matches!(val.view(), ValueView::Instance { .. })
+                            && !val.is_match_instance()
                         {
                             return None;
                         }

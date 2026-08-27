@@ -99,7 +99,7 @@ pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
             attributes,
             ..
         } if class_name == "Instant" => attributes.as_map().get("value").and_then(to_float_value),
-        ValueView::Instance { class_name, .. } if class_name == "Match" => {
+        ValueView::Instance { .. } if val.is_match_instance() => {
             val.match_str_value().as_ref().and_then(to_float_value)
         }
         ValueView::Instance { attributes, .. } => attributes

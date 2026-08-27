@@ -229,7 +229,8 @@ impl Interpreter {
         }
         iterable = self.reify_or_consume_seq_target(iterable, "for")?;
         let raw_items = if spec.direct_smartmatch
-            && matches!(iterable.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
+            && matches!(iterable.view(), ValueView::Instance { .. })
+            && iterable.is_match_instance()
         {
             Vec::new()
         } else if let ValueView::LazyList(ll) = iterable.view() {

@@ -218,14 +218,10 @@ impl PartialEq for Value {
                     ..
                 },
             ) => a == b && *aa == *ba,
-            (ValueView::Instance { class_name, .. }, ValueView::Array(..))
-                if class_name == "Match" =>
-            {
+            (ValueView::Instance { .. }, ValueView::Array(..)) if self.is_match_instance() => {
                 match_equals_pair_array(self, other)
             }
-            (ValueView::Array(..), ValueView::Instance { class_name, .. })
-                if class_name == "Match" =>
-            {
+            (ValueView::Array(..), ValueView::Instance { .. }) if other.is_match_instance() => {
                 match_equals_pair_array(other, self)
             }
             (

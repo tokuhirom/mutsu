@@ -673,6 +673,15 @@ impl Interpreter {
                 return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             };
             let gtarget = captures.target_or_new(&text);
+            // raku: a `Grammar` IS a `Match` subclass, so every cursor a parse
+            // mints — the top-level result and every nested capture, including
+            // ones matched by a token inherited from a parent grammar — reports
+            // the *invoked* grammar's own type, not `Match`. The class is a
+            // per-parse-run property, which is exactly what the shared
+            // `MatchTarget` already is: stamping it here retags the whole
+            // cursor tree at once (`set_cursor_class` writes a shared cell), so
+            // no class has to be threaded through the regex engine.
+            gtarget.set_cursor_class(crate::symbol::Symbol::intern(package_name));
             self.reduce_regex_captures_made(&mut captures, Some(&gtarget));
             // A subparse must begin at the requested offset (0, or `:pos(N)`);
             // `:c(N)` allows any start >= N, so it is exempt from the check.

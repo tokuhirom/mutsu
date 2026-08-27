@@ -196,7 +196,7 @@ fn raku_raw_repr(v: &Value) -> Option<String> {
 pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
     match v.view() {
         ValueView::Instance { class_name, .. } => {
-            !(class_name == "Match" || class_name == "ObjAt" || class_name == "ValueObjAt")
+            !(v.is_match_instance() || class_name == "ObjAt" || class_name == "ValueObjAt")
         }
         ValueView::CustomType(_) | ValueView::CustomTypeInstance(_) => true,
         _ => false,
@@ -1053,11 +1053,9 @@ pub fn raku_value(v: &Value) -> String {
         // `Match.new(...)` form, the same as a direct `$/.raku`. Without this,
         // `$/.list.raku` / `$/.caps.raku` / an array holding a Match stringified
         // the Match to its matched text instead.
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Match" => super::match_helpers::match_raku_repr(&attributes.as_map()),
+        ValueView::Instance { attributes, .. } if v.is_match_instance() => {
+            super::match_helpers::match_raku_repr(&attributes.as_map())
+        }
         ValueView::Instance {
             class_name,
             attributes,

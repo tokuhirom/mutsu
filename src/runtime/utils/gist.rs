@@ -263,11 +263,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
         // captures, matching `Match.gist`. The generic Instance fall-through
         // below would otherwise stringify it to the bare matched text.
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
+        ValueView::Instance { attributes, .. } if value.is_match_instance() => {
+            match_gist(&(attributes).as_map(), 0)
+        }
         // An `is Str` subclass instance gists as its string payload
         // (`Foo.new(:value("hi")).gist` → `hi`), not the generic `Class.new` —
         // `Str.gist` is the string itself.
@@ -378,11 +376,7 @@ pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
     let mut entries: Vec<(i64, String, Value)> = Vec::new();
     let push_capture = |label: &str, value: &Value, entries: &mut Vec<(i64, String, Value)>| {
         match value.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Match" => {
+            ValueView::Instance { attributes, .. } if value.is_match_instance() => {
                 entries.push((
                     match_from(&(attributes).as_map()),
                     label.to_string(),
@@ -392,12 +386,8 @@ pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
             // Quantified capture: a list of Match values under one index.
             ValueView::Array(items, _) => {
                 for item in items.iter() {
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = item.view()
-                        && class_name == "Match"
+                    if let ValueView::Instance { attributes, .. } = item.view()
+                        && item.is_match_instance()
                     {
                         entries.push((
                             match_from(&(attributes).as_map()),
@@ -410,12 +400,8 @@ pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
             ValueView::Seq(_) | ValueView::Slip(_) => {
                 let items = crate::runtime::utils::value_to_list(value);
                 for item in items.iter() {
-                    if let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = item.view()
-                        && class_name == "Match"
+                    if let ValueView::Instance { attributes, .. } = item.view()
+                        && item.is_match_instance()
                     {
                         entries.push((
                             match_from(&(attributes).as_map()),
