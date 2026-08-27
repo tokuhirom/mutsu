@@ -469,6 +469,46 @@ impl Interpreter {
         // shared backing node (container identity §3), so binding the element
         // value as-is would let `@row[0] = v` reach the source element.
         let param_is_copy = spec.is_rw && !spec.do_writeback;
+        // ADR-0045 slice 1: a writable aliasing parameter (`is rw`, `<->`,
+        // sigilless `\v`) over a DIRECT, real, mutable `Array` source binds the
+        // element's own `ContainerRef` instead of a value clone, and the
+        // per-iteration writeback for that shape is retired. The alias then has
+        // the lifetime of the binding, not of the body — a closure or `start`
+        // block that outlives the iteration still writes through, a read
+        // through the alias sees a later write to the element, and a direct
+        // `@a[i] = v` in the body is no longer reverted by an end-of-iteration
+        // whole-container rebuild. It also removes that rebuild's O(n^2)
+        // (§1.5): promotion is O(1) and idempotent (`array_slot_ref` reuses an
+        // existing cell), where the writeback cloned the whole `ArrayData` per
+        // iteration.
+        //
+        // Deliberately narrow — the rest is later slices of the same ADR:
+        //   * hash sources stay on `write_back_hash_value_item` (slice 2);
+        //   * the implicit topic and the plain named param stay on
+        //     `write_back_for_topic_item` (slice 3);
+        //   * derived producers (`.values`/`.kv`/`.pairs`/`.reverse`, and the
+        //     `$`-tagged `for @$s` shape) keep the index-reconstruction
+        //     writeback until their producers hand out element containers
+        //     (slice 4), so they are excluded here by the `*_mode` flags, by
+        //     `container_reversed`, and by the `@`-sigil requirement;
+        //   * a multi-parameter loop binds through the bind-prefix
+        //     `Stmt::Assign`s, not this native bind site, so it is excluded.
+        let alias_array_elements = spec.do_writeback
+            && arity == 1
+            && param_name.is_some()
+            && spec.multi_param_names.is_empty()
+            && !spec.kv_mode
+            && !spec.values_mode
+            && !spec.loop_var_wraps_element
+            && !container_reversed
+            && container_binding
+                .as_deref()
+                .is_some_and(|name| name.starts_with('@') && self.for_source_is_aliasable(name));
+        // The base decision; each iteration retires it for itself only when the
+        // element really was promoted (see the bind site below). `spec.do_writeback`
+        // itself is left alone: ADR-0040's bind-side itemization carve-out keys
+        // off it, and ADR-0045 §5 Q3 keeps that carve-out unchanged here.
+        let rw_writeback_base = rw_writeback;
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
             let item = if param_is_copy {
                 item.detach_shared_container()
@@ -522,6 +562,30 @@ impl Interpreter {
                     }
                 }
             }
+            // ADR-0045 slice 1: promote this element to its own container and
+            // bind THAT, so the parameter is a real alias for the lifetime of
+            // the binding. The source is re-resolved every iteration on purpose
+            // — a body that reassigns the source wholesale (`@a = 7, 8`) must
+            // have the remaining iterations alias the array it left behind, not
+            // the one the loop started with.
+            //
+            // A `Proxy` element is left alone (ADR-0045 §5 Q6): it mediates its
+            // own STORE, and a cell bound *around* one would take a plain write
+            // instead of calling it (`t/proxy-list-transparency.t`).
+            let promoted =
+                if alias_array_elements && !matches!(item.view(), ValueView::Proxy { .. }) {
+                    container_binding
+                        .as_deref()
+                        .and_then(|source| self.for_element_alias(source, idx))
+                } else {
+                    None
+                };
+            // The writeback is retired for exactly the iterations whose element
+            // was promoted. An iteration that fell back to a plain value bind —
+            // a `Proxy` element, or a body that shrank the source out from under
+            // the index — keeps the writeback that bind depends on.
+            rw_writeback = rw_writeback_base && promoted.is_none();
+            let item = promoted.unwrap_or(item);
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
             // `$x`). For a `.values` loop over a mutable QuantHash the topic is a

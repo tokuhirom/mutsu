@@ -2,8 +2,24 @@
 
 ## Status
 
-**Designed. The mechanism decision now lives in
-[ADR-0045](../../docs/adr/0045-for-loop-parameters-bind-the-element-container.md)** (2026-08-20):
+**Partially fixed (2026-08-27) — ADR-0045 slices 0 and 1 landed.** The headline symptom below is
+gone: `for @list -> $v is rw { @callbacks.push(-> { $v = $v + 1 }) }` now binds `$v` to the element's
+own `ContainerRef` (`array_slot_ref`) at the bind site, so a closure called after the loop writes
+through and the repro prints raku's `[11 21]`.
+
+Slice 1 turned these ADR-0045 §1.3 rows green: **01, 02, 03, 04, 07, 11, 12, 13, 14, 20, 27, 36, 38,
+41, 43** — the whole deferred-closure class for a direct array source, the stale-read class for it,
+and the class-3 clobber (including row 38, the body rebinding `@a` wholesale). §1.5's O(n²) mutating
+`<->` loop is linear now (40 000 elements: 2.13 s → 0.09 s).
+
+**Still open**, and why this file stays here: row 08 (hash sources, slice 2); rows 21, 22, 42, 44 (the
+implicit topic and the plain named param, slice 3); rows 16, 17, 24, 39 (derived producers —
+`.kv`/`.reverse`/`.sort`/`@$s`, slice 4); rows 19, 28, 30 (bind-time enforcement, slice 5). Each is
+`todo`-marked in `t/for-loop-element-alias.t` with its owning slice named. Retire this file to
+`news/2026-08/` when ADR-0045's slice 6 lands, per the note below.
+
+The mechanism decision lives in
+[ADR-0045](../../docs/adr/0045-for-loop-parameters-bind-the-element-container.md) (2026-08-20):
 bind the loop parameter to the element's `ContainerRef` (`array_slot_ref` / `hash_slot_ref`) at the
 bind site and retire the per-iteration writeback family. Read ADR-0045 before starting — it carries a
 27-row divergence matrix re-measured on `main` (33f75a62f), the invariant table that bounds it, the
