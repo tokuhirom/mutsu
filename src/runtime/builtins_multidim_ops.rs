@@ -6,6 +6,45 @@ use super::builtins_multidim::{
     multidim_delete, multidim_index, multidim_index_with_hole,
 };
 
+/// The empty-list `()` a missing multidim leaf reports for a plain
+/// (non-negated) value adverb (`:v`/`:k`/`:p`/`:kv`) -- matching raku, which
+/// answers `()` rather than `Nil` for a hole under these adverbs.
+fn multidim_empty_list() -> Value {
+    Value::array_with_kind(
+        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
+        ArrayKind::List,
+    )
+}
+
+/// What a plain (non-negated) `:v`/`:k`/`:p` adverb reports for a missing
+/// leaf, which differs by WHICH kind of "missing" it is:
+///
+/// - An in-bounds Array hole (`ArrayData::hole_at`) reports `raw_value`
+///   itself as the non-`Nil` hole marker (e.g. `Package("Any")`), never
+///   `Value::NIL` -- this is the ticket's own repro (`my @a[2;2]; @a[0;1]`)
+///   and reports the empty list `()`, matching plain `raku`.
+/// - Everything else that fails to resolve -- a missing Hash key, OR an
+///   out-of-range/non-numeric Array coordinate -- reports the literal
+///   `Value::NIL` (no hole marker of its own to carry), and answers `Nil`,
+///   not `()`. This is NOT what plain (non-PREVIEW) `raku` does for an
+///   out-of-range Array coordinate, but it IS what the vendored roast tests
+///   pin for both cases under `v6.e.PREVIEW`
+///   (`roast/S32-hash/multislice-6e.t`'s "gives Nil" assertions on a missing
+///   key, and `roast/S32-array/multislice-6e.t`'s identical assertions on an
+///   out-of-range index into a plain nested/autoviv array) -- roast is the
+///   authoritative spec (see CLAUDE.md), so mutsu (which does not currently
+///   branch multidim-adverb behavior on the language-version pragma) matches
+///   the roast-pinned answer.
+///
+/// `:kv` does not use this -- it is always `()` for every kind of miss.
+fn multidim_missing_result(raw_value: &Value) -> Value {
+    if raw_value.is_nil() {
+        Value::NIL
+    } else {
+        multidim_empty_list()
+    }
+}
+
 impl Interpreter {
     /// Handle dynamic adverbs on multidim index: @array[$a;$b;$c]:$delete
     /// Args: [inner_expr_result, adverb_name, adverb_value]
@@ -64,8 +103,26 @@ impl Interpreter {
         // Array hole per `ArrayData::hole_at`.
         let exists = !value.is_nil() && !is_hole;
 
+        // A missing leaf (`!exists`) reports differently depending on WHICH
+        // kind of "missing" it is, and on the adverb -- see
+        // `multidim_missing_result`'s doc comment for the full rule and its
+        // `raku`/roast evidence.
+        //
+        // The negated forms (`:!v`/`:!k`/`:!p`/`:!kv`) are a genuine Rakudo
+        // multidim quirk, also verified directly: unlike the single-dimension
+        // form (where each negated adverb keeps its own key/pair/kv shape and
+        // only suppresses the *suppression*, e.g. `:!k` on a hole still
+        // reports the key), real Rakudo's multidim `[;]` postcircumfix
+        // collapses ALL FOUR negated adverbs to plain value access --
+        // `@a[i;j]:!k` and `@a[i;j]:!p` both answer the same raw value
+        // `:!v` would, never the key or a pair, for both a filled slot and a
+        // hole.
         match adverb.as_str() {
-            "k" => Ok(if exists { key } else { Value::NIL }),
+            "k" => Ok(if exists {
+                key
+            } else {
+                multidim_missing_result(&value)
+            }),
             "kv" => {
                 if exists {
                     let v = array_to_list(value);
@@ -74,10 +131,7 @@ impl Interpreter {
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
-                        ArrayKind::List,
-                    ))
+                    Ok(multidim_empty_list())
                 }
             }
             "p" => {
@@ -85,46 +139,17 @@ impl Interpreter {
                     let v = array_to_list(value);
                     Ok(Value::value_pair(key, v))
                 } else {
-                    Ok(Value::NIL)
+                    Ok(multidim_missing_result(&value))
                 }
             }
             "v" => {
                 if exists {
                     Ok(array_to_list(value))
                 } else {
-                    Ok(Value::NIL)
+                    Ok(multidim_missing_result(&value))
                 }
             }
-            "not-k" => Ok(if !exists { key } else { Value::NIL }),
-            "not-kv" => {
-                if !exists {
-                    let v = array_to_list(value);
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![key, v])),
-                        ArrayKind::List,
-                    ))
-                } else {
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
-                        ArrayKind::List,
-                    ))
-                }
-            }
-            "not-p" => {
-                if !exists {
-                    let v = array_to_list(value);
-                    Ok(Value::value_pair(key, v))
-                } else {
-                    Ok(Value::NIL)
-                }
-            }
-            "not-v" => {
-                if !exists {
-                    Ok(array_to_list(value))
-                } else {
-                    Ok(Value::NIL)
-                }
-            }
+            "not-k" | "not-kv" | "not-p" | "not-v" => Ok(array_to_list(value)),
             _ => Ok(value),
         }
     }
@@ -168,26 +193,14 @@ impl Interpreter {
                         out.push(array_to_list(value));
                     }
                 }
-                "not-k" => {
-                    if !exists {
-                        out.push(key);
-                    }
-                }
-                "not-kv" => {
-                    if !exists {
-                        out.push(key);
-                        out.push(array_to_list(value));
-                    }
-                }
-                "not-p" => {
-                    if !exists {
-                        out.push(Value::value_pair(key, array_to_list(value)));
-                    }
-                }
-                "not-v" => {
-                    if !exists {
-                        out.push(array_to_list(value));
-                    }
+                // Self-consistency with `builtin_multidim_subscript_adverb`'s
+                // single-coordinate form above (raku itself has no oracle for
+                // this Whatever/list-index combination -- it throws X::NYI --
+                // so the two mutsu code paths must at least agree with each
+                // other): a negated adverb keeps every leaf, filled or hole,
+                // reported as the raw value, never the key or a pair.
+                "not-k" | "not-kv" | "not-p" | "not-v" => {
+                    out.push(array_to_list(value));
                 }
                 _ => out.push(value),
             }
@@ -780,6 +793,12 @@ impl Interpreter {
                             out.push(array_to_list(value));
                         }
                     }
+                    // Self-consistency with the plain (non-dyn) handlers above:
+                    // a negated adverb keeps every leaf, filled or hole,
+                    // reported as the raw value.
+                    "not-k" | "not-kv" | "not-p" | "not-v" => {
+                        out.push(array_to_list(value));
+                    }
                     _ => out.push(value),
                 }
             }
@@ -806,8 +825,17 @@ impl Interpreter {
 
         let key = make_key_tuple(&indices);
 
+        // Same shape/hole rules as `builtin_multidim_subscript_adverb` above
+        // (see `multidim_missing_result`'s doc comment): a missing leaf
+        // reports `()` for an in-bounds Array hole, `Nil` for everything
+        // else that fails to resolve, `:kv` is always `()`, and every
+        // negated adverb collapses to plain (raw) value access.
         match adverb.as_str() {
-            "k" => Ok(if exists { key } else { Value::NIL }),
+            "k" => Ok(if exists {
+                key
+            } else {
+                multidim_missing_result(&value)
+            }),
             "kv" => {
                 if exists {
                     let v = array_to_list(value);
@@ -816,10 +844,7 @@ impl Interpreter {
                         ArrayKind::List,
                     ))
                 } else {
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(vec![])),
-                        ArrayKind::List,
-                    ))
+                    Ok(multidim_empty_list())
                 }
             }
             "p" => {
@@ -827,16 +852,17 @@ impl Interpreter {
                     let v = array_to_list(value);
                     Ok(Value::value_pair(key, v))
                 } else {
-                    Ok(Value::NIL)
+                    Ok(multidim_missing_result(&value))
                 }
             }
             "v" => {
                 if exists {
                     Ok(array_to_list(value))
                 } else {
-                    Ok(Value::NIL)
+                    Ok(multidim_missing_result(&value))
                 }
             }
+            "not-k" | "not-kv" | "not-p" | "not-v" => Ok(array_to_list(value)),
             _ => Ok(value),
         }
     }
