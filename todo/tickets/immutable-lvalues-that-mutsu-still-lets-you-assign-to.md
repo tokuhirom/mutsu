@@ -82,6 +82,32 @@ property of the *value*, not a whitelist of view kinds.
 The element cases (`(1,2,3)[0] = 9`, `Range`, `Seq`) need the subscript store
 path to know its target is an immutable container.
 
+## Status update (2026-08-27): ADR-0040 slices 1-2 landed and did NOT unblock these rows
+
+The 2026-08-26 note above says the `for` topic rows are "blocked on ADR-0040's store-side
+element itemization". ADR-0040 slices 1 and 2 have both landed (mutation sites and
+construction sites — a real `Array`/`Hash` element that holds an aggregate is now itemized),
+and every row was re-measured against it. **None moved.** `(1,2,3)[0] = 9`,
+`(1..3)[0] = 9`, the `Seq` element, `map`/`grep` topics and `for %h` all still succeed
+silently in mutsu, and `for @a[0..1] { $_ = 5 }` still fails to write through.
+
+The re-measurement corrects the blocker attribution, which is the useful outcome:
+**itemization is not container-ness.** ADR-0040 makes an element render as one item
+(`ArrayKind::ItemArray` / a `Scalar` wrapper); it does not make the element a *cell*, and
+`item.is_container_ref()` — the runtime test the note proposes reusing on the eager `for`
+path — is still False for an ordinary itemized element. Worse, itemization is orthogonal to
+what these rows need: a plain `Int` element of a real `Array` is writable and is *not*
+itemized (§2's negatives), while a `List` literal's `List` element is not writable and, in a
+`for` over a real array, *is*. So the flag cannot be used as the writability oracle even in
+principle.
+
+The property these rows actually need is ADR-0036's surface — promoting the element that is
+handed out to a real `ContainerRef` cell — plus, for `map`/`grep`/pointy-block topics, the
+missing readonly marking on the closure-call binding path (which ADR-0040 never touched and
+which is independent of both). Re-point the blocker at
+[ADR-0036](../../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md) rather
+than at ADR-0040.
+
 ## Messages that are close but not exact
 
 These already throw the right class; only the rendered value differs:

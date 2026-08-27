@@ -284,6 +284,14 @@ impl Interpreter {
     }
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
+        // ADR-0040 slices 1-2: a `Seq` stored as a real `Array`/`Hash` element
+        // is itemized as `Scalar(Seq)`. `is-deeply` compares with `eqv`, which
+        // decontainerizes, so this Seq-to-List normalization has to see through
+        // the wrapper too — otherwise one side becomes a `List` and the other
+        // stays a `Scalar(Seq)` and they compare unequal even though
+        // `Seq eqv $(Seq)` is True. (`roast/S02-types/pair.t`'s `Pair.invert`
+        // subtest stages its expectations in `my @tests = [ …, ….Seq ], …`.)
+        let v = v.descalarize();
         match v.view() {
             // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines` —
             // ADR-0034 folds the latter into the same `SeqSource`) must be

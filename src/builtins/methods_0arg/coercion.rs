@@ -336,16 +336,27 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
-            ValueView::Array(items, _) => {
+            ValueView::Array(items, kind) => {
                 // `.List` materializes array holes as literal `Nil` — even when
                 // the array has an `is default(...)` value (Rakudo semantics:
                 // only `.Slip` substitutes the default).
+                //
+                // ADR-0040 slice 2: `.List` on a REAL `Array` hands out each
+                // element's *value*, not its container, so it decontainerizes
+                // (measured: `@c.List[0].VAR.^name` is `Array` while
+                // `@c.list[0].VAR.^name` is `Scalar`, and `@c.List[0].raku` is
+                // bare `[1, 2]`). `.List` on a `List` is identity, so a
+                // hand-itemized element of a List literal survives
+                // (`($[1,2],).List[0].raku` is `$[1, 2]`).
+                let deitemize = matches!(kind, crate::value::ArrayKind::Array);
                 let vec: Vec<Value> = items
                     .iter()
                     .enumerate()
                     .map(|(i, v)| {
                         if items.hole_at(i) {
                             Value::NIL
+                        } else if deitemize {
+                            v.clone().deitemize_element()
                         } else {
                             v.clone()
                         }
@@ -480,6 +491,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Array(items, kind) if kind.is_itemized() => Some(Ok(
                 Value::array_with_kind(items.clone(), kind.decontainerize()),
             )),
+            // ADR-0040: a Hash carries its itemization as a flag on the value
+            // rather than as a `Scalar` wrapper, so `$%h<>` has to clear that
+            // flag the same way the `ArrayKind` arm above clears the array's
+            // (`my %h; ($%h)<>.raku` is `{}`, not `${}`).
+            ValueView::Hash(_) if target.hash_is_itemized() => {
+                Some(Ok(target.clone().with_hash_itemized(false)))
+            }
             ValueView::Scalar(inner) => Some(Ok((*inner).clone())),
             ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {
                 Some(Ok(target.clone()))
@@ -505,9 +523,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "list" | "Array" => {
             // `.Array` yields a real `@`-sigiled Array; `.list` yields a List.
             let want_array = method == "Array";
+            // ADR-0040 slice 2: `.Array` builds a REAL Array, whose elements
+            // are `Scalar` containers, so aggregates itemize on the way in
+            // (`((1,2),(3,4)).Array[0].raku` is `$(1, 2)`). `.list` builds a
+            // List, whose elements are not containers, so it must not.
             let wrap = |items: Vec<Value>| {
                 if want_array {
-                    Value::real_array(items)
+                    crate::runtime::utils::itemize_real_array_elements(Value::real_array(items))
                 } else {
                     Value::array(items)
                 }
@@ -588,8 +610,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // → type-default). Non-shaped arrays keep the fast path.
                 ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
                 ValueView::Array(items, kind) => {
-                    if method == "Array" && !kind.is_real_array() {
-                        Some(Ok(Value::real_array(items.to_vec())))
+                    // ADR-0040 slice 2: `.Array` builds a NEW real Array, which
+                    // is not itself an element of anything -- so an itemized
+                    // receiver's own itemization is dropped
+                    // (`@a[0].Array.raku` is `[1, 2]`, not `$[1, 2]`), exactly
+                    // as `.list` already drops it below. `wrap` re-itemizes the
+                    // new array's own ELEMENTS.
+                    if method == "Array" && (!kind.is_real_array() || kind.is_itemized()) {
+                        Some(Ok(wrap(items.to_vec())))
                     } else if method == "list" && kind.is_itemized() {
                         // .list on an itemized array/list strips the itemization,
                         // returning the contents as a plain List (de-itemized).
@@ -612,18 +640,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // change this back to seq_consume for strict Raku semantics where
                     // .List on an uncached Seq consumes it.
                     items.mark_cache_requested();
-                    if method == "Array" {
-                        Some(Ok(Value::real_array(items.to_vec())))
-                    } else {
-                        Some(Ok(Value::array(items.to_vec())))
-                    }
+                    Some(Ok(wrap(items.to_vec())))
                 }
                 ValueView::Slip(items) if method == "list" || method == "Array" => {
-                    if method == "Array" {
-                        Some(Ok(Value::real_array(items.to_vec())))
-                    } else {
-                        Some(Ok(Value::array(items.to_vec())))
-                    }
+                    Some(Ok(wrap(items.to_vec())))
                 }
                 // A genuinely-lazy list stays lazy through `.Array`/`.list`:
                 // tag it with the target context so `.WHAT` reports `Array`/`List`

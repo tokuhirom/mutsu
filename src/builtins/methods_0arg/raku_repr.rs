@@ -477,6 +477,18 @@ fn raku_value_as_element(v: &Value) -> String {
             raku_value(&v.clone().with_hash_itemized(false))
         }
         ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => raku_value(inner),
+        // A `:=`-bound element holds a `ContainerRef` cell (ADR-0036's
+        // element-cell promotion). Its contents are itemized like any other
+        // stored element (ADR-0040 slices 1-2), so the de-itemization above
+        // has to see THROUGH the cell — otherwise a bound element and its
+        // un-bound sibling in the same array disagree:
+        // `my @a = {p=>1},{q=>2}; my $w := @a[0]; @a.raku` would render
+        // `[${:p(1)}, {:q(2)}]` where raku renders `[{:p(1)}, {:q(2)}]`.
+        // Pinned by `t/container-cell-raku-render.t`.
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            raku_value_as_element(&inner)
+        }
         _ => raku_value(v),
     }
 }

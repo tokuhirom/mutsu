@@ -433,6 +433,15 @@ impl<'a> Parser<'a> {
             data.declared_type = Some("Map".to_string());
             Value::hash_with_data(crate::gc::Gc::new(data))
         } else {
+            // ADR-0040 slice 2: a decoded JSON object is a real `Hash`, so its
+            // aggregate values are `Scalar` containers like any other stored
+            // hash value -- `from-json('{"a":[1,2]}')<a>.raku` is `$[1, 2]`.
+            // (The `:immutable` form is a `Map`, whose values are not
+            // containers, so it is deliberately left alone.)
+            let map: HashMap<String, Value> = map
+                .into_iter()
+                .map(|(k, v)| (k, v.itemize_for_element_store()))
+                .collect();
             Value::hash_with_data(Value::hash_arc(map))
         }
     }
@@ -446,7 +455,10 @@ impl<'a> Parser<'a> {
                 crate::value::ArrayKind::List,
             )
         } else {
-            Value::real_array(items)
+            // ADR-0040 slice 2: see `finish_object` -- a decoded JSON array is
+            // a real `Array`, so its aggregate elements itemize. (`:immutable`
+            // decodes to a `List`, whose elements are not containers.)
+            crate::runtime::utils::itemize_real_array_elements(Value::real_array(items))
         }
     }
 

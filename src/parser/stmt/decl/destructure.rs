@@ -594,7 +594,7 @@ fn parse_destructuring_with_rhs(
             }
         };
         let effective_where = dvar.where_constraint.clone().map(Box::new);
-        stmts.push(Stmt::VarDecl {
+        let decl = Stmt::VarDecl {
             name: dvar.name.clone(),
             expr,
             type_constraint: effective_tc,
@@ -605,7 +605,22 @@ fn parse_destructuring_with_rhs(
             export_tags: Vec::new(),
             custom_traits: Vec::new(),
             where_constraint: effective_where,
-        });
+        };
+        // In BINDING mode an `@`/`%` target BINDS the staged element rather
+        // than assigning it — `my (@a, @b) := (@x, @y)` gives `@a` the element
+        // itself. The staging temp is a real `Array`, so ADR-0040 slice 2
+        // itemizes its elements; an assign would then wrap
+        // (`my @a = $[1, 2]` is `[[1, 2],]`, which is what `=`-mode SHOULD do
+        // and `:=`-mode must not), while a bind decontainerizes the element
+        // exactly as `my @a := @c[0]` already does. `MarkBind` is the same
+        // marker the plain `my @a := expr` declaration uses.
+        // Pinned by `t/list-bind-trailing-array.t`.
+        let decl = if is_binding && dvar.name.starts_with(['@', '%']) {
+            Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl])
+        } else {
+            decl
+        };
+        stmts.push(decl);
         if dvar.sigilless {
             stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
         }

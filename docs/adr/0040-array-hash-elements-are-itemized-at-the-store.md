@@ -1,6 +1,6 @@
 # ADR-0040: Array and Hash elements are itemized at the *store*, not compensated at the read
 
-- **Status**: Accepted (Slices 0-1 implemented; see "Implementation status" below)
+- **Status**: Accepted (Slices 0-2 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 / §7 (the
@@ -477,11 +477,13 @@ approximates each separately. Recorded here so a future reader can see the whole
 
 ---
 
-## 8. Implementation status (2026-08-21)
+## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27)
 
-Slices 0-1 landed in full, including every mutation-site shape named in §2/§4's Slice 1
+Slices 0-2 landed in full. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
 description (element assign, autovivification — both single- and nested-level — and
-`push`/`unshift`/`append`/`prepend`/`splice` for a real `Array` or `Hash`).
+`push`/`unshift`/`append`/`prepend`/`splice` for a real `Array` or `Hash`). Slice 2 covered the
+construction sites, turning §1.3's rows 01-18 and 23 green; **only row 24 (`.VAR` reflection,
+Slice 3) is still `todo`-marked** in the acceptance oracle.
 
 - **Slice 0** (acceptance oracle): `t/element-store-itemization.t` — the full §1.3 divergence
   matrix (rows 01-25, dual-oracled against `raku`), the §1.6 agreeing-source rows, the §2.3 arity
@@ -589,6 +591,167 @@ Scalar-wrapped receiver). `.roll`/`.pick` also gained a dedicated `Hash` arm for
 the one `.pick` already had), rather than relying on the fallback at all for the common case.
 Pinned in `t/element-store-itemization.t`'s new CI-regression section (itemized Hash/Array elements
 via `.pick`/`.roll`/`.head`/`.tail`).
+
+### Slice 2 (2026-08-27) — the construction sites
+
+Two new primitives, both siblings of the ones slice 1 introduced:
+
+- **`Value::needs_element_itemization`** (`src/value/value_methods_a.rs`) — "would
+  `itemize_for_element_store` actually change this value?". Every construction-site hook scans a
+  whole element vector with it *before* touching anything, which is what keeps §5.2's cost at
+  zero on the common path (see "Perf" below). It excludes `Shaped`/`Lazy` arrays, on which
+  `ArrayKind::itemize()` is already a no-op.
+- **`Value::deitemize_element`** (same file) — the inverse, for the readers that hand out an
+  element's *value* rather than its container.
+
+And one container-level helper, **`itemize_real_array_elements`**
+(`src/runtime/utils/coerce_containers.rs`): itemizes every element of a value that is a *real*
+`Array` (`ArrayKind::{Array, Shaped, ItemArray}`), and is a no-op for a `List`/`Seq`/`Lazy`
+result — which is exactly what keeps §1.6's agreeing rows agreeing and `((1,2),(3,4))[0]` a bare
+`(1, 2)`. It scans first and only then `Gc::make_mut`s.
+
+Hook sites:
+
+- **Array side.** `coerce_to_array` was split into a private `coerce_to_array_inner` plus a
+  public wrapper that applies the helper to its result — one hook covering every arm (the
+  `Array`, `Seq`/`Slip`, `Hash`-flatten, `Set`/`Bag`/`Mix`, `Range` and catch-all arms) and every
+  one of its ~15 callers. §4 warned that `coerce_to_array` is "not the only entry", and that held:
+  the `@`-assign entry points reach it only on their *generic* arm, so a second hook went at
+  `exec_set_local_op_inner` / `exec_assign_expr_local_op_inner`, immediately after
+  `decay_nil_elements_for_var_assign` and **under the same `!is_bind` guard** — which covers the
+  reified-`gather` `LazyList` arm, the iterable-instance reify arm and the infinite-range arm in
+  one place. (The `!is_bind` guard is load-bearing: `my @l := 1, (1,2), [3,4]` must keep bare
+  elements — row 24's model seen from the value side.)
+- **Array literals.** `exec_make_array_op` and `exec_make_array_no_flatten_op`
+  (`src/vm/vm_data_ops.rs`), applied to the finished value right after
+  `decay_nil_container_elements` — so *after* each site's own one-arg-rule/Slip flattening
+  decision, never before (§2 part 3). Free there, as §5.2 predicted: the value's `Gc` is
+  freshly built with refcount 1, so `make_mut` never copies.
+- **Hash side.** As §4 predicted, this funnels cleanly. A single `hash_stored_value` helper
+  (`decay_nil_hash_value` composed with `itemize_for_element_store`, in that order — a decayed
+  `Nil` becomes `Any`, which never itemizes) is applied at every `map.insert` value site in
+  `coerce_to_hash` and `build_hash_from_items_with_key_coercion`, plus the `%(…)` literal ops
+  `exec_make_hash_op` / `exec_make_hash_from_pairs_op`.
+- **`.Array` / `.Hash` coercion.** `.Array` builds a real `Array`, so
+  `((1,2),(3,4)).Array[0].raku` is `$(1, 2)` in raku; the `"list" | "Array"` arm's shared `wrap`
+  closure now itemizes when `want_array`, and the three arms that were hand-rolling
+  `Value::real_array(...)` beside it were folded back onto `wrap`. `.Hash` needed nothing — it
+  already routes through `build_hash_from_items`.
+- **JSON decoding** (`Parser::finish_object` / `finish_array`, `src/runtime/json.rs`). A decoded
+  JSON object/array is a real `Hash`/`Array`, so `from-json('{"a":[1,2]}')<a>.raku` is `$[1, 2]`
+  in raku. mutsu's native `JSON::Fast` provider builds those containers directly and so bypassed
+  every other hook; this was a *pre-existing* divergence that slice 2 simply made conspicuous
+  (every other container had grown the property). The `:immutable` forms decode to `Map`/`List`,
+  whose elements are not containers, and are deliberately left alone. `to-json` round-trips
+  unchanged either way.
+
+**The `.List` counter-current — the slice-2 twin of slice 1's `value_to_list_for_receiver`
+trap.** §4's note that "receiver decomposition vs element flattening" would resurface was
+correct. Measured on raku:
+
+```
+my @c = [1,2],[3,4];
+@c.list[0].raku       # $[1, 2]     .list keeps the containers
+@c.list[0].VAR.^name  # Scalar
+@c.List[0].raku       # [1, 2]      .List hands out each element's VALUE
+@c.List[0].VAR.^name  # Array
+($[1,2],).List[0].raku  # $[1, 2]   .List on a List is identity
+```
+
+So `.List` on a *real* `Array` decontainerizes, and `.List` on a `List` does not. Before slice 2
+that divergence was invisible for a `my @c = …` array (its elements were bare) but already
+reproduced for a slice-1-itemized one (`my @c; @c[0] = [1,2]; @c.List[0].raku`); slice 2 would
+have made it visible everywhere. Fixed by de-itemizing in the `"List"` arm's `ValueView::Array`
+branch, gated on `ArrayKind::Array`.
+
+**Twelve counter-currents, all of the same shape.** Every one is a site that asks a question
+*about the value* while holding something that is itemized *because it is an element*. This is
+the slice-2 recurrence of slice 1's `value_to_list_for_receiver` discovery, and it is the honest
+cost of this slice: the hooks themselves were ~40 lines, the counter-currents were the work. Six
+were found by the local `t/` suite; two more (`[Z]`/`[X]` and `.Array`) came out of a deliberate
+Q4 sweep of serializers and receiver-decomposing methods (`to-json`/`from-json`, `is-deeply`,
+`eqv`, `.WHICH`, `.Str`/`.gist`/`.join`, `zip`/`X`/`roundrobin`, the reduce metaop, and the whole
+`.Array`/`.List`/`.list`/`.Slip`/`.Seq`/`.Bag`/`.Set`/`.Hash`/`.cache`/`.flat`/`.values`/`.keys`/
+`.rotor`/`.sum`/`.reverse`/`.sort`/`.min` family on an itemized receiver) — 30 + 30 programs, each
+dual-oracled; the last four by the targeted roast sweep. That distribution is the reusable lesson:
+the `t/` suite and a deliberate probe sweep between them found two thirds, but a third only
+surfaced against roast, and every one of the four was in a *different* subsystem
+(set operators, `.Map`, `is-deeply`, `.toggle`/`<>`). Budget for a roast iteration on this kind of
+change rather than expecting the local suite to be complete.
+
+| site | symptom | fix |
+| --- | --- | --- |
+| `.antipairs` (`positional_antipairs`) | `@c.antipairs` gave `($[1,2] => 0,)` where raku gives `([1,2] => 0,)` | de-itemize the **key**. Rakudo's `.antipairs` is `self.pairs.map: *.antipair`, and `Pair.antipair` *reads* `$!value` to build the new key — an attribute read decontainerizes. The same element is therefore itemized as a pair's *value* (`@c.pairs.raku` is `(0 => $[1, 2],)`) and bare as a pair's *key*. |
+| `.invert` (`extend_inverted_pairs`) | `{a => (1,2)}.invert` stopped expanding the value into one pair per member | de-itemize the value before decomposing it — the same reason, `Pair.antipair` reads `$!value`. |
+| `.raku` on an array holding a `:=`-bound element (`raku_value_as_element`) | `my @a = {p=>1},{q=>2}; my $w := @a[0]; @a.raku` gave `[${:p(1)}, {:q(2)}]` — the bound element and its un-bound sibling disagreed | the row-25 de-itemization has to see **through** ADR-0036's `ContainerRef` element cell, which it did not. Caught by `t/container-cell-raku-render.t` and `t/element-bind-cell.t`. |
+| `deepmap`/`nodemap`/`duckmap` (`deepmap_element_is_leaf`) | `%(a => 1, b => (2..3)).deepmap(*+1)` treated the itemized `Range` as a *leaf* | the leaf-vs-descend test is about what the value IS; descalarize first. The *result*'s itemization is decided separately by `itemize_result`, so it still answers `$(3, 4)`. |
+| destructuring sub-signature `@`/`%` params (`bind_sub_signature_from_value`) | `-> [@a, $b]` given `[(1,2).Seq, 9]` failed the Positional check with `Scalar(Seq)`; **`Digest::RIPEMD` stopped working** (`-> [&f, $r, @K, $s]`) | binding an element to an `@`/`%` parameter reads the element's *value* — the same rule as `my @a := @c[0]`, which is `[1, 2]` and not `[[1, 2],]`. |
+| `splice` on an element receiver (`scalar_holds_real_array`) | `@w[0].splice(*-2, 1)` resolved `*-2` against the wrong length | the gate matched `ArrayKind::Array` only, so an `ItemArray` receiver skipped the whole `@`-array block. An itemized array is still a real array *as a receiver*; the itemization describes how it behaves as an element of `@w`. |
+| the reduce metaop (`exec_reduction_op`) | `my @m = [1,2],[3,4]; [Z] @m` gave `(($[1,2], $[3,4]),)` where raku gives `((1, 3), (2, 4))` | a reduction's operands are the element *values*, so an element decomposed out of the source list is handed to the operator decontainerized. Note this is genuinely different from the explicit infix form: raku's `@m[0] Z @m[1]` really is `(($[1,2], $[3,4]),)`, because there each operand IS an element. Guarded on `len() > 1` so the one-arg rule (which deliberately keeps a lone itemized operand whole — `[+] @m[0]` is `2`) is untouched. |
+| `.Array` on an itemized receiver | `@a[0].Array.raku` gave `$[1, 2]` where raku gives `[1, 2]` | `.Array` builds a *new* real Array, which is not an element of anything, so the receiver's own itemization is dropped — exactly as the neighbouring `.list` arm already dropped it. The new array's own elements still itemize. |
+| set-op membership (`set_contains`) | `my @e = 2, 1..2; @e[0] (elem) @e[1]` was False (`roast/S03-operators/set_elem.t`, 30 subtests) | the **container** is the receiver of the membership test, so its own itemization is stripped. The **needle** is deliberately left alone: a `Set`'s members keep their itemization in raku (`Set.new($[1, 2])`), so `.WHICH` membership must see exactly what was stored. |
+| `.Map` (`map_hash_coerce::to_map`) | `%h.Map<a>.raku` gave `$[1, 2]`; `Foo.new(\|%args.Map)` bound `@.a` to one itemized array (`roast/S32-hash/map.t`) | a `Map`'s values are *not* containers, and the existing decont there only unwrapped a `Scalar` — it had to cover the kind/flag form too. |
+| `is-deeply` (`seq_to_list`) | `is-deeply (1,2).Seq, $((1,2).Seq)` failed even though `eqv` says True (`roast/S02-types/pair.t`'s `Pair.invert` subtest) | `is-deeply` normalizes a `Seq` to a `List` before comparing; it has to see through the wrapper to find the Seq, or one side becomes a `List` and the other stays a `Scalar(Seq)`. |
+| `.toggle` (`dispatch_toggle`) and `<>` (`__mutsu_zen_angle`) | `my @t = %(),; @t[0].toggle` yielded one element instead of the empty `Seq`; `($%h)<>.raku` was `${}` (`roast/S32-list/toggle.t`) | `.toggle` decomposes its own receiver, so it moved onto `value_to_list_for_receiver`. `<>` already cleared an itemized `ArrayKind` but not the Hash flag. |
+
+**And one desugar the slice made visibly wrong.** `my (@a, @b) := (@x, @y)` desugars to a staging
+`my @__destructure_tmp__ = <rhs>.list` plus one `my @a = @__destructure_tmp__[0]` per target
+(§1.7 already flagged this desugar as approximate). The staging temp is a real `Array`, so slice 2
+itemizes its elements — and `my @a = $[1, 2]` is `[[1, 2],]`, which is *correct* for `=` and wrong
+for `:=`. Fixed by emitting the per-target declaration as a genuine **bind** in binding mode
+(`Stmt::MarkBind` + the declaration, the same marker `my @a := expr` uses) for `@`/`%` targets,
+which decontainerizes the staged element exactly as a real bind does. `=`-mode is unchanged
+(`my (@a, @b) = (@x, @y)` still slurps greedily into `@a`). This does not close §1.7's
+write-through ticket — the temp still holds copies — but it does move the `:=` half onto the
+mechanism that ticket says it should be on.
+
+**Known remaining divergences of the same "attribute read decontainerizes" family, deliberately
+not chased here** (all pre-existing — they already reproduced on slice-1-itemized elements, and
+none is covered by §1.3's matrix): `@c.Bag.raku` renders `($[1, 2]=>1).Bag` where raku renders
+`([1, 2]=>1).Bag` (raku's `Set` is the *other* way — `Set.new($[1, 2])` in both), and the lazy
+`IndexTransform::AntiPairs` pull path (`vm_helpers_lazy_pull.rs`) has no de-itemization. The
+principled statement is "a `Pair`'s key is not a container"; making that a property of `Pair`
+construction rather than of individual producers belongs with Slice 3, which is where the
+container-vs-value distinction gets stated once in code.
+
+**Perf (§5.2): the open question resolves in the fix's favour, and the mitigation is the model
+itself.** The `ValueView::Array` arm's existing "share the `Gc` unless a `ContainerRef` is
+present" optimization is untouched — `itemize_real_array_elements` runs *after* it and adds a
+second, independent scan-then-rebuild-only-if-hit pass, so `my @a = @b` over a flat array of
+scalars still costs a refcount bump and nothing else. The nested case (`@b` an array of arrays)
+does not degenerate either, because slice 2 makes itemization **idempotent along a copy chain**:
+`@b`'s elements were already itemized when `@b` was built, so the scan finds nothing and shares
+the `Gc` too. The rebuild is therefore paid *at most once per aggregate*, at the moment it first
+enters a real container — which is precisely the array-literal / list-assign site where §5.2
+noted the per-element `match` is already being paid. No local A/B numbers are recorded here on
+purpose (CLAUDE.md: document-grade numbers come from the bench CI); slice 5 checks the series.
+
+**§5 Q4 ("does anything depend on an element being bare?") answers no.** 30 probes over
+`to-json`/`from-json`, `is-deeply` (three shapes), `eqv`, `.WHICH`, `.Str`/`~`/`.gist`/`.join`,
+`for`-with-`@row`, `.^name`/`~~ Positional`/`~~ Array`, `@`- and `Array`-typed parameter binding,
+hyper `>>.`, `map -> @r`, `sort(*.[0])`, nested element assign, and the three autovivifying-push
+shapes all agree with raku, and so do the 30 receiver-decomposition probes. The one place the ADR
+predicted a stray `$` could surface — a serializer — turned out to need a fix in the *opposite*
+direction (JSON was missing the itemization, not leaking it).
+
+**Verification**: `cargo fmt --check` and `cargo clippy -- -D warnings` clean. Full local `t/`
+suite passes (3490 files, 34k assertions). `t/element-store-itemization.t` grew from 46 to 100
+assertions, every new one dual-oracled against `raku`: non-declaring `@a = …` / `%h = …` assign,
+array and `%(…)` literals, the `(...)`-List-literal invariant, `.Array` / `.List` / `.list` /
+`List.List`, the `my @b = @a` copy no-op (both `@b[0].raku` itemized and `@b.raku` bare), each
+aggregate kind §2 names as a stored element (`Seq`, `Range`, `Hash`), flat-list hash
+construction and `.Hash` coercion, a reified `gather`, the `:=`-bind invariant, three arity
+invariants, native-array safety, a dedicated section pinning all eight counter-currents above
+(including the `[Z]`-vs-explicit-`Z` asymmetry and the `[+] @m[0]` one-arg rule), and the JSON
+round-trip. Targeted whitelisted roast batches: all
+`roast/S32-array/*`, `roast/S32-hash/*`, `roast/S32-list/*`, `roast/S09-typed-arrays/*`,
+`roast/S03-operators/*`, `roast/S02-types/{array,array_extending,array_ref,assigning-refs,
+autovivification,flattening,hash,hash_ref,list,multi_dimensional_array,set,bag,mix,baghash,
+mixhash,sethash,pair}.t` and all whitelisted `roast/integration/*.t` (release build).
+
+**Closed by this slice**: `todo/tickets/array-literal-nested-element-itemization-lost-in-raku.md`
+(`say .raku for [3,2,[1,0]]` now prints `$[1, 0]`), retired to
+`news/2026-08/array-literal-nested-element-itemization.md`.
 
 A `roast/integration/deep-recursion-initing-native-array.t` stack overflow observed locally under a
 **debug** build is unrelated and pre-existing (reproduces identically on `main`, unaffected by this

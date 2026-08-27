@@ -86,6 +86,30 @@ impl Interpreter {
             }
             list = flattened;
         }
+        // ADR-0040 slices 1-2: a reduction's operands are the element VALUES of
+        // the source list, so an element that is itemized *because it is an
+        // element* is handed to the operator decontainerized. Measured on raku:
+        // `my @m = [1,2],[3,4]; [Z] @m` is `((1, 3), (2, 4))` while the explicit
+        // `@m[0] Z @m[1]` is `(($[1, 2], $[3, 4]),)` — the reduction reads the
+        // values, the explicit infix receives the elements themselves.
+        //
+        // Only when the operand list was actually DECOMPOSED out of a container:
+        // if `list_value` IS the single operand (`[+] @m[0]`, where
+        // `value_to_list` keeps the itemized array whole), its own itemization
+        // is not an element property and must survive — the same
+        // receiver-vs-element distinction `value_to_list_for_receiver` draws.
+        // The `len() > 1` guard keeps the one-arg rule below (which deliberately
+        // does NOT flatten an itemized single operand) working unchanged.
+        let decomposed = matches!(
+            list_value.view(),
+            ValueView::Array(_, kind) if !kind.is_itemized()
+        ) || matches!(
+            list_value.view(),
+            ValueView::Seq(_) | ValueView::Slip(_) | ValueView::LazyList(_)
+        );
+        if decomposed && list.len() > 1 {
+            list = list.into_iter().map(Value::deitemize_element).collect();
+        }
         // Reduction is list-contextual; when the operand itself is a single list-like
         // value, flatten that one value into reduction elements.
         if list.len() == 1 {
