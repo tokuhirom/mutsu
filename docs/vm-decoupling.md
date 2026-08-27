@@ -207,6 +207,38 @@ nativized: its result is a subset of the *original* elements that must stay
 rw-view-bound to the source (`@a.grep(...)>>++` updates `@a`), which a freshly
 built result array cannot reproduce.
 
+> **Narrowed in 2026-08 — read this before widening it again.** "Metric-only"
+> turned out to understate the cost: no timing was taken at the time, and this
+> loop is **4-9x slower** than the `dispatch_map_method` orchestration it
+> replaced. It calls the general closure-call machinery once per element
+> (`call_compiled_closure_with_topic`: a scoped env child, the full captured-env
+> merge, per-instance state lookups, an exit writeback diff), all of it
+> loop-invariant, whereas the shared loop compiles the body once and rebinds
+> only the param/topic per iteration through `run_reuse`. The shared loop is not
+> a tree-walker either — it runs the same compiled bytecode — so the fallback
+> counter was measuring module location, not tree-walking.
+>
+> `try_native_array_map` is therefore now restricted to the one thing it does
+> uniquely: the `$_`/`is rw` **source writeback** (`@a.map({ $_++ })`), which it
+> implements by capturing the block's final `$_` directly and so also covers
+> prefix `++$_`/`--$_`, `tr///`, and re-tagging the rebuilt array with the
+> source's element type. Read-only blocks go back to the shared loop. Measured
+> over a 131072-element array (release, us/elem):
+>
+> | block | this loop | shared loop | raku |
+> |---|---|---|---|
+> | `map({ $_ })` | 2.15 | **0.24** | 0.60 |
+> | `map({ $_ + 1 })` | 2.18 | **0.26** | 0.56 |
+> | `map({ $_.Int })` | 6.87 | **0.81** | 0.78 |
+> | `map({ $_.succ })` | 7.20 | **0.86** | 0.53 |
+> | `map({ abs($_) })` | 5.46 | **1.12** | 0.61 |
+>
+> The lesson generalizes past `.map`: **a per-element `vm_call_on_value` /
+> `call_compiled_closure_with_topic` is roughly an order of magnitude more
+> expensive than a compile-once + `run_reuse` loop.** Any future "run the loop
+> in the VM" step must move the *loop*, not just relocate the per-element call —
+> and must come with a timing, not only a counter delta.
+
 | probe (`tmp/probe-closures.raku`, 50× over a 200-elem array) | method fallback before | after |
 |---|---|---|
 | `map` | 50 | **0** |

@@ -1,21 +1,28 @@
-//! Native `.map` over a concrete array with a simple block.
+//! Native `.map` over a concrete array for a `$_`-mutating / rw-param block.
 //!
-//! `@a.map({ ... })` previously always fell back to the interpreter's
-//! `dispatch_map_method` orchestration (see docs/vm-decoupling.md, lever A). The
-//! block *body* already runs compiled on the Interpreter (`vm_call_on_value` ->
-//! `call_compiled_closure`); only the surrounding iteration loop lived in the
-//! interpreter. This runs that loop in the Interpreter for the common, simple case
-//! (including multi-arity blocks like `-> $a, $b { ... }`, which consume the
-//! source in `arity`-sized chunks) and falls back for anything that needs the
-//! interpreter's richer orchestration (Slip/phaser/lazy-`return` handling,
-//! `next`/`last`/`take` control flow, `.assuming`/composed blocks, non-array
-//! targets, pair-shaped elements, a short final chunk, …).
+//! This loop exists for exactly one thing the shared map loop
+//! (`runtime/resolution_map_grep_rw.rs::eval_map_over_items_rw`) cannot do:
+//! Raku's rw binding of `$_` to the source element, i.e. `@a.map({ $_++ })` and
+//! `@a.map(-> $x is rw { $x++ })` mutating `@a`. It captures the block's final
+//! `$_` directly (`rw_map_topic_capture`) instead of relying on the shared
+//! loop's `__mutsu_rw_map_topic__` assignment mirror, which is why it — and only
+//! it — also covers prefix `++$_`/`--$_` and `tr///`, and can re-tag the
+//! rebuilt array with the source's element-type metadata (`my Int @a`).
 //!
-//! Eligibility is intentionally conservative: when the block body contains any
-//! construct that could escape the map loop (a `return`, loop control,
-//! `take`/`emit`, a phaser, …) — or any expression form this scanner does not
-//! explicitly recognize as safe — we fall back. A false "safe" verdict would
-//! silently produce a wrong result, so unknown forms default to "not simple".
+//! **A read-only map block must NOT come here.** It runs 4-7.6x slower than the
+//! shared loop, because this one calls the general closure-call machinery once
+//! per element while the shared loop compiles the body once and reuses the
+//! frame. See the measured table at the `writeback_name` bail-out below. The
+//! loop originally handled every simple block (docs/vm-decoupling.md Step 6, an
+//! avowedly "metric-only" decoupling with no timing taken); it was narrowed to
+//! the writeback cases once that cost was measured.
+//!
+//! Eligibility is otherwise intentionally conservative: when the block body
+//! contains any construct that could escape the map loop (a `return`, loop
+//! control, `take`/`emit`, a phaser, …) — or any expression form this scanner
+//! does not explicitly recognize as safe — we fall back. A false "safe" verdict
+//! would silently produce a wrong result, so unknown forms default to "not
+//! simple".
 
 use super::*;
 use crate::ast::{Expr, Stmt};
@@ -159,7 +166,30 @@ impl Interpreter {
                 _ => return None,
             }
         } else {
-            None
+            // No writeback needed, so this loop has nothing the shared
+            // compile-once/`run_reuse` loop (`eval_map_over_items_rw`) cannot
+            // do — and it is MUCH slower at it. This loop calls the general
+            // closure-call machinery once per element
+            // (`call_compiled_closure_with_topic`: a scoped env child, the full
+            // captured-env merge, per-instance state lookups and an exit
+            // writeback diff), all of which is loop-invariant; the shared loop
+            // compiles the body once and rebinds only the param/topic per
+            // iteration. Measured over a 131072-element array (release build,
+            // us/elem, this loop vs the shared one):
+            //
+            //     map({ $_ })        2.15  ->  0.28   (7.6x)
+            //     map({ $_ + 1 })    2.18  ->  0.31   (7.0x)
+            //     map({ $_.Int })    6.87  ->  1.23   (5.6x)
+            //     map({ $_.succ })   7.20  ->  1.22   (5.9x)
+            //     map({ abs($_) })   5.46  ->  1.36   (4.0x)
+            //
+            // Step 6 of docs/vm-decoupling.md introduced this loop as an
+            // explicitly "metric-only" decoupling (to zero the `map` method
+            // *fallback counter*) and took no timing at all; the shared loop is
+            // not a tree-walker either — it runs the same compiled bytecode
+            // through `run_reuse` — so routing read-only maps back to it costs
+            // nothing but that counter.
+            return None;
         };
 
         let block = args[0].clone();

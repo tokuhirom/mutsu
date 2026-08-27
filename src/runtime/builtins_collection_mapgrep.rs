@@ -89,8 +89,14 @@ impl Interpreter {
             }
         }
         if let Some(var_name) = source_var {
-            let result = self.eval_map_over_items_rw(func, &mut list_items)?;
-            self.env.insert(var_name, Value::real_array(list_items));
+            let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut list_items)?;
+            // Only refresh the source when the block actually rw-wrote an
+            // element: rebuilding it for a read-only block would drop the
+            // container's per-slot metadata (`initialized` holes, element type)
+            // — see the same gate in `methods_mut_dispatch.rs`.
+            if wrote_back {
+                self.env.insert(var_name, Value::real_array(list_items));
+            }
             Ok(result)
         } else {
             // Same deferral as dispatch_map_method: a callback containing

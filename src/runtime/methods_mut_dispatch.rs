@@ -2021,7 +2021,8 @@ impl Interpreter {
             } else {
                 Self::value_to_list(&target)
             };
-            let result = self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
+            let (result, wrote_back) =
+                self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
             // `.map` returns a Seq (same contract as `dispatch_map_method` and the
             // native fast path); only the rw writeback below is special here.
             let result = match result.view() {
@@ -2033,19 +2034,33 @@ impl Interpreter {
             // semantics). A shaped array keeps its shape/structure — only the leaf
             // values change — so rebuild it from the mutated leaves instead of
             // flattening it into an ordinary list.
+            //
+            // A read-only block wrote nothing, so leave the source container
+            // ALONE. It used to be rebuilt unconditionally, which silently
+            // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
+            // slot lost its `initialized` bit, stopped reading as a hole, and a
+            // later trailing-element `:delete` could no longer truncate the
+            // array (roast/S32-array/delete.t, via a read-only
+            // `@a.map({ $_ // "Any()" })` in between).
+            if !wrote_back {
+                return Ok(result);
+            }
             let key = target_var.to_string();
             if is_shaped {
                 let mut rebuilt = crate::runtime::utils::replace_shaped_leaves(&target, &items);
                 // The element-type metadata (`array[int]`) is embedded in
                 // ArrayData; `replace_shaped_leaves` rebuilds it, so re-tag the
                 // result to keep `.WHAT`/`.raku` (and shaped-only behaviours like
-                // `:delete` dying) correct after the map. Runs even for a
-                // non-mutating map (`@a.map(* + 2)`), which still round-trips the
-                // array through this writeback.
+                // `:delete` dying) correct after the map.
                 if let Some(info) = self.container_type_metadata(&target) {
                     rebuilt = self.tag_container_metadata(rebuilt, info);
                 }
                 self.env.insert(key, rebuilt);
+            } else if let ValueView::Array(src, kind) = target.view() {
+                // Keep the source container's metadata (element type, default,
+                // `initialized` holes) across the rebuild.
+                let rebuilt = Value::array_data_like(&src, items);
+                self.env.insert(key, Value::array_with_kind(rebuilt, kind));
             } else {
                 self.env.insert(key, Value::real_array(items));
             }
