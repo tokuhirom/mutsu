@@ -165,35 +165,50 @@ impl Interpreter {
         Some(param.to_string())
     }
 
+    /// Resolve `name` to a registered class entry, returning its registry key
+    /// and a clone of its declared parents. The exact key wins; otherwise the
+    /// first key whose `::`-tail short name matches (so `Bar` can find
+    /// `Foo::Bar`). Clones out of the registry under a single guard so callers
+    /// can recurse without holding the borrow.
+    ///
+    /// The returned KEY is what parent-chain walkers must dedupe on: the
+    /// short-name fallback can resolve a *parent* name back to a class already
+    /// on the chain. `grammar Bot::Grammar` has parent `Grammar`, which is a
+    /// built-in with no registry entry, so the fallback matches the short name
+    /// of `Bot::Grammar` itself — an unbounded `Bot::Grammar -> Grammar ->
+    /// Bot::Grammar` recursion that overflowed the stack (`Bot::Grammar[R]`,
+    /// `todo/deep/grammar-metaclass-parameterize-stack-overflow.md`).
+    fn resolved_class_parents(&self, name: &str) -> Option<(String, Vec<String>)> {
+        let reg = self.registry();
+        if let Some(cd) = reg.classes.get(name) {
+            return Some((name.to_string(), cd.parents.clone()));
+        }
+        reg.classes
+            .iter()
+            .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
+            .map(|(k, cd)| (k.clone(), cd.parents.clone()))
+    }
+
     pub(crate) fn is_container_subclass(&self, name: &str) -> bool {
+        self.is_container_subclass_seen(name, &mut Vec::new())
+    }
+
+    fn is_container_subclass_seen(&self, name: &str, seen: &mut Vec<String>) -> bool {
         const CONTAINER_TYPES: &[&str] = &[
             "Hash", "Array", "Map", "List", "Bag", "Set", "Mix", "BagHash", "SetHash", "MixHash",
             "Seq",
         ];
-        // Clone out the parents under a single guard, then recurse without holding it.
-        let parents = {
-            let reg = self.registry();
-            reg.classes
-                .get(name)
-                .or_else(|| {
-                    reg.classes
-                        .iter()
-                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                        .map(|(_, v)| v)
-                })
-                .map(|cd| cd.parents.clone())
+        let Some((key, parents)) = self.resolved_class_parents(name) else {
+            return false;
         };
-        if let Some(parents) = parents {
-            for parent in &parents {
-                if CONTAINER_TYPES.contains(&parent.as_str()) {
-                    return true;
-                }
-                if self.is_container_subclass(parent) {
-                    return true;
-                }
-            }
+        if seen.contains(&key) {
+            return false;
         }
-        false
+        seen.push(key);
+        parents.iter().any(|parent| {
+            CONTAINER_TYPES.contains(&parent.as_str())
+                || self.is_container_subclass_seen(parent, seen)
+        })
     }
 
     /// Whether a user-declared class `name` is (or inherits from) a `Grammar`.
@@ -202,24 +217,26 @@ impl Interpreter {
     /// and routed to the grammar `.parse`/`.subparse`/`.parsefile` dispatch just
     /// like the type object. Walks the registry parent chain with a shared borrow.
     pub(crate) fn class_is_grammar(&self, name: &str) -> bool {
+        self.class_is_grammar_seen(name, &mut Vec::new())
+    }
+
+    fn class_is_grammar_seen(&self, name: &str, seen: &mut Vec<String>) -> bool {
         if name == "Grammar" {
             return true;
         }
-        let parents = {
-            let reg = self.registry();
-            reg.classes
-                .get(name)
-                .or_else(|| {
-                    reg.classes
-                        .iter()
-                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                        .map(|(_, v)| v)
-                })
-                .map(|cd| cd.parents.clone())
+        let parents = match self.resolved_class_parents(name) {
+            Some((key, parents)) => {
+                if seen.contains(&key) {
+                    return false;
+                }
+                seen.push(key);
+                Some(parents)
+            }
+            None => None,
         };
         if let Some(parents) = parents {
             for parent in &parents {
-                if parent == "Grammar" || self.class_is_grammar(parent) {
+                if parent == "Grammar" || self.class_is_grammar_seen(parent, seen) {
                     return true;
                 }
             }
@@ -232,59 +249,48 @@ impl Interpreter {
     /// `Exception` type (or a built-in `X::`/`CX::` exception). Walks the registry
     /// parent chain with a shared borrow.
     pub(crate) fn class_inherits_from_exception(&self, name: &str) -> bool {
-        let parents = {
-            let reg = self.registry();
-            reg.classes
-                .get(name)
-                .or_else(|| {
-                    reg.classes
-                        .iter()
-                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                        .map(|(_, v)| v)
-                })
-                .map(|cd| cd.parents.clone())
+        self.class_inherits_from_exception_seen(name, &mut Vec::new())
+    }
+
+    fn class_inherits_from_exception_seen(&self, name: &str, seen: &mut Vec<String>) -> bool {
+        let Some((key, parents)) = self.resolved_class_parents(name) else {
+            return false;
         };
-        if let Some(parents) = parents {
-            for parent in &parents {
-                if parent == "Exception"
-                    || parent.starts_with("X::")
-                    || parent.starts_with("CX::")
-                    || self.class_inherits_from_exception(parent)
-                {
-                    return true;
-                }
+        if seen.contains(&key) {
+            return false;
+        }
+        seen.push(key);
+        for parent in &parents {
+            if parent == "Exception"
+                || parent.starts_with("X::")
+                || parent.starts_with("CX::")
+                || self.class_inherits_from_exception_seen(parent, seen)
+            {
+                return true;
             }
         }
         false
     }
 
     pub(crate) fn class_inherits_from_immutable_setty(&self, name: &str) -> bool {
+        self.class_inherits_from_immutable_setty_seen(name, &mut Vec::new())
+    }
+
+    fn class_inherits_from_immutable_setty_seen(&self, name: &str, seen: &mut Vec<String>) -> bool {
         const IMMUTABLE_SETTY: &[&str] = &["Set", "Bag", "Mix"];
         // A lexical user declaration shadows a builtin with the same name.
         // Resolve a registered declaration through its parents before treating
         // an otherwise-unresolved bare name as an immutable builtin QuantHash.
-        // Clone out the parents under a single guard, then recurse without holding it.
-        let parents = {
-            let reg = self.registry();
-            reg.classes
-                .get(name)
-                .or_else(|| {
-                    reg.classes
-                        .iter()
-                        .find(|(k, _)| k.rsplit_once("::").is_some_and(|(_, short)| short == name))
-                        .map(|(_, v)| v)
-                })
-                .map(|cd| cd.parents.clone())
+        let Some((key, parents)) = self.resolved_class_parents(name) else {
+            return IMMUTABLE_SETTY.contains(&name);
         };
-        if let Some(parents) = parents {
-            for parent in &parents {
-                if self.class_inherits_from_immutable_setty(parent) {
-                    return true;
-                }
-            }
+        if seen.contains(&key) {
             return false;
         }
-        IMMUTABLE_SETTY.contains(&name)
+        seen.push(key);
+        parents
+            .iter()
+            .any(|parent| self.class_inherits_from_immutable_setty_seen(parent, seen))
     }
 
     /// Whether a user-declared class inherits (transitively) from Array or

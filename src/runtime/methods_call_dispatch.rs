@@ -728,7 +728,13 @@ impl Interpreter {
         // `method ^foo(Mu) { ... }` in a class body defines a metamethod.
         // The caller (VM) already prepends the type object to args.
         // Route through run_instance_method to execute the method body.
-        if method.starts_with('^') && method.len() > 1 && !Self::is_classhow_method(&method[1..]) {
+        // A user-declared metamethod wins even when it shadows a native
+        // ClassHOW metamethod name (`method ^parameterize`, `method ^compose`,
+        // ...): Rakudo adds it to the type's own metaclass, so it overrides the
+        // stock implementation for that type. The `has_user_method` check below
+        // is what keeps this narrow — every other type still reaches the native
+        // handler.
+        if method.starts_with('^') && method.len() > 1 {
             let class_sym = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 ValueView::Package(name) => Some(name),
@@ -739,16 +745,19 @@ impl Interpreter {
             {
                 // ADR-0019 F6: VM-level direct-dispatch path first (see
                 // `try_dispatch_compiled_method_direct_as`'s doc comment).
-                // A metamethod's `self` is never the receiver: the carrier
-                // below always resolves `invocant: None` + empty attributes
-                // to `Value::package(cn)` (`run_instance_method_celled`'s own
-                // `inv_value` fallback), so passing that SAME synthesized
-                // package value as the direct helper's `target` reproduces
-                // identical invocant semantics — no calling-convention shift,
-                // since the type object the metamethod actually receives is
-                // already `args[0]` (prepended by the VM caller), not this
-                // invocant.
-                let dispatch_target = Value::package(class_sym);
+                // A metamethod's `self` is never the receiver: `method ^foo`
+                // is added to the type's METACLASS, so Rakudo binds `self` to
+                // the HOW (`Perl6::Metamodel::ClassHOW+{<anon>}`) and passes
+                // the type object separately as `args[0]` (prepended by the VM
+                // caller). Binding the HOW here is what makes the documented
+                // `method ^parameterize` shape work — its body calls
+                // `self.name($this)` / `self.mixin(...)` on the metaobject
+                // (`Language/mop.rakudoc`). Resolution still happens against
+                // the declaring class (`class_sym`), which is where the
+                // metamethod body is registered.
+                let dispatch_target = self
+                    .call_method_with_values(target.clone(), "HOW", vec![])
+                    .unwrap_or_else(|_| Value::package(class_sym));
                 if let Some(result) = self.try_dispatch_compiled_method_direct_as(
                     class_sym,
                     &dispatch_target,
@@ -764,7 +773,7 @@ impl Interpreter {
                     attrs,
                     method,
                     args,
-                    None,
+                    Some(dispatch_target),
                 )?;
                 return Ok(result);
             }
