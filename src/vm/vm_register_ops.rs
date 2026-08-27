@@ -957,47 +957,25 @@ impl Interpreter {
                 if !needs_cell && !is_dup_shadow {
                     continue;
                 }
-                // A type/`where`-constrained scalar must keep flowing through
-                // the assignment chokepoint so each mutation re-checks the
-                // constraint; the ContainerRef write-through bypasses it. Skip
-                // boxing it (inline `where` desugars to an anonymous subset, so
-                // var_type_constraint catches block/whatever/`&pred` forms).
-                // Applied to (B) only — the loop path (A) is left unchanged.
-                // EXCEPTION: `Mu` is the universal type — every value satisfies
-                // it, so the ContainerRef write-through bypasses no real check.
-                // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
-                // share its cell and stay coherent without the blanket reconcile.
-                // EXCEPTION: a closure handed to a THREAD boxes constrained
-                // scalars too. Boxing is safe for the constraint itself — the
-                // check runs at the assignment op, which looks the constraint up
-                // BY NAME in `var_type_constraints` (cloned into a spawned
-                // thread) before any write-through, and the loop path (A) has
-                // always boxed constrained scalars. But a cell breaks `cas`,
-                // which resolves its target by name (roast S17-lowlevel/cas.t
-                // does `cas` on a `my LittleNodey $head` captured by a
-                // same-frame `throws-like` block), so the relaxation is gated on
-                // `thread_escaping`, not applied to every escaping closure.
-                // For a thread the cell is required: without it the parent could
-                // only observe a worker's write through the name-keyed
-                // `shared_vars` lane, which no longer carries a spawned block's
-                // own captured scalars (PLAN.md §6).
-                // Pin: t/thread-shared-scalar-visibility.t.
-                // EXCEPTION: native value types (`int`/`num`/`str` families)
-                // and the builtin scalar value types (`Int`/`Num`/`Str`/
-                // `Rat`/`UInt`, with or without a `:D`/`:U` smiley) are boxed
-                // like `Mu`. Their wrap/coercion also runs at the assignment
-                // op by name before any write-through, and the snapshot lane
-                // genuinely loses coherence for them: a captured
-                // `my int $pos` (or an `Int:D $pos is rw` parameter)
-                // reassigned by the OWNER after the closure's `$pos++`
-                // diverged into two stores — CBOR::Simple's encoder buffer
-                // position, where every string byte landed one off. The cas
-                // concern that motivated the skip targets CLASS-typed
-                // scalars (S17-lowlevel/cas.t `my LittleNodey $head`), which
-                // keep the skip. Pin: t/nqp-cbor-ops.t.
-                if !cc.thread_escaping && self.type_constrained_unboxable(&s) {
-                    continue;
-                }
+                // HISTORY: a type/`where`-constrained scalar used to be skipped
+                // here, because the `ContainerRef` write-through bypassed the
+                // constraint re-check at the assignment chokepoint, and because
+                // a cell hid `cas`'s by-name target resolution
+                // (roast/S17-lowlevel/cas.t does `cas` on a
+                // `my LittleNodey $head` captured by a same-frame
+                // `throws-like` block). Both halves closed independently:
+                // ADR-0042 made the constraint a property of the CONTAINER, so
+                // a write reaching the scalar through its cell re-checks it
+                // (`my Str $s; my $t := $s; $t = 42` dies correctly), and
+                // ADR-0062 anchored the atomic lane to the published value with
+                // the root store as the lane's only authority. ADR-0055 slice 1
+                // therefore RETIRED the skip: it was the last thing keeping a
+                // captured-and-mutated class-typed scalar unboxed, which is
+                // exactly the residue an overwrite-install cannot tolerate.
+                // The exceptions the skip had accumulated (`Mu`, thread-escaping
+                // closures, the native/builtin scalar value types — pins
+                // `t/thread-shared-scalar-visibility.t` and `t/nqp-cbor-ops.t`)
+                // are subsumed: everything is boxed now.
             }
             let Some(idx) = baked_idx else {
                 continue;
@@ -1005,6 +983,13 @@ impl Interpreter {
             // Already a shared cell -> a sibling closure (or earlier capture)
             // boxed it; reuse the same Arc.
             if self.locals[idx].is_container_ref() {
+                continue;
+            }
+            // The name-keyed legacy atomic lane owns this binding's value right
+            // now (an earlier `cas` was refused a cell and parked the value
+            // there): promoting here would seed a cell from the stale slot and
+            // fork the binding in two. Decline — see `legacy_atomic_lane_owns`.
+            if self.legacy_atomic_lane_owns(s.trim_start_matches('$')) {
                 continue;
             }
             let cur = &self.locals[idx];
@@ -1025,13 +1010,17 @@ impl Interpreter {
             // (PLAN 8.5 step 3) — box it exactly like the old Nil seed, so a
             // captured-then-reassigned lexical stays a shared cell
             // (t/then-captured-lexical-cross-thread.t).
+            // ADR-0055 slice 1 (2026-08-28): `Package`, `Array` and `Hash` left
+            // this list. A `$`-held Array/Hash and a Package (type object) in a
+            // captured-and-mutated scalar were the other two unboxed residues;
+            // under closure-wins (slice 2) an unboxed mutated capture is a
+            // staleness bug, so the cell is mandatory. Note this boxes the `$`
+            // SCALAR container, not the Array/Hash itself — `@a`/`%h` sigil
+            // locals still take `box_decl_local_container_cell`.
             if !cur.is_any_type_object()
                 && matches!(
                     cur.view(),
-                    ValueView::Package(_)
-                        | ValueView::Array(..)
-                        | ValueView::Hash(..)
-                        | ValueView::Sub(..)
+                    ValueView::Sub(..)
                         | ValueView::Proxy { .. }
                         | ValueView::Seq(..)
                         | ValueView::HyperSeq(..)

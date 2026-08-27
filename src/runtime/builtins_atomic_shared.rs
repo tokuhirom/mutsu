@@ -743,6 +743,34 @@ impl Interpreter {
     /// the same pairing `box_captured_lexicals` performs. A captured outer
     /// lexical reached from a closure frame is left alone unless the closure
     /// machinery already boxed it (in which case the lookup above found it).
+    /// True when the name-keyed legacy atomic lane currently owns `bare`'s
+    /// value, i.e. an earlier `cas`/`atomic-*` on this name was refused a cell
+    /// and parked the authoritative value in `__mutsu_atomic_value::N`.
+    ///
+    /// While that is the case the lane — not the frame slot — is the source of
+    /// truth, so promoting the binding to a `ContainerRef` cell *now* would
+    /// seed the cell from a stale slot and fork the binding in two: that is the
+    /// mid-sequence promotion hazard
+    /// `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md` documents.
+    /// The seed-and-retire protocol that makes promotion safe is deliberately
+    /// confined to [`Self::atomic_scalar_cell`] (see its doc comment: it runs
+    /// synchronously in the thread that owns the atomic op, so there is no
+    /// racing sibling to steal the lane from). Closure-capture and declaration
+    /// boxing have no such guarantee, so they must simply DECLINE — a refusal
+    /// can only cost an optimisation, never correctness.
+    ///
+    /// Cheap by construction: the process-global "any atomic ever seen" flag
+    /// short-circuits it in programs that use no atomics at all.
+    pub(crate) fn legacy_atomic_lane_owns(&self, bare: &str) -> bool {
+        if !Self::atomic_var_seen_anywhere() {
+            return false;
+        }
+        // The lane is keyed by the canonical atomic name, which may or may not
+        // carry the `$` sigil depending on how the op spelled its argument.
+        self.legacy_atomic_value(bare).is_some()
+            || self.legacy_atomic_value(&format!("${bare}")).is_some()
+    }
+
     /// The value the legacy name-keyed atomic lane currently holds for `name`,
     /// if it has an entry at all.
     fn legacy_atomic_value(&self, name: &str) -> Option<Value> {

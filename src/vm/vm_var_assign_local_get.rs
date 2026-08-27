@@ -379,9 +379,11 @@ impl Interpreter {
     /// owner that reads it by slot observe one cell — enabling cross-call
     /// accumulation without the `env_dirty` blanket reconcile. The skips mirror
     /// `box_captured_lexicals` exactly: scalars only (`@`/`%`/`&` share already),
-    /// never an already-shared cell or a reference/identity-bearing value, and
-    /// never a type/`where`-constrained scalar (whose every mutation must re-flow
-    /// through the assignment chokepoint, which a cell write-through bypasses).
+    /// never an already-shared cell, never a reference/identity-bearing value,
+    /// and never a name the legacy atomic lane currently owns. (The
+    /// type/`where`-constraint refusal that used to be listed here was retired
+    /// with ADR-0055 slice 1 — the constraint belongs to the container now, so
+    /// a write reaching the scalar through its cell re-checks it.)
     pub(crate) fn box_decl_local_cell(&mut self, code: &CompiledCode, idx: usize) {
         let name = &code.locals[idx];
         if name.starts_with('&') {
@@ -398,30 +400,31 @@ impl Interpreter {
         if self.locals[idx].is_container_ref() {
             return;
         }
+        // Mirrors `box_captured_lexicals`: decline while the name-keyed legacy
+        // atomic lane owns this binding's value (see `legacy_atomic_lane_owns`).
+        if self.legacy_atomic_lane_owns(name.trim_start_matches('$')) {
+            return;
+        }
         let cur = self.locals[idx].clone();
         // The Any type object (uninitialized-scalar seed, PLAN 8.5 step 3) is
         // boxed like the old Nil seed; other reference/identity-bearing values
         // are skipped (mirrors `box_captured_lexicals`, including its
         // Seq/HyperSeq/RaceSeq/Slip exclusion --
         // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
+        // ADR-0055 slice 1 (2026-08-28): `Package`, `Array` and `Hash` left this
+        // list, and the type-constraint refusal below it went entirely -- an
+        // unboxed captured-and-mutated lexical is precisely the residue the
+        // vouch/cell dichotomy has to cover.
         if !cur.is_any_type_object()
             && matches!(
                 cur.view(),
-                ValueView::Package(_)
-                    | ValueView::Array(..)
-                    | ValueView::Hash(..)
-                    | ValueView::Sub(..)
+                ValueView::Sub(..)
                     | ValueView::Proxy { .. }
                     | ValueView::Seq(..)
                     | ValueView::HyperSeq(..)
                     | ValueView::RaceSeq(..)
                     | ValueView::Slip(..)
             )
-        {
-            return;
-        }
-        if loan_env!(self, var_type_constraint(name)).is_some()
-            || loan_env!(self, var_type_constraint(name.trim_start_matches('$'))).is_some()
         {
             return;
         }
