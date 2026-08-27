@@ -143,6 +143,12 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     let mut r = r;
     loop {
         let (r2, _) = ws(r)?;
+        // Adjacent colonpairs without commas: `ok :a :b, 'desc'` / `ok :a:b, 'desc'`.
+        if let Some((r3, arg)) = try_adjacent_colonpair_arg(r2) {
+            args.push(arg);
+            r = r3;
+            continue;
+        }
         if !r2.starts_with(',') || r2.starts_with(",,") {
             reject_two_terms_boundary(r, r2)?;
             break;
@@ -324,6 +330,25 @@ pub(crate) fn parse_listop_arg(input: &str) -> PResult<'_, Expr> {
     call_arg_expr(input)
 }
 
+/// A colonpair that directly follows another argument with no comma between
+/// them (`f :a :b, $x`, `f :a:b, $x`) is a further argument of the *same* call,
+/// and the argument list continues past it — `f(:a, :b, $x)`.
+///
+/// Every no-paren argument-list loop must consult this before deciding that a
+/// missing comma ends the list. Where it was missing, only the first colonpair
+/// became an argument and the remaining adjacent ones were glued onto the call
+/// afterwards by the postfix call-adverb rule in `expr/postfix/loop_.rs`. That
+/// rule can only append arguments to an already-finished call — it cannot
+/// resume the listop's argument list — so the following comma was left to the
+/// enclosing list-expression parser and `f :a:b, $x` silently parsed as the
+/// two-element list `(f(:a, :b), $x)` instead of one call.
+pub(crate) fn try_adjacent_colonpair_arg(input: &str) -> Option<(&str, Expr)> {
+    if !input.starts_with(':') || input.starts_with("::") {
+        return None;
+    }
+    parse_listop_arg(input).ok()
+}
+
 pub(crate) fn make_call_expr_from_listop_args<'a>(
     rest: &'a str,
     input: &'a str,
@@ -361,10 +386,7 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
     loop {
         let (r2, _) = ws(r)?;
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
-        if r2.starts_with(':')
-            && !r2.starts_with("::")
-            && let Ok((r3, arg)) = parse_listop_arg(r2)
-        {
+        if let Some((r3, arg)) = try_adjacent_colonpair_arg(r2) {
             args.push(arg);
             r = r3;
             continue;
