@@ -2580,6 +2580,36 @@ impl Compiler {
         }
     }
 
+    /// Whether this loop parameter is a *named* slurpy (`*%h`). It absorbs named
+    /// arguments only, so it neither consumes a positional element of the
+    /// iteration chunk nor makes the block's `.count` `Inf`.
+    fn for_param_is_named_slurpy(name: &str, def: &crate::ast::ParamDef) -> bool {
+        def.is_variadic() && name.strip_prefix('\\').unwrap_or(name).starts_with('%')
+    }
+
+    /// The number of source elements one iteration of a `for` loop consumes.
+    ///
+    /// Rakudo keys this on the block's `.count`: `for`/`map` batch `count`
+    /// elements per call, except that a `count` of `Inf` — which any *positional*
+    /// slurpy (`*@r`, `**@r`, `+@r`, `|c`) produces — or a `count` below 2 falls
+    /// back to one element at a time. Optional and defaulted non-slurpy params do
+    /// count (`-> $a, $b = 9` batches in twos, the short final chunk triggering
+    /// the default), and a named slurpy is invisible to the positional count
+    /// (`-> $a, $b, *%h` still batches in twos). So `-> $a, $b, *@rest` batches
+    /// ONE element and then dies with "Too few positionals passed", exactly as
+    /// rakudo does.
+    fn for_chunk_arity(params: &[String], params_def: &[crate::ast::ParamDef]) -> u32 {
+        let mut positionals = 0u32;
+        for (i, name) in params.iter().enumerate() {
+            match params_def.get(i) {
+                Some(def) if Self::for_param_is_named_slurpy(name, def) => continue,
+                Some(def) if def.is_variadic() => return 1,
+                _ => positionals += 1,
+            }
+        }
+        positionals.max(1)
+    }
+
     fn build_for_bind_stmts(
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,
@@ -2833,20 +2863,46 @@ impl Compiler {
         // mid-loop (after the full chunks have run). Emit that guard so the
         // body sees it before any bind, matching Raku's batching semantics.
         if !params_def.is_empty() {
-            let required_arity = params_def
+            // A slurpy binds whatever is left over, so it is never *required* and
+            // never contributes to the "expected N arguments" count -- but a
+            // positional slurpy does turn the bound into a lower one ("at least
+            // N"), matching rakudo's wording.
+            let positional: Vec<&crate::ast::ParamDef> = params_def
                 .iter()
-                .filter(|d| d.default.is_none() && !d.optional_marker)
+                .enumerate()
+                .filter(|(i, d)| {
+                    !Self::for_param_is_named_slurpy(
+                        params.get(*i).map(String::as_str).unwrap_or(""),
+                        d,
+                    )
+                })
+                .map(|(_, d)| d)
+                .collect();
+            let has_positional_slurpy = positional.iter().any(|d| d.is_variadic());
+            let required_arity = positional
+                .iter()
+                .filter(|d| d.default.is_none() && !d.optional_marker && !d.is_variadic())
                 .count();
-            let total = params.len();
+            let total = positional.iter().filter(|d| !d.is_variadic()).count();
             if required_arity > 0 {
-                let expected = if required_arity == total {
-                    format!("expected {} arguments", total)
+                // Rakudo words an open-ended bound as "expected at least N
+                // arguments but got only M".
+                let expected = if has_positional_slurpy {
+                    format!(
+                        "expected at least {} arguments but got only ",
+                        required_arity
+                    )
+                } else if required_arity == total {
+                    format!("expected {} arguments but got ", total)
                 } else {
-                    format!("expected {} or {} arguments", required_arity, total)
+                    format!(
+                        "expected {} or {} arguments but got ",
+                        required_arity, total
+                    )
                 };
                 let msg = Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(format!(
-                        "Too few positionals passed; {} but got ",
+                        "Too few positionals passed; {}",
                         expected
                     )))),
                     op: crate::token_kind::TokenKind::Tilde,
@@ -2869,16 +2925,52 @@ impl Compiler {
         // binding it first would clobber the source array before other params
         // can read from it.  Defer the `$_` binding to the end.
         let mut deferred_topic = None;
+        // Which chunk element the next *positional* param binds. A named slurpy
+        // (`*%h`) consumes none, so it must not shift the params after it.
+        let mut positional_slot = 0usize;
         for (i, p) in params.iter().enumerate() {
             // Sigilless params are prefixed with \\ by the parser.
             let actual_name = p.strip_prefix('\\').unwrap_or(p).to_string();
+            // A slurpy binds a *list*, not one chunk element: `*%h`/`+%h` gets the
+            // named arguments (always none — a `for` loop passes only
+            // positionals), and every other variadic (`*@r`, `**@r`, `+@r`, and
+            // the sigilless capture `|c`) gets whatever is left of the chunk.
+            let slurpy_kind = params_def
+                .get(i)
+                .filter(|d| d.is_variadic())
+                .map(|d| !Self::for_param_is_named_slurpy(p, d));
+            let slurpy_expr = slurpy_kind.map(|is_positional_slurpy| {
+                if is_positional_slurpy {
+                    // `_.skip(n).Array` — a fresh per-iteration Array holding the
+                    // unconsumed tail of the chunk (empty when nothing is left).
+                    Expr::MethodCall {
+                        target: Box::new(Expr::MethodCall {
+                            target: Box::new(Expr::Var("_".to_string())),
+                            name: Symbol::intern("skip"),
+                            args: vec![Expr::Literal(Value::int(positional_slot as i64))],
+                            modifier: None,
+                            quoted: false,
+                        }),
+                        name: Symbol::intern("Array"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    }
+                } else {
+                    Expr::Hash(Vec::new())
+                }
+            });
+            let slot = positional_slot;
+            if slurpy_kind.is_none() {
+                positional_slot += 1;
+            }
             // A param with a default value (`-> $a, $b = 7`) binds to the source
             // element when the chunk has one at this slot, else to the default.
-            // Use an explicit `_.elems > i` test (not `// default`) so a present
-            // but undefined element is still bound, matching Raku.
+            // Use an explicit `_.elems > slot` test (not `// default`) so a
+            // present but undefined element is still bound, matching Raku.
             let element_expr = Expr::Index {
                 target: Box::new(Expr::Var("_".to_string())),
-                index: Box::new(Expr::Literal(Value::int(i as i64))),
+                index: Box::new(Expr::Literal(Value::int(slot as i64))),
                 is_positional: false,
             };
             // An optional param without a default (`-> $a, $b? {}`) seeds its
@@ -2896,13 +2988,15 @@ impl Compiler {
                     cond: Box::new(Expr::Binary {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Gt,
-                        right: Box::new(Expr::Literal(Value::int(i as i64))),
+                        right: Box::new(Expr::Literal(Value::int(slot as i64))),
                     }),
                     then_expr: Box::new(element_expr),
                     else_expr: Box::new(fallback),
                 },
                 None => element_expr,
             };
+            // A slurpy ignores the per-element/default machinery above entirely.
+            let value_expr = slurpy_expr.unwrap_or(value_expr);
             // An `@`-sigil multi-param de-itemizes the chunk element: Raku binds
             // `@a` to the element's *list* (`for $@n, Any -> @a, $T` → `@a` IS the
             // 4-element array), whereas a plain assignment would wrap an itemized
@@ -2912,7 +3006,7 @@ impl Compiler {
             // of collapsing to an untyped `Array`. (A scalar param keeps plain
             // assignment + later MarkReadonly; `%`-sigil is left as plain
             // assignment — `.hash` mis-coerces an itemized hash.)
-            let value_expr = if actual_name.starts_with('@') {
+            let value_expr = if actual_name.starts_with('@') && slurpy_kind.is_none() {
                 Expr::DeitemizeForBind(Box::new(value_expr))
             } else {
                 value_expr

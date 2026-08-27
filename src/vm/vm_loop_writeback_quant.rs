@@ -365,8 +365,12 @@ impl Interpreter {
                         updated_value,
                     );
                 }
-            } else if arity > 1 && !rw_param_names.is_empty() {
-                // Multi-param rw: read each named param and write back to the array
+            } else if !rw_param_names.is_empty() {
+                // Multi-param rw: read each named param and write back to the
+                // array. Also the `arity == 1` multi-param case a trailing slurpy
+                // produces (`for @a <-> $x, *@r`): the single-param branch below
+                // would write the whole chunk over `items[idx]`, since a
+                // multi-param loop has no `param_name` and falls back to `$_`.
                 let base = idx * arity;
                 let mut updated = items.to_vec();
                 for (j, pname) in rw_param_names.iter().enumerate() {

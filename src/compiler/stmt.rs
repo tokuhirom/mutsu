@@ -2580,11 +2580,7 @@ impl Compiler {
                         }
                     }
                 }
-                let arity = if !params.is_empty() {
-                    params.len() as u32
-                } else {
-                    1
-                };
+                let arity = Self::for_chunk_arity(params, params_def);
                 let normalized_iterable = self.normalize_for_iterable(iterable);
                 // A `for`-loop handles `is rw` write-back through its own
                 // `TagContainerRef` mechanism, so the iterable's synthetic
@@ -2662,6 +2658,13 @@ impl Compiler {
                         .enumerate()
                         .map(|(i, p)| {
                             let stripped = p.strip_prefix('\\').unwrap_or(p).to_string();
+                            // A slurpy binds a fresh list of the chunk's leftovers,
+                            // not an element of it, so there is nothing to write
+                            // back through: `for @a <-> $a, *@r { $a = ... }` must
+                            // write back only `$a`.
+                            if params_def.get(i).is_some_and(|d| d.is_variadic()) {
+                                return String::new();
+                            }
                             let per_param_rw = kv_mode
                                 || *rw_block
                                 || params_def.get(i).is_some_and(|d| {

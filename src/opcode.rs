@@ -322,6 +322,22 @@ pub(crate) struct ForLoopSpec {
     pub(crate) source_items_are_bare: bool,
 }
 
+impl ForLoopSpec {
+    /// Whether the value handed to one iteration of the body is a *chunk array*
+    /// of `arity` source elements rather than the bare source element.
+    ///
+    /// A signature with more than one parameter always gets an array, even at
+    /// `arity == 1`: a trailing slurpy (`-> $a, *@rest`) makes rakudo consume
+    /// exactly one element per iteration while the binder still reads `$a` out
+    /// of slot 0 and hands the (empty) remainder to `*@rest`. Handing that
+    /// binder a bare element instead would be ambiguous whenever the element is
+    /// itself a list — `for (1,2),(3,4) -> $a, *@rest` must bind `$a` to the
+    /// whole `(1,2)`, not to `1`.
+    pub(crate) fn chunks_items(&self) -> bool {
+        self.arity > 1 || self.multi_param_names.len() > 1
+    }
+}
+
 /// Precompiled replacements for `CompiledAttrDecl::from_stmt`'s AST-only
 /// declaration-time expressions (`is_default`, `default`, `where_constraint`),
 /// supplied by a caller with compiler access at plan-lowering time (ADR-0019

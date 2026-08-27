@@ -423,6 +423,13 @@ fn closure_signature_as_for_params(
 ) -> ForParamShape {
     match params.len() {
         0 => (None, Box::new(None), Vec::new(), Vec::new(), is_rw, true),
+        // A lone sigil'd slurpy (`*@all { ... } for @list`) binds a *list* of the
+        // iteration chunk rather than the chunk element itself, so it needs the
+        // plural shape whose binder knows about slurpies — exactly the routing
+        // `parse_for_params` uses for the `for @list -> *@all { }` spelling.
+        1 if param_defs[0].is_variadic() && !param_defs[0].sigilless => {
+            (None, Box::new(None), params, param_defs, is_rw, false)
+        }
         1 => {
             let param = params.into_iter().next();
             let param_def = param_defs.into_iter().next();
