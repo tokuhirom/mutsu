@@ -1297,9 +1297,12 @@ pub(crate) struct Compiler {
     /// per-block placeholder and may not appear in a nested signature-less block.
     pub(crate) lexically_in_method: bool,
     /// True when the enclosing routine's own signature declares a parameter
-    /// spelled `$self` — an explicit invocant (`method m($self: $n)`), an
-    /// anonymous invocant marker (`method m(Foo:D:)`, `::?CLASS:`), or an
-    /// ordinary parameter (`sub ($self)`, `-> $self, $x`).
+    /// spelled `$self` — an explicit invocant (`method m($self: $n)`,
+    /// `method symbol(::?CLASS $self: ...)`) or an ordinary parameter
+    /// (`sub ($self)`, `-> $self, $x`). A parser-synthesized *anonymous*
+    /// invocant (`method () {}`, `method (Foo:D:)`, `method (::?CLASS:)`) is
+    /// excluded: it is named `self` only because that is the invocant's env key,
+    /// and it declares no lexical.
     ///
     /// Such a parameter is named `self` in `ParamDef`, so it binds the plain env
     /// key `"self"`. The parser gives every `$`-sigiled `self` the reserved
@@ -2180,12 +2183,22 @@ impl Compiler {
         slot
     }
 
-    /// True when a signature declares a parameter spelled `$self` — an explicit
-    /// or anonymous invocant, or an ordinary positional. Such a `ParamDef` is
-    /// named `self` and therefore binds the plain env key `"self"`; see
-    /// [`Compiler::self_is_signature_param`] and ADR-0061.
-    pub(crate) fn signature_declares_self(param_defs: &[crate::ast::ParamDef]) -> bool {
-        param_defs.iter().any(|pd| pd.declares_self_lexical())
+    /// True when a signature declares a parameter the *source* spelled `$self` —
+    /// an explicit invocant or an ordinary positional, but not a synthesized
+    /// anonymous invocant. Such a `ParamDef` is named `self` and therefore binds
+    /// the plain env key `"self"`; see [`Compiler::self_is_signature_param`],
+    /// [`crate::ast::ParamDef::declares_self_lexical`] and ADR-0061.
+    pub(crate) fn signature_declares_self(
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+    ) -> bool {
+        crate::ast::signature_declares_self_lexical(param_defs)
+            // The legacy binding path only: a single pointy-block parameter
+            // (`-> $self { }`) arrives as a bare name with no `ParamDef` at all.
+            // Whenever `param_defs` IS populated it is authoritative — a method
+            // literal (`method () { ... }`) carries `params = ["self"]` for its
+            // synthesized invocant, which declares no lexical.
+            || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params))
     }
 
     /// Resolve the reserved `$self` lexical key ([`crate::env::LEX_SELF`]) for

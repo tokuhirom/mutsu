@@ -232,7 +232,7 @@ impl Compiler {
         // slurpy, so `%_` / `@_` are valid lexicals anywhere in the body.
         sub_compiler.lexically_in_method = params.iter().any(|p| p == "?CLASS");
         sub_compiler.self_is_signature_param =
-            self.self_is_signature_param || Self::signature_declares_self(param_defs);
+            self.self_is_signature_param || Self::signature_declares_self(params, param_defs);
         // Propagate last_source_line so the sub body knows which line
         // the sub was defined at (for backtraces).
         sub_compiler.last_source_line = self.last_source_line;
@@ -988,7 +988,7 @@ impl Compiler {
         // A `$self` parameter of an enclosing routine stays visible in a nested
         // block/closure, exactly like any other lexical (ADR-0061).
         sub_compiler.self_is_signature_param =
-            self.self_is_signature_param || Self::signature_declares_self(param_defs);
+            self.self_is_signature_param || Self::signature_declares_self(params, param_defs);
         // Propagate the distribution context so `$?DISTRIBUTION` resolves to the
         // owning module's distribution inside a routine/method body (which is
         // compiled through this closure-body path), not Nil.

@@ -8,7 +8,7 @@ use Test;
 # the closure was next called with, and the `Proxy` form of that recursed into
 # `FETCH` until the process died. ADR-0061 gives the lexical its own key.
 
-plan 25;
+plan 29;
 
 class Outer { method tag { 'OUTER' } }
 class Inner { method tag { 'INNER' } }
@@ -177,6 +177,32 @@ class Inner { method tag { 'INNER' } }
     }
     is C10.new.m, 9, '$self supports ++, += and := like any other lexical';
     is $outer, 'OUT', 'and none of that disturbed the enclosing scope';
+}
+
+# --- 10b. A `$self` parameter must also reach a body run through the AST
+#          *carrier* path, which recompiles `SubData::body` with a bare compiler
+#          and so cannot consult `Compiler::self_is_signature_param`. `Date`'s
+#          formatter callback is a real instance of that path.
+{
+    my $us = sub ($self) { sprintf "%02d/%02d/%04d", .month, .day, .year given $self };
+    is Date.new('2015-12-31', formatter => $us).Str, '12/31/2015',
+        'a `sub ($self)` invoked through a native callback binds $self';
+}
+
+# --- 10c. The remaining shapes where the name `self` arrives from somewhere
+#          other than `my $self`: a SINGLE pointy-block parameter (which the
+#          legacy binding path carries as a bare name with no ParamDef at all),
+#          a destructuring sub-signature, and a `$self` parameter captured by a
+#          closure that outlives its frame.
+{
+    my $b1 = -> $self { "one:$self" };
+    is $b1('B'), 'one:B', 'a single `-> $self` pointy parameter binds $self';
+
+    sub destr([$self, $x]) { "destr:$self/$x" }
+    is destr([1, 2]), 'destr:1/2', 'a destructured sub-signature `$self` binds too';
+
+    sub outer-cb($self) { my $cb = { "cap:$self" }; $cb }
+    is outer-cb('Z')(), 'cap:Z', 'a $self parameter survives into an escaping closure';
 }
 
 # --- 11. A `for` loop parameter spelled `$self`.

@@ -67,6 +67,33 @@ lexical scope does. A parser-synthesized anonymous invocant (`method () { ... }`
 no lexical, so those carry an `IMPLICIT_INVOCANT_TRAIT` marker and
 `ParamDef::declares_self_lexical()` is the one oracle that tells the two apart.
 
+The finding warned that a naive fix risks *silently mis-binding, which would be worse
+than the current loud stack overflow*. That risk was real, and closing it took two
+rounds — both failures the same shape: the name `self` arriving from somewhere other
+than a `my $self`, at a site that did not consult the same oracle.
+
+First, a compiler flag only reaches bodies the compiler compiled with the signature in
+view, and mutsu has paths where that is not true. `t/dateish-methods.t` passes
+`sub ($self) { ... given $self }` as a `Date` formatter; the compiled path was fine, but
+the formatter is invoked through the AST *carrier* (`eval_block_value`), which recompiles
+`SubData::body` with a bare `Compiler::new()` — no flag, so the body read the reserved key
+while the parameter had bound the plain one. Rather than thread the flag through an
+open-ended list of entry points, `bind_function_args_values` now binds such a parameter
+under **both** keys: binding is common to every execution path, so the flag became an
+optimization for the compiled fast path rather than the contract.
+
+Second, two signature shapes the `ParamDef` scan simply could not see: a *single*
+pointy-block parameter (`-> $self { }`) has no `ParamDef` at all — only a bare name — and
+a destructured `sub f([$self, $x])` hides its `$self` one level down in `sub_signature`.
+Both bound `self` while their bodies read `$self`. The oracle now recurses into
+sub-signatures and consults the bare name list when (and only when) `param_defs` is
+empty, since a populated one is authoritative — a method literal carries
+`params = ["self"]` for its *synthesized* invocant, which declares no lexical.
+
+The durable lesson: the guard against mis-binding is one shared oracle plus a mirror at
+the binding chokepoint, not a flag threaded through call sites. A flag is only as good
+as the enumeration of paths that set it, and that enumeration was wrong twice.
+
 The ADR records why the two obvious alternatives lost: re-keying the *invocant* instead
 would have touched roughly 120 env-key sites across `src/runtime/` and `src/vm/` for no
 extra correctness, and a runtime "read `$self`, fall back to `self`" would have been
@@ -75,7 +102,7 @@ parameter — the compile-time flag cannot mis-bind that way.
 
 ## Results
 
-- `t/lexical-self-vs-invocant.t` pins 18 assertions covering every direction, including
+- `t/lexical-self-vs-invocant.t` pins 29 assertions covering every direction, including
   the negative ones: bare `self` in a method is still the invocant; `method bar($self: $n)`
   still binds `$self` to the invocant; `method m(C:D:)`'s anonymous invocant marker does
   *not* shadow an outer `$self`; `sub ($self)` / `-> $self, $x` parameters keep working,
@@ -87,9 +114,11 @@ parameter — the compile-time flag cannot mis-bind that way.
   and `AT-KEY` with the `my $self = self` + `Proxy` idiom. `docs/batteries/xml.md` is
   updated with the new count and the now-dominant blockers.
 
-Two neighbouring defects found while verifying the fix are filed separately, since both
-reproduce with an ordinary variable name and are untouched by this change:
+Three neighbouring defects found while verifying the fix are filed separately, since all
+three reproduce with an ordinary variable name and are untouched by this change:
 `todo/tickets/proxy-at-pos-store-and-shadowed-capture.md` (a `Proxy` returned from an
 `is rw` `AT-POS` loses its STORE, and its deferred capture loses to a same-named outer
-lexical) and `todo/tickets/proxy-what-reports-proxy-instead-of-fetching.md` (`.WHAT` on a
-`Proxy` answers about the container instead of FETCHing first).
+lexical), `todo/tickets/proxy-what-reports-proxy-instead-of-fetching.md` (`.WHAT` on a
+`Proxy` answers about the container instead of FETCHing first), and
+`todo/tickets/routine-local-bind-writes-through-to-same-named-outer-lexical.md`
+(`sub m { my $q = 5; my $r := $q; $r = 9 }` leaks the write to an enclosing `$q`).

@@ -76,7 +76,7 @@ user variable; and it is a *plain lowercase-identifier* key under the sigil, so 
 through the ordinary lexical machinery (free-variable capture, closure upvalues, block
 scoping, cross-thread sharing) with no special cases.
 
-The rename is applied where a **name becomes a key**, in two layers:
+The rename is applied where a **name becomes a key**, in three layers:
 
 1. **Parser** — the point where a `$`-sigiled `self` becomes a name string:
    - `src/parser/primary/var/scalar.rs` emits `Expr::Var("$self")` for a read.
@@ -102,7 +102,28 @@ The rename is applied where a **name becomes a key**, in two layers:
    anonymous invocant (`method () { ... }`, `method (Foo:D:)`, `method (::?CLASS:)`),
    which is also recorded under the name `self` but declares no lexical. The synthesized
    forms carry the `IMPLICIT_INVOCANT_TRAIT` marker (`src/ast.rs`), and
-   `ParamDef::declares_self_lexical()` is the single oracle both use.
+   `ast::signature_declares_self_lexical()` is the single oracle every layer consults —
+   deliberately one function, because a compiler that thinks `$self` means the parameter
+   while the binder thinks it means the reserved key is precisely the silent mis-binding
+   this ADR set out to avoid. It recurses into destructuring sub-signatures
+   (`sub f([$self, $x])`), and `ast::param_names_declare_self_lexical()` covers the
+   legacy binding path, where a *single* pointy-block parameter (`-> $self { }`) arrives
+   as a bare name with **no `ParamDef` at all** — consulted only when `param_defs` is
+   empty, since a populated one is authoritative (a method literal carries
+   `params = ["self"]` for its synthesized invocant).
+
+3. **Runtime** — a compiler flag only reaches bodies the *compiler* compiled with the
+   signature in view, and mutsu has execution paths where that is not true: the AST
+   **carrier** (`eval_block_value`) recompiles `SubData::body` with a bare
+   `Compiler::new()`, so a `Sub` invoked from a native callback (`Date`'s formatter,
+   `Proxy` FETCH/STORE, `.classify`, …) runs a body with no flag at all. Rather than
+   thread the flag through every such entry point — an open-ended list, where a missed
+   one reads an unbound `$self` — `bind_function_args_values` binds a
+   `declares_self_lexical()` parameter under **both** keys. Binding is common to every
+   execution path, so the parameter is visible whether the body was compiled with the
+   flag, without it, or interpreted. The gate is the same oracle: mirroring a
+   *synthesized* invocant onto the reserved key would put the invocant back on top of a
+   captured outer `my $self`, which is the collision this ADR removes.
 
 ## Alternatives considered
 
@@ -145,6 +166,33 @@ never seen; nothing errors, the wrong object is simply used. The compile-time fl
 mis-bind that way: it is decided from the signature being compiled, and a miss surfaces
 as a loud "method not found on Nil", not as a wrong answer.
 
+## The asymmetry this had to close
+
+The finding warned that a naive fix risks "silently mis-binding, which would be worse
+than the current loud stack overflow". That risk was real, and it took two rounds to
+close. Both failures had the same shape — **the name `self` arriving from somewhere
+other than a `my $self`, at a site that did not consult the same oracle**:
+
+1. **A `$self` parameter, in a body run through the AST carrier.** `t/dateish-methods.t`
+   passes `sub ($self) { ... given $self }` as a `Date` formatter. The compiled path was
+   correct (a direct `$us(...)` call worked), but the formatter is invoked through
+   `eval_call_on_value` → `call_sub_value` → `eval_block_value`, which recompiles
+   `SubData::body` with a bare `Compiler::new()` — no flag, so the body read the reserved
+   key while the parameter had bound the plain one. Fixed by layer 3: the mirror is at
+   *binding*, which every path shares.
+
+2. **Signature shapes the `ParamDef` scan could not see.** A *single* pointy-block
+   parameter (`-> $self { }`) has no `ParamDef` at all — only a bare name in `params` —
+   and a destructured `sub f([$self, $x])` hides its `$self` one level down in
+   `sub_signature`. Both bound `self` while their bodies read `$self`. Fixed by making
+   the oracle recurse and by consulting the name list when (and only when) `param_defs`
+   is empty.
+
+The lesson the ADR wants to keep: the guard against mis-binding is **one shared oracle
+plus a mirror at the binding chokepoint**, not a flag threaded through call sites. A
+flag is only as good as the enumeration of paths that set it, and that enumeration was
+wrong twice.
+
 ## Consequences
 
 - **The soundness bug is fixed in both directions**: a captured `$self` survives being
@@ -162,6 +210,10 @@ as a loud "method not found on Nil", not as a wrong answer.
   function's sigil set, so the decider character is `s`), which is what lets a closure
   drop a non-free outer `$self` instead of shadowing a routine-local one with it. A
   dynamic key such as `"$*x"` still has decider `*` and is still kept.
+- **The compiler flag is an optimization, not the contract.** The runtime mirror is what
+  makes a `$self` parameter reachable; the flag merely lets the compiled fast path read
+  it from the parameter's own slot instead of by name. A future execution path that
+  forgets the flag is therefore correct-but-slower, not wrong.
 - **One deliberately-unfixed corner.** A `class`/`method` declared lexically *inside* a
   routine that has a `$self` parameter does not inherit the flag, because a method body is
   compiled by a bare `Compiler::new()` that deliberately inherits no enclosing scope
@@ -171,7 +223,7 @@ as a loud "method not found on Nil", not as a wrong answer.
 
 ## Verification
 
-`t/lexical-self-vs-invocant.t` (18 assertions, verified to pass under `raku` first) pins
+`t/lexical-self-vs-invocant.t` (29 assertions, verified to pass under `raku` first) pins
 every direction of the decision, including the ones a mis-binding would break:
 
 - a mainline `my $self` read from a method body, and the negative direction — bare `self`
@@ -181,6 +233,12 @@ every direction of the decision, including the ones a mis-binding would break:
   a same-named mainline lexical in scope, which is what forced the
   `is_plain_user_lexical` classification;
 - the `Proxy` `AT-POS` **and** `AT-KEY` forms, which must simply not overflow;
+- a `sub ($self)` invoked through a *native callback* (`Date`'s formatter), which is the
+  AST-carrier path the runtime mirror exists for — it regressed `t/dateish-methods.t`
+  when only the compiler flag was in place;
+- a **single** `-> $self { }` pointy parameter (no `ParamDef`), a destructured
+  `sub f([$self, $x])`, and a `$self` parameter captured by an escaping closure — the
+  three shapes the first `ParamDef`-only oracle could not see;
 - `method bar($self: $n)` — an explicit invocant parameter genuinely named `self` — and
   its method-literal form, plus `method m(C:D:)` where the anonymous invocant marker must
   *not* shadow an outer `$self`;
