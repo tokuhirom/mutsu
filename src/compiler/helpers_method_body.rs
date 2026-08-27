@@ -135,6 +135,36 @@ impl Compiler {
             self.record_type_body_written_lexicals(type_body_writes);
         }
 
+        // ...and this body's outer-lexical READS, on the same one compile, into
+        // the enclosing frame's ordinary closure-capture channel. A method is
+        // installed into its type's method table by `RegisterDecl` and, exactly
+        // like a nested named `sub` (`compile_sub_body_with_deprecation`'s twin
+        // push) and unlike a nested anonymous closure, has no runtime
+        // closure-creation op — so it never reaches `closure_compiled_codes`
+        // and the enclosing scope's own `compute_free_vars` scan would
+        // otherwise never learn that this body references an outer lexical.
+        // Without this, `my $l = 42; my &blk = { my class C { method go() { $l
+        // } }; C.new.go }; blk()` snapshots a closure env with no `$l` in it
+        // and the method reads `Any` (see
+        // `news/2026-08/class-method-in-block-free-var-capture.md`).
+        // `type_body_written_lexicals` above covers only the WRITES, and does
+        // so through a separate, name-keyed runtime lane
+        // (`note_type_body_written_lexicals`) that never populates the capture
+        // set a block value carries.
+        if !cc.free_var_syms.is_empty() {
+            self.code
+                .nested_routine_free_reads
+                .push(cc.free_var_syms.clone());
+        }
+        // A parameter's DEFAULT VALUE (`method go($x = $l) {...}`) is a second,
+        // distinct capture site: it is evaluated from the `ParamDef` AST at
+        // call time and never appears in `cc`'s ops at all, so the fold above
+        // cannot see it. Same for a `where` constraint. Harvest both the same
+        // way the attribute-default side does
+        // (`bubble_decl_time_free_reads`).
+        let param_default_reads = self.decl_time_param_free_var_syms(&effective_param_defs);
+        self.bubble_decl_time_free_reads(param_default_reads);
+
         // Key shape follows C2 (design decision 5): a `!m` marker keeps
         // method keys disjoint from sub keys, and the fingerprint —
         // computed over the EFFECTIVE params/param_defs/body, matching what
@@ -192,6 +222,62 @@ impl Compiler {
         let key = Symbol::intern(&key_str);
         self.compiled_functions.insert(key, cf);
         Some(key)
+    }
+
+    /// Record `syms` as an extra free-variable contribution to THIS frame's
+    /// capture set (`CompiledCode::nested_routine_free_reads`), for a
+    /// declaration-time expression that is evaluated from raw AST rather than
+    /// from any compiled body — a method parameter's default/`where`
+    /// (`method go($x = $l)`) or an attribute's default (`has $.a = $l`).
+    /// Both are run at method-call / object-construction time, long after the
+    /// declaring block's own frame is gone, and neither contributes ops to a
+    /// `CompiledCode` the enclosing free-var scan walks, so without this the
+    /// name is missing from the block's closure-env snapshot exactly like a
+    /// method body's own reads were (see
+    /// `news/2026-08/class-method-in-block-free-var-capture.md`).
+    pub(crate) fn bubble_decl_time_free_reads(&mut self, syms: Vec<Symbol>) {
+        if !syms.is_empty() {
+            self.code.nested_routine_free_reads.push(syms);
+        }
+    }
+
+    /// Free plain-lexical names referenced by the default values and `where`
+    /// constraints of `param_defs`, harvested by compiling each expression as
+    /// a standalone analysis chunk (the same throwaway-compile technique
+    /// [`Self::record_type_body_captures_uncompiled`] uses). Filtered to plain
+    /// user lexicals: a standalone chunk owns no locals, so EVERY name it
+    /// touches looks free, and attribute/dynamic/special names resolve through
+    /// their own stores rather than the enclosing lexical env.
+    pub(crate) fn decl_time_param_free_var_syms(
+        &self,
+        param_defs: &[crate::ast::ParamDef],
+    ) -> Vec<Symbol> {
+        let mut out: Vec<Symbol> = Vec::new();
+        for pd in param_defs {
+            let exprs = pd.default.iter().chain(pd.where_constraint.as_deref());
+            for expr in exprs {
+                for sym in self.decl_time_expr_free_var_syms(expr) {
+                    if !out.contains(&sym) {
+                        out.push(sym);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// [`Self::decl_time_param_free_var_syms`] for one expression.
+    pub(crate) fn decl_time_expr_free_var_syms(&self, expr: &Expr) -> Vec<Symbol> {
+        let mut chunk_compiler = Compiler::new();
+        chunk_compiler.set_current_package(self.runtime_current_package().to_string());
+        chunk_compiler.current_distribution = self.current_distribution.clone();
+        let body = [Stmt::Expr(expr.clone())];
+        let (code, _fns) = chunk_compiler.compile(&body);
+        code.free_var_syms
+            .iter()
+            .copied()
+            .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+            .collect()
     }
 
     /// The qualified package name a class body's `RegisterClass` op will

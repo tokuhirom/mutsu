@@ -197,6 +197,8 @@ impl Compiler {
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_class_attr_decls(body);
+        let attr_free_reads = self.attr_decl_free_var_syms(&attr_decls);
+        self.bubble_decl_time_free_reads(attr_free_reads);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_arg_chunks = self.compile_parent_arg_chunks(parent_args);
         // ADR-0019 D3-8a: only a statically-named class (`name_expr` absent —
@@ -507,6 +509,51 @@ impl Compiler {
         }
     }
 
+    /// Free plain-lexical names referenced by the attribute DEFAULT and
+    /// `where` expressions of a class/role body, so the declaring frame can
+    /// capture them (see [`Self::bubble_decl_time_free_reads`]). These chunks
+    /// run at object-construction time — long after the declaring block's own
+    /// frame is gone — and are compiled as standalone units
+    /// ([`Self::compile_decl_expr_inner`]) that the enclosing frame's free-var
+    /// scan never walks, so `my $l = 42; my &blk = { my class C { has $.a = $l
+    /// }; C.new.a }; blk()` would otherwise read `Any`.
+    ///
+    /// A standalone chunk owns no locals, so every name it touches looks free;
+    /// the plain-user-lexical filter keeps attribute/dynamic/special names
+    /// (which resolve through their own stores) out of the capture set.
+    fn attr_decl_free_var_syms(
+        &self,
+        attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
+    ) -> Vec<Symbol> {
+        let mut out: Vec<Symbol> = Vec::new();
+        for (_, decl) in attr_decls {
+            for arg in [decl.default.as_ref(), decl.where_constraint.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let syms: Vec<Symbol> = match arg {
+                    crate::opcode::DeclTraitArg::Compiled(chunk) => chunk
+                        .code
+                        .free_var_syms
+                        .iter()
+                        .copied()
+                        .filter(|sym| sym.with_str(crate::env::is_plain_user_lexical))
+                        .collect(),
+                    crate::opcode::DeclTraitArg::Ast(expr) => {
+                        self.decl_time_expr_free_var_syms(expr)
+                    }
+                    crate::opcode::DeclTraitArg::Literal(_) => Vec::new(),
+                };
+                for sym in syms {
+                    if !out.contains(&sym) {
+                        out.push(sym);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Build one attribute's typed descriptor, precompiling its `is
     /// default(...)`, `default`, and `where_constraint` trait/expr arguments
     /// (ADR-0019 D2c-1/D2c-4) inline instead of leaving them as raw `Expr`s
@@ -550,6 +597,8 @@ impl Compiler {
         };
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_role_attr_decls(body);
+        let attr_free_reads = self.attr_decl_free_var_syms(&attr_decls);
+        self.bubble_decl_time_free_reads(attr_free_reads);
         let method_name_chunks = self.compile_method_name_chunks(body);
         let parent_ops = self.compile_role_parent_ops(body);
         // ADR-0019 D3-8a: `role_body_method_decl` always passes `is_hidden:
