@@ -615,10 +615,10 @@ impl Compiler {
         // closure's `free_var_syms`. A named sub has no runtime
         // closure-creation op, so this compile-time channel is the only way a
         // variable referenced ONLY inside its body reaches this scope's own
-        // `free_var_syms` (see `named_sub_free_reads`'s doc comment and
+        // `free_var_syms` (see `nested_routine_free_reads`'s doc comment and
         // `news/2026-08/nested-named-sub-free-var-capture.md`).
         self.code
-            .named_sub_free_reads
+            .nested_routine_free_reads
             .push(cf.code.free_var_syms.clone());
         // An `our sub` is installed into the package registry and outlives its
         // declaring block, but a registry routine has no per-sub closure env. So
@@ -876,6 +876,15 @@ impl Compiler {
             .copied()
             .collect();
         self.record_type_body_written_lexicals(writes);
+        // Same reads fold `compile_method_body` performs on its own compile —
+        // this body has no runtime closure-creation op either, so the enclosing
+        // frame learns which outer lexicals it reads only through this channel
+        // (see `CompiledCode::nested_routine_free_reads`).
+        if !cf.free_var_syms.is_empty() {
+            self.code
+                .nested_routine_free_reads
+                .push(cf.free_var_syms.clone());
+        }
     }
 
     /// Surface the free variables of a stmt_pool-stashed body (`gather` /
