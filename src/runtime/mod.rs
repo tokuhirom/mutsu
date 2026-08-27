@@ -452,6 +452,7 @@ mod io_pod_table;
 mod io_sysinfo;
 mod io_sysinfo_host;
 mod io_sysinfo_kernel;
+mod io_sysinfo_user;
 mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
