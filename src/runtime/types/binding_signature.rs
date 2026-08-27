@@ -1761,7 +1761,10 @@ impl Interpreter {
                 }
                 if positional_idx < args.len() {
                     let is_rw = pd.traits.iter().any(|t| t == "rw");
-                    let is_raw = pd.traits.iter().any(|t| t == "raw");
+                    // A sigilless `\p` is implicitly raw in Raku, so it takes the
+                    // same container-aliasing path as `is raw` — see
+                    // [`ParamDef::binds_caller_container`].
+                    let is_raw = pd.binds_caller_container() && !is_rw;
                     // Caller source name a scalar `is rw`/`is raw` param should
                     // alias through a shared cell (set below when eligible).
                     let mut rw_shared_cell_key: Option<String> = None;
@@ -1799,7 +1802,36 @@ impl Interpreter {
                                 indexed_varref_from_value(&args[positional_idx]),
                                 Some((_, _, Some(_)))
                             );
-                            if param_is_plain_scalar && source_is_plain_scalar && !source_is_indexed
+                            // An IMPLICITLY raw (sigilless) parameter additionally
+                            // requires the argument to be a variable the compiler
+                            // resolved to a slot. `Expr::BareWord` arg sources are
+                            // recorded verbatim by
+                            // `Compiler::positional_arg_source_name`, so a class or
+                            // type name reaches here looking exactly like a
+                            // sigilless variable — and installing the shared cell
+                            // under that name shadowed the CLASS with a
+                            // `ContainerRef` for the rest of the program:
+                            // `sub is-coerced(Any $v, Mu \target, ...)` called as
+                            // `is-coerced $v1, C1, ...` (roast
+                            // S12-coercion/coercion-methods.t) made every later
+                            // `C1(Any)` coercion fail with "no acceptable coercion
+                            // method found". The `WrapVarRef` site distinguishes
+                            // them: a real slot for `g($z)` / `g(p)`, the
+                            // `u32::MAX` "known NOT a local of this frame" sentinel
+                            // for `g(C1)`. Only that explicit sentinel vetoes the
+                            // cell — a `None` slot (a method call, whose arguments
+                            // carry no varref tag) keeps the existing behaviour,
+                            // and a genuine free sigilless variable arrives as a
+                            // `ContainerRef` already (see `exec_wrap_var_ref_op`'s
+                            // container-capture reuse), which the arm below binds
+                            // directly. Explicit `is rw` / `is raw` are untouched.
+                            let implicit_raw_veto = is_raw
+                                && !pd.traits.iter().any(|t| t == "raw")
+                                && args[positional_idx].varref_slot() == Some(u32::MAX);
+                            if param_is_plain_scalar
+                                && source_is_plain_scalar
+                                && !source_is_indexed
+                                && !implicit_raw_veto
                             {
                                 rw_shared_cell_key = Some(source_name.clone());
                             }

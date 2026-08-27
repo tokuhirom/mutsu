@@ -836,18 +836,29 @@ impl Interpreter {
         if source_is_own_frame_lexical {
             return;
         }
-        // Every matching frame is still patched, not just the innermost one.
-        // That is deliberately conservative: an alias CHAIN through raw
-        // parameters (`method new(\p) { self.bless!SET-SELF: p }` ->
+        // Only the INNERMOST ancestor frame that declares the name is the scope
+        // this bind's source resolved in — exactly the tier the env chain's own
+        // lookup stops at, since a callee's env is an `Env::scoped_child` of its
+        // caller's. Frames further out that happen to declare the same name hold
+        // variables this bind is *shadowed by*, not aliases of it, and writing
+        // the shared cell into them corrupted an unrelated caller's lexical (the
+        // mirror image, one frame up, of the recursion clobber the gate above
+        // rules out). So: splice once, then stop.
+        //
+        // This used to have to be a blanket write over every matching frame,
+        // because an alias CHAIN through raw parameters
+        // (`method new(\p) { self.bless!SET-SELF: p }` ->
         // `method !SET-SELF(\p) { $!x := p }`, roast S32-list/tail.t's
-        // `PredictiveIterator`) currently relies on the blanket write to reach
-        // the outermost frame that declares the name — mutsu does not yet
-        // propagate a bind transitively through each raw parameter's own
-        // aliasing, so stopping at the innermost match would cut the chain at
-        // the first intermediate routine whose parameter shares the name.
+        // `PredictiveIterator`) reached the caller ONLY by that blanket write
+        // finding a frame that happened to declare the same name. Now that a
+        // sigilless/raw parameter genuinely binds the caller's container
+        // (`ParamDef::binds_caller_container`), the chain is carried by the
+        // shared cell itself and needs no by-name reach, so the splice can be
+        // narrowed to the one frame it belongs in.
         for frame in self.call_frames.iter_mut().rev() {
             if frame.saved_env.contains_key_own_tier(name) {
                 frame.saved_env.insert(name.to_string(), container.clone());
+                return;
             }
         }
     }
@@ -908,31 +919,14 @@ impl Interpreter {
         resolved_source: &str,
         bind_source_slot: Option<u32>,
     ) -> bool {
-        let slot = if source_name == resolved_source
+        if source_name == resolved_source
             && let Some(slot) = bind_source_slot
         {
             // `u32::MAX` is the compiler's explicit "not a local of this frame".
-            if slot == u32::MAX {
-                return false;
-            }
-            slot
-        } else {
-            let Some(slot) = code.locals.iter().rposition(|n| n == resolved_source) else {
-                return false;
-            };
-            if !self.env().contains_key_own_tier(resolved_source) {
-                return false;
-            }
-            slot as u32
-        };
-        // A PARAMETER slot is not a fresh lexical of this invocation. A raw
-        // (`\p`) or `is rw` parameter aliases the caller's own container, so a
-        // bind through it must still reach outward — mutsu currently carries
-        // that outward reach through this very splice (see the loop above), so
-        // gating a parameter as "mine" would silently cut a raw-parameter alias
-        // chain (roast `S32-list/tail.t` / `skip.t`'s `PredictiveIterator`).
-        // Only a `my`-declared local is unambiguously this invocation's own.
-        !code.param_local_slots.contains(&slot)
+            return slot != u32::MAX;
+        }
+        code.locals.iter().any(|n| n == resolved_source)
+            && self.env().contains_key_own_tier(resolved_source)
     }
 
     /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any

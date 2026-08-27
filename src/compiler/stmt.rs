@@ -1618,7 +1618,20 @@ impl Compiler {
                     self.bind_terminal = false;
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
-                        || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. })))
+                        || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+                        // A bind whose source is a SIGILLESS variable (`my $x := p`,
+                        // where `p` is a `\p` parameter or a `my \p` alias) parses as
+                        // a bare `BareWord` RHS, so it never reached the
+                        // `compile_call_arg` route that emits `WrapVarRef` — unlike
+                        // the sigiled `my $x := $p`. Without that tag the bind has no
+                        // source identity at all: `SetLocal`'s bind path saw a plain
+                        // value with `bind_source == None` and marked the target
+                        // immutable, so `my $x := p; $x = 1` died with "Cannot assign
+                        // to an immutable value" even though `p` aliases a writable
+                        // caller container. Restricted to names the compiler knows
+                        // are sigilless variables, so an ordinary bareword (a type
+                        // name, a constant, a listop call) is untouched.
+                        || matches!(expr, Expr::BareWord(n) if self.sigilless_locals.contains(n.as_str())))
                 {
                     // A scalar `:=` bind to a *whole* container variable
                     // (`my $ref := @a` / `my $ref := %h`) must alias the same
