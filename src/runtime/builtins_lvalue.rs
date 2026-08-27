@@ -538,8 +538,11 @@ impl Interpreter {
                 }
                 // The routine returned a plain value. Fall back to the legacy
                 // caller-side tail re-interpretation, which still covers the
-                // bare-lexical tail (`sub f() is rw { $x }`) — a variable is not
-                // yet compiled to a container return (see ADR-0058 §Slice 2).
+                // bare-lexical tail (`sub f() is rw { $x }`, no `return-rw`) —
+                // that shape is not yet compiled to a container return
+                // (ADR-0059 §Slice 2's remaining half). An explicit `return-rw
+                // $x` now DOES return the variable's container, so it no longer
+                // depends on this path.
                 if let Some(target_expr) = tail {
                     match self.assign_rw_target_expr(&target_expr, value.clone()) {
                         Ok(result) => return Ok(result),
@@ -607,7 +610,7 @@ impl Interpreter {
                 // Lvalue return, the same order as the named path above: run the
                 // routine, write through the container it returns, and only fall
                 // back to the caller-side tail re-interpretation for a routine
-                // that returned a plain value (ADR-0058).
+                // that returned a plain value (ADR-0059).
                 if data.is_rw
                     || tail
                         .as_ref()

@@ -836,6 +836,18 @@ pub(crate) enum OpCode {
         name_idx: u32,
         slot: u32,
     },
+    /// Resolve a `WrapVarRef`-tagged top-of-stack value to the *shared cell* of
+    /// the variable it names, boxing the variable's local slot into a
+    /// `ContainerRef` if it is not one already (`capture_var_cell_inner` with
+    /// `box_type_objects`, i.e. exactly what `MakeArray` does per List element).
+    ///
+    /// Emitted for a `return-rw` operand that names a plain scalar lexical
+    /// (ADR-0059 Slice 2): `sub f() { return-rw $v }` must hand the caller `$v`'s
+    /// container, so a later `my $r := f(); $r = 5` — or an element write through
+    /// a returned list of containers — writes `$v` itself. `MakeArray`/
+    /// `MakeCapture`/`MakePair` consume the `VarRef` tag inline; this opcode is
+    /// the standalone spelling for the one-value case.
+    CaptureVarCell,
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via

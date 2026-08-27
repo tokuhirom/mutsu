@@ -992,6 +992,7 @@ impl Compiler {
             return;
         }
 
+        let wb_base = self.index_rw_writeback_base();
         for arg in &rewritten_args {
             match arg {
                 // A closure literal NAMED-argument value escapes exactly as it
@@ -1046,6 +1047,11 @@ impl Compiler {
             arg_sources_idx,
             keep_value: true,
         });
+        // This dispatch shape has no writeback emit point (see
+        // `index_rw_writeback_base`). Drop what this call's own arguments
+        // queued rather than leaving it for the next call to emit around ITS
+        // result.
+        self.pending_index_rw_writebacks.truncate(wb_base);
     }
 
     /// Classify a CONTROL block as "resume-safe": it always `.resume`s and

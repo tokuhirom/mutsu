@@ -923,28 +923,41 @@ impl Interpreter {
                             .collect(),
                     ));
                 }
-                // For List containers: allow assignment through a Scalar element.
-                // `my $l := List.new: 1, 2, my $ = 3` stores a Scalar value at
-                // position 2; `$l[2] = 42` should update that Scalar in-place.
-                let list_scalar_hit = if let ValueView::Array(items, kind) = target_val.view()
+                // A List is immutable as a *container* — its element slots cannot
+                // be replaced — but an element that IS a container is writable
+                // through that container, which is exactly what makes `my $a = 1;
+                // my $l = ($a, $b); $l[0] = 9` write `$a` in Raku. Two spellings
+                // reach here: an itemized `Scalar` element (`List.new: 1, 2, my $
+                // = 3`) and a shared `ContainerRef` cell (a List literal's
+                // variable element, or a `return-rw $a, $b` result).
+                let list_container_hit = if let ValueView::Array(items, kind) = target_val.view()
                     && (kind == crate::value::ArrayKind::List
                         || kind == crate::value::ArrayKind::ItemList)
                     && let Some(i) = Self::index_to_usize(&idx)
-                    && matches!(items.get(i).map(Value::view), Some(ValueView::Scalar(_)))
-                {
+                    && matches!(
+                        items.get(i).map(Value::view),
+                        Some(ValueView::Scalar(_) | ValueView::ContainerRef(_))
+                    ) {
                     Some((items.clone(), i))
                 } else {
                     None
                 };
-                if let Some((items, i)) = list_scalar_hit {
-                    // Update the Scalar element in-place.
+                if let Some((items, i)) = list_container_hit {
+                    // Write through the element's container in place.
                     // SAFETY: aliased in-place mutation of a shared list backing;
                     // see `gc_contents_mut`. No borrow into the items is live
                     // across the write. (The old code cast the `ArrayData` pointer
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items_mut()[i] = Value::scalar(val.clone());
+                    let slot = &mut data.items_mut()[i];
+                    if let ValueView::ContainerRef(cell) = slot.view() {
+                        // A shared cell keeps its identity: every other alias of
+                        // the same variable observes the write.
+                        *cell.lock().unwrap() = val.clone();
+                    } else {
+                        *slot = Value::scalar(val.clone());
+                    }
                     self.stack.push(val);
                     return Ok(());
                 }

@@ -16,10 +16,19 @@ impl Compiler {
     /// autovivifies the path). `assign_lvalue_container` at the call site writes
     /// through whichever of those comes back.
     ///
-    /// Every other operand shape (a bare variable in particular) compiles
-    /// unchanged: a variable tail already resolves in the caller's frame
-    /// through the legacy name-based path, and forcing a container there would
-    /// change what an ordinary `my $v = g()` read observes.
+    /// A plain scalar lexical operand (ADR-0059 Slice 2) is compiled to the
+    /// variable's *shared cell* (`WrapVarRef` + `CaptureVarCell`, the same
+    /// capture a List literal element gets), so `sub f() { return-rw $v }` hands
+    /// the caller `$v`'s container. Ordinary reads of the result decontainerize
+    /// at the usual chokepoints (`GetLocal`'s `into_deref`, element reads), so
+    /// `my $x = f()` still observes a value; only a binding (`my $r := f()`) or
+    /// an element write through a returned list keeps the container.
+    ///
+    /// An inline declaration operand (`return-rw my $x = 1`) is the same shape
+    /// once the declaration has run: the value is on the stack and the local
+    /// slot exists, so the identical two-op tail boxes that slot. The cell
+    /// outlives the callee frame because it is a GC'd `Gc<Mutex<Value>>`, not a
+    /// frame reference.
     pub(super) fn compile_return_rw_arg(&mut self, arg: &Expr) {
         let saved_rw = self.rw_return_operand;
         self.rw_return_operand = true;
@@ -33,9 +42,42 @@ impl Compiler {
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
             }
-            _ => self.compile_expr(arg),
+            _ => {
+                let cell_name = Self::return_rw_container_name(arg);
+                self.compile_expr(arg);
+                if let Some(name) = cell_name {
+                    self.emit_wrap_var_ref(&name);
+                    self.code.emit(OpCode::CaptureVarCell);
+                }
+            }
         }
         self.rw_return_operand = saved_rw;
+    }
+
+    /// The lexical name a `return-rw` operand denotes the *container* of, when
+    /// that container is a plain scalar variable's own cell: a bare `$v` (or
+    /// `$v.item`, which Raku defines as handing the invocant's container back),
+    /// and an inline `my $x = ...` declaration, whose slot is live by the time
+    /// the operand's value reaches the stack.
+    ///
+    /// Deliberately narrow. `@`/`%`/`&`-sigiled names, twigils, attributes and
+    /// package-qualified names are excluded: their containers are reached by
+    /// their own machinery, and boxing them into a scalar cell here would leak a
+    /// `ContainerRef` past the consumers that only decontainerize at the scalar
+    /// chokepoints.
+    fn return_rw_container_name(arg: &Expr) -> Option<String> {
+        if let Some(name) = Self::scalar_container_alias_name(arg)
+            && Self::is_plain_lexical_name(name)
+        {
+            return Some(name.to_string());
+        }
+        if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl { name, .. } = stmt.as_ref()
+            && Self::is_plain_lexical_name(name)
+        {
+            return Some(name.clone());
+        }
+        None
     }
 
     /// Compile a subscript call argument as the element's container, for the
@@ -500,16 +542,41 @@ impl Compiler {
         }
     }
 
+    /// The current depth of the pending-writeback queue, to be captured by a
+    /// call emitter BEFORE it compiles its arguments and handed back to
+    /// [`Self::emit_index_rw_writebacks`] afterwards.
+    ///
+    /// A call must only emit the writebacks *its own* arguments queued. The
+    /// queue is filled by `compile_call_arg_with_escape` and drained by the one
+    /// emitter below, but not every dispatch shape has a drain point:
+    /// `ExecCallPairs` (a listop-style statement call, and the shape `is @q[1],
+    /// 2, "x"` takes) never had one. Draining the whole queue therefore let an
+    /// older, unrelated call's writeback attach itself to the NEXT call in the
+    /// compilation unit — and since the writeback brackets that call's result
+    /// with `SetGlobalRaw`/`GetGlobal`, and `GetGlobal` decontainerizes, the
+    /// later call silently lost an lvalue-return container. `use Test; { my @q =
+    /// 1, 2; is @q[1], 2, "x" }` followed by `my $r := f()` on an `is rw`
+    /// routine died with "Cannot assign to an immutable value", in a statement
+    /// that had nothing to do with either.
+    ///
+    /// Entries left below the base belong to a shape with no drain point; they
+    /// stay unemitted, exactly as before, rather than corrupting a later call.
+    /// ADR-0059 Slice 3 retires these temps altogether.
+    pub(super) fn index_rw_writeback_base(&self) -> usize {
+        self.pending_index_rw_writebacks.len()
+    }
+
     /// Emit writeback code for Index expressions passed as function arguments.
-    /// After a function call, if any `is rw` parameter modified the temp variable,
-    /// we write the new value back to the original hash/array slot.
+    /// After a function call, if any `is rw` parameter modified the temp
+    /// variable, we write the new value back to the original hash/array slot.
     /// Only writes back when the temp value differs from the original value
-    /// (using `===` identity check).
-    pub(super) fn emit_index_rw_writebacks(&mut self) {
-        let writebacks = std::mem::take(&mut self.pending_index_rw_writebacks);
-        if writebacks.is_empty() {
+    /// (using `===` identity check). `base` is this call's own
+    /// [`Self::index_rw_writeback_base`].
+    pub(super) fn emit_index_rw_writebacks(&mut self, base: usize) {
+        if base >= self.pending_index_rw_writebacks.len() {
             return;
         }
+        let writebacks: Vec<_> = self.pending_index_rw_writebacks.drain(base..).collect();
         for (index_expr, tmp_name, orig_name) in writebacks {
             if let Expr::Index {
                 target,

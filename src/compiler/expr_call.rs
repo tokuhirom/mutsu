@@ -210,13 +210,20 @@ impl Compiler {
         // deferred `HashEntryRef` for a not-yet-existent key) instead of a
         // decontainerized read. The assignment site then writes through it (see
         // `assign_lvalue_container`). Non-subscript operands compile unchanged.
-        if name == "return-rw" && args.len() == 1 {
-            self.compile_return_rw_arg(&args[0]);
+        //
+        // EVERY operand is compiled this way, not just a lone one: `return-rw
+        // $a, $b` hands back a List of the two containers (raku: `(h())[0] = 9`
+        // writes `$a`), which is only possible if each operand produced its own
+        // container. `builtin_return_rw` assembles them into the List.
+        if name == "return-rw" && !args.is_empty() {
+            for arg in args {
+                self.compile_return_rw_arg(arg);
+            }
             let arg_sources_idx = self.add_arg_sources_constant(args);
             let name_idx = self.code.add_constant(Value::str(name.resolve()));
             self.code.emit(OpCode::CallFunc {
                 name_idx,
-                arity: 1,
+                arity: args.len() as u32,
                 arg_sources_idx,
             });
             return;
@@ -1670,6 +1677,7 @@ impl Compiler {
                 // and the synthetic callsite-line marker must remain an
                 // in-band pair for `peek_callsite_line`.
                 let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
+                let wb_base = self.index_rw_writeback_base();
                 for (i, arg) in args.iter().enumerate() {
                     // `start` keeps marking EVERY argument escaping, exactly as
                     // before; other calls mark only a closure literal.
@@ -1723,9 +1731,9 @@ impl Compiler {
                         arg_sources_idx,
                     });
                 }
-                // Emit writeback for any Index expressions that were passed
-                // as `is rw` arguments (temp variable -> original slot).
-                self.emit_index_rw_writebacks();
+                // Emit writeback for any Index expressions that THIS call
+                // passed as `is rw` arguments (temp variable -> original slot).
+                self.emit_index_rw_writebacks(wb_base);
             }
         }
     }

@@ -1,6 +1,7 @@
 # ADR-0059: An `is rw` routine returns a container — retiring caller-side tail re-interpretation
 
-- Status: Accepted (Slice 1 implemented; Slices 2-3 open)
+- Status: Accepted (Slices 1-2 implemented, except Slice 2's bare-`is rw`-tail
+  half; Slice 3 open)
 - Date: 2026-08-22
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline
   lexicals), ADR-0036 (element-container Pairs from subscripts)
@@ -153,13 +154,21 @@ by name.** Slice 2 closes the gap and deletes the old path.
 - **Slice 1 (this ADR's implementation, shipped):** the `return-rw` operand,
   its nested call arguments, `GetLocalDeferred`, the subscript-index fix, and
   both lvalue call sites.
-- **Slice 2 (open):** compile a *variable* tail to its container, so
-  `sub f() is rw { $x }` returns the variable's cell. The cells already exist
-  (`unit_lexicals` / ADR-0024, `capture_var_cell`); the work is emitting a
-  container read for the tail and making the ordinary `my $v = f()` read
-  decontainerize it. When it lands, `rw_sub_target_expr`,
-  `is_explicit_return_rw_target`, `assign_rw_target_expr` and the
-  `rw_tail_expr` plan field are deleted.
+- **Slice 2 (`return-rw` half shipped; bare-tail half open):** compile a
+  *variable* tail to its container. The `return-rw $x` spelling is done —
+  `WrapVarRef` + the new `OpCode::CaptureVarCell` box the variable's own slot
+  into the shared cell (`capture_var_cell_inner`, the same capture a List
+  literal element gets), `return-rw $a, $b` routes *every* operand through that
+  path so the result is a list of containers, and the ordinary `my $v = f()`
+  read decontainerizes at `SetLocal`. See
+  `news/2026-08/return-rw-produces-first-class-containers.md`; pinned by
+  `t/return-rw-container-values.t`.
+
+  Still open: a **bare `is rw` tail with no `return-rw`**
+  (`sub f() is rw { $x }`), which continues to resolve through the caller-side
+  tail re-interpretation. `rw_sub_target_expr`, `is_explicit_return_rw_target`,
+  `assign_rw_target_expr` and the `rw_tail_expr` plan field are deleted when
+  that lands, not before.
 - **Slice 3 (open):** extend container mode to *every* single-dimension
   subscript call argument, matching what `MultiDimIndex` arguments already do
   unconditionally, and retire the `__mutsu_index_rw_arg_*` snapshot/writeback

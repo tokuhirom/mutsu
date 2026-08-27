@@ -2236,6 +2236,10 @@ impl Interpreter {
                 self.exec_wrap_var_ref_op(code, *name_idx, *slot);
                 *ip += 1;
             }
+            OpCode::CaptureVarCell => {
+                self.exec_capture_var_cell_op(code);
+                *ip += 1;
+            }
             OpCode::MarkBindContext => {
                 self.bind_context.set(true);
                 *ip += 1;

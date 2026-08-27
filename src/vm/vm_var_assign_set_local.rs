@@ -436,6 +436,27 @@ impl Interpreter {
                 return self.array_share_assign(code, idx, raw_popped, src);
             }
         }
+        // Plain `=` assignment stores a VALUE. A bare `ContainerRef` reaching an
+        // assignment target is an lvalue return that nothing decontainerized on
+        // the way (`my $c = f()` where `f` is `is rw` / ends in `return-rw`):
+        // storing the cell itself would silently alias the routine's source, so
+        // `$c = 99` would write it. Raku copies there — only `:=` (and rw
+        // parameter binding, which never reaches this op) keeps the container.
+        //
+        // Every other producer of a `ContainerRef` already deconts at its read
+        // chokepoint (`GetLocal`'s `into_deref`, `resolve_array_entry`, ...), so
+        // this only ever fires for a value that came straight off a call. The
+        // `array_share` promotion above has already returned, and `:=`/rebind/
+        // `constant`/raw-param binds are excluded by the guard.
+        if !is_bind
+            && !is_rebind
+            && !is_constant
+            && !param_raw_bind
+            && !scalar_bind
+            && raw_popped.is_container_ref()
+        {
+            raw_popped = raw_popped.deref_container();
+        }
         // Record/clear the decontainerize marker for `$` scalars. A scalar bound
         // (`:=`) to a Positional is not a Scalar container, so `@a = $bound` must
         // flatten (the `ItemizeVar` opcode reads this marker). Plain assignment
