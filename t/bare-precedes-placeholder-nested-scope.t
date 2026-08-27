@@ -33,16 +33,16 @@ eval-dies-ok 'my $f = { given 5 { $^b }; say $b }; $f(42)',
 # enclosing scope, so $^b there DOES declare the enclosing block's $b. This
 # must keep working (see news/2026-08/for-modifier-placeholder-scope.md). ---
 
-lives-ok '{ say $^b for 1; say $b }',
+eval-lives-ok 'my $f = { say $^b for 1; say $b }; $f(7)',
     '$^b in a `for` statement MODIFIER declares the enclosing block\'s $b (stays legal)';
 
 # --- A bare $name that IS otherwise declared (locally, or in an outer
 # scope) is unaffected by an unrelated nested placeholder of the same name. ---
 
-lives-ok 'my $f = { my $b; for 1 { $^b }; say $b }; $f(42)',
+eval-lives-ok 'my $f = { my $b; for 1 { $^b }; say $b }; $f(42)',
     'a bare $b that is `my`-declared locally is unaffected by a nested $^b';
 
-lives-ok 'my $b = 99; my $f = { for 1 { $^b }; say $b }; $f(42)',
+eval-lives-ok 'my $b = 99; my $f = { for 1 { $^b }; say $b }; $f(42)',
     'a bare $b declared in an outer scope is unaffected by a nested $^b';
 
 # --- A placeholder that belongs to a genuinely separate closure (not
@@ -62,5 +62,5 @@ eval-dies-ok 'my $g = { my $h = { $^c }; say $c }; $g()',
 eval-dies-ok 'my $f = { $b + $^b }; $f(3)',
     'bare $b before $^b within the SAME expression is X::Undeclared';
 
-lives-ok 'my $f = { $^b + $b }; $f(3)',
+eval-lives-ok 'my $f = { $^b + $b }; $f(3)',
     '$^b before bare $b within the same expression stays legal';

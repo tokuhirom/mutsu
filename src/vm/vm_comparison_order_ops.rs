@@ -580,6 +580,29 @@ impl Interpreter {
     /// correctly SERVES instead of stealing when `.cache` was requested or
     /// the body was already `retained`.
     fn reify_or_consume_eqv_operand(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        // Same problem, other representation: a `gather`/`IO::CatHandle.lines`
+        // result is a `ValueView::LazyList`, and `Value::eqv` has no
+        // LazyList-vs-anything arm at all (`value/types_eqv.rs` only pairs a
+        // LazyList with another LazyList, by identity), so
+        // `(gather { take 1; take 2 }).List eqv (1, 2)` answered False without
+        // ever running the body. Force it here, into the SAME view its own
+        // method dispatch would produce (`vm_call_method_ops.rs`'s
+        // `in_list_context` branch), so the comparison sees a real List/Array.
+        // A genuinely lazy list (`eqv_would_hang`) is left alone: the caller
+        // has already decided those cases without iterating.
+        if value.is_lazy_list_value()
+            && let ValueView::LazyList(ll) = value.view()
+            && !ll.eqv_would_hang()
+        {
+            let items = self.force_lazy_list_vm(&ll)?;
+            return Ok(if ll.in_array_context() {
+                Value::real_array(items)
+            } else if ll.in_list_context() {
+                Value::array(items)
+            } else {
+                Value::seq(items)
+            });
+        }
         let ValueView::Seq(body) = value.view() else {
             return Ok(value);
         };

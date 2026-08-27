@@ -268,6 +268,16 @@ impl Interpreter {
         Err(sig)
     }
 
+    /// Whether a `&*EXIT` slot actually holds something `exit` can invoke. A
+    /// declared-but-unassigned `my &*EXIT;` holds the `Callable` type object,
+    /// which must NOT swallow the exit.
+    fn is_exit_hook_callable(v: &Value) -> bool {
+        matches!(
+            v.view(),
+            ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_)
+        )
+    }
+
     pub(super) fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code = match args.first().map(Value::view) {
             Some(ValueView::Int(i)) => i,
@@ -282,6 +292,18 @@ impl Interpreter {
             Some(_) => args.first().unwrap().to_f64() as i64,
             _ => 0,
         };
+        // rakudo's `exit` is overridable through the dynamic `&*EXIT` hook: when
+        // a caller has one in scope, `exit` CALLS it with the status and then
+        // returns normally, leaving the process running (measured against raku:
+        // `sub f { my &*EXIT = -> $c { say "trapped $c" }; exit 7; say "continues" }`
+        // prints both lines). The genuine upstream `Test.rakumod`'s `exits-ok`
+        // is built entirely on this hook, but it is a plain language feature —
+        // nothing about it is Test-specific.
+        if let Some(hook) = self.env.get("&*EXIT").cloned()
+            && Self::is_exit_hook_callable(&hook)
+        {
+            return self.call_sub_value(hook, vec![Value::int(code)], true);
+        }
         // An `exit` raised while the process is already exiting (an END phaser's
         // own `exit`) still unwinds, but the status was decided by the first
         // one — rakudo's `the-end-is-nigh` latch. See `finish`.

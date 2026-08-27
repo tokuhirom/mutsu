@@ -134,9 +134,15 @@ impl LazyList {
     /// a cache-only list (no coroutine/sequence_spec/etc, regardless of the
     /// `lazy` marker) is safe to compare (roast S03-operators/eqv.t: "eqv
     /// between identical lazy Seqs does not die" after `.cache`).
+    /// A `.map`/`.grep` pipe is only unsafe when its source chain does NOT
+    /// provably bottom out in a finite source: `gather { ... }.map(*+1)` is a
+    /// perfectly finite list, and raku answers `eqv` on two of them `True`
+    /// rather than throwing (measured). `pipe_bottoms_out_finite()` is the
+    /// same predicate the forcing dispatch paths already use to decide a pipe
+    /// is safe to drive to completion.
     pub(crate) fn eqv_would_hang(&self) -> bool {
         self.sequence_spec.is_some()
-            || self.lazy_pipe.is_some()
+            || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
             || self.closure_seq.is_some()
             || self.scan_spec.is_some()
             || ((self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
