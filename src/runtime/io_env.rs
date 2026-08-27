@@ -171,6 +171,8 @@ impl Interpreter {
             "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
             "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
             "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
+            "*USER" => Self::cached_user_instance(),
+            "*GROUP" => Self::cached_group_instance(),
             _ => return None,
         })
     }
@@ -243,6 +245,20 @@ impl Interpreter {
     fn cached_kernel_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_kernel_instance).clone()
+    }
+
+    /// Process-constant `$*USER` instance (see
+    /// `Interpreter::make_user_instance` in `io_sysinfo_user.rs`).
+    fn cached_user_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_user_instance).clone()
+    }
+
+    /// Process-constant `$*GROUP` instance (see
+    /// `Interpreter::make_group_instance` in `io_sysinfo_user.rs`).
+    fn cached_group_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE.get_or_init(Self::make_group_instance).clone()
     }
 
     /// Process-constant interpreter-executable path string, computed once via
