@@ -2872,3 +2872,217 @@ The 22-regression sweep count from the 2026-08-21 entry above should now read
 surfacing), consistent with the "20 confirmed by hand" / "24 raw" figures
 already recorded there -- not re-run here to keep this change scoped to the
 predicate fix itself.
+
+## 2026-08-28: `t/` residue 20 -> 9 genuine; six general interpreter bugs fixed; the residue is mostly NOT interpreter gaps any more
+
+Re-ran the sweep first, per the process note above (debug build, `-j6`, from
+the repo root, on top of `6e426bcb3` / `origin/main`):
+
+```
+pass under both:                   3403      (before)
+regressed under the real Test:     20
+passes only under the real Test:   0
+fail under both (pre-existing):    85
+```
+
+and after this session's fixes:
+
+```
+pass under both:                   3414      (after)
+regressed under the real Test:     13
+passes only under the real Test:   0
+fail under both (pre-existing):    85
+```
+
+Four of the 13 are the long-standing sweep-harness cwd artifact the 2026-08-20
+entry named (`any-type-object-int-coercion.t`, `bound-nil-method-warn.t`,
+`type-object-numeric-coercion.t`, `warns-like.t`) -- re-confirmed this session:
+run standalone from the repo root both providers exit 0. **So the honest count
+is 20 genuine before, 9 genuine after** (16 raw / 12 genuine after the
+interpreter fixes alone, then three more closed by the local-test rewrites
+described below).
+
+### The priority list at the head of this file was stale in both directions
+
+Two of its five items were already done and one of its assumptions was wrong:
+
+1. ~~Fix `scripts/test-module-sweep.sh`'s pass predicate~~ -- **done**
+   (2026-08-20 exit-status sidecars, 2026-08-23 TAP `# TODO` awareness).
+2. ~~The four stack-overflow aborts~~ -- **done**: ADR-0038 is
+   `Accepted -- implemented`, all four phases landed, and
+   `todo/deep/seq-cache-does-not-narrow-to-list-stack-overflow.md` was closed
+   out to `news/2026-08/seq-cache-returns-list-fixes-is-deeply-stack-overflow.md`.
+   No file in the current sweep aborts with a stack overflow.
+3. The `t/` and roast residue -- still the head of the list, but see the
+   reclassification below: it is no longer "one general interpreter gap each".
+
+### The biggest finding: most of what is left is NOT an interpreter gap
+
+The 2026-08-20 entry named the category "files that pass only because the
+native provider is *wider* than upstream `Test`" and predicted more of them
+would surface as the interpreter gaps thinned out. That has now happened, and
+it is the *majority* of the residue. Of the 12 genuine `t/` regressions left
+after the interpreter fixes, **seven are local tests that encode
+mutsu-native-provider-only behaviour and do not even compile or dispatch under
+real raku** -- verified individually by running each construct under `raku`,
+not assumed:
+
+| file | construct | raku's own answer |
+| --- | --- | --- |
+| `exec-call-mixed-block.t` | `dies-ok { ... }, 'd', :todo(False)` | `Cannot resolve caller dies-ok(Block:D, Str:D, :!todo)` |
+| `exec-call-pairs.t` | same, plus `ok 1, 'x', :todo(False)` | `Cannot resolve caller ok(Int:D, Str:D, :!todo)` |
+| `bare-precedes-placeholder-nested-scope.t` | `lives-ok '<source string>'` | `===SORRY!=== Calling lives-ok(Str, Str) will never work` |
+| `whenever-out-of-scope.t` | same | same |
+| `pair-improvements.t` | `cmp-ok $p, 'eqv', :foo<bar>, 'd'` | `Cannot resolve caller cmp-ok(..., :foo(Str))` -- a colonpair in an argument list is a NAMED argument |
+| `skip-list-vs-test.t` | `skip(2, <a b c d e>)` with `Test` loaded | raku ALSO routes to `Test`'s `skip` and dies "was passed a non-integer number of tests" -- the pinned behaviour is what mutsu's native provider does, not what raku does |
+| `skip-user-multi-shadows-test.t` | `my proto sub skip(Mu, |) {*}` + `my multi sub skip(...)` | `===SORRY!=== Redeclaration of routine 'skip'` -- the file is not valid raku at all |
+
+**Three of those seven were rewritten this session** to spell the same
+intention in a way both providers accept, which does not weaken what they pin:
+the two `lives-ok '<string>'` files now use `eval-lives-ok` (the routine that
+actually takes a Str), and `pair-improvements.t` passes its expected Pair as
+`('foo' => 'bar')` instead of the colonpair. All three now pass under both
+providers and under `raku` itself.
+
+The remaining four are genuinely provider-coupled and should be retired
+*with* the native provider rather than rewritten now:
+`exec-call-mixed-block.t` / `exec-call-pairs.t` exist to pin the pair-encoded
+named-argument exec-call path and use `:todo` on the native `ok`/`dies-ok`
+signature to do it (they want a user-defined sub with a `:todo` parameter
+instead); `skip-list-vs-test.t` / `skip-user-multi-shadows-test.t` pin a
+core-`skip`-vs-`Test`-`skip` disambiguation that only exists because mutsu's
+native provider is not a lexical import -- under the real module raku's own
+answer is the opposite, so the disambiguation *should* disappear at step 3.
+
+### Six general interpreter bugs fixed (four `t/` files closed, one improved)
+
+Every one is a plain language bug with a `raku` oracle; none is Test-specific.
+
+1. **A deferred `Seq` reaching a string context answered `(...)`.**
+   `~$fh.lines` and `$fh.lines eq <A B C>` go through the operand coercion
+   (`coerce_stringy_operand`) and the `StrCoerce` opcode, not through method
+   dispatch, so the `.Str` reify guard never ran and the pure stringifier fell
+   back to the opaque `IO::Handle.lines` placeholder. Both sites now route a
+   still-deferred Seq through `reify_or_consume_seq_target(v, "Str")` --
+   `"Str"` is not a `seq_method_consumes` entry, so this reifies without
+   consuming, matching rakudo's `multi method Str(Seq:D:) { self.cache.Str }`
+   (measured: `~$s; ~$s; $s.List` all work). Both sites are **tag-probed**
+   (`is_seq_value()`) before the `view()`, because an unconditional `view()`
+   there materialises every lazy Match in grammar-action code -- caught by
+   `tests/lazy_match_no_eager_materialization.rs`, which is exactly what that
+   guard exists for. Closes `is-lazy-io-lines.t`.
+   Pin: `t/seq-string-context-forces-deferred.t`.
+2. **The mut method-dispatch path ignored a lazy list's List view.**
+   `vm_call_method_ops.rs` renders a forced `LazyList` as `Value::array` when
+   `in_list_context()` and `Value::seq` otherwise; `vm_call_method_mut_ops.rs`
+   unconditionally built `Value::seq`. So whether `(gather ...).List` rendered
+   as a List or a Seq depended purely on which opcode the *later* method call
+   compiled to -- `CallMethod` for an inline receiver, `CallMethodMut` for a
+   named-variable one. `my $a = (gather takes-two()).List; $a.raku` gave
+   `(1, 2).Seq`, while the two-statement spelling gave `$(1, 2)`.
+3. **`eqv` had no `LazyList` arm at all.** `Value::eqv` (`value/types_eqv.rs`)
+   only pairs a LazyList with another LazyList, by identity, so
+   `(gather takes-two()).List eqv (1, 2)` answered False *without ever running
+   the gather body*. `reify_or_consume_eqv_operand` now forces a non-hanging
+   LazyList operand into the same view its own dispatch would produce.
+4. **`eqv` threw `X::Cannot::Lazy` on finite `.map`/`.grep` pipes.**
+   `LazyList::eqv_would_hang()` treated *any* `lazy_pipe` as unsafe, so
+   `(gather {take 1}).map(*+1) eqv (gather {take 1}).map(*+1)` died where raku
+   answers `True`. It now excludes a pipe whose source chain
+   `pipe_bottoms_out_finite()` -- the same predicate the forcing dispatch paths
+   already use. (2)-(4) together close `take-without-gather.t` and take
+   `io-cathandle-lazy.t` from 2 failures to 1.
+   Pin: `t/lazy-list-eqv-and-list-view.t`.
+5. **`exit` did not honour the dynamic `&*EXIT` hook.** rakudo's `exit` calls
+   `&*EXIT($status)` when one is in dynamic scope and then *returns normally*
+   (measured: `sub f { my &*EXIT = -> $c {say "trapped $c"}; exit 7; say
+   "continues" }` prints both lines). mutsu always terminated the process.
+   The real `Test.rakumod`'s `exits-ok` is built entirely on this hook, but it
+   is a plain language feature. Guarded so a declared-but-unassigned
+   `my &*EXIT;` (a `Callable` type object) does not swallow the exit.
+   Closes `exits-ok.t`. Pin: `t/exit-dynamic-hook.t`.
+6. **`:name<word>` lost the allomorph on a listop-style call to a routine the
+   compiler cannot see statically.** `<90>` is quote-words, so it yields an
+   `IntStr` -- but the *statement-call* argument parser
+   (`src/parser/stmt/args.rs`, the `CallArg::Named` path taken for a listop
+   call to an imported routine) minted a bare `Value::str(word)` instead of
+   calling the shared `parser::angle_word_value`. So `is-approx 1, 10,
+   :abs-tol<90>, :rel-tol<.5>` could not bind the `Numeric :$abs-tol`
+   parameter and the whole multi became `Unknown call: is-approx`, while
+   `f(:abs-tol<90>)` compiled through `Expr::Call` and worked. Reduced to a
+   Test-free repro (`t/lib/AngleNamedArg.rakumod`) before fixing.
+   Closes `failure-sink-handled.t`. Pin: `t/angle-named-arg-allomorph.t`.
+
+A note on method, since this file's own history keeps re-learning it: the
+`is-approx` bug looked for a long time like a *dispatch* bug (multi candidate
+selection with two required nameds), and a hand-written local reproduction of
+the exact five `is-approx` candidates passed. Only bisecting caller *spelling*
+(`:x<90>` vs `:x(<90>)`, identical AST and identical `--dump-bytecode` output)
+against caller *kind* (local sub vs imported sub) found it, and the confirming
+evidence was `MUTSU_VM_STATS=1` showing `ExecCallPairs`/`MakeNamedArg` where
+`--dump-bytecode` had shown `CallFuncNamed` -- i.e. **`--dump-bytecode` does
+not always show the bytecode that actually runs**, which is worth remembering
+the next time a dump and an observed behaviour disagree.
+
+### The 9 genuine `t/` regressions that remain
+
+Five are real interpreter gaps and are the actual next work:
+
+- `io-cathandle-lazy.t` (test 10 only) -- a `.map` pipe over
+  `IO::CatHandle.handles` never forces, so `.raku`/`eqv` see `(...)`. Filed as
+  `todo/tickets/cathandle-handles-map-pipe-never-forces.md` with a Test-free
+  repro; likely `needs_vm_lazy_dispatch()` plus `pipe_bottoms_out_finite()` on
+  a `cat_pull`-rooted chain.
+- `user-class-shadows-immutable-builtin.t` (5 subtests) -- a user class named
+  `Map`/`Set`/`Bag`/`Mix` permits element assignment but stores nothing
+  (`got: (Any)`).
+- `parametric-role-of-type.t` -- aborts at line 34 with `No such method 'x'
+  for invocant of type 'R1[Int]'`, after five passing subtests.
+- `signature-introspection-gaps.t` -- runs 7 of 8 and stops with no error
+  printed at all (worth a `rust-gdb` look; a silent stop is unusual).
+- `placeholder-scope-rejecting.t` (test 13 only) -- `INIT { $^c }` does not
+  die under the real module, though every other phaser in that 27-subtest file
+  does.
+
+The other four are the provider-coupled files listed in the table above
+(`exec-call-mixed-block.t`, `exec-call-pairs.t`, `skip-list-vs-test.t`,
+`skip-user-multi-shadows-test.t`). The remaining four rows in
+`regressions.txt` are the cwd artifacts, which are a sweep-harness bug, not a
+regression -- **worth fixing the harness for**, since they have now cost three
+separate sessions a re-verification pass each.
+
+### Corrected priority list
+
+1. **The five real interpreter gaps above** -- the genuine head of the queue,
+   two of them already reduced to standalone tickets.
+2. **Re-sweep the roast side.** The last roast measurement is 2026-08-20's
+   "76 regressions, 9 of them mid-file aborts", taken *before* ADR-0038 landed
+   and before this session's six fixes, so it is certainly stale. Spot-checked
+   rather than assumed: the three roast files that entry called "the largest
+   shared mechanism left" (`S16-io/words.t`, `S32-io/io-cathandle.t`,
+   `S32-list/tail.t`) **no longer abort** under `MUTSU_REAL_TEST=1` -- the
+   `exit 134` stack overflow is gone in all three, which is exactly what
+   ADR-0038 promised -- but all three still regress in ordinary ways (exit 4,
+   1, 1). So expect the abort count to have dropped and the total to have
+   moved less than that; measure it rather than guessing, and do it before
+   picking any individual roast file.
+3. **Un-whitelist or fudge the native-provider-only files**, and implement the
+   `#?rakudo eval` fudge directive while doing it (unchanged from the old item
+   4; `roast/S24-testing/2-force_todo.t` and `6-done_testing.t` are still the
+   named examples, and the four `t/` files above join them). With the `t/`
+   residue this thin, this is now a bigger share of what stands between here
+   and step 3 than the interpreter gaps are.
+4. **Fix the sweep harness's cwd artifact** so the four false positives stop
+   costing a manual re-check every session. They only fail inside
+   `tmp/test-module-sweep/`; the working copy needs whatever those four read
+   relative to cwd.
+5. `todo/perf/interpreter-call-path-in-hot-loops.md` -- unchanged, still last,
+   and TRIAGE records it as mostly resolved (13.8x -> ~2x).
+
+Verification for this entry: `make test` green (3512 files, 34944 tests), a
+23-file targeted roast sweep chosen from the consumers of what changed
+(`S03-operators/eqv.t`, `S04-statements/gather.t`, `S02-types/lazy-lists.t`,
+`S16-io/lines.t` + `words.t`, `S32-list/seq.t`, `S29-context/exit.t` +
+`exit-in-if.t`, `S04-phasers/exit-in-check.t`, the `S05`/`S06` named-argument
+and colonpair files, `roast/t/test-util/01-is-eqv.t`, ...) all green, and the
+full `make roast` delegated to CI.

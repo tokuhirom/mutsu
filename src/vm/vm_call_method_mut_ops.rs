@@ -845,7 +845,20 @@ impl Interpreter {
             if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            Value::seq(items)
+            // A list-context view (`(gather {...}).List`, `.cache`) records
+            // that the finite result must render as a List, not a Seq; the
+            // non-mut dispatch path already honours it (`vm_call_method_ops.rs`)
+            // and this one silently did not, so whether `.raku`/`eqv` saw a
+            // List or a Seq depended purely on which of the two opcodes the
+            // call compiled to (`CallMethod` for an inline receiver,
+            // `CallMethodMut` for a named-variable one). That made
+            // `my $a = (gather {...}).List; $a.raku` render `(1, 2).Seq` while
+            // the two-statement spelling rendered `$(1, 2)`.
+            if ll.in_list_context() {
+                Value::array(items)
+            } else {
+                Value::seq(items)
+            }
         } else {
             target
         };

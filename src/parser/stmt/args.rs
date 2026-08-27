@@ -631,18 +631,30 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         return Ok((r2, CallArg::Positional(expr)));
                     }
                     let words = split_angle_words(content);
+                    // Quote-words always yield the ALLOMORPH for a
+                    // number-shaped word (`<90>` is an `IntStr`, `<.5>` a
+                    // `RatStr`) — see `parser::angle_word_value`. This
+                    // statement-call argument parser used to mint a bare
+                    // `Str` instead, so `f :abs-tol<90>` on a listop-style
+                    // call to a routine the compiler cannot see statically
+                    // (an imported one) silently downgraded the value and no
+                    // longer matched a `Numeric` parameter, while the
+                    // expression-level colonpair path (`f(:abs-tol<90>)`
+                    // compiled through `Expr::Call`) got it right.
                     if words.len() == 1 {
                         return Ok((
                             r,
                             CallArg::Named {
                                 name,
-                                value: Some(Expr::Literal(Value::str(words[0].to_string()))),
+                                value: Some(Expr::Literal(crate::parser::angle_word_value(
+                                    words[0],
+                                ))),
                             },
                         ));
                     }
                     let items = words
                         .iter()
-                        .map(|w| Expr::Literal(Value::str(w.to_string())))
+                        .map(|w| Expr::Literal(crate::parser::angle_word_value(w)))
                         .collect();
                     return Ok((
                         r,

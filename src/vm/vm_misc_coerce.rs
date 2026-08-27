@@ -168,6 +168,27 @@ impl Interpreter {
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);
         }
+        // A `Seq` whose source has not been pulled yet (`IO::Handle.lines`,
+        // `Seq.new($iterator)`) reaches prefix `~` without going through method
+        // dispatch, so the `.Str` reify guard never ran and the pure
+        // stringifier answered the opaque `(...)` placeholder. Route it through
+        // that same guard: `"Str"` is not a `seq_method_consumes` entry, so
+        // this reifies without consuming, matching rakudo's
+        // `multi method Str(Seq:D:) { self.cache.Str }`. Same fix as the one in
+        // `coerce_stringy_operand` (infix `~`, `eq`/`lt`/…), which this opcode
+        // does not share.
+        // Tag-probed (`is_seq_value`) for the same reason the `Mu` check above
+        // is: `~$match` lands here once per capture in grammar-action code and
+        // an unconditional `view()` would materialize every lazy Match
+        // (pinned by `tests/lazy_match_no_eager_materialization.rs`).
+        let val = if val.is_seq_value()
+            && let ValueView::Seq(body) = val.view()
+            && body.needs_touch()
+        {
+            self.reify_or_consume_seq_target(val, "Str")?
+        } else {
+            val
+        };
         // Check for user-defined prefix:<~> multi sub first (operator overloading).
         // This must come before .Stringy()/.Str() to avoid infinite recursion when
         // .Stringy() is defined as `{ ~self }` which delegates to prefix:<~>.

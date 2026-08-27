@@ -232,6 +232,27 @@ impl Interpreter {
                 Value::str(String::new()),
             );
         }
+        // A `Seq` whose source has not been pulled yet (an
+        // `IO::Handle.lines`/`.words` read, or `Seq.new($iterator)`) reaches a
+        // string context through THIS operand coercion, not through method
+        // dispatch, so the `.Str` reify guard never ran and the pure
+        // stringifier fell back to the opaque `(...)` placeholder
+        // (`value/display.rs`) or to an empty join over a still-unfilled body.
+        // Route it through the very guard `.Str` itself uses: `"Str"` is not a
+        // `seq_method_consumes` entry, so this REIFIES (marking the body
+        // retained) without consuming it — matching rakudo's
+        // `multi method Str(Seq:D:) { self.cache.Str }`, where `~$s; ~$s` both
+        // answer the elements and a later `.List` still works.
+        // Tag-probed (`is_seq_value`): this coercion also runs on every `~`/`eq`
+        // operand in grammar-action code, where an unconditional `view()` would
+        // materialize a lazy Match (see
+        // `tests/lazy_match_no_eager_materialization.rs`).
+        if v.is_seq_value()
+            && let ValueView::Seq(body) = v.view()
+            && body.needs_touch()
+        {
+            return self.reify_or_consume_seq_target(v, "Str");
+        }
         // A role-mixed value is NOT an `Instance` view, so it used to fall
         // straight through to the `_` arm below and lose its composed
         // `Stringy`/`Str` (see `mixin_user_stringifier`).
