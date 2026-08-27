@@ -374,6 +374,10 @@ impl Interpreter {
                 class_name
             )));
         }
+        // The compiler's own resolution of a `:=` bind source (see
+        // `bind_source_is_own_frame_lexical`), kept before the wrapper is
+        // stripped.
+        let bind_source_slot = raw_popped.varref_slot();
         let (mut raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context.get() || bind_source.is_some();
         let is_rebind = self.rebind_context.get();
@@ -1457,6 +1461,27 @@ impl Interpreter {
             let effective_source = scalar_source
                 .clone()
                 .unwrap_or_else(|| resolved_source.clone());
+            // Frame-ownership gate for the ancestor-frame splice below. MUST be
+            // read here, before either bind branch writes the shared container
+            // into the env under the source's name — that write would make the
+            // own-tier half of the test trivially true. See
+            // `bind_source_is_own_frame_lexical`.
+            let resolved_source_is_own_lexical = self.bind_source_is_own_frame_lexical(
+                code,
+                &source_name,
+                &resolved_source,
+                bind_source_slot,
+            );
+            let effective_source_is_own_lexical = if effective_source == resolved_source {
+                resolved_source_is_own_lexical
+            } else {
+                self.bind_source_is_own_frame_lexical(
+                    code,
+                    &source_name,
+                    &effective_source,
+                    bind_source_slot,
+                )
+            };
             // For a deref-bind via a promoted scalar (`my @a := @$n` / `my %h :=
             // %$m`, Slice 2c), the sigilless alias set above points at the
             // sigil'd source (`@n`/`%m`) which has no container value — only the
@@ -1542,7 +1567,11 @@ impl Interpreter {
                 // reverting to a stale value (same as the scalar path below).
                 // See `propagate_bind_to_ancestor_frames`'s doc comment for
                 // what actually carries the binding across the call chain.
-                self.propagate_bind_to_ancestor_frames(&effective_source, &container);
+                self.propagate_bind_to_ancestor_frames(
+                    &effective_source,
+                    effective_source_is_own_lexical,
+                    &container,
+                );
                 self.set_env_with_main_alias(name, container.clone());
                 self.flush_local_to_env(code, idx);
                 return Ok(());
@@ -1618,7 +1647,11 @@ impl Interpreter {
                 // restore doesn't overwrite with stale values. See
                 // `propagate_bind_to_ancestor_frames`'s doc comment for what
                 // actually carries the binding across the call chain.
-                self.propagate_bind_to_ancestor_frames(&resolved_source, &container);
+                self.propagate_bind_to_ancestor_frames(
+                    &resolved_source,
+                    resolved_source_is_own_lexical,
+                    &container,
+                );
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
                 let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
