@@ -306,6 +306,14 @@ pub(crate) fn to_mix_map(
         ValueView::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
+                // A hash element may be its own `Scalar` container: ADR-0036
+                // slice 3's producers promote elements IN PLACE, so any hash a
+                // `.pairs`/`.values` has run over holds cells from then on, and
+                // bulk iteration like this `h.iter()` does not go through the
+                // element read chokepoint. Without the deref every weight fell
+                // to the truthy `_` arm below and became 1.0
+                // (roast/S03-metaops/infix.t's `%a = %reset.pairs` reset lines).
+                let v = v.deref_container();
                 let w = match v.view() {
                     ValueView::Int(i) => i as f64,
                     ValueView::Num(n) => n,
@@ -385,6 +393,11 @@ pub(crate) fn to_bag_map(
         ValueView::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
+                // See the matching deref in `to_mix_map`: a hash element may be
+                // its own `Scalar` container after an ADR-0036 slice 3 producer
+                // promoted it in place, and this bulk iteration bypasses the
+                // element read chokepoint.
+                let v = v.deref_container();
                 let count = match v.view() {
                     ValueView::Int(i) => i,
                     ValueView::Num(n) => n as i64,

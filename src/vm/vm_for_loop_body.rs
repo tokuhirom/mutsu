@@ -81,6 +81,25 @@ impl Interpreter {
         }
     }
 
+    /// Whether the value a loop iteration is about to bind already **is** (or
+    /// contains) an element container handed out by a container-aware producer.
+    ///
+    /// A single-parameter loop binds the item itself, so the item is the cell.
+    /// A multi-parameter loop binds out of a chunk — `for @a.kv -> $i, $v is rw`
+    /// gets `[index, cell]` — and the bind-prefix `Stmt::Assign`s hand `$v` the
+    /// cell, so the chunk carrying one anywhere is equally a reason to retire
+    /// the writeback: writing a cell back over the source element would replace
+    /// the element with a container instead of assigning into it.
+    fn binding_carries_element_cell(item: &Value) -> bool {
+        if item.is_container_ref() {
+            return true;
+        }
+        match item.view() {
+            ValueView::Array(chunk, _) => chunk.items().iter().any(Value::is_container_ref),
+            _ => false,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_for_loop_body(
         &mut self,
@@ -494,6 +513,7 @@ impl Interpreter {
         // parameters alias, which sources do, and the shaped/native/`Map`
         // carve-outs); see `vm_for_loop_alias.rs`.
         let element_alias = self.plan_for_element_alias(
+            code,
             spec,
             container_binding.as_deref(),
             container_reversed,
@@ -576,18 +596,30 @@ impl Interpreter {
             // instead of calling it (`t/proxy-list-transparency.t`).
             let promoted =
                 if element_alias.is_active() && !matches!(item.view(), ValueView::Proxy { .. }) {
-                    self.for_element_alias(&element_alias, idx)
+                    self.for_element_alias(code, &element_alias, idx)
                 } else {
                     None
                 };
+            // ADR-0036 slice 3 / ADR-0045 slice 4: the item may ALREADY be an
+            // element container, because a container-aware producer handed it
+            // out (`for @a.reverse`, `for @a.sort`, `for @a.values`, and the
+            // `.kv` chunk's value slot). That is the whole point of routing at
+            // the producer: the item carries its own identity, so the loop needs
+            // no index reconstruction — and there is nothing to write back,
+            // whatever order the producer chose. This is what makes
+            // `container_reversed` correct-by-construction for `.reverse`
+            // instead of a mirror-image index to compute, and what gives `.sort`
+            // an alias at all when it has no index to reconstruct.
+            let item_carries_cell = Self::binding_carries_element_cell(&item);
             // Both writebacks are retired for exactly the iterations whose
-            // element was promoted. An iteration that fell back to a plain
-            // value bind — a `Proxy` element, or a body that removed the
-            // index/key out from under the loop — keeps the writeback that bind
-            // depends on. Retiring per LOOP instead of per ITERATION silently
-            // drops such an iteration's write.
-            rw_writeback = rw_writeback_base && promoted.is_none();
-            writes_back_loop_var = topic_writeback_base && promoted.is_none();
+            // element was promoted (here or at the producer). An iteration that
+            // fell back to a plain value bind — a `Proxy` element, or a body
+            // that removed the index/key out from under the loop — keeps the
+            // writeback that bind depends on. Retiring per LOOP instead of per
+            // ITERATION silently drops such an iteration's write.
+            let aliased = promoted.is_some() || item_carries_cell;
+            rw_writeback = rw_writeback_base && !aliased;
+            writes_back_loop_var = topic_writeback_base && !aliased;
             let item = promoted.unwrap_or(item);
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to

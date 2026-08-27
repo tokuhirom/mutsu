@@ -1,6 +1,6 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — partially implemented (slices 0-3 landed 2026-08-27; slices 4-6 open, see
+- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27; slices 5-6 open, see
   §8 "Implementation status")
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
@@ -612,23 +612,88 @@ remains the place to watch it. A lazy "promote only when the binding is observed
 it and needs its own design; do not bolt on a cached source resolution to chase it, since
 re-resolving per iteration is what makes row 38 work.
 
-### What slices 4-6 still own
+### Slice 4 — landed 2026-08-27 (with ADR-0036 slice 3)
 
-Rows 16, 17, 24 and 39 (slice 4 — derived producers), and 19, 28 and 30 (slice 5 — bind-time
-enforcement). They are `todo`-marked in `t/for-loop-element-alias.t` with the owning slice named in
-the reason string, so each later slice un-`todo`s exactly its own rows. The writeback family survives
-only as the fallback for shapes not yet converted: `write_back_for_rw_param`'s `kv_mode`,
-multi-parameter and scalar arms, `write_back_for_topic_item`'s `$`-tagged `for @$s` arm, and
+§4 required these to land together because they are the same producer layer, and the shared layer is
+real: `src/vm/vm_element_producers.rs`, hooked into the VM's method-dispatch tail, makes
+`.values`/`.reverse`/`.sort` hand out the elements' own `Scalar` containers when the receiver is a
+real mutable `Array`/`Hash`.
+
+ADR-0036's own `.pairs` did **not** ship with it. It was implemented on this same layer, measured,
+and backed out: a Pair carrying a cell leaks into the many consumers that read a pair's value *as
+data*, and five distinct failures were measured before that was accepted as a class (see ADR-0036's
+slice-3 status). A flat list of cells — which is what `.values`/`.reverse`/`.sort` produce — has no
+such problem, because list consumers decontainerize. So the "two half-converted method sets" §4
+warned about did not materialise in the direction it expected: the split is not array-producers vs
+pair-producers, it is **flat lists vs Pair wrappers**, and that split is now a measured property
+rather than a scheduling accident.
+
+**The index bookkeeping was deletable, not fixable — and this is why.** Once a producer hands out
+element containers, the loop needs no index reconstruction at all: the item it binds *is* the alias,
+in whatever order the producer chose. So the loop's rule is simply "if the bound item already carries
+an element cell, there is nothing to write back" (`binding_carries_element_cell` in
+`vm_for_loop_body.rs`), and `container_reversed` stops being a mirror-image index to compute.
+`.sort` gets an alias at all this way, having no index to reconstruct — the cells are carried
+*through* the sort, keyed by what they hold, rather than an index being recovered from the sorted
+value afterwards (which is ambiguous the moment two elements compare equal).
+
+**Rows 17 and 24 turn green**, plus the deferred-closure form of each and of `@a.values`.
+
+**Row 39 (`for @$s`) was implemented and backed out.** It did not need the producer layer at all —
+its `$`-tagged source is an ordinary in-order array read, so it joined slices 1-3's bind-site routing
+via a shared `resolve_for_source_array`, which is retained. But `encode($_) for @$_` is the ordinary
+idiom for walking a nested structure recursively, and that is exactly the code which **type-tests**
+what it is holding before recursing: CBOR::Simple's `nqp::istype($_, Associative)` answered False for
+a promoted topic and encoded a `Map` as its element count, failing the bundled-library gate.
+Decontainerizing `nqp::istype` (done, and kept) was not sufficient — the `nqp::` surface that
+inspects a value structurally is wide. Tracked in
+`todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
+
+**Row 16 (`.kv`) is deferred, and the reason is the consumer.** A `.kv` loop is a *multi-parameter*
+loop, and those do not bind at the native bind site — they bind through the bind-prefix
+`Stmt::Assign`s, each reading its chunk element through the ordinary element chokepoint, which
+**decontainerizes**. Routing `.kv` therefore *lost* the direct write (row 15,
+`for @a.kv -> $i, $v is rw { $v += $i }`) rather than gaining the deferred one, because the writeback
+that used to carry it had been retired for the iteration. It needs a raw bind for an rw scalar
+multi-parameter first — the shape `@`/`%`-sigil multi-params already have via `Stmt::MarkBind`.
+Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`. This is the "hard half" §8
+predicted, and the prediction was right for a reason nobody had written down: the difficulty is not
+in `.kv` at all.
+
+**Perf.** Eager promotion costs a read-only producer pass on a large container (200 000 elements,
+release, best of three, idle machine): `.values` 0.07 s → 0.18 s, `.reverse` 0.07 s → 0.18 s,
+`.sort` 0.05 s → 0.18 s. The unrouted producers are the controls and stay flat (`.pairs` 0.23 →
+0.25 s, `.kv` 0.73 → 0.77 s). The repository's own benchmarks do not move. See ADR-0036's slice-3
+status for the full table.
+
+**The hazard in this campaign is type-testing a promoted value, not reading one**, and ADR-0036 §5
+Q5 predicted it. `"...".trans(%matcher.pairs)` type-tests the pair value (`is_closure`, then a
+Regex/Array/Range shape match) and a `ContainerRef` answers "no" to all of them. Four more of the
+same shape followed, all of them fed by `.pairs`. Slice 5 should assume that any *new* place a cell
+can reach will be found this way — by a full roast sweep, not by reading — and that the tell is a
+`match` on `view()`, not a `.value` read.
+
+### What slices 5-6 still own
+
+Rows 16 (`.kv`) and 39 (`for @$s`), both carried over from slice 4 — see above — and rows 19, 28
+and 30 (slice 5 — bind-time enforcement). They are `todo`-marked in `t/for-loop-element-alias.t` with the owning reason named in
+the reason string. The writeback family survives only as the fallback for shapes not yet converted:
+`write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
 `write_back_hash_value_item` for a hash iteration that could not be promoted.
 
-**Two things slice 4 should know before it starts.**
+**A note for slice 5, which is shared three ways.** The element type constraint (row 28) is also
+ADR-0036 slice 4's and ADR-0042's; whichever lands it first owns it. **ADR-0036 slice 4 is the
+natural owner**: it already has to touch `methods_mut_method_lvalue.rs` to delete the env-scan
+compensator, its `lookup_container_constraint` call site is where the constraint is consumed, and the
+gap exists for `:=`-bound elements today independently of any `for` loop
+(`my Str @a; my $r := @a[0]; $r = 42` wrongly succeeds). This ADR's slice 5 should consume it rather
+than build it, and keep only the bind-time immutable-source rejection (rows 19/30), which is
+genuinely the loop's own.
 
-- **`.sort` needs a source *tag*, not just a producer.** `for_iterable_source_name` does not match
-  `.sort` at all, so a `for @a.sort -> $v is rw` loop carries no `container_binding` — there is no
-  writeback to correct, and nothing for a producer change to hook. Row 24 needs the tag added as well.
-- **`.kv` is the multi-parameter shape.** Row 16 (`@a.kv`) and its hash twin (`%h.kv -> $k, $v is
-  rw`, also still divergent) bind through the bind-prefix `Stmt::Assign`s, not the native bind site
-  these slices converted, so they need the producer to hand out containers rather than a change here.
+**`.sort` did not need a source tag after all.** §8 recorded that `for_iterable_source_name` does not
+match `.sort`, and treated that as a prerequisite. Routing the producer made it moot: the loop binds
+the cell the producer handed out, so there is nothing for a tag to point at. The same is true of
+`.reverse` — `container_reversed` survives only for the shapes that still take the writeback.
 
 **Found along the way, unrelated:** after any `start` block, a later `for @m -> @row { ... }` loop
 rebinds the *previous* iteration's container. Pre-existing on `main` (verified at `f678b032b`) and
@@ -638,5 +703,5 @@ independent of this ADR — recorded as
 
 ---
 
-*Slices 0-3 of this ADR are implemented; the decision stands. If the mechanism judgment changes
+*Slices 0-4 of this ADR are implemented; the decision stands. If the mechanism judgment changes
 later, supersede it rather than rewriting it.*

@@ -102,7 +102,14 @@ fn positional_antipairs(values: &[Value]) -> Vec<Value> {
         // `my @c; @c[0]=[1,2]; @c.antipairs.raku` is `([1, 2] => 0,).Seq` but
         // `@c.pairs.raku` is `(0 => $[1, 2],).Seq`.
         .map(|(idx, value)| {
-            Value::value_pair(value.clone().deitemize_element(), Value::int(idx as i64))
+            // `deref_container` first: an element promoted to its own `Scalar`
+            // container (ADR-0036 slice 3 hands these out from `.pairs`, so a
+            // later `.antipairs` over the same array sees them) must be seen
+            // through before the de-itemization above can apply.
+            Value::value_pair(
+                value.deref_container().deitemize_element(),
+                Value::int(idx as i64),
+            )
         })
         .collect()
 }

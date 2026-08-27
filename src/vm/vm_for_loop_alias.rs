@@ -71,6 +71,7 @@ impl Interpreter {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn plan_for_element_alias(
         &self,
+        code: &CompiledCode,
         spec: &ForLoopSpec,
         container_binding: Option<&str>,
         container_reversed: bool,
@@ -110,18 +111,37 @@ impl Interpreter {
         let Some(source) = container_binding else {
             return ForElementAlias::None;
         };
+        // `@a`, and `@a.list`, which re-tags the array itself: both iterate a
+        // real array's elements in order, so iteration position names element
+        // position.
+        //
+        // The `$`-tagged deref'd-container shape (`for @$s` / `for $s.list`,
+        // ADR-0045 row 39) is deliberately NOT here. It was implemented and
+        // backed out: `encode($_) for @$_` is an ordinary way to walk a nested
+        // structure, and promoting there hands the body's topic a cell that the
+        // `nqp::` layer type-tests — CBOR::Simple encoded a Map as its element
+        // count. Decontainerizing `nqp::istype` was not enough on its own; the
+        // `nqp::` surface that inspects a value structurally is wide, and each
+        // op would need the same treatment before this shape is safe. Tracked in
+        // `todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
         if source.starts_with('@') {
-            // `@a.values` is an identity-ordered derived producer, but it is
-            // slice 4's to route; keep it on the writeback so the two array
-            // producers convert together.
-            if spec.values_mode || !self.for_source_is_aliasable(source) {
+            // `@a.values` is an identity-ordered derived producer, but its
+            // routing belongs with `.reverse`/`.sort`; keep it on the writeback
+            // so the array producers convert together.
+            if spec.values_mode {
                 return ForElementAlias::None;
             }
-            let arr = self
-                .get_env_with_main_alias(source)
-                .map(|v| v.deref_container());
+            let arr = self.resolve_for_source_array(code, source);
             let (len, first) = match arr.as_ref().map(Value::view) {
-                Some(ValueView::Array(data, _)) => (data.len(), data.items().first().cloned()),
+                Some(ValueView::Array(data, kind))
+                    if !matches!(
+                        kind,
+                        crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
+                    ) && data.shape.is_none()
+                        && data.native_storage_node().is_none() =>
+                {
+                    (data.len(), data.items().first().cloned())
+                }
                 _ => return ForElementAlias::None,
             };
             if items.len() != len || !Self::items_are_source_elements(items, first) {
@@ -170,13 +190,14 @@ impl Interpreter {
     /// same container costs nothing after the first pass.
     pub(super) fn for_element_alias(
         &mut self,
+        code: &CompiledCode,
         plan: &ForElementAlias,
         idx: usize,
     ) -> Option<Value> {
         match plan {
             ForElementAlias::None => None,
             ForElementAlias::ArrayIndex(source) => {
-                let arr = self.get_env_with_main_alias(source)?.deref_container();
+                let arr = self.resolve_for_source_array(code, source)?;
                 if !Self::array_is_aliasable(&arr, Some(idx)) {
                     return None;
                 }
@@ -225,30 +246,34 @@ impl Interpreter {
         }
     }
 
-    /// Whether a `for` loop's tagged `@`-source is a real, mutable, plain
-    /// `Array` whose elements may be promoted.
+    /// The backing `Array` value behind a `for` loop's tagged source, for both
+    /// tag shapes the compiler emits:
     ///
-    /// The carve-outs (ADR-0045 §5 Q5) are deliberate and stay until slice 5
-    /// decides otherwise:
+    /// * `@a` — the array variable itself (also what `@a.list` tags).
+    /// * `$s` — the SIGILED deref'd-container tag for `for @$s` / `for $s.list`,
+    ///   where the loop iterates the *scalar's inner array*. A plain scalar
+    ///   local is slot-only (never mirrored to `env`), so the slot is consulted
+    ///   first and `env` covers globals and `:=`-bound cells; the scalar may
+    ///   hold the array itemized (`Scalar(Array)`) or behind a cell, so both
+    ///   wrappers are stripped.
     ///
-    /// * a **shaped** array (`my @a[2;3]`) carries its dimensions in
-    ///   `ArrayData::shape` / `ArrayKind::Shaped`, and the writeback path
-    ///   deliberately preserves that metadata by cloning the whole `ArrayData`
-    ///   (see `vm_loop_writeback.rs`'s "clone the original ArrayData" comment);
-    ///   `array_slot_ref` has no such provision.
-    /// * a **native-backed** array (`array[int]`, ADR-0015 P3b / ADR-0030)
-    ///   keeps its elements in a packed `NativeBacking` payload, which cannot
-    ///   hold a `ContainerRef` at all.
-    /// * a **lazy** array must not be forced by a promotion.
-    ///
-    /// `t/cas-shaped-and-for-loop.t` and row 26 of `t/for-loop-element-alias.t`
-    /// are the pins for the shaped case.
-    pub(super) fn for_source_is_aliasable(&self, source: &str) -> bool {
-        self.get_env_with_main_alias(source)
-            .is_some_and(|raw| Self::array_is_aliasable(&raw.deref_container(), None))
+    /// Returns the `Array` value itself (sharing its `Gc`), so a promotion
+    /// through it lands in the container every holder observes.
+    fn resolve_for_source_array(&self, code: &CompiledCode, source: &str) -> Option<Value> {
+        if let Some(bare) = source.strip_prefix('$') {
+            let raw = self
+                .find_local_slot(code, bare)
+                .and_then(|s| self.locals.get(s))
+                .filter(|v| !v.is_nil())
+                .cloned()
+                .or_else(|| self.get_env_with_main_alias(bare))?;
+            return Some(raw.deref_container().into_descalarized());
+        }
+        Some(self.get_env_with_main_alias(source)?.deref_container())
     }
 
-    /// The hash sibling of [`Self::for_source_is_aliasable`].
+    /// Whether a `for` loop's tagged `%`-source is a real mutable `Hash`
+    /// whose elements may be promoted.
     fn for_source_is_aliasable_hash(&self, source: &str) -> bool {
         self.get_env_with_main_alias(source)
             .is_some_and(|raw| Self::hash_is_aliasable(&raw.deref_container()))
