@@ -1,7 +1,7 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char};
-use super::super::{ident, keyword, qualified_ident, var_name};
+use super::super::{ident, keyword, qualified_ident};
 use super::helpers::{
     parse_export_trait_tags, parse_sigilless_decl_name, register_term_symbol_from_decl_name,
 };
@@ -35,7 +35,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             b'&' => "&",
             _ => "",
         };
-        let (r, n) = var_name(rest)?;
+        let (r, n) = crate::parser::stmt::lexical_var_name(rest)?;
         let name = format!("{prefix}{n}");
         register_term_symbol_from_decl_name(&name);
         (r, name)

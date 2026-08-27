@@ -371,6 +371,9 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         // `__ANON_STATE_<id>__` name. Raku reports it as "unnamed $ variable",
         // not by its internal name.
         Expr::Var(n) if n.starts_with("__ANON_STATE_") => Some("unnamed $ variable".to_string()),
+        // The reserved `$self` lexical key already carries its sigil (ADR-0061),
+        // so it must be reported before the generic sigiled-name skip below.
+        Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
         Expr::Var(n) => Some(format!("${}", n)),
         // The trailing result read a `my (...)` destructuring block leaves — an
@@ -449,7 +452,7 @@ fn render_source(expr: &Expr) -> Option<String> {
             _ => Some(lit.to_string_value()),
         },
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
-        Expr::Var(n) => Some(format!("${}", n)),
+        Expr::Var(n) => Some(crate::env::sigiled_scalar_name(n)),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),
         Expr::BareWord(s) => Some(s.clone()),

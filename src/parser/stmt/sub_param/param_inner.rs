@@ -241,6 +241,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = Some(tc);
             p.is_invocant = true;
             p.traits.push("invocant".to_string());
+            p.traits
+                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
@@ -268,6 +270,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = Some(tc);
             p.is_invocant = true;
             p.traits.push("invocant".to_string());
+            p.traits
+                .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
             return Ok((r, p));
         }
     }

@@ -89,7 +89,35 @@ pub(crate) struct ParamDef {
     pub(crate) block_param: bool,
 }
 
+/// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
+/// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
+/// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
+/// a user-written `$self:` declares a `$self` lexical in the body — see
+/// [`ParamDef::declares_self_lexical`] and ADR-0061.
+pub(crate) const IMPLICIT_INVOCANT_TRAIT: &str = "implicit-invocant";
+
+/// Build the read expression for a `$`-sigiled scalar whose bare (sigil-less)
+/// name is `name`, applying the reserved-`$self` rename: `self` is a *term*, so
+/// a `$`-sigiled `self` is a user lexical and takes [`crate::env::LEX_SELF`]
+/// rather than the invocant's key (ADR-0061).
+pub(crate) fn scalar_var_expr(name: String) -> Expr {
+    if name == "self" {
+        Expr::Var(crate::env::LEX_SELF.to_string())
+    } else {
+        Expr::Var(name)
+    }
+}
+
 impl ParamDef {
+    /// True when the *source* declares a parameter spelled `$self` — an explicit
+    /// invocant (`method m($self: $n)`, `method symbol(::?CLASS $self: ...)`) or
+    /// an ordinary parameter (`sub ($self)`, `-> $self, $x`). A parser-synthesized
+    /// anonymous invocant is excluded: it is named `self` only because that is the
+    /// invocant's env key, and it declares no lexical (ADR-0061).
+    pub(crate) fn declares_self_lexical(&self) -> bool {
+        self.name == "self" && !self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+    }
+
     /// True when this parameter is a capture that carries a subsignature, i.e.
     /// `|c(...)` or the anonymous `|(...)` — both sigilless slurpies.  Such a
     /// parameter consumes all remaining arguments and delegates dispatch to its

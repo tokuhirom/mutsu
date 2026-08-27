@@ -150,7 +150,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     if sigil != b'$' && sigil != b'@' && sigil != b'%' {
         return Err(PError::expected("assignment expression"));
     }
-    let (r, var) = var_name(input)?;
+    let (r, var) = crate::parser::stmt::lexical_var_name(input)?;
     // A bare-`$` assignment target is an anonymous state variable; mint it a
     // unique per-occurrence name, exactly as `assign_stmt` does — see the note
     // there, including the guard: a following `.`/subscript means the

@@ -47,7 +47,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         _ => "",
     };
 
-    let (rest, var) = var_name(input)?;
+    let (rest, var) = crate::parser::stmt::lexical_var_name(input)?;
     // A bare-`$` assignment target is an anonymous state variable. `var_name`
     // returns the collapsed `__ANON_STATE__` spelling (it also parses
     // declarations and signature params, which must keep it), but each SOURCE

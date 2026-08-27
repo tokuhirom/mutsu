@@ -77,7 +77,9 @@ pub(crate) fn validate_param_trait_pub<'a>(
 /// a `Parameter`; that can only be known at declaration time, so the check lives
 /// in the VM (`check_param_custom_traits`), not here.
 pub(crate) fn is_builtin_param_trait(trait_name: &str) -> bool {
-    VALID_PARAM_TRAITS.contains(&trait_name) || trait_name == "invocant"
+    VALID_PARAM_TRAITS.contains(&trait_name)
+        || trait_name == "invocant"
+        || trait_name == crate::ast::IMPLICIT_INVOCANT_TRAIT
 }
 
 /// Parse-time handling of a parameter trait name. An unknown name is NOT a parse

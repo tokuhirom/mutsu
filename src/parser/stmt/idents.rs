@@ -132,6 +132,24 @@ pub(crate) fn qualified_ident(input: &str) -> PResult<'_, String> {
     Ok((rest, full))
 }
 
+/// [`var_name`] with the reserved-`$self` rename applied (ADR-0061): a scalar
+/// spelled `$self` yields [`crate::env::LEX_SELF`] instead of the plain key
+/// `self`, which belongs to a method's invocant.
+///
+/// Use this at DECLARATION and ASSIGNMENT sites (`my $self`, `$self = ...`,
+/// `constant $self`, `my ($self, $x)`), where the parsed name becomes an env
+/// key directly. Do NOT use it for signature parameters: a `ParamDef` keeps its
+/// sigil-less `name` for introspection (`.signature.params[0].name` re-adds the
+/// sigil), and the compiler maps `$self` back onto such a parameter through
+/// `Compiler::self_is_signature_param`.
+pub(crate) fn lexical_var_name(input: &str) -> PResult<'_, String> {
+    let (rest, name) = var_name(input)?;
+    if input.starts_with('$') && name == "self" {
+        return Ok((rest, crate::env::LEX_SELF.to_string()));
+    }
+    Ok((rest, name))
+}
+
 /// Parse a variable name ($x, @arr, %hash) and return just the name part.
 pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
     if input.starts_with('$')

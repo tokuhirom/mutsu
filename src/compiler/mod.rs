@@ -1296,6 +1296,18 @@ pub(crate) struct Compiler {
     /// plain `sub` has no such implicit slurpy, so `%_` there only works as a
     /// per-block placeholder and may not appear in a nested signature-less block.
     pub(crate) lexically_in_method: bool,
+    /// True when the enclosing routine's own signature declares a parameter
+    /// spelled `$self` — an explicit invocant (`method m($self: $n)`), an
+    /// anonymous invocant marker (`method m(Foo:D:)`, `::?CLASS:`), or an
+    /// ordinary parameter (`sub ($self)`, `-> $self, $x`).
+    ///
+    /// Such a parameter is named `self` in `ParamDef`, so it binds the plain env
+    /// key `"self"`. The parser gives every `$`-sigiled `self` the reserved
+    /// lexical key [`crate::env::LEX_SELF`] (ADR-0061); inside such a routine the
+    /// compiler maps it back to `"self"`, so the body reads its own parameter
+    /// rather than an unrelated outer lexical. Inherited by nested blocks and
+    /// closures, exactly like the lexical scope it describes.
+    pub(crate) self_is_signature_param: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
     /// True while compiling a `do whenever $s {...}` in expression position
@@ -1597,6 +1609,7 @@ impl Compiler {
             eval_context_dead_routine: false,
             lexically_in_block: false,
             lexically_in_method: false,
+            self_is_signature_param: false,
             bind_vardecl: false,
             whenever_bind_target: false,
             scalar_bind_autovivify: false,
@@ -2167,6 +2180,26 @@ impl Compiler {
         slot
     }
 
+    /// True when a signature declares a parameter spelled `$self` — an explicit
+    /// or anonymous invocant, or an ordinary positional. Such a `ParamDef` is
+    /// named `self` and therefore binds the plain env key `"self"`; see
+    /// [`Compiler::self_is_signature_param`] and ADR-0061.
+    pub(crate) fn signature_declares_self(param_defs: &[crate::ast::ParamDef]) -> bool {
+        param_defs.iter().any(|pd| pd.declares_self_lexical())
+    }
+
+    /// Resolve the reserved `$self` lexical key ([`crate::env::LEX_SELF`]) for
+    /// the scope being compiled: inside a routine whose own signature declares a
+    /// `$self` parameter it names that parameter, which binds `"self"`.
+    /// Every other name passes through unchanged.
+    pub(crate) fn resolve_self_lexical<'a>(&self, name: &'a str) -> &'a str {
+        if self.self_is_signature_param && name == crate::env::LEX_SELF {
+            "self"
+        } else {
+            name
+        }
+    }
+
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
     /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
     fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
@@ -2312,6 +2345,7 @@ impl Compiler {
     }
 
     fn emit_set_named_var(&mut self, name: &str) {
+        let name = self.resolve_self_lexical(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::SetLocal(slot));
         } else if name.starts_with('!') && name.len() > 1 {
@@ -3168,7 +3202,7 @@ impl Compiler {
                     other => other,
                 };
                 match inner {
-                    Expr::Var(name) => Some(format!("${}", name)),
+                    Expr::Var(name) => Some(crate::env::sigiled_scalar_name(name)),
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),
                     _ => None,
                 }

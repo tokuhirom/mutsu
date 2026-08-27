@@ -18,7 +18,7 @@ pub(crate) fn invocant_param_def() -> crate::ast::ParamDef {
         literal_value: None,
         sub_signature: None,
         where_constraint: None,
-        traits: Vec::new(),
+        traits: vec![crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string()],
         optional_marker: false,
         outer_sub_signature: None,
         code_signature: None,
@@ -59,6 +59,7 @@ pub(crate) fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
     for pd in param_defs {
         let declares_invocant =
             pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.name == "self";
+        let declares_self_lexical = pd.declares_self_lexical();
         if !seen_positional && declares_invocant {
             if pd.type_constraint.is_some() {
                 invocant.type_constraint = pd.type_constraint;
@@ -66,7 +67,11 @@ pub(crate) fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
             if pd.where_constraint.is_some() {
                 invocant.where_constraint = pd.where_constraint;
             }
-            if !pd.name.is_empty() && pd.name != "self" {
+            // A user-written `$self:` is aliased like any other named invocant:
+            // it declares the `$self` *lexical*, which no longer shares the
+            // invocant's env key (ADR-0061). A parser-synthesized anonymous
+            // invocant (`method (Foo:D:)`) declares nothing and is skipped.
+            if !pd.name.is_empty() && (pd.name != "self" || declares_self_lexical) {
                 invocant_aliases.push(pd.name);
             }
             continue;
@@ -103,7 +108,13 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
     let mut new_body: Vec<crate::ast::Stmt> = aliases
         .iter()
         .map(|name| crate::ast::Stmt::VarDecl {
-            name: name.clone(),
+            // `$self` binds the reserved lexical key, not the invocant's own
+            // (ADR-0061); every other alias keeps its sigil-less name.
+            name: if name == "self" {
+                crate::env::LEX_SELF.to_string()
+            } else {
+                name.clone()
+            },
             expr: Expr::BareWord("self".to_string()),
             type_constraint: None,
             is_state: false,

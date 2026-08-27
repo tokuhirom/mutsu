@@ -382,7 +382,12 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     } else {
         full_name
     };
-    Ok((rest, Expr::Var(full_name)))
+    // `$self` is an ordinary user lexical, NOT the `self` term: in Raku the two
+    // never interact. mutsu stores scalars sigil-less, so the plain key `self`
+    // would be the very key a method's invocant binds under — give the lexical
+    // the reserved sigiled key instead (ADR-0061). A routine whose own signature
+    // declares a `$self` parameter maps it back at compile time.
+    Ok((rest, crate::ast::scalar_var_expr(full_name)))
 }
 
 /// Parse `$(stmt; stmt; ... expr)` — statement block in scalar context.

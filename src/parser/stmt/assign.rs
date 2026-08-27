@@ -15,7 +15,7 @@ use crate::symbol::Symbol;
 use crate::token_kind::{MetaAssignIdentity, TokenKind};
 use crate::value::Value;
 
-use super::{ident, parse_statement_modifier, var_name};
+use super::{ident, parse_statement_modifier};
 
 static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 

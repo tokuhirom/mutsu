@@ -139,6 +139,7 @@ impl Compiler {
                 self.compile_match_regex(v);
             }
             Expr::Var(name) => {
+                let name = self.resolve_self_lexical(name);
                 self.compile_expr_var(name);
             }
             Expr::ArrayVar(name) => {
@@ -715,6 +716,7 @@ impl Compiler {
                 expr,
                 is_bind,
             } => {
+                let name = self.resolve_self_lexical(name);
                 self.compile_expr_assign(name, expr, *is_bind);
             }
             // Capture variable ($0, $1, etc.)

@@ -18,7 +18,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws1(rest)?;
         // Only handle simple scalar declarations (no type constraint).
         // Typed declarations like `my int $i` fall through to statement().
-        if let Ok((rest, name)) = var_name(rest) {
+        if let Ok((rest, name)) = crate::parser::stmt::lexical_var_name(rest) {
             // var_name strips the sigil; VarDecl name does not include the sigil
             let (rest, _) = ws(rest)?;
             if rest.starts_with('=') && !rest.starts_with("==") && !rest.starts_with("=>") {

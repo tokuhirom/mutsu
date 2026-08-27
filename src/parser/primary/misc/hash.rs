@@ -301,7 +301,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
             format!("{}{}", twigil, name)
         };
         let expr = match sigil {
-            "$" => Expr::Var(full_var_name),
+            "$" => crate::ast::scalar_var_expr(full_var_name),
             "@" => Expr::ArrayVar(full_var_name),
             "%" => Expr::HashVar(full_var_name),
             "&" => Expr::CodeVar(full_var_name),
