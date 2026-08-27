@@ -9,8 +9,58 @@ fn make_buf_value(bytes: &[u8]) -> Value {
     crate::value::value_buf::make_buf_from_u8(bytes)
 }
 
+/// The Supply channels one Proc::Async reader thread emits its decoded chunks to.
+///
+/// `stream` is the reader's own per-stream Supply (`.stdout` / `.stderr`).
+/// `merged` is the process-wide `.Supply`, which **both** reader threads feed —
+/// that is what makes `whenever $proc { ... }` a genuine live merge of the two
+/// streams rather than something only reconstructible after the child exits.
+///
+/// The merged stream's `Done` is deliberately NOT sent from a reader: the merge
+/// ends only once *both* readers have finished, so the `proc-wait` thread sends
+/// it after joining them (see [`Interpreter::native_proc_async_mut`]).
+struct ChunkSinks {
+    stream: Option<super::native_methods::supply_channel::SupplySender>,
+    merged: Option<super::native_methods::supply_channel::SupplySender>,
+}
+
+impl ChunkSinks {
+    fn is_empty(&self) -> bool {
+        self.stream.is_none() && self.merged.is_none()
+    }
+
+    fn emit(&self, value: Value) {
+        if let Some(tx) = &self.merged {
+            let _ = tx.send(SupplyEvent::Emit(value.clone()));
+        }
+        if let Some(tx) = &self.stream {
+            let _ = tx.send(SupplyEvent::Emit(value));
+        }
+    }
+
+    /// An encoding error ends both the per-stream and the merged view of this
+    /// reader. The merged `quit` is recorded in `merged_quit` so `proc-wait`
+    /// knows not to follow it with a `Done`.
+    fn quit(&self, reason: Value, merged_quit: &std::sync::atomic::AtomicBool) {
+        if let Some(tx) = &self.merged {
+            merged_quit.store(true, std::sync::atomic::Ordering::Release);
+            let _ = tx.send(SupplyEvent::Quit(reason.clone()));
+        }
+        if let Some(tx) = &self.stream {
+            let _ = tx.send(SupplyEvent::Quit(reason));
+        }
+    }
+
+    /// End this reader's own per-stream Supply. The merged Supply outlives it.
+    fn stream_done(&self) {
+        if let Some(tx) = &self.stream {
+            let _ = tx.send(SupplyEvent::Done);
+        }
+    }
+}
+
 /// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded valid
-/// prefix through the supply channel, retains an INCOMPLETE trailing sequence in
+/// prefix through the supply channels, retains an INCOMPLETE trailing sequence in
 /// `pending` (so a multibyte character split across two reads is not mis-flagged),
 /// and returns `true` when a genuinely malformed byte is hit — the caller then
 /// quits the supply, matching Rakudo ("stdout/stderr Supply quit on encoding
@@ -24,7 +74,7 @@ fn make_buf_value(bytes: &[u8]) -> Value {
 fn feed_utf8_incremental(
     pending: &mut Vec<u8>,
     new: &[u8],
-    tx: &Option<super::native_methods::supply_channel::SupplySender>,
+    sinks: &ChunkSinks,
     collected: &mut String,
     translate_crlf: bool,
     held_cr: &mut bool,
@@ -32,7 +82,7 @@ fn feed_utf8_incremental(
     pending.extend_from_slice(new);
     match std::str::from_utf8(pending) {
         Ok(s) => {
-            emit_decoded_chunk(s, tx, collected, translate_crlf, held_cr);
+            emit_decoded_chunk(s, sinks, collected, translate_crlf, held_cr);
             pending.clear();
             false
         }
@@ -40,7 +90,7 @@ fn feed_utf8_incremental(
             let valid = e.valid_up_to();
             if valid > 0 {
                 let s = std::str::from_utf8(&pending[..valid]).unwrap_or("");
-                emit_decoded_chunk(s, tx, collected, translate_crlf, held_cr);
+                emit_decoded_chunk(s, sinks, collected, translate_crlf, held_cr);
             }
             match e.error_len() {
                 // Incomplete trailing sequence: keep the tail for the next read.
@@ -59,7 +109,7 @@ fn feed_utf8_incremental(
 /// held-back-`\r` CRLF translation when `translate_crlf` is set.
 fn emit_decoded_chunk(
     s: &str,
-    tx: &Option<super::native_methods::supply_channel::SupplySender>,
+    sinks: &ChunkSinks,
     collected: &mut String,
     translate_crlf: bool,
     held_cr: &mut bool,
@@ -84,24 +134,16 @@ fn emit_decoded_chunk(
     if text.is_empty() {
         return;
     }
-    if let Some(tx) = tx {
-        let _ = tx.send(SupplyEvent::Emit(Value::str(text.clone())));
-    }
+    sinks.emit(Value::str(text.clone()));
     collected.push_str(&text);
 }
 
 /// Flush a [`feed_utf8_incremental`] run's held-back lone `\r` (see its doc
 /// comment) once the stream has genuinely ended with no following `\n` to
 /// pair it with.
-fn flush_held_cr(
-    held_cr: bool,
-    tx: &Option<super::native_methods::supply_channel::SupplySender>,
-    collected: &mut String,
-) {
+fn flush_held_cr(held_cr: bool, sinks: &ChunkSinks, collected: &mut String) {
     if held_cr {
-        if let Some(tx) = tx {
-            let _ = tx.send(SupplyEvent::Emit(Value::str("\r".to_string())));
-        }
+        sinks.emit(Value::str("\r".to_string()));
         collected.push('\r');
     }
 }
@@ -513,6 +555,25 @@ impl Interpreter {
                     }
                     tx
                 });
+                // The merged `.Supply` gets a channel of its own, fed by BOTH
+                // reader threads. Without it the merge had no live producer at
+                // all and could only be served after the child exited, by
+                // `replay_proc_taps` off the resulting `Proc` — which the react
+                // drive loop never reaches (it settles a `whenever <Promise>`
+                // through `is_resolved`/`result_blocking` directly), so
+                // `react { whenever $proc { ... } }` collected the output and
+                // threw it away. Only created when the merge is actually
+                // claimed; an unclaimed one would park a receiver nobody drains.
+                let merged_channel = merged_supply_id.filter(|_| merged_claimed).map(|sid| {
+                    let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
+                    if let Ok(mut map) = supply_channel_map().lock() {
+                        map.insert(sid, rx);
+                    }
+                    tx
+                });
+                // Set by a reader that ends its stream with an encoding `quit`:
+                // `proc-wait` must not then follow it with a merged `Done`.
+                let merged_quit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
                 // A tap registered on `.stdout`/`.stderr` before `.start()` (the
                 // normal order — `X::Proc::Async::TapBeforeSpawn` rejects a
@@ -608,6 +669,18 @@ impl Interpreter {
                 let ret = Value::promise(promise.clone());
                 let cmd_arr_clone = cmd_arr.clone();
 
+                // Both readers emit into the merged Supply; each also into its
+                // own per-stream Supply. `proc-wait` keeps the last sender clone
+                // so it can close the merge after joining both readers.
+                let stdout_sinks = ChunkSinks {
+                    stream: stdout_channel,
+                    merged: merged_channel.clone(),
+                };
+                let stderr_sinks = ChunkSinks {
+                    stream: stderr_channel,
+                    merged: merged_channel.clone(),
+                };
+
                 // Builds Proc `Value`s (Gc nodes) and resolves the promise:
                 // registered GC mutator; its child-wait / joins are quiescent.
                 // Runs no user VM code (`keep` dispatches waiters to a fresh
@@ -615,7 +688,8 @@ impl Interpreter {
                 crate::runtime::builtins_system::spawn_gc_helper_thread("proc-wait", move || {
                     // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
-                        let tx = stdout_channel;
+                        let sinks = stdout_sinks;
+                        let merged_quit = merged_quit.clone();
                         let bin_mode = stdout_bin;
                         let sid = stdout_supply_id;
                         // Emits Buf `Value`s (Gc nodes): registered mutator,
@@ -638,23 +712,21 @@ impl Interpreter {
                                         Ok(n) => {
                                             raw.extend_from_slice(&buf[..n]);
                                             if bin_mode {
-                                                if let Some(ref tx) = tx {
-                                                    let buf_val = make_buf_value(&buf[..n]);
-                                                    let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                                if !sinks.is_empty() {
+                                                    sinks.emit(make_buf_value(&buf[..n]));
                                                 }
                                             } else if feed_utf8_incremental(
                                                 &mut pending,
                                                 &buf[..n],
-                                                &tx,
+                                                &sinks,
                                                 &mut collected,
                                                 true,
                                                 &mut held_cr,
                                             ) {
-                                                if let Some(ref tx) = tx {
-                                                    let _ = tx.send(SupplyEvent::Quit(
-                                                        malformed_utf8_quit_value(),
-                                                    ));
-                                                }
+                                                sinks.quit(
+                                                    malformed_utf8_quit_value(),
+                                                    &merged_quit,
+                                                );
                                                 quit = true;
                                                 break;
                                             }
@@ -663,10 +735,8 @@ impl Interpreter {
                                     }
                                 }
                                 if !quit {
-                                    flush_held_cr(held_cr, &tx, &mut collected);
-                                    if let Some(ref tx) = tx {
-                                        let _ = tx.send(SupplyEvent::Done);
-                                    }
+                                    flush_held_cr(held_cr, &sinks, &mut collected);
+                                    sinks.stream_done();
                                 }
                                 // Retain the raw bytes so the await-time replay can
                                 // decode them with the stream's effective encoding
@@ -682,7 +752,8 @@ impl Interpreter {
 
                     // Spawn stderr reader thread — streams raw chunks through channel
                     let stderr_handle = child_stderr.map(|stderr| {
-                        let tx = stderr_channel;
+                        let sinks = stderr_sinks;
+                        let merged_quit = merged_quit.clone();
                         let bin_mode = stderr_bin;
                         let sid = stderr_supply_id;
                         // Same as the stdout reader: registered + quiescent
@@ -704,23 +775,21 @@ impl Interpreter {
                                         Ok(n) => {
                                             raw.extend_from_slice(&buf[..n]);
                                             if bin_mode {
-                                                if let Some(ref tx) = tx {
-                                                    let buf_val = make_buf_value(&buf[..n]);
-                                                    let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                                if !sinks.is_empty() {
+                                                    sinks.emit(make_buf_value(&buf[..n]));
                                                 }
                                             } else if feed_utf8_incremental(
                                                 &mut pending,
                                                 &buf[..n],
-                                                &tx,
+                                                &sinks,
                                                 &mut collected,
                                                 false,
                                                 &mut held_cr,
                                             ) {
-                                                if let Some(ref tx) = tx {
-                                                    let _ = tx.send(SupplyEvent::Quit(
-                                                        malformed_utf8_quit_value(),
-                                                    ));
-                                                }
+                                                sinks.quit(
+                                                    malformed_utf8_quit_value(),
+                                                    &merged_quit,
+                                                );
                                                 quit = true;
                                                 break;
                                             }
@@ -728,8 +797,8 @@ impl Interpreter {
                                         Err(_) => break,
                                     }
                                 }
-                                if !quit && let Some(ref tx) = tx {
-                                    let _ = tx.send(SupplyEvent::Done);
+                                if !quit {
+                                    sinks.stream_done();
                                 }
                                 if let Some(sid) = sid {
                                     set_supply_collected_bytes(sid, raw);
@@ -768,6 +837,17 @@ impl Interpreter {
                         .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
                         .unwrap_or_default();
                     let collected_stdout = collected_stdout.replace("\r\n", "\n");
+
+                    // The merge ends only once BOTH readers have finished, so
+                    // its `Done` belongs here, after the joins above — never in
+                    // either reader, which would close the merged Supply while
+                    // the other stream was still producing. Skipped when a
+                    // reader already `quit` the merge on an encoding error.
+                    if let Some(tx) = merged_channel
+                        && !merged_quit.load(std::sync::atomic::Ordering::Acquire)
+                    {
+                        let _ = tx.send(SupplyEvent::Done);
+                    }
 
                     // Join any live tap consumers spawned above: the reader
                     // threads only guarantee the raw bytes were *read*, not that
