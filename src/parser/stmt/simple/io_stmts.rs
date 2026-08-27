@@ -167,6 +167,13 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        // Adjacent colonpairs without commas: `say :a :b, $x` / `say :a:b, $x`
+        // are `say(:a, :b, $x)` — the argument list continues past them.
+        if let Some((r2, arg)) = crate::parser::primary::ident::try_adjacent_colonpair_arg(r) {
+            items.push(arg);
+            rest = r2;
+            continue;
+        }
         if !r.starts_with(',') {
             let gap = &rest[..rest.len() - r.len()];
             let is_legitimate_continuation = gap.contains('\n')
@@ -259,6 +266,16 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
     let (rest_after_target, target) = expression(input)?;
     let (rest_after_target, _) = ws(rest_after_target)?;
     if !rest_after_target.starts_with(':') || rest_after_target.starts_with("::") {
+        return Err(PError::expected("io colon invocant call"));
+    }
+    // `say :!d:r, "x"` is `say(:!d, :r, "x")`, not `(:!d).say(r, "x")`: a colon
+    // that opens a colonpair, or that follows one, is never the invocant colon.
+    // These are the same two guards `try_parse_no_paren_invocant_colon_call`
+    // applies for the general listop form. `say $*OUT: "hi"` is unaffected — its
+    // colon is followed by whitespace, not by a name or a sigil.
+    if crate::parser::primary::ident::colon_starts_colonpair(rest_after_target)
+        || crate::parser::primary::ident::expr_is_colonpair(&target)
+    {
         return Err(PError::expected("io colon invocant call"));
     }
     let mut rest = &rest_after_target[1..];
