@@ -2738,7 +2738,12 @@ impl Compiler {
                             source_var_names,
                             source_var_locals,
                             autothread_junctions,
-                            explicit_zero_params: *explicit_zero_params,
+                            zero_positional_params: Self::for_zero_positional_params(
+                                *explicit_zero_params,
+                                param,
+                                params,
+                                params_def,
+                            ),
                             multi_param_names: params
                                 .iter()
                                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
