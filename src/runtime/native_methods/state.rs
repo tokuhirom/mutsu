@@ -118,12 +118,39 @@ pub(crate) enum SupplyEvent {
     Quit(Value),
 }
 
-/// Take a receiver from the supply channel registry (can only be consumed once)
+/// Take a receiver from the supply channel registry (can only be consumed once).
+///
+/// Taking it hands ownership of the stream to a consumer that will deliver every
+/// event on it, so this also records the supply as live-consumed
+/// ([`mark_supply_live_tapped`]) — the fact the `Proc::Async` await/result-time
+/// replay consults to decide it must NOT redeliver the same output a second
+/// time. Recording it here rather than at each consumer keeps the two delivery
+/// mechanisms mutually exclusive by construction, whoever the consumer is (the
+/// `.start()` live act-loop pump, the react drive loop, a `zip`/`.list`
+/// materialiser); a `whenever` on a `Proc::Async` output Supply registers a tap
+/// as well, so without this both paths would fire it.
 pub(crate) fn take_supply_channel(supply_id: u64) -> Option<super::supply_channel::SupplyReceiver> {
-    if let Ok(mut map) = supply_channel_map().lock() {
+    let taken = if let Ok(mut map) = supply_channel_map().lock() {
         map.remove(&supply_id)
     } else {
         None
+    };
+    if taken.is_some() {
+        mark_supply_live_tapped(supply_id);
+    }
+    taken
+}
+
+/// Drop a still-unclaimed receiver without marking the supply live-consumed.
+///
+/// Used by the `Proc::Async` await/result-time replay once it has decided to
+/// serve the collected output itself: the merged Supply's channel was created
+/// at `.start()` but nobody took it, and leaving the receiver parked in the
+/// registry would pin a second copy of the whole child output until the
+/// interpreter exits.
+pub(in crate::runtime) fn discard_supply_channel(supply_id: u64) {
+    if let Ok(mut map) = supply_channel_map().lock() {
+        map.remove(&supply_id);
     }
 }
 
@@ -686,13 +713,15 @@ pub(in crate::runtime) fn mark_supply_replayed(supply_id: u64) -> bool {
         .unwrap_or(false)
 }
 
-/// Marks a Proc::Async output supply (stdout/stderr) as having a *live*
-/// act-loop pump (a `.tap()` registered before `.start()` took the channel
-/// and streams each chunk as it arrives — see
-/// `todo/tickets/procasync-stdout-is-not-incremental.md`). The await/result-time
-/// `replay_proc_output` consults this to skip redelivering the same output a
-/// second time once the child exits: the live pump already streamed every
-/// chunk (and fired `done`/`quit`) inline as the reader thread produced them.
+/// Marks a Proc::Async output supply (stdout, stderr, or the merged `.Supply`)
+/// as having a *live* consumer of its event channel: a `.tap()` registered
+/// before `.start()` whose act-loop pump streams each chunk as it arrives (see
+/// `todo/tickets/procasync-stdout-is-not-incremental.md`), or the react drive
+/// loop, which takes the channel and dispatches to the `whenever` body itself.
+/// The await/result-time `replay_proc_output` / `replay_proc_taps` consult this
+/// to skip redelivering the same output a second time once the child exits: the
+/// live consumer already delivered every chunk (and `done`/`quit`) inline.
+/// Normally set by [`take_supply_channel`], which is where ownership moves.
 pub(in crate::runtime) fn mark_supply_live_tapped(supply_id: u64) {
     if let Ok(mut set) = live_tapped_set().lock() {
         set.insert(supply_id);

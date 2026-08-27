@@ -370,9 +370,28 @@ impl Interpreter {
             Some(ValueView::Int(sid)) => Some(sid as u64),
             _ => None,
         };
+        // The merged `.Supply` now has a live channel of its own, fed by both
+        // reader threads (see `native_proc_async.rs`). When a consumer took that
+        // channel — the react drive loop, or a pre-`.start()` `.tap()`'s pump —
+        // every chunk has already been delivered, and a `whenever` also
+        // registers an ordinary tap, so replaying `collected_merged` here would
+        // deliver the whole output a second time. Same recorded-fact guard the
+        // per-stream `replay_proc_output` uses.
+        let merged_live = merged_sid
+            .map(super::super::native_methods::is_supply_live_tapped)
+            .unwrap_or(false);
         let merged_first_replay = merged_sid
             .map(super::super::native_methods::mark_supply_replayed)
             .unwrap_or(true);
+        if merged_live {
+            return;
+        }
+        // Nobody took the merged channel, so this replay is the delivery path:
+        // release the parked receiver rather than pinning a second copy of the
+        // whole child output until the interpreter exits.
+        if let Some(sid) = merged_sid {
+            super::super::native_methods::discard_supply_channel(sid);
+        }
         if merged_first_replay && !collected_merged.is_empty() && !supply_taps.is_empty() {
             for tap in &supply_taps {
                 let _ = self.call_sub_value(
