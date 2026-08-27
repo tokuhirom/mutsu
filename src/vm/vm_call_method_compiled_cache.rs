@@ -13,6 +13,7 @@ impl Interpreter {
         self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
+        self.native_lever_a_override_cache.clear();
         self.resolved_seq_cache.clear();
         self.dispatch_multi_candidate.clear();
         self.clear_private_zeroarg_method_cache();
@@ -179,8 +180,27 @@ impl Interpreter {
     /// because `Array` itself does not declare `sort` — no redeclaration error,
     /// unlike `augment class Str { method uc {...} }`) was silently shadowed by
     /// the native fast path. See `t/augment-native-lever-a-methods.t`.
+    ///
+    /// Memoized on `(type name, method)` — the answer is a pure function of the
+    /// registry shape, so it only changes when the registry generation does, and
+    /// [`Self::refresh_method_caches_for_generation`] clears the memo alongside
+    /// the other method caches. This gate sits on EVERY native method call, and
+    /// uncached it re-walked the receiver's whole MRO (`Int` -> `Cool` -> `Any`
+    /// -> `Mu`) asking `user_method_overloads` at each level, just to re-derive
+    /// "no, nobody augmented `Int`".
     pub(crate) fn native_lever_a_user_override(&mut self, target: &Value, method: &str) -> bool {
-        self.has_user_method(crate::runtime::utils::value_type_name(target), method)
+        let type_name = crate::runtime::utils::value_type_name(target);
+        self.refresh_method_caches_for_generation();
+        let key = (
+            crate::symbol::Symbol::intern(type_name),
+            crate::symbol::Symbol::intern(method),
+        );
+        if let Some(&hit) = self.native_lever_a_override_cache.get(&key) {
+            return hit;
+        }
+        let answer = self.has_user_method(type_name, method);
+        self.native_lever_a_override_cache.insert(key, answer);
+        answer
     }
 
     /// Resolve a method, consulting the sound multi-resolution cache for a

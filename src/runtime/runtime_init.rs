@@ -3082,6 +3082,7 @@ impl Interpreter {
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),
             multi_resolve_cache: rustc_hash::FxHashMap::default(),
             multi_type_cacheable: rustc_hash::FxHashMap::default(),
+            native_lever_a_override_cache: rustc_hash::FxHashMap::default(),
             resolved_seq_cache: rustc_hash::FxHashMap::default(),
             dispatch_multi_candidate: rustc_hash::FxHashMap::default(),
             method_body_fp_cache: rustc_hash::FxHashMap::default(),

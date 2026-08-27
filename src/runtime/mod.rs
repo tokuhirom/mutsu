@@ -2826,6 +2826,17 @@ pub struct Interpreter {
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.
     pub(crate) multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memoized `(native type name, method) -> does a user `augment` declare this
+    /// method on that type or an MRO ancestor` — the `native_lever_a_user_override`
+    /// gate every native method call passes through. The answer is a pure function
+    /// of the registry shape, so it is sound to key on the pair and clear it with
+    /// the other method caches on a registry-generation bump. Without the memo the
+    /// gate re-walked the receiver's whole MRO (`Int` -> `Cool` -> `Any` -> `Mu`),
+    /// asking `user_method_overloads` at each level, on EVERY `$x.foo` — which
+    /// showed up as ~7% of a native-method-dispatch loop's profile
+    /// (`has_user_method` + `class_mro` + `user_method_overloads`) purely to
+    /// re-derive "no, nobody augmented Int".
+    pub(crate) native_lever_a_override_cache: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
     /// Memoized `(class, method) -> does this name have >= 2 structural dispatch
     /// candidates across the MRO` (counting overloads BEFORE arg-matching).
     /// `false` means the name resolves to at most one candidate, so
