@@ -87,3 +87,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0059](0059-is-rw-routines-return-a-container.md) | An `is rw` routine returns a container — retiring caller-side tail re-interpretation | Accepted (Slice 1 implemented; Slices 2-3 open) |
 | [0060](0060-mixin-what-is-a-composition-keyed-type-object.md) | A role-mixed value's `.WHAT` is a composition-keyed type object, not the shared base or a per-instance fork | Accepted (implemented) |
 | [0061](0061-lexical-self-has-its-own-env-key.md) | A user lexical `$self` has its own env key — `self` names only the invocant | Accepted (implemented) |
+| [0062](0062-atomic-lane-anchors-to-the-published-value.md) | A generation of the legacy atomic lane anchors to the published value, and the root store is the lane's only authority | Accepted (implemented) |

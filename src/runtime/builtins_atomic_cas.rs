@@ -39,6 +39,15 @@ impl Interpreter {
         } else {
             None
         };
+        // TODO: re-resolve inside the retry loop below. ADR-0062 §"Not
+        // addressed" (2): the lane's `value_key` is resolved once, here, so a
+        // lane another thread retires (via `reset_atomic_var_key`, i.e. a plain
+        // assignment) *during* this `cas` leaves the loop writing a slot nobody
+        // reads any more. Correct would be to re-resolve at the top of each
+        // retry iteration, but that changes which slot the compare is against
+        // mid-flight, which is a separate semantic decision — and the program
+        // that triggers it is already racy by Raku's own rules (an unordered
+        // plain assignment concurrent with a `cas`).
         let value_key = if attr_cell.is_none() && scalar_cell.is_none() {
             self.atomic_value_key_for_name(&name)
         } else {

@@ -150,17 +150,82 @@ impl Interpreter {
         Ok((current, next))
     }
 
+    /// The process-global *published* value of `name`, if there is one — the
+    /// value [`sync_shared_vars_to_env`](Interpreter::sync_shared_vars_to_env)
+    /// would itself hand a thread reconciling this name.
+    ///
+    /// ADR-0062: this, not the calling frame's `env`, is what a **newly created**
+    /// generation of the legacy atomic lane anchors to. `env` is a private
+    /// snapshot taken when the thread was cloned; the store's entry is the last
+    /// value any thread explicitly published. Seeding a process-wide atomic from
+    /// a private snapshot is what let a stale-spawned thread publish an
+    /// arbitrarily old value as authoritative.
+    ///
+    /// The two gates are exactly the ones `set_shared_var_sym` and the blanket
+    /// reconcile already use to decide whether the store speaks for a name:
+    ///
+    /// - **dirty** — `clone_for_thread`'s spawn-time seeding deliberately does
+    ///   *not* mark a key dirty, so an entry that is merely seeded carries no
+    ///   more information than the thread's own `env` and must not displace it.
+    ///   Only an explicit `set_shared_var` write marks the name dirty, and that
+    ///   is precisely "some thread published a value here".
+    /// - **not thread-redeclared** — a re-declared name is a fresh frame-local
+    ///   binding that merely shares a spelling with the store's entry (the same
+    ///   exclusion `sync_shared_vars_to_env` applies to its dirty-key list).
+    ///
+    /// Read with no `shared_vars` lock held: `SharedStore::get` walks the
+    /// lineage chain and would re-enter the root lock the caller is about to
+    /// take.
+    fn published_atomic_seed(&self, name: &str) -> Option<Value> {
+        if !self.shared_vars_active {
+            return None;
+        }
+        if self.thread_redeclared_vars.borrow().contains(name) {
+            return None;
+        }
+        if !self.is_shared_var_dirty(name) {
+            return None;
+        }
+        self.shared_vars.get(name)
+    }
+
+    /// Resolve (creating if needed) the `__mutsu_atomic_value::N` slot that backs
+    /// the legacy name-keyed atomic lane for `name`.
+    ///
+    /// ADR-0062. Two properties are load-bearing and were both absent before:
+    ///
+    /// 1. **The root store is the sole authority for the mapping.** The frame's
+    ///    `env` copy is a mirror, never consulted first: `reset_atomic_var_key`
+    ///    retires a mapping in the store but can only reach the `env` of the
+    ///    thread that ran the assignment, so trusting the mirror hands another
+    ///    thread a retired slot that nothing writes any more.
+    /// 2. **A new generation is anchored to the published value, not to `env`.**
+    ///    See [`published_atomic_seed`](Self::published_atomic_seed).
     pub(super) fn atomic_value_key_for_name(&mut self, name: &str) -> String {
         self.mark_atomic_var_seen();
         let name_key = Self::atomic_shared_name_key(name);
-        if let Some(v) = self.env.get(&name_key)
-            && let ValueView::Str(existing) = v.view()
-        {
-            return existing.to_string();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        // Fast path: the mapping already exists. A read lock keeps a plain read
+        // of an atomic-touched variable (`exec_get_local_op_inner` ->
+        // `builtin_atomic_fetch_var`) off the writer lock.
+        let existing = atomic_root
+            .own_map()
+            .read()
+            .unwrap()
+            .get(&name_key)
+            .and_then(|v| match v.view() {
+                ValueView::Str(vk) => Some(vk.to_string()),
+                _ => None,
+            });
+        if let Some(existing) = existing {
+            self.env.insert(name_key, Value::str(existing.clone()));
+            return existing;
         }
+        // Creating a new generation of the lane: take the anchor value before
+        // locking (see `published_atomic_seed`).
+        let seed = self.published_atomic_seed(name);
         let value_key = {
-            // ADR-0010: atomics are process-wide shared state -> the root lineage.
-            let atomic_root = self.shared_vars.root_store();
             let mut shared = atomic_root.own_map().write().unwrap();
             if let Some(existing) = shared.get(&name_key).and_then(|v| v.as_str()) {
                 existing.to_string()
@@ -168,6 +233,9 @@ impl Interpreter {
                 let id = ATOMIC_VAR_KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
                 let value_key = Self::atomic_shared_value_key(id);
                 shared.insert(name_key.clone(), Value::str(value_key.clone()));
+                if let Some(seed) = seed {
+                    shared.insert(value_key.clone(), seed);
+                }
                 value_key
             }
         };
