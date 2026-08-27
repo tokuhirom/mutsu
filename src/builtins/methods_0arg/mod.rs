@@ -613,6 +613,15 @@ pub(crate) fn native_method_0arg(
                 | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
                     return native_method_0arg(str_val, method_sym);
                 }
+                // `wordcase` reads the Str part like its siblings above, but
+                // unlike them it preserves the allomorph type — see
+                // `allomorph_wordcase_result` for why.
+                "wordcase" => {
+                    let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
+                    return Some(Ok(crate::value::types::allomorph_wordcase_result(
+                        inner, wordcased,
+                    )));
+                }
                 _ => {}
             }
         }

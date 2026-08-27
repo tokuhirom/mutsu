@@ -153,6 +153,19 @@ impl Interpreter {
             };
             result.push_str(&transformed);
         }
+        // An allomorph (IntStr/RatStr/NumStr/ComplexStr) argument reads its
+        // Str part above (via `target.to_string_value()`), but the RESULT
+        // must also preserve the allomorph the way the 0-arg form does — see
+        // `allomorph_wordcase_result` for why rakudo's own reconstruction
+        // resets the numeric part to a type zero rather than the original
+        // number.
+        if let ValueView::Mixin(inner, mixins) = target.view()
+            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        {
+            return Ok(crate::value::types::allomorph_wordcase_result(
+                inner, result,
+            ));
+        }
         Ok(Value::str(result))
     }
 
