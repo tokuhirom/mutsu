@@ -818,16 +818,121 @@ impl Interpreter {
     /// and `t/bind-alias-reverse-write.t` pass, and why deleting the
     /// `saved_locals[i]` patch produces byte-identical output even for a
     /// recursive same-function bind
-    /// (`t/bind-alias-recursive-frame-index.t`; see that test's comments for
-    /// the caveat that the `saved_env` splice itself has a separate,
-    /// out-of-scope bug for same-named recursive locals, tracked in
-    /// `todo/deep/bind-propagate-ancestor-frames-clobbers-unrelated-recursive-locals.md`).
-    pub(super) fn propagate_bind_to_ancestor_frames(&mut self, name: &str, container: &Value) {
+    /// (`t/bind-alias-recursive-frame-index.t`).
+    ///
+    /// `source_is_own_frame_lexical` is the frame-ownership gate that keeps the
+    /// by-name match honest — see
+    /// [`bind_source_is_own_frame_lexical`](Self::bind_source_is_own_frame_lexical).
+    /// When the bind's source is a lexical THIS invocation declared, every
+    /// ancestor frame that owns the same name owns a *different* variable, and
+    /// splicing the shared cell into them silently aliases N independent
+    /// lexicals into one cell (the recursion clobber this gate fixes).
+    pub(super) fn propagate_bind_to_ancestor_frames(
+        &mut self,
+        name: &str,
+        source_is_own_frame_lexical: bool,
+        container: &Value,
+    ) {
+        if source_is_own_frame_lexical {
+            return;
+        }
+        // Every matching frame is still patched, not just the innermost one.
+        // That is deliberately conservative: an alias CHAIN through raw
+        // parameters (`method new(\p) { self.bless!SET-SELF: p }` ->
+        // `method !SET-SELF(\p) { $!x := p }`, roast S32-list/tail.t's
+        // `PredictiveIterator`) currently relies on the blanket write to reach
+        // the outermost frame that declares the name — mutsu does not yet
+        // propagate a bind transitively through each raw parameter's own
+        // aliasing, so stopping at the innermost match would cut the chain at
+        // the first intermediate routine whose parameter shares the name.
         for frame in self.call_frames.iter_mut().rev() {
             if frame.saved_env.contains_key_own_tier(name) {
                 frame.saved_env.insert(name.to_string(), container.clone());
             }
         }
+    }
+
+    /// True when the `:=` bind source `name` is a lexical **this invocation
+    /// declared itself**, rather than a free variable whose declaring scope
+    /// lives in an ancestor call frame.
+    ///
+    /// [`propagate_bind_to_ancestor_frames`](Self::propagate_bind_to_ancestor_frames)
+    /// can only find an ancestor's declaring scope by name, and a bare name is
+    /// not an identity: under recursion every ancestor invocation of the same
+    /// routine legitimately declares its own independent lexical under that
+    /// name. Splicing the bind's shared `ContainerRef` into all of them aliased
+    /// what Raku scopes as N separate variables into one cell, so
+    /// `sub rec($n) { my $v = $n; ...; my $x := $v; $x = 999 }` reported `999`
+    /// at *every* recursion level instead of only the base case
+    /// (`t/bind-alias-recursive-frame-index.t`).
+    ///
+    /// The primary signal is the **compiler's own resolution of the bind
+    /// source**, carried on the `VarRef` the `WrapVarRef` site pushed
+    /// (`Value::varref_slot`): a real slot index means the source was compiled
+    /// as a `GetLocal` of this very code unit, so it unambiguously denotes this
+    /// invocation's own lexical; the `u32::MAX` sentinel is the compiler's
+    /// explicit "known NOT a local of this frame" (the source read compiled to
+    /// `GetGlobal`), which is exactly the free-variable case the propagation
+    /// exists for. That is a genuine identity token rather than a name, and it
+    /// is already trusted verbatim elsewhere for the same reason (see
+    /// `exec_wrap_var_ref_op` and `t/list-alias-shadowed-name.t`). It only
+    /// describes `source_name`, so it is consulted only when the sigilless
+    /// alias chain did not redirect the bind to a different `resolved_source`.
+    ///
+    /// A `VarRef` built without compiler slot info (`slot: None`, the legacy
+    /// constructors) and the redirected-source case fall back to a name-based
+    /// conjunction of two signals that each cover the other's failure mode:
+    ///
+    /// * `code.locals` contains the name — the routine has a slot for it, i.e.
+    ///   the name is not free here. Alone this is not enough: `code.locals` is
+    ///   function-wide, so a `my $v` in a *sibling* (possibly never executed)
+    ///   block satisfies it while the live read still resolves to an outer
+    ///   frame's variable (the same hazard the `source_in_same_scope` comment in
+    ///   `vm_var_assign_set_local.rs` documents).
+    /// * the name is declared in the CURRENT env's own overlay tier — the exact
+    ///   mirror of the [`Env::contains_key_own_tier`] test the ancestor loop
+    ///   applies, so "this frame declares it" is decided by the same rule as
+    ///   "that frame declares it". Alone this is not enough either: a frame
+    ///   whose env got flattened (`Env::flattened`, e.g. past
+    ///   `MAX_OVERLAY_DEPTH`) carries inherited names in its own tier, which
+    ///   would wrongly suppress a genuine free-variable propagation — and
+    ///   `code.locals` rules that out, since a free variable has no slot here.
+    ///
+    /// MUST be evaluated BEFORE the bind handler writes the shared container
+    /// into the env under the source's name: that write would make the
+    /// own-tier test trivially true for every bind.
+    pub(super) fn bind_source_is_own_frame_lexical(
+        &self,
+        code: &CompiledCode,
+        source_name: &str,
+        resolved_source: &str,
+        bind_source_slot: Option<u32>,
+    ) -> bool {
+        let slot = if source_name == resolved_source
+            && let Some(slot) = bind_source_slot
+        {
+            // `u32::MAX` is the compiler's explicit "not a local of this frame".
+            if slot == u32::MAX {
+                return false;
+            }
+            slot
+        } else {
+            let Some(slot) = code.locals.iter().rposition(|n| n == resolved_source) else {
+                return false;
+            };
+            if !self.env().contains_key_own_tier(resolved_source) {
+                return false;
+            }
+            slot as u32
+        };
+        // A PARAMETER slot is not a fresh lexical of this invocation. A raw
+        // (`\p`) or `is rw` parameter aliases the caller's own container, so a
+        // bind through it must still reach outward — mutsu currently carries
+        // that outward reach through this very splice (see the loop above), so
+        // gating a parameter as "mine" would silently cut a raw-parameter alias
+        // chain (roast `S32-list/tail.t` / `skip.t`'s `PredictiveIterator`).
+        // Only a `my`-declared local is unambiguously this invocation's own.
+        !code.param_local_slots.contains(&slot)
     }
 
     /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any

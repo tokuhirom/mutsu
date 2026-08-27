@@ -1243,6 +1243,10 @@ impl Interpreter {
                     }
                 }
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                // The compiler's own resolution of a `:=` bind source (see
+                // `bind_source_is_own_frame_lexical`), kept before the wrapper
+                // is stripped.
+                let bind_source_slot = raw_val.varref_slot();
                 let (raw_val, bind_source) = match raw_val.as_varref() {
                     Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
                     None => (raw_val, None),
@@ -1458,6 +1462,17 @@ impl Interpreter {
                         };
                         resolved_source = next.to_string();
                     }
+                    // Frame-ownership gate for the ancestor-frame splice below.
+                    // MUST be read here, before the container is written into
+                    // the env under the source's name — that write would make
+                    // the own-tier half of the test trivially true. See
+                    // `bind_source_is_own_frame_lexical`.
+                    let resolved_source_is_own_lexical = self.bind_source_is_own_frame_lexical(
+                        code,
+                        source_name,
+                        &resolved_source,
+                        bind_source_slot,
+                    );
                     self.env_mut()
                         .insert(alias_key.clone(), Value::str(resolved_source.clone()));
                     self.mark_sigilless_alias_seen();
@@ -1547,7 +1562,11 @@ impl Interpreter {
                         // `propagate_bind_to_ancestor_frames`'s doc comment
                         // for what actually carries the binding across the
                         // call chain.
-                        self.propagate_bind_to_ancestor_frames(&resolved_source, &container);
+                        self.propagate_bind_to_ancestor_frames(
+                            &resolved_source,
+                            resolved_source_is_own_lexical,
+                            &container,
+                        );
                         // Persist ContainerRef in our_vars for `our` variables.
                         // Store under both the bare name and any existing
                         // package-qualified variants (e.g., "K::x" for bare "x")
