@@ -3,6 +3,37 @@
 `Interpreter::var_type_constraints` is a single global `HashMap<String,
 String>` keyed by BARE variable name, and it is never frame-scoped.
 
+## Spot-check 2026-08-27 (`main` @ `10ac4d450`): re-measure before dispatching slice 2
+
+Five rows this ticket and ADR-0042 §3 use as motivation now **agree with
+`raku`**, including the one ADR-0042 §5.2 names as the reason slice 2 is "the
+architectural half":
+
+| row | program | mutsu | raku |
+| --- | --- | --- | --- |
+| A | `my Str $s; my $t := $s; $t = 42` — **ADR-0042 §3's headline** | dies, correct message | dies |
+| B | `my $y; if True { my Str $y = "a" }; $y = 42` (residual 2, `if` branch) | `42` | `42` |
+| C | `my $x; my $i = 0; while $i++ < 2 { my Str $x = "a" }; $x = 42` (residual 2, `while` body) | `42` | `42` |
+| E | `my Str $s = "a"; my \x := $s; x = 42` | dies | dies |
+| F | `my Str $e = "a"; sub f { my $e = 1 }; f(); $e = 42` (residual 3) | dies | dies |
+
+Row A dying correctly means the *correctness* argument for giving the scalar
+cell an `of` field has, at least for this shape, already been satisfied by some
+other change. Rows B and C are residual 2's two literal repros, quoted verbatim
+from this file's own "What is still scope-blind" section; both now agree.
+
+**This is a spot-check, not a closure.** Only five rows were run — ADR-0042's
+§2.1 and §2.2 matrices are larger, and CLAUDE.md's standing lesson is that a
+*partial* fix is more common than full staleness, so a headline repro passing
+is exactly when to re-run the whole table rather than assume. Slice 2 also has
+a second, independent motivation this measurement says nothing about: deleting
+the `box_decl_local_cell` constraint bails and unblocking slice 3's removal of
+the global map and its six workarounds.
+
+**Before dispatching ADR-0042 slice 2, re-run §2.1 and §2.2 in full and rewrite
+its §3 with what actually still diverges.** Dispatching it on the ADR's stated
+motivation as written would be work against a repro that no longer fails.
+
 ## Status 2026-08-23: ADR-0042 Slice 1 is SHIPPED — residual 1 is closed
 
 Slice 1 landed 2026-08-20 as PR #6743 (`dc39cb3e3`), and the follow-on
