@@ -2,7 +2,7 @@ use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult};
 use super::super::idents::qualified_ident;
-use super::super::{ident, keyword, var_name};
+use super::super::{ident, keyword};
 use super::destructure::parse_destructuring_decl;
 use super::helpers::{
     is_supported_variable_trait, parse_array_shape_suffix, parse_export_trait_tags,
@@ -301,7 +301,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
                 &[],
             ));
         }
-        let (r, n) = var_name(rest)?;
+        let (r, n) = crate::parser::stmt::lexical_var_name(rest)?;
         // Reject `!`/`?` twigils in `my` scope: `my $!foo` / `my $?FILE` are
         // invalid. Bare special variables (`my $!`, `my $?`) are still allowed.
         if (n.starts_with('!') || n.starts_with('?')) && n.len() > 1 {

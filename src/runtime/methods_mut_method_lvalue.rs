@@ -1663,7 +1663,7 @@ impl Interpreter {
     /// `None` for a non-variable target. `%!hash` -> `Some("%!hash")`.
     fn expr_lvalue_var_name(expr: &Expr) -> Option<String> {
         match expr {
-            Expr::Var(n) => Some(format!("${}", n)),
+            Expr::Var(n) => Some(crate::env::sigiled_scalar_name(n)),
             Expr::ArrayVar(n) => Some(format!("@{}", n)),
             Expr::HashVar(n) => Some(format!("%{}", n)),
             _ => None,

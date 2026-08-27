@@ -89,7 +89,65 @@ pub(crate) struct ParamDef {
     pub(crate) block_param: bool,
 }
 
+/// Trait marker the parser records on an invocant `ParamDef` it *synthesized*
+/// rather than one the user named: `method () { ... }`, `method (Foo:D:)`,
+/// `method (::?CLASS:)`. Both forms are recorded under the name `self`, but only
+/// a user-written `$self:` declares a `$self` lexical in the body — see
+/// [`ParamDef::declares_self_lexical`] and ADR-0061.
+pub(crate) const IMPLICIT_INVOCANT_TRAIT: &str = "implicit-invocant";
+
+/// True when a *signature* declares a parameter the source spelled `$self`,
+/// including one nested in a destructuring sub-signature (`sub f([$self, $x])`).
+///
+/// The single oracle both halves of ADR-0061 consult: the compiler's
+/// `self_is_signature_param` flag and the runtime's binding-time mirror. Keeping
+/// them on one function is what stops the two from disagreeing — a compiler that
+/// thinks `$self` means the parameter while the binder thinks it means the
+/// reserved lexical key is exactly the silent mis-binding the ADR set out to
+/// avoid.
+pub(crate) fn signature_declares_self_lexical(param_defs: &[ParamDef]) -> bool {
+    param_defs.iter().any(|pd| {
+        pd.declares_self_lexical()
+            || pd
+                .sub_signature
+                .as_deref()
+                .is_some_and(signature_declares_self_lexical)
+    })
+}
+
+/// True when a bare parameter-NAME list declares a `$self` lexical.
+///
+/// The legacy binding path carries a single pointy-block parameter
+/// (`-> $self { }`) as a bare name with no `ParamDef` at all, so the list has to
+/// be consulted too. A `self` in a METHOD's parameter list is the *injected*
+/// invocant rather than a lexical; `?CLASS` is injected alongside it and is the
+/// existing marker for that shape (see `Compiler::lexically_in_method`).
+pub(crate) fn param_names_declare_self_lexical(params: &[String]) -> bool {
+    !params.iter().any(|p| p == "?CLASS") && params.iter().any(|p| p == "self")
+}
+
+/// Build the read expression for a `$`-sigiled scalar whose bare (sigil-less)
+/// name is `name`, applying the reserved-`$self` rename: `self` is a *term*, so
+/// a `$`-sigiled `self` is a user lexical and takes [`crate::env::LEX_SELF`]
+/// rather than the invocant's key (ADR-0061).
+pub(crate) fn scalar_var_expr(name: String) -> Expr {
+    if name == "self" {
+        Expr::Var(crate::env::LEX_SELF.to_string())
+    } else {
+        Expr::Var(name)
+    }
+}
+
 impl ParamDef {
+    /// True when the *source* declares a parameter spelled `$self` — an explicit
+    /// invocant (`method m($self: $n)`, `method symbol(::?CLASS $self: ...)`) or
+    /// an ordinary parameter (`sub ($self)`, `-> $self, $x`). A parser-synthesized
+    /// anonymous invocant is excluded: it is named `self` only because that is the
+    /// invocant's env key, and it declares no lexical (ADR-0061).
+    pub(crate) fn declares_self_lexical(&self) -> bool {
+        self.name == "self" && !self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+    }
+
     /// True when this parameter is a capture that carries a subsignature, i.e.
     /// `|c(...)` or the anonymous `|(...)` — both sigilless slurpies.  Such a
     /// parameter consumes all remaining arguments and delegates dispatch to its

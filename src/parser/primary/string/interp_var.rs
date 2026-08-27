@@ -388,7 +388,11 @@ pub(crate) fn try_interpolate_var<'a>(
                 parts.push(Expr::Literal(literal_str(file)));
                 return Some(var_rest);
             }
-            let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
+            // An interpolated `$self` is the user lexical, not the `self` term —
+            // it takes the reserved key like every other `$`-sigiled `self`
+            // (ADR-0061).
+            let (expr, var_rest) =
+                parse_postcircumfix_index(var_rest, crate::ast::scalar_var_expr(var_name));
             // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
             let (expr, var_rest) = try_parse_interp_call(var_rest, expr);
             // Handle method call interpolation: "$var.method()" or "$var.method"

@@ -60,6 +60,31 @@ pub(crate) fn global_base_contains(name: &str) -> bool {
 /// registry misses. See `exec_register_sub_op`.
 pub(crate) const BLOCK_LEXICAL_SUB_PREFIX: &str = "__mutsu_block_lexical_sub::";
 
+/// The env key / local-slot name of a **user lexical** spelled `$self`.
+///
+/// `self` is a *term* in Raku, not a `$`-sigiled variable, and mutsu binds a
+/// method's invocant to the sigil-less env key `"self"`. Scalars are otherwise
+/// stored sigil-less too, so a user's `my $self` would land on that very key and
+/// be silently replaced by whatever invocant the enclosing closure is next
+/// called with (ADR-0061). The sigiled spelling is reserved for the user
+/// lexical: no ordinary scalar carries its `$`, so `"$self"` cannot collide.
+///
+/// Only the *lexical* takes this key. `"self"` still means the invocant
+/// everywhere, and a routine whose own signature declares a `$self` parameter
+/// (`method m($self: $n)`, `sub ($self)`, `-> $self, $x`) resolves `$self` back
+/// to that parameter — see `Compiler::self_is_signature_param`.
+pub(crate) const LEX_SELF: &str = "$self";
+
+/// Render a scalar variable's env/AST name with its `$` sigil, without doubling
+/// the sigil [`LEX_SELF`] already carries.
+pub(crate) fn sigiled_scalar_name(name: &str) -> String {
+    if name == LEX_SELF {
+        name.to_string()
+    } else {
+        format!("${}", name)
+    }
+}
+
 /// True if `name` is a *plain user lexical* env key — a `my`/`our`-declared
 /// scalar/array/hash/sub whose name is an ordinary lowercase identifier (stored
 /// scalar-sigilless, e.g. `$x` → `"x"`, `@a` → `"@a"`). These are the only env
@@ -94,7 +119,13 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     // ASCII letter. Anything else — uppercase (types), `?`/`*`/`/`/`!`/`<`
     // (specials/dynamics/captures), a digit (positional captures), `_` (`$_`,
     // `@_`), or `__mutsu_*` — is a system name the capture must keep.
-    let decider = if matches!(first, b'@' | b'%' | b'&') {
+    //
+    // `$` is in the sigil set for the one key that carries it: [`LEX_SELF`], the
+    // reserved key of a user `my $self` (ADR-0061). It IS a plain user lexical
+    // and must be droppable when it is not free — kept unconditionally, a stale
+    // outer `$self` would shadow the routine-local one a nested closure captures.
+    // A dynamic key like `"$*x"` still has decider `*`, so it stays kept.
+    let decider = if matches!(first, b'@' | b'%' | b'&' | b'$') {
         b.get(1).copied()
     } else {
         Some(first)

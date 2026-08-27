@@ -21,6 +21,8 @@ pub(crate) fn make_smiley_invocant_param(invocant_type: String) -> ParamDef {
     p.type_constraint = Some(invocant_type);
     p.is_invocant = true;
     p.traits.push("invocant".to_string());
+    p.traits
+        .push(crate::ast::IMPLICIT_INVOCANT_TRAIT.to_string());
     p
 }
 

@@ -42,7 +42,7 @@ use sub::{
 // `keyword`/`parse_raku_ident` are referenced from sibling parser modules
 // (`primary`, `expr`) and must keep their original `pub(super)` reach; the
 // others are only used within the `stmt` descendant tree.
-use idents::{ident, qualified_ident, starts_unit_class_role_grammar, var_name};
+use idents::{ident, lexical_var_name, qualified_ident, starts_unit_class_role_grammar, var_name};
 pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.

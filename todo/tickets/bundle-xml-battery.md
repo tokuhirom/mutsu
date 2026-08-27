@@ -24,9 +24,11 @@ the dist's own directory against a release build. `raku`: **15/15** files.
 | --- | --- |
 | Original survey (2026-08-22) | 1/15 |
 | After the two originally-filed blockers were fixed | 2/15 |
-| After the group-backreference fix (2026-08-26) | **5/15** |
+| After the group-backreference fix (2026-08-26) | 5/15 |
+| After the `$self`/invocant fix, ADR-0061 (2026-08-27) | **9/15** |
 
-Passing: `comments`, `emitter`, `numeric-entities`, `preamble`, `quotes`.
+Passing: `comments`, `custom-entities`, `emitter`, `entities`,
+`numeric-entities`, `parser`, `preamble`, `query-positional`, `quotes`.
 
 ### Blockers cleared since the survey
 
@@ -44,23 +46,33 @@ Passing: `comments`, `emitter`, `numeric-entities`, `preamble`, `quotes`.
    with `[ '/>' | '>' <child>* '</' $<name> '>' ]`, so no element with a
    closing tag matched at all (`<root/>` parsed, `<root></root>` did not).
 
+4. ~~A user lexical `$self` collides with a method's invocant, so
+   `XML::Element`'s `my $self = self;` + `Proxy` `AT-POS`/`AT-KEY` recursed
+   into `FETCH` until the stack overflowed.~~ **Fixed 2026-08-27** —
+   [ADR-0061](../../docs/adr/0061-lexical-self-has-its-own-env-key.md) /
+   [news/2026-08/lexical-self-has-its-own-env-key.md](../../news/2026-08/lexical-self-has-its-own-env-key.md).
+   This took the suite from **5/15 to 9/15**: every file that aborted on
+   `$doc.root[0]` now runs.
+
 ### What still blocks it
 
-1. **[todo/deep/lexical-self-collides-with-invocant.md](../deep/lexical-self-collides-with-invocant.md)
-   — 7 of the 10 remaining files.** `XML::Element` implements `AT-POS` and
-   `AT-KEY` with the standard `my $self = self;` + `Proxy` idiom. mutsu stores
-   a `$self` scalar under the same env key as a method's invocant, so inside
-   the Proxy's `FETCH` method `$self` resolves to the Proxy itself and the
-   fetch recurses until the stack overflows. `$doc.root[0]` — the most ordinary
-   operation on a parsed document — aborts the process. This needs a design
-   decision (which of the two keys moves) before any code, hence `deep/`.
-2. **Three files not yet bisected**: `t/make.rakutest` (`make-xml worked.`
+Re-measured 2026-08-27 (debug build, `mutsu -I lib t/*.rakutest` from the
+dist's own directory): **9/15**, `raku` 15/15. The six remaining failures:
+
+1. **`XML::Document` does not delegate postcircumfix to its root element** —
+   `t/proxies.rakutest`, `t/query-methods.rakutest`, `t/example.rakutest`.
+   `$doc[1]` / `$doc<attr>` return `(Any)` where the element-level
+   `$doc.root[1]` now works, and `.attribs` on the document is `(Any)` too.
+2. **A missing `.string` method on `XML::Element`** (`t/proxies.rakutest`
+   aborts on it after the assertions above).
+3. **Three files still not bisected**: `t/make.rakutest` (`make-xml worked.`
    fails), `t/namespaces.rakutest` (2 assertions: default-namespace content,
    `elements(:URI)`), `t/open-xml.rakutest` (exits 255).
 
-Blocker 1 is the real gate: it is a general interpreter bug with a
-three-line repro that has nothing to do with XML, and it is worth fixing on
-its own merits regardless of this battery.
+Two neighbouring `Proxy` defects found while fixing blocker 4 are filed
+separately and may well be behind item 1:
+[proxy-at-pos-store-and-shadowed-capture.md](proxy-at-pos-store-and-shadowed-capture.md)
+and [proxy-what-reports-proxy-instead-of-fetching.md](proxy-what-reports-proxy-instead-of-fetching.md).
 
 **Re-measure before starting** — per `selection-method.md`, a readiness claim
 nobody just re-measured is not evidence.

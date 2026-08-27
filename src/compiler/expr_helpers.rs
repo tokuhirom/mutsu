@@ -538,6 +538,9 @@ impl Compiler {
 
     /// Compile Expr::Var -- variable access with all special cases.
     pub(super) fn compile_expr_var(&mut self, name: &str) {
+        // ADR-0061: the reserved `$self` lexical key names the enclosing
+        // routine's `$self` parameter when its signature declares one.
+        let name = self.resolve_self_lexical(name);
         // $.attr (public twigil) — compile as self.attr() method call.
         // In Raku, $.attr is syntactic sugar for self.attr(), not a variable lookup.
         if let Some(attr_name) = name.strip_prefix('.')

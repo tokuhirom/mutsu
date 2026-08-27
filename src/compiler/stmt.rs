@@ -1293,6 +1293,10 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
+                // ADR-0061: `my $self` declares the reserved lexical key, unless
+                // this routine's signature already declares a `$self` parameter
+                // (a redeclaration, which then shares that parameter's binding).
+                let name = &self.resolve_self_lexical(name).to_string();
                 // Snapshot-and-clear `bind_vardecl` immediately: it is a
                 // one-shot signal meant for THIS declaration's own store
                 // (set by an enclosing `SyntheticBlock`/inline-block for a
@@ -2060,6 +2064,10 @@ impl Compiler {
                 expr,
                 op: op @ (AssignOp::Assign | AssignOp::Bind),
             } if name != "*PID" => {
+                // ADR-0061: inside a routine whose signature declares a `$self`
+                // parameter, the reserved `$self` lexical key names that
+                // parameter (which binds `"self"`).
+                let name = &self.resolve_self_lexical(name).to_string();
                 // Handle $CALLER::varname = expr or $CALLER::varname := expr
                 if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
                     if matches!(op, AssignOp::Bind) {
@@ -2518,6 +2526,16 @@ impl Compiler {
                     params,
                     params_def,
                 );
+                // ADR-0061: a loop parameter spelled `$self` is a `ParamDef` named
+                // `self` and binds the plain key, exactly like a routine's `$self`
+                // parameter — so `$self` in the body must resolve to it, not to the
+                // reserved lexical key. The loop body compiles inline in THIS
+                // compiler, so the flag is scoped by hand (restored at the arm's
+                // end) instead of being seeded on a child compiler.
+                let saved_self_is_signature_param = self.self_is_signature_param;
+                if param.as_deref() == Some("self") || params.iter().any(|p| p == "self") {
+                    self.self_is_signature_param = true;
+                }
                 // A sigilless raw binding (`-> \v`) aliases the source element
                 // directly; in Raku it is writable and modifications propagate
                 // back to the source container (`for @a -> \v { v = 99 }` mutates
@@ -2841,6 +2859,7 @@ impl Compiler {
                 {
                     self.code.emit(OpCode::RestoreForParam);
                 }
+                self.self_is_signature_param = saved_self_is_signature_param;
             }
             // ADR-0048 Phase 2: `loop {}` (headerless and C-style) does not
             // take a signature in raku. `repeat: true` (`repeat {}

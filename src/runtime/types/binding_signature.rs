@@ -442,7 +442,43 @@ impl Interpreter {
         Ok(value)
     }
 
+    /// Bind a call's arguments to a signature, then mirror a `$self` parameter
+    /// onto the reserved lexical key (ADR-0061).
+    ///
+    /// A parameter the source spelled `$self` keeps the sigil-less
+    /// `ParamDef.name` — signature introspection re-adds the sigil, and a *named*
+    /// parameter matches its argument `Pair` by that name — so it binds the plain
+    /// `"self"` key. A body compiled with `Compiler::self_is_signature_param`
+    /// reads it there and needs nothing more, but the AST **carrier** path
+    /// (`eval_block_value`, which recompiles `SubData::body` with a bare
+    /// `Compiler::new()`) has no such flag to consult and reads the reserved key
+    /// instead. Binding both makes the parameter visible to every execution
+    /// path — compiled, carrier, or slow — instead of only the ones that happen
+    /// to carry the compiler's view of the signature.
+    ///
+    /// Gated on [`ParamDef::declares_self_lexical`], NOT on the bare name: a
+    /// parser-synthesized anonymous invocant (`method () { ... }`,
+    /// `method (Foo:D:)`) is also recorded under the name `self`, and mirroring
+    /// *that* onto the reserved key would put the invocant back on top of a
+    /// captured outer `my $self` — the very collision ADR-0061 removes.
     pub(crate) fn bind_function_args_values(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let result = self.bind_function_args_values_inner(param_defs, params, args);
+        let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
+            // The legacy binding path: a single pointy-block parameter
+            // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
+            || (param_defs.is_empty() && crate::ast::param_names_declare_self_lexical(params));
+        if declares_self && let Some(bound) = self.env.get("self").cloned() {
+            self.env.insert(crate::env::LEX_SELF.to_string(), bound);
+        }
+        result
+    }
+
+    fn bind_function_args_values_inner(
         &mut self,
         param_defs: &[ParamDef],
         params: &[String],

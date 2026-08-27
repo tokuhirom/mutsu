@@ -73,6 +73,13 @@ impl Compiler {
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
+        // `method m($self: $n)` names its invocant param `self`, so it binds the
+        // plain `"self"` key; a `$self` read in the body must resolve to it
+        // rather than to the reserved lexical key (ADR-0061). An *anonymous*
+        // invocant marker (`method m(Foo:D:)`) declares no `$self` and is
+        // excluded by `ParamDef::declares_self_lexical`.
+        method_compiler.self_is_signature_param =
+            crate::ast::signature_declares_self_lexical(&effective_param_defs);
         let mut method_params: Vec<String> = vec![
             "self".to_string(),
             "__ANON_STATE__".to_string(),

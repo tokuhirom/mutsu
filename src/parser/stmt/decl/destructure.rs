@@ -2,7 +2,7 @@ use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use super::super::parse_statement_modifier;
-use super::super::{ident, keyword, var_name};
+use super::super::{ident, keyword};
 use super::helpers::register_term_symbol_from_decl_name;
 use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
@@ -75,7 +75,7 @@ fn collect_nested_group_vars<'a>(
                     b'&' => "&",
                     _ => "",
                 };
-                let (r2, n) = var_name(r)?;
+                let (r2, n) = crate::parser::stmt::lexical_var_name(r)?;
                 vars.push(DestructureVar {
                     name: format!("{}{}", prefix, n),
                     is_slurpy: false,
@@ -265,7 +265,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 b'&' => "&",
                 _ => "",
             };
-            let (r2, n) = var_name(r)?;
+            let (r2, n) = crate::parser::stmt::lexical_var_name(r)?;
             let full_name = format!("{}{}", prefix, n);
             if sigil == b'&' {
                 // A `&name` destructure target (e.g. `my (&plan, &is) = ...`)

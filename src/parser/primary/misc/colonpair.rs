@@ -430,7 +430,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             format!("{}{}", twigil, var_name)
         };
         let var_expr = match sigil {
-            "$" => Expr::Var(full_var_name),
+            "$" => crate::ast::scalar_var_expr(full_var_name),
             "@" => Expr::ArrayVar(full_var_name),
             "%" => Expr::HashVar(full_var_name),
             "&" => Expr::CodeVar(full_var_name),
@@ -703,7 +703,7 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
 fn render_signature_item(expr: &Expr) -> String {
     match expr {
         Expr::BareWord(name) => name.clone(),
-        Expr::Var(name) => format!("${}", name),
+        Expr::Var(name) => crate::env::sigiled_scalar_name(name),
         Expr::ArrayVar(name) => format!("@{}", name),
         Expr::HashVar(name) => format!("%{}", name),
         Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
