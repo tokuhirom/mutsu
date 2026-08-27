@@ -211,7 +211,13 @@ answer to the worker.
    acknowledges this (`atomic_cell_update`'s doc comment; the reason
    `reset_atomic_var_key_decl` exists). The real cure is to retire the legacy
    lane in favour of the cell lane for every atomic scalar, which is an
-   ADR-0025/ADR-0013-scale campaign and not this decision.
+   ADR-0025/ADR-0013-scale campaign and not this decision. A concrete,
+   reproducible instance found while verifying this ADR — a `cas` on a `my`
+   that shadows an outer name inside a `start` block leaks the worker's value
+   to the outer lexical — is filed as
+   `todo/tickets/cas-on-a-worker-shadowed-my-leaks-to-the-outer-lexical.md`.
+   It was confirmed **pre-existing** by rebuilding the two files touched here
+   at their pre-ADR-0062 revision and observing byte-identical wrong output.
 2. **`builtin_cas_var` resolves `value_key` once at entry** and does not
    re-resolve inside its retry loop, so a lane retired by another thread's
    plain assignment *during* a `cas` leaves the loop writing a retired slot.
