@@ -39,7 +39,22 @@ impl Interpreter {
         // (the engine records them there but nothing consumes the log otherwise).
         self.pending_local_updates.clear();
         let saved_topic = self.env().get("_").cloned();
-        self.env_mut().insert("_".to_string(), left.clone());
+        // ADR-0045: `$_ ~~ s///` where the topic is an *aliasing* binding — a
+        // `for` loop parameter bound to its source's element container — must
+        // keep that binding for the duration of the RHS and write through it.
+        // `left` has already been decontainerized, so installing it here would
+        // orphan the cell and the substitution would never reach the source
+        // element (`t/smartmatch-subst-topic.t`). The topic already holds
+        // exactly `left`'s container, so there is nothing to install.
+        let topic_cell = match self.env().get("_").map(Value::view) {
+            Some(ValueView::ContainerRef(arc)) if matches!(lhs, Some(SmartMatchLhs::Var { name, .. }) if name == "_") => {
+                Some(arc.clone())
+            }
+            _ => None,
+        };
+        if topic_cell.is_none() {
+            self.env_mut().insert("_".to_string(), left.clone());
+        }
         // While the RHS runs, `$_` is *aliased* to the LHS variable (`$x ~~ s///`
         // topicalizes `$x`). A destructive `s///`/`tr///` checks `$_`'s readonly
         // status, but the enclosing scope may have marked `_` readonly for an
@@ -115,26 +130,43 @@ impl Interpreter {
         // caller, clobbering a same-named caller lexical of a different sigil
         // (JSON::Unmarshal: the callee's `$json` Int overwrote the caller's
         // `%json` hash after `if $json ~~ Int`).
-        let topic_after = self.env().get("_").cloned().unwrap_or(Value::NIL);
+        // Decontainerized on purpose: when the topic is an aliasing cell the RHS
+        // wrote THROUGH it, so the modified value is the cell's content — and
+        // comparing the cell itself against the plain `left` would report every
+        // pure predicate match as "modified".
+        let topic_after = self
+            .env()
+            .get("_")
+            .cloned()
+            .unwrap_or(Value::NIL)
+            .deref_container();
         let topic_modified = was_substitution
             || was_transliterate
             || !crate::runtime::utils::values_identical(&topic_after, &left);
         if let Some(var_name) = lhs_var.filter(|_| topic_modified) {
             let modified_topic = topic_after.clone();
-            self.env_mut()
-                .insert(var_name.clone(), modified_topic.clone());
-            // Reverse write-through: if the lhs alias names a compiled local slot,
-            // mirror the (possibly substitution-modified) topic into it so the
-            // caller sees it without an O(locals) sync_locals_from_env pull.
-            // §1.5: prefer the compile-time-baked `lhs_slot` (scope-correct even
-            // once a name occupies several slots) over the by-name resolution; the
-            // by-name fallback stays for a `None` slot (global LHS, or an EVAL /
-            // carrier where the var is an outer lexical with no current-frame slot).
-            match lhs_slot {
-                Some(slot) if (slot as usize) < self.locals.len() => {
-                    self.locals[slot as usize] = modified_topic.clone();
+            // An aliasing topic keeps its binding: write the modified value into
+            // the cell rather than replacing the binding with a plain value, and
+            // leave the local slot alone (it holds that same cell).
+            if let Some(arc) = topic_cell.clone() {
+                Self::cell_store_preserving_container_identity(var_name, &arc, &modified_topic);
+            } else {
+                self.env_mut()
+                    .insert(var_name.clone(), modified_topic.clone());
+                // Reverse write-through: if the lhs alias names a compiled local
+                // slot, mirror the (possibly substitution-modified) topic into it
+                // so the caller sees it without an O(locals)
+                // sync_locals_from_env pull. §1.5: prefer the compile-time-baked
+                // `lhs_slot` (scope-correct even once a name occupies several
+                // slots) over the by-name resolution; the by-name fallback stays
+                // for a `None` slot (global LHS, or an EVAL / carrier where the
+                // var is an outer lexical with no current-frame slot).
+                match lhs_slot {
+                    Some(slot) if (slot as usize) < self.locals.len() => {
+                        self.locals[slot as usize] = modified_topic.clone();
+                    }
+                    _ => self.update_local_if_exists(code, var_name, &modified_topic),
                 }
-                _ => self.update_local_if_exists(code, var_name, &modified_topic),
             }
             // The env insert above bypasses `set_env_with_main_alias`, and
             // `update_local_if_exists` only touches the *current* frame's slot —

@@ -303,7 +303,25 @@ impl Interpreter {
             attrs.insert("value".to_string(), result);
             return Err(RuntimeError::typed("X::Assignment::RO", attrs));
         }
-        self.env_mut().insert("_".to_string(), result.clone());
+        // ADR-0045: when the topic is an aliasing binding — a `for` loop
+        // parameter bound to its source's element container — `s///` assigns
+        // INTO that container. Replacing the env entry with a plain value would
+        // orphan the cell, so the substitution would be invisible to the source
+        // (`for @a { s:g/c/X/ }`, `t/subst-readonly-topic.t`). Writing through
+        // is also what leaves the alias intact for the rest of the iteration.
+        // The local slot holds the same cell, so it must not be overwritten
+        // either — see the `update_local_if_exists` call below.
+        let topic_cell = match self.env().get("_").map(Value::view) {
+            Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+            _ => None,
+        };
+        let topic_is_cell = topic_cell.is_some();
+        match topic_cell {
+            Some(arc) => Self::cell_store_preserving_container_identity("_", &arc, &result),
+            None => {
+                self.env_mut().insert("_".to_string(), result.clone());
+            }
+        }
         self.env_mut().insert("$_".to_string(), result.clone());
         self.env_mut()
             .insert("__mutsu_rw_map_topic__".to_string(), result.clone());
@@ -315,7 +333,13 @@ impl Interpreter {
         // matching the `$x ~~ s///` smartmatch writeback path. Both `_` and the
         // source name are flagged for the carrier (env_dirty) so an enclosing
         // EVAL/carrier dropping its blanket net still reconciles the slot.
-        self.update_local_if_exists(code, "_", &result);
+        // Skipped when the topic is an aliasing cell: the slot holds that very
+        // cell, and storing the plain result over it would sever the alias for
+        // the rest of the iteration (the cell write above already reached
+        // every holder, the slot included).
+        if !topic_is_cell {
+            self.update_local_if_exists(code, "_", &result);
+        }
         self.note_caller_env_write("_");
         // Inside a smartmatch RHS (`$frag ~~ s///`) the topic is temporarily the
         // smartmatch LHS, not the enclosing `given`/`for` source — mirroring
