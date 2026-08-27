@@ -332,6 +332,22 @@ impl Interpreter {
                 let mut promoted = mutated_items;
                 let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
                 for &i in &indices {
+                    // A `:delete`d (or never-assigned) slot has no element
+                    // container to alias, and promoting it would *create* one:
+                    // `ArrayData::hole_at` recognises a hole by the gap marker
+                    // value (`Package("Any")`/the declared type) sitting in the
+                    // slot AND its absence from `initialized`, so wrapping that
+                    // marker in a `ContainerRef` makes the slot read as a live
+                    // element while `initialized` still calls it empty. The two
+                    // then disagree, and a later trailing-slot `:delete` stops
+                    // truncating the array (`@a[2]:delete; @a.grep({True});
+                    // @a[3]:delete` left 3 elements instead of 2). Hand the
+                    // grep result the raw marker instead — Raku yields `Any`
+                    // there, not an alias into a slot that does not exist.
+                    if items.hole_at(i) {
+                        shared_cells.push(promoted[i].clone());
+                        continue;
+                    }
                     let cell = match promoted[i].view() {
                         ValueView::ContainerRef(_) => promoted[i].clone(),
                         _ => Value::container_ref(crate::gc::Gc::new(std::sync::Mutex::new(
