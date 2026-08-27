@@ -248,10 +248,10 @@ impl Interpreter {
         }
         // User-defined ^method (metamethod) dispatch:
         // Foo.^bar passes Foo as the first positional argument.
-        if method.starts_with('^')
-            && method.len() > 1
-            && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
-        {
+        // A user-declared metamethod shadows the native ClassHOW one of the
+        // same name for its own type (see `methods_call_dispatch.rs`), so the
+        // `has_user_method` check below — not a name pre-filter — is the gate.
+        if method.starts_with('^') && method.len() > 1 {
             let class_name = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
                 ValueView::Package(name) => Some(name.as_str()),

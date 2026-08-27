@@ -787,6 +787,34 @@ impl Interpreter {
         } else {
             index
         };
+        // A user-defined `method ^parameterize` on the type's metaclass owns
+        // `Type[...]`: Rakudo's `type_object[args]` is exactly a call to the
+        // HOW's `parameterize`, and declaring one is the documented way to make
+        // an otherwise non-parametric class/grammar parametric
+        // (`Language/mop.rakudoc`'s "parametric" archetype example, which
+        // mixes roles into a grammar). Without this the declaration was
+        // ignored and the subscript fell through to X::NotParametric below.
+        // Roles are left to the currying arm inside the match: their
+        // parameterization is the built-in role-currying protocol, not a
+        // metaclass method.
+        if is_positional
+            && let ValueView::Package(name) = target.view()
+            && !self.is_role(&name.resolve())
+            && self.has_user_method(name.as_str(), "^parameterize")
+        {
+            // Only a comma list spreads into several type arguments
+            // (`T[Int, Str]`); an itemized array is ONE argument.
+            let mut how_args = vec![target.clone()];
+            match index.view() {
+                ValueView::Array(items, crate::value::ArrayKind::List) => {
+                    how_args.extend(items.iter().cloned())
+                }
+                _ => how_args.push(index.clone()),
+            }
+            let result = self.call_method_with_values(target.clone(), "^parameterize", how_args)?;
+            self.stack.push(result);
+            return Ok(());
+        }
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps
