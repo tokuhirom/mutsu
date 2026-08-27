@@ -14,7 +14,7 @@ use Test;
 # mutsu used to shortcut a single space-padded fraction straight to a plain
 # `Rat`, losing the allomorph.
 
-plan 86;
+plan 99;
 
 # --- Int: allomorphic whether tight or padded --------------------------------
 
@@ -136,6 +136,34 @@ is (:a<2/3>).value.^name,   'RatStr',     ':a<2/3> value is a RatStr';
 is (:a< 2/3 >).value.^name, 'RatStr',     ':a< 2/3 > value is a RatStr';
 is (:a<1+2i>).value.^name,  'ComplexStr', ':a<1+2i> value is a ComplexStr';
 is (:a<Inf>).value.^name,   'NumStr',     ':a<Inf> value is a NumStr';
+
+# --- Underscore in a fraction's numerator vs. denominator --------------------
+#
+# Rakudo's `bare_rat_number` is `<?before <.[-−+0..9<>:boxd]>+? '/'>
+# <nu=.signed-integer> '/' <de=integer>` -- a lookahead that scans only the
+# numerator (up to the first `/`) through a character class that excludes
+# `_`. So an underscore anywhere in the numerator disqualifies the literal
+# (plain `Rat`) reading and the word falls through to the allomorph
+# (`RatStr`) path, while an underscore in the denominator does not, since the
+# lookahead never looks past the slash.
+
+is <1_0/2>.^name,     'RatStr', '<1_0/2> is a RatStr (numerator underscore)';
+is +<1_0/2>,          5.0,      '<1_0/2> numeric half';
+is <10/2_0>.^name,    'Rat',    '<10/2_0> is a plain Rat (denominator underscore)';
+is <1_0/2_0>.^name,   'RatStr', '<1_0/2_0> is a RatStr (underscore on both sides)';
+is <0x1_0/2>.^name,   'RatStr', '<0x1_0/2> is a RatStr (hex numerator underscore)';
+is <0b1_0/2>.^name,   'RatStr', '<0b1_0/2> is a RatStr (binary numerator underscore)';
+is <-1_0/2>.^name,    'RatStr', '<-1_0/2> is a RatStr (signed numerator underscore)';
+is <1/1_0>.^name,     'Rat',    '<1/1_0> is a plain Rat (unaffected baseline)';
+is +<1/1_0>,          0.1,      '<1/1_0> numeric half';
+
+# An isolated underscore is still fine on either side once it disqualifies
+# the literal reading; a leading/trailing/doubled underscore is not a valid
+# numeral at all, so the whole word falls all the way through to plain Str.
+is <_10/2>.^name,     'Str',    '<_10/2> is a plain Str (leading underscore, invalid)';
+is <10_/2>.^name,     'Str',    '<10_/2> is a plain Str (trailing underscore, invalid)';
+is <1__0/2>.^name,    'Str',    '<1__0/2> is a plain Str (doubled underscore, invalid)';
+is <0x_2a/2>.^name,   'RatStr', '<0x_2a/2> is a RatStr (isolated underscore right after radix prefix)';
 
 # --- Non-numeric words stay plain Str ----------------------------------------
 
