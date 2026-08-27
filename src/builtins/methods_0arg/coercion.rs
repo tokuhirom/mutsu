@@ -861,9 +861,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         // A Capture is already a Capture
         ValueView::Capture { .. } => Ok(target.clone()),
         // Match.Capture returns self
-        ValueView::Instance { class_name, .. } if class_name.resolve() == "Match" => {
-            Ok(target.clone())
-        }
+        ValueView::Instance { .. } if target.is_match_instance() => Ok(target.clone()),
         // Blob/Buf/utf8/utf16 .Capture behaves like List.Capture: each byte
         // becomes a positional argument (no nameds).
         ValueView::Instance {

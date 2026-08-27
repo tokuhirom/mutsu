@@ -1876,12 +1876,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Match object methods
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Match"
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && target.is_match_instance()
     {
         let list_v = target.match_list();
         let named_v = target.match_named();

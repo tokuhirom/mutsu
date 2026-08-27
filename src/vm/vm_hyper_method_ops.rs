@@ -703,8 +703,9 @@ impl Interpreter {
                 )
             {
                 let class_name = if item.is_lazy_match_value() {
-                    // Lazy Match: class is "Match" — no materialization.
-                    Some("Match".to_string())
+                    // Lazy Match: read the cursor class off the node (a grammar
+                    // cursor reports the grammar's own type) — no materialization.
+                    Some(item.match_dispatch_class().to_string())
                 } else {
                     match item.view() {
                         ValueView::Instance { class_name, .. } => Some(class_name.resolve()),

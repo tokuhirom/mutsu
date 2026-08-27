@@ -546,11 +546,7 @@ pub(super) fn dispatch(
                     // A Match nested in a list/seq gist renders as its full
                     // `Match.gist` (corner-quoted text + sub-captures), not the
                     // bare matched string.
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "Match" => {
+                    ValueView::Instance { attributes, .. } if v.is_match_instance() => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
                     ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
@@ -691,11 +687,7 @@ pub(super) fn dispatch(
                     // A Match nested in a list/seq gist renders as its full
                     // `Match.gist` (corner-quoted text + sub-captures), not the
                     // bare matched string.
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "Match" => {
+                    ValueView::Instance { attributes, .. } if v.is_match_instance() => {
                         crate::runtime::utils::match_gist(&(attributes).as_map(), 0)
                     }
                     ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {

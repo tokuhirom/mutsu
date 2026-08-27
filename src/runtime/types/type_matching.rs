@@ -419,11 +419,13 @@ impl Interpreter {
         // so it is gated on the subset registry. This skips the long string-
         // compare gauntlet for the ubiquitous `Int $n` / `Point $p` params.
         let tag_match = if value.is_lazy_match_value() {
-            // A lazy Match is always class "Match" — answer the ubiquitous
-            // constraints without materializing it. Unlisted constraints
-            // (subsets, roles) fall through to the full checker below, which
-            // materializes through `view()` as an Instance.
+            // A lazy Match answers the ubiquitous constraints without
+            // materializing. `Match` holds for a grammar cursor too (raku:
+            // `Grammar` IS a `Match` subclass), as does the cursor's own class.
+            // Unlisted constraints (subsets, roles) fall through to the full
+            // checker below, which materializes through `view()` as an Instance.
             matches!(constraint, "Match" | "Any" | "Mu")
+                || constraint == value.match_dispatch_class()
         } else {
             match value.view() {
                 ValueView::Int(_) => constraint == "Int",
@@ -1519,13 +1521,25 @@ impl Interpreter {
                     }
                 }
             }
-            // An instance's type identity is fully determined by its class name,
-            // parents, MRO, and composed roles (all checked above). Do NOT fall
-            // through to the generic `value_type_name` fallback, which reports
-            // every instance as "Any" — that wrongly accepts a `Mu.new` instance
-            // for an `Any` constraint (`Mu` is a direct subtype of `Mu`, not
-            // `Any`). The checks above already match `Any`/`Mu`/`Cool`/... via
-            // the MRO for ordinary classes.
+            // A grammar's parse cursor is a `Match` by SHAPE, whatever its
+            // grammar's registration looks like (raku: `Grammar` IS a `Match`
+            // subclass, so a cursor reports the grammar's own class name). The
+            // MRO walk above gets there for a grammar declared as a statement
+            // — its `Grammar` parent reaches `Match` through the builtin type
+            // catalog — but an ANONYMOUS grammar (`my grammar { … }`) is
+            // registered as a bare package with no parents, so its cursor would
+            // relate to no type at all. `isa_check` answers `Match`/`Capture`/
+            // `Cool` from the value's shape, which is the authority here.
+            if value.is_match_instance() && value.isa_check(constraint) {
+                return true;
+            }
+            // An instance's type identity is otherwise fully determined by its
+            // class name, parents, MRO, and composed roles (all checked above).
+            // Do NOT fall through to the generic `value_type_name` fallback,
+            // which reports every instance as "Any" — that wrongly accepts a
+            // `Mu.new` instance for an `Any` constraint (`Mu` is a direct
+            // subtype of `Mu`, not `Any`). The checks above already match
+            // `Any`/`Mu`/`Cool`/... via the MRO for ordinary classes.
             return false;
         }
         // Mixin allomorphic types: check both inner type and mixin type keys

@@ -187,9 +187,10 @@ impl Interpreter {
         // Stringy-then-Str method-dispatch ceremony below. Only a user augment
         // of `Match.Stringy`/`Match.Str` (or a `prefix:<~>` overload, already
         // checked above) could observe the difference — gate on those.
+        let match_owner = val.match_dispatch_class();
         if val.is_match_instance()
-            && !self.has_user_method("Match", "Stringy")
-            && !self.has_user_method("Match", "Str")
+            && !self.has_user_method(match_owner, "Stringy")
+            && !self.has_user_method(match_owner, "Str")
         {
             let s = val
                 .match_str_value()

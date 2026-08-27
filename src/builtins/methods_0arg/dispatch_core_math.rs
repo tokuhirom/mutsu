@@ -145,7 +145,14 @@ pub(super) fn cool_instance_numeric(target: &Value) -> Option<f64> {
     else {
         return None;
     };
-    match class_name.resolve().as_str() {
+    // A grammar cursor is a Match (raku: `Grammar` IS a `Match` subclass) but
+    // reports the grammar's own class name, so route it by shape, not name.
+    let owner = if target.is_match_instance() {
+        "Match".to_string()
+    } else {
+        class_name.resolve()
+    };
+    match owner.as_str() {
         "IO::Path" => target.to_string_value().trim().parse::<f64>().ok(),
         "Match" => target
             .match_str_value()

@@ -275,9 +275,7 @@ impl Interpreter {
             // of the LHS (rakudo: `$str ~~ G.new.tok` is the cursor's Bool —
             // URI's missing-components smartmatches strings against the
             // cursor a grammar-token instance-method call returns).
-            (ValueView::Str(_), ValueView::Instance { class_name, .. })
-                if class_name == "Match" =>
-            {
+            (ValueView::Str(_), ValueView::Instance { .. }) if right.is_match_instance() => {
                 right.truthy()
             }
             (

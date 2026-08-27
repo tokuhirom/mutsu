@@ -1,8 +1,7 @@
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(crate) fn is_str_or_match_receiver(target: &Value) -> bool {
-    matches!(target.view(), ValueView::Str(_))
-        || matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
+    matches!(target.view(), ValueView::Str(_)) || target.is_match_instance()
 }
 
 /// Separate `(needle, …)`-style positional args from the `:i`/`:ignorecase`/

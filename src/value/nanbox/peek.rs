@@ -610,7 +610,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 // seam accessors / `as_match_node` instead of `view()`.
                 let node = peek_gc::<MatchNode>(bits);
                 ValueView::Instance {
-                    class_name: crate::value::match_lazy::match_class_symbol(),
+                    class_name: node.cursor_class(),
                     attributes: RefGuard::borrowed(node.force_attrs()),
                     id: node.id,
                 }

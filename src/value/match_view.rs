@@ -13,15 +13,52 @@
 
 use super::*;
 
+/// Internal attribute marking a grammar cursor — a Match whose `class_name` is
+/// the grammar's own type rather than `Match` (raku: `Grammar` IS a `Match`
+/// subclass, so `G.parse(...).^name` is `G`).
+///
+/// A live cursor keeps the lazy `ValueRepr::Match`, so the tag probe in
+/// [`Value::is_match_instance`] answers for it directly. But the post-hoc
+/// attribute rebuilds (`match_with_attrs*` for `.made`/`actions`/
+/// `capture_alias_map`, the action walk's write-backs) produce plain eager
+/// `Instance`s, and for those the class name is no longer the "is a Match"
+/// signal.
+///
+/// The marker is written ONCE, into `MatchNode::materialize_map`, so every
+/// eager derivative inherits it by copying the attribute map — no construction
+/// site has to know about cursors. It shares the map with the other internal
+/// keys (`silent_caps`, `capture_alias_map`, `reduce_time_vars`,
+/// `__failed_match__`) and is never exposed through `.hash`/`.list`.
+pub(crate) const CURSOR_MATCH_MARKER: &str = "__grammar_cursor__";
+
 impl Value {
     /// Is this value a `Match` instance (regex match object)? True for both
     /// the lazy repr (`ValueRepr::Match`, checked WITHOUT materializing) and
     /// an eager/rebuilt `Instance("Match")`.
+    ///
+    /// This is the ONLY correct "is a Match" test — an inline
+    /// `class_name == "Match"` is not, because a grammar cursor reports the
+    /// grammar's own class (raku: `Grammar` IS a `Match` subclass, so
+    /// `G.parse(...).^name` is `G`). Every cursor keeps the lazy repr, so the
+    /// tag probe below answers for them without any registry lookup.
     pub(crate) fn is_match_instance(&self) -> bool {
         if self.0.as_match_node().is_some() {
             return true;
         }
-        matches!(self.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
+        matches!(self.view(), ValueView::Instance { class_name, attributes, .. }
+            if class_name == "Match" || attributes.as_map().get(CURSOR_MATCH_MARKER).is_some())
+    }
+
+    /// The class name a Match receiver dispatches under: `"Match"` for a plain
+    /// regex match, the grammar's own class for a parse cursor. Callers that
+    /// used to hardcode `"Match"` for user-override / native-method lookups
+    /// pass this instead, so a grammar's own `method made { ... }` wins over
+    /// the native `Match.made` the way raku's MRO makes it.
+    pub(crate) fn match_dispatch_class(&self) -> &'static str {
+        match self.0.as_match_node() {
+            Some(node) => node.cursor_class().as_str(),
+            None => "Match",
+        }
     }
 
     /// Read one attribute of a `Match` instance. `None` when `self` is not a
@@ -32,12 +69,11 @@ impl Value {
         if let Some(node) = self.0.as_match_node() {
             return node.attr(name);
         }
+        if !self.is_match_instance() {
+            return None;
+        }
         match self.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Match" => attributes.as_map().get(name).cloned(),
+            ValueView::Instance { attributes, .. } => attributes.as_map().get(name).cloned(),
             _ => None,
         }
     }
@@ -99,12 +135,15 @@ impl Value {
     /// instance (new identity), same as the inline clone-insert-rebuild
     /// sites this replaces.
     pub(crate) fn match_with_attrs(&self, updates: Vec<(&str, Value)>) -> Option<Value> {
+        if !self.is_match_instance() {
+            return None;
+        }
         match self.view() {
             ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Match" => {
+            } => {
                 let attrs = attributes.as_ref().clone();
                 for (k, v) in updates {
                     attrs.insert(k.to_string(), v);
@@ -120,12 +159,15 @@ impl Value {
     /// consumers re-read live objects by `(class, id)` match (see the grammar
     /// action walk). `None` when `self` is not a Match.
     pub(crate) fn match_with_attrs_keeping_id(&self, updates: Vec<(&str, Value)>) -> Option<Value> {
+        if !self.is_match_instance() {
+            return None;
+        }
         match self.view() {
             ValueView::Instance {
                 class_name,
                 attributes,
                 id,
-            } if class_name == "Match" => {
+            } => {
                 let attrs = InstanceAttrs::clone(&attributes);
                 for (k, v) in updates {
                     attrs.insert(k.to_string(), v);

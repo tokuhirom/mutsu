@@ -242,7 +242,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             ))
         }
         ValueView::Nil => Value::hash(HashMap::new()),
-        ValueView::Instance { class_name, .. } if class_name == "Match" => {
+        ValueView::Instance { .. } if value.is_match_instance() => {
             // %($/) returns the named captures hash
             value
                 .match_named()

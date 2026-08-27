@@ -268,22 +268,25 @@ impl Interpreter {
         // bypasses below without materializing. (A Match never matches
         // Real/Numeric, and the Supply/Supplier arms cannot apply.)
         if target.is_lazy_match_value() {
+            // A grammar cursor's dispatch owner is the grammar's own class, not
+            // `Match` — see `should_bypass_native_fastpath`'s twin of this gate.
+            let owner = target.match_dispatch_class();
             let is_pure_render = matches!(
                 method_name.as_str(),
                 "gist" | "Str" | "Stringy" | "raku" | "perl"
             );
-            let render_overridden = is_pure_render && self.has_user_method("Match", &method_name);
-            if (!is_pure_render || render_overridden) && self.has_user_method("Match", "Bridge") {
+            let render_overridden = is_pure_render && self.has_user_method(owner, &method_name);
+            if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
             }
             if matches!(
                 method_name.as_str(),
                 "throw" | "rethrow" | "gist" | "Str" | "Stringy"
-            ) && self.exception_render_needs_interpreter(target, "Match")
+            ) && self.exception_render_needs_interpreter(target, owner)
             {
                 return None;
             }
-            if self.is_native_method("Match", &method_name) {
+            if self.is_native_method(owner, &method_name) {
                 return None;
             }
         }

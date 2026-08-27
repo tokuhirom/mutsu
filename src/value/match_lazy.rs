@@ -29,6 +29,14 @@ pub(in crate::value) fn match_class_symbol() -> Symbol {
     *SYM.get_or_init(|| Symbol::intern("Match"))
 }
 
+/// The class a cursor produced against `target` reports: the grammar's own
+/// type for a grammar parse (raku: `Grammar` IS a `Match` subclass and every
+/// cursor of a parse is of the invoked grammar's type), plain `Match` for an
+/// ordinary regex match.
+pub(crate) fn cursor_class_symbol(target: &MatchTarget) -> Symbol {
+    target.cursor_class().unwrap_or_else(match_class_symbol)
+}
+
 /// The payload of a lazy `Match` value. See the module doc.
 pub(crate) struct MatchNode {
     /// The shared subject this match ran against, shared by every node of
@@ -68,12 +76,17 @@ impl MatchNode {
         self.attrs.get()
     }
 
+    /// The class this cursor reports (`Match`, or the grammar's own type).
+    pub(crate) fn cursor_class(&self) -> Symbol {
+        cursor_class_symbol(&self.target)
+    }
+
     /// Force the Instance-shaped materialization (one level deep).
     pub(in crate::value) fn force_attrs(&self) -> &crate::gc::Gc<InstanceAttrs> {
         self.attrs.get_or_init(|| {
             crate::vm::vm_stats::record_regex_match_materialization();
             crate::gc::Gc::new(InstanceAttrs::new(
-                match_class_symbol(),
+                cursor_class_symbol(&self.target),
                 self.materialize_map(),
                 self.id,
                 true,
@@ -150,6 +163,18 @@ impl MatchNode {
         }
 
         let mut attrs = AttrMap::new();
+        // A grammar cursor's class name is the GRAMMAR's, so it can no longer
+        // double as the "this Instance is a Match" signal. Record the fact in
+        // the attribute map instead: every eager derivative of this Match (the
+        // `match_with_attrs*` rebuilds, the action walk's write-backs) copies
+        // the map wholesale, so the marker propagates without every one of
+        // those construction sites having to know about cursors.
+        if self.target.cursor_class().is_some() {
+            attrs.insert(
+                crate::value::match_view::CURSOR_MATCH_MARKER,
+                Value::Bool(true),
+            );
+        }
         attrs.insert("str", Value::str(self.span_text()));
         attrs.insert("from", Value::Int(cap.from as i64));
         attrs.insert("to", Value::Int(cap.to as i64));
@@ -191,8 +216,21 @@ impl MatchNode {
     }
 }
 
-/// Eager leaf Match for a quantified-capture entry with a recorded span.
+/// Leaf Match for a quantified-capture entry with a recorded span.
+///
+/// Under a *grammar* parse this has to be a lazy `ValueRepr::Match` rather than
+/// the eager `Instance` the plain-regex path uses: the leaf reports the
+/// grammar's cursor class (raku: `G.parse(...)[0].^name` is `G`), and the repr
+/// — not the class name — is what tells every consumer "this is a Match".
 fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
+    if target.cursor_class().is_some() {
+        let caps = crate::runtime::RegexCaptures {
+            from,
+            to,
+            ..Default::default()
+        };
+        return Value::lazy_match(Arc::new(caps.into_cap_node()), target.clone());
+    }
     let mut attrs = AttrMap::new();
     attrs.insert("str", Value::str(target.span_str(from, to)));
     attrs.insert("from", Value::Int(from as i64));

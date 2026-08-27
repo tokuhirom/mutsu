@@ -440,6 +440,16 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: [],
         owner: "",
     ),
+    // raku: `Grammar.^mro` is `(Grammar Match Capture Cool Any Mu)` -- a grammar
+    // IS a Match subclass (its parse cursors are Match objects of the grammar's
+    // own type). Every user grammar gets `Grammar` as its implicit parent, so
+    // this row is what makes `G ~~ Match` / `G.parse(...) ~~ Match` hold.
+    row!(
+        "Grammar",
+        mro: ["Grammar", "Match", "Capture", "Cool", "Any", "Mu"],
+        roles: [],
+        owner: "",
+    ),
     // ---- Temporal (ADR-0051 P1): `Instant`/`Duration` genuinely ARE `Cool` in
     // raku (verified 2026-08-10/20: `Instant.^mro`/`Duration.^mro` are
     // `(<Type> Cool Any Mu)`, `.^roles` is `(Real Numeric)`), but had no catalog

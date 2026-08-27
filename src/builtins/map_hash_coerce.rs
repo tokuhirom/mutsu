@@ -169,7 +169,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             }),
             |w| w.clone(),
         )),
-        ValueView::Instance { class_name, .. } if class_name == "Match" => {
+        ValueView::Instance { .. } if target.is_match_instance() => {
             // %($/) returns the named captures hash.
             Ok(target
                 .match_named()

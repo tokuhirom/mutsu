@@ -183,7 +183,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => {
                 return Self::scalarize_range_endpoint(inner.clone());
             }
-            ValueView::Instance { class_name, .. } if class_name == "Match" => {
+            ValueView::Instance { .. } if value.is_match_instance() => {
                 return runtime::coerce_to_numeric(Value::str(value.to_string_value()));
             }
             ValueView::Array(..)

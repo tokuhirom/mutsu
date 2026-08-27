@@ -284,6 +284,31 @@ impl Value {
                 };
                 before_eq && after_eq
             }
+            // Two Match objects compare by CONTENT, across classes: a grammar
+            // cursor reports the grammar's own class (raku: `Grammar` IS a
+            // `Match` subclass), yet raku holds
+            // `EVAL(G.parse($s).raku) eqv G.parse($s)` — the `.raku` of a cursor
+            // renders as a plain `Match.new(...)`, and the round trip is `eqv`
+            // to the cursor it came from (roast: `S05-match/raku.t`, verified
+            // against raku 2026-08-27). The generic Instance arm below would
+            // compare class names and attribute maps, which differ in both the
+            // class and the internal cursor marker.
+            (ValueView::Instance { .. }, ValueView::Instance { .. })
+                if self.is_match_instance() && other.is_match_instance() =>
+            {
+                let scalars_eq = self.match_from() == other.match_from()
+                    && self.match_to() == other.match_to()
+                    && self.match_orig().map(|v| v.to_string_value())
+                        == other.match_orig().map(|v| v.to_string_value());
+                let opt_eqv = |a: Option<Value>, b: Option<Value>| match (a, b) {
+                    (Some(a), Some(b)) => a.eqv(&b),
+                    (None, None) => true,
+                    _ => false,
+                };
+                scalars_eq
+                    && opt_eqv(self.match_list(), other.match_list())
+                    && opt_eqv(self.match_named(), other.match_named())
+            }
             // Other Instance types: use identity comparison
             (ValueView::Instance { .. }, ValueView::Instance { .. }) => self == other,
             // The Nil value IS the Nil type object: a `Package("Nil")` obtained
