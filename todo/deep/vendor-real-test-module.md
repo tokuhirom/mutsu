@@ -3086,3 +3086,263 @@ Verification for this entry: `make test` green (3512 files, 34944 tests), a
 `exit-in-if.t`, `S04-phasers/exit-in-check.t`, the `S05`/`S06` named-argument
 and colonpair files, `roast/t/test-util/01-is-eqv.t`, ...) all green, and the
 full `make roast` delegated to CI.
+
+## 2026-08-28 (later the same day): the ROAST side re-measured for the first time since 2026-08-20 — 76 -> 67, and the mid-file aborts are gone
+
+Priority item 2 of the list above, done. The roast half of this campaign had
+not been measured since 2026-08-20, before ADR-0038 and before a great deal of
+other work; the 76 was stale, and nothing detects a `MUTSU_REAL_TEST`
+regression between manual sweeps.
+
+### Tooling: the existing sweep only covers `t/`, so there is now a roast one
+
+`scripts/test-module-sweep.sh` sweeps `t/*.t` only. Rather than hand-pick roast
+files (which would not be a measurement), this session added
+**`scripts/roast-test-module-sweep.sh`** — the same two-runs-per-file
+comparison and the same `passes()` predicate (exit status 0, no failure marker,
+TAP `# TODO` treated as an expected failure), over every entry in
+`roast-whitelist.txt`. Two deliberate differences from the `t/` sweep:
+
+- files run **in place from the repo root through `scripts/run-roast-test.sh`**,
+  so they inherit its per-file timeouts, its `MUTSU_FUDGE=1` export (roast needs
+  it) and its `roast/`-cwd special cases. There is no working copy, so the `t/`
+  sweep's cwd-artifact class *cannot occur here* — a small but real advantage of
+  this harness over that one;
+- a **release** build, since the whitelist is 1436 files run twice.
+
+### The measurement (release build, `-j6`, on top of `003b69a35` / `origin/main`)
+
+```
+pass under both:                   1369
+regressed under the real Test:     67
+passes only under the real Test:   0
+fail under both (pre-existing):    0
+```
+
+(1369 + 67 + 0 + 0 = 1436 = `wc -l roast-whitelist.txt`. "Fail under both" is
+zero, as it must be: the whitelist is exactly the set that passes natively.)
+
+**76 -> 67.** But the shape moved far more than the count:
+
+### The mid-file aborts are gone: 9 -> 1
+
+The 2026-08-20 entry recorded "**9 abort mid-file**, 67 lose individual
+assertions". Counting truncated plans across the 67 real-provider logs now
+finds exactly **one** (`S24-testing/2-force_todo.t`, which is a known
+native-provider-only file, below). That is ADR-0038 landing, and it is the
+single biggest structural change in this campaign since the last roast
+measurement.
+
+Spot-checked rather than assumed: the three files that entry called "the
+largest shared mechanism left" (`S16-io/words.t`, `S32-io/io-cathandle.t`,
+`S32-list/tail.t`) no longer abort with `exit 134`; all three now merely lose
+1-4 individual assertions.
+
+### 7 of the 67 are not correctness regressions at all — they are the real module being slower
+
+Every `exit 124` row (`6.d/S32-str/sprintf-{d,f,x}.t`, `S03-buf/read-write-bits.t`,
+`S03-buf/write-int.t`, `S32-str/sprintf-{b,d}.t`) is a **timeout**, and all
+seven were re-run individually with a 900 s budget: **every one exits 0 with
+zero non-TODO failures**, in 12-67 s. They are the assertion-heavy families the
+2026-08-20 entry already named — several thousand assertions each, answered
+through Raku-level code instead of the native provider's Rust — and under a
+6-way parallel sweep they simply do not fit `run-roast-test.sh`'s 30 s budget.
+
+**So the honest correctness count is 67 - 7 = 60.** (The sweep script now
+documents this so the next person does not re-derive it; an `exit 124` row
+means "re-run with headroom before counting it".)
+
+**This is not a nicety — the raw count is noisy by about +-6 because of that
+family alone.** The post-fix sweep at the end of this session came back with
+only **one** `exit 124` (`S03-buf/write-int.t`, the slowest of the seven at
+67 s standalone): the other six simply happened to fit the budget on a
+less-contended run. Nothing about them changed. **Always quote the
+timeout-excluded number**, or a sweep will appear to have gained or lost half a
+dozen files that nobody touched.
+
+### Classification: the residue is a long tail of ONE-subtest gaps, not shared mechanisms
+
+Counting non-TODO `not ok` lines per file across all 67:
+
+| failing subtests | files |
+| --- | --- |
+| 0 (fails on exit status / truncated plan only) | 12 (7 of them the timeouts) |
+| 1 | 39 |
+| 2 | 6 |
+| 3 | 3 |
+| 4 | 2 |
+| 10 | 2 |
+
+**39 files lose exactly one assertion.** That is the opposite of the `t/` side's
+shape and it changes what "work the residue down" means here: on roast there is
+no large shared mechanism left to find, and the observed rate really is about
+one fix per file. The two 10-failure files (`S09-typed-arrays/native-int.t`,
+`native-shape1-int.t`) are one assertion repeated across ten integer widths, so
+they are one mechanism, not ten.
+
+### A warning about the obvious classification shortcut
+
+The tempting way to separate "native provider is wider" from "genuine
+interpreter gap" on roast is the `raku_status` column of
+`TODO_roast/raku-baseline.tsv`, and 22 of the 67 are not `PASS` there. **Do not
+use it that way.** That baseline's own header says why: it runs `raku` on the
+**raw, UNFUDGED** `.t` file, because applying roast's fudge would mean writing
+into the read-only `roast/` tree — so "a raku FAIL/SORRY on a whitelisted file
+is usually a fudge/version artifact, not raku being worse than mutsu". It is a
+useful hint and nothing more; each candidate still has to be checked on its own
+failing assertion. (Checked by hand this round: `S24-testing/10-is-approx.t`,
+`14-like-unlike.t` and `3-output.t` all have raku_status `PASS` and are genuine
+mutsu gaps, while `2-force_todo.t` and `6-done_testing.t` really are the
+native-provider-only pair already documented on 2026-08-20.)
+
+### Fixed this round: two general interpreter bugs, three roast files closed
+
+Both were found by looking for *shared mechanisms* among the files that fail on
+exit status with no visible failing assertion — the most information-dense
+corner of the report, because a file that runs every test and still exits
+non-zero is usually one mechanism rather than one assertion.
+
+1. **An `EVAL`'s unresolved package/class stubs leaked into the enclosing
+   program.** `src/runtime/system.rs` only ran the EVAL's own end-of-unit stub
+   check when the snippet *succeeded*, so an EVAL that died first — e.g.
+   `class A { ... }; class B does A { }`, which dies composing against the
+   still-open stub — left `A` in the outer registry. The program's end-of-run
+   check then reported "The following packages were stubbed but not defined:
+   A" for a name the outer program never mentioned, and exited non-zero *after
+   every test had passed*. raku prints nothing there (measured).
+
+   The first attempt **removed** the leaked names from `class_stubs`, and the
+   targeted roast sweep immediately caught the consequence:
+   `roast/S12-class/stubs.t` test 7 went green-to-red, because `class_stubs` is
+   also what answers "is this name still an open stub" — deleting the entry made
+   a *later* `EVAL 'class A { ... }; class B is A {}'` see a fully-defined `A`
+   and stop raising `X::Inheritance::NotComposed`. The shipped fix marks them in
+   `reported_stub_errors` instead, which is precisely the distinction that field
+   was introduced for: the name stays a stub for every class-system purpose,
+   only its *error* is spent. Closes `roast/integration/error-reporting.t` and
+   `roast/S12-class/augment-supersede.t`. Pin: `t/eval-stub-package-does-not-leak.t`
+   (which pins the re-stub case too, so the first attempt's regression cannot
+   come back). `roast/S32-exceptions/misc2.t`, which also lives in this
+   EVAL-registry family, was checked and is **not** fixed by it — its three
+   `X::Placeholder::Mainline` failures are a separate gap.
+
+2. **`our @array` / `our %hash` declared in a nested scope was never readable
+   through the package.** `{ our @a = 1..3 }` then `@OUR::a` answered `[]`;
+   `{ our $s = 5 }` then `$OUR::s` answered `5`. The value really was published
+   — `set_our_var` runs — but the **read** side diverged by sigil: `GetGlobal`
+   (scalars) consults `our_pseudo_var_read`, which reads the `our` store before
+   env, while `GetArrayVar`/`GetHashVar` resolve only through
+   `get_env_with_main_alias`, and block exit deliberately drops the bare env
+   alias (an `our` declared only inside a block keeps its lexical alias
+   block-scoped). So the `@`/`%` read had nothing left to find. The fix makes
+   the pseudo-package branch of `get_env_with_main_alias` fall back to the `our`
+   store, purely additively — every lookup that already succeeded through env
+   still does. Also fixes it inside a routine and for declare-then-assign.
+   Closes `roast/S04-declarations/our.t`.
+   Pin: `t/our-array-hash-in-nested-scope.t`.
+
+### After the fixes
+
+```
+pass under both:                   1378
+regressed under the real Test:     58
+passes only under the real Test:   0
+fail under both (pre-existing):    0
+```
+
+Diffing the two regressed-file lists, exactly nine files left the list: the
+three this session fixed (`integration/error-reporting.t`,
+`S12-class/augment-supersede.t`, `S04-declarations/our.t`) and six of the seven
+timeouts, which merely fit the budget this time. So the headline, stated the
+only way that is stable:
+
+**roast correctness regressions: 60 -> 57** (67 -> 58 raw, minus 7 -> 1
+timeouts). `make test` green throughout (3515 files, 34982 tests), and a
+189-file targeted roast sweep over the consumers of what changed
+(`S10-packages`, `S12-class`, `S12-construction`, `S12-coercion`, `S12-enums`,
+`S32-exceptions`, `S04-declarations`, `S02-names*`, `S02-magicals`,
+`S02-types`, `S11-modules`, `S06-other`) is green — that sweep is what caught
+the `S12-class/stubs.t` regression described above, at a point where `make test`
+alone was still green. The `t/` sweep was re-run afterwards and is unchanged at
+13 raw / 9 genuine, so neither fix cost anything on that side.
+
+### Five tickets filed for the gaps left behind
+
+All five have a **Test-free repro with a `raku` oracle**, because in every case
+the real `Test.rakumod` turned out to be only the *shape* that exposed the bug,
+not part of it:
+
+- `todo/tickets/eval-declared-my-role-leaks-and-shadows-a-later-lexical-role.md`
+  — the role-registry sibling of the stub leak fixed above:
+  `try EVAL 'my role R1[::T] { }'` makes a *later* lexical
+  `my role R1[::T] { method x { T } }` resolve to the EVAL's method-less
+  version. Blocks `t/parametric-role-of-type.t`. Note the tell recorded there:
+  if the two declarations happen to have the same methods the leak is invisible,
+  which is how a first attempt at the repro wrongly appeared to pass.
+- `todo/tickets/sunk-lazy-seq-failure-escapes-try-and-aborts-the-routine.md` —
+  a `Failure` produced by sink-forcing a lazy `Seq` at the end of a `try` block
+  escapes the `try`, skips the rest of the enclosing routine and becomes its
+  return value, silently. This is the "runs N of M tests and prints no error"
+  signature of `t/signature-introspection-gaps.t`.
+- `todo/tickets/user-class-instance-element-write-lost-through-closure-call.md`
+  — `$userClassInstance<k> = 1` inside a closure another routine invokes is
+  lost, while the same write into a builtin `Hash.new`, a `%h`, an `@a` or a
+  `$scalar` is not. Records five hand-written twins of `lives-ok` that do NOT
+  reproduce it, so the next person does not re-derive them.
+- `todo/tickets/init-phaser-does-not-reject-a-placeholder-parameter.md` —
+  `INIT { $^c }` does not raise `X::Placeholder::Block`, though `BEGIN`,
+  `CHECK`, `PRE` and fifteen other block kinds do. Almost certainly a one-line
+  addition.
+- `todo/tickets/begin-selective-import-of-code-sigil-lexicals.md` —
+  `BEGIN my (&plan, &is) = do { use Test; (&plan, &is) }` does not bind, so
+  `roast/S32-list/skip.t` dies on `Unknown function: plan` and none of its 55
+  tests run. roast uses this idiom specifically to avoid `Test`'s `skip`
+  shadowing the core list `skip`.
+
+### Two method notes worth keeping
+
+- **`--dump-bytecode` does not always show the bytecode that actually runs.**
+  The 2026-08-28 `:name<90>` allomorph bug had byte-identical `--dump-ast` *and*
+  `--dump-bytecode` output for the working and the broken spelling; what cracked
+  it was `MUTSU_VM_STATS=1` showing `ExecCallPairs`/`MakeNamedArg` where the
+  dump claimed `CallFuncNamed`. When a dump and an observed behaviour disagree,
+  suspect the dump.
+- **A hand-written reproduction of "the same thing" can lie.** That same bug
+  looked like multi-dispatch for a long time because a local re-declaration of
+  the exact five `is-approx` candidates passed; only bisecting caller *spelling*
+  against caller *kind* found it. The same trap fired twice more this round:
+  five separate hand-written twins of `lives-ok` all failed to reproduce the
+  closure-writeback bug, and the role-leak repro passed until the EVAL'd role
+  was given *different* methods from the outer one.
+
+### Corrected priority list
+
+1. **The `t/` residue's five real interpreter gaps and the five tickets above**
+   — now all written down as `todo/tickets/` files with standalone repros, so
+   they can be handed to independent agents. The two EVAL-registry ones
+   (`my role`, and the already-fixed stub half) are the same mechanism seen
+   twice, so the role half is the natural next fix.
+2. **Un-whitelist or fudge the native-provider-only files, and implement the
+   `#?rakudo eval` fudge directive.** Unchanged in substance, but now clearly
+   the *smaller* half of the work on the roast side: only 2 of the 67 roast
+   regressions are confirmed native-provider-only, against the `t/` side's 4.
+   The campaign's framing has moved again — on `t/` the residue is mostly
+   provider-coupled local tests, on roast it is mostly a genuine one-assertion
+   long tail.
+3. **Work the roast long tail, cheapest-first.** With 39 single-assertion files
+   and no large shared mechanism left, this is now a volume problem rather than
+   a design problem, and it parallelises across agents better than anything
+   else in this ticket. `tmp/roast-real-sweep/regressions.txt` (regenerated by
+   the new script) names the failing assertion for each.
+4. **Fix the `t/` sweep harness's cwd artifact** (four permanent false
+   positives). The roast sweep shows the cheap fix: run the files in place from
+   the repo root rather than from a working copy.
+5. `todo/perf/interpreter-call-path-in-hot-loops.md` — unchanged, still last.
+   Note the seven timeouts above are its most visible symptom in this mode: the
+   real module is several times slower per assertion, which is exactly what that
+   ticket is about.
+
+One caveat to carry forward: this sweep takes ~25 minutes on a release build
+and is still not in CI, so it remains a manual ritual. Gating it means a second
+full roast pass; with 60 correctness regressions left that is still not worth
+2x the roast CI cost, but the gap is narrowing.

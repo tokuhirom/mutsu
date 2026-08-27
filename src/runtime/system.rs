@@ -195,6 +195,43 @@ impl Interpreter {
                 {
                     outcome = Err(e);
                 }
+                // The EVAL is its own compilation unit, so a stub it introduced
+                // and left unresolved dies WITH that unit — whatever the
+                // outcome. The check above only runs when the snippet
+                // succeeded, so an EVAL that died BEFORE reaching it (e.g.
+                // `class A { ... }; class B does A { }`, which dies composing
+                // against the stub) used to leave `A` sitting in the outer
+                // program's registry; the top-level end-of-run check then
+                // reported "The following packages were stubbed but not
+                // defined: A" for a name the outer program never mentioned,
+                // and the process exited non-zero after every test had passed.
+                // raku prints nothing at all there (measured). Surfaced by
+                // `roast/integration/error-reporting.t` and
+                // `roast/S12-class/augment-supersede.t` under
+                // `MUTSU_REAL_TEST=1`, where `throws-like` really EVALs the
+                // code string it is given.
+                //
+                // Mark them reported rather than REMOVING them: `class_stubs`
+                // is what every class-system check reads to answer "is this
+                // name still an open stub", so deleting the entry would make a
+                // *later* EVAL that re-stubs the same name see a fully-defined
+                // class instead — `EVAL 'class A { ... }; class B is A {}'`
+                // stopped raising `X::Inheritance::NotComposed` once a previous
+                // EVAL had stubbed `A` (caught by `roast/S12-class/stubs.t`
+                // test 7). `reported_stub_errors` exists for exactly this
+                // distinction: the name stays a stub, only its *error* is
+                // spent.
+                let eval_introduced_stubs: Vec<String> = self
+                    .registry()
+                    .class_stubs
+                    .iter()
+                    .chain(self.registry().package_stubs.iter())
+                    .filter(|n| !eval_pre_stubs.contains(*n))
+                    .cloned()
+                    .collect();
+                for name in eval_introduced_stubs {
+                    self.registry_mut().reported_stub_errors.insert(name);
+                }
                 // When the last statement is an assignment, the VM pops the
                 // value from the stack, so eval_block_value returns Nil/Any.
                 // In Raku, EVAL returns the value of the last expression,
