@@ -664,7 +664,7 @@ reproduced for a slice-1-itemized one (`my @c; @c[0] = [1,2]; @c.List[0].raku`);
 have made it visible everywhere. Fixed by de-itemizing in the `"List"` arm's `ValueView::Array`
 branch, gated on `ArrayKind::Array`.
 
-**Twelve counter-currents, all of the same shape.** Every one is a site that asks a question
+**Seventeen counter-currents, all of the same shape.** Every one is a site that asks a question
 *about the value* while holding something that is itemized *because it is an element*. This is
 the slice-2 recurrence of slice 1's `value_to_list_for_receiver` discovery, and it is the honest
 cost of this slice: the hooks themselves were ~40 lines, the counter-currents were the work. Six
@@ -673,11 +673,15 @@ Q4 sweep of serializers and receiver-decomposing methods (`to-json`/`from-json`,
 `eqv`, `.WHICH`, `.Str`/`.gist`/`.join`, `zip`/`X`/`roundrobin`, the reduce metaop, and the whole
 `.Array`/`.List`/`.list`/`.Slip`/`.Seq`/`.Bag`/`.Set`/`.Hash`/`.cache`/`.flat`/`.values`/`.keys`/
 `.rotor`/`.sum`/`.reverse`/`.sort`/`.min` family on an itemized receiver) — 30 + 30 programs, each
-dual-oracled; the last four by the targeted roast sweep. That distribution is the reusable lesson:
-the `t/` suite and a deliberate probe sweep between them found two thirds, but a third only
-surfaced against roast, and every one of the four was in a *different* subsystem
-(set operators, `.Map`, `is-deeply`, `.toggle`/`<>`). Budget for a roast iteration on this kind of
-change rather than expecting the local suite to be complete.
+dual-oracled. **The remaining nine only surfaced against roast, in eight different subsystems,
+and across two separate iterations** — a targeted sweep chosen by "who consumes the code I
+changed" found four, and the full `make roast` found five more (including the two that aborted a
+whole file mid-run and the 88-failure `S03-sequence/exhaustive.t`).
+
+That distribution is the reusable lesson, and it is stronger than ADR-0036's version of it: for a
+change that alters *what is in every container*, the consumer surface is the whole language, so a
+targeted roast sweep is **not** an adequate proxy for the full suite. Run `make roast` locally
+before pushing rather than iterating through CI.
 
 | site | symptom | fix |
 | --- | --- | --- |
@@ -693,17 +697,33 @@ change rather than expecting the local suite to be complete.
 | `.Map` (`map_hash_coerce::to_map`) | `%h.Map<a>.raku` gave `$[1, 2]`; `Foo.new(\|%args.Map)` bound `@.a` to one itemized array (`roast/S32-hash/map.t`) | a `Map`'s values are *not* containers, and the existing decont there only unwrapped a `Scalar` — it had to cover the kind/flag form too. |
 | `is-deeply` (`seq_to_list`) | `is-deeply (1,2).Seq, $((1,2).Seq)` failed even though `eqv` says True (`roast/S02-types/pair.t`'s `Pair.invert` subtest) | `is-deeply` normalizes a `Seq` to a `List` before comparing; it has to see through the wrapper to find the Seq, or one side becomes a `List` and the other stays a `Scalar(Seq)`. |
 | `.toggle` (`dispatch_toggle`) and `<>` (`__mutsu_zen_angle`) | `my @t = %(),; @t[0].toggle` yielded one element instead of the empty `Seq`; `($%h)<>.raku` was `${}` (`roast/S32-list/toggle.t`) | `.toggle` decomposes its own receiver, so it moved onto `value_to_list_for_receiver`. `<>` already cleared an itemized `ArrayKind` but not the Hash flag. |
+| smartmatch (`smart_match_inner`) | `my @t = [<42+0i>, 10..50],; $t[0] ~~ $t[1]` was False (`roast/S02-types/range.t`, `roast/S03-smartmatch/range-range.t`) | raku's protocol is `$matcher.ACCEPTS($topic)`, and both invocant and argument decontainerize on the way in — so a `Scalar` wrapper is transparent on **both** sides, exactly as the pre-existing `ContainerRef` LHS unwrap already was. |
+| the `...` sequence operator (`eval_sequence` / `eval_chained_sequence`) | `roast/S03-sequence/exhaustive.t`, **88 failures** — its seed table is `my @tests = …, [(1/4,1/2,1),(8,9)], …` fed through `infix:<...>(\|seed)` | `...` *decomposes* its seed operand into deduction seeds. A pre-existing divergence (`$(1,2) ... 10` was already wrong) that slice 2 made reachable through elements. |
+| `.pairup` and the whole n-arg receiver family (`methods_narg/dispatch_1arg.rs`) | `[[2,3],[4,[5,6]]]».pairup` **aborted** `roast/S03-metaops/hyper.t` mid-file with "Odd number of elements"; `».pick(*)` shuffled the wrong level | slice 1 moved the *0-arg* `.pick`/`.roll`/`.head`/`.tail` forms onto `value_to_list_for_receiver`; the n-arg forms (`.head(n)`, `.tail(n)`, `.combinations`, `.batch`, `.fmt`, `.pick(n)`, `.roll(n)`) were the other half of the same set, and all eight `value_to_list(target)` sites in that file moved together. `&combinations(Iterable, k)` needed it too — its hand-rolled itemized-`Array` unwrap covered the kind but not the Hash flag. |
+| `.trans` grouped operands (`value_to_string_list`) | `'a'..'z' => ['n'..'z','a'..'m']` stringified each whole `Range` instead of expanding it (`roast/S05-transliteration/trans.t`) | the grouping means "expand each of these in turn", so the element's itemization is stripped before deciding how to expand. |
 
 **And one desugar the slice made visibly wrong.** `my (@a, @b) := (@x, @y)` desugars to a staging
 `my @__destructure_tmp__ = <rhs>.list` plus one `my @a = @__destructure_tmp__[0]` per target
-(§1.7 already flagged this desugar as approximate). The staging temp is a real `Array`, so slice 2
-itemizes its elements — and `my @a = $[1, 2]` is `[[1, 2],]`, which is *correct* for `=` and wrong
-for `:=`. Fixed by emitting the per-target declaration as a genuine **bind** in binding mode
-(`Stmt::MarkBind` + the declaration, the same marker `my @a := expr` uses) for `@`/`%` targets,
-which decontainerizes the staged element exactly as a real bind does. `=`-mode is unchanged
-(`my (@a, @b) = (@x, @y)` still slurps greedily into `@a`). This does not close §1.7's
-write-through ticket — the temp still holds copies — but it does move the `:=` half onto the
-mechanism that ticket says it should be on.
+(§1.7 already flagged this desugar as approximate). Two things had to change:
+
+1. **The staging temp is exempted from element itemization**
+   (`Interpreter::itemize_elements_for_var_assign` / `is_destructure_staging_temp`,
+   `src/vm/vm_var_assign_nil_decay.rs`). It is not a user `Array` — it *is* the RHS list, and
+   every target reads a *value* out of it; raku stages that in a `Capture`/`List`, whose elements
+   are not `Scalar`s. Itemizing it made a `%`-sigiled target read an itemized hash and die "Odd
+   number of elements" (`roast/S06-signature/named-parameters.t` aborted mid-file). Two other
+   passes already key on this same name for the same "compiler artifact, not a user container"
+   reason (`parser/sink_warn.rs`, `compiler/expr_block.rs`); retiring the name check means
+   changing the desugar to stage a Capture, which is §1.7's own ticket. Staging it as a genuine
+   *bind* was tried first and is worse: `my ($b) = ()` then reads `Nil` instead of `Any`, and
+   `my ($b) = 5` fails the `@`-sigil Positional bind check.
+2. **A non-slurpy `@`/`%` target in binding mode is a genuine bind** (`Stmt::MarkBind` + the
+   declaration). Measured: `my @x = 1, 2; my (@a,) := (@x,); @a.push(3)` writes through to `@x`
+   in raku, so `@a` must be the element itself, not a copy. A slurpy `*@rest` is excluded — its
+   read is a *slice* of the temp, and raku gives `@rest` an `Array` there
+   (`roast/S02-names-vars/signature.t`).
+
+`=`-mode keeps its greedy-slurp semantics unchanged.
 
 **Known remaining divergences of the same "attribute read decontainerizes" family, deliberately
 not chased here** (all pre-existing — they already reproduced on slice-1-itemized elements, and
@@ -741,13 +761,10 @@ array and `%(…)` literals, the `(...)`-List-literal invariant, `.Array` / `.Li
 `List.List`, the `my @b = @a` copy no-op (both `@b[0].raku` itemized and `@b.raku` bare), each
 aggregate kind §2 names as a stored element (`Seq`, `Range`, `Hash`), flat-list hash
 construction and `.Hash` coercion, a reified `gather`, the `:=`-bind invariant, three arity
-invariants, native-array safety, a dedicated section pinning all eight counter-currents above
-(including the `[Z]`-vs-explicit-`Z` asymmetry and the `[+] @m[0]` one-arg rule), and the JSON
-round-trip. Targeted whitelisted roast batches: all
-`roast/S32-array/*`, `roast/S32-hash/*`, `roast/S32-list/*`, `roast/S09-typed-arrays/*`,
-`roast/S03-operators/*`, `roast/S02-types/{array,array_extending,array_ref,assigning-refs,
-autovivification,flattening,hash,hash_ref,list,multi_dimensional_array,set,bag,mix,baghash,
-mixhash,sethash,pair}.t` and all whitelisted `roast/integration/*.t` (release build).
+invariants, native-array safety, a dedicated section pinning the counter-currents (including the
+`[Z]`-vs-explicit-`Z` asymmetry and the `[+] @m[0]` one-arg rule), and the JSON round-trip. The
+**full** `make roast` suite (1436 files, 218 836 tests) passes on a release build — not just a
+targeted batch; see the distribution note above for why that distinction mattered here.
 
 **Closed by this slice**: `todo/tickets/array-literal-nested-element-itemization-lost-in-raku.md`
 (`say .raku for [3,2,[1,0]]` now prints `$[1, 0]`), retired to

@@ -1048,7 +1048,7 @@ impl Interpreter {
                 // LazyList); hooking here covers the whole `@`-assign entry
                 // with one call. A `:=` bind is deliberately excluded -- a
                 // bound `List`'s elements are NOT containers (§1.6/row 24).
-                assigned = runtime::utils::itemize_real_array_elements(assigned);
+                assigned = Self::itemize_elements_for_var_assign(name, assigned);
             }
             // `@a = Nil` resets to the *outgoing container's* own
             // `is default(...)` -- see `array_assign_nil_container_default`.

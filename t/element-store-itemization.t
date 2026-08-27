@@ -515,4 +515,58 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is ($%h)<>.raku, '{}', 'counter-current: <> clears the hash itemization flag';
 }
 
+{
+    # Smartmatch is `$matcher.ACCEPTS($topic)`, and both sides decontainerize
+    # on the way in -- so an itemized element is transparent on both.
+    my @t = [<42+0i>, 10 .. 50],;
+    ok (@t[0][0] ~~ @t[0][1]), 'counter-current: smartmatch sees through an itemized matcher';
+}
+{
+    # The `...` operator DECOMPOSES its seed operand into deduction seeds.
+    is ($(1, 2) ... 10).head(5).List.raku, '(1, 2, 3, 4, 5)',
+        'counter-current: ... decomposes an itemized seed';
+    my @s = [(1/4, 1/2, 1), (8, 9)];
+    @s.push(*);
+    is infix:<...>(|@s).head(6).List.raku, '(0.25, 0.5, 1.0, 2.0, 4.0, 8)',
+        'counter-current: ...and a chained one staged in an Array';
+}
+{
+    # The n-arg receiver family: `.pairup`, `.head(n)`, `.pick(*)`,
+    # `.combinations` all decompose their own receiver.
+    is [[2, 3], [4, [5, 6]]]».pairup.gist, '((2 => 3) (4 => [5 6]))',
+        'counter-current: .pairup decomposes an itemized receiver';
+    is [[2, 3], [4, [5, 6]]]».pick(*)».sort.gist, '((2 3) (4 [5 6]))',
+        'counter-current: .pick(*) is nodal over itemized elements';
+    is [[2, 3], [4, [5, 6]]]».head(1).gist, '((2) (4))',
+        'counter-current: .head(n) likewise';
+    my @n := %(:42foo, :70bar),;
+    is-deeply combinations(@n[0], 1).sort, @n[0].combinations(1).sort,
+        'counter-current: &combinations(Iterable, k) matches the method form';
+}
+{
+    # A grouped `.trans` operand means "expand each of these in turn", so an
+    # itemized Range element still expands.
+    is "Whfg".trans('a' .. 'z' => ['n' .. 'z', 'a' .. 'm']), 'Wust',
+        'counter-current: .trans expands itemized Range group members';
+}
+{
+    # The list-destructuring staging temp is NOT a user Array: every target
+    # reads a VALUE out of it. A `%` target must still flatten the staged hash,
+    # a `:=` `@` target binds (and so aliases), and a `*@rest` slurpy gets an
+    # Array.
+    sub named_and_slurp(:$grass, *%rest) { return ($grass, %rest) }
+    my ($grass, %rest) = named_and_slurp(sky => 'blue', grass => 'green', fire => 'red');
+    is $grass, 'green', 'staging temp: explicit named arg survives';
+    is +%rest, 2, 'staging temp: a % target still flattens the staged hash';
+    my ($x, @y, *@r) := (42, [13, 17], 5, 6, 7);
+    is @y.raku, '[13, 17]', 'staging temp: a := @ target binds the element';
+    is @r.raku, '[5, 6, 7]', 'staging temp: a slurpy *@rest is still an Array';
+    my @xs = 1, 2;
+    my (@a2,) := (@xs,);
+    @a2.push(3);
+    is @xs.raku, '[1, 2, 3]', 'staging temp: a := @ target aliases its source';
+    my ($b) = ();
+    is $b.^name, 'Any', 'staging temp: a missing untyped target is Any, not Nil';
+}
+
 done-testing;

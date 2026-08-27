@@ -697,7 +697,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A bare type object listifies to nothing, so `Range.pairup` is `()`.
             ValueView::Package(_) => Some(Ok(Value::seq(Vec::new()))),
             _ => {
-                let items = crate::runtime::utils::value_to_list(target);
+                // ADR-0040 slices 1-2: `target` is `.pairup`'s own RECEIVER,
+                // decomposed into ITS elements -- a question the itemization it
+                // carries as an element of some other container has no say in.
+                // (`[[2,3],[4,[5,6]]]».pairup` hands each itemized `$[2, 3]` to
+                // `.pairup`, which must still see two elements.)
+                let items = crate::runtime::utils::value_to_list_for_receiver(target);
                 let mut pairs: Vec<Value> = Vec::new();
                 let mut i = 0;
                 while i < items.len() {

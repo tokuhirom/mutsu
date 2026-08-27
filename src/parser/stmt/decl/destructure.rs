@@ -492,6 +492,10 @@ fn parse_destructuring_with_rhs(
     // Positional destructuring
     let tmp_name = "@__destructure_tmp__".to_string();
     let array_bare = "__destructure_tmp__".to_string();
+    // NOTE: this staging temp is NOT a user `Array` -- it IS the RHS list, and
+    // every target below reads a VALUE out of it. ADR-0040 slice 2's
+    // element-itemization is therefore deliberately suppressed for it; see
+    // `Interpreter::is_destructure_staging_temp`.
     let mut stmts = vec![Stmt::VarDecl {
         name: tmp_name,
         expr: rhs,
@@ -606,16 +610,24 @@ fn parse_destructuring_with_rhs(
             custom_traits: Vec::new(),
             where_constraint: effective_where,
         };
-        // In BINDING mode an `@`/`%` target BINDS the staged element rather
-        // than assigning it — `my (@a, @b) := (@x, @y)` gives `@a` the element
-        // itself. The staging temp is a real `Array`, so ADR-0040 slice 2
-        // itemizes its elements; an assign would then wrap
-        // (`my @a = $[1, 2]` is `[[1, 2],]`, which is what `=`-mode SHOULD do
-        // and `:=`-mode must not), while a bind decontainerizes the element
-        // exactly as `my @a := @c[0]` already does. `MarkBind` is the same
-        // marker the plain `my @a := expr` declaration uses.
-        // Pinned by `t/list-bind-trailing-array.t`.
-        let decl = if is_binding && dvar.name.starts_with(['@', '%']) {
+        // In BINDING mode a non-slurpy `@`/`%` target BINDS the staged element
+        // rather than assigning it: `my @x = 1, 2; my (@a,) := (@x,);
+        // @a.push(3)` writes through to `@x` in raku, so `@a` must be the
+        // element itself and not a copy. `MarkBind` is the same marker the
+        // plain `my @a := expr` declaration uses.
+        //
+        // A slurpy `*@rest` is excluded: its read is a SLICE of the staging
+        // temp (a freshly built `List`), and raku gives `@rest` an `Array`
+        // there (`my ($x, @y, *@rest) := (42, [13,17], 5, 6, 7)` leaves
+        // `@rest.raku` as `[5, 6, 7]`), which is what the assigning form's
+        // `coerce_to_array` produces.
+        // Pinned by `t/list-bind-trailing-array.t` and
+        // `roast/S02-names-vars/signature.t`.
+        let decl = if is_binding
+            && !dvar.is_slurpy
+            && !is_implicit_slurpy
+            && dvar.name.starts_with(['@', '%'])
+        {
             Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl])
         } else {
             decl

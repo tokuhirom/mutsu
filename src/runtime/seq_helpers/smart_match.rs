@@ -250,6 +250,23 @@ impl Interpreter {
             let inner = cell.lock().unwrap().clone();
             return self.smart_match_inner(&inner, right);
         }
+        // ADR-0040 slices 1-2: a `Range`/`Seq`/`Set`-family value stored as a
+        // real `Array`/`Hash` element is itemized as `Scalar(inner)`. Raku's
+        // smartmatch protocol is `$matcher.ACCEPTS($topic)`, and both the
+        // invocant and the argument decontainerize on the way in, so the
+        // wrapper is transparent here exactly as the `ContainerRef` above is:
+        // `my @t = [<42+0i>, 10..50],; $t[0] ~~ $t[1]` must still be the
+        // Complex-against-Range match. (An itemized `Array`/`Hash` needs no
+        // unwrapping — its itemization is a kind/flag, so the arms below still
+        // see `ValueView::Array`/`ValueView::Hash`.)
+        if let ValueView::Scalar(inner) = left.view() {
+            let inner = (*inner).clone();
+            return self.smart_match_inner(&inner, right);
+        }
+        if let ValueView::Scalar(inner) = right.view() {
+            let inner = (*inner).clone();
+            return self.smart_match_inner(left, &inner);
+        }
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, ValueView::Whatever) => true,

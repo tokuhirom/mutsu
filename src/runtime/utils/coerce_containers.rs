@@ -66,6 +66,34 @@ pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
     value
 }
 
+/// The mirror of [`itemize_real_array_elements`], for the one container that
+/// must NOT carry the property: the list-destructuring desugar's synthetic
+/// staging temp, which is the RHS list rather than a user `Array` (see
+/// `Interpreter::itemize_elements_for_var_assign`). Same
+/// scan-then-rebuild-only-if-needed shape.
+pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
+    let needs = match value.view() {
+        ValueView::Array(items, ArrayKind::Array | ArrayKind::Shaped | ArrayKind::ItemArray) => {
+            items.iter().any(|v| {
+                matches!(v.view(), ValueView::Array(_, k) if k.is_itemized())
+                    || matches!(v.view(), ValueView::Scalar(_))
+                    || (matches!(v.view(), ValueView::Hash(_)) && v.hash_is_itemized())
+            })
+        }
+        _ => false,
+    };
+    if !needs {
+        return value;
+    }
+    value.with_array_mut(|items, _kind| {
+        let data = crate::gc::Gc::make_mut(items);
+        for item in data.items_mut() {
+            *item = item.clone().deitemize_element();
+        }
+    });
+    value
+}
+
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();

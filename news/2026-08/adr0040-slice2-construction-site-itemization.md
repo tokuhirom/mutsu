@@ -50,11 +50,11 @@ container, which is the literal/list-assign site that was already doing a per-el
 
 ## The work was the counter-currents, not the hooks
 
-Twelve sites asked a question *about a value* while holding something itemized *because it is an
-element* — the slice-2 recurrence of slice 1's `value_to_list_for_receiver` discovery. Six were
-caught by the local `t/` suite, two more by a deliberate sweep of serializers and
-receiver-decomposing methods, and the last four only by the targeted roast sweep — each in a
-different subsystem. Each needed the same distinction drawn explicitly:
+Seventeen sites asked a question *about a value* while holding something itemized *because it is
+an element* — the slice-2 recurrence of slice 1's `value_to_list_for_receiver` discovery. Six were
+caught by the local `t/` suite and two by a deliberate sweep of serializers and
+receiver-decomposing methods; **the remaining nine only surfaced against roast, in eight different
+subsystems and across two iterations**. Each needed the same distinction drawn explicitly:
 
 - **`.antipairs` / `.invert`** — Rakudo builds these with `Pair.antipair`, which *reads* `$!value`;
   an attribute read decontainerizes. So the same element is itemized as a pair's value
@@ -83,6 +83,23 @@ different subsystem. Each needed the same distinction drawn explicitly:
   the wrapper to find the Seq (`eqv` itself was already right).
 - **`.toggle` and `<>`** — `.toggle` decomposes its own receiver; `<>` already cleared an
   itemized `ArrayKind` but not the Hash itemization flag.
+- **Smartmatch** — raku's protocol is `$matcher.ACCEPTS($topic)`, and both invocant and argument
+  decontainerize on the way in, so a `Scalar` wrapper is transparent on *both* sides (the
+  `ContainerRef` LHS unwrap was already there; this is its sibling).
+- **The `...` sequence operator** — it *decomposes* its seed operand into deduction seeds, so an
+  itemized seed must be seen through. This was the single biggest breakage (88 subtests in
+  `roast/S03-sequence/exhaustive.t`), and it was a pre-existing divergence — `$(1,2) ... 10` was
+  already wrong — that slice 2 merely made reachable.
+- **The n-arg receiver family** — slice 1 moved the *0-arg* `.pick`/`.roll`/`.head`/`.tail` onto
+  `value_to_list_for_receiver`; `.head(n)`/`.tail(n)`/`.combinations`/`.batch`/`.fmt`/`.pick(n)`/
+  `.roll(n)` and `.pairup` were the other half of the same set.
+- **`.trans` grouped operands** — `'a'..'z' => ['n'..'z','a'..'m']` means "expand each of these in
+  turn", so each element's itemization is stripped before deciding how to expand it.
+
+The lesson worth carrying forward: for a change that alters *what is in every container*, the
+consumer surface is the whole language. A targeted roast sweep chosen by "who consumes the code I
+changed" is **not** an adequate proxy for the full suite — it found four of the nine; the other
+five needed `make roast`.
 
 One desugar also became visibly wrong: `my (@a, @b) := (@x, @y)` staged the RHS in a real
 `Array` and then *assigned* each element to its target. `my @a = $[1, 2]` is `[[1, 2],]` — correct

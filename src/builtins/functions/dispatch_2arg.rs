@@ -66,10 +66,12 @@ pub(crate) fn native_function_2arg(
             // bound from a `$` param) still iterates its ELEMENTS — the spec
             // pins `&combinations(Iterable, k)` to the method form
             // (S32-list/combinations.t subtest 33).
+            // ADR-0040 slices 1-2: `value_to_list_for_receiver` is exactly the
+            // "decompose this value into ITS OWN elements" primitive this arm
+            // needs -- it strips an itemized `Array` kind (the shape this arm
+            // used to unwrap by hand) AND an itemized `Hash` flag, which an
+            // element read out of a container now also carries.
             let items = match arg1.view() {
-                ValueView::Array(elems, kind) if kind.is_itemized() => runtime::value_to_list(
-                    &Value::array_with_kind(elems.clone(), kind.decontainerize()),
-                ),
                 ValueView::Array(..)
                 | ValueView::Seq(..)
                 | ValueView::Slip(..)
@@ -78,7 +80,7 @@ pub(crate) fn native_function_2arg(
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..)
                 | ValueView::GenericRange { .. }
-                | ValueView::Hash(..) => runtime::value_to_list(arg1),
+                | ValueView::Hash(..) => runtime::value_to_list_for_receiver(arg1),
                 _ => {
                     let n = runtime::to_int(arg1);
                     if n <= 0 {

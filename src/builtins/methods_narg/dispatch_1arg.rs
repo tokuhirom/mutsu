@@ -939,6 +939,14 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
+        // ADR-0040 slices 1-2: every `value_to_list_for_receiver(target)` in
+        // this file decomposes the method's own RECEIVER into ITS elements --
+        // `.head`/`.tail`/`.combinations`/`.batch`/`.fmt`/`.pick`/`.roll`. That
+        // is a question the itemization the receiver carries as an element of
+        // some OTHER container has no say in (`[[2,3],[4,[5,6]]]».pick(*)` must
+        // shuffle each inner array's own elements). Slice 1 drew the same
+        // distinction for the 0-arg forms in `dispatch_core_range.rs`; this is
+        // the n-arg half.
         "head" => {
             let n: i64 = match arg.view() {
                 ValueView::Int(i) => i,
@@ -975,7 +983,7 @@ pub(crate) fn native_method_1arg(
                     Some(Ok(Value::seq(items)))
                 }
                 _ => {
-                    let items = runtime::value_to_list(target);
+                    let items = runtime::value_to_list_for_receiver(target);
                     Some(Ok(Value::seq(items[..n.min(items.len())].to_vec())))
                 }
             }
@@ -995,7 +1003,7 @@ pub(crate) fn native_method_1arg(
                     ValueView::Int(i) => i as usize,
                     _ => return None,
                 };
-                let items = runtime::value_to_list(target);
+                let items = runtime::value_to_list_for_receiver(target);
                 let start = items.len().saturating_sub(n);
                 Some(Ok(Value::seq(items[start..].to_vec())))
             }
@@ -1004,7 +1012,7 @@ pub(crate) fn native_method_1arg(
             let items = target
                 .as_list_items()
                 .map(|items| items.to_vec())
-                .unwrap_or_else(|| runtime::value_to_list(target));
+                .unwrap_or_else(|| runtime::value_to_list_for_receiver(target));
             match arg.view() {
                 ValueView::Range(a, b) => Some(Ok(Value::seq(
                     crate::builtins::methods_0arg::collection::combinations_range(&items, a, b),
@@ -1087,7 +1095,7 @@ pub(crate) fn native_method_1arg(
             // its bytes), not as a single opaque element.
             let items = match crate::builtins::methods_narg::buf::buf_get_bytes(target) {
                 Some(bytes) => bytes.into_iter().map(|b| Value::int(b as i64)).collect(),
-                None => runtime::value_to_list(target),
+                None => runtime::value_to_list_for_receiver(target),
             };
             let batches: Vec<Value> = items
                 .chunks(n)
@@ -1170,7 +1178,7 @@ pub(crate) fn native_method_1arg(
                 let items: Vec<Value> = if let Some(inner) = target.as_list_items() {
                     inner.to_vec()
                 } else {
-                    runtime::value_to_list(target)
+                    runtime::value_to_list_for_receiver(target)
                 };
                 let rendered = items
                     .into_iter()
@@ -1611,7 +1619,7 @@ pub(crate) fn native_method_1arg(
             }
             // .pick(**) — lazy infinite shuffled cycles
             if matches!(arg.view(), ValueView::HyperWhatever) {
-                let pool = runtime::value_to_list(target);
+                let pool = runtime::value_to_list_for_receiver(target);
                 if pool.is_empty() {
                     return Some(Ok(Value::seq(Vec::new())));
                 }
@@ -1643,7 +1651,7 @@ pub(crate) fn native_method_1arg(
             {
                 return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
             }
-            let mut items = runtime::value_to_list(target);
+            let mut items = runtime::value_to_list_for_receiver(target);
             Some(Ok(match arg.view() {
                 ValueView::Whatever => {
                     // .pick(*) — Fisher-Yates shuffle
@@ -1952,7 +1960,7 @@ pub(crate) fn native_method_1arg(
             let items = if target.is_range() {
                 Vec::new()
             } else {
-                runtime::value_to_list(target)
+                runtime::value_to_list_for_receiver(target)
             };
             if count.is_none() {
                 if !target.is_range() && items.is_empty() {
