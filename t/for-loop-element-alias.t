@@ -14,13 +14,14 @@ use Test;
 #     `-> $v` alias (rows 45/46 say it must not), or by cascading a promoted
 #     cell across iterations (rows 34/35, ADR-0027's per-iteration freeze).
 #
-# Slice 1 (the direct array source with a writable aliasing parameter) has
-# landed, so rows 01, 02, 03, 04, 07, 11, 12, 13, 14, 20, 27, 36 and 41 are
-# ordinary passing tests here. The rows still `todo`-marked name the slice that
-# owns them: slice 2 (hash sources), slice 3 (the implicit topic and the plain
-# named param), slice 4 (derived producers) and slice 5 (bind-time enforcement).
+# Slices 1 (the direct array source with a writable aliasing parameter),
+# 2 (`%h.values`) and 3 (the implicit topic, plus the plain named parameter's
+# pure deletion) have landed, so every row they own is an ordinary passing test
+# here. The rows still `todo`-marked name the slice that owns them: slice 4
+# (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
+# enforcement).
 
-plan 57;
+plan 64;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -116,7 +117,6 @@ plan 57;
     my @c;
     for %h.values -> $v is rw { @c.push(-> { $v = $v + 1 }) }
     @c[0]();
-    todo 'ADR-0045 slice 2: hash sources still use write_back_hash_value_item';
     is %h<a>, 2, 'row 08: escaping closure over a `%h.values` rw param writes through';
 }
 
@@ -137,8 +137,17 @@ plan 57;
     my @c;
     for @a { @c.push(-> { $_ = 99 }) }
     @c[0]();
-    todo 'ADR-0045 slice 3: the implicit topic must bind the element container';
     is-deeply @a, [99, 2], 'row 44: escaping closure over the implicit topic writes through';
+}
+
+# The topic sibling of row 08: an escaping closure over the topic of a
+# `%h.values` loop (slice 2 x slice 3).
+{
+    my %h = a => 1;
+    my @c;
+    for %h.values { @c.push(-> { $_ = 99 }) }
+    @c[0]();
+    is %h<a>, 99, 'slice 2/3: escaping closure over a `%h.values` topic writes through';
 }
 
 # ---------------------------------------------------------------------------
@@ -177,7 +186,6 @@ plan 57;
     my @a = 1, 2;
     my $seen;
     for @a { @a[0] = 9; $seen = $_; last }
-    todo 'ADR-0045 slice 3: the implicit topic must bind the element container';
     is $seen, 9, 'row 42: reading the implicit topic sees the body own direct element write';
 }
 
@@ -187,6 +195,29 @@ plan 57;
     my $seen;
     for @a -> \v { @a[0] = 9; $seen = v; last }
     is $seen, 9, 'row 43: reading a sigilless alias sees the body own direct element write';
+}
+
+# The topic sibling of rows 11/20 — ADR-0045 §5 Q1's pin. Slice 1 was protected
+# from ADR-0027's capture freeze by accident: an `is rw` parameter never enters
+# `loop_local_vars` (that set is gated on `!spec.is_rw`), so a promoted cell
+# could not reach `compute_owned_captures`' unguarded primary branch or
+# `freeze_readonly_owned_captures`. The topic is NOT gated that way, so this row
+# is the one that would break first if the freeze ever value-froze a promoted
+# cell: a READ-ONLY closure over the topic must still see later element writes.
+{
+    my @a = 1, 2;
+    my @c;
+    for @a { @c.push(-> { $_ }) }
+    @a[0] = 9;
+    is @c[0]() ~ " " ~ @c[1](), '9 2', 'Q1: a deferred read of the promoted topic sees a later write';
+}
+
+# The same, through a hash value.
+{
+    my %h = a => 1;
+    my $seen;
+    for %h.values -> $v is rw { %h<a> = 5; $seen = $v; last }
+    is $seen, 5, 'slice 2: reading a `%h.values` rw alias sees a later element write';
 }
 
 # ---------------------------------------------------------------------------
@@ -205,7 +236,6 @@ plan 57;
 {
     my @a = 10, 20;
     for @a { $_ = $_ + 1; @a[1] = 99 }
-    todo 'ADR-0045 slice 3: the topic writeback still clobbers direct element writes';
     is-deeply @a, [11, 99], 'row 21: a direct `@a[1] = 99` in a topic body survives';
 }
 
@@ -213,7 +243,6 @@ plan 57;
 {
     my @a = 10, 20;
     for @a -> $v { @a[1] = 99 }
-    todo 'ADR-0045 slice 3: the named-param writeback is a pure deletion';
     is-deeply @a, [10, 99], 'row 22: a plain `-> $v` body direct element write survives';
 }
 
@@ -322,6 +351,33 @@ plan 57;
     for %h.values -> $v { $v.push(9) }
     is-deeply %h<a>, [1, 2, 9], 'row 33: `%h.values -> $v` in-place container mutation propagates';
 }
+# A container-sigil parameter binds the element's CONTAINER, and must keep
+# doing so when the element is already a shared `ContainerRef` cell (the rw-alias
+# cell `.grep` leaves behind, or a `:=`-bound element): it has to bind the
+# container INSIDE the cell, not the cell. This was masked by the named
+# parameter's writeback until slice 3 deleted it — the writeback re-stored the
+# mutated binding over the element, hiding that the binding was never the
+# container. `t/for-loop-cell-elements.t` is the other pin.
+{
+    my @c = [1, 2], [3, 4];
+    @c.grep(*.so).elems;
+    for @c -> @row { @row.push(8) }
+    is-deeply @c, [[1, 2, 8], [3, 4, 8]],
+        'slice 3: an `@`-sigil param binds through a ContainerRef element';
+}
+{
+    my @c = [1, 2], [3, 4];
+    @c.grep(*.so).elems;
+    for @c -> $row { $row.push(8) }
+    is-deeply @c, [[1, 2, 8], [3, 4, 8]],
+        'slice 3: a `$`-sigil param binds through a ContainerRef element';
+}
+# The statement-modifier topic form of row 09.
+{
+    my %h = a => 1, b => 2;
+    $_ = $_ * 10 for %h.values;
+    is-deeply %h, {a => 10, b => 20}, 'slice 2: `$_ = X for %h.values` mutates in place';
+}
 
 # row 15 — `.kv` with a direct rw write.
 {
@@ -387,11 +443,28 @@ plan 57;
         'row 34b: an `is rw` alias over an Array keeps per-iteration identity';
 }
 
-# row 37 — nesting.
+# row 37 — nesting. Also the pin for the kind test in `array_is_aliasable`:
+# ADR-0040 stores an `Array` element ITEMIZED, so `@row` here binds an
+# `ItemArray`. An allow list of `Array | List` silently dropped that back onto
+# the writeback, which rebuilds a fresh `ArrayData` and severs `@row` from the
+# `@m` element it was sharing — invisible while the named parameter's writeback
+# copied the severed array back, and a lost mutation the moment slice 3 deleted
+# that writeback.
 {
     my @m = [1, 2], [3, 4];
     for @m -> @row { for @row <-> $x { $x = $x * 10 } }
     is-deeply @m, [[10, 20], [30, 40]], 'row 37: a nested `<->` loop mutates the inner rows';
+}
+# The same severance, one level flatter: whatever the inner loop does to the
+# bound row must leave the row still shared with its source element.
+{
+    my @m = [1, 2], [3, 4];
+    for @m -> @row {
+        for @row <-> $x { $x = $x * 10 }
+        @row.push(9);
+    }
+    is-deeply @m, [[10, 20, 9], [30, 40, 9]],
+        'row 37b: a bound row stays shared with its source element across an inner loop';
 }
 
 # row 40 — the promoted cell stays invisible to reflection.

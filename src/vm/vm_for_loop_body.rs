@@ -133,22 +133,32 @@ impl Interpreter {
             && spec.arity <= 1
             && spec.multi_param_names.is_empty();
         let mut rw_writeback = spec.do_writeback;
-        // A plain (non-rw, non-copy) named loop variable aliases the source
-        // element in Raku: `for @m -> @row { @row.push(9) }` and
-        // `for @m -> $row { $row.push(9) }` both mutate `@m` (a scalar binding a
-        // container can still mutate the container, though not rebind it).
-        // Mirror the topic writeback for it. `is copy` sets `is_rw` (suppressing
-        // this), and `<->` rw uses `rw_writeback` instead. The unchanged-value
-        // guard in `write_back_for_topic_item` keeps read-only loops O(n).
-        let writes_back_named_param =
-            !spec.is_rw && !rw_writeback && spec.arity <= 1 && param_name.is_some();
+        // ADR-0045 slice 3: a plain (non-rw, non-copy) named loop variable used
+        // to get a writeback of its own, on the theory that `for @m -> @row
+        // { @row.push(9) }` and `for @m -> $row { $row.push(9) }` need one to
+        // mutate `@m`. **They do not, and the writeback was actively harmful.**
+        //
+        // A `-> $v` parameter binds the element's *value*, not its container
+        // (§1.1, measured: `for @a -> $v { @a[0] = 9; say $v }` prints `1` in
+        // raku, and the deferred-read form prints `1 2` — rows 45/46), so there
+        // is nothing for it to write back. In-place *container* mutation
+        // through such a parameter already propagates on its own, because the
+        // bound value shares the source element's `Gc` (rows 10/32/33), and the
+        // parameter cannot be assigned at all (row 31). Meanwhile the writeback
+        // was a whole-container rebuild from a snapshot taken before the body
+        // ran, so an ordinary `for @a -> $v { @a[1] = 99 }` — no `rw`, no
+        // closure, no advanced feature — silently lost the write (row 22).
+        //
+        // So the named-parameter half is a **pure deletion**: nothing replaces
+        // it. Only the implicit topic keeps a writeback here, and only until it
+        // is promoted below.
+        //
         // `.pairs`/`.antipairs` loop variables are `Pair`s wrapping the element,
         // not the element itself — writing one back would overwrite the source
         // element with the Pair (S32-array/pairs.t 14). The Pair's rw `.value`
         // alias handles propagation (and immutability for Mix), so suppress the
         // plain writeback here while keeping the source tag.
-        let writes_back_loop_var =
-            (writes_back_topic || writes_back_named_param) && !spec.loop_var_wraps_element;
+        let writes_back_loop_var = writes_back_topic && !spec.loop_var_wraps_element;
         let chunked_items: Vec<Value> = if spec.chunks_items() {
             items
                 .chunks(arity)
@@ -469,46 +479,41 @@ impl Interpreter {
         // shared backing node (container identity §3), so binding the element
         // value as-is would let `@row[0] = v` reach the source element.
         let param_is_copy = spec.is_rw && !spec.do_writeback;
-        // ADR-0045 slice 1: a writable aliasing parameter (`is rw`, `<->`,
-        // sigilless `\v`) over a DIRECT, real, mutable `Array` source binds the
-        // element's own `ContainerRef` instead of a value clone, and the
-        // per-iteration writeback for that shape is retired. The alias then has
-        // the lifetime of the binding, not of the body — a closure or `start`
-        // block that outlives the iteration still writes through, a read
-        // through the alias sees a later write to the element, and a direct
-        // `@a[i] = v` in the body is no longer reverted by an end-of-iteration
-        // whole-container rebuild. It also removes that rebuild's O(n^2)
-        // (§1.5): promotion is O(1) and idempotent (`array_slot_ref` reuses an
-        // existing cell), where the writeback cloned the whole `ArrayData` per
-        // iteration.
+        // ADR-0045 slices 1-3: an aliasing binding — `is rw` / `<->` /
+        // sigilless `\v`, or the implicit topic — over a real mutable
+        // `Array`/`Hash` source binds the element's own `ContainerRef` instead
+        // of a value clone, and the per-iteration writeback for that shape is
+        // retired. The alias then has the lifetime of the binding, not of the
+        // body: a closure or `start` block that outlives the iteration still
+        // writes through, a read through the alias sees a later write to the
+        // element, and a direct `@a[i] = v` in the body is no longer reverted
+        // by an end-of-iteration whole-container rebuild. It also removes that
+        // rebuild's O(n^2) (§1.5) — promotion is O(1) and idempotent.
         //
-        // Deliberately narrow — the rest is later slices of the same ADR:
-        //   * hash sources stay on `write_back_hash_value_item` (slice 2);
-        //   * the implicit topic and the plain named param stay on
-        //     `write_back_for_topic_item` (slice 3);
-        //   * derived producers (`.values`/`.kv`/`.pairs`/`.reverse`, and the
-        //     `$`-tagged `for @$s` shape) keep the index-reconstruction
-        //     writeback until their producers hand out element containers
-        //     (slice 4), so they are excluded here by the `*_mode` flags, by
-        //     `container_reversed`, and by the `@`-sigil requirement;
-        //   * a multi-parameter loop binds through the bind-prefix
-        //     `Stmt::Assign`s, not this native bind site, so it is excluded.
-        let alias_array_elements = spec.do_writeback
-            && arity == 1
-            && param_name.is_some()
-            && spec.multi_param_names.is_empty()
-            && !spec.kv_mode
-            && !spec.values_mode
-            && !spec.loop_var_wraps_element
-            && !container_reversed
-            && container_binding
-                .as_deref()
-                .is_some_and(|name| name.starts_with('@') && self.for_source_is_aliasable(name));
-        // The base decision; each iteration retires it for itself only when the
-        // element really was promoted (see the bind site below). `spec.do_writeback`
-        // itself is left alone: ADR-0040's bind-side itemization carve-out keys
-        // off it, and ADR-0045 §5 Q3 keeps that carve-out unchanged here.
+        // `plan_for_element_alias` owns the whole discriminator (which
+        // parameters alias, which sources do, and the shaped/native/`Map`
+        // carve-outs); see `vm_for_loop_alias.rs`.
+        let element_alias = self.plan_for_element_alias(
+            spec,
+            container_binding.as_deref(),
+            container_reversed,
+            arity,
+            param_name.as_deref(),
+            writes_back_topic,
+            topic_readonly,
+            hash_keys_for_writeback.as_deref(),
+            &chunked_items,
+        );
+        // The base decisions; each iteration retires them for itself only when
+        // the element really was promoted (see the bind site below).
+        // `spec.do_writeback` itself is left alone: ADR-0040's bind-side
+        // itemization carve-out keys off it, and ADR-0045 §5 Q3 keeps that
+        // carve-out unchanged here.
         let rw_writeback_base = rw_writeback;
+        let topic_writeback_base = writes_back_loop_var;
+        // Set per iteration at the bind site below; the initial value is never
+        // read.
+        let mut writes_back_loop_var;
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
             let item = if param_is_copy {
                 item.detach_shared_container()
@@ -562,29 +567,27 @@ impl Interpreter {
                     }
                 }
             }
-            // ADR-0045 slice 1: promote this element to its own container and
-            // bind THAT, so the parameter is a real alias for the lifetime of
-            // the binding. The source is re-resolved every iteration on purpose
-            // — a body that reassigns the source wholesale (`@a = 7, 8`) must
-            // have the remaining iterations alias the array it left behind, not
-            // the one the loop started with.
+            // ADR-0045 slices 1-3: promote this element to its own container
+            // and bind THAT, so the binding is a real alias for the lifetime of
+            // the binding.
             //
             // A `Proxy` element is left alone (ADR-0045 §5 Q6): it mediates its
             // own STORE, and a cell bound *around* one would take a plain write
             // instead of calling it (`t/proxy-list-transparency.t`).
             let promoted =
-                if alias_array_elements && !matches!(item.view(), ValueView::Proxy { .. }) {
-                    container_binding
-                        .as_deref()
-                        .and_then(|source| self.for_element_alias(source, idx))
+                if element_alias.is_active() && !matches!(item.view(), ValueView::Proxy { .. }) {
+                    self.for_element_alias(&element_alias, idx)
                 } else {
                     None
                 };
-            // The writeback is retired for exactly the iterations whose element
-            // was promoted. An iteration that fell back to a plain value bind —
-            // a `Proxy` element, or a body that shrank the source out from under
-            // the index — keeps the writeback that bind depends on.
+            // Both writebacks are retired for exactly the iterations whose
+            // element was promoted. An iteration that fell back to a plain
+            // value bind — a `Proxy` element, or a body that removed the
+            // index/key out from under the loop — keeps the writeback that bind
+            // depends on. Retiring per LOOP instead of per ITERATION silently
+            // drops such an iteration's write.
             rw_writeback = rw_writeback_base && promoted.is_none();
+            writes_back_loop_var = topic_writeback_base && promoted.is_none();
             let item = promoted.unwrap_or(item);
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
@@ -617,6 +620,20 @@ impl Interpreter {
                 Some(name) if !name.starts_with(['@', '%', '&', '\\']) && !spec.do_writeback => {
                     Self::itemize_scalar_store(name, item)
                 }
+                // An `@`/`%`-sigil parameter binds a Positional/Associative, so
+                // when the element it binds is a shared `ContainerRef` cell —
+                // the rw-alias cell `.grep` leaves in its source array, or a
+                // `:=`-bound element — it must bind the container INSIDE the
+                // cell, not the cell itself. Otherwise `@row.push(8)` pushes
+                // onto a cell rather than the row (`t/for-loop-cell-elements.t`).
+                // A shared `Gc` is what makes the mutation propagate, and the
+                // deref keeps it: the cell holds the very same `Gc`.
+                //
+                // This used to be masked by the plain named parameter's
+                // writeback, which ADR-0045 slice 3 deletes — the writeback
+                // re-stored the mutated binding over the element, hiding the
+                // fact that the binding was never the container to begin with.
+                Some(name) if name.starts_with(['@', '%']) => item.deref_container(),
                 _ => item,
             };
             if let Some(ref name) = param_name {

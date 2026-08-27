@@ -2,20 +2,25 @@
 
 ## Status
 
-**Partially fixed (2026-08-27) — ADR-0045 slices 0 and 1 landed.** The headline symptom below is
-gone: `for @list -> $v is rw { @callbacks.push(-> { $v = $v + 1 }) }` now binds `$v` to the element's
-own `ContainerRef` (`array_slot_ref`) at the bind site, so a closure called after the loop writes
-through and the repro prints raku's `[11 21]`.
+**Partially fixed (2026-08-27) — ADR-0045 slices 0-3 landed.** The headline symptom below is gone:
+`for @list -> $v is rw { @callbacks.push(-> { $v = $v + 1 }) }` now binds `$v` to the element's own
+`ContainerRef` (`array_slot_ref`) at the bind site, so a closure called after the loop writes through
+and the repro prints raku's `[11 21]`.
 
 Slice 1 turned these ADR-0045 §1.3 rows green: **01, 02, 03, 04, 07, 11, 12, 13, 14, 20, 27, 36, 38,
 41, 43** — the whole deferred-closure class for a direct array source, the stale-read class for it,
-and the class-3 clobber (including row 38, the body rebinding `@a` wholesale). §1.5's O(n²) mutating
-`<->` loop is linear now (40 000 elements: 2.13 s → 0.09 s).
+and the class-3 clobber (including row 38, the body rebinding `@a` wholesale). Slices 2 and 3 added
+**08** (hash sources, via `hash_slot_ref`), **21, 42, 44** (the implicit topic, which promotes) and
+**22** (the plain named parameter, which turned out to be a pure deletion — `for @a -> $v { @a[1] =
+99 }`, silent corruption in code using no advanced feature at all).
 
-**Still open**, and why this file stays here: row 08 (hash sources, slice 2); rows 21, 22, 42, 44 (the
-implicit topic and the plain named param, slice 3); rows 16, 17, 24, 39 (derived producers —
-`.kv`/`.reverse`/`.sort`/`@$s`, slice 4); rows 19, 28, 30 (bind-time enforcement, slice 5). Each is
-`todo`-marked in `t/for-loop-element-alias.t` with its owning slice named. Retire this file to
+Three measured quadratics went with them: the mutating `<->` loop (160 000 elements: 39.8 s →
+0.16 s), the mutating *topic* loop (43.1 s → 0.16 s) and `for %h.values -> $v is rw` (20 000
+elements: 17.3 s → 0.04 s).
+
+**Still open**, and why this file stays here: rows 16, 17, 24, 39 (derived producers —
+`.kv`/`.reverse`/`.sort`/`@$s`, slice 4) and rows 19, 28, 30 (bind-time enforcement, slice 5). Each
+is `todo`-marked in `t/for-loop-element-alias.t` with its owning slice named. Retire this file to
 `news/2026-08/` when ADR-0045's slice 6 lands, per the note below.
 
 The mechanism decision lives in

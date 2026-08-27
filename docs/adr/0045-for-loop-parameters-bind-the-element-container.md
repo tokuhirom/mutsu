@@ -1,6 +1,6 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — partially implemented (slices 0 and 1 landed 2026-08-27; slices 2-6 open, see
+- **Status**: Accepted — partially implemented (slices 0-3 landed 2026-08-27; slices 4-6 open, see
   §8 "Implementation status")
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
@@ -515,14 +515,18 @@ roughly doubles. The quadratic is gone, not merely reduced. These are local A/B 
 this ADR's own acceptance criterion; the bench CI series remains the source of truth for any headline
 figure.
 
-### Answers to the open questions, as measured by slice 1
+### Answers to the open questions, as measured by slices 1-3
 
-- **§5 Q1 (ADR-0027 composition)** — no conflict, for a reason worth writing down: an `is rw` loop's
-  parameter never enters `loop_local_vars` in the first place (`exec_for_loop_body` gates that set on
-  `!spec.is_rw`), so `compute_owned_captures`'s unguarded primary branch is not reached by a promoted
-  cell and `freeze_readonly_owned_captures` cannot value-freeze one. Rows 34/35 (per-iteration
-  identity) and rows 12/36 (sharing *within* an iteration) both hold, and `box_captured_lexicals`
-  already refuses to double-box (`if self.locals[idx].is_container_ref() { continue }`).
+- **§5 Q1 (ADR-0027 composition)** — no conflict, and slice 3 confirmed why rather than by luck. An
+  `is rw` loop's parameter never enters `loop_local_vars` (`exec_for_loop_body` gates that set on
+  `!spec.is_rw`), so slice 1's promoted cell could not reach `compute_owned_captures`'s unguarded
+  primary branch. The **topic is not gated that way** — but it is excluded from `loop_param_names` by
+  an explicit `name != "_"` filter, so it never enters that set either, and no guard was needed after
+  all. Measured, not assumed: the topic form of rows 11/20 (a read-only closure over `$_` seeing a
+  later element write) passes, and it is pinned in `t/for-loop-element-alias.t` precisely because it
+  is what would break first if that filter ever changed. Rows 34/35 (per-iteration identity) and rows
+  12/36 (sharing *within* an iteration) both hold, and `box_captured_lexicals` already refuses to
+  double-box (`if self.locals[idx].is_container_ref() { continue }`).
 - **§5 Q3 (ADR-0040 itemization)** — unchanged, deliberately: slice 1 flips a *local* writeback flag
   and never touches `spec.do_writeback`, which is what the bind-side itemization carve-out keys off.
   `t/param-bind-itemization.t` and `t/for-bind-typed-array-deitemize.t` pass unmodified.
@@ -538,13 +542,93 @@ figure.
   Retiring it loop-wide silently dropped the `Proxy` element's write; the pin is the second Q6
   assertion in `t/for-loop-element-alias.t`.
 
-### What slices 2-6 still own
+### Slices 2 and 3 — landed 2026-08-27
 
-Rows 08 (slice 2); 21, 22, 42, 44 (slice 3); 16, 17, 24, 39 (slice 4); 19, 28, 30 (slice 5). They are
-`todo`-marked in `t/for-loop-element-alias.t` with the owning slice named in the reason string, so
-each later slice un-`todo`s exactly its own rows. `write_back_for_rw_param` still carries the hash,
-`kv_mode`, multi-param and scalar arms; only its direct-array single-parameter path is now dead code
-for the promoted shape.
+**Slice 2 (hash sources).** `for %h.values -> $v is rw` (and its topic form) binds
+`hash_slot_ref(key, true)`, keyed by the key order captured before the loop — the same order the
+materialized `.values` list was built from. The key capture moves from *writeback* time to *bind*
+time, which is strictly earlier and therefore strictly less exposed to a body that mutates the map.
+`write_back_hash_value_item` survives only as the fallback for iterations that could not be promoted.
+**Row 08 turns green**, along with the topic form and the hash sibling of rows 11/20 (a read through
+the alias seeing a later `%h<a> = 5`).
+
+**Slice 3 (the implicit topic, and the plain named parameter).** Two different jobs, as §4 predicted:
+
+- **The topic promotes.** `for @a { … }` binds `$_` to the element container. **Rows 21, 42 and 44
+  turn green**, and so does the topic form of rows 11/20.
+- **The plain named parameter is a pure deletion.** `writes_back_named_param` is gone with nothing put
+  in its place. **Row 22 turns green** — `for @a -> $v { @a[1] = 99 }`, silent corruption in code
+  using no advanced feature at all, which was this pair of slices' acceptance criterion.
+
+The discriminator moved into a single `plan_for_element_alias` (`src/vm/vm_for_loop_alias.rs`),
+decided once per loop and carrying the resolved source.
+
+**Three things the deletion exposed** — each a latent bug the writeback had been masking, and each a
+pin in `t/for-loop-element-alias.t`:
+
+1. **An `@`/`%`-sigil parameter did not bind *through* a `ContainerRef` element.** `for @c -> @row
+   { @row.push(8) }` over an array whose elements are already cells (the rw-alias cells `.grep`
+   leaves behind) pushed onto the *cell* rather than the row. The writeback re-stored the mutated
+   binding over the element, hiding that the binding was never the container. Fixed at the bind site:
+   a container-sigil parameter derefs a cell element. `t/for-loop-cell-elements.t` is the other pin.
+2. **The kind test for "aliasable array" has to be a denial list.** ADR-0040 stores an `Array`
+   element *itemized*, so the very common `for @m -> @row { for @row <-> $x { … } }` binds `@row` to
+   an `ItemArray`. An allow list of `Array | List` dropped it back onto the writeback — which rebuilds
+   a fresh `ArrayData` and **severs** `@row` from the `@m` element it shared. Invisible while the
+   named parameter's writeback copied the severed array back; a lost mutation the moment that
+   writeback went (row 37, plus a new row 37b that pins the sharing directly).
+3. **A source tag does not prove the loop iterates that source's elements one-for-one.** `for @a,`
+   builds a *one*-element list whose single item is the whole `@a`, yet still tags `@a`. Guarded by a
+   **loop-entry** check (item count against element count, plus first-item identity). Deliberately
+   *not* per iteration: the item vector is a loop-entry snapshot, so once the body has mutated an
+   element it no longer matches — and that is precisely the case an alias must keep serving. A
+   per-iteration version of this test silently re-broke rows 04, 21 and 38.
+
+**Two topic-write paths had to learn to write *through* the binding**, since an aliasing topic is no
+longer a plain value: the destructive `s///` writeback (`vm_subst_exec.rs`) and the `$_ ~~ s///`
+smartmatch writeback (`vm_smartmatch_ops.rs`), which additionally must not install the
+decontainerized LHS over the cell for the duration of its RHS. Pins: `t/subst-readonly-topic.t`,
+`t/smartmatch-subst-topic.t`, `t/statement-modifier-for-regression.t`.
+
+**Perf.** Release build, best of three. The topic loop carried the same quadratic the `<->` loop did,
+and `%h.values` carried a worse one:
+
+| probe (n) | before slices 1-3 | after |
+| --- | --- | --- |
+| `for @a { $_ = $_ + 1 }` (20 000) | 0.71 s | 0.02 s |
+| `for @a { $_ = $_ + 1 }` (160 000) | 43.14 s | 0.16 s |
+| `for @a <-> $x { $x = $x + 1 }` (160 000) | 39.83 s | 0.16 s |
+| `for %h.values -> $v is rw { … }` (20 000) | 17.32 s | 0.04 s |
+
+**§5 Q2's predicted cost is real, and here it is.** A *read-only* topic loop pays for a promotion
+nothing observes: 160 000 elements go from 0.07 s to 0.24 s on the first pass. Splitting the two
+costs (four passes over the same array, where `array_slot_ref` is idempotent) puts ~0.12 s of that in
+the first pass's per-element cell allocation and ~0.12 s in the steady-state per-iteration source
+resolution plus cell deref — against 0.05 s for the equivalent named-parameter loop. The repository's
+own benchmarks do not move (`bench-array` 0.03→0.02, `bench-hash` 0.03→0.02, `bench-class`
+0.15→0.17, `bench-string`/`bench-ctor`/`bench-mandelbrot` unchanged), so this is a synthetic-shape
+cost rather than a corpus-wide one — but it is the honest answer to Q2, and the bench CI series
+remains the place to watch it. A lazy "promote only when the binding is observed" scheme would remove
+it and needs its own design; do not bolt on a cached source resolution to chase it, since
+re-resolving per iteration is what makes row 38 work.
+
+### What slices 4-6 still own
+
+Rows 16, 17, 24 and 39 (slice 4 — derived producers), and 19, 28 and 30 (slice 5 — bind-time
+enforcement). They are `todo`-marked in `t/for-loop-element-alias.t` with the owning slice named in
+the reason string, so each later slice un-`todo`s exactly its own rows. The writeback family survives
+only as the fallback for shapes not yet converted: `write_back_for_rw_param`'s `kv_mode`,
+multi-parameter and scalar arms, `write_back_for_topic_item`'s `$`-tagged `for @$s` arm, and
+`write_back_hash_value_item` for a hash iteration that could not be promoted.
+
+**Two things slice 4 should know before it starts.**
+
+- **`.sort` needs a source *tag*, not just a producer.** `for_iterable_source_name` does not match
+  `.sort` at all, so a `for @a.sort -> $v is rw` loop carries no `container_binding` — there is no
+  writeback to correct, and nothing for a producer change to hook. Row 24 needs the tag added as well.
+- **`.kv` is the multi-parameter shape.** Row 16 (`@a.kv`) and its hash twin (`%h.kv -> $k, $v is
+  rw`, also still divergent) bind through the bind-prefix `Stmt::Assign`s, not the native bind site
+  these slices converted, so they need the producer to hand out containers rather than a change here.
 
 **Found along the way, unrelated:** after any `start` block, a later `for @m -> @row { ... }` loop
 rebinds the *previous* iteration's container. Pre-existing on `main` (verified at `f678b032b`) and
@@ -554,5 +638,5 @@ independent of this ADR — recorded as
 
 ---
 
-*Slices 0 and 1 of this ADR are implemented; the decision stands. If the mechanism judgment changes
+*Slices 0-3 of this ADR are implemented; the decision stands. If the mechanism judgment changes
 later, supersede it rather than rewriting it.*
