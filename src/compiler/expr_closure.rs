@@ -351,6 +351,41 @@ impl Compiler {
         } else {
             body
         };
+        // A `$`-sigiled single pointy-block parameter (`-> $v { }`) reaches this
+        // function with an empty `param_defs` (see the module doc on
+        // `bind_function_args_values`'s legacy binding path), so it never passes
+        // through the general "mark parameters readonly unless `is rw`/`is copy`/
+        // `is raw`" logic that a multi-param pointy block (which DOES get a real
+        // `ParamDef`, even with no traits) or a named sub parameter goes through.
+        // That let `-> $v { $v = 1 }` silently accept an assignment Raku rejects
+        // (`X::AdHoc`, "Cannot assign to a readonly variable or a value") --
+        // `sub f($x) { $x = 1 }` and `-> $v, $w { $v = 1 }` were already correctly
+        // rejected.
+        //
+        // This is marked at the CALL SITE (`call_compiled_closure_with_topic`,
+        // gated on `cc.pointy_alias_param`), NOT by injecting a `MarkReadonly`
+        // prologue statement into the compiled BODY. A prologue statement runs
+        // unconditionally whenever this bytecode executes -- including several
+        // "fast native loop" paths (`.map`/`.grep`/`.first`, in
+        // `resolution_map_grep.rs`/`resolution_map_grep_rw.rs`) that bind a
+        // block's params by a direct `env.insert` and run its body via
+        // `run_reuse`, bypassing `push_call_frame`/`enter_readonly_frame`
+        // entirely for performance. A mark made with no readonly frame open
+        // skips the undo journal (see `mark_readonly_sym_with`) and leaks
+        // PERMANENTLY into any later, unrelated same-named lexical in the
+        // program -- this reached CI as a real regression (SHA3's `map -> $x
+        // {...}` leaking into a later `for ... -> ($x, $y)` reusing the same
+        // name) before being moved here. `call_compiled_closure_with_topic`
+        // always calls `push_call_frame` before binding parameters, so marking
+        // there is properly scoped and rolled back on return -- and it is
+        // never reached by those fast-loop paths for this closure shape, so
+        // marking there also does not (and must not) affect them: whether a
+        // `.map`/`.grep` block topic is writable depends on whether the
+        // SOURCE item is a container, which mutsu cannot yet decide on the
+        // eager path (ADR-0040) -- that is a separate, deliberately
+        // unaddressed gap, not something this fix may accidentally start
+        // rejecting via a shared mechanism.
+        let pointy_alias_param = !is_whatever_code && !param_sigilless && !param.is_empty();
         // A single-`*` WhateverCode whose body *mutates* the `_` placeholder
         // (`*++`, `*--`, `++*`, `* =:= $x`, `*.=foo`) binds `_` `is raw`, so the
         // mutation/identity reaches the caller's container (S02 "WhateverCode
@@ -416,6 +451,7 @@ impl Compiler {
         if !is_whatever_code {
             compiled.is_pointy_block = true;
         }
+        compiled.pointy_alias_param = pointy_alias_param;
         // `supply { … }` lowers to `Supply.on-demand(-> $__mutsu_supply_emitter_N
         // { … })`, so the generated emitter parameter identifies the supply body.
         // See `CompiledCode::is_supply_block_body`.

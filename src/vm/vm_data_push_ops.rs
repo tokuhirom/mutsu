@@ -71,6 +71,25 @@ impl Interpreter {
             let _ = self.stack.pop();
             return Err(RuntimeError::cannot_lazy_with_action("push to", "Array"));
         }
+        // `my @a := (1,2,3); @a.push(4)` must be rejected the same way a
+        // scalar bind is (`my $a := (1,2,3); $a.push(4)`, already caught by
+        // `call_method_mut_with_values`'s immutable-list check): `:=`-binding
+        // an `@`-var to a List literal preserves the source's `ArrayKind::List`
+        // (see `bind_positional_value` in `vm_var_assign_set_local.rs`), so
+        // `env[target_name]` is `ValueView::Array(_, ArrayKind::List)` here --
+        // but this fast path's `is_simple_array` check below (`matches!(...,
+        // ValueView::Array(..))`) accepts ANY array kind, so it mutated the
+        // supposedly-immutable List in place without ever reaching that check.
+        // Checked before the (also kind-blind) `shared_vars_active` branch so
+        // both single-threaded and threaded programs reject it alike.
+        if let Some(ValueView::Array(_, kind)) = self.env().get(target_name).map(Value::view)
+            && !kind.is_real_array()
+        {
+            let _ = self.stack.pop();
+            return Err(
+                crate::runtime::methods_signature_errors::make_x_immutable_error("push", "List"),
+            );
+        }
         // Shared (threaded) context: route an Array push through the atomic
         // shared store so concurrent `@a.push` from multiple threads serialize
         // under the shared_vars write lock instead of clobbering each other's

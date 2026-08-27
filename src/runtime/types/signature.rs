@@ -971,6 +971,47 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         let bind_alias_name = !(sub_pd.named && sub_pd.sub_signature.is_some());
         if !sub_pd.name.is_empty() && bind_alias_name {
             bind_sub_param_name(interpreter, &sub_pd.name, candidate.clone());
+            // Neither shape of a destructured leaf ever got marked readonly:
+            // a sigilless leaf (`sub f($ (\a, \b)) { a = 1 }`) is a TERM
+            // binding like a top-level `sub f(\a) { a = 1 }` param, and a
+            // `$`-sigiled leaf (`sub f($ ($x, $y)) { $x = 1 }`) is a readonly
+            // ALIAS like any other non-`is rw` parameter. Both are marked at
+            // the ordinary top-level binding site -- `MarkSigillessReadonly`
+            // (a parser/compiler prologue, `compiler/helpers_sub_body.rs`)
+            // for the former, `mark_readonly` (`binding_signature.rs`'s
+            // "correct" branch) for the latter -- but a destructure leaf is
+            // bound purely at RUNTIME, here, and neither mechanism reaches
+            // it, so an assignment silently succeeded where Raku throws.
+            if sub_pd.sigilless {
+                // Mirror the exact env-key marker `Stmt::MarkSigillessReadonly`
+                // compiles to, so `CheckReadOnly` treats this identically to a
+                // top-level sigilless param or a `my \x = 5` bind (X::Assignment::RO,
+                // "Cannot modify an immutable TYPE (VALUE)").
+                interpreter.env.insert(
+                    format!("__mutsu_sigilless_readonly::{}", sub_pd.name),
+                    Value::TRUE,
+                );
+            } else if !sub_pd.name.starts_with('@')
+                && !sub_pd.name.starts_with('%')
+                && !sub_pd.name.starts_with('!')
+                && !sub_pd.name.starts_with('.')
+            {
+                // `@`/`%` destructure leaves bind a writable container (same
+                // exemption as top-level `@`/`%` params); `!`/`.` are
+                // attribute-binding leaves, always writable. A plain `$`
+                // leaf is readonly (X::AdHoc, "Cannot assign to a readonly
+                // variable or a value") unless explicitly `is rw`/`is copy`/
+                // `is raw`.
+                let has_mutable_trait = sub_pd
+                    .traits
+                    .iter()
+                    .any(|t| t == "rw" || t == "copy" || t == "raw");
+                if has_mutable_trait {
+                    interpreter.unmark_readonly(&sub_pd.name);
+                } else {
+                    interpreter.mark_readonly(&sub_pd.name);
+                }
+            }
         }
         if let Some(nested) = &sub_pd.sub_signature {
             // A named sub-param's parens are either a RENAME/alias target

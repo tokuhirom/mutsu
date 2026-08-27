@@ -439,6 +439,28 @@ impl RuntimeError {
         Self::typed("X::Assignment::RO", attrs)
     }
 
+    /// X::Assignment::RO - assigning to a type object (`Int = 5`, `class Foo
+    /// {}; Foo = 5`). Rakudo's own wording names the type, not a value repr
+    /// ("Cannot modify an immutable 'Int' type object", no `(...)`), so this
+    /// does not reuse `assignment_ro_typename`'s "TYPE (VALUE)" shape.
+    pub(crate) fn assignment_ro_type_object(name: &str) -> Self {
+        let msg = format!("Cannot modify an immutable '{}' type object", name);
+        let mut attrs = HashMap::new();
+        attrs.insert("typename".to_string(), Value::str(name.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Assignment::RO", attrs)
+    }
+
+    /// X::Assignment::RO - assigning to the bare `Nil` term (`Nil = 5`).
+    /// Rakudo's wording is its own special case ("Cannot modify an immutable
+    /// Nil value"), distinct from both the typed-value and type-object forms.
+    pub(crate) fn assignment_ro_nil() -> Self {
+        let msg = "Cannot modify an immutable Nil value".to_string();
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Assignment::RO", attrs)
+    }
+
     /// X::Str::Numeric - Cannot convert string to number
     #[allow(dead_code)]
     pub(crate) fn str_numeric(source: &str, reason: &str) -> Self {

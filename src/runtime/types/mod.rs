@@ -361,7 +361,23 @@ impl Interpreter {
         name: &str,
         op: &str,
     ) -> Result<(), RuntimeError> {
-        if self.is_readonly(name) {
+        // A sigilless bind (`my \G = 5`) is marked via a SEPARATE mechanism
+        // from `readonly_vars`/`ReadonlyKind` -- the `__mutsu_sigilless_readonly::
+        // NAME` env key `Stmt::MarkSigillessReadonly` sets (see
+        // `CheckReadOnly`'s own probe of the same key in `vm_exec_dispatch.rs`).
+        // Plain assignment (`G = 10`) already consulted it; `G++`/`G--` did
+        // not, so `my \G = 5; G++` silently mutated the "value" in place
+        // where Raku's postfix:<++> dispatch rejects it (X::Multi::NoMatch,
+        // "requires mutable arguments") the same way it rejects a readonly
+        // sub parameter's `++$n`.
+        let sigilless_readonly = crate::env::closure_meta_keys_possible()
+            && matches!(
+                self.env()
+                    .get(&format!("__mutsu_sigilless_readonly::{}", name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
+            );
+        if self.is_readonly(name) || sigilless_readonly {
             let msg = format!(
                 "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
                 name

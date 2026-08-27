@@ -67,7 +67,17 @@ impl Interpreter {
                 && !target_var.starts_with('%')
                 && !target_var.starts_with('&')
                 && !has_sigilless_meta);
-        if scalar_like_target
+        // `my @a := (1,2,3); @a.push(4)` must be rejected the same way
+        // `my $a := (1,2,3); $a.push(4)` already is: `:=`-binding an `@`-var to
+        // a List literal preserves the List's `ArrayKind` (see
+        // `bind_positional_value` in `vm_var_assign_set_local.rs` -- only an
+        // itemized/decontainerized Array is re-kinded, a plain List literal
+        // falls through unchanged), so `!kind.is_real_array()` is already the
+        // correct signal for an `@`-sigiled target too. `scalar_like_target`
+        // was scoped to `$`/sigilless names only, so a same-shaped `@`-bound
+        // List silently allowed mutation.
+        let mutable_container_check_target = scalar_like_target || target_var.starts_with('@');
+        if mutable_container_check_target
             && let ValueView::Array(_, kind) = target.view()
             && !kind.is_real_array()
             && matches!(
