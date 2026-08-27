@@ -1103,7 +1103,25 @@ impl Interpreter {
         // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
         // the variable under its bare name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
-            return self.env().get(&bare).cloned();
+            if let Some(val) = self.env().get(&bare) {
+                return Some(val.clone());
+            }
+            // `our @a = ...` / `our %h = ...` declared inside a NESTED block
+            // publishes into the `our` store, but block exit deliberately drops
+            // the bare env alias (`vm_misc_scope.rs`: an `our` declared only
+            // inside a block keeps its lexical alias block-scoped). The SCALAR
+            // read path already copes — `GetGlobal` calls `our_pseudo_var_read`,
+            // which consults `our_vars` before env — but the `@`/`%` read
+            // opcodes (`GetArrayVar`/`GetHashVar`) resolve only through here,
+            // so `@OUR::a` read back an empty array while `$OUR::s` read back
+            // its value. Consulting the `our` store here is purely additive:
+            // every lookup that already succeeded through `env` above still
+            // does, and a genuine miss still falls through to the sigil's
+            // empty-container default.
+            return self
+                .our_pseudo_var_read(name)
+                .filter(|v| !v.is_nil())
+                .or_else(|| self.get_our_var(&bare).cloned());
         }
         // Placeholder block parameters are stored as "^name". Allow lexical
         // access by the de-careted name inside the same block. Gated on the
