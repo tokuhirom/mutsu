@@ -6,18 +6,23 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn builtin_chdir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let arg = args
-            .first()
-            .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
         let (require_dir, require_read, require_write, require_exec) = parse_io_requirements(args);
-        let effective_arg = if let ValueView::Capture { positional, named } = arg.view() {
+        // `chdir` accepts its path either before or after the adverbs
+        // (`chdir :!d, $path` and `chdir $path, :!d` both name $path), so a
+        // `Pair` argument (an adverb) must never be mistaken for the
+        // positional path. Mirrors `builtin_indir` below.
+        let effective_arg = args
+            .iter()
+            .find(|arg| !matches!(arg.view(), ValueView::Pair(_, _)))
+            .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
+        let effective_arg = if let ValueView::Capture { positional, named } = effective_arg.view() {
             if named.is_empty() && positional.len() == 1 {
                 positional[0].clone()
             } else {
-                arg.clone()
+                effective_arg.clone()
             }
         } else {
-            arg.clone()
+            effective_arg.clone()
         };
         let mut requested = effective_arg.to_string_value();
         let mut requested_cwd_opt: Option<String> = None;
@@ -52,7 +57,16 @@ impl Interpreter {
         } else {
             self.resolve_path(&Self::stringify_path(&path_buf))
         };
-        if !absolute_target.exists() {
+        // The `:d` adverb (default `True`) is what requests the directory
+        // test, and existence is part of that test: `chdir :!d, $path` must
+        // succeed against a path that need not exist at all, because
+        // `$*CWD` is a *virtual* working directory, not a real process one
+        // (verified against rakudo: even a `chdir` to a real, existing
+        // directory never issues an OS-level `chdir(2)` — `/proc/self/cwd`
+        // is unchanged afterwards, only `$*CWD` and subprocess-spawn `:cwd`
+        // move). See `builtin_indir` for the identical reasoning.
+        let skip_existence_test = !require_dir;
+        if !skip_existence_test && !absolute_target.exists() {
             return Ok(io_exception_failure(
                 "X::IO::Chdir",
                 format!(
