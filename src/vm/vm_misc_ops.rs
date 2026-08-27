@@ -264,7 +264,11 @@ impl Interpreter {
         }
         match op {
             "**" => ReductionAssoc::Right,
-            "=" | ":=" | "=>" | "x" | "xx" => ReductionAssoc::Right,
+            // NOTE: `x`/`xx` (list/string repeat) are LEFT-associative in Raku
+            // (`raku -e 'say [x] "a", 2, 3'` == "aaaaaa", i.e. `("a" x 2) x 3`),
+            // unlike `=`/`:=`/`=>` which genuinely right-associate. They fall
+            // through to the `_ => ReductionAssoc::Left` default below.
+            "=" | ":=" | "=>" => ReductionAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
             | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => ReductionAssoc::Chain,
             _ => ReductionAssoc::Left,

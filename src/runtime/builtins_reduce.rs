@@ -615,7 +615,11 @@ impl Interpreter {
             .unwrap_or_else(|| name_str.clone());
         match op.as_str() {
             "**" => OpAssoc::Right,
-            "=" | ":=" | "=>" | "x" | "xx" => OpAssoc::Right,
+            // NOTE: `x`/`xx` (list/string repeat) are LEFT-associative in Raku
+            // (`raku -e 'say [x] "a", 2, 3'` == "aaaaaa", i.e. `("a" x 2) x 3`),
+            // unlike `=`/`:=`/`=>` which genuinely right-associate. They fall
+            // through to the `_ => OpAssoc::Left` default below.
+            "=" | ":=" | "=>" => OpAssoc::Right,
             "eqv" | "===" | "==" | "!=" | "<" | ">" | "<=" | ">=" | "eq" | "ne" | "lt" | "gt"
             | "le" | "ge" | "~~" | "=~=" | "=:=" | "!=:=" => OpAssoc::Chain,
             _ => OpAssoc::Left,
