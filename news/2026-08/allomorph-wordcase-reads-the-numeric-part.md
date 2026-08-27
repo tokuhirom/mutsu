@@ -47,12 +47,13 @@ from a type-specific override):
   the type's zero value.
 - `NumStr` resets to `0e0`, `ComplexStr` resets to `0+0i` — both clean,
   usable zeros, matching the `IntStr` pattern.
-- `RatStr` is different: probing `RatStr.new(3/2, "...").wordcase.numerator`
-  and `.denominator` both return the bare `Int` type object (undefined, not
-  even `0`). `.Str` on the result works fine, but `.raku` (or any numeric
-  operation) hits `Use of uninitialized value of type Int in numeric
-  context` — i.e. rakudo's own `RatStr.wordcase` result is genuinely broken
-  for numeric use, not just cosmetically "reset."
+- `RatStr` is different: probing `RatStr.new(1/2, "a b").wordcase` shows
+  `.^name` is still `RatStr` and `.Str` works fine ("A B"), but the
+  reconstructed Rat's denominator is truly `0` — every numeric coercion of
+  the result (`+$r`, `.Rat`, `.Int`, `.raku`) raises `Attempt to divide by
+  zero when coercing/calling ...` in real rakudo. So rakudo's own
+  `RatStr.wordcase` result is genuinely broken for numeric use, not just
+  cosmetically "reset."
 - The behavior is identical for the 0-arg and argument-taking (`:filter`,
   `:where`) forms — this isn't specific to one multi candidate.
 

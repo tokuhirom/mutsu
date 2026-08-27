@@ -238,24 +238,32 @@ is IntStr.new(0, "").ords.elems, 0, '.ords on an empty-Str allomorph is empty';
 # but UNLIKE every sibling Cool string method (.uc/.trim/.flip/...), rakudo's
 # `Cool.wordcase` on an allomorph returns ANOTHER allomorph of the same type,
 # with the numeric part unconditionally reset to the type's zero value
-# (0 / 0e0), discarding the original number. mutsu matches that (verified
-# against real rakudo: IntStr/NumStr/RatStr/ComplexStr all preserve their
-# type). rakudo's own RatStr reset is additionally broken -- the
-# reconstructed Rat's numerator/denominator are left genuinely uninitialized,
-# so `.raku`/any numeric op on the result crashes -- mutsu uses the sane 0/1
-# zero Rat instead of replicating that crash, which is why the RatStr/NumStr
-# numeric value itself is intentionally NOT pinned below.
-# See news/2026-08/allomorph-wordcase-reads-the-numeric-part.md.
+# (0 / 0e0 / 0+0i), discarding the original number. mutsu matches that
+# (verified against real rakudo: IntStr/NumStr/RatStr/ComplexStr all preserve
+# their type across .wordcase). See
+# news/2026-08/allomorph-wordcase-reads-the-numeric-part.md.
 is IntStr.new(5, "zero one").wordcase, "Zero One",
     '.wordcase on an IntStr reads the Str part';
 is IntStr.new(5, "zero one").wordcase.WHAT, IntStr,
     '.wordcase on an IntStr returns another IntStr';
 is IntStr.new(5, "zero one").wordcase.Int, 0,
     ".wordcase's numeric part resets to 0, not the original number";
+
+# RatStr is the one member of the family whose rakudo reset is ADDITIONALLY
+# broken, not just cosmetic: verified directly against rakudo 2026.06 --
+# `RatStr.new(1/2, "a b").wordcase` has type RatStr (asserted below) and
+# `.Str` works ("A B"), but its reconstructed Rat's denominator is truly 0,
+# so EVERY numeric coercion of the result (`+$r`, `.Rat`, `.Int`, `.raku`)
+# raises "Attempt to divide by zero ..." in real rakudo. mutsu therefore uses
+# a SAFE 0/1 zero Rat (never crashes) rather than reproducing that crash --
+# but that also means there is no rakudo-side numeric value to pin here, so
+# (unlike IntStr/NumStr/ComplexStr below) this section asserts only the Str
+# value and the WHAT, not a numeric coercion of the result.
 is RatStr.new(3/2, "one point five").wordcase, "One Point Five",
     '.wordcase on a RatStr reads the Str part';
 is RatStr.new(3/2, "one point five").wordcase.WHAT, RatStr,
     '.wordcase on a RatStr returns another RatStr';
+
 is NumStr.new(1.5e0, "one point five").wordcase, "One Point Five",
     '.wordcase on a NumStr reads the Str part';
 is NumStr.new(1.5e0, "one point five").wordcase.WHAT, NumStr,
