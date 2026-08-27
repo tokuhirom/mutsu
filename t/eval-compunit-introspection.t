@@ -11,7 +11,7 @@ use Test;
 # *shape* rather than the value. Path assertions are relative (`.ends-with`,
 # `.IO.basename`) so the file survives being moved.
 
-plan 62;
+plan 73;
 
 # ---------------------------------------------------------------------------
 # EVAL synthesizes a per-call compilation-unit name for $?FILE
@@ -141,6 +141,50 @@ ok !@global-keys.grep({ .contains('__mutsu_') }),
 
 is GLOBAL::.keys.sort.join(','), OUR::.keys.sort.join(','),
     'GLOBAL:: and OUR:: agree at file scope (same root stash)';
+
+# ---------------------------------------------------------------------------
+# `our sub` at file scope is a genuine GLOBAL::/OUR:: member (`&name`); a
+# plain `sub` or `my sub` stays lexical and absent, same as a `my` variable.
+# ---------------------------------------------------------------------------
+
+sub stash-lex-sub { }
+my sub stash-my-sub { }
+our sub stash-our-sub { 42 }
+our sub stash-our-sub-with-params(Int $x) { $x + 1 }
+our proto sub stash-our-multi(|) {*}
+multi sub stash-our-multi(Int $x) { "int:$x" }
+multi sub stash-our-multi(Str $x) { "str:$x" }
+
+module StashSubMod {
+    our sub stash-mod-sub { 'mod-sub-result' }
+}
+
+my @sub-global-keys = GLOBAL::.keys;
+ok @sub-global-keys.grep(* eq '&stash-our-sub'),
+    'GLOBAL:: contains a root-scope `our sub`';
+ok @sub-global-keys.grep(* eq '&stash-our-sub-with-params'),
+    'GLOBAL:: contains a root-scope `our sub` with parameters';
+is @sub-global-keys.grep(* eq '&stash-our-multi').elems, 1,
+    'GLOBAL:: lists an our-scoped proto once, not once per multi candidate';
+ok !@sub-global-keys.grep(* eq '&stash-lex-sub'),
+    'GLOBAL:: excludes a plain `sub` at file scope';
+ok !@sub-global-keys.grep(* eq '&stash-my-sub'),
+    'GLOBAL:: excludes a `my sub` at file scope';
+
+ok OUR::.keys.grep(* eq '&stash-our-sub'),
+    'OUR:: also contains the root-scope `our sub`';
+
+is GLOBAL::<&stash-our-sub>(), 42,
+    'GLOBAL::<&name> retrieves a callable, working routine, not just a listed key';
+is ::('&stash-our-sub')(), 42,
+    '::(\'&name\') retrieves the same routine via symbolic deref';
+
+ok @sub-global-keys.grep(* eq 'StashSubMod'),
+    'GLOBAL:: contains the module that declares the our sub';
+ok StashSubMod::.keys.grep(* eq '&stash-mod-sub'),
+    'the module\'s own stash contains its `our sub`, keyed under the module, not flattened into GLOBAL::';
+ok !@sub-global-keys.grep(* eq '&stash-mod-sub'),
+    'GLOBAL:: does not also expose the module\'s our sub under a flat key';
 
 # Inside a named package, OUR:: is scoped to that package while GLOBAL::
 # stays the root -- neither vacuums up the other's `our` declarations.

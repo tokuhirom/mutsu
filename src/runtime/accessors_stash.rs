@@ -647,7 +647,21 @@ impl Interpreter {
 
         for (key, def) in &self.registry().functions {
             let key_s = key.resolve();
-            let Some(rest) = Self::stash_member_tail(&key_s, &package_name) else {
+            // A top-level sub's registry key is always package-qualified
+            // (`GLOBAL::name`), including at the root -- unlike a named
+            // package, GLOBAL's `stash_member_tail` special-case returns the
+            // whole key unconditionally (there is no `GLOBAL::` prefix to
+            // require), so without stripping it here the tail would still
+            // carry the self-qualification and get misread as a `::`-nested
+            // sub-package name a few lines down, dropping the sub entirely.
+            // Same self-qualification-stripping the env/classes/roles loops
+            // above already do.
+            let effective_key: &str = if package_name == "GLOBAL" {
+                key_s.strip_prefix("GLOBAL::").unwrap_or(&key_s)
+            } else {
+                &key_s
+            };
+            let Some(rest) = Self::stash_member_tail(effective_key, &package_name) else {
                 continue;
             };
             let base = rest.split('/').next().unwrap_or(rest);
@@ -684,7 +698,15 @@ impl Interpreter {
         // is the one visible name, and it is visible exactly when it is `our`.
         for (key, def) in &self.registry().proto_functions {
             let key_s = key.resolve();
-            let Some(base) = Self::stash_member_tail(&key_s, &package_name) else {
+            // Same GLOBAL self-qualification stripping as the `functions` loop
+            // above -- a proto's registry key is `GLOBAL::name` at the root
+            // too.
+            let effective_key: &str = if package_name == "GLOBAL" {
+                key_s.strip_prefix("GLOBAL::").unwrap_or(&key_s)
+            } else {
+                &key_s
+            };
+            let Some(base) = Self::stash_member_tail(effective_key, &package_name) else {
                 continue;
             };
             if base.is_empty() || base.contains("::") || base.contains(':') {

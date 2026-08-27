@@ -1351,9 +1351,13 @@ impl Interpreter {
                     .insert(Symbol::intern(&fq), f);
             }
         }
-        // If this is NOT our-scoped and we're inside a non-GLOBAL package,
-        // mark it as my-scoped so it doesn't appear in the package stash.
-        if !is_our_scoped && self.current_package() != "GLOBAL" {
+        // If this is NOT our-scoped, mark it as my-scoped so it doesn't appear
+        // in the package stash -- including at the root (GLOBAL) package: a
+        // plain `sub foo {}` or `my sub foo {}` at file scope is just as
+        // lexical as one inside a named package, and `package_stash_value`'s
+        // GLOBAL handling relies on this marker the same way it does for any
+        // other package.
+        if !is_our_scoped {
             let fq = format!("{}::{}", self.current_package(), name);
             self.mark_my_scoped_package_item(fq);
         }
@@ -1674,8 +1678,9 @@ impl Interpreter {
         // candidates are declared bare (`multi sub f(...)`) and each of those
         // marks `Pkg::f` my-scoped, which would hide the routine from the
         // package stash however the proto was declared — so record the
-        // our-visibility up front and let it win.
-        if is_our && self.current_package() != "GLOBAL" {
+        // our-visibility up front and let it win. This applies at the root
+        // (GLOBAL) package too, same as `mark_my_scoped_package_item` above.
+        if is_our {
             self.mark_our_scoped_package_item(key.clone());
         }
         if self
