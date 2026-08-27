@@ -1687,6 +1687,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let mut rest_after = r2;
             loop {
                 let (r3, _) = ws(rest_after)?;
+                // Adjacent colonpairs without commas: `sort :a :b, @x` / `sort :a:b, @x`.
+                if let Some((r4, adverb)) =
+                    crate::parser::primary::ident::listop::try_adjacent_colonpair_arg(r3)
+                {
+                    args.push(adverb);
+                    rest_after = r4;
+                    continue;
+                }
                 if !r3.starts_with(',') {
                     break;
                 }
@@ -1915,6 +1923,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let mut rest_after = r2;
             loop {
                 let (r3, _) = ws(rest_after)?;
+                // Adjacent colonpairs without commas: `foo :a :b, "x"` / `foo :a:b, "x"`.
+                if let Some((r4, adverb)) =
+                    crate::parser::primary::ident::listop::try_adjacent_colonpair_arg(r3)
+                {
+                    args.push(adverb);
+                    rest_after = r4;
+                    continue;
+                }
                 if !r3.starts_with(',') {
                     break;
                 }
