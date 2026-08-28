@@ -177,8 +177,8 @@ impl Interpreter {
                 Ok(())
             }
             Err(e) if e.is_return() => {
-                self.discard_let_saves(let_mark);
                 if control_begin < end {
+                    self.discard_let_saves(let_mark);
                     self.stack.truncate(saved_depth);
                     let saved_topic = self.env().get("_").cloned();
                     if let Some(signal_topic) = Self::control_signal_topic_value(&e) {
@@ -206,7 +206,45 @@ impl Interpreter {
                     *ip = end;
                     Ok(())
                 } else {
-                    Err(e)
+                    // A live `return` — one whose captured target routine
+                    // frame (or, for an untargeted one, ANY enclosing
+                    // routine) is still on the dynamic call stack — must
+                    // keep propagating past this `try`/CATCH untouched:
+                    // `try` is not a return boundary. But when the target
+                    // has already exited (its call frame is gone and never
+                    // coming back), it can NEVER be caught by unwinding
+                    // further — it is dead right now, not merely still in
+                    // flight — so convert it into a real, catchable
+                    // `X::ControlFlow::Return` here and route it through
+                    // this try's own CATCH exactly like any other
+                    // exception (matching raku: the nearest enclosing
+                    // `CATCH` sees `X::ControlFlow::Return`). Without this,
+                    // a dead return silently blew straight past every
+                    // `try`/CATCH boundary on its way out — see
+                    // `Interpreter::return_target_is_live`'s doc comment.
+                    let is_dead = match e.return_target_callable_id() {
+                        Some(target_id) => !self.return_target_is_live(target_id),
+                        None => self.routine_stack().is_empty(),
+                    };
+                    if is_dead {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        self.apply_pending_rw_writeback(code);
+                        self.dispatch_to_catch_handler(
+                            code,
+                            RuntimeError::controlflow_return(true),
+                            catch_begin,
+                            control_begin,
+                            end,
+                            explicit_catch,
+                            traps,
+                            saved_depth,
+                            ip,
+                            compiled_fns,
+                        )
+                    } else {
+                        self.discard_let_saves(let_mark);
+                        Err(e)
+                    }
                 }
             }
             // A `when`/`default` succeed with nothing closer inside this

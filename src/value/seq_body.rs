@@ -86,6 +86,20 @@ struct SeqState {
     /// set this — only an actual [`SeqBody::reify`] call does, so a body
     /// nobody has read yet still steals on its first `take`.
     retained: bool,
+    /// A plain `$scalar = SEQ` (or `my $scalar = SEQ`) assignment itemized
+    /// this body into a Scalar container (`SeqBody::mark_itemized`'s call
+    /// site, `vm_var_assign_set_local.rs`). Raku's `sink` never forces an
+    /// itemized value — sinking a bare `$s;` after `my $s = (gather die)[];`
+    /// only warns "Useless use of $s in sink context" and does NOT run the
+    /// `gather`'s body (measured against raku); only a genuinely un-itemized
+    /// Seq (returned bare, with no assignment, e.g. `sub f { gather { ... }
+    /// } }; f();`) is forced by `sink`. Once a body is itemized this way the
+    /// exemption travels with it through any later read/return — including
+    /// back out through a routine or closure call whose OWN result is then
+    /// sunk by ITS caller (`sub call-it(&c) { c() }; call-it({ my $s = ... })
+    /// ;` — `c()`'s discarded return must not force the `$s` the closure
+    /// itemized), because it is the same shared `Arc<SeqBody>` throughout.
+    itemized: bool,
 }
 
 /// Outcome of [`SeqBody::take`]: whether the caller may treat the Seq as
@@ -171,6 +185,7 @@ impl SeqBody {
                     hyper_iterator_claimed: false,
                     single_use_claimed: false,
                     retained: false,
+                    itemized: false,
                 }),
             }),
             view: SeqView::Seq,
@@ -191,6 +206,7 @@ impl SeqBody {
                     hyper_iterator_claimed: false,
                     single_use_claimed: false,
                     retained: false,
+                    itemized: false,
                 }),
             }),
             view: SeqView::Seq,
@@ -378,6 +394,7 @@ impl SeqBody {
             let mut state = self.core.state.lock().unwrap();
             match &state.source {
                 SeqSource::Taken => return Ok(()),
+                _ if state.itemized => return Ok(()),
                 SeqSource::Reified if state.cache_requested || state.retained => {
                     return Ok(());
                 }
@@ -396,6 +413,13 @@ impl SeqBody {
     /// `cache_requested`'s doc comment).
     pub(crate) fn mark_cache_requested(&self) {
         self.core.state.lock().unwrap().cache_requested = true;
+    }
+
+    /// A plain scalar assignment (`$s = SEQ` / `my $s = SEQ`) itemized this
+    /// body — see `itemized`'s doc comment for why that permanently exempts
+    /// it from `sink`'s forcing.
+    pub(crate) fn mark_itemized(&self) {
+        self.core.state.lock().unwrap().itemized = true;
     }
 
     /// Whether `.cache` was requested, or the body is already reified — the

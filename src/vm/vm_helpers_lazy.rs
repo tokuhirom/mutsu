@@ -703,7 +703,26 @@ impl Interpreter {
         // not whichever routine is forcing it now — re-push the context the
         // gather captured at creation.
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
-        let r = self.force_lazy_list_vm_inner(list);
+        let mut r = self.force_lazy_list_vm_inner(list);
+        // A `return` inside the gather body (`gather { ...; return }`) is
+        // lexically inside whatever routine WROTE the gather, and its target
+        // must be resolved from THAT env — not left untargeted — the exact
+        // same rule `call_compiled_closure_with_topic` applies to an
+        // ordinary non-routine closure's own captured `return`
+        // (`vm_closure_dispatch.rs`). Without this, forcing a gather whose
+        // routine has already exited produced an UNTARGETED `CX::Return`,
+        // which the first enclosing routine call frame unconditionally
+        // "catches" as if it were ITS OWN return (raku: the return targets
+        // the routine that wrote the gather, not whoever is forcing it) —
+        // silently truncating that caller instead of surfacing
+        // `X::ControlFlow::Return` to the nearest real `CATCH`.
+        if let Err(e) = &mut r
+            && e.is_return()
+            && e.return_target_callable_id().is_none()
+            && let Some(ValueView::Int(id)) = list.env.get("__mutsu_callable_id").map(Value::view)
+        {
+            e.set_return_target_callable_id(Some(id as u64));
+        }
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);

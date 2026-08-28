@@ -1256,6 +1256,7 @@ impl Interpreter {
                         array_context: list.array_context,
                         list_context: list.list_context,
                         cached_no_sink: list.cached_no_sink,
+                        itemized: list.itemized,
                     }))
                 } else {
                     v

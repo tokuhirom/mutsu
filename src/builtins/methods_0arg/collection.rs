@@ -1196,6 +1196,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     array_context: false,
                     list_context: false,
                     cached_no_sink: false,
+                    itemized: false,
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }

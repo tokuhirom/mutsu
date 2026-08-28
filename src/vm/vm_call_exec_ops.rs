@@ -160,7 +160,10 @@ impl Interpreter {
     /// `ExecCallPairs`) never sees the escaping `return`.
     fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
-            ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+            // A `.cache`-returned view or a `$s = SEQ`-itemized value must not
+            // be force-drained — see the matching guard in `SinkPop`
+            // (`vm_exec_dispatch.rs`) for the full rationale.
+            ValueView::LazyList(list) if list.is_cached_no_sink() || list.is_itemized() => {}
             ValueView::LazyList(list) => {
                 self.force_lazy_list_vm(&list)?;
             }

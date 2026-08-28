@@ -172,6 +172,7 @@ pub(super) fn dispatch(
                             array_context: list.array_context,
                             list_context: list.list_context,
                             cached_no_sink: list.cached_no_sink,
+                            itemized: list.itemized,
                         },
                     )))));
                 }
@@ -223,6 +224,7 @@ pub(super) fn dispatch(
                     array_context: false,
                     list_context: false,
                     cached_no_sink: false,
+                    itemized: false,
                 },
             )))))
         }

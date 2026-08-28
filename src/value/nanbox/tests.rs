@@ -569,6 +569,7 @@ fn lazy_list_roundtrips_by_identity() {
         array_context: false,
         list_context: false,
         cached_no_sink: false,
+        itemized: false,
     });
     match roundtrip(ValueRepr::LazyList(node.clone())) {
         ValueRepr::LazyList(back) => assert!(Gc::ptr_eq(&back, &node)),

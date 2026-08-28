@@ -407,15 +407,45 @@ impl Interpreter {
         if !is_bind
             && !is_rebind
             && let ValueView::Seq(body) = raw_popped.view()
-            && body.needs_touch()
         {
             let name = &code.locals[idx];
             if name.starts_with('@') || name.starts_with('%') {
-                let body = std::sync::Arc::clone(&body);
-                self.reify_seq_body(&body)?;
-                // `body` is shared by `raw_popped` (both alias the same
-                // `Arc<SeqBody>`), so the in-place reify above already
-                // updated it — no rebuild needed.
+                if body.needs_touch() {
+                    let body = std::sync::Arc::clone(&body);
+                    self.reify_seq_body(&body)?;
+                    // `body` is shared by `raw_popped` (both alias the same
+                    // `Arc<SeqBody>`), so the in-place reify above already
+                    // updated it — no rebuild needed.
+                }
+            } else if name.starts_with('$') {
+                // A plain `$s = SEQ` (or `my $s = SEQ`) assignment itemizes
+                // the Seq into a Scalar container (raku container
+                // semantics): from this point on a later "discarded in sink
+                // context" read of this same value — even a bare `$s;`, or
+                // this value flowing back out through a routine/closure
+                // return whose caller discards it — must NOT force it
+                // (`$s;` after `my $s = (gather die)[];` only warns "Useless
+                // use of $s in sink context", it does not run the gather;
+                // measured against raku). See `SeqBody::mark_itemized`.
+                body.mark_itemized();
+            }
+        }
+        // The `gather`/`take` coroutine machinery still represents a lazy
+        // sequence as `ValueView::LazyList` (docs/adr/0034's `Seq`/`SeqBody`
+        // split has not yet subsumed it) rather than `ValueView::Seq`, so it
+        // needs the identical itemization exemption via its own value-level
+        // `itemized` flag (LazyList has no shared mutable core to flip in
+        // place the way `SeqBody::mark_itemized` does — the flag travels by
+        // replacing the stored value with a tagged clone, same pattern as
+        // `.cache`'s `with_cached_no_sink`).
+        if !is_bind
+            && !is_rebind
+            && let ValueView::LazyList(list) = raw_popped.view()
+            && !list.is_itemized()
+        {
+            let name = &code.locals[idx];
+            if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+                raw_popped = Value::lazy_list(crate::gc::Gc::new(list.with_itemized()));
             }
         }
         // Slice 2a/2b: `$scalar = @arr` / `$scalar = %hash` / chained `$r = $q`

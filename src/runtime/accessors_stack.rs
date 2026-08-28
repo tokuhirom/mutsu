@@ -27,6 +27,42 @@ impl Interpreter {
         self.routine_stack.iter().any(|f| !f.is_block)
     }
 
+    /// Whether a `return`'s captured `return_target_callable_id` still names
+    /// a routine frame actually on the dynamic call stack right now — the
+    /// general, "right at the return site" liveness check `EvalContextRoutineState`
+    /// (`classify_eval_context_routine`, ADR-0037 §2.3) already applies for an
+    /// `EVAL ..., context => $ctx` unit, generalized here for an ordinary
+    /// (non-EVAL) closure's captured `return`.
+    ///
+    /// A `return` inside a closure lexically written inside routine `R`
+    /// always compiles to propagate a `CX::Return` signal (the compiler
+    /// cannot know at compile time whether `R`'s call frame will still be
+    /// live when the closure is eventually invoked — that is a dynamic
+    /// question). Every routine-call boundary the signal passes through
+    /// (`vm_call_named_inner.rs`, `vm_closure_dispatch.rs`) checks "is this
+    /// frame the target" and keeps propagating on a miss — correct as far as
+    /// it goes, but it never asks "could ANY live frame still be the
+    /// target", so a signal whose target already exited keeps propagating
+    /// uncaught straight through every `try`/`CATCH` boundary along the way,
+    /// instead of being caught by the nearest one (raku: the nearest
+    /// enclosing `CATCH` sees a real `X::ControlFlow::Return`).
+    ///
+    /// This walks every live (non-block) routine frame and resolves its
+    /// CURRENT registration id via `registration_clone_id` — the same id
+    /// space `RuntimeError::return_target_callable_id` and `SubData::id`
+    /// live in (see that field's doc comment) — so it answers precisely
+    /// "does `target_id` still belong to something on the stack", not just
+    /// "is the stack non-empty" (which `enclosing_routine_exists` answers,
+    /// too coarse here: an unrelated routine frame, e.g. a `subtest`
+    /// wrapper, does not make a DIFFERENT routine's captured return live).
+    pub(crate) fn return_target_is_live(&self, target_id: u64) -> bool {
+        self.routine_stack.iter().any(|f| {
+            !f.is_block
+                && self.registration_clone_id(&f.package.resolve(), &f.name.resolve())
+                    == Some(target_id)
+        })
+    }
+
     /// Push a new routine frame. `line` and `file` record the call-site
     /// in the *caller* (the line/file where this function was called from);
     /// `def_file` is the file the routine's body lives in (None = main
