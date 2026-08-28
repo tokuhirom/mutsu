@@ -488,9 +488,14 @@ impl Interpreter {
                     .unwrap_or_else(|| "Any".to_string());
                 let mut leaves: Vec<i64> = Vec::new();
                 Self::collect_slice_leaf_indices(&indices, &mut leaves);
+                // Descend a shared `ContainerRef` cell, exactly as the
+                // associative `:delete` companion below does: `@a` boxed into a
+                // cell (a `:=` rebind, an rw capture, or having been passed to
+                // a Raku-level routine) does not match `with_array_mut`, so
+                // `@a[0, 1]:delete:p` reported the right pairs but deleted
+                // nothing.
                 let was_array = self
-                    .env
-                    .get_mut(var_name)
+                    .env_root_descended_mut(var_name)
                     .and_then(|entry| {
                         entry.with_array_mut(|live, _| {
                             let hole_value =
@@ -660,7 +665,14 @@ impl Interpreter {
             }
         } else if delete_after
             && let Some(var_name) = var_name.as_ref()
-            && let Some(entry) = self.env.get_mut(var_name)
+            // Read/write THROUGH a shared `ContainerRef` cell: `%h` is boxed
+            // into one by a `:=` rebind, an rw / `\(...)` capture, or simply by
+            // being passed to a Raku-level routine. A raw `env.get_mut` then
+            // hands `with_hash_mut` the CELL, which does not match
+            // `ValueView::Hash`, so the whole `:delete` half of an adverb pair
+            // (`%h<a c>:delete:p`, `:delete:k`, ...) was silently dropped while
+            // the `:p`/`:k` half still answered correctly.
+            && let Some(entry) = self.env_root_descended_mut(var_name)
         {
             entry.with_hash_mut(|map| {
                 let h = crate::value::gc_data_mut(map);

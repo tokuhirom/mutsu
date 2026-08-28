@@ -1837,9 +1837,14 @@ impl Interpreter {
                         // hash (the fallback below) severs the alias, so a
                         // `postcircumfix:<{ }>(\SELF, \k, :$eject){ SELF.DELETE-KEY(k) }`
                         // would not reach the caller's `%h`.
+                        // `env_root_descended_mut` rather than a raw
+                        // `env.get_mut`: the name may hold a shared
+                        // `ContainerRef` cell (a `:=` rebind, an rw capture, or
+                        // simply having been passed to a Raku-level routine),
+                        // which `with_hash_mut` does not match, dropping us into
+                        // the alias-severing rebuild below.
                         let removed_in_place = self
-                            .env_mut()
-                            .get_mut(target_name.as_ref())
+                            .env_root_descended_mut(target_name.as_ref())
                             .and_then(|v| {
                                 v.with_hash_mut(|gc| {
                                     crate::value::gc_data_mut(gc).remove(&key);
