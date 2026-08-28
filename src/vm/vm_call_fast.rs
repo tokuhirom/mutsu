@@ -297,7 +297,7 @@ impl Interpreter {
                     || *k == "%_"
                     || *k == "__mutsu_callable_id"
                     || (bang_is_callee_private
-                        && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
+                        && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
                 {
                     continue;
                 }
@@ -314,7 +314,7 @@ impl Interpreter {
                 let mut restored_env = saved_env;
                 for (k, v) in self.env().iter() {
                     if bang_is_callee_private
-                        && k.with_str(crate::runtime::utils::is_routine_scoped_error_var)
+                        && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var)
                     {
                         continue;
                     }

@@ -5071,3 +5071,60 @@ Also re-swept the full whitelisted `S12-*`, `S02-*`, `S10-packages`,
 `S11-modules`, `S14-*`, `S32-exceptions`, and `integration` directories (407
 files) under the native provider with the fix applied — all still PASS, so
 the `PushLastRegisteredClass` change is not a native-provider regression.
+
+## 2026-08-29: `$/` and the capture variables are routine-scoped, like `$!` (`S05-modifier/pos.t`, `S05-modifier/repetition-exhaustive.t`, `S05-metachars/closure.t`)
+
+Three whitelisted files, one root cause. A routine that performed a regex match
+internally overwrote its **caller's** `$/`, `$0` and `$1`. In Raku those are
+implicitly `my`-declared in every routine, exactly like `$!`.
+
+The reason this is a real-`Test`-only regression is worth recording, because it
+explains the shape of all three files. mutsu's native `Test` is Rust and runs no
+Raku-level code between two statements of a test file. The vendored
+`Test.rakumod` does — and on a **failing** assertion it runs a good deal more of
+it, because rendering the diagnostics (`# expected:` / `# got:`, and `diag`'s
+indentation, which splits and re-joins on newlines) matches internally. So each
+of the three files has a `#?rakudo todo`-marked *failing* assertion immediately
+before the assertion that regressed, and the failure's own diagnostics clobbered
+the `$/` the next statement reads:
+
+```
+ok 1 - matched
+not ok 2 - first entry (deliberately failing)
+Use of Nil in string context      <-- the next statement's $/[1] is gone
+not ok 3 - second entry
+```
+
+`runtime::utils::is_routine_scoped_error_var` — the predicate every return-side
+env merge consults for names that must NOT be copied callee->caller — knew only
+about `$!`. It is now `is_routine_scoped_implicit_var` and covers `$/` plus the
+capture variables that are views into it (`0`, `1`, ... and `<name>` env keys);
+scoping `$/` alone left the caller with the right `$/` and the wrong `$0`. It
+stays gated on `cf.code.is_routine`, so a bare block still shares its enclosing
+routine's `$/` and `$!`.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S05-modifier/pos.t` | 1 failure (#12) | **PASS** | PASS | PASS |
+| `S05-modifier/repetition-exhaustive.t` | 1 failure (#3) | **PASS** | PASS | PASS |
+| `S05-metachars/closure.t` | 1 failure (#12) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/match-vars-are-routine-scoped.md`,
+`t/match-vars-are-routine-scoped.t` (14 assertions, green under real `raku`).
+Verification: `make test` green (3540 files, 35494 tests); a 1162-file targeted
+native-provider roast sweep (`S02-*`, `S03-*`, `S04-*`, `S05-*`, `S06-*`,
+`S07-*`, `S12-*`, `S17-*`, `S24-*`, `S32-*`, `6.*`, `integration`) PASS
+(119011 tests); `scripts/battery-testsuite.sh` GATE PASSED (273/297).
+
+Two neighbouring gaps the pin surfaced were split off rather than folded in.
+Both were verified to predate this change by reverting the predicate to its old
+body and rebuilding, and neither is gated by any roast file in the residue:
+`todo/tickets/named-capture-reset-removes-the-callers-slot.md` (a routine's
+named-capture reset *removes* the caller's `$<name>` slot, so the merge has
+nothing to skip) and
+`todo/tickets/a-blocks-match-does-not-reach-its-defining-scope-through-a-callable.md`
+(a block invoked through a `&`-parameter does not publish its match to the scope
+it was written in).
+
+Per the counting note above, this closes **three** named files; re-measure the
+sweep rather than trusting a running total.

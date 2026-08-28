@@ -723,7 +723,7 @@ impl Interpreter {
                         || *k == "__mutsu_callable_id"
                         || k.with_str(|s| s.starts_with('?'))
                         || (bang_is_callee_private
-                            && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
+                            && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
                     {
                         continue;
                     }
@@ -748,7 +748,9 @@ impl Interpreter {
                             || *k == "__mutsu_callable_id"
                             || k.with_str(|s| s.starts_with('?'))
                             || (bang_is_callee_private
-                                && k.with_str(crate::runtime::utils::is_routine_scoped_error_var))
+                                && k.with_str(
+                                    crate::runtime::utils::is_routine_scoped_implicit_var,
+                                ))
                             || cf.is_callee_local_sym(*k))
                     });
                 }

@@ -80,17 +80,43 @@ pub(crate) fn is_index_rw_call_temp(name: &str) -> bool {
     name.starts_with("__mutsu_index_rw_") || name.starts_with("__mutsu_call_result_")
 }
 
-/// True for `$!`'s env key. `$!` is scoped **per routine** in raku: a sub or
-/// method gets a fresh `Nil` on entry (which every routine-entry path already
-/// does) and the CALLER's value must survive the call — so the return-side env
-/// merge has to treat `!` like the other per-routine magic names (`_`, `@_`,
-/// `%_`, `__mutsu_callable_id`) and never copy the callee's back.
+/// True for the env keys of `$!` and `$/`. Both are scoped **per routine** in
+/// raku — every sub and method gets its own implicit `my $!` / `my $/` — so the
+/// CALLER's value must survive the call, and the return-side env merge has to
+/// treat them like the other per-routine magic names (`_`, `@_`, `%_`,
+/// `__mutsu_callable_id`) and never copy the callee's back.
+///
+/// `$/` was missing here, which is why a routine that matched internally
+/// clobbered its caller's match:
+///
+/// ```raku
+/// sub inner() { "zz" ~~ /(z)/; 1 }
+/// "abc" ~~ /(b)(c)/;   say ~$/;   # bc
+/// inner();             say ~$/;   # was `z`, must stay `bc`
+/// ```
+///
+/// The real `Test.rakumod` hits this on every FAILING assertion (its diagnostic
+/// rendering matches internally), so the next statement in the test file read a
+/// clobbered `$/` — invisible to the native Rust provider, which never runs
+/// Raku-level code.
 ///
 /// Deliberately NOT applied on the block/closure path: a bare block shares its
-/// enclosing routine's `$!`, and a `CATCH` block *writes* it there, so skipping
-/// the merge for blocks would break `try`/`CATCH`.
-pub(crate) fn is_routine_scoped_error_var(name: &str) -> bool {
-    name == "!"
+/// enclosing routine's `$!` and `$/` — a `CATCH` block *writes* `$!` there, and
+/// `if $x ~~ /y/ { }` must leave `$/` visible to the enclosing scope — so
+/// skipping the merge for blocks would break `try`/`CATCH` and ordinary
+/// conditional matches.
+pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
+    match name {
+        "!" | "/" => true,
+        // The capture variables are views into `$/` and mutsu stores them in
+        // their own env slots (`0`, `1`, ... for `$0`/`$1`, `<name>` for
+        // `$<name>`), so they have to be scoped exactly like the `$/` they
+        // belong to or the caller keeps `$/` and loses `$0`.
+        _ => {
+            let digits = !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
+            digits || (name.starts_with('<') && name.ends_with('>'))
+        }
+    }
 }
 
 /// Build the `Failure` value raku yields when a count/numeric coercion is

@@ -683,7 +683,7 @@ impl Interpreter {
                     continue;
                 }
                 if bang_is_callee_private
-                    && k.with_str(crate::runtime::utils::is_routine_scoped_error_var)
+                    && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var)
                 {
                     continue;
                 }
@@ -726,7 +726,7 @@ impl Interpreter {
                         || s == "%_"
                         // `$!` is per-routine; see the merge loop above.
                         || (bang_is_callee_private
-                            && crate::runtime::utils::is_routine_scoped_error_var(s))
+                            && crate::runtime::utils::is_routine_scoped_implicit_var(s))
                         || rw_sources.contains(s)
                         // Compiler-internal bookkeeping symbols (e.g. the
                         // `__mutsu_sigilless_readonly::p` marker emitted for a
