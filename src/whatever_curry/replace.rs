@@ -162,6 +162,9 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             index: index.clone(),
             is_positional: *is_positional,
         },
+        Expr::ZenSlice(target) => {
+            Expr::ZenSlice(Box::new(replace_whatever_numbered(target, counter)))
+        }
         Expr::InfixFunc {
             name,
             left,
@@ -318,6 +321,7 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
             index: index.clone(),
             is_positional: *is_positional,
         },
+        Expr::ZenSlice(target) => Expr::ZenSlice(Box::new(replace_whatever_single(target))),
         Expr::InfixFunc {
             name,
             left,

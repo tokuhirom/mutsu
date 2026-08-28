@@ -1,5 +1,31 @@
 use super::*;
 
+/// The diagnosis rakudo gives for a `[...]` sitting in *infix* position whose
+/// content is not an infix operator at all.
+///
+/// A bracket group after a complete term is the reduce metaoperator, so its
+/// content has to name an infix: `@arr [0]` (and `@arr [foo]`, with `foo`
+/// undeclared) is `X::Syntax::Missing`, "Missing infix inside []", never the
+/// generic "Confused". Only names that cannot be an infix qualify — an
+/// in-scope `infix:<foo>` used as `@a [foo] @b` is a real reduce and its own
+/// right-hand side failure keeps the ordinary "expected expression" wording.
+///
+/// Deliberately SOFT, for the same reason [`PError::infix_in_term_position`]
+/// is: the caller may still back out of this hypothesis and let another
+/// production parse the text. The `"X::Type: text"` convention is what
+/// promotes the diagnosis over "Confused." once every alternative has failed.
+fn missing_infix_inside_brackets(name: &str, input: &str) -> Option<PError> {
+    if crate::parser::stmt::simple::is_user_defined_infix(name) {
+        return None;
+    }
+    Some(PError::raw_with_what(
+        "X::Syntax::Missing: Missing infix inside []".to_string(),
+        Some(input.len()),
+        "X::Syntax::Missing",
+        "infix inside []",
+    ))
+}
+
 /// Shared loop for Z/X meta operators and infix function calls.
 /// Modifies `left` in place and returns the remaining input.
 pub(crate) fn parse_list_infix_loop<'a>(
@@ -340,9 +366,13 @@ fn parse_list_infix_loop_impl<'a>(
                     continue;
                 }
                 BracketInfix::UserInfix(name, len) => {
+                    let bracket = r;
                     let r = &r[len..];
                     let (r, _) = ws(r)?;
                     let (r, right) = range_expr(r).map_err(|err| {
+                        if let Some(diag) = missing_infix_inside_brackets(&name, bracket) {
+                            return diag;
+                        }
                         enrich_expected_error(
                             err,
                             "expected expression after bracket user infix op",

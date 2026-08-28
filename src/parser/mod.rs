@@ -696,11 +696,27 @@ mod tests {
 
     #[test]
     fn parse_program_reports_line_and_column_for_parse_error() {
-        let err = parse_program("say 1;\nok(,)").unwrap_err();
+        // `ok(,)` used to be the input here, but a comma in term position now
+        // has its own diagnosis (`X::Syntax::InfixInTermPosition`, pinned by
+        // `parse_program_reports_infix_in_term_position` below), so this case
+        // needs input that genuinely has no better description than "confused".
+        let err = parse_program("say 1;\nsay 1 ]").unwrap_err();
         assert!(err.message.contains("line 2"));
         assert!(err.message.contains("column"));
         assert!(err.message.contains("parse error"));
         assert!(matches!(err.code(), Some(RuntimeErrorCode::ParseExpected)));
+        assert_eq!(err.line(), Some(2));
+    }
+
+    #[test]
+    fn parse_program_reports_infix_in_term_position() {
+        let err = parse_program("say 1;\nok(,)").unwrap_err();
+        assert!(
+            err.message
+                .contains("Preceding context expects a term, but found infix , instead."),
+            "{}",
+            err.message
+        );
         assert_eq!(err.line(), Some(2));
     }
 

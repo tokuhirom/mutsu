@@ -137,6 +137,7 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
     if !rest.starts_with('{') {
         return Err(PError::expected("itemized brace expression"));
     }
+    let block_start = rest;
     let (rest, inner) = crate::parser::primary::misc::block_or_hash_expr(rest)?;
     // When the inner expression is a Hash literal, ${ } creates an itemized hash
     // (wrapped in a Scalar container), not a Capture.
@@ -153,8 +154,13 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
         ))
     } else {
         // ${expr} where expr is not a hash is Perl 5 scalar dereference syntax
-        Err(crate::parser::parse_result::PError::obsolete(
-            "${expr}", "$(expr)",
+        let block_src = &block_start[..block_start.len() - rest.len()];
+        let deref_inner = block_src
+            .strip_prefix('{')
+            .and_then(|s| s.strip_suffix('}'))
+            .unwrap_or("expr");
+        Err(crate::parser::parse_result::PError::from_typed(
+            crate::value::RuntimeError::obsolete_p5_deref('$', deref_inner),
         ))
     }
 }

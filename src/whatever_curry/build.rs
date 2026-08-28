@@ -258,6 +258,9 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         }
         // Only check target, not index (subscript handles its own WhateverCode)
         Expr::Index { target, .. } => count_whatever(target),
+        // A zen slice is the empty-subscript postcircumfix; like `Index`, only
+        // its target can hold the `*` that decides the arity.
+        Expr::ZenSlice(target) => count_whatever(target),
         // User-defined infix operators
         Expr::InfixFunc { left, right, .. } => {
             count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
@@ -295,6 +298,7 @@ pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
         Expr::Index { target, index, .. } => {
             expr_contains_topic(target) || expr_contains_topic(index)
         }
+        Expr::ZenSlice(target) => expr_contains_topic(target),
         Expr::InfixFunc { left, right, .. } => {
             expr_contains_topic(left) || right.iter().any(expr_contains_topic)
         }
