@@ -4356,3 +4356,41 @@ installation and mutsu defers the mainline's own ENDs). It is deliberately NOT
 fixed here — `news/2026-08/end-phasers-run-in-install-order.md` made mutsu
 install-ordered on purpose — and is filed as
 `todo/tickets/end-phaser-run-order-is-not-reverse-installation.md`.
+
+
+## 2026-08-29: an EVAL'd unit does not inherit the caller's `fatal` (`S02-names/is_default.t`)
+
+`roast/S02-names/is_default.t` regressed on the assertion
+`eval-lives-ok 'my $a is default(Failure.new); 1'`. Under `MUTSU_REAL_TEST=1`
+the real module's `eval-lives-ok` really EVALs its string from inside a `try`,
+and `try` turns `fatal` on implicitly — which mutsu let through into the EVAL'd
+unit, where assigning an unhandled `Failure` to a variable throws. The native
+provider does not take that path.
+
+`fatal` is lexical to a compilation unit and EVAL compiles a fresh one, so
+neither an explicit `use fatal` nor `try`'s implicit one reaches the snippet;
+only a snippet that says `use fatal` itself is fatal. `eval_eval_string` saved
+and restored `fatal_mode` (so a snippet's own pragma correctly stopped at the
+boundary) but never cleared it on the way in.
+
+**The in-code comment that argued for inheriting it was wrong, and worth
+recording as a method lesson.** It cited `use fatal; try { EVAL q["bar"[5]] }`
+reporting `X::OutOfRange` as proof the caller's `fatal` is live inside. Measured
+both ways, that snippet reports `X::OutOfRange` **with or without** `fatal` — a
+test whose outcome does not change with the variable under test is not evidence
+about it. Re-deriving the whole matrix against rakudo gave the real rule in one
+pass.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S02-names/is_default.t` | 1 failure (#140) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/eval-unit-does-not-inherit-fatal.md`,
+`t/eval-unit-does-not-inherit-fatal.t` (14 assertions, green under real `raku`).
+Verification: `make test` green (3527 files, 35246 tests); a 505-file targeted
+roast sweep across `S02-names`, `S04-exception*`, `S32-exceptions`, `S06-*`,
+`S12-*`, `S24-testing`, `S32-num`, `S29-context`, `S05-*` and `integration`
+green on the native provider.
+
+Per the counting note above, this closes **one** named file; re-measure rather
+than trusting a running total.
