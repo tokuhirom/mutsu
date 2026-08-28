@@ -36,7 +36,14 @@ impl Interpreter {
         // Checked before the "::"-gated package-chain walk below, and before
         // it too — `env` reflects the innermost lexical scope directly, which
         // is at least as precise as walking `current_package`'s chain.
-        if let Some(ValueView::Package(target)) = self.env().get(name).map(Value::view) {
+        //
+        // `is_magic_sigilless_key` excludes the topic: `$_` is stored under the
+        // bare key `_`, seeded with the `Any` type object on routine entry, so
+        // without the guard `_` resolves to `Any` here and every bare `_` in
+        // call/type position silently becomes an `Any` coercion inside a routine.
+        if !crate::env::is_magic_sigilless_key(name)
+            && let Some(ValueView::Package(target)) = self.env().get(name).map(Value::view)
+        {
             let resolved = target.resolve();
             if resolved != name && (self.has_class(&resolved) || self.has_role(&resolved)) {
                 return Some(resolved);
@@ -70,10 +77,11 @@ impl Interpreter {
             return false;
         }
         self.chain_declared_packages.contains(name)
-            || matches!(
-                self.env.get(name).map(Value::view),
-                Some(ValueView::Package(_))
-            )
+            || (!crate::env::is_magic_sigilless_key(name)
+                && matches!(
+                    self.env.get(name).map(Value::view),
+                    Some(ValueView::Package(_))
+                ))
     }
 
     /// Check if a class name refers to a user-defined class that inherits from

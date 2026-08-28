@@ -133,6 +133,36 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     matches!(decider, Some(c) if c.is_ascii_lowercase())
 }
 
+/// True when `name` is a sigil-less env key that holds a *magic variable* rather
+/// than a name binding, and must therefore never be read as a lexical
+/// type/package alias.
+///
+/// A lexically scoped `my class Foo` binds `env["Foo"]` to a `Package` naming its
+/// mangled storage symbol, and several bare-name type lookups resolve a short
+/// name through exactly that binding (see
+/// [`crate::runtime::Interpreter::resolve_bare_type_name`]). The topic `$_` is
+/// stored sigil-less as `"_"`, which collides with the identifier `_` in that
+/// namespace: entering a routine seeds the implicit topic with the `Any` type
+/// object, so `env.get("_")` answers `Package(Any)` and those lookups read the
+/// topic as if it were a `my class _` aliasing `Any`. Inside a routine that
+/// turned an unresolvable `_(1, 2)` into a coercion to `Any` returning `(1, 2)`
+/// instead of "Unknown function: _" — which is how `EVAL '10_.0'` (parsed as a
+/// speculative `infix:<_>`) stopped throwing whenever the `EVAL` ran inside a
+/// routine.
+///
+/// `_` is the only sigil-less magic key that is also a legal bare identifier
+/// (`/`, `!`, `?FILE`, `0`, `<n>`, `*x`, `__mutsu_*` are all unreachable as type
+/// names), so this is deliberately exactly one name.
+///
+// TODO: the real fix is to stop storing the topic under a key that lives in the
+// identifier namespace (`"$_"`, or a reserved prefix like `LEX_SELF`), which
+// would also make a genuine `class _ { }` reachable — it is unreachable through
+// these lookups for as long as the collision stands.
+#[inline]
+pub(crate) fn is_magic_sigilless_key(name: &str) -> bool {
+    name == "_"
+}
+
 /// True for a dynamic variable's env key (the `*` twigil): `$*x` → `"*x"` (scalars
 /// are stored sigil-less), `@*x` → `"@*x"`, `%*VAR` → `"%*VAR"`, `&*f` → `"&*f"`.
 ///
