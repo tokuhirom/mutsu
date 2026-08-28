@@ -12,6 +12,25 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("return statement"));
     }
     let rest = keyword("return", input).ok_or_else(|| PError::expected("return statement"))?;
+    // `return()` -- an argument list attached with NO space -- is a zero-argument
+    // call, so it returns `Nil` exactly like a bare `return`. `return ()` (with a
+    // space) is different: the `()` is a term, an empty list, passed as the
+    // argument, and the routine returns `()`. Rakudo splits the two on the
+    // whitespace, so this test has to run before `ws` eats it.
+    if let Some(after_open) = rest.strip_prefix('(') {
+        let (inner, _) = ws(after_open)?;
+        if let Some(after_close) = inner.strip_prefix(')') {
+            let (after_close, _) = ws(after_close)?;
+            if is_stmt_modifier_keyword(after_close) {
+                return parse_statement_modifier(
+                    after_close,
+                    Stmt::Return(Expr::Literal(Value::NIL)),
+                );
+            }
+            let (after_close, _) = opt_char(after_close, ';');
+            return Ok((after_close, Stmt::Return(Expr::Literal(Value::NIL))));
+        }
+    }
     let (rest, _) = ws(rest)?;
     if is_stmt_modifier_keyword(rest) {
         return parse_statement_modifier(rest, Stmt::Return(Expr::Literal(Value::NIL)));

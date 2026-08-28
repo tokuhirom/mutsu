@@ -4152,3 +4152,35 @@ independently. Because those landed concurrently, no single running total in
 this file is trustworthy as arithmetic — subtract "the N files each entry names"
 from a *re-measured* baseline instead, and re-run
 `scripts/roast-test-module-sweep.sh` when you need an authoritative number.
+
+## 2026-08-29: `return()` is a zero-argument call (`S04-statements/return.t`)
+
+`roast/S04-statements/return.t` regressed on tests 2 and 5 —
+`is(bar2(), Nil, ...)` for `sub bar2 { return() }` and
+`sub foobar2 { return() if 1 }`. mutsu returned an empty list where rakudo
+returns `Nil`, and the cause is one of Raku's oldest whitespace rules that the
+parser dropped: an argument list attached with **no** space is the routine's
+argument list, so `return()` passes zero arguments and is exactly a bare
+`return`, while `return ()` passes the empty list as a term and really does
+return `()`. `return_stmt` called `ws` immediately after the keyword, so both
+spellings produced a byte-identical `Return(ArrayLiteral([]))`.
+
+Measured on a rebuilt pre-fix binary: the **native** `is` accepted the wrong
+value (`ok 1`), the real module's rejected it. Another instance of this file's
+recurring shape — the answer was already wrong under the native provider, and
+only the strict module asks a question sharp enough to see it.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S04-statements/return.t` | 2 failures (#2, #5) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/bare-return-with-parens-is-nil.md`,
+`t/bare-return-with-parens.t` (17 assertions, green under real `raku`).
+Verification: `make test` green (3526 files, 35226 tests); a 523-file targeted
+roast sweep across `S04-statements`, `S04-blocks*`, `S06-*`, `S02-names`,
+`S32-list`, `S05-*`, `S12-*` and `integration` green on the native provider.
+
+Per the counting note above: this closes **one** named file. It composes with
+#7084 (2 files), #7085 (2) and #7086 (1) against the same re-measured 40
+baseline, so a fresh sweep should read 35 — measure it rather than trusting that
+arithmetic.
