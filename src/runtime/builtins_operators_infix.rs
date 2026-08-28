@@ -440,6 +440,29 @@ impl Interpreter {
                 acc = self.eqv_values(acc, rhs.clone())?;
                 continue;
             }
+            // The numeric-comparison family likewise needs the full
+            // interpreter, not the pure `apply_reduction_op` fold plus this
+            // function's own `coerce_infix_operand_numeric` bridge: that
+            // bridge is a *reimplementation* of the operator's coercion rules
+            // (Inf/-Inf-valued Rat/FatRat, exact BigInt equality, SetHash/Set
+            // structural comparison, a user subclass of Int, ...) and drifts
+            // from the real operator body in `vm_comparison_ops.rs` /
+            // `vm_comparison_order_ops.rs`. `&infix:<==>($a, $b)` — exactly
+            // what the real `Test.rakumod`'s `cmp-ok` reaches through — must
+            // behave identically to `$a == $b`.
+            if let Some(result) = match op {
+                "==" => Some(self.num_eq_values(acc.clone(), rhs.clone())?),
+                "!=" => Some(self.num_ne_values(acc.clone(), rhs.clone())?),
+                "<" => Some(self.num_lt_values(acc.clone(), rhs.clone())?),
+                ">" => Some(self.num_gt_values(acc.clone(), rhs.clone())?),
+                "<=" => Some(self.num_le_values(acc.clone(), rhs.clone())?),
+                ">=" => Some(self.num_ge_values(acc.clone(), rhs.clone())?),
+                "<=>" => Some(self.spaceship_values(acc.clone(), rhs.clone())?),
+                _ => None,
+            } {
+                acc = result;
+                continue;
+            }
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {
@@ -499,26 +522,14 @@ impl Interpreter {
         Ok(acc)
     }
 
+    // `==`, `!=`, `<`, `>`, `<=`, `>=` and `<=>` are deliberately absent here:
+    // they are intercepted earlier in `call_infix_routine` and routed through
+    // the real operator body (`num_eq_values` etc.), so they never reach this
+    // bridge.
     pub(super) fn infix_uses_numeric_bridge(&self, op: &str) -> bool {
         matches!(
             op,
-            "+" | "-"
-                | "*"
-                | "/"
-                | "%"
-                | "**"
-                | "=="
-                | "!="
-                | "<"
-                | ">"
-                | "<="
-                | ">="
-                | "<=>"
-                | "cmp"
-                | "before"
-                | "after"
-                | "min"
-                | "max"
+            "+" | "-" | "*" | "/" | "%" | "**" | "cmp" | "before" | "after" | "min" | "max"
         )
     }
 

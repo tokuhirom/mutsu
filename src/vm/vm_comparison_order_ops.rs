@@ -411,10 +411,16 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+    /// The full `infix:<<=>>>` semantics, shared so the routine form
+    /// (`&infix:<<=>>>($a, $b)`, reached by the real `Test.rakumod`'s
+    /// `cmp-ok`) behaves identically to the `$a <=> $b` operator form — see
+    /// the doc comment on [`Interpreter::num_eq_values`] for why that matters.
+    pub(crate) fn spaceship_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
             // `<=>` is numeric (unlike generic `cmp`): a bare numeric type object
             // operand throws X::Numeric::Uninitialized, matching rakudo.
             crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&l)?;
@@ -429,7 +435,13 @@ impl Interpreter {
             let r = vm.coerce_complex_to_real_if_tolerant(&r)?;
             let ord = Self::numeric_spaceship_ordering(&l, &r)?;
             Ok(runtime::make_order(ord))
-        })?;
+        })
+    }
+
+    pub(super) fn exec_spaceship_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = self.spaceship_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
