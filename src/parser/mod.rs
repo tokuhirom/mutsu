@@ -452,6 +452,32 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                     err.set_column(Some(col_num));
                 }
                 if let Some(ex) = e.exception {
+                    // A fatal diagnosis's own exception (built far from here,
+                    // e.g. `pod_begin_without_identifier_error`) usually carries
+                    // only `message`. `err.set_line` above computed the real
+                    // `line`/`column` from the failure position; without also
+                    // copying them onto the exception's own attributes here,
+                    // `$!.line`/`$!.column` (the actual X::Comp accessors, read
+                    // straight from the instance) stayed unset even though the
+                    // CLI's own `===SORRY!===` rendering (which reads `err`
+                    // directly) already had them. Other X::Comp builders in this
+                    // file (`build_vcs_conflict_error`, etc.) set `line` on their
+                    // exception's attrs by hand at construction; this generalizes
+                    // that for every site that instead relies on `remaining_len`.
+                    if let crate::value::ValueView::Instance { attributes, .. } = ex.view() {
+                        if let Some(line) = err.line() {
+                            attributes.insert_if_absent(
+                                "line".to_string(),
+                                crate::value::Value::int(line as i64),
+                            );
+                        }
+                        if let Some(column) = err.column() {
+                            attributes.insert_if_absent(
+                                "column".to_string(),
+                                crate::value::Value::int(column as i64),
+                            );
+                        }
+                    }
                     err.exception = Some(ex);
                 }
                 return Err(err);

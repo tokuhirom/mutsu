@@ -1518,16 +1518,30 @@ impl Interpreter {
                     };
                 }
 
-                // Enum type object smartmatch against enum values.
+                // Enum type object smartmatch against enum values -- and
+                // against the enum's OWN type object, which is a type-object
+                // match like any other (`Direction ~~ Direction` is True,
+                // exactly as `Int ~~ Int` is: a type object always matches
+                // its own type). Missing the second case used to make every
+                // `$x ~~ Direction` matcher fail whenever `$x` held the type
+                // object itself rather than an enum value -- e.g.
+                // `$exception.type` on `X::Enum::NoValue`, whose `.type`
+                // attribute is the enum's type object, not one of its values
+                // (`roast/S12-enums/misc.t`'s `throws-like ..., type =>
+                // Direction` under `MUTSU_REAL_TEST=1`).
                 if self.registry().enum_types.contains_key(base_type) {
                     let enum_match = matches!(
                         left.view(),
                         ValueView::Enum { enum_type, .. } if enum_type == base_type
                     );
+                    let own_type_object = matches!(
+                        left.view(),
+                        ValueView::Package(lhs_name) if lhs_name == base_type
+                    );
                     return match smiley {
-                        Some(":U") => false,
+                        Some(":U") => own_type_object,
                         Some(":D") => enum_match,
-                        _ => enum_match,
+                        _ => enum_match || own_type_object,
                     };
                 }
 

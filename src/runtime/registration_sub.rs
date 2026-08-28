@@ -1552,13 +1552,38 @@ impl Interpreter {
                             self.env.insert(code_var_key, mixin_val);
                         }
                     }
-                    // No user candidate accepted this trait (e.g. `is
-                    // test-assertion` with no `Test` handler in scope, or a
-                    // genuinely unknown custom trait): keep whatever builtin
-                    // meaning parsing already recorded and move on, same as
-                    // the analogous variable-trait fallback in
-                    // `vm_var_trait_ops.rs`.
-                    Err(e) if Self::is_trait_mod_no_candidate(&e) => {}
+                    // No user candidate accepted this trait. `has_trait_mod`
+                    // only proves SOME `trait_mod:<is>` multi exists somewhere
+                    // (e.g. `Test.rakumod`'s own `:$test-assertion!`
+                    // candidate) -- it says nothing about whether any of them
+                    // actually claims THIS trait, so a `is_trait_mod_no_candidate`
+                    // verdict here is exactly as "unknown" as the `!has_trait_mod`
+                    // case just above and must be reported the same way (raku:
+                    // `sub yulia is krassivaya { }` still dies "Can't use
+                    // unknown trait" even with an unrelated `trait_mod:<is>`
+                    // multi in scope). Previously this arm silently swallowed
+                    // the verdict and kept the routine undecorated -- the sub
+                    // declaration itself never failed, so the caller had no way
+                    // to learn the trait was rejected
+                    // (`roast/S14-traits/routines.t` under `MUTSU_REAL_TEST=1`:
+                    // merely `use Test;` supplies a `:$test-assertion!`
+                    // candidate, so every OTHER unknown routine trait silently
+                    // no-op'd instead of raising `X::Comp::Trait::Unknown`).
+                    // `test-assertion` keeps its exemption (mutsu's parser
+                    // already recorded its builtin meaning) and the `in_eval`
+                    // gate mirrors the sibling branch above -- outside EVAL
+                    // (plain module loading) a handler may simply not be
+                    // registered yet, so stay silent there as before.
+                    Err(e) if Self::is_trait_mod_no_candidate(&e) => {
+                        if trait_name != "test-assertion"
+                            && self.env.get("__mutsu_in_eval").is_some_and(|v| v.truthy())
+                        {
+                            return Err(RuntimeError::new(format!(
+                                "Can't use unknown trait 'is' -> '{}' in sub declaration.",
+                                trait_name
+                            )));
+                        }
+                    }
                     // A real error raised from inside a handler that DID
                     // match (e.g. it `die`s) must propagate, not be silently
                     // swallowed.

@@ -1546,6 +1546,18 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     }
                     return Some(Ok(Value::NIL));
                 }
+                // `X::Comp` (compile-time diagnoses like `X::Syntax::*`)
+                // exposes `.filename`, not `.file` -- rakudo's actual
+                // attribute is `$!filename`. Fall back to `file` for
+                // exceptions that only got the older generic attribute
+                // populated (kept for symmetry with the `.file` arm above).
+                "filename" => {
+                    let map = attributes.as_map();
+                    if let Some(filename) = map.get("filename").or_else(|| map.get("file")) {
+                        return Some(Ok(filename.clone()));
+                    }
+                    return Some(Ok(Value::NIL));
+                }
                 "backtrace" => {
                     if let Some(bt) = attributes.as_map().get("backtrace") {
                         return Some(Ok(bt.clone()));
