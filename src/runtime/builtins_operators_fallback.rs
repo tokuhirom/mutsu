@@ -474,6 +474,17 @@ impl Interpreter {
             // Use all multi candidates (not just matching ones) because callwith()
             // can re-dispatch with different arguments.
             let all_candidates = self.resolve_all_multi_candidates(name);
+            // Being a `multi` at all is what establishes a dispatcher, not
+            // having somewhere to defer to: `nextsame`/`callsame` in the LAST
+            // (or only) candidate is legal in rakudo and evaluates to Nil.
+            // Push the frame whenever this name has multi candidates, even
+            // when the winner filter leaves `remaining` empty — otherwise
+            // `dispatch_next_candidate` falls through to "not in the dynamic
+            // scope of a dispatcher". A plain sub (no multi candidates) still
+            // pushes nothing, so its `nextsame` correctly dies. Mirrors the
+            // same rule in `push_multi_dispatch_frame`; this call path is the
+            // one a Callable *value* (`&e`, `my &c = &e; c()`) takes.
+            let pushed_dispatch = !all_candidates.is_empty();
             let def_fp = def.body_fingerprint();
             let remaining: Vec<std::sync::Arc<FunctionDef>> = all_candidates
                 .into_iter()
@@ -482,7 +493,6 @@ impl Interpreter {
                 // candidate is always recognized and excluded.
                 .filter(|c| c.body_fingerprint() != def_fp)
                 .collect();
-            let pushed_dispatch = !remaining.is_empty();
             if pushed_dispatch {
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
