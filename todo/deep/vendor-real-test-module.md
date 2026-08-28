@@ -4003,3 +4003,55 @@ gist-comparing sites they would have to move with in
 `todo/tickets/blob-comparison-should-die-instead-of-answering.md`.
 
 Remaining in this cluster: `S16-io/words.t` and `S32-io/io-cathandle.t`.
+
+## 2026-08-29: the `where`-constraint scope pair (`subset-6c.t` / `subset-6e.t`)
+
+Two more files off the residue — **the two this slice closes; see the note on
+counting below before adding them to any running total** — and, as the
+classification entry two sections up predicted for this residue in general, the
+bug had nothing whatsoever to do with `Test`. It reproduced identically under
+the native provider; it only *surfaced* under the real module because
+`lives-ok`'s Raku-level implementation actually observes the exception the
+native builtin swallowed.
+
+| file | test | before (real Test) | after (real Test) | native provider |
+| --- | --- | --- | --- | --- |
+| `roast/S02-types/subset-6e.t` | 39, `where-constraint picks up the right lexical (+)` | FAIL (1/60) | PASS (60/60) | PASS before and after |
+| `roast/6.c/S02-types/subset-6c.t` | 38, same assertion | FAIL (1/51) | PASS (51/51) | PASS before and after |
+
+The bug: a parameter's `where` constraint (and its default value) was evaluated
+against the *calling* frame instead of the scope the signature was written in.
+The roast assertion's shape makes that unmissable — `bar(2)` died and `bar(3)`
+lived, `3` being exactly the enclosing block's shadowed binding. Two independent
+root causes, both general and both now fixed: the compiler never recorded a
+signature's declaration-time reads as captures (they live on the `ParamDef` AST
+and never reach the opcode scan `compute_free_vars` performs), and a named `sub`
+escaping as its declaring routine's return value captured a flattened env that
+could not see that routine's local *slots*. Full write-up:
+`news/2026-08/where-constraint-declaration-scope-capture.md`; pin:
+`t/where-constraint-lexical-scope.t` (23 assertions, also green under real
+`raku`).
+
+Verification: both files green under BOTH providers; `make test` green; the full
+1436-file whitelisted roast suite green on a release build; and
+`scripts/battery-testsuite.sh` green (the change touches closure-capture
+representation, which the note in CLAUDE.md warns roast alone will not catch).
+
+**Method for whoever continues here.** The previous entry's advice — classify by
+"what shape of mutsu bug can only be seen through a Raku-level assertion", not by
+synopsis — held up again, with one refinement worth writing down: for a file
+whose regression is a *single* assertion, read that assertion's expected/actual
+values before reading any code. Here, "the value that wrongly passed is precisely
+the shadowed outer binding" identified the failure as a wrong-frame lookup (not a
+missing one) in one step, and a handful of probe shapes then separated the two
+root causes without a single instrumented build.
+
+**A note on counting, since several slices are in flight at once.** This entry
+deliberately quotes only its own per-file before/after. A fresh session-opening
+sweep on `139aa395f` measured 42 raw regressions minus 2 `exit 124` timeouts =
+**40 correctness regressions**; the `infix:<eq>` entry above took that to 38;
+this slice closes 2 more; and PR #7086 closes `S24-testing/14-like-unlike.t`
+independently. Because those landed concurrently, no single running total in
+this file is trustworthy as arithmetic — subtract "the N files each entry names"
+from a *re-measured* baseline instead, and re-run
+`scripts/roast-test-module-sweep.sh` when you need an authoritative number.

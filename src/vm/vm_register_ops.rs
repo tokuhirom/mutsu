@@ -221,6 +221,51 @@ impl Interpreter {
         sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
     }
 
+    /// Overwrite `env`'s entry for each free variable of `callee` that the
+    /// CURRENTLY RUNNING frame (`code`) owns as a local slot, with the live
+    /// slot value.
+    ///
+    /// This is the by-name half of [`Self::capture_closure_env`]'s "upvalue
+    /// read" step, factored out for the one env-capture site that cannot use
+    /// that function: a *named* sub returned as the trailing value of its
+    /// declaring routine (`sub outer { my $a = 2; sub inner {...} }`). That path
+    /// flattens the frame's env with `clone_env()`, but a `my` in a routine body
+    /// lives in the frame's local SLOT and is not necessarily mirrored into
+    /// `env` — so the flattened snapshot either lacks the name entirely or, when
+    /// an enclosing scope declared the same name, still holds the OUTER
+    /// binding's value. Either way the escaping Sub then resolved the name
+    /// against its caller instead of its declaration scope: lexical scoping
+    /// degrading into dynamic scoping.
+    /// Returns the names it installed, so the caller can vouch for them as
+    /// `SubData::authoritative_captures`: the declaring frame is gone by the
+    /// time such a Sub is called, so its snapshot can never be stale, and the
+    /// call-time merge must install it with OVERWRITE rather than losing to a
+    /// same-named lexical in whatever frame invokes it.
+    pub(crate) fn inject_frame_locals_for_free_vars(
+        &self,
+        code: &CompiledCode,
+        callee: &CompiledCode,
+        env: &mut Env,
+    ) -> Vec<crate::symbol::Symbol> {
+        let mut installed = Vec::new();
+        for (i, sym) in callee.free_var_syms.iter().enumerate() {
+            // Dynamics (`$*x`), the topic, attribute twigils and `__mutsu_*`
+            // metadata resolve through their own stores against the LIVE frame
+            // by design — never freeze one into a lexical snapshot.
+            if !sym.with_str(crate::env::is_plain_user_lexical) {
+                continue;
+            }
+            if let Some(slot) =
+                Self::resolve_capture_slot(code, &callee.free_var_parent_slots, i, *sym)
+                && let Some(val) = self.locals.get(slot)
+            {
+                env.insert_sym(*sym, val.clone());
+                installed.push(*sym);
+            }
+        }
+        installed
+    }
+
     pub(super) fn exec_make_anon_sub_op(
         &mut self,
         code: &CompiledCode,

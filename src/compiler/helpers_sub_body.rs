@@ -538,6 +538,12 @@ impl Compiler {
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
         sub_compiler.code.compute_needs_env_sync();
+        // See the twin call in `compile_closure_body_with_routine_flag`: a
+        // parameter default / `where` constraint reads its outer lexicals from
+        // the `ParamDef` AST at call time, invisibly to the op scan. A named
+        // sub has no runtime closure-creation op, so this set is what
+        // `RegisterSub` snapshots into the sub's captured env.
+        self.fold_decl_time_param_captures(&mut sub_compiler.code, param_defs);
         let own_compiled_fns = self.import_compiled_functions(
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
@@ -1456,6 +1462,13 @@ impl Compiler {
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
         sub_compiler.code.compute_needs_env_sync();
+        // A parameter DEFAULT or `where` constraint is evaluated from the
+        // `ParamDef` AST at call time and never compiles into these ops, so
+        // `compute_free_vars` (which just ran, inside `compute_needs_env_sync`)
+        // cannot see the outer lexicals it reads. Fold them in before the
+        // capture set is consumed by `compute_upvalues` below and by
+        // `add_closure_code_baked`'s parent-slot bake.
+        self.fold_decl_time_param_captures(&mut sub_compiler.code, param_defs);
         // Promote read-only plain-lexical free variables to index-based upvalues.
         // Closure-only (this path compiles anonymous closures/blocks); named subs
         // and the top-level program never get an upvalue array at runtime.
