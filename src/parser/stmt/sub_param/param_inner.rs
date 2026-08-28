@@ -1127,16 +1127,25 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        // A `&`-sigiled parameter cannot be *unpacked*: what follows it is a
-        // constraint on the CALLABLE's own signature, the whitespace-separated
-        // spelling of `&cb:(...)`. NativeCall's documented callback declaration
-        // is exactly this form — `sub SetCallback(&callback (Str --> int32)) is
-        // native('mylib')` (`Language/nativecall.rakudoc`, "Function
-        // arguments") — and the `--> T` it carries is the callback's C return
-        // type, which `parse_param_list` would discard. So record it as the
-        // parameter's `code_signature`, return type and all, rather than as a
-        // destructuring `sub_signature` whose inner type constraints would
-        // (wrongly) be matched against the passed Callable itself.
+        // What follows a `&`-sigiled parameter is also readable as a constraint
+        // on the CALLABLE's own signature: NativeCall's documented callback
+        // declaration is exactly this whitespace-separated spelling —
+        // `sub SetCallback(&callback (Str --> int32)) is native('mylib')`
+        // (`Language/nativecall.rakudoc`, "Function arguments") — and the
+        // `--> T` it carries is the callback's C return type, which
+        // `parse_param_list` discards. So a `&` parameter records BOTH: the
+        // ordinary destructuring `sub_signature` (which is what Rakudo parses
+        // it as, and what keeps a non-native `sub f(&cb (Int))` behaving as it
+        // did) and a `code_signature` carrying the return type, which is what
+        // the NativeCall registration reads.
+        //
+        // The two are NOT interchangeable: only the Signature-literal spelling
+        // `&cb:(...)` declares a return *type*, so it alone conflicts with a
+        // parameter type constraint (`Int &b:(--> Bool)` is an
+        // X::Redeclaration, pinned by S06-signature/closure-parameters.t),
+        // while raku accepts `Callable &cb (Int --> Int)`. The presence of
+        // `sub_signature` is what distinguishes this spelling from that one —
+        // see `validate_callable_param_return_redeclaration`.
         if original_sigil == b'&' {
             let (r, (sig_params, sig_ret)) = super::super::sub::parse_param_list_with_return(r)?;
             let (r, _) = ws(r)?;
@@ -1163,6 +1172,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.double_slurpy = double_slurpy;
             p.onearg = onearg;
             p.type_constraint = type_constraint;
+            p.sub_signature = Some(sig_params.clone());
             p.code_signature = Some((sig_params, sig_ret));
             p.traits = param_traits;
             return Ok((r, p));

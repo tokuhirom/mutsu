@@ -7,7 +7,15 @@ impl Interpreter {
         param_defs: &[ParamDef],
     ) -> Result<(), RuntimeError> {
         for pd in param_defs {
+            // Only the Signature-LITERAL spelling `&b:(--> Bool)` declares a
+            // return type that can clash with the parameter's own constraint
+            // (`Int &b:(--> Bool)`, pinned by S06-signature/closure-parameters.t).
+            // The whitespace-separated `Callable &cb (Int --> Int)` is a
+            // sub-signature that raku accepts, and the parser records a
+            // `sub_signature` alongside the `code_signature` precisely so the
+            // two spellings stay distinguishable here.
             if pd.type_constraint.is_some()
+                && pd.sub_signature.is_none()
                 && pd
                     .code_signature
                     .as_ref()
