@@ -385,6 +385,14 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_else(Self::next_eval_unit_name);
         let saved_env_file = self.env.get("?FILE").cloned();
+        // Record which unit this EVAL was compiled inside. `EVAL` compiles in
+        // the caller's lexical scope, so an operator declared in the enclosing
+        // unit is in scope for the EVAL'd code too -- and an operator declared
+        // BY the EVAL'd code is scoped to the EVAL unit alone. Operator
+        // visibility (`Interpreter::user_infix_override`) walks this chain.
+        let unit_sym = Symbol::intern(&unit_name);
+        crate::runtime::note_eval_unit_parent(unit_sym, self.current_unit);
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
         let saved_source_file =
@@ -395,6 +403,7 @@ impl Interpreter {
             self.eval_eval_string(&code)
         };
         crate::parser::set_parser_source_file(saved_source_file);
+        self.current_unit = saved_unit;
         match saved_env_file {
             Some(prev) => {
                 self.env.insert("?FILE".to_string(), prev);

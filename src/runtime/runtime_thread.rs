@@ -555,7 +555,7 @@ impl Interpreter {
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
-            module_call_depth: 0,
+            current_unit: self.current_unit,
             closures_created: 0,
             lib_paths: self.lib_paths.clone(),
             bundled_lib_paths: self.bundled_lib_paths.clone(),

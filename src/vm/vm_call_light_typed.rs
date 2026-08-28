@@ -45,7 +45,7 @@ impl Interpreter {
         // chunk without one takes the full named dispatch instead.
         let Some(plan) = cf.named_call_plan.as_deref() else {
             let pkg = self.current_package().to_string();
-            // call_compiled_function_named handles module_call_depth itself.
+            // call_compiled_function_named tracks the unit itself.
             return self.call_compiled_function_named(
                 cf,
                 args.to_vec(),
@@ -54,13 +54,7 @@ impl Interpreter {
                 func_name,
             );
         };
-        // Gate user-infix overrides out of module code: only count a call as
-        // "module code" when the function's source file differs from the main
-        // script (same logic as call_compiled_function_named).
-        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
-        if is_module_call {
-            self.module_call_depth += 1;
-        }
+        let saved_unit = self.enter_compilation_unit(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         // Isolate the caller's loop-body-local declaration scope (mirrors
@@ -376,9 +370,7 @@ impl Interpreter {
             self.loop_local_saved_env = saved_loop_local_saved_env;
             self.active_loop_param_names = saved_active_loop_param_names;
             self.block_declared_vars = saved_block_declared_vars;
-            if is_module_call {
-                self.module_call_depth -= 1;
-            }
+            self.current_unit = saved_unit;
             return Err(e);
         }
 
@@ -609,9 +601,7 @@ impl Interpreter {
                 self.block_declared_vars = saved_block_declared_vars;
                 self.finish_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
-                if is_module_call {
-                    self.module_call_depth -= 1;
-                }
+                self.current_unit = saved_unit;
                 std::panic::resume_unwind(panic_payload);
             }
         };
@@ -696,9 +686,7 @@ impl Interpreter {
             }
         }
 
-        if is_module_call {
-            self.module_call_depth -= 1;
-        }
+        self.current_unit = saved_unit;
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {

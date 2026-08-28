@@ -172,7 +172,11 @@ impl Interpreter {
                 self.imported_operator_names.insert(op.to_string());
             }
             if op.starts_with("infix:<") {
-                self.user_declared_infix_ops.insert(op.to_string());
+                // Exported: visible in the importing unit, so no
+                // declaring-file restriction (see the field's doc comment).
+                self.user_declared_infix_ops
+                    .entry(op.to_string())
+                    .or_default();
                 crate::vm::vm_jit::note_user_infix_decl();
             }
         }
