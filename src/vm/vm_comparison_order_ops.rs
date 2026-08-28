@@ -20,8 +20,27 @@ impl Interpreter {
         right: Value,
     ) -> Result<(Value, Value), RuntimeError> {
         let caller_code = self.current_code;
-        let left = Self::decode_utf8_compare_operand(self.coerce_stringy_operand(left)?);
-        let right = Self::decode_utf8_compare_operand(self.coerce_stringy_operand(right)?);
+        let left = self.coerce_stringy_operand(left)?;
+        let right = self.coerce_stringy_operand(right)?;
+        // The utf8 decode is a property of the PAIR, not of either operand on
+        // its own. Rakudo's comparators have a `(Blob:D, Blob:D)` candidate that
+        // compares BYTES whatever the two Blob types are -- measured:
+        // `"hi".encode eq Buf[uint8].new(104, 105)` is True, as is the same
+        // comparison against a `Blob[uint8]` or with the operands swapped. Only
+        // when the other side is NOT a Blob does the `.Str` coercion apply, and
+        // there `utf8` is the one Blob type that decodes
+        // (`"hi".encode eq "hi"` is True). Decoding per-operand made a mixed
+        // pair stop being a Blob pair before the byte branch below was ever
+        // consulted, so it compared the decoded text against the other Blob's
+        // *gist* (`Blob[uint8]:0x<68 69>`) and always answered False.
+        let (left, right) = if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+            (left, right)
+        } else {
+            (
+                Self::decode_utf8_compare_operand(left),
+                Self::decode_utf8_compare_operand(right),
+            )
+        };
         self.reconcile_caller_after_internal_dispatch(caller_code);
         Ok((left, right))
     }
