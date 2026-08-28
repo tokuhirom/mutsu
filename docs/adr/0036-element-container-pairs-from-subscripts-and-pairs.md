@@ -425,6 +425,36 @@ success. The read-only guard is only reachable once that scan is deleted, which 
   tell a cell reached *through* `.VAR` from a bare aliased value —
   `todo/tickets/var-on-a-containerref-is-not-distinguishable.md`.
 
+## Implementation status — §1.3 row 10 (2026-08-28)
+
+**Row 10 is green.** Its prerequisite landed first: `Value::array_slot_ref` no longer grows the array
+at bind time. An index past the end now yields a deferred vivification token
+(`EntryRoot::Array` + `EntryStep::Index`, the array twin of `hash_slot_ref`'s missing-key
+`HashEntryRef`), and the first write through the binding walk-creates it, filling the gap with the
+element hole value. `my @a = 1, 2; my $r := @a[5]; @a.elems` is `2` again, matching raku, and an
+unwritten bind on a typed / `is default(...)` array reads that array's hole value (`Int`, `42`)
+rather than a blanket `Any`.
+
+With the eager growth gone, row 10 is the three-line compiler change slice 3 described: a FatArrow
+whose RHS is an `Expr::Index` compiles in the container-producing mode (`scalar_bind_autovivify` +
+`bind_terminal`) that `=:=` and `return-rw` already use, so the Pair's value *is* the element's
+shared cell — no `WrapVarRef` boxing, which only ever applied to a bare `Expr::Var`. Both the
+in-range row (`my $p = 0 => @a[0]; $p.value = "x"`) and its out-of-range companion
+(`my $p = 'k' => @a[5]`, which must not grow `@a` until `.value` is written) are pinned in
+`t/subscript-pair-element-container.t`, and the whole file passes under real `raku` too.
+
+The Pair-value leak that backed `.pairs` out (above) does not bite here: the FatArrow arm promotes
+**one** named element on demand, exactly like the `:p`/`:kv` adverbs of slice 2, rather than handing
+a coercion a whole container's worth of cells.
+
+**Still open in slice 3/4**: rows 3, 4, 9 (`.pairs` routing), row 11 (env-scan compensator) and
+row 12 (element type constraint). One divergence is knowingly left behind by the array-token work: a
+bound *slice* (`my @s := @a[1,5]`) and the two multi-dim descents still grow the array eagerly,
+because their promoted cells are stored as elements of *another* array and an out-of-range index
+would put a deferred token where neither `resolve_array_entry` nor the bound-slice write-through
+recognizes one (measured: `roast/S32-array/multislice-6e.t`). Tracked in
+`todo/tickets/bound-array-slice-still-vivifies-eagerly.md`.
+
 ---
 
 ## 5. Open questions (the forks for the deciders)

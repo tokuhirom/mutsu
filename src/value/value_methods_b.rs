@@ -182,25 +182,22 @@ impl Value {
         }
     }
 
-    /// Bind to array element `idx`, promoting it to a first-class container
-    /// (Phase 2). The element is replaced in place with a shared
-    /// `ContainerRef` cell (reusing an existing one), and that same cell is
-    /// returned so the binding aliases the element by **cell identity**. Unlike
-    /// the old array element back-reference (an array-Arc + index back-reference, which goes
-    /// stale when an enclosing container is COW-cloned on a later write), the
-    /// `Arc<Mutex>` cell is shared on every clone, so the alias survives
-    /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
-    /// element at the single read chokepoint (`resolve_array_entry`).
-    pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
+    /// Grow the array so `idx` is in range, filling the gap with the element
+    /// hole value (the declared element type object, or the `is default(...)`
+    /// value) — the eager growth `array_slot_ref` used to do unconditionally.
+    /// A no-op when `idx` is already in range or `self` is not an Array.
+    ///
+    /// Only for callers that genuinely need the slot to exist *now*; the `:=`
+    /// bind path deliberately does not, and hands out a deferred token instead.
+    pub fn array_grow_to(&self, idx: usize) {
         if let ValueView::Array(arc, _kind) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `gc_contents_mut`. No borrow into the items is live across the
-            // growth/promotion below.
+            // growth.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
-            // Autovivifying past the end fills the gap with the element's type
-            // object (`Any`, or the declared element type / `is default` value),
-            // matching Raku — `my @a; my $r := @a[5]; $r = 1` yields
-            // `[Any, Any, Any, Any, Any, 1]`, not `Nil` holes.
+            if idx < data.len() {
+                return;
+            }
             let hole = data
                 .default
                 .as_ref()
@@ -211,6 +208,52 @@ impl Value {
             while data.len() <= idx {
                 data.push(hole.clone());
             }
+        }
+    }
+
+    /// Bind to array element `idx`, promoting it to a first-class container
+    /// (Phase 2). The element is replaced in place with a shared
+    /// `ContainerRef` cell (reusing an existing one), and that same cell is
+    /// returned so the binding aliases the element by **cell identity**. Unlike
+    /// the old array element back-reference (an array-Arc + index back-reference, which goes
+    /// stale when an enclosing container is COW-cloned on a later write), the
+    /// `Arc<Mutex>` cell is shared on every clone, so the alias survives
+    /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
+    /// element at the single read chokepoint (`resolve_array_entry`).
+    ///
+    /// An index PAST THE END has nothing to promote. When `terminal` (the
+    /// outermost bind subscript) it stays lazy, exactly like `hash_slot_ref`'s
+    /// missing-key arm: a deferred `HashEntryRef` token rooted on this array
+    /// carries the index until the first write walk-creates it, so
+    /// `my @a = 1, 2; my $r := @a[5]` does not grow `@a`. A NON-terminal step
+    /// still grows eagerly — the intermediate level must exist for the next
+    /// subscript to descend it (the analogue of `hash_autovivify_cell`).
+    pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
+        if let ValueView::Array(arc, _kind) = self.view() {
+            if idx >= arc.len() {
+                if terminal {
+                    // Past the end and nothing to promote: hand back a DEFERRED
+                    // vivification token instead of growing, the array twin of
+                    // `hash_slot_ref`'s missing-key arm. `my @a = 1, 2;
+                    // my $r := @a[5]` must leave `@a` two elements long (raku),
+                    // and only the first write through `$r` fills the gap — see
+                    // `EntryTerminal`'s array arm, which grows with the same
+                    // hole value this used to push eagerly.
+                    return Some(Value::from_repr(ValueRepr::HashEntryRef {
+                        root: crate::value::EntryRoot::Array(arc.clone()),
+                        path: vec![crate::value::EntryStep::Index(idx)],
+                        eager: false,
+                    }));
+                }
+                // A non-terminal (intermediate) descent step is the eager
+                // analogue of `hash_autovivify_cell`: the level has to exist
+                // before the next subscript can descend it.
+                self.array_grow_to(idx);
+            }
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `gc_contents_mut`. No borrow into the items is live across the
+            // promotion below.
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             let elem = &mut data[idx];
             if let ValueView::ContainerRef(cell) = elem.view() {
                 return Some(Value::ContainerRef(cell.clone()));

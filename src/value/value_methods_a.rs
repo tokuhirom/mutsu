@@ -776,17 +776,22 @@ impl Value {
             ValueView::HashEntryRef { eager, .. } => eager,
             _ => return self.clone(),
         };
-        let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
         // A path whose intermediate levels are missing (or are not the
         // container kind their step addresses) has no terminal yet — the
         // deferred bind reads as `Any` without creating anything.
-        let Some(entry) = self.hash_entry_locate().and_then(|t| t.peek()) else {
-            return any();
+        let Some(terminal) = self.hash_entry_locate() else {
+            return Value::Package(crate::symbol::Symbol::intern("Any"));
+        };
+        // An unconnected slot reads as what an unwritten slot of that container
+        // holds: `Any` for a hash entry, the element hole (`Int`, an
+        // `is default(...)` value) for an array index past the end.
+        let Some(entry) = terminal.peek() else {
+            return terminal.unwritten_read();
         };
         match entry.view() {
             ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             _ if eager => entry.clone(),
-            _ => any(),
+            _ => terminal.unwritten_read(),
         }
     }
 }
