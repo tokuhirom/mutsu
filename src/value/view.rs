@@ -391,6 +391,28 @@ impl Value {
         Value::Seq(body.as_list_view())
     }
 
+    /// `Some(list)` when `value` is a `SeqView::List` handle (what
+    /// [`Value::seq_list_view`] produced) — i.e. a value that Raku calls a
+    /// `List` even though mutsu still represents it with a `Seq` body.
+    ///
+    /// Sites that ask a *structural* question about a value's Raku type —
+    /// `eqv` (type-strict) and `.raku` (renders the type) — must see the
+    /// `List`, not the `Seq`. Both call this to normalise first, so neither
+    /// grows its own copy of the view rule (ADR-0038 S2's "one oracle" applied
+    /// to representation as well as to the type name).
+    ///
+    /// Reads the body's live generation, so it answers the *current*
+    /// reification state: a still-deferred body normalises to an empty list,
+    /// exactly as a direct element read of the `Seq` handle would.
+    pub(crate) fn seq_list_view_as_list(value: &Self) -> Option<Self> {
+        match value.view() {
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
+                Some(Value::array(body.to_vec()))
+            }
+            _ => None,
+        }
+    }
+
     /// Construct a `HyperSeq` from an existing `SeqBody`.
     #[inline]
     pub(crate) fn hyper_seq_body(body: Arc<SeqBody>) -> Self {

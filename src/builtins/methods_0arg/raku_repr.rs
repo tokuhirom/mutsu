@@ -638,6 +638,12 @@ pub fn raku_value(v: &Value) -> String {
             }
         }
         ValueView::Seq(items) => {
+            // ADR-0038 S2: a `SeqView::List` handle (what `.cache` on a
+            // not-yet-reified Seq returns) is a `List` to Raku, so it renders as
+            // one — `(1, 2, 3)`, never `(1, 2, 3).Seq`.
+            if let Some(as_list) = Value::seq_list_view_as_list(v) {
+                return raku_value(&as_list);
+            }
             // A consumed Seq is represented as Seq.new() so that EVALing it
             // produces a pre-consumed Seq (matching Raku's behavior). Verified
             // against raku: `.raku` on an already-taken Seq shows this

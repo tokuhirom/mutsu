@@ -4184,3 +4184,80 @@ Per the counting note above: this closes **one** named file. It composes with
 #7084 (2 files), #7085 (2) and #7086 (1) against the same re-measured 40
 baseline, so a fresh sweep should read 35 — measure it rather than trusting that
 arithmetic.
+
+## 2026-08-29: the Seq/List cluster — `tail.t`, `seq.t`, `words.t` (closes 3)
+
+The three files the end-of-day sweep grouped as `S32-list/{seq,tail}.t` plus
+`S16-io/words.t` are **two** root causes, not one, and both sit in
+`infix:<eqv>` — which is exactly why the native provider never saw them: the
+real `is-deeply` narrows `Seq` arguments with `.cache` and then compares with
+`eqv`, and the real `cmp-ok` reaches an operator only through the ROUTINE form
+`&CALLER::LEXICAL::("infix:<$op>")`.
+
+1. **The `SeqView::List` handle was a `List` only by name.** ADR-0038 gave
+   `.cache` on a not-yet-reified `Seq` a second handle tagged `SeqView::List`
+   and taught `value_type_name` to read the tag — enough for `is-deeply`'s
+   narrowing to terminate (the ADR's stack overflow), but the value stayed a
+   `ValueView::Seq`, so `eqv` (type-strict) and `.raku` (renders the type) both
+   still saw a `Seq`. `$d.cache eqv ('a','b','c')` answered False and
+   `$d.cache eqv <a b c>.Seq` answered True — both backwards. Fixed by
+   normalising through one new helper, `Value::seq_list_view_as_list`, read by
+   `Value::eqv`, the `.raku` renderer, and `reify_or_consume_eqv_operand` (which
+   used to rebuild a taken List-view handle as a plain `Seq`). That is
+   `tail.t` 57 and all four `words.t` failures.
+2. **`&infix:<eqv>` was not the `eqv` operator.** `a eqv b` runs `OpCode::Eqv`,
+   whose handler owns the lazy-iterable rules, `Proxy` element FETCH, the
+   same-Seq identity fast path and the Seq reify/consume protocol that raises
+   `X::Seq::Consumed`. The routine form fell through `call_infix_routine` to the
+   pure `apply_reduction_op` fold (just `Value::eqv`), so
+   `cmp-ok $consumed1, 'eqv', $consumed2` silently answered False and emitted
+   its own TAP line inside the `throws-like` subtest. The operator body is now
+   `Interpreter::eqv_values` and `call_infix_routine` routes `eqv` through it,
+   the same way it already routes `~~`. That is `seq.t` 34.
+
+A THIRD route to `eqv` had the same defect and was fixed in the same move:
+`eval_reduction_operator_values` (which serves `[eqv]` and every metaop —
+`Zeqv`, `Xeqv`, `>>eqv<<`) also answered from the static `apply_reduction_op`
+table, so `[eqv] $consumed1, $consumed2` said `False` where raku throws.
+
+The targeted sweep then caught the consequence of (2): making the routine form
+consume — as raku does — exposed that mutsu's `unique`/`repeated` never cached a
+`Seq`-valued `:as` needle, which is what `roast/S32-list/unique.t`'s last test
+("Seq as the result of an :as caches the Seq") pins. `unique` and `repeated` now
+`.cache` it; `squish` deliberately does not, because raku's `squish` genuinely
+throws `X::Seq::Consumed` on the same input (measured all three side by side).
+
+### Per-file before/after (release build, `scripts/run-roast-test.sh`)
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `roast/S32-list/tail.t` | 1 failure (#57) | **PASS** | PASS | PASS |
+| `roast/S32-list/seq.t` | 1 failure (#34) | **PASS** | PASS | PASS |
+| `roast/S16-io/words.t` | 4 failures (#1, #2, #5, #6) | **PASS** | PASS | PASS |
+
+Per the counting note above: this closes **three** named files against the
+2026-08-29 re-measured 40 baseline. It composes with #7084 (2 files), #7085
+(2), #7086 (1) and #7087 (1) on a disjoint file set — measure the next sweep
+rather than trusting the arithmetic.
+
+Pin: `t/seq-cache-list-view-and-eqv-routine.t` (38 assertions, green under real
+`raku` as well as mutsu). Verification: `make test` green; the three files green
+under BOTH providers; a 444-file native sweep across `S32-list`, `S32-array`,
+`S16-io`, `S32-io`, `S02-types`, `S04-statements`, `S07-*`, `S03-operators` and
+`integration` green; `scripts/battery-testsuite.sh` on a release build unchanged.
+Full write-up:
+`news/2026-08/seq-list-view-is-a-list-everywhere-and-the-eqv-routine-is-the-eqv-operator.md`.
+One residual was split off rather than forced through:
+`todo/tickets/seq-list-view-handle-is-not-itemized-by-scalar-assignment.md` (a
+`.raku`-only itemization gap on the deferred List-view handle).
+
+### Note for the rest of the residue
+
+ADR-0038's "one oracle" rule was written about the type *name*. Both bugs here
+say the same thing one level down: a value carrying a type tag needs that
+discipline everywhere its type is *observable* (`eqv` and `.raku` are type
+oracles too), and where an operation has an operator form and a routine form,
+the real `Test.rakumod` will find whichever of the two mutsu did not think of as
+"the" implementation. `cmp-ok` reaches EVERY operator by name through
+`&CALLER::LEXICAL::`, so any remaining operator whose routine form diverges from
+its opcode is a live candidate for the rest of the list.

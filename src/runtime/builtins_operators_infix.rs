@@ -429,6 +429,17 @@ impl Interpreter {
                 acc = Value::truth(!self.smart_match(&acc, rhs));
                 continue;
             }
+            // `eqv` likewise needs the full interpreter, not the pure
+            // `apply_reduction_op` fold: the lazy-iterable rules, `Proxy`
+            // element FETCH, and the Seq reify/consume protocol (the source of
+            // `X::Seq::Consumed`) all live in `eqv_values`, and the routine form
+            // `&infix:<eqv>($a, $b)` must behave exactly like the `a eqv b`
+            // operator. The real `Test.rakumod`'s `cmp-ok` reaches `eqv` only
+            // through this routine form.
+            if op == "eqv" {
+                acc = self.eqv_values(acc, rhs.clone())?;
+                continue;
+            }
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             if self.infix_uses_numeric_bridge(op) {

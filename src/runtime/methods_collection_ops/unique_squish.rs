@@ -16,6 +16,31 @@ fn adverb_pair(arg: &Value) -> Option<(String, &Value)> {
     }
 }
 
+/// `.cache` an `:as`-produced needle when it is a `Seq`.
+///
+/// A `:as` mapper may hand back a `Seq` (`:as(*.map(&[~]))`), and `unique` /
+/// `repeated` compare each needle against EVERY needle seen so far. `:with`
+/// comparators such as `&[eqv]` CONSUME a `Seq` operand (measured against
+/// `raku`: `my $a = (1,2).Seq; &[eqv]($a, $b); $a.List` throws
+/// `X::Seq::Consumed`), so an un-cached needle dies on its second use. Rakudo
+/// caches it — that is exactly what `roast/S32-list/unique.t`'s "Seq as the
+/// result of an :as caches the Seq" pins. `.cache` does not force a deferred
+/// body, so an infinite `:as` result stays lazy.
+///
+/// `squish` deliberately does NOT get this: it keeps only the PREVIOUS
+/// needle, and rakudo never cached it there. Measured — with a `Seq`-valued
+/// `:as` and `:with(&[eqv])`, `raku`'s `unique` and `repeated` both answer
+/// while its `squish` throws `X::Seq::Consumed`, because the middle needle is
+/// used once as the right operand and again as the left one.
+fn cache_seq_needle(key: Value) -> Value {
+    if matches!(key.view(), ValueView::Seq(_))
+        && let Some(Ok(cached)) = crate::builtins::native_method_0arg(&key, Symbol::intern("cache"))
+    {
+        return cached;
+    }
+    key
+}
+
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_unique(
         &mut self,
@@ -57,7 +82,7 @@ impl Interpreter {
         let mut unique_items: Vec<Value> = Vec::new();
         for item in items {
             let key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![item.clone()], true)?
+                cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?)
             } else {
                 item.clone()
             };
@@ -150,7 +175,7 @@ impl Interpreter {
         let mut repeated_items: Vec<Value> = Vec::new();
         for item in items {
             let key = if let Some(func) = as_func.clone() {
-                self.call_sub_value(func, vec![item.clone()], true)?
+                cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?)
             } else {
                 item.clone()
             };

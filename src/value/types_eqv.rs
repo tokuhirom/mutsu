@@ -27,6 +27,20 @@ impl Value {
         if matches!(other.view(), ValueView::ContainerRef(_)) {
             return self.eqv(&other.deref_container());
         }
+        // ADR-0038 S2: `.cache` on a not-yet-reified `Seq` hands back a SECOND
+        // handle over the same body tagged `SeqView::List`. That handle
+        // IS a `List` as far as Raku is concerned (`value_type_name` says so),
+        // and `eqv` is type-strict, so it must compare as one — otherwise
+        // `Seq.new($iter).cache eqv (1, 2, 3)` answers False (and, worse,
+        // `... eqv (1, 2, 3).Seq` answers True). Normalising here rather than
+        // adding four cross-arms keeps every pairing (List-view vs List,
+        // vs Array, vs real Seq, vs List-view) consistent in one place.
+        if let Some(as_list) = Self::seq_list_view_as_list(self) {
+            return as_list.eqv(other);
+        }
+        if let Some(as_list) = Self::seq_list_view_as_list(other) {
+            return self.eqv(&as_list);
+        }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
         if let ValueView::Junction { kind, values } = other.view() {
