@@ -270,10 +270,19 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn exec_num_eq_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+    /// The full `infix:<==>` semantics, shared so that calling the operator as
+    /// a routine — `&infix:<==>($a, $b)`, which is exactly what the real
+    /// `Test.rakumod`'s `cmp-ok` does via `&CALLER::LEXICAL::("infix:<$op>")` —
+    /// behaves identically to the `$a == $b` operator form. The routine path
+    /// used to land on the pure `apply_reduction_op` fold (via a separate,
+    /// incomplete numeric-coercion bridge) instead, so e.g. `&infix:<==>(Inf.Rat,
+    /// Inf)` answered `False` where the operator answers `True`.
+    pub(crate) fn num_eq_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
@@ -299,7 +308,22 @@ impl Interpreter {
                     }
                     _ => {}
                 }
-                let needs_float = !l.same_variant(&r) || l.is_nil();
+                // Two numeric-looking Strs (`"1" == "1 "`, `"1.0" == "1"`) must
+                // compare their NUMERIC value, not their literal bytes — Raku's
+                // numeric-string coercion trims surrounding whitespace, so a
+                // trailing/leading space made two otherwise-equal numbers
+                // compare unequal under the `same_variant` raw-`l == r` shortcut
+                // below. Two non-numeric Strs of the same shape (mutsu's
+                // bare-string enum modeling, e.g. `$status == Broken`) still
+                // fall through to that shortcut unchanged — `==` is
+                // deliberately lenient about non-numeric strings (see
+                // `infix_is_strictly_numeric`'s doc comment), so this only
+                // widens the case where BOTH sides actually parse as numbers.
+                let both_numeric_strs = matches!(l.view(), ValueView::Str(_))
+                    && matches!(r.view(), ValueView::Str(_))
+                    && runtime::to_float_value(&l).is_some()
+                    && runtime::to_float_value(&r).is_some();
+                let needs_float = !l.same_variant(&r) || l.is_nil() || both_numeric_strs;
                 if needs_float {
                     Ok(Value::truth(
                         runtime::to_float_value(&l) == runtime::to_float_value(&r),
@@ -308,43 +332,37 @@ impl Interpreter {
                     Ok(Value::truth(l == r))
                 }
             }
-        })?;
+        })
+    }
+
+    pub(super) fn exec_num_eq_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = self.num_eq_values(left, right)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// `!=` is a negation meta-operator shortcut for `!==`: it evaluates `==`
+    /// (autothreading through junctions via [`Self::num_eq_values`]) and then
+    /// negates the boolean-collapsed result, always returning `Bool`. Sharing
+    /// [`Self::num_eq_values`] is the same "one oracle" reasoning as that
+    /// method's own doc comment — the routine form `&infix:<!=>($a, $b)` must
+    /// answer identically to `$a != $b`.
+    pub(crate) fn num_ne_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        let eq_result = self.num_eq_values(left, right)?;
+        Ok(Value::truth(!eq_result.truthy()))
     }
 
     pub(super) fn exec_num_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // != is a negation meta-operator shortcut for !==.
-        // It first evaluates == (which autothreads through junctions),
-        // then negates the boolean-collapsed result, always returning Bool.
-        let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
-            // NaN is unordered: NaN == anything is always False
-            if is_nan_value(&l) || is_nan_value(&r) {
-                return Ok(Value::FALSE);
-            }
-            if let (Some(a), Some(b)) =
-                (runtime::to_big_rat_parts(&l), runtime::to_big_rat_parts(&r))
-                && (is_rationalish(&l) || is_rationalish(&r))
-            {
-                Ok(Value::truth(runtime::big_rat_parts_equal(a, b)))
-            } else if !l.same_variant(&r) || l.is_nil() {
-                // Mirror `==` exactly: operands of different shapes (a Str and
-                // an Int, say) compare as floats. Structural equality here made
-                // `"" != 0` answer True while `"" == 0` answered False.
-                Ok(Value::truth(
-                    runtime::to_float_value(&l) == runtime::to_float_value(&r),
-                ))
-            } else {
-                Ok(Value::truth(l == r))
-            }
-        })?;
-        self.stack.push(Value::truth(!eq_result.truthy()));
+        let result = self.num_ne_values(left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -399,29 +417,112 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        // Fast path: Int < Int
+    /// Shared body for `<`, used by both the stack-based `exec_num_lt_op`
+    /// opcode and the routine form (`&infix:<<>($a, $b)`), so the two call
+    /// shapes cannot drift — see the doc comment on [`Self::num_eq_values`]
+    /// for why that matters.
+    pub(crate) fn num_lt_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        // Fast path: Int/Int or Num/Num, skipping the generic BigRat-capable
+        // `compare` path (its conversions + allocation are wasted on the
+        // overwhelmingly common case of two native-shaped operands).
         if let ValueView::Int(a) = left.view()
             && let ValueView::Int(b) = right.view()
         {
-            self.stack.push(Value::truth(a < b));
-            return Ok(());
+            return Ok(Value::truth(a < b));
         }
-        // Fast path: Num < Num
         if let ValueView::Num(a) = left.view()
             && let ValueView::Num(b) = right.view()
         {
-            self.stack.push(Value::truth(a < b));
-            return Ok(());
+            return Ok(Value::truth(a < b));
         }
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
-        })?;
+        })
+    }
+
+    /// Shared body for `<=` — see [`Self::num_lt_values`].
+    pub(crate) fn num_le_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            return Ok(Value::truth(a <= b));
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            return Ok(Value::truth(a <= b));
+        }
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            Interpreter::compare(l, r, |o| o <= 0)
+        })
+    }
+
+    /// Shared body for `>` — see [`Self::num_lt_values`].
+    pub(crate) fn num_gt_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            return Ok(Value::truth(a > b));
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            return Ok(Value::truth(a > b));
+        }
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            Interpreter::compare(l, r, |o| o > 0)
+        })
+    }
+
+    /// Shared body for `>=` — see [`Self::num_lt_values`].
+    pub(crate) fn num_ge_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            return Ok(Value::truth(a >= b));
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            return Ok(Value::truth(a >= b));
+        }
+        self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            check_type_object_in_numeric_context(&l)?;
+            check_type_object_in_numeric_context(&r)?;
+            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            Interpreter::compare(l, r, |o| o >= 0)
+        })
+    }
+
+    pub(super) fn exec_num_lt_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = self.num_lt_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -429,26 +530,7 @@ impl Interpreter {
     pub(super) fn exec_num_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Fast paths mirroring exec_num_lt_op: without them every `<=` in a
-        // hot loop pays the generic compare (BigRat conversion + alloc).
-        if let ValueView::Int(a) = left.view()
-            && let ValueView::Int(b) = right.view()
-        {
-            self.stack.push(Value::truth(a <= b));
-            return Ok(());
-        }
-        if let ValueView::Num(a) = left.view()
-            && let ValueView::Num(b) = right.view()
-        {
-            self.stack.push(Value::truth(a <= b));
-            return Ok(());
-        }
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            Interpreter::compare(l, r, |o| o <= 0)
-        })?;
+        let result = self.num_le_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -456,25 +538,7 @@ impl Interpreter {
     pub(super) fn exec_num_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Fast paths mirroring exec_num_lt_op (see exec_num_le_op).
-        if let ValueView::Int(a) = left.view()
-            && let ValueView::Int(b) = right.view()
-        {
-            self.stack.push(Value::truth(a > b));
-            return Ok(());
-        }
-        if let ValueView::Num(a) = left.view()
-            && let ValueView::Num(b) = right.view()
-        {
-            self.stack.push(Value::truth(a > b));
-            return Ok(());
-        }
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            Interpreter::compare(l, r, |o| o > 0)
-        })?;
+        let result = self.num_gt_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -482,25 +546,7 @@ impl Interpreter {
     pub(super) fn exec_num_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Fast paths mirroring exec_num_lt_op (see exec_num_le_op).
-        if let ValueView::Int(a) = left.view()
-            && let ValueView::Int(b) = right.view()
-        {
-            self.stack.push(Value::truth(a >= b));
-            return Ok(());
-        }
-        if let ValueView::Num(a) = left.view()
-            && let ValueView::Num(b) = right.view()
-        {
-            self.stack.push(Value::truth(a >= b));
-            return Ok(());
-        }
-        let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
-            check_type_object_in_numeric_context(&l)?;
-            check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
-            Interpreter::compare(l, r, |o| o >= 0)
-        })?;
+        let result = self.num_ge_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }

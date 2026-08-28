@@ -163,6 +163,37 @@ impl Interpreter {
         if normalized_op == "eqv" {
             return self.eqv_values(left.clone(), right.clone());
         }
+        // The numeric-comparison family needs the full interpreter for the
+        // same reason `eqv` does above: the pure `apply_reduction_op` table
+        // (and the narrower Instance/ContainerRef bridge a few lines below)
+        // cannot reach an Inf-valued Rat/FatRat, exact BigInt equality,
+        // SetHash/Set structural comparison, or a user subclass of Int the
+        // way the real operator body (`num_eq_values` etc. in
+        // `vm_comparison_ops.rs` / `vm_comparison_order_ops.rs`) does.
+        // `[==] @list`, `@a Z== @b` and `@a >>==<< @b` must all agree with
+        // the plain `$a == $b` operator.
+        //
+        // A user-defined `multi sub infix:<==>` on an object operand still
+        // wins first, mirroring the `reduction_op_is_numeric` bridge below —
+        // `num_eq_values` et al. know nothing about user-declared candidates.
+        if matches!(normalized_op, "==" | "!=" | "<" | ">" | "<=" | ">=" | "<=>") {
+            if Self::value_needs_numeric_bridge(left) || Self::value_needs_numeric_bridge(right) {
+                let infix_name = format!("infix:<{}>", normalized_op);
+                if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                    return Ok(v);
+                }
+            }
+            return match normalized_op {
+                "==" => self.num_eq_values(left.clone(), right.clone()),
+                "!=" => self.num_ne_values(left.clone(), right.clone()),
+                "<" => self.num_lt_values(left.clone(), right.clone()),
+                ">" => self.num_gt_values(left.clone(), right.clone()),
+                "<=" => self.num_le_values(left.clone(), right.clone()),
+                ">=" => self.num_ge_values(left.clone(), right.clone()),
+                "<=>" => self.spaceship_values(left.clone(), right.clone()),
+                _ => unreachable!(),
+            };
+        }
         // Range operators are legal metaop bases (`(1,2) Z.. (5,6)`,
         // `(1,2) X..^ (5,6)`) but are not reductions — they build a Range
         // value rather than fold two operands, so they cannot live in the

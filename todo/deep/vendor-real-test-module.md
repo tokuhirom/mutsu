@@ -4633,3 +4633,70 @@ loses its attributes in `.raku` (the class form is already correct, and it
 reproduces without `EVAL`). The roast assertion is only `eval-lives-ok`, so it
 gates nothing here. Filed as
 `todo/tickets/punned-role-raku-drops-undefined-attributes.md`.
+
+## 2026-08-28: the routine form of a numeric-comparison operator was not the operator
+
+Three files from the residue table above shared one root cause: the real
+`Test.rakumod`'s `cmp-ok` reaches an operator only through the ROUTINE form
+(`&CALLER::LEXICAL::("infix:<$op>")`), and `call_infix_routine`'s numeric
+comparison handling (`==`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`) folded through
+the pure static `apply_reduction_op` table plus its own separate
+`coerce_infix_operand_numeric` bridge — a reimplementation of the real
+operator's coercion rules, missing Inf-valued Rat/FatRat, exact BigInt
+equality, SetHash/Set structural comparison, and a user subclass of Int. Same
+fix shape as `eqv` got in `8360b3120`: the routine form and the
+`[==]`/`Z==`/`>>==<<` reduction/metaop forms now share the real operator body
+(`num_eq_values` / `num_ne_values` / `num_lt_values` / `num_le_values` /
+`num_gt_values` / `num_ge_values` / `spaceship_values`) with the `$a == $b`
+operator opcode, instead of a separately-maintained fold. Full write-up:
+`news/2026-08/infix-routine-form-numeric-comparison.md`. Pin:
+`t/infix-routine-form-numeric-comparison.t` (27 assertions, green under real
+`raku` too).
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | before (native) | after (native) |
+| --- | --- | --- | --- | --- |
+| `S32-num/int.t` | FAIL (test 118, `.new of subclass of Int`) | **PASS** (exit 0) | PASS | PASS (unchanged) |
+| `S02-types/WHICH.t` | FAIL (test 1655, `ObjAt.raku gives distinct results for different objects`) | **PASS** (exit 0) | PASS | PASS (unchanged) |
+| `S32-num/rat.t` | FAIL (test 749, `±Inf/NaN ⇿ Rat`, plus a later, unrelated abort) | test 749 now passes; file still aborts later (see below) | PASS | PASS (unchanged) |
+
+`S32-num/int.t` and `S02-types/WHICH.t` are fully closed under both
+providers. `S32-num/rat.t`'s named failure (test 749) is fixed, but the file
+still aborts later at an unrelated, pre-existing bug: `eqv with
+zero-denominator Rationals` crashes `Test.rakumod`'s `proclaim` with `Cannot
+modify an immutable Str`, reproducing identically before this change (traced
+to `proclaim`'s `$desc is copy` parameter not decoupling from a value that
+arrives through a chain of sigilless `\`-capture aliases). Filed as
+`todo/tickets/is-copy-param-not-decoupled-through-sigilless-capture-chain.md`
+rather than folded into this fix — it is unrelated to numeric-comparison
+dispatch.
+
+### Two things that cost the most time here
+
+**The redirect regressed a real behavior before it was noticed: user-defined
+`multi sub infix:<==>` stopped winning over the built-in path in the
+reduction/metaop form (`eval_reduction_operator_values`).** The `eqv`
+precedent's redirect runs unconditionally, but `==`/`!=`/etc. already had an
+existing `try_user_infix` check (gated on `value_needs_numeric_bridge`) that
+a naive port of the `eqv` pattern silently dropped. Fixed by preserving that
+check ahead of the new redirect. Caught by testing the scenario directly
+(`class Foo { has $.v }; multi sub infix:<==>(Foo $a, Foo $b) {...}; [==]
+($a, $b)`) — not in the original repro list, so always test the
+"pre-existing feature this touches" axis, not only the target divergence.
+
+**Unifying the routine and operator forms surfaced a THIRD, pre-existing bug
+in the operator itself: `"1" == "1 "` (two `Str` operands) was already
+`False`, not `True`.** `exec_num_eq_op`'s "same variant → compare raw values"
+shortcut compared two `Str` operands' literal bytes, not their numeric value
+— unnoticed because the old routine-form fold's `to_num` always numified
+(and trimmed) both operands, silently masking it. `t/reduce-numeric-string-whitespace.t`
+(`.unique(with => &[==])` on `("1", 1, "1 ", 2)`) caught this the moment the
+routine form stopped taking that separate, accidentally-more-correct code
+path. Fixed by widening the shortcut to also numify when BOTH `Str` operands
+actually parse as numbers, while leaving genuinely non-numeric `Str` pairs
+(mutsu's bare-string enum modeling) on the existing raw-equality path. This
+is the general shape the prompt's "warnings that have repeatedly cost time"
+section describes: an isolated `-e` probe of the *target* divergence looked
+clean, but the *unification itself* had two more edges the target list never
+mentioned.
