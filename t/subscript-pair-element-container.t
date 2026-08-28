@@ -38,7 +38,7 @@ use Test;
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
 
-plan 27;
+plan 29;
 
 # --- §1.3 row 1: :p stale read (Slice 2) -----------------------------------
 {
@@ -147,13 +147,25 @@ plan 27;
 }
 
 # --- §1.3 row 10: standalone `key => @a[elem]` pair ambiguity (Slice 3) ----
+# Landed once `array_slot_ref` stopped vivifying eagerly: a FatArrow's `Index`
+# RHS now compiles in the container-producing mode `=:=` / `return-rw` use, and
+# an out-of-range index yields a deferred token rather than growing the array at
+# pair-construction time.
 {
     my @a = <A B>;
     my $p = 0 => @a[0];
     my @c = <A B>;
     $p.value = "x";
-    todo 'row 10 needs a non-vivifying array element token first -- todo/tickets/array-slot-ref-vivifies-eagerly-where-raku-defers.md';
     is-deeply @a, ["x", "B"], 'key => @a[i] pair writes through with an equal sibling array (row 10)';
+}
+{
+    # The out-of-range companion: constructing the pair must not grow `@a`,
+    # and the write through `.value` fills the gap.
+    my @a = 1, 2;
+    my $p = 'k' => @a[5];
+    is-deeply @a, [1, 2], 'key => @a[out-of-range] does not grow the array (row 10)';
+    $p.value = 9;
+    is @a.raku, '[1, 2, Any, Any, Any, 9]', 'the pair write vivifies the element (row 10)';
 }
 
 # --- §1.3 row 11: .pairs on an immutable List must die (Slice 4) ----------

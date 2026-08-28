@@ -2643,13 +2643,26 @@ impl Interpreter {
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
                             // Only update refs that pointed to the OLD container.
-                            local.with_hash_entry_ref_mut(|root, _| {
-                                if let crate::value::EntryRoot::Hash(hash) = root
-                                    && crate::gc::Gc::as_ptr(hash) as usize == old_ptr
-                                    && let ValueView::Hash(new_arc) = container.view()
+                            local.with_hash_entry_ref_mut(|root, _| match root {
+                                crate::value::EntryRoot::Hash(hash)
+                                    if crate::gc::Gc::as_ptr(hash) as usize == old_ptr =>
                                 {
-                                    *hash = new_arc.clone();
+                                    if let ValueView::Hash(new_arc) = container.view() {
+                                        *hash = new_arc.clone();
+                                    }
                                 }
+                                // The array twin: an out-of-range `:=` bind
+                                // (`my $r := @a[5]`) anchors its deferred token
+                                // on the array node itself, so a COW detach has
+                                // to re-anchor it the same way.
+                                crate::value::EntryRoot::Array(arr)
+                                    if crate::gc::Gc::as_ptr(arr) as usize == old_ptr =>
+                                {
+                                    if let ValueView::Array(new_arc, _) = container.view() {
+                                        *arr = new_arc.clone();
+                                    }
+                                }
+                                _ => {}
                             });
                         }
                     }

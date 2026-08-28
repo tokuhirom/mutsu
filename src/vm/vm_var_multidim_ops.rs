@@ -118,6 +118,14 @@ impl Interpreter {
                 .unwrap_or_else(|| dim.clone());
             let idx = Self::index_to_usize(&resolved)?;
             if terminal {
+                // TODO: hand out the deferred array token here too. This path is
+                // explicitly the EAGER one (see the caller's comment): its result
+                // is pushed straight onto the stack for `MultiDimIndexBindRef`,
+                // where a `HashEntryRef` token would leak into a plain read
+                // (`roast/S32-array/multislice-6e.t`'s `@array[0;0;3] gives Any`
+                // rows read the raw token instead of the hole). Grow first so the
+                // promotion still yields a cell.
+                cur.array_grow_to(idx);
                 return cur.array_slot_ref(idx, true);
             }
             cur = cur.ensure_array_child(idx)?;
@@ -224,6 +232,14 @@ impl Interpreter {
         // dim) autovivifies, matching the assignment semantics.
         for i in indices {
             if terminal {
+                // TODO: hand out the deferred array token here too. Like the
+                // all-scalar autoviv path, this one is EAGER on purpose: the
+                // cells it collects become the elements of the slice list the
+                // caller pushes, and a `HashEntryRef` token there is neither
+                // decontainerized on read nor written through on assignment
+                // (`roast/S32-array/multislice-6e.t`'s `@array[*;0;3] = 999`).
+                // Grow first so the promotion still yields a cell.
+                cur.array_grow_to(i);
                 out.push(cur.array_slot_ref(i, true)?);
             } else {
                 let child = cur.ensure_array_child(i)?;

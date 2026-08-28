@@ -19,6 +19,13 @@
 //! element chokepoints ([`Value::hash_insert_through`] /
 //! [`Value::assign_element_slot`]), so a `:=`-bound `ContainerRef` cell that
 //! already sits at the slot is written *through* rather than replaced.
+//!
+//! Both container kinds anchor a path: [`EntryRoot::Hash`] for a key that does
+//! not exist yet, [`EntryRoot::Array`] for an index past the end. The array
+//! side used to vivify eagerly ([`Value::array_slot_ref`] grew the vec at
+//! *bind* time), so `my @a = 1, 2; my $r := @a[5]` reported six elements where
+//! raku reports two; it now mints a token like the hash side and
+//! [`EntryTerminal`]'s array arm fills the gap on the first write.
 
 use super::{ArrayData, HashData, Value, ValueView};
 use crate::gc::Gc;
@@ -26,17 +33,22 @@ use std::sync::Mutex;
 
 /// What a deferred vivification path is anchored to.
 ///
-/// Almost always a `Hash`: only `hash_slot_ref` / `hash_autovivify` mint a
-/// token, because the array side vivifies eagerly (`array_slot_ref` grows past
-/// the end). The exception is a chain link that is an *already-materialized but
-/// still empty* `ContainerRef` cell — the shape `array_slot_ref` leaves behind
-/// when it promotes a fresh hole. Descending it associatively
-/// (`my @a; my $x := @a[0]; my $y := $x<k>; $y = 5`) must stay deferred too, so
-/// the cell itself can anchor a path.
+/// Usually a `Hash` (`hash_slot_ref` / `hash_autovivify` mint one for a key
+/// that is not there yet), but an `Array` anchors a token just the same:
+/// `array_slot_ref` hands one out for an index past the end, so
+/// `my @a = 1, 2; my $r := @a[5]` leaves `@a` two elements long until something
+/// is actually written through `$r` — raku's behaviour, and the shape the hash
+/// side always had. The third root is a chain link that is an
+/// *already-materialized but still empty* `ContainerRef` cell — what
+/// `array_slot_ref` leaves behind when it promotes a fresh hole. Descending it
+/// associatively (`my @a; my $x := @a[0]; my $y := $x<k>; $y = 5`) must stay
+/// deferred too, so the cell itself can anchor a path.
 #[derive(Debug, Clone)]
 pub(crate) enum EntryRoot {
     /// A hash the first step keys into.
     Hash(Gc<HashData>),
+    /// An array the first step indexes into.
+    Array(Gc<ArrayData>),
     /// A shared scalar cell; the first step's container is created *inside* it.
     Cell(Gc<Mutex<Value>>),
 }
@@ -108,6 +120,9 @@ impl EntryRoot {
             EntryRoot::Hash(arc) => Level::Hash(arc.clone())
                 .accepts(want)
                 .then(|| Level::Hash(arc.clone())),
+            EntryRoot::Array(arc) => Level::Array(arc.clone())
+                .accepts(want)
+                .then(|| Level::Array(arc.clone())),
             EntryRoot::Cell(cell) => {
                 let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 Level::of(&inner).filter(|l| l.accepts(want))
@@ -116,9 +131,10 @@ impl EntryRoot {
     }
 
     /// The level this root presents to `want`, CREATING it when absent. A hash
-    /// root is fixed (a positional first step simply has no level, which is
-    /// unreachable: `path[0]` is always a key for a hash root); an EMPTY cell
-    /// root is filled with a fresh container of the kind `want` needs.
+    /// or array root is fixed (a step of the other shape simply has no level,
+    /// which is unreachable: `path[0]` always matches the root's kind); an
+    /// EMPTY cell root is filled with a fresh container of the kind `want`
+    /// needs.
     ///
     /// A cell holding a real value is left alone and reports no level, so the
     /// write is dropped rather than clobbering it. `my %h = a => 1; my $x :=
@@ -131,7 +147,7 @@ impl EntryRoot {
             return Some(level);
         }
         match self {
-            EntryRoot::Hash(_) => None,
+            EntryRoot::Hash(_) | EntryRoot::Array(_) => None,
             EntryRoot::Cell(cell) => {
                 let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                 if !is_container_hole(&guard) {
@@ -214,6 +230,25 @@ impl EntryTerminal {
                 let data: &ArrayData = unsafe { &*Gc::as_ptr(arc) };
                 data.get(*idx).cloned()
             }
+        }
+    }
+
+    /// What a read of this slot yields while the deferred bind is still
+    /// UNCONNECTED — nothing was ever written through the bound variable.
+    ///
+    /// A hash entry that does not exist reads as `Any`. An array slot past the
+    /// end reads as the array's hole value, which is `Any` only by default:
+    /// `my Int @i; my $r := @i[5]` reads `Int`, and an `is default(42)` array
+    /// reads `42` (verified against rakudo). That is the same value
+    /// [`EntryTerminal::insert`] fills the gap with, so the read agrees with
+    /// what the eventual write leaves behind.
+    pub(crate) fn unwritten_read(&self) -> Value {
+        match self {
+            EntryTerminal::Hash(..) => Value::Package(crate::symbol::Symbol::intern("Any")),
+            // SAFETY: a shared read of the aliased container, mirroring `peek`.
+            // The clone ends the borrow before any caller can mutate through
+            // `gc_contents_mut`.
+            EntryTerminal::Array(arc, _) => array_hole(unsafe { &*Gc::as_ptr(arc) }),
         }
     }
 

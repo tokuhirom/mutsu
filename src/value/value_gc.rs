@@ -111,11 +111,13 @@ impl Value {
             ValueView::Sub(data) => visit(&data.erased()),
             ValueView::Instance { attributes, .. } => visit(&attributes.erased()),
             ValueView::LazyList(ll) => visit(&ll.erased()),
-            // A hash-entry lvalue reference holds a strong `Gc<HashData>` node
-            // (the hash it indexes into); yield it so a cycle routed through a
-            // stored entry-ref is still reached.
+            // A deferred entry lvalue reference holds a strong node for the
+            // container it is anchored to (the hash it keys into, the array it
+            // indexes into, or the shared cell); yield it so a cycle routed
+            // through a stored entry-ref is still reached.
             ValueView::HashEntryRef { root, .. } => match root {
                 crate::value::EntryRoot::Hash(hash) => visit(&hash.erased()),
+                crate::value::EntryRoot::Array(arr) => visit(&arr.erased()),
                 crate::value::EntryRoot::Cell(cell) => visit(&cell.erased()),
             },
 
@@ -892,6 +894,21 @@ mod tests {
         let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
             root: crate::value::EntryRoot::Hash(hash),
             path: vec![crate::value::EntryStep::Key("k".to_string())],
+            eager: false,
+        });
+        assert_eq!(gc_trace_node_count(&value), 1);
+    }
+
+    #[test]
+    fn hash_entry_ref_traces_an_array_root() {
+        // An out-of-range `:=` bind (`my @a = 1, 2; my $r := @a[5]`) anchors a
+        // deferred token on the array itself. It holds a strong
+        // `Gc<ArrayData>`, so gc_trace must yield that node or a cycle routed
+        // through the deferred bind is under-collected.
+        let arr = crate::gc::Gc::new(crate::value::ArrayData::default());
+        let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
+            root: crate::value::EntryRoot::Array(arr),
+            path: vec![crate::value::EntryStep::Index(5)],
             eager: false,
         });
         assert_eq!(gc_trace_node_count(&value), 1);

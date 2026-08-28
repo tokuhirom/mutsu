@@ -716,6 +716,36 @@ impl Compiler {
             });
             return;
         }
+
+        // `key => @a[i]`: the Pair's value must alias the ELEMENT container, so
+        // `$p.value = "x"` writes through to the array (ADR-0036 §1.3 row 10).
+        // Compile the subscript in the same container-producing mode `=:=`
+        // (above) and `return-rw` (`compile_return_rw_arg`) use — the element's
+        // shared `ContainerRef` cell IS the pair value, so unlike the `$var`
+        // case there is nothing to box with `WrapVarRef`. Landing this needed
+        // the deferred array-element token first: routing every `key => @a[i]`
+        // through the container-producing primitive while it still grew the
+        // array eagerly would have extended the array at pair-construction
+        // time for every out-of-range index.
+        if matches!(op, TokenKind::FatArrow)
+            && !self.suppress_pair_capture
+            && matches!(right, Expr::Index { .. })
+        {
+            self.compile_expr(left);
+            let saved_av = self.scalar_bind_autovivify;
+            let saved_term = self.bind_terminal;
+            self.scalar_bind_autovivify = true;
+            self.bind_terminal = true;
+            self.compile_expr(right);
+            self.scalar_bind_autovivify = saved_av;
+            self.bind_terminal = saved_term;
+            self.code.emit(if mint_named_pair {
+                OpCode::MakeNamedArg
+            } else {
+                OpCode::MakePair
+            });
+            return;
+        }
         if let Some(opcode) = Self::binary_opcode(op) {
             if matches!(op, TokenKind::Ident(name) if name == "does") {
                 let var_name = match left {
