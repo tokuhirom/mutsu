@@ -4946,3 +4946,56 @@ three files; native-provider behavior unaffected (still PASS, and the
 `role-pun-metamethod-identity.t`/`promise-subclass-factory-methods.t`/
 `mixin-type-object-*.t` local pins cover the underlying language bugs
 directly, independent of either `Test` provider).
+
+## 2026-08-29 — lazy-gather-forced `return`/`die` signal delivery: misc2.t closed, array.t closed
+
+Closes out the `lazy-gather-return-outside-scope-swallowed-in-nested-block`
+ticket the previous slice filed (`news/2026-08/lazy-gather-return-outside-
+scope-resolution.md` has the full writeup; `news/2026-08/gather-lazy-force-
+signal-delivery.md` and `news/2026-08/itemized-scalar-sink-does-not-force-
+lazy-gather.md` have the two independent root-cause fixes). Two unrelated
+bugs shared one observable symptom: a control-flow signal (a `return`, or a
+plain `die`) raised while forcing a lazy `gather`/`Seq` was either delivered
+to the wrong place or never delivered at all.
+
+1. **False-positive forcing**: mutsu's sink-context forcing ran an
+   as-yet-untouched lazy value for side effects even when it had already
+   been assigned to a plain scalar (itemized) — raku never forces an
+   itemized value merely because it is later discarded, only a genuinely
+   bare one. Fixed with a persistent `itemized` flag on both `SeqBody` and
+   `LazyList`, set at scalar-assignment time (`vm_var_assign_set_local.rs`)
+   and checked by every sink-forcing site.
+2. **Missed delivery**: `try`/CATCH unconditionally let ANY `return` control
+   signal propagate past itself (correct for a still-live return, wrong for
+   one whose target routine had already exited — that one can never be
+   caught by unwinding further and must convert to a catchable
+   `X::ControlFlow::Return` right there). Separately, a `return` executed
+   while FORCING a `gather` never had its target callable id resolved at
+   all, so it fell back to "the first enclosing routine call frame catches
+   it unconditionally" and was silently absorbed by an unrelated caller
+   (exactly the shape the real `Test.rakumod`'s `subtest(&subtests) {
+   subtests(); CATCH {...} }` hits). Fixed with a general liveness check
+   (`Interpreter::return_target_is_live`, generalizing ADR-0037 §2.3's EVAL-
+   context classification to ordinary closures) plus resolving the gather's
+   own captured `__mutsu_callable_id` at both of mutsu's gather-forcing
+   entry points.
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S32-exceptions/misc2.t` | aborts mid-file (unrelated `lazy-gather-return` bug, test ~220, "You planned N tests, but ran M") | **PASS** (266/266) | still PASS (266/266) |
+| `S02-types/array.t` | `zen and whatever slices` subtest dies where raku lives (`Died` escaping `lives-ok` itself, "You planned 2 tests, but ran 0") | **PASS** (108/108) | still PASS (108/108) |
+| `S04-statements/return.t` | not independently blocked by this bug (`X::ControlFlow::Return`'s `.out-of-dynamic-scope` shape was already correct) | still **PASS** (26/26) | still PASS (26/26) |
+
+Pins: `t/itemized-scalar-sink-does-not-force-lazy.t` (8 assertions),
+`t/return-target-dead-reaches-nearest-catch.t` (9 assertions) — both green
+under `raku` too.
+
+A third, narrower, adjacent gap surfaced while writing the regression
+tests — an explicit `.sink()` METHOD call on a gather-based lazy list never
+runs the body at all (distinct from the delivery bug above: here forcing
+never happens, rather than happening and being misdelivered) — filed
+separately as `todo/tickets/lazylist-sink-method-does-not-force-gather-body.md`
+rather than folded into this fix, since it is not required by any
+currently-tracked roast test.

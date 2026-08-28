@@ -2023,6 +2023,17 @@ pub(crate) struct LazyList {
     /// `.cache`-returned view carries this flag. Typed field (was the
     /// `__mutsu_lazylist_cached_no_sink` env marker).
     pub(crate) cached_no_sink: bool,
+    /// Set by a plain `$s = SEQ` (or `my $s = SEQ`) scalar assignment
+    /// (`vm_var_assign_set_local.rs`): from that point on, discarding this
+    /// value in sink context — even a bare `$s;`, or this same value
+    /// flowing back out through a routine/closure return whose caller
+    /// discards ITS result — must not force/drain the underlying `gather`
+    /// (raku's `sink` never forces an itemized Scalar; only a genuinely
+    /// un-itemized bare Seq gets drained for side effects). Mirrors
+    /// `cached_no_sink`'s exemption in `SinkPop`/`ExecCall`'s sink-forcing,
+    /// but is orthogonal to it (a `.cache` view and an itemized scalar are
+    /// different reasons to skip the same forcing).
+    pub(crate) itemized: bool,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

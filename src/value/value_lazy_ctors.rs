@@ -25,6 +25,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -59,6 +60,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -82,6 +84,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -122,6 +125,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -166,6 +170,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -200,6 +205,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 
@@ -231,6 +237,7 @@ impl LazyList {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         }
     }
 

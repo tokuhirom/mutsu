@@ -49,6 +49,7 @@ impl Clone for LazyList {
             array_context: self.array_context,
             list_context: self.list_context,
             cached_no_sink: self.cached_no_sink,
+            itemized: self.itemized,
         }
     }
 }
@@ -327,6 +328,20 @@ impl LazyList {
     pub(crate) fn with_cached_no_sink(&self) -> Self {
         let mut cloned = self.clone();
         cloned.cached_no_sink = true;
+        cloned
+    }
+
+    /// Whether a plain scalar assignment itemized this list (see the
+    /// `itemized` field doc on `LazyList`).
+    pub(crate) fn is_itemized(&self) -> bool {
+        self.itemized
+    }
+
+    /// Return a clone tagged as itemized by a `$s = SEQ` scalar assignment
+    /// (no-op on a later sink of this same value).
+    pub(crate) fn with_itemized(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned.itemized = true;
         cloned
     }
 

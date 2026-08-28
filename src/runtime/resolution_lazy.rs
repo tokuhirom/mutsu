@@ -162,7 +162,26 @@ impl Interpreter {
         &mut self,
         list: &crate::value::LazyList,
     ) -> Result<Vec<Value>, RuntimeError> {
-        self.force_lazy_list(list)
+        let mut r = self.force_lazy_list(list);
+        // Same fix as `force_lazy_list_vm`: a `return` inside the gather
+        // body targets whatever routine WROTE the gather (captured in
+        // `list.env`'s `__mutsu_callable_id`, the same key an ordinary
+        // non-routine closure's own `return` resolves from in
+        // `vm_closure_dispatch.rs`), not whichever routine happens to be
+        // forcing it — `.Str`/`~`/other method-dispatch forcing routes
+        // through this bridge instead of `force_lazy_list_vm`, so it needs
+        // its own copy of the tag. See that fix's doc comment for the full
+        // rationale (an untargeted `CX::Return` is silently "caught" by the
+        // first enclosing routine call frame instead of surfacing
+        // `X::ControlFlow::Return`).
+        if let Err(e) = &mut r
+            && e.is_return()
+            && e.return_target_callable_id().is_none()
+            && let Some(ValueView::Int(id)) = list.env.get("__mutsu_callable_id").map(Value::view)
+        {
+            e.set_return_target_callable_id(Some(id as u64));
+        }
+        r
     }
 
     /// Force a `LazyIoLines` value into an eager array by reading all remaining

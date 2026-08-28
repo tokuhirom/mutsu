@@ -3199,8 +3199,13 @@ impl Interpreter {
                         // A `.cache`-returned view is a cached, re-iterable list;
                         // sinking it is a no-op and must NOT drain the underlying
                         // source (e.g. `(my $l = $cat.lines).cache;` keeps the cat
-                        // unread). A bare lazy Seq still drains below.
-                        ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+                        // unread). A `$s = SEQ` scalar assignment itemized this
+                        // value (`LazyList::itemized`) — raku's `sink` never
+                        // forces an itemized Scalar, only a genuinely bare Seq
+                        // (measured: `my $s = (gather die)[]; $s;` lives). A bare
+                        // lazy Seq still drains below.
+                        ValueView::LazyList(list)
+                            if list.is_cached_no_sink() || list.is_itemized() => {}
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }

@@ -640,6 +640,7 @@ impl Interpreter {
             array_context: false,
             list_context: false,
             cached_no_sink: false,
+            itemized: false,
         };
         Value::lazy_list(crate::gc::Gc::new(list))
     }
