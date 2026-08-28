@@ -1,6 +1,38 @@
 use super::*;
 
 impl Interpreter {
+    /// The name of the type object a bareword that `has_type`/`is_builtin_type`
+    /// already accepted must resolve to.
+    ///
+    /// A short name is only its own type object when something is registered
+    /// under exactly that name (or it is a builtin). Otherwise the name is a
+    /// REFERENCE that has to be resolved: through the declaring module's import
+    /// aliases (`package_type_alias`), and — the case this exists for — through
+    /// the running package's chain, because a type declared inside a package
+    /// (`module M { class C {…} }`, and anything an `EVAL` compiles while a
+    /// module's sub is on the stack) is registered ONLY as `M::C`. `has_type`
+    /// accepts the short `C` there, so without this the bareword bound a bare,
+    /// never-registered `C` type object with no methods and `C.new` died with
+    /// "Unknown method ... new on C".
+    pub(super) fn type_object_name_for_bareword(&self, name: &str) -> String {
+        self.resolve_bareword_type_name(name)
+            .unwrap_or_else(|| Self::resolve_type_alias(name).to_string())
+    }
+
+    /// [`Self::type_object_name_for_bareword`] as a probe: `Some(qualified)`
+    /// when the bareword really does name a type, `None` when nothing accounts
+    /// for it. Deliberately never consults `env[name]` for the name itself —
+    /// that key is shared with a same-named `$`-sigiled lexical, and the whole
+    /// point of the callers is to decide whether such a lexical's value is
+    /// shadowing a type.
+    pub(super) fn resolve_bareword_type_name(&self, name: &str) -> Option<String> {
+        if self.has_type_direct(name) || Self::is_builtin_type(name) {
+            return Some(Self::resolve_type_alias(name).to_string());
+        }
+        self.package_type_alias(name)
+            .or_else(|| self.resolve_type_in_current_package(name))
+    }
+
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
@@ -143,12 +175,18 @@ impl Interpreter {
             // placeholder `Package(Any)` before its RHS runs (closure
             // capture-by-reference support in SetVarDynamic); the RHS bareword
             // still names the TYPE — without this it fell into the alias
-            // branch below and returned Any. `has_type_direct` (no alias
-            // resolution) is required here: the plain `has_type` treats the
-            // very placeholder as an import alias to Any and reports ANY name
-            // as a type (`my $x .= new` would resolve `x` to Package("x")).
+            // branch below and returned Any. The plain `has_type` must NOT be
+            // used here: it treats the very placeholder as an import alias to
+            // Any and reports ANY name as a type (`my $x .= new` would resolve
+            // `x` to Package("x")). `resolve_bareword_type_name` is the
+            // env-blind probe that avoids exactly that while still finding a
+            // type declared inside a package (`module M { class C {…} }`,
+            // including a lexical `class` in a routine, which is registered
+            // only under a qualified — possibly ADR-0047-mangled — key): with
+            // the plain `has_type_direct` alone, `my C $C .= new` resolved its
+            // own bareword to the placeholder and built an `Any` instance.
             Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
-                Self::is_builtin_type(name) || self.has_type_direct(name)
+                self.resolve_bareword_type_name(name).is_some()
             }
             _ => false,
         } {
@@ -158,10 +196,7 @@ impl Interpreter {
             // (Nil) it must NOT shadow the type — `$foo` and `foo` are distinct
             // symbols in Raku. This notably affects `my $foo = foo.new`, whose RHS
             // resolves `foo` before the `$foo` slot is assigned.
-            match self.package_type_alias(name) {
-                Some(qualified) => Value::package(Symbol::intern(&qualified)),
-                None => Value::package(Symbol::intern(Self::resolve_type_alias(name))),
-            }
+            Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
         } else if let Some(v) = self.env().get(name) {
             if matches!(v.view(), ValueView::Enum { .. } | ValueView::Nil)
                 || matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name)
@@ -195,7 +230,7 @@ impl Interpreter {
                 }
                 v.clone()
             } else if self.has_type(name) || Self::is_builtin_type(name) {
-                Value::package(Symbol::intern(Self::resolve_type_alias(name)))
+                Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
             } else if name.contains("::")
                 && !name.starts_with('$')
                 && !name.starts_with('@')
@@ -245,10 +280,7 @@ impl Interpreter {
             // declaring module's own import aliases (`package_type_aliases`); such
             // a name must become the QUALIFIED type, since the short name is not
             // registered anywhere.
-            match self.package_type_alias(name) {
-                Some(qualified) => Value::package(Symbol::intern(&qualified)),
-                None => Value::package(Symbol::intern(Self::resolve_type_alias(name))),
-            }
+            Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
         } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
             // A short type name declared in the (dynamically) current package.
             // Checked BEFORE the built-in-type fallback so a module-local

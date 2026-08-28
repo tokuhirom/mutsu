@@ -701,6 +701,27 @@ impl Interpreter {
                 return self.nominal_type_object_name_for_constraint(&resolved);
             }
         }
+        // A short type name declared INSIDE a package (`module M { class C {…} }`,
+        // and anything an `EVAL` compiles while a module's sub is on the stack) is
+        // registered under its QUALIFIED name only. The short name normally works
+        // because `env` carries an alias to the qualified one — but that alias
+        // lives under the sigil-stripped key `C`, which a same-named `$`-sigiled
+        // lexical (`my C $C`) overwrites, and inside an `EVAL`'d unit it is absent
+        // altogether. Fall back to the type registry, exactly as `GetBareWord`
+        // does, so an uninitialised `my C $x` holds the real `M::C` type object
+        // instead of a bare, never-registered `C` with no methods (on which
+        // `.new` then fails). Builtin and already-registered names keep their
+        // spelling, so a core type is never re-anchored onto a package.
+        if !base_name.contains("::")
+            && !self.has_type_direct(&base_name)
+            && !Self::is_builtin_type(&base_name)
+            && let Some(qualified) = self
+                .package_type_alias(&base_name)
+                .or_else(|| self.resolve_type_in_current_package(&base_name))
+            && qualified != base_name
+        {
+            return self.nominal_type_object_name_for_constraint(&qualified);
+        }
         if let Some(subset) = self.registry().subsets.get(&base_name) {
             if language_version_is_6e_or_newer(&subset.version) {
                 // In v6.e, the default for a subset variable is the base type's
