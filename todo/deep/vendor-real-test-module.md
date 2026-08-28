@@ -4430,3 +4430,69 @@ roast sweep across `S32-exceptions`, `S02-names`, `S02-lexical-conventions`,
 
 Per the counting note above, this closes **one** named file; re-measure rather
 than trusting a running total.
+
+## 2026-08-29 (end of session): every remaining file, re-run and classified
+
+The eight PRs that landed today (#7084, #7085, #7086, #7087, #7088, #7089, #7090, #7091) were
+measured against a **session-opening sweep of 40 correctness regressions** (42 raw minus two
+`exit 124` performance artifacts, and byte-identical in file set to the previous evening's, so the
+baseline is reproducible rather than noisy).
+
+Rather than quote a running total — the counting note above warns against exactly that — **all 42
+files from that sweep were re-run individually on `main` @ `33cb4434e`** (release,
+`MUTSU_ROAST_TIMEOUT_SCALE=2`, one at a time, both providers checked for the survivors). 13 are now
+clean. What follows is every file that still fails, with its **first unmarked failing assertion** —
+`# TODO`-marked lines are excluded, since the sweep predicate treats them as the expected failures
+they are.
+
+| file | first unmarked failure | note |
+| --- | --- | --- |
+| `6.c/S14-roles/mixin-6c.t` | method Bool in mixin is used | |
+| `S02-types/WHICH.t` | ObjAt.raku gives distinct results for different objects | |
+| `S03-metaops/hyper.t` | can use hypers with local scoped user-defined operators | `Unsupported reduction operator: +++` |
+| `S04-phasers/end.t` | lexical lookup from END block to surrounding BEGIN block works | root-caused, see `todo/tickets/end-phaser-captured-lexical-clobbered-by-a-later-same-named-capture.md` |
+| `S05-metachars/closure.t` | One matched | |
+| `S05-modifier/pos.t` | Insensitive repeated continued match pos | |
+| `S05-modifier/repetition-exhaustive.t` | Second entry of prev. generated `$/` | |
+| `S06-multi/redispatch.t` | It's ok to call nextsame in the last/only candidate | in flight |
+| `S06-multi/subsignature.t` | It's ok to call nextsame in the last/only candidate (test 66) | **same cause as the row above** |
+| `S06-operator-overloading/sub.t` | ... basic infix operator overloading worked | |
+| `S06-other/main.t` | MAIN in a module did not get executed | |
+| `S12-class/attributes.t` | HOW on attributes lives, custom class | `No such method 'x' for invocant of type 'A'` |
+| `S12-coercion/coercion-methods.t` | Roles | |
+| `S12-construction/autopairs.t` | class instantiation with autopair, spaces | `Unknown method ... new on Tb` — in flight |
+| `S12-enums/misc.t` | did we throws-like X::Enum::NoValue? | |
+| `S14-traits/routines.t` | unknown trait mentions `trait_mod:<is>` in dispatch error | |
+| `S17-promise/basic.t` | subclasses create subclassed Promises | |
+| `S24-testing/10-is-approx.t` | tree-arg version + optional description | real module's own spec |
+| `S24-testing/2-force_todo.t` | `# You planned 12 tests, but ran 0` | native-provider-only; needs `#?rakudo eval` fudge or un-whitelisting |
+| `S24-testing/3-output.t` | eval error via diag | mutsu's parse-error text is verbose and internally duplicated |
+| `S24-testing/6-done_testing.t` | (no unmarked failure; exit 1) | native-provider-only, as above |
+| `S32-io/io-cathandle.t` | handles method | `todo/tickets/cathandle-handles-wrongly-lazy-array.md` |
+| `S32-list/skip.t` | (no unmarked failure; exit 1) | `todo/tickets/routine-value-self-recursion-after-import-scope-pop.md` |
+| `S32-num/int.t` | Int.new | |
+| `S32-num/rat.t` | ±Inf/NaN ⇿ Rat | |
+| `S02-types/array.t` | (no unmarked failure; exit 255) | needs a second look — may be a mid-file abort |
+| `S03-buf/write-int.t` | (exit 124) | **NOT correctness** — the performance class, see below |
+
+`S32-exceptions/misc2.t` is absent because #7091 closed it after this table's build; `roast/S04-statements/return.t`
+appeared in the loop with `exit 255` but re-runs clean under both providers, so it is listed nowhere —
+treat a lone `exit 255` with no unmarked failure as needing a re-run before it is believed.
+
+**Two rows share one cause** (`redispatch.t` and `subsignature.t`), and three are not interpreter
+gaps at all (`S24-testing/{2-force_todo,6-done_testing}.t` are native-provider-only;
+`S03-buf/write-int.t` is the timeout class). Everything else is a singleton — this residue genuinely
+has no dominant cause left, which is a different situation from the earlier "one-at-a-time"
+conclusions this file records having drawn and retracted three times: those were drawn from a
+*classification of first-failure text*, this one from re-running every file.
+
+### The performance blocker moved, and it is now one measurement
+
+`todo/perf/interpreter-call-path-in-hot-loops.md` gained a dated section today that supersedes this
+file's "step 3 needs the call path as well" note. The short version: the `sprintf-*` family and
+`S04-declarations/state.t` **now fit** the per-file budget (state.t 61.8 s -> 15.1 s; sprintf-d.t
+22.2 s -> 11.4 s, where mutsu is faster than rakudo), leaving only
+`S03-buf/{write-int,read-write-bits}.t`. And the cause is sharper than "the call path": it is the
+**`&`-sigil parameter**. `sub f(&c) { 1 }` called `f(&c)` costs 4.32 µs/iter and re-resolves the
+callee by name on every call; `sub f($c) { 1 }` with an identical callsite, body and arity costs
+0.64 µs and resolves once. Every real-`Test` assertion is the former shape.
