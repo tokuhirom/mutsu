@@ -3956,6 +3956,103 @@ The remaining named clusters are `S24-testing/{10-is-approx,14-like-unlike,3-out
 pair, which needs the `#?rakudo eval` fudge directive or an un-whitelisting
 rather than an interpreter fix.
 
+## 2026-08-29: the session-opening sweep reproduces 40, and `S24-testing/14-like-unlike.t` closes
+
+Per this file's own process note, the day opened with a fresh
+`scripts/roast-test-module-sweep.sh` on `main` @ `139aa395f` (release, `-j6`):
+
+```
+pass under both:                   1394
+regressed under the real Test:      42
+passes only under the real Test:     0
+fail under both (pre-existing):      0
+```
+
+Two of the 42 are the familiar `exit 124` performance artifact
+(`S03-buf/read-write-bits.t`, `S03-buf/write-int.t`), so **40 correctness
+regressions** — and the regressed *file set* is byte-identical to the previous
+evening's, so the count is reproducible rather than noisy. Report preserved at
+`tmp/real-test-regressions-2026-08-28-round151-start.txt`.
+
+### `S24-testing/14-like-unlike.t`, and the value of reading the diagnostic
+
+The failing assertion is
+`like class { method Str { 'foo' } }, /foo/, '...'`, and the obvious first
+reading — "mutsu's regex smartmatch does not stringify a non-`Str` object" — was
+**wrong**, even though probing it *did* turn up a real divergence. The
+diagnostic is what corrects it:
+
+```
+# expected a match with: /foo/
+#                   got: ""
+```
+
+`got: ""` means the argument was already `""` before any matching happened, and
+rakudo's `like` declares **`Str() $got`** — a coercion-type parameter. mutsu's
+`try_coerce_value_with_method` dispatched the target-named method for an
+`Instance` but had no branch for a *type object*, so a class defining
+`method Str` coerced to `""`. That, not the smartmatch, is what failed the file.
+
+The smartmatch divergence found on the way in is real too and is fixed in the
+same PR: `regex_match_text` matched a type object against its own type NAME, so
+`Int ~~ /Int/` was True (rakudo: False, with the uninitialized-value warning)
+and `C ~~ /foo/` was False for a `C` defining `method Str` (rakudo: True). Both
+are in `news/2026-08/type-object-string-coercion-dispatches-its-own-str.md`,
+pinned by `t/regex-smartmatch-type-object.t` (23 assertions) and
+`t/coercion-param-type-object-user-method.t` (14), both green under real `raku`.
+
+The smartmatch half also cost a lesson worth recording: making the coercion
+*warn*, as rakudo does for `Any ~~ /a/`, regressed `roast/S05-metasyntax/regex.t`
+test 51 in the targeted sweep, because a **bare** `/a/` is silent in rakudo where
+the written-out `$_ ~~ /a/` warns. That is a compile-time distinction — the
+compiler synthesizes the `$_` LHS in `compile_match_regex` — so it is now carried
+on `SmartMatchLhs::Var` as an `implicit_topic` flag. **Run the targeted sweep
+before believing a spec-fidelity addition is free**: this one looked like a pure
+improvement and broke a whitelisted file.
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `S24-testing/14-like-unlike.t` | 1 failure (#2) | **PASS** | PASS | PASS |
+
+**So: 40 -> 39 correctness regressions** from this slice alone. Two other slices
+ran concurrently on disjoint files (`S32-io/{slurp,spurt}.t`;
+`S02-types/subset-6e.t` + `6.c/S02-types/subset-6c.t`) and are measured in their
+own entries.
+
+### Two clusters classified for whoever goes next
+
+Probing the residue turned up one cluster that is worth taking as a unit,
+because three files reduce to a single root cause:
+
+**A runtime, name-resolved write to an outer lexical is lost as soon as it
+happens inside an *invoked* closure or a routine.** Both `EVAL` and symbolic
+dereference show the identical shape, and neither involves `Test`:
+
+```raku
+my $z = 1; $::('z') = 11;                              # 11   OK
+my $z = 1; { $::('z') = 22 };                          # 22   OK  (bare block)
+my $z = 1; my $c = { $::('z') = 33 }; $c();            #  1   WRONG (raku: 33)
+my $z = 1; sub w(&f) { f() }; w({ $::('z') = 44 });    #  1   WRONG (raku: 44)
+my $z = 1; sub w2() { $::('z') = 55 }; w2();           #  1   WRONG (raku: 55)
+```
+
+`todo/tickets/eval-write-to-outer-lexical-lost-inside-a-closure-or-routine.md`
+already records the `EVAL` half and names
+`roast/S02-lexical-conventions/comments.t` (test 41). The sweep says it is worth
+more than that one file: `roast/S06-signature/sigilless.t` (test 5,
+`lives-ok { EVAL 'swap($a, $b)' }` with sigilless rw parameters) is the same
+`EVAL` half, and `roast/S02-names/symbolic-deref.t` (tests 3 and 14) is the
+`$::(…)` half — **three files, one root cause**. It only surfaces under the real
+module because both are written inside a `lives-ok { … }`, and the real
+`lives-ok` is a Raku sub that *calls* the block where the native one does not.
+
+The second, smaller observation: `S24-testing/{2-force_todo,6-done_testing}.t`
+remain the native-provider-only pair described above, and
+`S24-testing/3-output.t` is not a `Test` gap either — it compares `diag` output
+and mutsu's parse-error text is both more verbose and internally duplicated
+("expected expected statement …", "— near: X — near: X"), which is a message
+-quality bug rather than a behavioural one.
+
 ## 2026-08-29: the Buf/handle-I/O cluster, part 1 — `infix:<eq>` across Blob types (40 -> 38)
 
 Taking the `S32-io/{slurp,spurt}.t` pair named in the residue above. Both

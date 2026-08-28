@@ -194,6 +194,22 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
+        // The same rule for a TYPE OBJECT. A coercion type calls the named
+        // method on its argument, and a method call on a type object dispatches
+        // like any other, so `sub f(Str() $g)` given `class C { method Str
+        // {'foo'} }` binds "foo" — not the "" a bare type object stringifies to.
+        // Only a class that actually defines the method takes this path; a plain
+        // type object falls through to the ordinary coercion below (`Str(Int)`
+        // stays ""), which is what rakudo does.
+        if let ValueView::Package(class_name) = value.view()
+            && self.class_has_user_method(&class_name.resolve(), base_target)
+        {
+            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+            return Err(coerce_impossible_error(target, &value));
+        }
         if let ValueView::Instance {
             class_name,
             attributes,

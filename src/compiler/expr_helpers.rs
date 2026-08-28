@@ -766,6 +766,8 @@ impl Compiler {
             lhs: Some(Box::new(crate::opcode::SmartMatchLhs::Var {
                 name: "_".to_string(),
                 slot: self.local_map.get("_").copied(),
+                // Synthesized topic: this is a bare `/regex/`, not `$_ ~~ /regex/`.
+                implicit_topic: true,
             })),
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.
