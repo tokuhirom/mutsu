@@ -3903,3 +3903,55 @@ Verification for this entry: `t/parse-error-exception-classes.t` (20
 assertions, green under `raku` unchanged and under mutsu); `make test` green
 (3520 files, 35081 tests); the seven ticket files green under BOTH providers;
 and a full 1436-file whitelisted roast sweep green on a release build.
+
+## 2026-08-28 (end of day): the composed sweep re-run — 57 -> 40 correctness regressions
+
+The five entries above each measured against a partly-overlapping baseline
+(the third and sixth entries both quote a "55", from different sides), which
+makes the running arithmetic hard to trust. So the sweep was re-run once at the
+end of the day, on `main` @ `592e04f3a` (after #7078, #7079, #7080, #7081 and
+#7082 had all landed), release build, `-j6`, same
+`scripts/roast-test-module-sweep.sh`:
+
+```
+pass under both:                   1394
+regressed under the real Test:      42
+passes only under the real Test:     0
+fail under both (pre-existing):      0
+```
+
+Two of the 42 are `exit 124` (`S03-buf/read-write-bits.t`,
+`S03-buf/write-int.t`) — the performance artifact this file has documented
+twice, not correctness. **So: 40 correctness regressions, down from the 57 this
+day opened with.** That is exactly 57 minus the 17 files the five PRs closed
+(2 + 5 + 3 + 7), so the per-entry arithmetic above was right after all; this
+run is the independent confirmation of it.
+
+Note that the morning sweep had *three* timeouts and this one has two, with
+nothing about those files changed — the same ±6 noise in the raw count that
+this file warns about. The timeout-excluded number is the only one worth
+quoting.
+
+The per-file reports for both runs are preserved outside the repo at
+`tmp/real-test-regressions-2026-08-28.txt` (morning, the 60-file baseline) and
+`tmp/real-test-regressions-2026-08-28-eod.txt` (evening, the 42-file residue).
+
+### What the residue looks like now
+
+The three largest clusters closed today were all found by *classifying the
+report* rather than by picking files off it one at a time, and the
+classification that paid was **not** "which synopsis is it in" — it was "what
+shape of mutsu bug can only be seen through a Raku-level `is`". Two of the four
+slices reduced to the same root class (a read or write site that inspects a
+variable's stored `Value` instead of going through `with_deref`), and that
+class is invisible under the native provider by construction, because the
+native `is`/`is-deeply` are Rust builtins that never bind an argument.
+
+For whoever picks this up next: start from that axis, not from the file list.
+The remaining named clusters are `S24-testing/{10-is-approx,14-like-unlike,3-output}.t`
+(the real module's own spec tests, confirmed genuine mutsu gaps),
+`S32-io/{slurp,spurt}.t` plus `S16-io/words.t` and `S32-io/io-cathandle.t`
+(Buf/handle I/O), and `S32-list/{seq,tail}.t`.
+`S24-testing/{2-force_todo,6-done_testing}.t` remain the native-provider-only
+pair, which needs the `#?rakudo eval` fudge directive or an un-whitelisting
+rather than an interpreter fix.
