@@ -175,6 +175,20 @@ impl Interpreter {
             ValueView::Package(name) => self.class_chain(name.as_str()),
             ValueView::ParametricRole { base_name, .. } => self.class_chain(base_name.as_str()),
 
+            // A `Promise` carries its own (possibly subclassed, e.g. `class
+            // Meows is Promise {}`) class name (see `promise_class_name` in
+            // `socket_inet_proc.rs`). Route through `class_chain` the same
+            // way `Instance`/`Package` do above, so a subclass's chain is
+            // `[Meows, Promise, Any, Mu]` rather than the catch-all default
+            // below, which uses `value_type_name` -- hardcoded to the
+            // literal string "Promise" for every Promise value, subclassed
+            // or not, and so cannot see "Meows" at all. Without this arm,
+            // `nqp::istype($meows_promise, Meows)` (exactly what the real
+            // `Test.rakumod`'s `isa-ok` calls for a non-`Str` expected type)
+            // was False even though `.isa(Meows)` (a separate, Promise-aware
+            // code path in `Value::isa_check`) was already True.
+            ValueView::Promise(p) => self.class_chain(&p.class_name().resolve()),
+
             // Enum (V3): raku puts the enum type itself ahead of Int, unlike
             // `value_type_name`'s "Int" answer for every enum value.
             ValueView::Enum { enum_type, .. } => {

@@ -454,16 +454,35 @@ impl Interpreter {
         }
         if method == "isa" && args.len() == 1 {
             let arg0 = args.first().cloned().unwrap_or(Value::NIL);
-            let target_name = match arg0.view() {
-                ValueView::Package(name) => name.resolve(),
-                ValueView::Str(name) => name.to_string(),
-                ValueView::Instance { class_name, .. } => class_name.resolve(),
-                _ => arg0.to_string_value(),
+            // `R.^pun` (a role's pun) is the concrete class the role
+            // generates for its instances, wrapped as `Mixin(Package(role),
+            // {__mutsu_role__role: ...})` (see `punned_role_type_object`).
+            // It stringifies the same as the bare role name, but unlike the
+            // bare role it IS a real class — `raku` accepts `.isa(R.^pun)`
+            // while rejecting `.isa(R)` (see "Roles are excluded" below).
+            // Unwrap it here so `target_name` resolves from the pun's inner
+            // Package/Instance, and skip the role-exclusion rule for it.
+            let (target_name, is_bare_role_arg) = match arg0.view() {
+                ValueView::Package(name) => (name.resolve(), true),
+                ValueView::Str(name) => (name.to_string(), false),
+                ValueView::Instance { class_name, .. } => (class_name.resolve(), false),
+                ValueView::Mixin(pun_inner, _) => {
+                    let name = match pun_inner.view() {
+                        ValueView::Package(name) => name.resolve(),
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
+                        _ => arg0.to_string_value(),
+                    };
+                    (name, false)
+                }
+                _ => (arg0.to_string_value(), false),
             };
-            // Roles are excluded from isa checks
-            let role_key = format!("__mutsu_role__{}", target_name);
-            if mixins.contains_key(&role_key) {
-                return Some(Ok(Value::FALSE));
+            // Roles are excluded from isa checks, but only when the argument
+            // is literally the bare role (a `Package`) — not its pun.
+            if is_bare_role_arg {
+                let role_key = format!("__mutsu_role__{}", target_name);
+                if mixins.contains_key(&role_key) {
+                    return Some(Ok(Value::FALSE));
+                }
             }
             // Delegate to inner value's isa check using class MRO
             let result = match inner.as_ref().view() {

@@ -4857,3 +4857,92 @@ verdict) merely prevented the RIGHT value from ever being computed. Re-derive
 the root cause from a from-scratch, `use Test`-free repro every time, even
 when the roast test's own `throws-like` line makes the exception-object
 explanation look obvious.
+
+## 2026-08-28 — three type-identity divergences, all reproduce without `Test`
+
+Three files, all closed. Unusually for this campaign, each repro reduced to a
+plain one-liner with no `Test` involved — real language bugs the real
+module's `isa-ok`/`is` happened to gate. All three touch "what type is this
+value really" machinery (a `Mixin`-wrapped `Package`/`Instance` not being
+recognized where a bare one was, and `Promise`'s hardcoded type name), so
+they turned out to share more plumbing than expected, though each has a
+distinct root cause.
+
+**1. A punned role's instance did not `isa`/smartmatch its pun.** `R.^pun`
+(`Mixin(Package(role), overrides)`, ADR-0060) was invisible to three
+argument-side type-name extractors that enumerated `Package`/`Str`/`Instance`
+but not `Mixin`: `Value::isa` (`methods_mixin_dispatch.rs`), smartmatch
+(`seq_helpers/smart_match.rs`), and `nqp::istype` (`nqp_ops.rs`). The last one
+mattered most for the roast regression: the real `Test.rakumod`'s `isa-ok`
+calls `nqp::istype($var, $type.WHAT)` for a non-`Str` expected type, and a
+pun's own `.WHAT` is *also* a `Mixin`. Fixed all three to unwrap a `Mixin`
+argument to its inner `Package`/`Instance` name — for `isa`, only when the
+argument is NOT a bare `Package` (the literal role stays excluded from
+nominal isa checks, unchanged); for smartmatch, only when `left` is not
+itself the bare role Package the pun was generated from (`R ~~ R.^pun` is
+correctly `False` even though `R.^pun ~~ R` and `$o ~~ R.^pun` are both
+`True` — asymmetric, like ordinary isa). Full write-up:
+`news/2026-08/punned-role-isa-and-smartmatch.md`. Pin:
+`t/role-pun-isa-smartmatch.t` (green under `raku`).
+
+**2. `Promise` factory methods ignored the invocant subclass.**
+`.start`/`.in`/`.at`/`.anyof`/`.allof`/`.then` on `class Meows is Promise {}`
+built a plain `Promise`, and even after that was fixed, the subclass name
+reaching `.^name` carried a raw ADR-0047 lexical-mangling suffix (visible as
+a stray embedded NUL). Fixed by threading the (still internally mangled, for
+consistency with `Instance`) class name through `promise_class_name`
+(`methods_collection_ops/socket_inet_proc.rs`) and stripping it only at
+display time in `dispatch_caret_name`'s `Promise` arm
+(`methods_introspect.rs`), mirroring the `Instance`/`Package` arms beside it.
+A third, independent bug surfaced once the first two were fixed:
+`Interpreter::dispatch_mro`'s `Promise` fallback (`receiver_class.rs`) used
+`value_type_name`, hardcoded to the literal `"Promise"` for every Promise
+value — so `nqp::istype($meows_promise, Meows)` (again, what the real
+`isa-ok` actually calls) stayed `False` even after `.isa(Meows)` (a separate
+code path) agreed with `.^name`. Added a dedicated `Promise` arm routing
+through the existing `class_chain` registry-MRO mechanism. Full write-up:
+`news/2026-08/promise-subclass-factory-methods.md`. Pin:
+`t/promise-subclass-factory-methods.t` (green under `raku`).
+
+**3. A mixin on a type object was lost by `.gist`/`.raku`, and by `:U`
+parameter binding.** `.^name` on `Any but role Meows {...}` already composed
+correctly ("Any+{Meows}"), but `.gist`/`.raku` delegated straight to the bare
+inner `Package`, dropping the mixin ("(Any)") — the fast-path mixin method
+dispatch (`builtins/methods_0arg/mod.rs`) had a Set/Bag/Mix-inner special
+case for this but none for a plain type-object `Package` inner. Fixing that
+alone did not close the roast file under `MUTSU_REAL_TEST=1`: the real
+`Test.rakumod`'s `is(Mu $got, Mu:U $expected, ...)` multi (selected because
+the operand is undefined) could not even *bind* a mixin type object to its
+`Mu:U` parameter, because `value_is_defined` (`runtime/types/mod.rs`) had no
+`Mixin` arm and treated every mixin — instance or type object alike — as
+defined. Added `ValueView::Mixin(inner, _) => value_is_defined(inner)`,
+mirroring the existing `ContainerRef` arm. This second bug is general (a
+plain `sub f(Mu:U $x) {...}; f(Any but role {...})` failed to bind, nothing
+Test-specific), so it is a distinct root cause from the `.gist` fix, not a
+symptom of it. Full write-up:
+`news/2026-08/mixin-type-object-gist-and-definedness.md`. Pins:
+`t/mixin-type-object-gist.t`, `t/mixin-type-object-definedness.t` (both
+green under `raku`).
+
+**A regression caught by an existing pin, not roast**: the first
+`smart_match.rs` fix above initially recursed unconditionally on any `Mixin`
+RHS carrying a `__mutsu_role__*` marker, which flipped
+`t/role-pun-metamethod-identity.t` test 8 (`nok R ~~ R.^pun`, "the role
+itself does not smartmatch its own pun") to a false `True` — confirmed with
+`raku t/role-pun-metamethod-identity.t` (13/13 pass on `raku`, so the
+assertion was correct and the interpreter regressed). The asymmetry guard
+described above fixes it; all 13 assertions in that file pass again.
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (native) | after (native) | before (real) | after (real) |
+| --- | --- | --- | --- | --- |
+| `S12-coercion/coercion-methods.t` | PASS | PASS | 2 failures (Roles subtest, tests 2 &amp; 5) | **PASS** |
+| `S17-promise/basic.t` | PASS | PASS | 7 failures (subclasses subtest, all 7) | **PASS** |
+| `6.c/S14-roles/mixin-6c.t` | PASS | PASS | 2 failures (tests 48-49) | **PASS** |
+
+So: roast correctness regressions under the real provider closed for these
+three files; native-provider behavior unaffected (still PASS, and the
+`role-pun-metamethod-identity.t`/`promise-subclass-factory-methods.t`/
+`mixin-type-object-*.t` local pins cover the underlying language bugs
+directly, independent of either `Test` provider).

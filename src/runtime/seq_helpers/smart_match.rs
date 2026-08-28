@@ -1453,6 +1453,32 @@ impl Interpreter {
                     .zip(rhs_args.iter())
                     .all(|(lhs, rhs)| self.parametric_arg_subtypes(lhs, rhs))
             }
+            // `R.^pun` (a role's pun) is a `Mixin`-wrapped Package/Instance
+            // carrying an `__mutsu_role__*` marker (see
+            // `punned_role_type_object` in `methods_mixin_what_cache.rs`).
+            // Unwrap it and recurse so `$o ~~ R.^pun` matches exactly like
+            // `$o ~~ R` (the role it puns to) instead of falling through to
+            // the generic string-equality fallback below, which compares the
+            // Mixin's own `(R)`-style gist against the instance's stringification
+            // and can never match.
+            //
+            // EXCEPT when `left` is itself the bare role (the same
+            // `ParametricRoleGroupHOW` `Package` the pun was generated from):
+            // raku says `R ~~ R.^pun` is False even though `R.^pun ~~ R` and
+            // `$o ~~ R.^pun` (an instance) are both True -- the role group
+            // itself is not an instance/subtype of the `ClassHOW`-backed pun
+            // it generates (asymmetric, like normal isa: a supertype does not
+            // isa its subtype). Recursing with the unwrapped inner would
+            // compare `Package("R")` against `Package("R")` and wrongly
+            // report True by identity, so this case is excluded and falls
+            // through to the generic fallback below instead.
+            (_, ValueView::Mixin(pun_inner, pun_mixins))
+                if pun_mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
+                    && !matches!(left.view(), ValueView::Package(name)
+                        if pun_mixins.contains_key(&format!("__mutsu_role__{}", name.resolve()))) =>
+            {
+                self.smart_match_inner(left, pun_inner.as_ref())
+            }
             // When RHS is a CustomType, use Raku type checking protocol
             (_, ValueView::CustomType(c)) => self.custom_type_check(left, c.id, &c.how),
             // When LHS is a CustomType (type object), check type cache or HOW.type_check

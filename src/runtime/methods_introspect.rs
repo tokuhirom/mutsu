@@ -144,7 +144,14 @@ impl Interpreter {
             ValueView::Seq(_) => crate::runtime::value_type_name(target),
             ValueView::HyperSeq(_) => "HyperSeq",
             ValueView::RaceSeq(_) => "RaceSeq",
-            ValueView::Promise(_) => "Promise",
+            // A Promise carries its own (possibly subclassed, e.g. `class
+            // Meows is Promise {}`) class name, set at construction time by
+            // the factory methods (`promise_class_name` in
+            // `socket_inet_proc.rs`). `.WHAT`/`.WHAT.^name` must honour it,
+            // not hardcode the base "Promise".
+            ValueView::Promise(p) => {
+                return Ok(Value::package(p.class_name()));
+            }
             ValueView::Channel(_) => "Channel",
             ValueView::Whatever => "Whatever",
             ValueView::HyperWhatever => "HyperWhatever",
@@ -796,7 +803,14 @@ impl Interpreter {
                     None => crate::value::types::what_type_name(target),
                 }
             }
-            ValueView::Promise(p) => p.class_name().resolve(),
+            // `p.class_name()` is the raw internal storage name, which for a
+            // lexical Promise subclass (`my class Meows is Promise {}`)
+            // carries an ADR-0047 mangling suffix (`Meows\u{0}<decl-id>`),
+            // same as `ValueView::Instance`'s `class_name` above — strip it
+            // for display the same way.
+            ValueView::Promise(p) => {
+                crate::value::user_facing_type_name(&p.class_name().resolve()).to_string()
+            }
             ValueView::ParametricRole {
                 base_name,
                 type_args,
