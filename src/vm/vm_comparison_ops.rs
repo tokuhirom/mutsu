@@ -286,6 +286,40 @@ impl Interpreter {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            // rakudo's last-resort candidate is `multi infix:<==>(Any \a, Any
+            // \b) { a.Numeric == b.Numeric }`, so two objects the bridge left
+            // alone still compare by their `.Numeric`. The bridge only numifies
+            // an object that does `Real`/`Numeric` or has a USER `Numeric`
+            // method, which misses a native type that is neither -- `DateTime`
+            // is neither in rakudo either, yet `$a == $b` compares fine there.
+            // Structural equality answered False for two DateTimes naming the
+            // same instant in different timezones (roast
+            // S32-temporal/DateTime.t's leap-second subtest).
+            //
+            // Deliberately scoped to `==`/`!=` rather than the shared numeric
+            // bridge: `-` and `<=>` have their own temporal candidates
+            // (`DateTime - DateTime` is a `Duration`), and numifying there
+            // destroys them.
+            let (l, r) = match (l.view(), r.view()) {
+                (ValueView::Instance { .. }, ValueView::Instance { .. }) => {
+                    match (
+                        vm.call_method_with_values(l.clone(), "Numeric", vec![]),
+                        vm.call_method_with_values(r.clone(), "Numeric", vec![]),
+                    ) {
+                        // Only when BOTH numify to something that is no longer
+                        // an object; otherwise keep the originals so an object
+                        // with no `.Numeric` still reaches the structural path.
+                        (Ok(ln), Ok(rn))
+                            if !matches!(ln.view(), ValueView::Instance { .. })
+                                && !matches!(rn.view(), ValueView::Instance { .. }) =>
+                        {
+                            (ln, rn)
+                        }
+                        _ => (l, r),
+                    }
+                }
+                _ => (l, r),
+            };
             let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
