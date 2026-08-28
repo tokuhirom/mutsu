@@ -170,7 +170,15 @@ pub(crate) enum SmartMatchLhs {
     /// current-scope local (§1.5: bakes the scope-correct slot so the
     /// writeback does not re-resolve the name at run time — see
     /// docs/lexical-scope-slot-campaign.md); `None` keeps the env-by-name path.
-    Var { name: String, slot: Option<u32> },
+    /// `implicit_topic` marks the LHS the compiler SYNTHESIZED for a bare
+    /// regex (`/a/`, `if /a/`, `so /a/`) rather than one the source wrote.
+    /// Rakudo coerces that subject quietly, while an explicit `$_ ~~ /a/`
+    /// warns -- see `Interpreter::quiet_topic_for_regex_match`.
+    Var {
+        name: String,
+        slot: Option<u32>,
+        implicit_topic: bool,
+    },
     /// `$obj.meth ~~ s///` — the LHS is a zero-arg method call on a variable
     /// (an `is rw` accessor in Raku, whose returned container the substitution
     /// writes through). mutsu's method calls return plain values, so the VM

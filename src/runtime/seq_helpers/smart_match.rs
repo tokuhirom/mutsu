@@ -50,7 +50,58 @@ impl Interpreter {
     /// defines a user `Str` method must match against that string (e.g. a
     /// `URI::Path` object with `multi method Str` smartmatched against a path
     /// regex); everything else keeps the plain value stringification.
+    ///
+    /// A *type object* is ordinary string context, not its own name: rakudo
+    /// dispatches a user `.Str` (so `class C { method Str { 'foo' } }` makes
+    /// `C ~~ /foo/` True) and otherwise coerces to `""` with the
+    /// "uninitialized value of type X in string context" warning — which makes
+    /// `Int ~~ /Int/` and `Any ~~ /Any/` False, where matching the type NAME
+    /// answered True.
+    ///
+    /// Only `.Str`, deliberately: unlike prefix `~` (which is `.Stringy`), the
+    /// match target is the `.Str` coercion, so a class defining `.Stringy`
+    /// alone stringifies to `""` here and one defining both matches its `.Str`.
+    /// Measured against rakudo — `class B { method Stringy {'bar'}; method Str
+    /// {'baz'} }` gives `B ~~ /baz/` True and `B ~~ /bar/` False.
+    /// Pre-coerce the IMPLICIT TOPIC of a bare regex match (`/a/`, `if /a/`,
+    /// `so /a/`) so that [`Self::regex_match_text`] never has to warn about it.
+    ///
+    /// Rakudo distinguishes the two forms: `Any ~~ /a/` and `Any.match(/a/)`
+    /// warn "Use of uninitialized value of type Any in string context", but a
+    /// bare `/a/` against an undefined topic is silent — `/a/; print "pass"`
+    /// prints `pass` with an empty STDERR, which `roast/S05-metasyntax/regex.t`
+    /// pins. Doing the coercion at the implicit-topic call sites keeps that
+    /// distinction where the information actually is; `regex_match_text` cannot
+    /// see which form it was reached from.
+    ///
+    /// Only a type object needs the treatment, and a class defining `.Str`
+    /// still dispatches it — quieting the warning must not also lose the value.
+    pub(crate) fn quiet_topic_for_regex_match(&mut self, topic: Value) -> Value {
+        let ValueView::Package(name) = topic.view() else {
+            return topic;
+        };
+        let cn = name.resolve().to_string();
+        if self.has_user_method(&cn, "Str")
+            && let Ok(v) = self.call_method_with_values(topic.clone(), "Str", vec![])
+        {
+            return Value::str(v.to_string_value());
+        }
+        Value::str(String::new())
+    }
+
     fn regex_match_text(&mut self, left: &Value) -> String {
+        if let ValueView::Package(name) = left.view() {
+            let cn = name.resolve().to_string();
+            if self.has_user_method(&cn, "Str")
+                && let Ok(v) = self.call_method_with_values(left.clone(), "Str", vec![])
+            {
+                return v.to_string_value();
+            }
+            return self
+                .warn_type_object_string_context(&cn, false)
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+        }
         if let ValueView::Instance { class_name, .. } = left.view()
             && self.has_user_method(&class_name.resolve(), "Str")
             && let Ok(v) = self.call_method_with_values(left.clone(), "Str", vec![])

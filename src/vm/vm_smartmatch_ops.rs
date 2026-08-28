@@ -24,6 +24,15 @@ impl Interpreter {
             Some(SmartMatchLhs::Var { slot, .. }) => *slot,
             _ => None,
         };
+        // A bare `/regex/` (the compiler synthesizes `$_` as its LHS) coerces
+        // its subject QUIETLY, unlike an explicit `$_ ~~ /regex/`.
+        let lhs_is_implicit_topic = matches!(
+            lhs,
+            Some(SmartMatchLhs::Var {
+                implicit_topic: true,
+                ..
+            })
+        );
         // Smartmatching *reads* the left operand, and reading a `Proxy` means
         // FETCH: `cglobal(...) ~~ Pointer` asks about the value in the C global,
         // not about the Proxy standing in for it (`NativeLibs::Searcher` probes
@@ -279,6 +288,18 @@ impl Interpreter {
             {
                 self.set_pending_call_arg_sources(Some(vec![Some(v.clone())]));
             }
+            // The subject of a bare `/regex/` is coerced quietly -- see
+            // `quiet_topic_for_regex_match`. Only for a regex RHS: a value
+            // smartmatch against a type object is a type test, not a string one.
+            let left = if lhs_is_implicit_topic
+                && matches!(
+                    right.view(),
+                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                ) {
+                self.quiet_topic_for_regex_match(left)
+            } else {
+                left
+            };
             self.eval_smartmatch_with_junctions_ex(left, right, negate, rhs_is_match_regex)?
         };
         self.stack.push(out);

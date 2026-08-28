@@ -529,6 +529,7 @@ impl Compiler {
                     Expr::Var(name) => Some(Box::new(crate::opcode::SmartMatchLhs::Var {
                         name: name.clone(),
                         slot: self.local_map.get(name.as_str()).copied(),
+                        implicit_topic: false,
                     })),
                     // `$obj.meth ~~ s///`: an rw-accessor LHS whose returned
                     // container Raku's substitution writes through. Only a
@@ -896,6 +897,7 @@ impl Compiler {
             lhs: Some(Box::new(crate::opcode::SmartMatchLhs::Var {
                 name: val_name.clone(),
                 slot: Some(val_slot),
+                implicit_topic: false,
             })),
             rhs_is_match_regex: false,
             lhs_is_literal: false,
