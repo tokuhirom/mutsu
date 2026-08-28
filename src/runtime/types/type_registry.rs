@@ -503,6 +503,28 @@ impl Interpreter {
             })
     }
 
+    /// Whether a type object *named exactly* `name` exists: a builtin, a native
+    /// type, or something the registry holds under that key (directly or through
+    /// an `env`/import alias). Deliberately NOT package-chain resolution
+    /// (`resolve_type_in_current_package`): that answers "does this REFERENCE
+    /// resolve", which is true for the short name `C` of an `M::C` — while the
+    /// question here is whether the *stored identity* `C` is a real type object.
+    ///
+    /// A `Package` value failing this is a DEAD type object: nothing can
+    /// dispatch on it, and no assignment can produce one, since every bareword
+    /// that yields a `Package` resolves through one of the tables above. It is
+    /// only ever produced by seeding a declaration from a constraint that was
+    /// not resolvable yet. See `exec_set_var_type`'s dead-seed re-seeding.
+    pub(crate) fn type_name_is_known(&self, name: &str) -> bool {
+        let (base, _) = crate::runtime::types::strip_type_smiley(name);
+        if base.is_empty() {
+            return false;
+        }
+        Interpreter::is_builtin_type(base)
+            || crate::runtime::native_types::is_native_array_element_type(base)
+            || self.has_type(base)
+    }
+
     /// Resolve `qualified` against the type registry, tolerating ADR-0047's
     /// unconditional lexical site-key mangling (`Foo\u{0}<decl-id>`). A caller
     /// that RECONSTRUCTS a qualified name from a package/short-name pair

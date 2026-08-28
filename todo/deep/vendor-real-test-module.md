@@ -4567,3 +4567,69 @@ env, and `Any` is the one type name that has an env entry (a `Value::NIL`
 sentinel installed by `runtime_init.rs`). No roast file in the current residue
 gates it. Filed as
 `todo/tickets/anonymous-any-parameter-never-matches-in-multi-dispatch.md`.
+
+## 2026-08-29 — `S12-construction/autopairs.t`: the file name lied twice
+
+Slice for one whitelisted file that regressed under `MUTSU_REAL_TEST=1`.
+
+**Read this if you are triaging another file on the residue list: the roast
+file's NAME had nothing to do with the failure.** `autopairs.t` failed on
+test 2, "class instantiation with autopair, spaces", and neither the autopair
+(`:$a`) nor the space that distinguishes that subtest from the passing one
+was involved. Nor was `Test` itself. The only thing the real module changes is
+*where the snippet runs*: `eval-lives-ok` goes through `eval_exception`, a sub of
+a separate compilation unit, so the `EVAL`'d `class Tb { … }` is registered under
+that module's package — which rakudo does too. The bug was that every later
+reference to the class's SHORT name then broke.
+
+Root cause: `env` was the only bridge from a short type name to its
+package-qualified registration, and `env` stores `$C` under the sigil-stripped
+key `C` — the same key. So `my C $C` overwrote the alias that made its own type
+name resolvable, and `my C $C .= new(...)` (which calls `.new` on the bareword)
+died on a bare, never-registered `C` with no methods. Three sites needed the same
+registry fallback: the declaration seed
+(`nominal_type_object_name_for_constraint`), the block-entry hoist's stale seed
+(`exec_set_var_type` now re-seeds a `Package` naming a type that exists nowhere),
+and `GetBareWord`'s three "this is a type" branches plus its `Package(Any)`
+placeholder guard (one env-blind `resolve_bareword_type_name` probe now).
+
+Full write-up: `news/2026-08/package-type-short-name-vs-same-named-lexical.md`.
+Pin: `t/package-type-short-name-vs-same-named-lexical.t` (35 assertions, green
+under real `raku` too).
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S12-construction/autopairs.t` | 1 failure (#2 "class instantiation with autopair, spaces") | **PASS** (4/4) | still PASS (4/4) |
+
+So: roast correctness regressions under the real provider **-1**.
+
+### Two things worth carrying forward
+
+**The hoist's seeding is load-bearing, even though its own doc comment says it
+only registers the constraint.** The obvious fix — make `hoist_typed_var_decls`
+emit a type-only op — was implemented, measured, and reverted: without the
+hoisted seed, `my Int $Int` keeps the `Package(Any)` placeholder that
+`SetVarDynamic` writes for every `my`, and `$Int.^name` regresses to `Any` at
+plain mainline. The two mechanisms are fighting over the same env key; correcting
+the stale seed at the real declaration is the version that satisfies both.
+
+**A same-named lexical also defeats resolution for a LEXICAL class in a routine.**
+`module M { sub f { class C {…}; my C $C .= new(:a(7)) } }` did not merely fail to
+find the class — after the first fix round it silently built an `Any` instance
+whose `.a` worked but whose `.^name`/`.WHAT`/`.raku` all said `Any`. The tell was
+`.raku` reading `Any.new` while `.defined` was `True`; the cause was
+`GetBareWord`'s `Package(Any)` placeholder guard testing `has_type_direct`, which
+cannot see an ADR-0047-mangled qualified key. Any future work in this area should
+assume "the short name resolves" and "a type object named exactly this exists"
+are different questions.
+
+### Deferred from this file
+
+`EVAL 'my $a; role Tc { has $.a }; my Tc $c .= new(:$a)'` returns an object whose
+`.raku` is `Tc.new` in mutsu and `Tc.new(a => Any)` in rakudo — a punned role
+loses its attributes in `.raku` (the class form is already correct, and it
+reproduces without `EVAL`). The roast assertion is only `eval-lives-ok`, so it
+gates nothing here. Filed as
+`todo/tickets/punned-role-raku-drops-undefined-attributes.md`.

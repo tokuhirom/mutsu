@@ -48,7 +48,26 @@ impl Interpreter {
                 self.env().get(&name).map(Value::view),
                 Some(ValueView::Nil) | None
             );
-            if is_nil {
+            // ... or the variable still holds a DEAD seed: a type object for a
+            // name nothing has registered. `hoist_typed_var_decls` emits a
+            // block-entry `SetVarType` for every top-level `my TYPE $x`, which
+            // runs BEFORE the `class`/`role` statements of the same block, so
+            // for a type declared inside a package (`module M { class C {…} }`,
+            // and anything an `EVAL` compiles while a module's sub is running)
+            // the constraint was not yet resolvable and the hoist seeded a bare,
+            // never-registered `C` with no methods. That value is not a
+            // legitimate one — no assignment can produce a type object for an
+            // unknown type — so the declaration itself re-seeds it now that the
+            // type exists. Without this the dead seed lives in `env` under the
+            // sigil-stripped key a bareword `C` also reads, so `my C $C .= new`
+            // (the fused form calls `.new` on the *bareword*) died with
+            // "Unknown method ... new on C". Re-seeding an already-correct value
+            // is a no-op: the seed is a pure function of the constraint.
+            let is_dead_seed = matches!(
+                self.env().get(&name).map(Value::view),
+                Some(ValueView::Package(p)) if !self.type_name_is_known(&p.resolve())
+            );
+            if is_nil || is_dead_seed {
                 let init_val = self.typed_scalar_nil_seed_value(&name, &constraint);
                 self.set_env_with_main_alias(&name, init_val.clone());
                 self.update_local_if_exists(code, &name, &init_val);
