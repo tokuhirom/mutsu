@@ -304,7 +304,7 @@ impl Interpreter {
                 // Drop the synthetic callsite-line marker the compiler may append.
                 args.retain(|a| !Self::is_callsite_line_marker(a));
                 let (result, out_args) =
-                    crate::runtime::nativecall::call_native_with_out_args(&spec, &args)?;
+                    crate::runtime::nativecall::call_native_with_out_args(self, &spec, &args)?;
                 // An `is rw` numeric out-parameter whose argument is a plain
                 // variable arrives as a `VarRef`; the marshalling layer cannot
                 // reach the caller's slot, so write it back here by name —

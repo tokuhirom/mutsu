@@ -128,35 +128,19 @@ impl Interpreter {
                     "nativecast(): CArray element type '{inner}' cannot be marshalled to C"
                 )));
             };
-            return Ok(ParamSpec {
-                ct: CType::CArray,
-                is_rw,
-                elem: Some(elem),
-            });
+            return Ok(ParamSpec::carray(Some(elem), is_rw));
         }
         if base == "CArray" {
-            return Ok(ParamSpec {
-                ct: CType::CArray,
-                is_rw,
-                elem: None,
-            });
+            return Ok(ParamSpec::carray(None, is_rw));
         }
         // A typed `Pointer[T]` is still one pointer.
         let stem = base.split_once('[').map_or(base, |(b, _)| b);
         if let Some(ct) = CType::from_type_name(stem) {
-            return Ok(ParamSpec {
-                ct,
-                is_rw,
-                elem: None,
-            });
+            return Ok(ParamSpec::scalar(ct, is_rw));
         }
         // Any class held by reference in C (a CStruct / CPointer handle).
         if self.is_cstruct_class(base) || self.is_native_handle_class(base) {
-            return Ok(ParamSpec {
-                ct: CType::Pointer,
-                is_rw,
-                elem: None,
-            });
+            return Ok(ParamSpec::scalar(CType::Pointer, is_rw));
         }
         Err(RuntimeError::new(format!(
             "nativecast(): type '{type_name}' cannot be marshalled to C"

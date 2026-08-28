@@ -2664,8 +2664,11 @@ pub(crate) fn compiled_routine_metadata(
         empty_sig: params.is_empty() && effective_param_defs.is_empty(),
         has_non_nil_return: body_contains_non_nil_return(body),
         is_stub: is_stub_routine_body(body),
+        // Only the Signature-literal spelling `&b:(--> Bool)` counts — see
+        // `validate_callable_param_return_redeclaration`.
         has_param_return_redeclaration: param_defs.iter().any(|pd| {
             pd.type_constraint.is_some()
+                && pd.sub_signature.is_none()
                 && pd
                     .code_signature
                     .as_ref()

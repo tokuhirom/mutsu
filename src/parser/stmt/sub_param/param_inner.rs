@@ -1127,6 +1127,56 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        // What follows a `&`-sigiled parameter is also readable as a constraint
+        // on the CALLABLE's own signature: NativeCall's documented callback
+        // declaration is exactly this whitespace-separated spelling —
+        // `sub SetCallback(&callback (Str --> int32)) is native('mylib')`
+        // (`Language/nativecall.rakudoc`, "Function arguments") — and the
+        // `--> T` it carries is the callback's C return type, which
+        // `parse_param_list` discards. So a `&` parameter records BOTH: the
+        // ordinary destructuring `sub_signature` (which is what Rakudo parses
+        // it as, and what keeps a non-native `sub f(&cb (Int))` behaving as it
+        // did) and a `code_signature` carrying the return type, which is what
+        // the NativeCall registration reads.
+        //
+        // The two are NOT interchangeable: only the Signature-literal spelling
+        // `&cb:(...)` declares a return *type*, so it alone conflicts with a
+        // parameter type constraint (`Int &b:(--> Bool)` is an
+        // X::Redeclaration, pinned by S06-signature/closure-parameters.t),
+        // while raku accepts `Callable &cb (Int --> Int)`. The presence of
+        // `sub_signature` is what distinguishes this spelling from that one —
+        // see `validate_callable_param_return_redeclaration`.
+        if original_sigil == b'&' {
+            let (r, (sig_params, sig_ret)) = super::super::sub::parse_param_list_with_return(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let (r, _) = ws(r)?;
+            let (r, post_required, post_opt_marker) = super::helpers::parse_required_suffix(r);
+            let (r, _) = ws(r)?;
+            let mut param_traits = Vec::new();
+            let (mut r, _) = ws(r)?;
+            while let Some(r2) = super::super::keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, trait_name) = super::super::ident(r2)?;
+                let (r2, _) =
+                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+                param_traits.push(trait_name);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            }
+            let mut p = super::helpers::make_param(format!("&{name}"));
+            p.required = required || post_required;
+            p.optional_marker = opt_marker || post_opt_marker;
+            p.named = named;
+            p.slurpy = slurpy;
+            p.double_slurpy = double_slurpy;
+            p.onearg = onearg;
+            p.type_constraint = type_constraint;
+            p.sub_signature = Some(sig_params.clone());
+            p.code_signature = Some((sig_params, sig_ret));
+            p.traits = param_traits;
+            return Ok((r, p));
+        }
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
