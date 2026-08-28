@@ -96,6 +96,15 @@ impl Interpreter {
         crate::parser::clear_parser_lib_paths();
         match parse_result {
             Ok((stmts, _)) => {
+                // A placeholder parameter used directly in the mainline is
+                // `X::Placeholder::Mainline`, and this has to run BEFORE the
+                // undeclared check -- otherwise `@_` / `%_` are reported as
+                // `X::Undeclared`. It lived only in the NATIVE `throws-like`
+                // (`test_functions/throws_like.rs`), which is why
+                // `roast/S32-exceptions/misc2.t` passed there and failed under
+                // the real `Test` module, whose `throws-like` EVALs its string
+                // through this ordinary path.
+                self.check_eval_mainline_placeholders(&stmts)?;
                 self.check_eval_class_redeclarations(&stmts)?;
                 self.check_eval_undeclared_trusts(&stmts)?;
                 self.check_eval_undeclared_type_args(&stmts)?;

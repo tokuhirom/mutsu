@@ -202,6 +202,15 @@ impl Interpreter {
                                 }
                             }
                             nested
+                                // NOT redundant with the same call in
+                                // `parse_and_eval_with_operators`: this is a
+                                // PARALLEL check chain -- the native
+                                // `throws-like` parses the string itself and
+                                // never goes through that path -- and without
+                                // it `@_` is reported as `X::Undeclared`
+                                // (measured: removing this line fails
+                                // `roast/S32-exceptions/misc2.t` test 14 under
+                                // the native provider).
                                 .check_eval_mainline_placeholders(&stmts)
                                 .and_then(|()| nested.check_eval_class_redeclarations(&stmts))
                                 .and_then(|()| nested.check_eval_undeclared_trusts(&stmts))

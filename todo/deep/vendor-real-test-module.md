@@ -4392,5 +4392,41 @@ roast sweep across `S02-names`, `S04-exception*`, `S32-exceptions`, `S06-*`,
 `S12-*`, `S24-testing`, `S32-num`, `S29-context`, `S05-*` and `integration`
 green on the native provider.
 
+## 2026-08-29: a placeholder at an EVAL'd unit's mainline (`S32-exceptions/misc2.t`)
+
+`roast/S32-exceptions/misc2.t` regressed on three `throws-like` assertions
+wanting `X::Placeholder::Mainline` (`'$^x'`, `'@_'`, `'"foo".{ say $^a }'`).
+mutsu raised nothing at all for `$^a` and `X::Undeclared` for `@_`.
+
+**The check was already implemented — in only one of two parallel chains.**
+`check_eval_mainline_placeholders` (`runtime/system_eval_vars.rs`) exists with
+the `placeholder` attribute and rakudo's message text, and its only caller was
+`runtime/test_functions/throws_like.rs` — the **native** provider's
+`throws-like`, which parses its code string itself and runs its own chain of
+`check_eval_*` calls. The ordinary EVAL path (`parse_and_eval_with_operators`)
+runs the same chain and was missing this member, so real `EVAL` never ran it.
+One line, placed ahead of `check_eval_undeclared_vars` (or `@_` is reported as
+an undeclared variable instead).
+
+**The obvious follow-up was measured and reverted.** "The native chain's copy is
+now redundant, delete it" is false: the native `throws-like` never goes through
+`parse_and_eval_with_operators` at all, and removing the line fails this same
+file's test 14 under the *native* provider. Both chains need it; the call site
+now says so and names the test that proves it. Worth carrying forward as a
+shape — **a check reachable from only one of two parallel chains looks exactly
+like a native-provider leniency crutch and is not one.** Measure the removal
+before believing the label.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S32-exceptions/misc2.t` | 3 failures (#13, #14, #15) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/eval-mainline-placeholder-check.md`,
+`t/eval-mainline-placeholder.t` (15 assertions, green under real `raku`).
+Verification: `make test` green (3529 files, 35302 tests); a 483-file targeted
+roast sweep across `S32-exceptions`, `S02-names`, `S02-lexical-conventions`,
+`S04-exception*`, `S06-*`, `S12-*`, `S24-testing`, `S29-context`, `S05-*` and
+`integration` green on the native provider.
+
 Per the counting note above, this closes **one** named file; re-measure rather
 than trusting a running total.
