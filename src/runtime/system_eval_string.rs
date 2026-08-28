@@ -308,6 +308,17 @@ impl Interpreter {
         // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
         // common assertion shape, so one of them poisoned the rest of the file.)
         let saved_fatal_mode = self.fatal_mode;
+        // ... and the EVAL'd unit does not INHERIT one either. `fatal` is
+        // lexical to a compilation unit and EVAL compiles a fresh one, so a
+        // caller's `use fatal` — or `try`'s implicit one — must not fatalize the
+        // snippet. Measured against rakudo: `use fatal; try EVAL 'my $x =
+        // Failure.new; 1'` answers 1, and so does the same without `use fatal`;
+        // only `EVAL 'use fatal; my $x = Failure.new; 1'`, where the snippet
+        // turns it on itself, dies. (The `use fatal; try { EVAL q["bar"[5]] }`
+        // -> X::OutOfRange case that once argued for inheriting it proves
+        // nothing: an out-of-range subscript throws there with or without
+        // `fatal`.)
+        self.fatal_mode = false;
         // Unlike `fatal` (a runtime dynamic-scope check the EVAL'd unit
         // legitimately inherits from its caller -- `raku -e 'use
         // MONKEY-SEE-NO-EVAL; use fatal; try { EVAL q["bar"[5]] }; say

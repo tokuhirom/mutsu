@@ -421,3 +421,30 @@ bodies), which touches class-level attribute storage and has no connection to th
 unrelated PRs (§7.3, and the roast test's own `sometimes hangs, sometimes segfaults` skip comment),
 and the same job passed the file cleanly on re-run. Recorded here so the evidence is not lost to a
 green re-run, per `CLAUDE.md`'s rule that a crash-class failure is never dismissed as noise.
+
+## §8.4 Third recurrence, and it confirms §8.2's diagnostics gap exactly
+
+CI run **33154831894** (gc-stress, PR #7089 — an `EVAL`/`fatal` change with no connection to
+threads, `Supplier`, or the scheduler):
+
+```
+roast/integration/advent2014-day05.t   (Wstat: 35584 (exited 139) Tests: 5 Failed: 0)
+  Non-zero exit status: 139
+Result: FAIL
+```
+
+Same shape as §8.2: SIGSEGV, `Failed: 0` (it died five assertions in), and **no crash report for it**
+— the only report in `tmp/crash/` was the allowlisted deliberate `strdup(0)` subprocess from
+`roast/S29-os/system.t`, so the collector step passed and the diagnostic this ticket exists for
+again captured nothing.
+
+Not a regression from that PR: the file contains no `EVAL` and no `fatal`, so the change under test
+cannot reach it. Re-measured on the PR's own branch with the job's exact environment
+(`MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1 MUTSU_ROAST_TIMEOUT_SCALE=2`,
+release): the file alone 8/8 clean, the whole `integration/` whitelist under `prove -j4` 3/3 clean,
+and the full `t/` suite (3529 files) clean.
+
+The actionable item is unchanged and is §8.2's, not the crash itself: **make a fatal signal on a
+non-`mutsu-main` thread actually produce a report.** Three recurrences have now each cost a red CI
+and yielded no backtrace. Extending `tests/crash_report.rs` to fault each thread class mutsu spawns
+is contained work that does not need the underlying race to reproduce.
