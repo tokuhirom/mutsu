@@ -1477,7 +1477,16 @@ impl Interpreter {
                         "callmethodmutwithvalues",
                         "array-squish",
                     );
-                    let current = self.env.get(&key).cloned().unwrap_or(target.clone());
+                    // Read THROUGH a shared `ContainerRef` cell: a `$scalar = @arr`
+                    // share, an rw/`\(...)` argument capture or a `:=` rebind used
+                    // as a sub argument leaves the env entry holding the cell, and
+                    // squishing the cell itself wrapped the whole array as one
+                    // element (`@a.squish.List` gave `([...],)`).
+                    let current = self
+                        .env
+                        .get(&key)
+                        .map(Value::deref_container)
+                        .unwrap_or_else(|| target.clone());
                     let squished = self.dispatch_squish(current, &args)?;
                     if self.in_lvalue_assignment {
                         let squished_items = match squished.view() {

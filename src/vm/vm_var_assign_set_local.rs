@@ -1106,11 +1106,18 @@ impl Interpreter {
                     assigned.view(),
                     ValueView::Array(_, crate::value::ArrayKind::Shaped)
                 );
-            let lhs_shape = crate::runtime::utils::shaped_array_shape(&self.locals[idx]);
+            // Read the LHS's current value THROUGH a shared `ContainerRef` cell:
+            // a `$scalar = @arr` share (`MarkArrayShareSource`) or an rw/`\(...)`
+            // argument capture (`WrapVarRef`) replaces this slot with the cell,
+            // and a bare `shaped_array_shape` on the cell answers `None` — which
+            // silently turned the next whole assignment into an unshaped,
+            // truncated array (`my @a[4]; peek(@a); @a = "x","y"` gave 2 elems).
+            let lhs_shape = self.locals[idx].with_deref(crate::runtime::utils::shaped_array_shape);
             if let Some(shape) = &lhs_shape
                 && shape.len() == 1
                 && !assigned_has_own_shape
             {
+                let lhs_current = self.locals[idx].deref_container();
                 let items = runtime::value_to_list(&assigned);
                 let item_count = items.len();
                 let mut shaped_items: Vec<Value> = items.into_iter().take(shape[0]).collect();
@@ -1118,10 +1125,7 @@ impl Interpreter {
                     // Pad with the element type's default (native arrays: int->0,
                     // num->0e0, str->""), not Nil, so clearing a shaped num array
                     // yields `0 0 0 0` rather than empty slots.
-                    let default = {
-                        let old = self.locals[idx].clone();
-                        self.typed_container_default(&old)
-                    };
+                    let default = self.typed_container_default(&lhs_current);
                     Self::autoviv_resize(&mut shaped_items, shape[0], default)?;
                 }
                 assigned = Value::array_with_kind(
@@ -1130,7 +1134,7 @@ impl Interpreter {
                 );
                 crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
                 // Preserve container type metadata
-                if let Some(info) = self.container_type_metadata(&self.locals[idx]) {
+                if let Some(info) = self.container_type_metadata(&lhs_current) {
                     assigned = self.tag_container_metadata(assigned, info);
                 }
             } else if !is_bind

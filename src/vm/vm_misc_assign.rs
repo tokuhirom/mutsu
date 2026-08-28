@@ -198,7 +198,14 @@ impl Interpreter {
                 .position(|n| n == &name)
                 .and_then(|idx| self.locals.get(idx).cloned());
             let env_val = self.get_env_with_main_alias(&name);
-            let is_shaped = |v: &Value| crate::runtime::utils::shaped_array_shape(v).is_some();
+            // Read through a shared `ContainerRef` cell: a `$scalar = @arr` share
+            // or an rw/`\(...)` argument capture replaces the store's entry with
+            // the cell, and a bare `shaped_array_shape` on the cell answers `None`
+            // (see the `SetLocal` sibling for the repro).
+            let is_shaped = |v: &Value| {
+                v.with_deref(crate::runtime::utils::shaped_array_shape)
+                    .is_some()
+            };
             let current_val = match (&local_val, &env_val) {
                 (Some(l), _) if is_shaped(l) => local_val.clone(),
                 (_, Some(e)) if is_shaped(e) => env_val.clone(),
@@ -207,7 +214,7 @@ impl Interpreter {
             };
             let current_shape = current_val
                 .as_ref()
-                .and_then(crate::runtime::utils::shaped_array_shape)
+                .and_then(|v| v.with_deref(crate::runtime::utils::shaped_array_shape))
                 .or_else(|| {
                     // Also check declared shape metadata for multi-dim
                     let key = format!("__mutsu_shaped_array_dims::{}", name);
@@ -251,8 +258,8 @@ impl Interpreter {
                     );
                     crate::runtime::utils::mark_shaped_array(&assigned, Some(shape));
                     // Preserve container type metadata from old array
-                    if let Some(ref cv) = current_val
-                        && let Some(info) = self.container_type_metadata(cv)
+                    if let Some(cv) = current_val.as_ref().map(Value::deref_container)
+                        && let Some(info) = self.container_type_metadata(&cv)
                     {
                         assigned = self.tag_container_metadata(assigned, info);
                     }
