@@ -155,6 +155,14 @@ impl Interpreter {
         if normalized_op == "=~=" || normalized_op == "\u{2245}" {
             return self.approx_eq_values(left.clone(), right.clone());
         }
+        // `eqv` is the same story: the static table can only offer the pure
+        // `Value::eqv`, while the operator also owns the lazy-iterable rules,
+        // `Proxy` element FETCH and the Seq reify/consume protocol (the source
+        // of `X::Seq::Consumed`). `[eqv] $consumed1, $consumed2` and
+        // `@a Zeqv @b` must behave exactly like `$a eqv $b`.
+        if normalized_op == "eqv" {
+            return self.eqv_values(left.clone(), right.clone());
+        }
         // Range operators are legal metaop bases (`(1,2) Z.. (5,6)`,
         // `(1,2) X..^ (5,6)`) but are not reductions — they build a Range
         // value rather than fold two operands, so they cannot live in the

@@ -631,7 +631,15 @@ impl Interpreter {
         let body = Arc::clone(&body);
         let (items, outcome) = self.take_seq_body(&body)?;
         Ok(if matches!(outcome, SeqTaken::Taken) {
-            Value::seq(items)
+            // Keep the handle's Raku type: a `SeqView::List` handle (from
+            // `.cache` on a not-yet-reified Seq, ADR-0038 S2) is a
+            // `List`, and `eqv` is type-strict — rebuilding it as a plain
+            // `Seq` here would make `$seq.cache eqv (1, 2, 3)` answer False.
+            if body.view() == crate::value::SeqView::List {
+                Value::array(items)
+            } else {
+                Value::seq(items)
+            }
         } else {
             value
         })
@@ -640,6 +648,23 @@ impl Interpreter {
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let result = self.eqv_values(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// The full `infix:<eqv>` semantics: the lazy-iterable rules, `Proxy`
+    /// element resolution, the same-Seq identity fast path, and the Seq
+    /// reify/consume protocol (which is what raises `X::Seq::Consumed`), on top
+    /// of the pure [`Value::eqv`] comparison.
+    ///
+    /// Shared so that calling the operator as a routine — `&infix:<eqv>($a,
+    /// $b)`, which is exactly what the real `Test.rakumod`'s `cmp-ok` does via
+    /// `&CALLER::LEXICAL::("infix:<eqv>")` — behaves identically to the `a eqv
+    /// b` operator form. The routine path used to land on the pure
+    /// `apply_reduction_op` fold instead, so `cmp-ok $consumed1, 'eqv',
+    /// $consumed2` silently answered `False` where the operator throws.
+    pub(crate) fn eqv_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // `eqv` on two lazy iterables of the SAME type cannot be answered without
         // iterating them, so it throws X::Cannot::Lazy (action `eqv`). Two lazy
         // iterables of DIFFERENT type are trivially not-eqv (no iteration needed),
@@ -647,10 +672,7 @@ impl Interpreter {
         // which short-circuits on the length/laziness mismatch.
         match (Self::lazy_eqv_type(&left), Self::lazy_eqv_type(&right)) {
             (Some(a), Some(b)) if a == b => return Err(RuntimeError::cannot_lazy("eqv")),
-            (Some(_), Some(_)) => {
-                self.stack.push(Value::FALSE);
-                return Ok(());
-            }
+            (Some(_), Some(_)) => return Ok(Value::FALSE),
             _ => {}
         }
         // `Value::eqv` is a pure, interpreter-free comparison, so it cannot call
@@ -671,14 +693,10 @@ impl Interpreter {
         if let (ValueView::Seq(lb), ValueView::Seq(rb)) = (left.view(), right.view())
             && Arc::ptr_eq(&lb, &rb)
         {
-            self.stack.push(Value::TRUE);
-            return Ok(());
+            return Ok(Value::TRUE);
         }
         let left = self.reify_or_consume_eqv_operand(left)?;
         let right = self.reify_or_consume_eqv_operand(right)?;
-        let result =
-            self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))?;
-        self.stack.push(result);
-        Ok(())
+        self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))
     }
 }
