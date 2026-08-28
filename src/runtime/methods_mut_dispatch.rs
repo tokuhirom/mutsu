@@ -1520,8 +1520,25 @@ impl Interpreter {
                     // constraints off the hash's own metadata (authoritative,
                     // travels with COW) falling back to the variable's declared
                     // constraints.
+                    //
+                    // ADR-0039 slice 1, `%`-sigil twin of the `@`-append fix
+                    // below: `%h` may hold a shared `ContainerRef` cell rather
+                    // than the hash itself -- a `%r := %h` rebind, an rw /
+                    // `\(...)` capture, or simply having been passed to a
+                    // Raku-level routine, all of which box the slot. A raw
+                    // `self.env.get(&key)` then sees the CELL, never matches
+                    // `ValueView::Hash`, and the whole arm falls through to the
+                    // "create from target value" fallback at the end, which
+                    // rebuilds a DETACHED hash and overwrites `env[key]` with
+                    // it -- severing the cell, so every alias of the hash goes
+                    // stale. So every read AND write below goes through
+                    // `env_root_descended_mut`, the same cell-descending
+                    // chokepoint the array mutators use. Reading and writing
+                    // through the identical resolution is also what makes the
+                    // `.unwrap()`s below sound.
+                    let stored = self.env_root_descended_mut(&key).map(|v| v.clone());
                     let (key_constraint, value_constraint, is_object_hash) =
-                        match self.env.get(&key).map(Value::view) {
+                        match stored.as_ref().map(Value::view) {
                             Some(ValueView::Hash(h)) => (
                                 h.key_type
                                     .clone()
@@ -1548,7 +1565,8 @@ impl Interpreter {
                         // the duplicate-key array-conflict check can run before the
                         // mutable borrow (type_matches_value needs `&mut self`).
                         let existing: Vec<Option<Value>> = {
-                            let h = match self.env.get(&key).map(Value::view) {
+                            let stored = self.env_root_descended_mut(&key).map(|v| v.clone());
+                            let h = match stored.as_ref().map(Value::view) {
                                 Some(ValueView::Hash(h)) => Some(h),
                                 _ => None,
                             };
@@ -1607,14 +1625,12 @@ impl Interpreter {
                                 }
                             }
                         }
-                        let hash_present = matches!(
-                            self.env.get(&key).map(Value::view),
-                            Some(ValueView::Hash(_))
-                        );
+                        let hash_present = self
+                            .env_root_descended_mut(&key)
+                            .is_some_and(|slot| matches!(slot.view(), ValueView::Hash(_)));
                         if hash_present {
                             return Ok(self
-                                .env
-                                .get_mut(&key)
+                                .env_root_descended_mut(&key)
                                 .unwrap()
                                 .with_hash_mut(|arc_hash| {
                                     // Container identity (§3): push through a shared node.
@@ -1663,15 +1679,13 @@ impl Interpreter {
                     }
 
                     // Fast path: COW via Arc::make_mut (O(1) when refcount=1)
-                    let hash_present = matches!(
-                        self.env.get(&key).map(Value::view),
-                        Some(ValueView::Hash(_))
-                    );
+                    let hash_present = self
+                        .env_root_descended_mut(&key)
+                        .is_some_and(|slot| matches!(slot.view(), ValueView::Hash(_)));
                     if hash_present {
                         let pairs = Self::hash_push_collect_pairs(args);
                         return Ok(self
-                            .env
-                            .get_mut(&key)
+                            .env_root_descended_mut(&key)
                             .unwrap()
                             .with_hash_mut(|arc_hash| {
                                 // Container identity (§3): push through a shared node.

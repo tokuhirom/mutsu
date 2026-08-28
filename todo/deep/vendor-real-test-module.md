@@ -3617,3 +3617,165 @@ builtin that never binds an argument. When triaging the remaining roast
 regressions, "does this read go through `with_deref`?" is worth checking early:
 it is cheap, and it found two of the five files in this cluster from the same
 grep.
+
+## 2026-08-28 (fifth entry that day): the `%`-sigil half of the same `ContainerRef`-blind class — hash `push`/`append` and `:delete`-with-adverb
+
+The entry above closed the `@`-sigil instances of "a read site that inspects a
+variable's stored `Value` instead of going through `with_deref`" and explicitly
+left the `%`-sigil siblings for a follow-up. This slice took that follow-up.
+The prompting analysis pointed at `runtime/methods_mut_dispatch.rs`'s
+`self.env.get(&key).cloned()` shape; that site is indeed blind and is fixed
+here, but it is **not** what the headline repro was hitting. `rust-gdb -batch`
+settled it in three breakpoints and zero rebuilds:
+
+### The headline bug was a fast-path delegating to a weaker implementation
+
+```raku
+sub peek(Mu $got) { }
+my %h;
+%h.push: 'b', 2, 'a', 1, 'c', 3;
+peek(%h);                       # boxes %h's slot into a shared ContainerRef cell
+%h.push: (:a(4), :a(5));
+say %h.raku;
+# raku:  {:a($[1, 4, 5]), :b(2), :c(3)}     mutsu (before): {:a(1), :b(2), :c(3)}
+```
+
+The second `.push` was lost outright — not merely invisible to the read, as the
+prompting analysis had it: a plain `say %h.raku` right after it was stale too.
+
+`vm/vm_call_method_mut_ops.rs`'s `try_native_hash_mut_bound` intercepts
+`%h.push` / `%h.append` whenever the name's env entry is a `ContainerRef`,
+unwraps the cell, and delegates to `call_method_with_values` on the inner hash
+so the write lands through the cell. That routing is right. The problem is
+where it lands: `runtime/methods_call_dispatch.rs`'s by-value `Hash.push` arm was
+an inline hand-rolled duplicate of the `%`-sigiled lvalue arm, and it only
+understood a bare `ValuePair` argument. Everything else silently vanished:
+
+- an alternating `'k', $v, 'k2', $v2` list,
+- a parenthesised list / `Seq` / `Slip` / `Hash` argument,
+- `append`'s array-flattening semantics (it applied `push` semantics to both),
+- the element itemization at the store.
+
+Nothing noticed because the by-value arm was only reachable from routes that
+happened to pass plain pairs — until `try_native_hash_mut_bound` started
+funnelling every cell-boxed `%h.push` through it, and passing a hash to *any*
+Raku-level routine boxes it. Under the native provider `is`/`is-deeply` are Rust
+builtins that never bind an argument, so the whole family was invisible there;
+under the real `Test.rakumod` they are Raku subs, and the first `is %h, ...` in a
+file arms the bug for every later `.push` in that file.
+
+The fix deletes the duplicate: the by-value arm now calls the same
+`hash_push_collect_pairs` / `hash_push_insert` helpers the lvalue arm uses, so
+the two implementations of `Hash.push`/`Hash.append` cannot drift apart again.
+
+### Bug 2 — the `%`-sigil lvalue arm really is `with_deref`-blind
+
+Separately observable, and exactly the shape the entry above predicted:
+
+```raku
+sub peek(Mu $got) { }
+my %a; %a<x> = 1;
+my %r := %a;
+peek(%a);
+push %a, 'y', 2;
+say %a.raku, " ", %r.raku;
+# raku:  {:x(1), :y(2)} {:x(1), :y(2)}      mutsu (before): {:x(1), :y(2)} {:x(1)}
+```
+
+The listop and `%h."$name"()` routes reach `call_method_mut_with_values` without
+passing `try_native_hash_mut_bound`, so they land in the `%`-sigil arm, whose
+`hash_present` predicate and both write sites used a raw `self.env.get(&key)` /
+`self.env.get_mut(&key)`. Against a `ContainerRef` those never match
+`ValueView::Hash`, so the arm fell through to its "create from target value"
+fallback, which rebuilds a **detached** hash and overwrites `env[key]` with it —
+severing the cell, so `%r` never sees the push again. The mutation still looked
+right through `%a` itself, which is why it survived so long. Every read and both
+writes now go through `env_root_descended_mut`, the same cell-descending
+chokepoint the array mutators use; reading and writing through the identical
+resolution is also what keeps the `.unwrap()`s sound.
+
+### Bug 3 — `:delete` combined with a `:k`/`:v`/`:p`/`:kv` adverb
+
+Found by auditing the class rather than the one call site — a 27-case
+mutsu-vs-`raku` diff of every hash/array mutator run after a `peek()`:
+
+```raku
+sub peek(Mu $got) { }
+my %h = a=>1, b=>2; peek(%h); %h<a c>:delete:p; say %h.raku;
+# raku:  {:b(2)}      mutsu (before): {:a(1), :b(2)}
+my @a = 1,2,3;      peek(@a); @a[0,1]:delete:p; say @a.raku;
+# raku:  [Any, Any, 3]  mutsu (before): [1, 2, 3]
+```
+
+A bare `:delete` lowers to the `DeleteIndexNamed` opcode, which already descends
+cells. Combined with a `:k`/`:v`/`:p`/`:kv` adverb the compiler instead routes it
+to `__mutsu_subscript_adverb` with a `delete => True` flag, and **both** of that
+builtin's delete companions in `runtime/builtins_multidim_subscript.rs` (the
+associative one and the positional one) used a raw `self.env.get_mut(var_name)`.
+Against a cell, `with_hash_mut` / `with_array_mut` return `None`, and neither
+site has a fallback — so the `:p`/`:k` half answered correctly while the
+`:delete` half was silently dropped. This is what actually failed
+`advent2013-day12.t` test 24; the prompting analysis's guess that the two
+`integration/` files were the same `push` mechanism was right for
+`advent2010-day08.t` and wrong for `advent2013-day12.t`.
+
+`vm/vm_call_method_mut_ops.rs`'s `DELETE-KEY` in-place removal had the same raw
+`env_mut().get_mut(target_name)`; it does have a fallback, but the fallback is
+the alias-severing rebuild, so it was fixed for the same reason.
+
+### Sites audited
+
+| site | verdict |
+| --- | --- |
+| `runtime/methods_call_dispatch.rs` by-value `Hash.push`/`append` | duplicate implementation, replaced by the shared helpers |
+| `runtime/methods_mut_dispatch.rs` `%`-arm: `key_constraint` read | blind, now `env_root_descended_mut` |
+| `runtime/methods_mut_dispatch.rs` `%`-arm: `existing` snapshot | blind, now `env_root_descended_mut` |
+| `runtime/methods_mut_dispatch.rs` `%`-arm: typed `hash_present` + write | blind, now `env_root_descended_mut` |
+| `runtime/methods_mut_dispatch.rs` `%`-arm: untyped `hash_present` + write | blind, now `env_root_descended_mut` |
+| `runtime/builtins_multidim_subscript.rs` associative `:delete` companion | blind, now `env_root_descended_mut` |
+| `runtime/builtins_multidim_subscript.rs` positional `:delete` companion | blind, now `env_root_descended_mut` |
+| `vm/vm_call_method_mut_ops.rs` `DELETE-KEY` in-place removal | blind, now `env_root_descended_mut` |
+| `runtime/methods_mut_dispatch.rs` sigilless-array `unshift`/`prepend` (`env.get_mut`) | reachable only behind `try_native_array_mut`, which already descends; measured green in the 16-case sigilless/bound audit, left alone |
+| `vm/vm_var_index_tracking.rs`, `vm_var_assign_element.rs`, `vm_var_assign_index_named.rs`, `vm_var_assign_post_incdec.rs` `env_mut().get_mut` sites | measured green for every element-assign / incr / slice-assign / nested-assign case in the audit, left alone |
+
+### Per-file before/after (release build, both providers)
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `S32-hash/push.t` | 2 failures (#3, #5) | pass | pass | pass |
+| `integration/advent2010-day08.t` | 1 failure (#7) | pass | pass | pass |
+| `integration/advent2013-day12.t` | 1 failure (#24) | pass | pass | pass |
+
+So **roast correctness regressions: 50 -> 47** against the 2026-08-28 baseline
+(the 57 of the sweep entry above, minus PRs #7078/#7079). Per-file
+measurements, as that entry recommends given the `exit 124` noise. A real-Test
+re-run of all 285 whitelisted files under `S32-hash` / `S09-hash` / `S32-list` /
+`S02-types` / `S06-signature` / `integration` reports exactly the baseline's
+failure set for those directories minus these three files — no new real-Test
+regression.
+
+Pin: `t/hash-mutation-visible-after-sub-argument.t` (28 assertions, verified
+green under real `raku` as well as mutsu — it covers the argument-binding
+promotion, the `:=` rebind, both `%`- and `$`-named bind targets, all five call
+forms of `push`/`append` (colon-listop, parenthesised, listop, `."$name"`,
+`append`), alternating / pair-list / hash / duplicate-key arguments, alias
+visibility, and `:delete` with `:p`/`:k` on both an associative and a positional
+slice).
+
+Verification: `make test` green (3521 files, 35113 tests), two targeted roast
+sweeps chosen from the consumers of what changed (285 files across `S32-hash`,
+`S09-hash`, `S32-list`, `S02-types`, `S06-signature`, `integration`; then 139
+more across `S09-subscript`, `S32-array`, `S32-container`, `S02-names-vars`,
+`S03-operators`, `S12-construction`, `S09-typed-arrays`, `S06-other`,
+`S04-declarations`) both green, and `scripts/battery-testsuite.sh` on a
+**release** build with an idle machine: `GATE PASSED`, 273/297 — unchanged.
+
+### Note for the rest of the residue
+
+The `with_deref` heuristic held up, but with a twist worth carrying forward: two
+of the three bugs here were *write* sites, not read sites, and the headline one
+was a **fast path delegating to a second, weaker implementation of the same
+operation**. When a cell-boxed receiver misbehaves, check not only "does this
+read go through `with_deref`?" but also "does this interception land in the same
+implementation the non-intercepted path uses?" — a duplicated implementation is
+latent divergence that only the cell case exercises.

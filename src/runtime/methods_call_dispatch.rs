@@ -1500,10 +1500,26 @@ impl Interpreter {
                     }
                 }
             }
-            // Build the updated hash by merging pairs
+            // Build the updated hash by merging pairs.
+            //
+            // This is the by-value twin of the `%`-sigiled lvalue arm in
+            // `methods_mut_dispatch.rs`, and it must implement the SAME
+            // semantics: it used to hand-roll a version that only understood a
+            // bare `ValuePair` argument and applied push semantics to `append`
+            // as well. Everything else silently vanished -- an alternating
+            // `'k', $v` list, a parenthesised list / `Seq` / `Slip` / `Hash`
+            // argument, `append`'s array flattening, and the element
+            // itemization at the store. That was invisible until
+            // `try_native_hash_mut_bound` started routing `%h.push` on a
+            // variable boxed into a shared `ContainerRef` cell (which passing
+            // it to any Raku-level routine does) through here. Delegate to the
+            // shared `hash_push_collect_pairs` / `hash_push_insert` helpers so
+            // the two implementations cannot drift apart again.
             let ValueView::Hash(arc) = target.view() else {
                 unreachable!()
             };
+            let is_push = method == "push";
+            let pairs = Self::hash_push_collect_pairs(args);
             // Check if we can mutate in-place (shared reference)
             if crate::gc::Gc::strong_count_of(&arc) > 1 {
                 // SAFETY: aliased in-place mutation of a shared hash (guarded by
@@ -1511,48 +1527,17 @@ impl Interpreter {
                 // see `gc_contents_mut`. No borrow into the map is live across
                 // each insert.
                 let data = unsafe { crate::value::gc_contents_mut(&arc) };
-                for arg in args {
-                    if let ValueView::ValuePair(k, v) = arg.view() {
-                        let key = k.to_string_value();
-                        let v = v.clone();
-                        let map = &mut data.map;
-                        if let Some(existing) = map.get(&key) {
-                            let arr = Value::array_with_kind(
-                                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                    existing.clone(),
-                                    v,
-                                ])),
-                                crate::value::ArrayKind::ItemArray,
-                            );
-                            map.insert(key, arr);
-                        } else {
-                            map.insert(key, v);
-                        }
-                    }
+                for (k, v) in pairs {
+                    Self::hash_push_insert(&mut data.map, k, v, is_push);
                 }
                 return Ok(target);
             }
-            // Not shared: build new hash
-            let mut new_map = (**arc).clone();
-            for arg in args {
-                if let ValueView::ValuePair(k, v) = arg.view() {
-                    let key = k.to_string_value();
-                    let v = v.clone();
-                    if let Some(existing) = new_map.get(&key) {
-                        let arr = Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                existing.clone(),
-                                v,
-                            ])),
-                            crate::value::ArrayKind::ItemArray,
-                        );
-                        new_map.insert(key, arr);
-                    } else {
-                        new_map.insert(key, v);
-                    }
-                }
+            // Not shared: build a new hash
+            let mut new_data: crate::value::HashData = (**arc).clone();
+            for (k, v) in pairs {
+                Self::hash_push_insert(&mut new_data.map, k, v, is_push);
             }
-            return Ok(Value::hash_with_data(Value::hash_arc(new_map)));
+            return Ok(Value::hash_with_data(Value::hash_arc(new_data)));
         }
         // IO::Special.new("<STDOUT>")
         if let ValueView::Package(name) = target.view()
