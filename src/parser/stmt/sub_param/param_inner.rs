@@ -1127,6 +1127,46 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
+        // A `&`-sigiled parameter cannot be *unpacked*: what follows it is a
+        // constraint on the CALLABLE's own signature, the whitespace-separated
+        // spelling of `&cb:(...)`. NativeCall's documented callback declaration
+        // is exactly this form — `sub SetCallback(&callback (Str --> int32)) is
+        // native('mylib')` (`Language/nativecall.rakudoc`, "Function
+        // arguments") — and the `--> T` it carries is the callback's C return
+        // type, which `parse_param_list` would discard. So record it as the
+        // parameter's `code_signature`, return type and all, rather than as a
+        // destructuring `sub_signature` whose inner type constraints would
+        // (wrongly) be matched against the passed Callable itself.
+        if original_sigil == b'&' {
+            let (r, (sig_params, sig_ret)) = super::super::sub::parse_param_list_with_return(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, ')')?;
+            let (r, _) = ws(r)?;
+            let (r, post_required, post_opt_marker) = super::helpers::parse_required_suffix(r);
+            let (r, _) = ws(r)?;
+            let mut param_traits = Vec::new();
+            let (mut r, _) = ws(r)?;
+            while let Some(r2) = super::super::keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, trait_name) = super::super::ident(r2)?;
+                let (r2, _) =
+                    super::super::sub::validate_param_trait(&trait_name, &param_traits, r2)?;
+                param_traits.push(trait_name);
+                let (r2, _) = ws(r2)?;
+                r = r2;
+            }
+            let mut p = super::helpers::make_param(format!("&{name}"));
+            p.required = required || post_required;
+            p.optional_marker = opt_marker || post_opt_marker;
+            p.named = named;
+            p.slurpy = slurpy;
+            p.double_slurpy = double_slurpy;
+            p.onearg = onearg;
+            p.type_constraint = type_constraint;
+            p.code_signature = Some((sig_params, sig_ret));
+            p.traits = param_traits;
+            return Ok((r, p));
+        }
         let (r, sub_params) = super::super::sub::parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;

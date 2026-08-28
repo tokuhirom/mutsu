@@ -554,6 +554,8 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 pub(crate) mod native_types;
 pub(crate) mod nativecall;
+#[cfg(feature = "libffi")]
+pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
 pub(crate) mod nativecall_manage;

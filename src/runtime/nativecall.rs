@@ -15,9 +15,11 @@
 //! [docs/nativecall-repr-bodies.md](../../docs/nativecall-repr-bodies.md)), and
 //! `is repr('CStruct')` types as **opaque native handles passed by pointer**
 //! (returned wrapped in an instance of the declared class, e.g. OpenSSL's
-//! `SSL` / `SSL_CTX` / `SSL_METHOD`). The library name may be supplied by a code
-//! object (`is native(&ssl-lib)`), resolved at bind time. By-value CStructs
-//! (field layout marshalling) and callbacks remain follow-up work.
+//! `SSL` / `SSL_CTX` / `SSL_METHOD`), and a `&callback (Sig)` parameter, whose
+//! Raku `Callable` argument is marshalled to a real C function pointer that
+//! re-enters the VM (`nativecall_callback.rs`, ADR-0063). The library name may
+//! be supplied by a code object (`is native(&ssl-lib)`), resolved at bind time.
+//! By-value CStructs (field layout marshalling) remain follow-up work.
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -49,6 +51,10 @@ pub enum CType {
     /// e.g. `SSL_read` / `BIO_read`) — which needs no copy back, because the
     /// memory C wrote into is the Raku object's storage (ADR-0015 P2).
     Buf,
+    /// A `&callback (Sig)` parameter: the Raku `Callable` argument is marshalled
+    /// to a real C function pointer that re-enters the VM (ADR-0063). The
+    /// callback's own C signature lives in [`ParamSpec::callback`].
+    Callback,
 }
 
 impl CType {
@@ -85,12 +91,47 @@ impl CType {
 /// the resulting pointer back into the caller's `Pointer` object.
 // Fields are read only in the `libffi` build (the wasm stub ignores them).
 #[cfg_attr(not(feature = "libffi"), allow(dead_code))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ParamSpec {
     pub ct: CType,
     pub is_rw: bool,
     /// Element C type when `ct == CType::CArray` (`None` otherwise).
     pub elem: Option<CType>,
+    /// The callback's own C signature when `ct == CType::Callback` (`None`
+    /// otherwise) — boxed so an ordinary scalar parameter stays word-sized.
+    pub callback: Option<Box<CallbackSig>>,
+}
+
+impl ParamSpec {
+    /// A plain (non-`CArray`, non-callback) parameter of the given C type.
+    pub fn scalar(ct: CType, is_rw: bool) -> ParamSpec {
+        ParamSpec {
+            ct,
+            is_rw,
+            elem: None,
+            callback: None,
+        }
+    }
+
+    /// A `CArray[T]` parameter; `elem` is `None` for the unparameterized
+    /// `CArray` spelling, whose element type is read off the argument.
+    pub fn carray(elem: Option<CType>, is_rw: bool) -> ParamSpec {
+        ParamSpec {
+            ct: CType::CArray,
+            is_rw,
+            elem,
+            callback: None,
+        }
+    }
+}
+
+/// The C signature of a `&callback (Sig)` parameter: what the C side will pass
+/// to, and expect back from, the function pointer mutsu hands it.
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallbackSig {
+    pub params: Vec<CType>,
+    pub ret: CType,
 }
 
 /// The resolved descriptor for one `is native` sub: which library/symbol to
@@ -331,8 +372,15 @@ pub(crate) fn load_library_cached(
 /// that arrives as a shared cell is already written in place; the returned
 /// pairs let an interpreter-side call path also write back a plain `VarRef`
 /// (or arg-source-named) argument, which this layer cannot reach.
+///
+/// `interp` is the VM making the call. It is registered for the duration of the
+/// libffi call so that a `&callback (Sig)` argument's C function pointer can
+/// re-enter it (ADR-0063); it is deliberately not touched between the
+/// registration and the call's return, which is what makes that re-borrow the
+/// only live access.
 #[cfg(feature = "libffi")]
 pub fn call_native_with_out_args(
+    interp: &mut crate::runtime::Interpreter,
     spec: &NativeCallSpec,
     args: &[Value],
 ) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
@@ -416,6 +464,30 @@ pub fn call_native_with_out_args(
             let slot = Box::new(seed as usize);
             num_writebacks.push(i);
             (Type::pointer(), ArgOwner::new_out_ptr(slot))
+        } else if ps.ct == CType::Callback {
+            // `&callback (Sig)`: hand C a real function pointer that re-enters
+            // this VM (ADR-0063). The closure is process-lifetime, so a callee
+            // that retains the pointer past this call keeps a live entry point.
+            let Some(cb) = ps.callback.as_deref() else {
+                return Err(RuntimeError::new(format!(
+                    "NativeCall: argument {} to '{}': a callback parameter has no signature",
+                    i + 1,
+                    spec.symbol
+                )));
+            };
+            let addr =
+                crate::runtime::nativecall_callback::callback_code_address(cb, v).map_err(|e| {
+                    RuntimeError::new(format!(
+                        "NativeCall: argument {} to '{}': {}",
+                        i + 1,
+                        spec.symbol,
+                        e.message
+                    ))
+                })?;
+            (
+                Type::pointer(),
+                ArgOwner::Ptr(addr as *const std::ffi::c_void),
+            )
         } else {
             let (ty, owner) = marshal_arg(ps, v).map_err(|msg| {
                 RuntimeError::new(format!(
@@ -442,6 +514,15 @@ pub fn call_native_with_out_args(
     let cif = Cif::new(arg_types, ret_ffi_type(spec.ret));
     let code = CodePtr(func_ptr as *mut _);
 
+    // Register the calling VM so a `&callback` argument's function pointer can
+    // re-enter it while C is running (ADR-0063). `interp` is not touched again
+    // until the guard is dropped, so the callback's re-borrow through this raw
+    // pointer is the only live access to it.
+    // SAFETY: the pointer is derived from the live `&mut Interpreter` and the
+    // guard is dropped before `interp` is used again.
+    let _interp_guard =
+        unsafe { crate::runtime::nativecall_callback::InterpreterGuard::push(interp as *mut _) };
+
     // SAFETY: the CIF matches the declared signature; arg pointers outlive the
     // call via `owners`.
     let result = unsafe {
@@ -465,7 +546,7 @@ pub fn call_native_with_out_args(
             // unreachable in practice — treat it as an opaque pointer. A CStruct
             // return (`ret_struct` set) wraps the address in an instance of the
             // declared class so it round-trips as that native handle type.
-            CType::Pointer | CType::CArray | CType::Buf => {
+            CType::Pointer | CType::CArray | CType::Buf | CType::Callback => {
                 let addr = cif.call::<usize>(code, &ffi_args);
                 let class = spec.ret_struct.as_deref().unwrap_or("Pointer");
                 if addr == 0 {
@@ -500,6 +581,8 @@ pub fn call_native_with_out_args(
             }
         }
     };
+
+    drop(_interp_guard);
 
     // Write `is rw Pointer` out-slots back into the caller's Pointer objects.
     // The `Instance` shares its attribute cell with the caller's
@@ -728,7 +811,12 @@ fn numeric_out_width(ct: CType) -> Option<usize> {
         CType::I16 | CType::U16 => Some(2),
         CType::I32 | CType::U32 | CType::F32 => Some(4),
         CType::I64 | CType::U64 | CType::F64 => Some(8),
-        CType::Void | CType::Str | CType::Pointer | CType::CArray | CType::Buf => None,
+        CType::Void
+        | CType::Str
+        | CType::Pointer
+        | CType::CArray
+        | CType::Buf
+        | CType::Callback => None,
     }
 }
 
@@ -921,9 +1009,12 @@ fn carray_elem_size(elem: CType) -> usize {
         CType::I32 | CType::U32 | CType::F32 => 4,
         CType::I64 | CType::U64 | CType::F64 => 8,
         // A pointer-sized element (`Pointer`); Str is handled separately.
-        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
-            std::mem::size_of::<usize>()
-        }
+        CType::Pointer
+        | CType::Str
+        | CType::CArray
+        | CType::Buf
+        | CType::Void
+        | CType::Callback => std::mem::size_of::<usize>(),
     }
 }
 
@@ -940,9 +1031,12 @@ fn encode_carray_elem(elem: CType, v: &Value, dst: &mut [u8]) {
         CType::I64 | CType::U64 => dst.copy_from_slice(&(int as u64).to_ne_bytes()),
         CType::F32 => dst.copy_from_slice(&(num as f32).to_ne_bytes()),
         CType::F64 => dst.copy_from_slice(&num.to_ne_bytes()),
-        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
-            dst.copy_from_slice(&(int as usize).to_ne_bytes())
-        }
+        CType::Pointer
+        | CType::Str
+        | CType::CArray
+        | CType::Buf
+        | CType::Void
+        | CType::Callback => dst.copy_from_slice(&(int as usize).to_ne_bytes()),
     }
 }
 
@@ -966,9 +1060,12 @@ fn decode_carray_elem(elem: CType, src: &[u8]) -> Value {
         CType::U64 => Value::int(u64::from_ne_bytes(arr::<8>(src)) as i64),
         CType::F32 => Value::num(f32::from_ne_bytes(arr(src)) as f64),
         CType::F64 => Value::num(f64::from_ne_bytes(arr(src))),
-        CType::Pointer | CType::Str | CType::CArray | CType::Buf | CType::Void => {
-            Value::int(usize::from_ne_bytes(arr(src)) as i64)
-        }
+        CType::Pointer
+        | CType::Str
+        | CType::CArray
+        | CType::Buf
+        | CType::Void
+        | CType::Callback => Value::int(usize::from_ne_bytes(arr(src)) as i64),
     }
 }
 
@@ -1076,6 +1173,9 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
             }
         }
         CType::Void => return Err("a parameter cannot have type void".to_string()),
+        // Routed to `callback_arg_owner` before `marshal_arg` is reached (it
+        // needs the interpreter, which this function does not have).
+        CType::Callback => return Err("a callback parameter is marshalled earlier".to_string()),
         // Routed to `marshal_carray_arg` above; unreachable here.
         CType::CArray => return marshal_carray_arg(ps, raw),
     })
@@ -1230,13 +1330,16 @@ fn ret_ffi_type(ct: CType) -> libffi::middle::Type {
         CType::U64 => Type::u64(),
         CType::F32 => Type::f32(),
         CType::F64 => Type::f64(),
-        CType::Str | CType::Pointer | CType::CArray | CType::Buf => Type::pointer(),
+        CType::Str | CType::Pointer | CType::CArray | CType::Buf | CType::Callback => {
+            Type::pointer()
+        }
     }
 }
 
 /// Stub used when the `libffi` feature is disabled (e.g. wasm builds).
 #[cfg(not(feature = "libffi"))]
 pub fn call_native_with_out_args(
+    _interp: &mut crate::runtime::Interpreter,
     spec: &NativeCallSpec,
     _args: &[Value],
 ) -> Result<(Value, Vec<(usize, Value)>), RuntimeError> {
@@ -1304,11 +1407,7 @@ mod tests {
     use super::*;
 
     fn carray_spec(elem: CType) -> ParamSpec {
-        ParamSpec {
-            ct: CType::CArray,
-            is_rw: false,
-            elem: Some(elem),
-        }
+        ParamSpec::carray(Some(elem), false)
     }
 
     /// An undefined `CArray[T]` argument (a type object) must marshal as a

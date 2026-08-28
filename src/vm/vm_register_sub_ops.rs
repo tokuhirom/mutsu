@@ -775,11 +775,7 @@ impl Interpreter {
         // leading `is_invocant` parameter; synthesize the pointer slot when the
         // signature leaves it implicit.
         if invocant_class.is_some() && !param_defs.first().is_some_and(|pd| pd.is_invocant) {
-            params.push(ParamSpec {
-                ct: CType::Pointer,
-                is_rw: false,
-                elem: None,
-            });
+            params.push(ParamSpec::scalar(CType::Pointer, false));
         }
         for pd in param_defs {
             // A method's invocant is its first C argument, passed by pointer —
@@ -789,10 +785,23 @@ impl Interpreter {
             // synthesis here — only the right C type, which its declared
             // constraint (`MYSQL:D`, smiley and all) would not map to.
             if pd.is_invocant {
+                params.push(ParamSpec::scalar(CType::Pointer, false));
+                continue;
+            }
+            // `&callback (Sig)` / `&callback:(Sig)` — a C function pointer the
+            // callee will call back into (`Language/nativecall.rakudoc`,
+            // "Function arguments"). The Callable's own signature is the C
+            // signature of that pointer, so it is what the closure is built
+            // from (ADR-0063), not a type constraint on the parameter itself.
+            if let Some((sig_params, sig_ret)) = pd.code_signature.as_ref() {
+                let Some(cb) = self.callback_signature(sig_params, sig_ret.as_deref()) else {
+                    return Ok(());
+                };
                 params.push(ParamSpec {
-                    ct: CType::Pointer,
+                    ct: CType::Callback,
                     is_rw: false,
                     elem: None,
+                    callback: Some(Box::new(cb)),
                 });
                 continue;
             }
@@ -821,11 +830,7 @@ impl Interpreter {
                 let Some(elem) = CType::from_type_name(&inner) else {
                     return Ok(());
                 };
-                params.push(ParamSpec {
-                    ct: CType::CArray,
-                    is_rw,
-                    elem: Some(elem),
-                });
+                params.push(ParamSpec::carray(Some(elem), is_rw));
                 continue;
             }
             // An unparameterized `CArray` parameter — OpenSSL declares
@@ -837,11 +842,7 @@ impl Interpreter {
             // `void*` — i.e. NULL, since a `CArray` carries no address — and the
             // callee wrote through it.
             if tc == "CArray" {
-                params.push(ParamSpec {
-                    ct: CType::CArray,
-                    is_rw,
-                    elem: None,
-                });
+                params.push(ParamSpec::carray(None, is_rw));
                 continue;
             }
             // A parameterized `Buf[T]`/`Blob[T]` marshals as `CType::Buf`
@@ -870,11 +871,7 @@ impl Interpreter {
                 None if self.is_native_struct_type(tc) => CType::Pointer,
                 None => return Ok(()),
             };
-            params.push(ParamSpec {
-                ct,
-                is_rw,
-                elem: None,
-            });
+            params.push(ParamSpec::scalar(ct, is_rw));
         }
 
         let mut ret_struct: Option<String> = None;
@@ -944,6 +941,55 @@ impl Interpreter {
             .insert(format!("{pkg}::{name}"), spec.clone());
         self.native_call_specs.insert(name.to_string(), spec);
         Ok(())
+    }
+
+    /// The C signature of a `&callback (Sig)` parameter, or `None` when one of
+    /// its types cannot be marshalled (which makes the whole declaration skip
+    /// native registration, so the failure surfaces rather than mis-calling).
+    ///
+    /// A callback's parameters are the ones C will *hand* to Raku, so every
+    /// aggregate spelling (`CArray[T]`, `Buf`, a CStruct handle) is one machine
+    /// word here — there is no length to reify and nothing to copy back.
+    fn callback_signature(
+        &self,
+        sig_params: &[crate::ast::ParamDef],
+        sig_ret: Option<&str>,
+    ) -> Option<crate::runtime::nativecall::CallbackSig> {
+        use crate::runtime::nativecall::{CType, CallbackSig};
+        let mut params = Vec::with_capacity(sig_params.len());
+        for pd in sig_params {
+            // A callback signature is a pure type list; an unnamed parameter
+            // with no constraint at all cannot be marshalled.
+            params.push(self.callback_ctype(pd.type_constraint.as_deref()?)?);
+        }
+        let ret = match sig_ret {
+            None | Some("Mu") => CType::Void,
+            Some(rt) => self.callback_ctype(rt)?,
+        };
+        Some(CallbackSig { params, ret })
+    }
+
+    /// One type name in a callback signature, mapped to its C type.
+    fn callback_ctype(&self, name: &str) -> Option<crate::runtime::nativecall::CType> {
+        use crate::runtime::nativecall::CType;
+        let base = name
+            .strip_suffix(":D")
+            .or_else(|| name.strip_suffix(":U"))
+            .or_else(|| name.strip_suffix(":_"))
+            .unwrap_or(name);
+        let resolved = self.resolve_native_type_alias(base);
+        let base = resolved.as_str();
+        let stem = base.split_once('[').map_or(base, |(b, _)| b);
+        if stem == "CArray" {
+            return Some(CType::Pointer);
+        }
+        if let Some(ct) = CType::from_type_name(stem) {
+            return Some(ct);
+        }
+        if self.is_native_struct_type(base) {
+            return Some(CType::Pointer);
+        }
+        None
     }
 
     /// A native parameter / return type name that is not one of the mapped

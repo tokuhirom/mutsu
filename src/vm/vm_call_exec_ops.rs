@@ -44,7 +44,7 @@ impl Interpreter {
                 let mut call_args = args;
                 call_args.retain(|a| !Self::is_callsite_line_marker(a));
                 let (result, out_args) =
-                    crate::runtime::nativecall::call_native_with_out_args(&spec, &call_args)?;
+                    crate::runtime::nativecall::call_native_with_out_args(self, &spec, &call_args)?;
                 if !out_args.is_empty() {
                     let mut wrote = false;
                     for (idx, val) in out_args {

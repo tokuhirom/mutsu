@@ -206,7 +206,7 @@ impl Interpreter {
             .cloned()
             .collect();
         let (result, out_args) =
-            crate::runtime::nativecall::call_native_with_out_args(&spec, &call_args)?;
+            crate::runtime::nativecall::call_native_with_out_args(self, &spec, &call_args)?;
         for (idx, val) in out_args {
             if let ValueView::VarRef { name, .. } = call_args[idx].view() {
                 let n = name.resolve().to_string();
