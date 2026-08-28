@@ -1212,8 +1212,31 @@ impl Interpreter {
         // needed because callwith() can re-dispatch with different args, so
         // candidates that don't match the original args may match the new ones.
         let all_candidates = self.resolve_all_multi_candidates(name);
-        if all_candidates.len() <= 1 {
+        // A name with no multi candidates at all is a plain sub: it establishes
+        // no dispatcher, so `nextsame` from its body correctly dies with
+        // X::NoDispatcher (`roast/S06-multi/redispatch.t` test 10).
+        if all_candidates.is_empty() {
             return false;
+        }
+        // A `multi` with a SINGLE candidate is still a dispatcher — it merely
+        // has no NEXT candidate. Rakudo makes `nextsame`/`callsame`/`nextwith`/
+        // `callwith` in the last (or only) candidate legal and Nil-valued, so
+        // the frame must exist with an empty `remaining`; without it
+        // `dispatch_next_candidate` fell all the way through to "nextsame is
+        // not in the dynamic scope of a dispatcher" (roast test 9, "It's ok to
+        // call nextsame in the last/only candidate"). Skip the winner
+        // resolution below: with one candidate there is nothing to filter out
+        // and no rw value to chain forward.
+        if all_candidates.len() == 1 {
+            let dispatch_token = self.next_dispatch_token();
+            self.multi_dispatch_stack.push((
+                name.to_string(),
+                Vec::new(),
+                args.to_vec(),
+                Vec::new(),
+                dispatch_token,
+            ));
+            return true;
         }
         // Identify the candidate currently being called by the DETERMINISTIC
         // dispatch winner (the same resolver the interpreter's inline frame uses),
@@ -1240,26 +1263,25 @@ impl Interpreter {
                 Some(fp) != current_fp
             })
             .collect();
-        let pushed = !remaining.is_empty();
-        if pushed {
-            // Capture the FIRST (winning) candidate's scalar rw params so a
-            // nextsame+rw redispatch can chain the rw value through it (§D).
-            let rw_params = current_def
-                .as_ref()
-                .map(|def| {
-                    super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
-                })
-                .unwrap_or_default();
-            let dispatch_token = self.next_dispatch_token();
-            self.multi_dispatch_stack.push((
-                name.to_string(),
-                remaining,
-                args.to_vec(),
-                rw_params,
-                dispatch_token,
-            ));
-        }
-        pushed
+        // Capture the FIRST (winning) candidate's scalar rw params so a
+        // nextsame+rw redispatch can chain the rw value through it (§D).
+        let rw_params = current_def
+            .as_ref()
+            .map(|def| super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs))
+            .unwrap_or_default();
+        let dispatch_token = self.next_dispatch_token();
+        // Push unconditionally, even when the winner filter left `remaining`
+        // empty (every candidate shares the winner's body fingerprint): being a
+        // multi is what makes this a dispatcher, not having somewhere to defer
+        // to. An empty frame is exactly the "no next candidate -> Nil" case.
+        self.multi_dispatch_stack.push((
+            name.to_string(),
+            remaining,
+            args.to_vec(),
+            rw_params,
+            dispatch_token,
+        ));
+        true
     }
 
     /// Pop a multi dispatch frame (must only be called if push returned true).

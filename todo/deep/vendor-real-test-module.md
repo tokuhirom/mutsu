@@ -4454,8 +4454,8 @@ they are.
 | `S05-metachars/closure.t` | One matched | |
 | `S05-modifier/pos.t` | Insensitive repeated continued match pos | |
 | `S05-modifier/repetition-exhaustive.t` | Second entry of prev. generated `$/` | |
-| `S06-multi/redispatch.t` | It's ok to call nextsame in the last/only candidate | in flight |
-| `S06-multi/subsignature.t` | It's ok to call nextsame in the last/only candidate (test 66) | **same cause as the row above** |
+| `S06-multi/redispatch.t` | It's ok to call nextsame in the last/only candidate | **CLOSED** — see the section below |
+| `S06-multi/subsignature.t` | It's ok to call nextsame in the last/only candidate (test 66) | **CLOSED** — same cause as the row above |
 | `S06-operator-overloading/sub.t` | ... basic infix operator overloading worked | |
 | `S06-other/main.t` | MAIN in a module did not get executed | |
 | `S12-class/attributes.t` | HOW on attributes lives, custom class | `No such method 'x' for invocant of type 'A'` |
@@ -4496,3 +4496,74 @@ file's "step 3 needs the call path as well" note. The short version: the `sprint
 **`&`-sigil parameter**. `sub f(&c) { 1 }` called `f(&c)` costs 4.32 µs/iter and re-resolves the
 callee by name on every call; `sub f($c) { 1 }` with an identical callsite, body and arity costs
 0.64 µs and resolves once. Every real-`Test` assertion is the former shape.
+
+## 2026-08-29: a `multi` is a dispatcher even with nowhere to defer to (`S06-multi/redispatch.t`, `S06-multi/subsignature.t`)
+
+`roast/S06-multi/redispatch.t` test 9 ("It's ok to call `nextsame` in the
+last/only candidate") failed under `MUTSU_REAL_TEST=1` with "nextsame is not in
+the dynamic scope of a dispatcher".
+
+Two independent gaps, both needed:
+
+1. `push_multi_dispatch_frame` (`src/runtime/accessors_state.rs`) pushed no
+   frame at all when a multi had a single candidate (`all_candidates.len() <= 1`)
+   or when the winner filter emptied `remaining`. Rakudo makes being a `multi`
+   the thing that establishes a dispatcher; "no next candidate" is answered
+   afterwards with `Nil`, not with `X::NoDispatcher`. All four verbs
+   (`nextsame`/`callsame`/`nextwith`/`callwith`) plus `lastcall`/`nextcallee`
+   were re-derived against rakudo.
+2. `call_function_fallback` (`src/runtime/builtins_operators_fallback.rs`)
+   carries an inlined *copy* of that guard, and it is the path a routine invoked
+   through a **Callable value** takes (`call_sub_value` -> `call_function` ->
+   here). That copy dropped the dispatcher for EVERY multi, one candidate or
+   many — so a two-candidate multi called through an `&`-parameter lost its
+   frame too. Fixing only (1) left the assertion red.
+
+Both sites now push whenever the name has multi candidates at all (empty
+`remaining` when there is nothing to defer to) and push nothing when it has
+none, so a plain `sub` still throws.
+
+### Per-file before/after (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `roast/S06-multi/redispatch.t` | 1 failure (#9) | **PASS** | PASS | PASS |
+| `roast/S06-multi/subsignature.t` | 1 failure (#66) | **PASS** | PASS | PASS |
+
+`roast/S06-multi/subsignature.t` carries the identical assertion at test 66 and
+was the second whitelisted file the switch regressed. Its other two `not ok`
+lines (4 "variable was modified", 43 "[+] overloaded by proto definition") are
+`# TODO`-marked expected failures before and after, under both providers, and
+are unrelated to this change.
+
+Per the counting note above, this closes **two** named files
+(`S06-multi/redispatch.t` and `S06-multi/subsignature.t`); re-measure the sweep
+rather than trusting a running total.
+
+Pin: `t/nextsame-in-the-only-candidate.t` (37 assertions, green under real
+`raku` as well as mutsu). Full write-up:
+`news/2026-08/nextsame-in-the-only-candidate.md`.
+
+### The assertion's wording described neither the trigger nor the fix
+
+"It's ok to call `nextsame` in the last/only candidate" is a true statement
+about the spec, but "last" was never the trigger — `nextsame` in the *last of
+two* candidates already worked, because two candidates meant a frame got pushed.
+What actually broke it was "only" (one candidate, hence no frame) plus a second
+thing the wording does not mention at all: the code was reached through a
+Callable value, because the real `Test.rakumod`'s `lives-ok` invokes what it is
+handed as `try { $code(); 1 }`. That misdirection is the recurring shape of this
+campaign's residue: the assertion names a language feature, and the bug is in
+the plumbing the real module happens to use to reach it.
+
+### One neighbour split off rather than folded in
+
+An anonymous `Any` parameter never matches, so `multi f(Any)` is dead code and
+an `Any` fallback candidate silently disappears (`multi w(Int) { callsame }` /
+`multi w(Any) { "any" }` yields `Nil` instead of `"any"`). Different root cause
+— argument matching, not the dispatcher stacks: `args_match_param_types` treats
+the parser's `__type_only__` placeholder as a bare *term* to resolve from the
+env, and `Any` is the one type name that has an env entry (a `Value::NIL`
+sentinel installed by `runtime_init.rs`). No roast file in the current residue
+gates it. Filed as
+`todo/tickets/anonymous-any-parameter-never-matches-in-multi-dispatch.md`.
