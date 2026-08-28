@@ -3488,3 +3488,132 @@ under `raku`, under mutsu's native provider and under `MUTSU_REAL_TEST=1`);
 sweep over every whitelisted file in the synopses that consume bare-name type
 resolution and EVAL plumbing (`S02`-`S06`, `S09`-`S12`, `S14`, `S32-exceptions`,
 `integration`) is green on a release build.
+## 2026-08-28 (fourth entry that day): the 5-file native-typed-array roast cluster closed — two `ContainerRef`-blind read sites
+
+The largest single cluster among the 60 correctness regressions of the entry
+above was five `S09-typed-arrays` files. Both of its bugs turned out to be the
+same *shape* of mistake and neither is Test-specific: a read site that inspects
+a variable's stored `Value` without reading **through** a shared `ContainerRef`
+cell. The real `Test.rakumod` only supplied the context that puts the cell
+there — its `is` / `is-deeply` are Raku subs, so the roast files' `is (@arr =
+()), ...` and `is (@arr := array[$T].new(...)), ...` pass an array variable
+through *argument binding*, which boxes the variable's slot into a cell.
+
+### Bug 1 — a shaped array lost its shape once the variable had been shared
+
+```raku
+sub peek(Mu $got) { }
+my @a := array[str].new(:shape(4), "a","b","c","d");
+peek(@a);            # or: my $s = @a;   or: my $s := @a;
+@a = "x","y";
+say @a.join(":"), " elems=", @a.elems;
+# raku:  x:y:: elems=4      mutsu (before): x:y elems=2
+```
+
+The prompting analysis had this as "the assignment's *result* being bound as a
+sub argument". It is broader than that: **any** promotion of the variable to a
+shared cell does it — a plain `peek(@a)` with no assignment at all, `my $s =
+@a` (`MarkArrayShareSource` → `array_share_assign`, which writes
+`self.locals[source_idx] = container`), `my $s := @a`, and an rw/`\(...)`
+argument capture (`WrapVarRef` → `capture_var_cell_inner`). It is also not
+native-array-specific: a plain `my @d[4]` loses its shape the same way.
+
+Root cause: `runtime::utils::shaped_array_shape` requires
+`ValueView::Array(_, ArrayKind::Shaped)` and answers `None` for anything else,
+including a `ContainerRef` **holding** such an array. All three whole-array
+assignment paths compute their `lhs_shape` from the raw stored value:
+
+- `vm/vm_var_assign_set_local.rs` (`SetLocal`, the statement form),
+- `vm/vm_var_assign_local.rs` (`AssignExprLocal`, the expression form),
+- `vm/vm_misc_assign.rs` (`AssignExpr`, the by-name form).
+
+With `lhs_shape == None` the shape-refill block is skipped, the unshaped RHS is
+stored straight through the cell, and the array silently shrinks. The tell that
+made this confusing: `@a.shape` still answered `(4,)` *between* the call and the
+assignment, because that read goes through a different store — only the
+assignment's `locals[idx]` read saw the cell.
+
+The fix reads all three through the cell (`Value::with_deref`), and inside the
+refill block reads the *old* container through it too, so the padding default
+(`typed_container_default`) and the `array[T]` metadata
+(`container_type_metadata`) are still recovered from the real array. Confirmed
+with `rust-gdb -batch` breaking on the `lhs_shape` line rather than by guessing:
+good case `Some([4])`, bad case `None`, same line, one statement apart.
+
+### Bug 2 — `.squish` on a shared variable squished the cell, not the array
+
+```raku
+sub peek(Mu $got) { }
+my @j := array[str].new("m","e","a","t");
+peek((@j := array[str].new("nn","nn","bb","uu")));
+say @j.squish.List.raku;
+# raku:  ("nn", "bb", "uu")     mutsu (before): (["nn", "nn", "bb", "uu"],)
+```
+
+The prompting analysis expected this might be a separate, large problem; it is
+neither. `runtime/methods_mut_dispatch.rs`'s `"squish"` arm re-reads its
+receiver by name — `self.env.get(&key).cloned().unwrap_or(target.clone())` —
+and after the rebind-in-an-argument the env entry is the `ContainerRef`.
+Squishing a cell yields a one-element result whose single element is the whole
+array. `.unique` / `.repeated` pass right beside it because they never take
+this by-name re-read path (`squish` and `tail` are the two methods
+`vm_native_dispatch.rs` unconditionally bypasses to the interpreter). One
+`.map(Value::deref_container)` fixes it.
+
+Note for the record: the standalone repro *was* findable, contrary to the
+expectation carried into this slice — but only by bisecting the roast file, as
+this ticket's own "a hand-written reproduction of 'the same thing' can lie"
+note predicts. Six hand-written twins (plain `my str @arr`, the mutating
+`for`/`map` pair, an element assign, a `for (int,) -> $T` loop, a `multi sub`
+with `Mu` params) all passed. The one ingredient none of them had was the
+`:=` **rebind used as a sub argument**, which comes from the roast file's
+`is (@arr := array[$T].new("m","e","a","t")), ...` sixty lines earlier.
+
+### Per-file before/after (release build, both providers)
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `S09-typed-arrays/native-shape1-str.t` | 1 failure | pass | pass | pass |
+| `S09-typed-arrays/native-shape1-num.t` | 5 failures | pass | pass | pass |
+| `S09-typed-arrays/native-shape1-int.t` | 10 failures | pass | pass | pass |
+| `S09-typed-arrays/native-int.t` | 10 failures | pass | pass | pass |
+| `S09-typed-arrays/native-str.t` | 1 failure | pass | pass | pass |
+
+So **roast correctness regressions: 57 -> 52** against the 2026-08-28 baseline
+of that entry (the full sweep was not re-run; these are per-file measurements,
+which is what that entry recommends given the `exit 124` noise). This slice ran
+concurrently with the EVAL-suppression entry above, which took the same 57
+baseline to 55 on a disjoint pair of files; composed, the two land at
+**57 -> 50**. Worth
+recording about the timeout family: on the **debug** build `native-int.t` still
+exits 124 under `MUTSU_REAL_TEST=1` with zero failing assertions — the same
+"re-run with headroom before counting it" artifact, now visible per-file and
+not just under the parallel sweep.
+
+Pin: `t/shaped-native-array-survives-sub-argument.t` (24 assertions, verified
+green under real `raku` as well as mutsu — it covers the sub-argument, the
+`$s = @a` share, the `$s := @a` bind, all three parameter shapes, the native
+`int`/`num`/`str` element defaults, `.squish` through both promotion routes,
+and the negative case that a *plain* array still shrinks and still reports no
+fixed dimension).
+
+Verification: `make test` green (3519 files, 35071 tests), two targeted roast
+sweeps chosen from the consumers of what changed (181 files across
+`S09-typed-arrays`, `S09-subscript`, `S32-array`, `S32-list`, `S02-types`,
+`S06-signature`; then 107 more across `S02-names-vars`, `S03-operators`,
+`S04-declarations`, `S06-other`, `S09-*`, `S32-container`, `S12-construction`)
+both green, and `scripts/battery-testsuite.sh` on a **release** build with an
+idle machine: `GATE PASSED`, 273/297 — unchanged.
+
+### What this suggests for the rest of the residue
+
+Both bugs are instances of one class: **a read site that inspects a variable's
+stored `Value` directly instead of through `Value::with_deref`**. Every such
+site is latent until something promotes the variable to a shared cell, and
+passing the variable to a Raku-level routine is exactly such a promotion — which
+is why this class shows up disproportionately in the `MUTSU_REAL_TEST=1`
+regression list and is invisible under the native provider, whose `is` is a Rust
+builtin that never binds an argument. When triaging the remaining roast
+regressions, "does this read go through `with_deref`?" is worth checking early:
+it is cheap, and it found two of the five files in this cluster from the same
+grep.
