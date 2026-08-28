@@ -19,13 +19,7 @@ impl Interpreter {
         // including a Rust panic unwind through the body loop below.
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         self.record_cf_deprecation(cf);
-        // Gate user-infix overrides out of module code: only count a call as
-        // "module code" when the function's source file differs from the main
-        // script (same logic as call_compiled_function_named).
-        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
-        if is_module_call {
-            self.module_call_depth += 1;
-        }
+        let saved_unit = self.enter_compilation_unit(cf);
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
         let actual_count = args.len();
@@ -40,9 +34,7 @@ impl Interpreter {
                 "Too few positionals passed; expected {} arguments but got {}",
                 positional_count, actual_count
             );
-            if is_module_call {
-                self.module_call_depth -= 1;
-            }
+            self.current_unit = saved_unit;
             return Err(RuntimeError::typed(
                 "X::TypeCheck::Argument",
                 Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
@@ -60,9 +52,7 @@ impl Interpreter {
                 "Too many positionals passed; expected {} arguments but got {}",
                 positional_count, actual_count
             );
-            if is_module_call {
-                self.module_call_depth -= 1;
-            }
+            self.current_unit = saved_unit;
             return Err(RuntimeError::typed(
                 "X::TypeCheck::Argument",
                 Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
@@ -210,9 +200,7 @@ impl Interpreter {
                     self.loop_local_saved_env = saved_loop_local_saved_env;
                     self.active_loop_param_names = saved_active_loop_param_names;
                     self.block_declared_vars = saved_block_declared_vars;
-                    if is_module_call {
-                        self.module_call_depth -= 1;
-                    }
+                    self.current_unit = saved_unit;
                     {
                         let param_name = &cf.param_defs[param_idx].name;
                         let got = runtime::value_type_name(&val);
@@ -446,9 +434,7 @@ impl Interpreter {
                 self.block_declared_vars = saved_block_declared_vars;
                 self.finish_positional_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
-                if is_module_call {
-                    self.module_call_depth -= 1;
-                }
+                self.current_unit = saved_unit;
                 std::panic::resume_unwind(panic_payload);
             }
         };
@@ -541,9 +527,7 @@ impl Interpreter {
             });
         }
 
-        if is_module_call {
-            self.module_call_depth -= 1;
-        }
+        self.current_unit = saved_unit;
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {

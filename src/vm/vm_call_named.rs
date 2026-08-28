@@ -29,16 +29,7 @@ impl Interpreter {
         {
             return Ok(value.clone());
         }
-        // Gate user-infix overrides out of module code: only count a call as
-        // "module code" when the function's source file differs from the main
-        // script.  User-defined `multi sub` in the test file are OTF-compiled
-        // and carry `source_file = Some(script_path)`, so they must NOT be
-        // treated as module code — user infix ops must remain available inside
-        // them (lexically scoped per compilation unit).
-        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
-        if is_module_call {
-            self.module_call_depth += 1;
-        }
+        let saved_unit = self.enter_compilation_unit(cf);
         // Lexical pragmas (`use fatal`, `use strict`, `use MONKEY-TYPING`,
         // `use newline`) are scoped to the compilation unit where they appear.
         // Save the caller's pragma state and restore it on every exit path so
@@ -73,9 +64,7 @@ impl Interpreter {
             r
         };
         self.restore_pragma_state(saved_pragmas);
-        if is_module_call {
-            self.module_call_depth -= 1;
-        }
+        self.current_unit = saved_unit;
         if cf.is_cached
             && let Ok(value) = &result
         {

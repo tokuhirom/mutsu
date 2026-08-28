@@ -1331,14 +1331,23 @@ pub struct Interpreter {
     /// when a user override could plausibly exist, keeping the common
     /// no-override hot path (e.g. tight `Int + Int` loops) free of registry
     /// lookups.
-    pub(crate) user_declared_infix_ops: HashSet<String>,
-    /// Counts how many stack frames deep we are inside a module/external
-    /// compiled function (one whose `CompiledFunction::source_file` is
-    /// `Some`). User-declared `sub infix:<op>` from the test script must NOT
-    /// override operators used inside compiled module code (e.g. Test.rakumod's
-    /// counter arithmetic), mirroring Raku's lexical-per-compilation-unit
-    /// operator scoping. `user_infix_override` gates on this being zero.
-    pub(crate) module_call_depth: u32,
+    /// Each entry maps the operator name to the compilation units that declared
+    /// it (`?FILE` at declaration time). An EMPTY file set means "provenance
+    /// unknown, visible everywhere" and is what module *exports* record, since
+    /// an exported operator is lexically visible in whatever unit imported it.
+    ///
+    /// The file set is what makes operator scoping lexical rather than dynamic:
+    /// a `sub infix:<+>` declared in the main script must not override
+    /// arithmetic inside an imported module (Test.rakumod's own counter
+    /// arithmetic is the motivating case), and must still apply inside a
+    /// main-script block even when a module routine is what invokes that block.
+    /// See `Interpreter::user_infix_override`.
+    pub(crate) user_declared_infix_ops: HashMap<String, HashSet<Symbol>>,
+    /// The compilation unit whose code is executing right now. Saved and
+    /// restored around every compiled-routine call, and around every `EVAL`, so
+    /// it names the unit the running code was COMPILED in rather than anything
+    /// about the call stack. Read by `Interpreter::user_infix_override`.
+    pub(crate) current_unit: Symbol,
     /// Monotonically increasing count of closures created by the
     /// block/lambda/anon-sub-literal exec ops (`MakeAnonSub`,
     /// `MakeAnonSubParams`, `MakeLambda`, `MakeBlockClosure` —
@@ -3155,6 +3164,33 @@ pub(crate) struct SubtestContext {
     parent_halted: bool,
 }
 
+/// Which compilation unit each `EVAL` unit was compiled inside, keyed by the
+/// unit's `?FILE` name (`EVAL_0`, ...). Process-global, like the counter that
+/// mints those names: the names are unique for the life of the process, and an
+/// EVAL unit's parent never changes once recorded.
+static EVAL_UNIT_PARENTS: std::sync::LazyLock<std::sync::RwLock<HashMap<Symbol, Symbol>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
+
+/// The unit key for the main script. A routine body carries `source_file =
+/// None` when it was AOT-compiled and `Some(program_path)` when it was
+/// compiled on the fly from the same script, so both normalise to this.
+pub(crate) fn main_unit() -> Symbol {
+    static MAIN: std::sync::LazyLock<Symbol> =
+        std::sync::LazyLock::new(|| Symbol::intern("<main>"));
+    *MAIN
+}
+
+pub(crate) fn note_eval_unit_parent(unit: Symbol, parent: Symbol) {
+    if let Ok(mut map) = EVAL_UNIT_PARENTS.write() {
+        map.insert(unit, parent);
+    }
+}
+
+/// The compilation unit an `EVAL` unit was compiled inside, if `unit` is one.
+pub(crate) fn eval_unit_parent(unit: Symbol) -> Option<Symbol> {
+    EVAL_UNIT_PARENTS.read().ok()?.get(&unit).copied()
+}
+
 pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
     rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
@@ -3162,7 +3198,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
-    std::collections::HashSet<String>, // user_declared_infix_ops snapshot
+    std::collections::HashMap<String, HashSet<Symbol>>, // user_declared_infix_ops snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the

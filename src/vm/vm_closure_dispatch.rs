@@ -163,7 +163,37 @@ impl Interpreter {
     /// topic value directly rather than relying on the `__mutsu_rw_map_topic__`
     /// signal, so it also covers `$_++`/`$_--` (which the interpreter's
     /// signal-based writeback misses).
+    /// Enter the closure's own compilation unit for the duration of the call.
+    ///
+    /// A block is lexical to the unit it was WRITTEN in, so a block from the
+    /// main script keeps the script's user-declared operators even when a
+    /// module routine is what invokes it (`Test.rakumod`'s
+    /// `lives-ok { $a + $b }` is the motivating case), and a block from a
+    /// module keeps the module's. See `Interpreter::user_infix_override`.
     pub(super) fn call_compiled_closure_with_topic(
+        &mut self,
+        data: &crate::gc::Gc<crate::value::SubData>,
+        cc: &CompiledCode,
+        args: Vec<Value>,
+        explicit_topic: Option<Value>,
+        capture_rw_topic: bool,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Value, RuntimeError> {
+        let unit = self.unit_of_source(data.source_file.as_deref());
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let result = self.call_compiled_closure_in_unit(
+            data,
+            cc,
+            args,
+            explicit_topic,
+            capture_rw_topic,
+            compiled_fns,
+        );
+        self.current_unit = saved_unit;
+        result
+    }
+
+    fn call_compiled_closure_in_unit(
         &mut self,
         data: &crate::gc::Gc<crate::value::SubData>,
         cc: &CompiledCode,

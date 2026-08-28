@@ -42,15 +42,50 @@ impl Interpreter {
     /// (e.g. `"infix:<+>"`). The set is empty in the overwhelming common
     /// case, keeping tight numeric loops free of any registry lookup.
     ///
-    /// Returns false when inside a module function (`module_call_depth > 0`):
-    /// user infix ops from the test file are lexically scoped to their
-    /// compilation unit and must not override operators inside imported
-    /// modules (e.g. Test.rakumod's `$num_of_tests_run + 1`).
+    /// Returns false when the code *currently executing* was compiled from a
+    /// module file rather than the main script: user infix ops are lexically
+    /// scoped to their compilation unit and must not override operators inside
+    /// an imported module (e.g. Test.rakumod's `$num_of_tests_run + 1`).
+    ///
+    /// The question is deliberately about the executing compilation unit, NOT
+    /// about how the VM got there. A dynamic "are we anywhere inside a module
+    /// call" depth counter answers a different question and gets the common
+    /// callback case backwards: `Test.rakumod`'s `lives-ok { $a + $b }`
+    /// invokes a block that was compiled in the *main script*, so the script's
+    /// own `sub infix:<+>` must still apply inside it.
     #[inline]
     fn user_infix_override(&self, canon: &str) -> bool {
-        self.module_call_depth == 0
-            && !self.user_declared_infix_ops.is_empty()
-            && self.user_declared_infix_ops.contains(canon)
+        if self.user_declared_infix_ops.is_empty() {
+            return false;
+        }
+        let Some(files) = self.user_declared_infix_ops.get(canon) else {
+            return false;
+        };
+        // Empty == provenance unknown (an export, or a declaration we could
+        // not attribute to a unit): visible everywhere, as before.
+        files.is_empty() || self.declaring_unit_is_in_scope(files)
+    }
+
+    /// Whether any of `files` (the compilation units that declared an
+    /// operator) is the unit currently executing, or an ancestor of it through
+    /// the `EVAL` chain — `EVAL` compiles in its caller's lexical scope, so an
+    /// operator declared in the enclosing unit is in scope inside the EVAL,
+    /// while one declared by the EVAL'd code is scoped to that EVAL unit.
+    ///
+    /// Only reached once a user-declared infix of this name exists, so the env
+    /// lookup stays off ordinary arithmetic.
+    fn declaring_unit_is_in_scope(&self, files: &HashSet<Symbol>) -> bool {
+        let mut unit = Some(self.current_unit);
+        // An EVAL nested in an EVAL nested in ... is bounded in practice; the
+        // cap only stops a cycle from hanging the VM.
+        for _ in 0..64 {
+            let Some(sym) = unit else { return false };
+            if files.contains(&sym) {
+                return true;
+            }
+            unit = crate::runtime::eval_unit_parent(sym);
+        }
+        false
     }
 
     /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).
@@ -166,7 +201,7 @@ impl Interpreter {
     pub(super) fn try_comma_overload(&mut self, n: u32) -> Result<bool, RuntimeError> {
         if n < 2
             || self.user_declared_infix_ops.is_empty()
-            || !self.user_declared_infix_ops.contains("infix:<,>")
+            || !self.user_declared_infix_ops.contains_key("infix:<,>")
         {
             return Ok(false);
         }

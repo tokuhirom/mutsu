@@ -4700,3 +4700,65 @@ is the general shape the prompt's "warnings that have repeatedly cost time"
 section describes: an isolated `-e` probe of the *target* divergence looked
 clean, but the *unification itself* had two more edges the target list never
 mentioned.
+||||||| parent of d4386c8c5 (fix(operators): a user-declared operator is scoped to its compilation unit)
+
+## 2026-08-29: operator scope is lexical, not dynamic (`S06-operator-overloading/sub.t`, `S03-metaops/hyper.t`)
+
+Two whitelisted files, one root cause. mutsu decided whether a user-declared
+`sub infix:<op>` was in scope from `Interpreter::module_call_depth` — a *dynamic*
+count of how many module frames the VM was inside — where Raku's rule is
+*lexical*: the operator belongs to the compilation unit that declared it.
+
+The gate itself was load-bearing (a test file's `sub infix:<+>` must not
+intercept `Test.rakumod`'s own `$num_of_tests_run + 1`), but the dynamic
+approximation is invisible to the native provider and wrong under the real one:
+every real-`Test` assertion calls the caller's block back from inside the module
+(`lives-ok` is `try { $code(); 1 }`), and that block was written in the test
+file, so the test file's operators must still apply inside it. `hyper.t` is the
+same rule reached through `eval-lives-ok`, where the EVAL'd unit declares the
+operator *and* uses it.
+
+`Interpreter::current_unit` now names the compilation unit currently executing,
+saved/restored around every compiled-routine call, every compiled *closure* call
+(a block carries the unit it was written in) and every `EVAL`;
+`user_declared_infix_ops` maps each operator name to the units that declared it,
+with an empty set (module exports) meaning "visible everywhere"; and
+`note_eval_unit_parent` records each EVAL unit's parent so an operator from the
+enclosing unit stays in scope inside the EVAL.
+
+**Worth carrying forward: `$?FILE` does NOT answer this question.** The env
+entry tracks the unit being *loaded*, so inside a module routine invoked at
+runtime it still names the main script. A first attempt that read it passed both
+roast files while silently deleting the original protection — the module's own
+arithmetic resolved to the caller's candidate again. The pin asserts both
+directions.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S06-operator-overloading/sub.t` | 1 failure (#13) | **PASS** | PASS | PASS |
+| `S03-metaops/hyper.t` | 1 failure (#347) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/operator-scope-is-lexical-not-dynamic.md`,
+`t/operator-scope-is-lexical-not-dynamic.t` (13 assertions, green under real
+`raku`) plus `t/lib/OperatorScopeRunner.rakumod`.
+
+Per the counting note above, this closes **two** named files; re-measure the
+sweep rather than trusting a running total.
+
+### Session-opening sweep for the record
+
+`scripts/roast-test-module-sweep.sh` on `main` @ `1d698c171` (release, 1436
+whitelisted files, both providers): **28 raw regressions, minus 3 `exit 124`
+performance artifacts (`6.d/S32-str/sprintf-d.t`, `S32-str/sprintf-d.t`,
+`S03-buf/write-int.t`) = 25 correctness regressions.** `pass under both` 1408,
+`fail under both` 0. Detail preserved at
+`tmp/real-test-regressions-2026-08-28-r152.txt`.
+
+Two files on that list carry `exit 255` with no unmarked failing assertion and
+were re-run individually rather than believed: `S04-statements/return.t` aborts
+because `X::ControlFlow::Return` is raised as a bare error string instead of a
+typed exception carrying `out-of-dynamic-scope`, and `S02-types/array.t` aborts
+because `lives-ok { my $s = (gather die)[] }` reifies the `gather` that a zen
+slice must not touch. `S32-exceptions/misc2.t` is back on the list for a new
+reason (`X::Syntax::Pod::BeginWithoutIdentifier` has no `.filename`, which the
+real `throws-like` calls).

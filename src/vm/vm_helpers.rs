@@ -1,25 +1,32 @@
 use super::*;
 
 impl Interpreter {
-    /// Whether calling `cf` should be treated as a cross-module call for the
-    /// purpose of gating user-declared infix operators.
+    /// Enter `cf`'s compilation unit: record it as the unit currently
+    /// executing and hand back the caller's, which every exit path restores.
     ///
-    /// A function is a "module call" when it was compiled from a *different*
-    /// compilation unit than the main script:
+    /// This is what makes user-declared operator scoping lexical. `?FILE` is
+    /// NOT usable for the same purpose: the env entry tracks the unit being
+    /// *loaded*, so inside a module routine called at runtime it still names
+    /// the main script. `EVAL` is the exception — it sets both, because an
+    /// EVAL unit exists only at runtime (see `Interpreter::user_infix_override`
+    /// and `runtime::note_eval_unit_parent`).
     ///
-    /// - AOT-compiled functions (`source_file = None`) are always from the
-    ///   user's own script — never a module call.
-    /// - OTF-compiled functions from the main script (`source_file ==
-    ///   program_path`) are also user code — not a module call.
-    /// - OTF-compiled functions from a *different* file (e.g. Test.rakumod)
-    ///   are module code — counted as a module call so user infix ops defined
-    ///   in the test script do not override arithmetic inside the module.
+    /// `None` (an AOT-compiled body) means the main script.
     #[inline]
-    pub(super) fn is_module_call(cf: &CompiledFunction, program_path: Option<&str>) -> bool {
-        match (&cf.source_file, program_path) {
-            (None, _) => false,
-            (Some(cf_file), Some(prog)) => cf_file.as_str() != prog,
-            (Some(_), None) => true,
+    pub(super) fn enter_compilation_unit(&mut self, cf: &CompiledFunction) -> Symbol {
+        let unit = self.unit_of_source(cf.source_file.as_deref());
+        std::mem::replace(&mut self.current_unit, unit)
+    }
+
+    /// The compilation-unit key for a routine/closure's recorded source file.
+    /// `None` (AOT-compiled) and `Some(program_path)` (compiled on the fly from
+    /// the running script) are the same unit: the main script.
+    #[inline]
+    pub(crate) fn unit_of_source(&self, source_file: Option<&str>) -> Symbol {
+        match (source_file, self.program_path.as_deref()) {
+            (None, _) => crate::runtime::main_unit(),
+            (Some(file), Some(prog)) if file == prog => crate::runtime::main_unit(),
+            (Some(file), _) => Symbol::intern(file),
         }
     }
 

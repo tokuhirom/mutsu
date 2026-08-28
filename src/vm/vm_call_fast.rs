@@ -43,13 +43,7 @@ impl Interpreter {
         // including a Rust panic unwind through the body loop below.
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         self.record_cf_deprecation(cf);
-        // Gate user-infix overrides out of module code: only count a call as
-        // "module code" when the function's source file differs from the main
-        // script (same logic as call_compiled_function_named).
-        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
-        if is_module_call {
-            self.module_call_depth += 1;
-        }
+        let saved_unit = self.enter_compilation_unit(cf);
         // A routine declared directly in this body is lexical; snapshot the
         // registry so it is removed on return unless it escaped (see
         // `call_compiled_function_named` / `return_value_escapes_routine`).
@@ -412,9 +406,7 @@ impl Interpreter {
                 self.restore_routine_registry(snapshot);
             }
         }
-        if is_module_call {
-            self.module_call_depth -= 1;
-        }
+        self.current_unit = saved_unit;
         final_result
     }
 }

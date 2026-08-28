@@ -714,7 +714,20 @@ impl Interpreter {
         compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         if name.starts_with("infix:<") {
-            self.user_declared_infix_ops.insert(name.to_string());
+            // Declared here: record the compilation unit so the operator stays
+            // lexically scoped to it (and to any EVAL unit nested inside it).
+            let unit = self.current_unit;
+            let is_new = !self.user_declared_infix_ops.contains_key(name);
+            let files = self
+                .user_declared_infix_ops
+                .entry(name.to_string())
+                .or_default();
+            // An entry that is already permissive (empty == exported) stays
+            // permissive: narrowing it here would hide an operator that is
+            // genuinely in scope elsewhere.
+            if is_new || !files.is_empty() {
+                files.insert(unit);
+            }
             crate::vm::vm_jit::note_user_infix_decl();
         }
         // A plain (non-multi) `sub name` supersedes any earlier empty-signature

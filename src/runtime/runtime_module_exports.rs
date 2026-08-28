@@ -356,7 +356,12 @@ impl Interpreter {
                 self.imported_operator_names.insert(name.clone());
             }
             if name.starts_with("infix:<") {
-                self.user_declared_infix_ops.insert(name.clone());
+                // An EXPORTED operator becomes lexically visible in whatever
+                // unit imported it, so it carries no declaring-file
+                // restriction (empty set == visible everywhere).
+                self.user_declared_infix_ops
+                    .entry(name.clone())
+                    .or_default();
                 crate::vm::vm_jit::note_user_infix_decl();
             }
             let source_single = format!("{module}::{name}");
