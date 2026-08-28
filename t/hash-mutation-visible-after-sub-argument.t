@@ -8,7 +8,7 @@ use Test;
 # behind `Hash.push`/`Hash.append` and the `:delete`-with-adverb companion were
 # routed through the cell-descending chokepoint.
 
-plan 28;
+plan 33;
 
 sub peek(Mu $got) { }
 
@@ -193,4 +193,29 @@ sub peek(Mu $got) { }
     peek(%h);
     %h.push: 'a', 1, 'a', 2;
     is-deeply %h, {a => [1, 2]}, 'repeated key in one push stacks after argument binding';
+}
+
+# --- the richer typed/object-hash semantics survive argument binding too ---
+
+{
+    my %h{Int};
+    peek(%h);
+    %h.push(1, 'x');
+    is-deeply %h.keys.list, (1,), 'object-hash push keeps the typed key after argument binding';
+    is-deeply %h{1}, 'x', 'object-hash push stores under the typed key';
+}
+
+{
+    my Int %h = a => 1;
+    peek(%h);
+    dies-ok { %h.push('b', 'not-an-int') },
+        'typed-hash push still type-checks after argument binding';
+}
+
+{
+    my %h is default(42) = a => 1;
+    peek(%h);
+    %h.push('b', 2);
+    is-deeply %h, {a => 1, b => 2}, 'is default(...) hash pushes after argument binding';
+    is-deeply %h<zz>, 42, 'is default(...) survives the push';
 }

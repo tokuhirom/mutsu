@@ -2835,21 +2835,30 @@ impl Interpreter {
             && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
     }
 
-    /// Bound-hash twin of `try_native_array_mut`: `%h.push((k => v))` /
-    /// `%h.append(...)` where `%h := %g` holds a shared `ContainerRef` cell.
+    /// Bound-hash twin of `try_native_array_mut`: `$r.push((k => v))` /
+    /// `$r.append(...)` where `my $r := %g` holds a shared `ContainerRef` cell.
     /// Only the bound case is intercepted — a plain hash has no cell to detach,
     /// so its existing interpreter writeback (into the receiver's slot) is
     /// already correct. Hash push/append semantics (existing-key value becomes a
     /// list) are non-trivial, so we delegate to the interpreter on the *inner*
     /// hash and write the result back through the cell, keeping every alias
     /// coherent.
+    ///
+    /// A `%`-SIGILED name is deliberately NOT intercepted: the interpreter's own
+    /// `%`-arm (`runtime/methods_mut_dispatch.rs`) descends the cell itself now,
+    /// and it is the only path carrying the richer semantics an intercept here
+    /// would skip — the object-hash `.WHICH` key encoding with its
+    /// `original_keys` record, the typed-hash key/value type checks, and the
+    /// duplicate-key array-conflict check. Routing `%h` through the by-value
+    /// implementation instead silently stringified an object hash's key and
+    /// dropped the type check.
     fn try_native_hash_mut_bound(
         &mut self,
         target_name: &str,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "push" | "append") {
+        if !matches!(method, "push" | "append") || target_name.starts_with('%') {
             return None;
         }
         let cell = match self.env().get(target_name).map(Value::view) {
