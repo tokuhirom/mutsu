@@ -235,6 +235,26 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::record_caller_var_writeback`] for a write whose TARGET NAME was
+    /// resolved at RUN TIME (`$::($n) = v`, `::('$x') = v`, an assignment inside an
+    /// `EVAL`'d snippet). Such a name is invisible to the compiler, so on top of
+    /// the slot refresh it also needs its VALUE carried across each frame exit
+    /// between the writer and the frame that declares the lexical — see
+    /// [`Self::pending_runtime_name_writes`] and `propagate_pending_caller_writes`.
+    ///
+    /// Only plain user lexicals qualify: a system name (`&?BLOCK`, the topic,
+    /// `$/`, a dynamic, `__mutsu_*`) is per-frame by construction and replaying it
+    /// into a caller corrupts that caller's own binding.
+    pub(crate) fn record_runtime_name_write(&mut self, name: &str) {
+        if !crate::env::is_plain_user_lexical(name) {
+            return;
+        }
+        self.record_caller_var_writeback(name);
+        if !self.pending_runtime_name_writes.iter().any(|n| n == name) {
+            self.pending_runtime_name_writes.push(name.to_string());
+        }
+    }
+
     /// Collect the dynamic variables (`$*x` / `@*x` / `%*x`) visible in the
     /// current dynamic scope — the whole caller chain plus the current frame —
     /// keyed by their full `$*name` spelling. Backs the `DYNAMIC::` pseudo-stash

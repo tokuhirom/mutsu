@@ -4261,3 +4261,98 @@ the real `Test.rakumod` will find whichever of the two mutsu did not think of as
 "the" implementation. `cmp-ok` reaches EVERY operator by name through
 `&CALLER::LEXICAL::`, so any remaining operator whose routine form diverges from
 its opcode is a live candidate for the rest of the list.
+## 2026-08-29 — runtime-name writes: three files, three root causes
+
+(Started 2026-08-28, landed against the 40-regression baseline the
+session-opening sweep above reproduced; it takes that count to **37**.)
+
+Slice for the largest remaining cluster on the residue list: a write whose
+target NAME is resolved at run time (`$::($n) = v`, `::('$x') = v`, an
+assignment inside an `EVAL`'d snippet) was silently lost as soon as it happened
+inside an *invoked* closure or a routine. Mainline and a bare block worked, which
+is why only the real `Test` provider surfaced it — the real `lives-ok` /
+`throws-like` are Raku subs that **call** the Callable they are given, so the
+write runs one closure-invocation deep.
+
+The prompt's framing was "three files, one root cause". Measured, it was three
+*different* root causes, all needed:
+
+1. The frame-exit writeback (`call_compiled_closure_with_topic` /
+   `call_compiled_function_named_inner`) filters purely on compile-time
+   knowledge, so a runtime-resolved target passes none of its tests.
+   `OpCode::SymbolicDerefStore` is additionally missing from
+   `CompiledCode::has_env_writes`, so a closure whose body was only a symbolic
+   store skipped the writeback scan entirely (left as-is — the new escape hatch
+   runs outside that gate, so widening the flag would only add scan cost).
+2. An EVAL'd unit never recorded its own compile-time `free_var_writes` (only
+   `where` clauses used `eval_block_value_recording_writes`).
+3. `parse_and_eval_with_operators`'s `eval_pre_lexicals` snapshot used
+   `Env::keys` (innermost overlay only). Inside a closure/routine the caller's
+   lexicals live in a parent tier, so they all looked new and the EVAL's write
+   was deleted as an "EVAL-local `my`" — leaving a **tombstone** that hid the
+   caller's binding, so a second `EVAL 'say $a'` in the same block died with
+   "Variable '$a' is not declared".
+
+Full write-up: `news/2026-08/runtime-name-write-to-outer-lexical.md`. Pin:
+`t/runtime-name-write-to-outer-lexical.t` (28 assertions, green under real
+`raku` too).
+
+### Measured, file by file (debug build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S02-lexical-conventions/comments.t` | 1 failure (#41 "sanity check") | **PASS** | still PASS |
+| `S06-signature/sigilless.t` | 1 failure (#5 "swapping worked") | **PASS** | still PASS |
+| `S02-names/symbolic-deref.t` | 2 failures (#3, #14 "and the assignment worked") | **PASS** | still PASS |
+
+So: roast correctness regressions under the real provider **-3** (three files
+fully cleared, not merely improved). `comments.t`'s remaining "no tab allowed"
+`throws-like` — the row this ledger had recorded as its residual — turned out to
+pass once the tombstone in root cause 3 was gone, so that file is now clean
+under both providers as well.
+
+### Two traps this slice hit, both worth carrying forward
+
+**A system name must never be replayed across a frame boundary.** The first
+working version propagated every name on `pending_caller_var_writeback`, which
+included `&?BLOCK` (recorded from an EVAL'd unit's `free_var_writes`). Carried
+upward it made the real `Test::throws-like`'s `subtest` block run against the
+*previous* subtest's `&?BLOCK`, so its `CATCH` saw `Any` and the second of two
+consecutive `throws-like { EVAL … }` calls reported "right exception type" as
+failed. That regression was invisible in isolation and only reproduced with a
+prior `throws-like` in the same file.
+
+**`scripts/battery-testsuite.sh` earned its keep again.** Even after filtering
+to plain user lexicals, propagating all of `pending_caller_var_writeback` was
+too blunt — that list is also fed by `is rw` writeback misses, Proxy STOREs,
+`$CALLER::x` writes and the shared-var lane. Replaying those into every
+intervening caller env broke a `given $in { when IO::Handle {…} }` dispatch in
+the bundled Text::CSV (`Type check failed in assignment to $io-in`, 90_csv.t),
+which a green `make test` (3523 files) and a green 226-file targeted roast sweep
+both missed. The fix was a dedicated `pending_runtime_name_writes` list carrying
+only the runtime-name writes.
+
+### Two END-phaser bugs found in the same area, filed separately
+
+A fourth file, `roast/S04-phasers/end.t` (tests 6/7, real-provider-only), was
+suspected to share this root cause. It does not — it still reproduces with the
+fix landed, and its trigger needs neither `EVAL` nor a runtime-resolved name:
+
+```raku
+sub callit(&c) { c() }
+{ my $a = 42; END { say "END1 (want 42): ", $a.raku }; }
+my $a = 0;          # a DIFFERENT binding that merely shares the name
+callit { $a };      # mutsu: 0    raku: 42
+```
+
+The post-return END-phaser env refresh in `vm_closure_dispatch.rs` is
+**name-keyed**, so any called closure capturing a same-named lexical rewrites an
+unrelated phaser's capture. Filed as
+`todo/tickets/end-phaser-captured-lexical-clobbered-by-a-later-same-named-capture.md`.
+
+An independent END *ordering* divergence surfaced alongside it (mutsu
+`END2 END1 END3` vs raku `END3 END2 END1`, i.e. raku is plain reverse
+installation and mutsu defers the mainline's own ENDs). It is deliberately NOT
+fixed here — `news/2026-08/end-phasers-run-in-install-order.md` made mutsu
+install-ordered on purpose — and is filed as
+`todo/tickets/end-phaser-run-order-is-not-reverse-installation.md`.

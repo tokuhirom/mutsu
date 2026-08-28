@@ -1649,6 +1649,35 @@ pub struct Interpreter {
     /// `supply` block body) has no `CompiledCode` on its `SubData`, so the
     /// compile-time `my_declared_sym` is otherwise unreachable from there.
     last_block_my_declared: Vec<Symbol>,
+    /// Append-only log of the free variables that carrier bodies run with
+    /// `record_free_var_writes` (an `EVAL`'d compilation unit, a `where` clause)
+    /// WROTE. `parse_and_eval_with_operators` reads back the slice its own snippet
+    /// appended: those names are assignments to *outer* lexicals, so they must
+    /// survive the "drop the EVAL's own `my` lexicals" cleanup even though the
+    /// caller's env had no entry for them before (a caller's `my $a;` with no
+    /// initializer materializes no env key, so `EVAL '$a = 32'` looks exactly like
+    /// a snippet-local declaration to a key-set diff). Names the snippet really
+    /// DECLARED are locals of its code, never free variables, so they never land
+    /// here.
+    pub(crate) recorded_free_var_writes: Vec<String>,
+    /// The subset of [`Self::pending_caller_var_writeback`] that came from a write
+    /// whose TARGET NAME was resolved at RUN TIME — `$::($n) = v`, `::('$x') = v`,
+    /// an assignment inside an `EVAL`'d snippet. Only these names are carried
+    /// across a frame boundary by `propagate_pending_caller_writes`.
+    ///
+    /// Kept separate on purpose: the main list is fed by many long-standing
+    /// mechanisms (an `is rw` writeback whose slot is not in this frame, a Proxy
+    /// STORE, a `$CALLER::x` write, the shared-var lane), and replaying *those*
+    /// into every intervening caller env is far too blunt — it broke a
+    /// `given $in { when IO::Handle {...} }` dispatch in the bundled Text::CSV by
+    /// carrying an unrelated frame's `in` upward. A runtime-name write is exactly
+    /// the case the compile-time filters cannot see, so it is the only one that
+    /// needs the extra hop.
+    ///
+    /// Entries are dropped by `apply_pending_caller_var_writeback` at the same
+    /// moment the main list drops them: when a frame that actually owns the slot
+    /// has absorbed the value.
+    pub(crate) pending_runtime_name_writes: Vec<String>,
     /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
     /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`
