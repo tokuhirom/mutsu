@@ -189,7 +189,30 @@ fn skip_declarator_doc_comment(input: &str) -> Option<&str> {
 }
 
 /// `X::Syntax::Pod::BeginWithoutIdentifier` — a `=begin` with no block name.
-fn pod_begin_without_identifier_error() -> PError {
+///
+/// `construct` is the unconsumed tail of the *original* top-level source
+/// starting at this `=begin` construct's own `=` (a suffix slice, not a
+/// copy): `PError::remaining_len` needs it to let
+/// `parser::parse_program`'s fatal-error branch compute the line the same
+/// way every other fatal diagnosis does (`e.consumed_from(source.len())`).
+/// Without it the exception carried no `remaining_len` at all, so
+/// `parse_program` never reached the branch that calls `err.set_line` --
+/// `$!.line` on this exception was simply never populated, and
+/// `$!.filename` had no method to read it with (see the `.filename` 0-arg
+/// accessor added alongside `.line`/`.file`).
+///
+/// Deliberately anchored at the construct's OWN start rather than at the
+/// (empty, or all-trailing-whitespace) remainder *after* it: rakudo reports
+/// this diagnosis on the line `=begin` itself sits on (verified: `EVAL
+/// "=begin\nfoo\n=end\n"` still answers `.line == 1`, not the line of
+/// `foo`), but `parse_program`'s shared position math always skips forward
+/// over any *trailing* whitespace looking for "the next real token" --
+/// which, when the remainder is pure whitespace up to the next real content
+/// (or end of input), walks straight across the newline that ends this
+/// line and lands one line too far down. Anchoring at `=` instead makes the
+/// skip-forward a no-op (a `=` is never whitespace), so the reported line
+/// is always this construct's own, regardless of what follows.
+fn pod_begin_without_identifier_error(construct: &str) -> PError {
     let msg =
         "=begin must be followed by an identifier; (did you mean \"=begin pod\"?)".to_string();
     let mut attrs = std::collections::HashMap::new();
@@ -198,7 +221,9 @@ fn pod_begin_without_identifier_error() -> PError {
         crate::symbol::Symbol::intern("X::Syntax::Pod::BeginWithoutIdentifier"),
         attrs,
     );
-    PError::fatal_with_exception(msg, Box::new(ex))
+    let mut err = PError::fatal_with_exception(msg, Box::new(ex));
+    err.remaining_len = Some(construct.len());
+    err
 }
 
 /// Parse and skip a Pod block.
@@ -234,7 +259,7 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         // position — but mutsu cannot, because the trim has already erased the
         // difference by the time the parser runs. Matching the newline form is
         // the useful half: it is the one real source ever contains.
-        return Err(pod_begin_without_identifier_error());
+        return Err(pod_begin_without_identifier_error(input));
     } else {
         return Err(PError::expected("pod directive"));
     }
@@ -247,7 +272,7 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
         let target = begin_line.split_whitespace().next().unwrap_or("");
         // `=begin` must be followed by an identifier (the block name).
         if target.is_empty() {
-            return Err(pod_begin_without_identifier_error());
+            return Err(pod_begin_without_identifier_error(input));
         }
         let is_table = target == "table";
         let mut remaining = rest.get(begin_line_end + 1..).unwrap_or_default();

@@ -4700,7 +4700,6 @@ is the general shape the prompt's "warnings that have repeatedly cost time"
 section describes: an isolated `-e` probe of the *target* divergence looked
 clean, but the *unification itself* had two more edges the target list never
 mentioned.
-||||||| parent of d4386c8c5 (fix(operators): a user-declared operator is scoped to its compilation unit)
 
 ## 2026-08-29: operator scope is lexical, not dynamic (`S06-operator-overloading/sub.t`, `S03-metaops/hyper.t`)
 
@@ -4762,3 +4761,99 @@ because `lives-ok { my $s = (gather die)[] }` reifies the `gather` that a zen
 slice must not touch. `S32-exceptions/misc2.t` is back on the list for a new
 reason (`X::Syntax::Pod::BeginWithoutIdentifier` has no `.filename`, which the
 real `throws-like` calls).
+
+## 2026-08-29 — three exception-object/incidental-VM-bug files: misc2.t, S12-enums/misc.t, S14-traits/routines.t
+
+Cluster of three files whose regressions all *looked* like the same shape
+(the real `Test.rakumod`'s `throws-like` interrogating the caught exception
+through real Raku method calls, which mutsu's native provider never
+exercises) — verified independently per file rather than assumed. Two of
+the three turned out to be genuinely unrelated VM bugs, not exception-object
+gaps at all; only `misc2.t`'s was the exception-attribute shape the cluster
+was named for.
+
+**`roast/S32-exceptions/misc2.t`** — `X::Syntax::Pod::BeginWithoutIdentifier`
+had no `.filename` method at all (only the looser `.file`), and its `.line`
+was never populated because its builder (`PError::fatal_with_exception`)
+never recorded a source position for `parser::parse_program`'s fatal branch
+to compute one from. Fixed generally (a new `.filename` accessor alongside
+`.line`/`.file`; `parse_program`'s fatal branch now copies computed
+`line`/`column` onto any pre-built exception; `builtin_eval` backfills
+`filename`/`file` for the whole `X::Comp` family raised while parsing an
+EVAL'd string, not just this one class). Write-up:
+`news/2026-08/eval-compile-error-filename-and-line.md`. Pin:
+`t/eval-compile-error-line-and-filename.t` (8 assertions, green under `raku`).
+
+Fixing that abort exposed a SEPARATE, unrelated bug further into the same
+file (`throws-like 'my sub f() { gather { return } }; ~f()'`,
+X::ControlFlow::Return`): a `return`-outside-scope raised while forcing a
+lazy `gather` is swallowed (or misreported) once the force happens inside a
+nested block or a Callable invoked through a plain user sub — a general VM
+control-flow bug, not Test-specific (reproduces with a two-line user sub, no
+`use Test` at all). Too deep to fix in this slice; filed as
+`todo/deep/lazy-gather-return-outside-scope-swallowed-in-nested-block.md`.
+misc2.t is therefore not fully green under `MUTSU_REAL_TEST=1` yet, but the
+abort point moved from test ~94 to this new, unrelated bug around test ~220.
+
+**`roast/S12-enums/misc.t`** — NOT an exception-object gap. Two unrelated,
+general VM correctness bugs, both surfaced by
+`throws-like { Direction( 2 <=> 3 ) }, X::Enum::NoValue, type => Direction,
+value => Less`:
+1. A for-loop's second `.kv` param rebind (`OpCode::SetGlobal`) could
+   spuriously raise `X::Assignment::RO` when a PRIOR iteration's value
+   happened to be an enum member — the "is this reassigning an enum
+   constant" guard checked only the current value's *type*, never that the
+   write target's *name* was the constant's own name.
+2. An enum's type object did not smartmatch itself (`Color ~~ Color` was
+   `False`) — the enum-specific smartmatch arm only considered an enum
+   *value* on the LHS, never the type object compared to itself, breaking
+   any `$x ~~ Color` where `$x` held the type object (exactly what
+   `X::Enum::NoValue.type` is).
+
+Both fixed; write-up `news/2026-08/enum-value-rebind-and-self-smartmatch.md`.
+Pins: `t/enum-value-does-not-block-unrelated-rebind.t`,
+`t/enum-type-object-smartmatches-itself.t` (both green under `raku`).
+
+**`roast/S14-traits/routines.t`** — NOT an exception-object gap either. A
+routine-trait application (`sub f() is TRAIT { }`) silently swallowed the
+"no `trait_mod:<is>` candidate actually claims this trait" verdict
+unconditionally, instead of raising "Can't use unknown trait" the way the
+sibling *variable*-trait path already does (a gap that 2026-08-01's
+`f58c424c6` explicitly called out as unfixed for routines). Merely
+`use Test;` — which exports `multi sub trait_mod:<is>(Routine:D,
+:$test-assertion!)` — was enough to make ANY unrelated unknown routine
+trait silently succeed instead of dying, so `try { EVAL 'sub yulia is
+krassivaya { }' }` never set `$!`. Fixed to raise the same message the
+sibling `!has_trait_mod` branch already uses. Write-up:
+`news/2026-08/unrelated-trait-mod-does-not-swallow-unknown-routine-trait.md`.
+Pin: `t/unrelated-trait-mod-candidate-does-not-swallow-unknown-trait.t`
+(green under `raku`).
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S32-exceptions/misc2.t` | aborts mid-file (test ~94, "No such method 'filename'") | improved, still aborts (unrelated `lazy-gather-return` bug, test ~220) | still PASS (266/266) |
+| `S12-enums/misc.t` | aborts mid-file ("Cannot modify an immutable Order (Less)", desyncs the rest of the file) | **PASS** (28/28) | still PASS (28/28) |
+| `S14-traits/routines.t` | 1 failure (test 12, "declaration of a sub with an unknown trait...") | **PASS** (17/17, test 10 stays `#?rakudo todo`) | still PASS (17/17) |
+
+So: `S12-enums/misc.t` and `S14-traits/routines.t` are fully closed under
+`MUTSU_REAL_TEST=1`; `S32-exceptions/misc2.t`'s original blocker (the
+subject of this slice) is fixed, but the file is blocked by the newly
+surfaced `lazy-gather-return-outside-scope-swallowed-in-nested-block`
+ticket instead. All three remain green under the native (whitelisted)
+provider throughout.
+
+### One thing worth carrying forward
+
+**Don't trust the cluster framing over independent verification.** All
+three files were handed over as "one cluster of the same shape (incomplete
+exception objects)" — and two of the three were not that at all. The
+diagnostic symptom (`throws-like` failing a `.foo matches ...` check, or
+"Use of uninitialized value ... in string context") looks identical whether
+the exception object is genuinely incomplete or whether an unrelated VM bug
+(a stale for-loop rebind, a broken self-smartmatch, a swallowed dispatch
+verdict) merely prevented the RIGHT value from ever being computed. Re-derive
+the root cause from a from-scratch, `use Test`-free repro every time, even
+when the roast test's own `throws-like` line makes the exception-object
+explanation look obvious.

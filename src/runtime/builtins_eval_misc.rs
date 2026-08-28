@@ -397,11 +397,28 @@ impl Interpreter {
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(self.absolutify_unit_name(&unit_name)));
-        let result = if check_only {
+        let mut result = if check_only {
             self.eval_eval_string_check_only(&code)
         } else {
             self.eval_eval_string(&code)
         };
+        // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
+        // parsing the EVAL'd string reports `.filename` matching the EVAL
+        // pseudo-file (rakudo: `/EVAL/`), just like `.line` reports the line
+        // within that source. Every such exception is built with `line`
+        // already on its own attributes (either directly, by the builder
+        // that raises it, or generically by `parser::parse_program`'s fatal
+        // branch), but none of those sites know the EVAL unit's synthesized
+        // name -- only this call site does. Backfill it here, once, for the
+        // whole `X::Comp` family rather than at each individual raise site.
+        if let Err(ref mut e) = result
+            && e.code().is_some_and(|c| c.is_parse())
+            && let Some(exc_box) = e.exception.as_ref()
+            && let ValueView::Instance { attributes, .. } = exc_box.view()
+        {
+            attributes.insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
+            attributes.insert_if_absent("file".to_string(), Value::str(unit_name.clone()));
+        }
         crate::parser::set_parser_source_file(saved_source_file);
         self.current_unit = saved_unit;
         match saved_env_file {
