@@ -3779,3 +3779,35 @@ operation**. When a cell-boxed receiver misbehaves, check not only "does this
 read go through `with_deref`?" but also "does this interception land in the same
 implementation the non-intercepted path uses?" — a duplicated implementation is
 latent divergence that only the cell case exercises.
+
+### Follow-up the same day: `%`-sigiled names must NOT take the bound-hash fast path
+
+Landing the above exposed one more consequence of routing a cell-boxed `%h`
+through the by-value implementation: the by-value arm carries none of the
+*richer* hash-push semantics the `%`-sigiled lvalue arm does. Measured against
+`raku` right after the fix:
+
+```raku
+sub peek(Mu $got) { }
+my %h{Int};  peek(%h); %h.push(1, 'x'); say %h.raku;
+# raku: (my Any %{Int} = 1 => "x")    mutsu: (my Any %{Int} = "1" => "x")
+my Int %h = a=>1; peek(%h); %h.push('b', 'not-an-int');   # raku dies, mutsu did not
+```
+
+The object hash's `.WHICH` key encoding with its `original_keys` record, the
+typed-hash key/value type checks and the duplicate-key array-conflict check all
+live in the `%` arm. Before this campaign the fast path hid that because it
+dropped the push entirely; afterwards it performed the push, with the wrong key
+representation and no type check.
+
+Since the `%` arm now descends the cell on its own, the fast path is simply
+redundant for a `%`-sigiled name, so `try_native_hash_mut_bound` bails on one.
+It still owns the case the `%` arm cannot see — a *scalar*-named bind
+(`my $r := %g; $r.push(...)`), which is what it was written for. Pinned by five
+more assertions in `t/hash-mutation-visible-after-sub-argument.t` (33 total,
+green under real `raku`).
+
+The general lesson, sharper than the one above: when a fast path "delegates to
+the interpreter", check *which* interpreter arm it lands in. Two arms
+implementing one operation will differ, and the intercept silently picks the
+poorer one.
