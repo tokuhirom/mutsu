@@ -3346,3 +3346,145 @@ One caveat to carry forward: this sweep takes ~25 minutes on a release build
 and is still not in CI, so it remains a manual ritual. Gating it means a second
 full roast pass; with 60 correctness regressions left that is still not worth
 2x the roast CI cost, but the gap is narrowing.
+
+## 2026-08-28 (third entry that day): the "swallowed EVAL failure" was two context-dependent error suppressions, both fixed; the rest of that candidate list is a wrong-exception-class long tail
+
+The starting hypothesis was a single shared mechanism: "`EVAL` of a snippet that
+fails to parse silently does not throw when the `EVAL` is inside a block that
+another routine invokes", with eleven roast files from the 60-file regression
+list nominated as likely consumers. Investigated with `rust-gdb` rather than
+`eprintln!`, the hypothesis turned out to be **two unrelated suppressions with
+the same shape** — and to explain **only two of the eleven files**. Both
+suppressions are now fixed; the other nine are a different family and are filed
+as their own tickets.
+
+### The discriminating pair in the repro was the whole diagnostic
+
+`EVAL '10_'` threw and `EVAL '10_.0'` did not, from the same call site, with the
+same exception class. That rules out both "it is about the exception type" and
+"it is about `EVAL`-in-a-block". Breaking on the parse showed why: **neither
+snippet is a parse error in mutsu.** `parse_program` returns `Ok` for `10_.0` in
+*both* contexts, with a byte-identical tree —
+`Expr::InfixFunc { name: "_", left: 10, right: [0.0] }`. mutsu's parser accepts
+any non-reserved word as a *speculative* `infix:<word>` at the loosest
+precedence level (`parse_custom_infix_word`, deliberately permissive because an
+infix can be installed at runtime), so `10_ .0` reads as `10 infix:<_> .0`. The
+"parse error" is raised much later, by the runtime's unresolvable-infix fallback
+(`call_infix_fallback` -> `X::Syntax::Confused: "Two terms in a row"`).
+
+### Mechanism 1: the topic occupies the identifier `_`, so bare-name type lookups resolved `_` to `Any`
+
+`$_` is stored in `env` under the **sigil-less key `_`** (CLAUDE.md's
+debugging section already warns about this key). Entering a compiled routine
+seeds the implicit topic with the `Any` **type object**, i.e. `Value::Package`.
+`resolve_bare_type_name` resolves a short type name through exactly such an
+`env` binding, because that is how a lexical `my class Foo` is reachable (it
+registers under a mangled storage name and `env["Foo"]` points at it). So inside
+any routine, `env.get("_")` answered `Package(Any)` and `_` resolved to the type
+`Any` — after which `call_function_fallback`'s coercion arm turned the
+unresolvable `_(10, 0.0)` into `Any(10, 0.0)`, which type-matches and **returns
+its argument list**. `EVAL '10_.0'` therefore evaluated to `(10, 0.0)` and threw
+nothing. At mainline there is no such env entry, the fallback ran out of options,
+and the error appeared — which is the entire top-level-vs-routine divergence.
+
+The bug is general, not EVAL-specific (all measured against `raku`):
+
+```
+sub f() { say _(1,2) }; f()          # was: (1 2)     raku: Undeclared name: _
+sub f() { say 1 _ 2 }; f()           # was: (1 2)     raku: Two terms in a row
+sub f() { my _ $x = 3; say $x }; f() # was: 3         raku: Type '_' is not declared
+```
+
+Fixed by `crate::env::is_magic_sigilless_key` — a documented, one-name guard
+applied at the four bare-name type/role alias lookups (`resolve_bare_type_name`,
+`is_declared_package`, `type_registry`'s short-import-alias arm,
+`resolve_role_key`). `_` is the only sigil-less magic env key that is also a
+legal bare identifier (`/`, `!`, `?FILE`, `0`, `<n>`, `*x` are not), so the guard
+is exactly one name. The real fix — not storing the topic in the identifier
+namespace — is recorded as a `TODO:` at the helper; until then a genuine
+`class _ { }` stays unreachable through these lookups, which it already was.
+
+### Mechanism 2: EVAL's `&?ROUTINE` check consulted the CALLER's routine stack
+
+```rust
+if code.contains("&?ROUTINE") && self.routine_stack.is_empty() { ...Undeclared... }
+```
+
+`&?ROUTINE` is resolved **lexically at compile time**, and an `EVAL`'d string is
+its own compilation unit, so the caller's runtime stack is irrelevant. The gate
+was wrong in both directions (both measured against `raku`): it accepted a
+mainline `&?ROUTINE` in the snippet whenever the `EVAL` happened to sit inside a
+`sub` (the reported symptom), and it **rejected** `EVAL 'sub g { &?ROUTINE.name }; g()'`
+called from mainline, which raku accepts.
+
+Replaced with a structural post-parse walk over the snippet's own statements
+(`src/runtime/eval_routine_magicals.rs`, modelled on `parser::whenever_scope`),
+run alongside the other `check_eval_*` passes. `sub`/`method`/`token`/`rule`/
+`proto` and an anonymous `sub { }` open a routine scope; a bare block, a
+`class`/`role` body and control flow preserve it. One documented limitation: a
+pointy `-> { }` and a parameterised `sub ($x) { }` both lower to
+`Expr::AnonSubParams`/`Expr::Lambda` with nothing left to tell them apart, so
+both are treated as routine boundaries — per the walker's conservatism rule that
+can only *miss* an offending pointy-block use, never invent one. (`raku` rejects
+`EVAL 'my $z = -> { &?ROUTINE }; $z()'`; mutsu now does not. Every other measured
+shape matches.)
+
+### Measured, file by file (debug build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S02-literals/underscores.t` | 1 failure ("Underscore before . fails") | **PASS** | still PASS |
+| `S02-magicals/subname.t` | 1 failure ("&?ROUTINE not available outside of a routine") | **PASS** | still PASS |
+| `S02-lexical-conventions/minimal-whitespace.t` | 3 | 3 (unchanged) | PASS |
+| `S02-lexical-conventions/comments.t` | 1 | 1 (unchanged) | PASS |
+| `S02-literals/quoting-unicode.t` | 1 | 1 (unchanged) | PASS |
+| `S03-operators/context.t` | 2 | 2 (unchanged) | PASS |
+| `S06-signature/optional.t` | 1 | 1 (unchanged) | PASS |
+| `S06-signature/positional-placeholders.t` | 1 | 1 (unchanged) | PASS |
+| `S02-types/whatever.t` | 1 (+2 TODO) | 1 (unchanged) | PASS |
+| `S12-enums/misc.t` | 1 | 1 (unchanged) | PASS |
+| `S32-exceptions/misc2.t` | 3 | 3 (unchanged) | PASS |
+
+**So: roast correctness regressions 57 -> 55.** The full sweep was not re-run
+(it is ~25 minutes and its raw count is noisy by about +-6 because of the
+timeout family); the per-file before/after above is the measurement.
+
+### The other nine are NOT this mechanism — they are wrong exception classes
+
+Each of the nine remaining assertions *does* throw in both contexts; it throws
+the **wrong class**, and mutsu's native `throws-like` hides that on purpose:
+`src/runtime/test_functions/throws_like.rs` accepts any error whose message
+contains `"Confused"`/`"parse error"` whenever the expected class starts with
+`X::Syntax`, plus a similar `X::Comp`/`X::Comp::Group` widening. The real
+module's `$_ ~~ $expected` does not. Filed with the full measured table as
+`todo/tickets/parse-errors-collapse-to-x-syntax-confused.md` (nine rows,
+independent of each other, so it parallelises well). Two rows are *not* in that
+family and are called out there: `S12-enums/misc.t` (right class, empty `.enum`
+attribute) and `S32-exceptions/misc2.t` (`X::Placeholder::Mainline`, already a
+known separate gap).
+
+One more general bug fell out of that triage and is filed separately:
+`todo/tickets/eval-write-to-outer-lexical-lost-inside-a-closure-or-routine.md`
+— `EVAL '$a = 32'` writes through at mainline and inside a bare block, but the
+write is **silently lost** once the `EVAL` runs inside an invoked closure or a
+`sub` (raku: 32, mutsu: `Any`). That is `comments.t` #41, and it is a dual-store /
+closure-writeback problem rather than an exception one.
+
+### A correction to carry forward
+
+The 2026-08-28 roast entry's classification ("39 files lose exactly one
+assertion … no large shared mechanism left") is right about the *shape* but the
+reason matters: a large part of that long tail is not missing behaviour, it is
+**mutsu raising a generic parse exception where rakudo raises a specific one**,
+masked by the native provider's deliberate leniency. Counting those as
+"one fix per file" overstates the work — several of them will fall to one
+parser change each, and the `X::Obsolete`-in-interpolation pair is one change
+for two assertions.
+
+Verification for this entry: the four-line repro now matches `raku` exactly;
+`t/eval-parse-failure-propagates-through-block-call.t` (14 assertions, green
+under `raku`, under mutsu's native provider and under `MUTSU_REAL_TEST=1`);
+`make test` green (3518 files, 35036 tests); and an 823-file targeted roast
+sweep over every whitelisted file in the synopses that consume bare-name type
+resolution and EVAL plumbing (`S02`-`S06`, `S09`-`S12`, `S14`, `S32-exceptions`,
+`integration`) is green on a release build.

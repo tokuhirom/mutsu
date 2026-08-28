@@ -353,7 +353,12 @@ impl Interpreter {
         // importing module's scope. Humming-Bird's `Route.CALL-ME` does
         // `my Response:D $res = ...` with `Response` imported from
         // `Humming-Bird::Glue`.
-        if let Some(ValueView::Package(target)) = self.env.get(name).map(Value::view) {
+        // The topic is excluded for the reason `is_magic_sigilless_key` records:
+        // `$_` lives under the bare key `_` and holds `Any` inside a routine, so
+        // without the guard `my _ $x` would accept `_` as a type name.
+        if !crate::env::is_magic_sigilless_key(name)
+            && let Some(ValueView::Package(target)) = self.env.get(name).map(Value::view)
+        {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return true;

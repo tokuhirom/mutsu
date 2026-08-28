@@ -350,9 +350,6 @@ impl Interpreter {
                 return Err(err);
             }
         }
-        if code.contains("&?ROUTINE") && self.routine_stack.is_empty() {
-            return Err(RuntimeError::undeclared_symbols("Undeclared name"));
-        }
         // `EVAL $code, context => $ctx` compiles the string as if it stood at
         // `$ctx`'s frame, so a package the snippet declares is named after the
         // caller and not after whichever module called EVAL. Without this a

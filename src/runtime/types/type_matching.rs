@@ -353,7 +353,11 @@ impl Interpreter {
         if self.registry().roles.contains_key(name) {
             return Some(name.to_string());
         }
-        if let Some(ValueView::Package(pkg)) = self.env.get(name).map(Value::view) {
+        // Same topic exclusion as the class-side lookups: see
+        // `crate::env::is_magic_sigilless_key`.
+        if !crate::env::is_magic_sigilless_key(name)
+            && let Some(ValueView::Package(pkg)) = self.env.get(name).map(Value::view)
+        {
             let resolved = pkg.resolve();
             if self.registry().roles.contains_key(&resolved) {
                 return Some(resolved);
