@@ -240,7 +240,19 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, is_eval_unit, false, None)
+        // An EVAL'd unit records its free-variable writes for the same reason a
+        // `where` clause does, and more urgently: `EVAL '$a = 32'` assigns to a
+        // caller lexical whose NAME exists only in the snippet's source, so the
+        // ENCLOSING frame's compiler never saw the write. Every compile-time filter
+        // in that frame's exit writeback (`free_var_syms`, `free_var_writes`,
+        // `captured_names`, "the caller env already has the key") therefore rejects
+        // it, and the assignment died with the frame as soon as the EVAL ran one
+        // closure-invocation or routine deep. The SNIPPET's own compiler does know
+        // — `$a` is a free variable it writes — so record exactly that set; the
+        // retain-on-miss list then refreshes the slot in whichever frame declares
+        // the lexical, and `propagate_pending_caller_writes` carries the value
+        // across each intervening frame exit.
+        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None)
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -396,7 +408,26 @@ impl Interpreter {
         if record_free_var_writes {
             for sym in &code.free_var_writes {
                 let name = sym.resolve();
-                if name != "_" && name != "$_" && name != "@_" && name != "%_" {
+                if name == "_" || name == "$_" || name == "@_" || name == "%_" {
+                    continue;
+                }
+                if is_eval_unit {
+                    // An EVAL'd unit's write goes one step further than a `where`
+                    // clause's: the target name exists only in the snippet's
+                    // source, so the ENCLOSING frame's exit writeback (all of whose
+                    // filters are compile-time) drops it. `record_runtime_name_write`
+                    // both refreshes the owning slot and carries the value across
+                    // each intervening frame exit. It also filters to plain user
+                    // lexicals — a system name like `&?BLOCK` is per-frame and
+                    // replaying it corrupts the caller's own binding.
+                    self.record_runtime_name_write(&name);
+                    // Append-only log: `parse_and_eval_with_operators` reads back
+                    // the names ITS snippet wrote, to keep them out of the
+                    // "drop the EVAL's own `my` lexicals" cleanup.
+                    if crate::env::is_plain_user_lexical(&name) {
+                        self.recorded_free_var_writes.push(name.clone());
+                    }
+                } else {
                     self.record_caller_var_writeback(&name);
                 }
             }

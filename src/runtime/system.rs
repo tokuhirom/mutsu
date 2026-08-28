@@ -124,13 +124,26 @@ impl Interpreter {
                 // keys are untouched, so assignments to outer variables persist,
                 // matching raku. `&`-sub keys are handled by the callable-key
                 // restore in `eval_eval_string`, so they are excluded here.
+                //
+                // `visible_keys_where`, not `keys()`: `Env::keys` exposes only the
+                // innermost tier's overlay, but inside a closure or a routine the
+                // frame env is a scoped child and the caller's lexicals live in a
+                // PARENT tier. Scanning the overlay alone made every such lexical
+                // look brand-new, so `EVAL '$a = 32'` — whose write lands in the
+                // overlay — was classified as an EVAL-local `my` and deleted on the
+                // way out. Worse, removing a name from a scoped env leaves a
+                // TOMBSTONE, so the caller's binding was hidden outright: a second
+                // `EVAL 'say $a'` in the same block then died with
+                // "Variable '$a' is not declared". (Mirrors the identical `keys()`
+                // -> `visible_keys_where` fix already made for the `&`-code-var
+                // shadow snapshot in `eval_eval_string`.)
                 let eval_pre_lexicals: HashSet<crate::symbol::Symbol> = self
                     .env
-                    .keys()
-                    .filter(|k| {
-                        k.with_str(|s| crate::env::is_plain_user_lexical(s) && !s.starts_with('&'))
+                    .visible_keys_where(|s| {
+                        crate::env::is_plain_user_lexical(s) && !s.starts_with('&')
                     })
-                    .copied()
+                    .iter()
+                    .map(|s| crate::symbol::Symbol::intern(s))
                     .collect();
                 // Removing only the *new* keys is not enough: a `my` whose name the
                 // caller already uses SHADOWS it, and the shared env has one entry
@@ -184,7 +197,16 @@ impl Interpreter {
                 // undo it. Pop runs unconditionally (mirrors the block cleanup
                 // being exception-safe), so a failing snippet is cleaned up too.
                 self.push_lexical_class_scope();
+                let free_var_writes_mark = self.recorded_free_var_writes.len();
                 let mut outcome = self.eval_block_value_opts(&stmts, true);
+                // The free variables this snippet WROTE (`EVAL '$a = 32'`). They are
+                // assignments to the caller's lexicals, not the snippet's own `my`,
+                // so the leaked-lexical cleanup below must leave them alone.
+                let snippet_free_var_writes: HashSet<crate::symbol::Symbol> = self
+                    .recorded_free_var_writes
+                    .drain(free_var_writes_mark..)
+                    .map(|n| crate::symbol::Symbol::intern(&n))
+                    .collect();
                 self.pop_lexical_class_scope();
                 if let Ok(value) = &outcome
                     && self.eval_result_is_unresolved_bareword(&stmts, value)
@@ -247,11 +269,26 @@ impl Interpreter {
                 }
                 // Drop the EVAL's own `my` lexicals (plain user lexical keys that
                 // did not exist before) so they don't leak into the caller's pad.
+                //
+                // A name the snippet ASSIGNED to is not one of its own lexicals,
+                // even when the caller's env had no entry for it: a `my $a;` with no
+                // initializer materializes no env key, so `EVAL '$a = 32'` created
+                // the key and this cleanup used to delete the write — which is how
+                // an `EVAL` that assigns an outer lexical silently lost the
+                // assignment as soon as it ran inside a closure or a routine (the
+                // mainline still worked only because the caller's slot was
+                // reconciled from `env` before the removal). The snippet's own
+                // compiler knows exactly which free variables it wrote; those are
+                // exempt. A `my` the snippet really declares is a LOCAL of its code,
+                // never a free variable, so it is still dropped here (and a `my`
+                // that shadows a caller name is separately restored by
+                // `eval_shadowed` below).
                 let leaked: Vec<crate::symbol::Symbol> = self
                     .env
                     .keys()
                     .filter(|k| {
                         !eval_pre_lexicals.contains(k)
+                            && !snippet_free_var_writes.contains(k)
                             && k.with_str(|s| {
                                 crate::env::is_plain_user_lexical(s) && !s.starts_with('&')
                             })

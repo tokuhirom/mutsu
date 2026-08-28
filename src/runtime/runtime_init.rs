@@ -2864,6 +2864,8 @@ impl Interpreter {
             pending_supply_authoritative_free_vars: Vec::new(),
             pending_whenever_inherited_owned: Vec::new(),
             last_block_my_declared: Vec::new(),
+            recorded_free_var_writes: Vec::new(),
+            pending_runtime_name_writes: Vec::new(),
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
             lock_async_recursion: Vec::new(),

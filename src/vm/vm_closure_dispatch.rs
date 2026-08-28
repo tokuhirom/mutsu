@@ -1539,6 +1539,17 @@ impl Interpreter {
             self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
         }
 
+        // A by-name write whose target name only exists at run time (`$::($n) = v`,
+        // an `EVAL`'d `$a = 32`) is invisible to every filter of the writeback loop
+        // above, so it would die with this frame. Carry it into the caller env; the
+        // call site's `apply_pending_caller_var_writeback` then refreshes the slot in
+        // whichever frame actually declares the lexical.
+        {
+            let callee_private =
+                |n: &str| cc.locals.iter().any(|l| l == n) && !data.env.contains_key(n);
+            self.propagate_pending_caller_writes(&mut restored_env, &callee_private);
+        }
+
         *self.env_mut() = restored_env;
 
         // After a closure returns, update captured envs of END phasers for

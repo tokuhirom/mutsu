@@ -404,6 +404,16 @@ impl Interpreter {
         // set env_dirty) — without this the write is lost once the blanket
         // reconcile is removed (mirrors the regex `:let` path).
         self.note_caller_env_write(&store_name);
+        // ...and when the target is NOT one of this frame's own locals, the owning
+        // slot lives further up the stack. The compiler never saw this name (it is
+        // resolved at run time), so the frame-exit writeback's compile-time filters
+        // all reject it; put it on the retain-on-miss caller list instead, which
+        // both refreshes the owning frame's slot and — via
+        // `propagate_pending_caller_writes` — carries the value across every
+        // intervening frame exit.
+        if self.find_local_slot(code, &store_name).is_none() {
+            self.record_runtime_name_write(&store_name);
+        }
         // A `$` symbolic-deref store is a scalar assignment, so its rvalue is the
         // *itemized* container value: `flat ($::('x') = 1, 2), ...` keeps the
         // `(1,2)` as one element (matches a plain scalar assignment result).
@@ -446,8 +456,13 @@ impl Interpreter {
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
         // env_dirty substrate: same as exec_symbolic_deref_store_op — `::('$x') = v`
-        // writes the target lexical by name, so log it for the carrier writeback.
+        // writes the target lexical by name, so log it for the carrier writeback,
+        // and (when the owning slot is not in this frame) for the cross-frame
+        // caller writeback.
         self.note_caller_env_write(&store_name);
+        if self.find_local_slot(code, &store_name).is_none() {
+            self.record_runtime_name_write(&store_name);
+        }
         self.stack.push(value);
         Ok(())
     }

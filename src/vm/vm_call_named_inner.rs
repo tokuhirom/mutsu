@@ -775,6 +775,17 @@ impl Interpreter {
                 }
                 restored_env.insert(target.clone(), val.clone());
             }
+            // A by-name write whose target name only exists at run time
+            // (`$::($n) = v`, an `EVAL`'d `$a = 32`) is invisible to the
+            // `contains_key`-gated merge and to `free_var_writes` alike, so it
+            // would die with this frame. Carry it into the caller env; the call
+            // site's `apply_pending_caller_var_writeback` then refreshes the slot
+            // in whichever frame actually declares the lexical.
+            {
+                let callee_private =
+                    |n: &str| cf.is_callee_local_sym(crate::symbol::Symbol::intern(n));
+                self.propagate_pending_caller_writes(&mut restored_env, &callee_private);
+            }
             *self.env_mut() = restored_env;
         }
 

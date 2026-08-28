@@ -1905,6 +1905,45 @@ impl Interpreter {
         self.apply_pending_caller_var_writeback(code);
     }
 
+    /// Carry a still-unclaimed RUNTIME-NAME write ACROSS a frame boundary.
+    ///
+    /// `pending_runtime_name_writes` names a lexical that some nested frame wrote
+    /// through a name resolved at RUN time — `$::($n) = v`, `::('$x') = v`, an
+    /// assignment inside an `EVAL`'d snippet — and whose owning local slot has not
+    /// been found yet (retain-on-miss, see `apply_pending_caller_var_writeback`).
+    /// The slot drain reads the value out of `env`, so the value has to survive the
+    /// frame exit that is about to replace `self.env` with the caller's saved env.
+    ///
+    /// The frame-exit writebacks in `call_compiled_closure_with_topic` /
+    /// `call_compiled_function_named_inner` cannot do that on their own: every one
+    /// of their filters is keyed on compile-time knowledge (`free_var_syms`,
+    /// `free_var_writes`, `captured_names`, "the caller env already has the key"),
+    /// and a runtime-resolved target satisfies none of them. Such a write was
+    /// therefore dropped at the frame boundary and silently lost
+    /// (`my $z = 1; my $c = { $::('z') = 33 }; $c()` left `$z` at 1).
+    ///
+    /// So: copy those names' live values into the caller's env as the frame dies.
+    /// `callee_private` excludes names the callee declared itself (they are not the
+    /// caller's lexical, whatever they are named). No-op — and no cost — for any
+    /// program that never made a runtime-name write.
+    pub(super) fn propagate_pending_caller_writes(
+        &self,
+        restored_env: &mut crate::env::Env,
+        callee_private: &dyn Fn(&str) -> bool,
+    ) {
+        if self.pending_runtime_name_writes.is_empty() {
+            return;
+        }
+        for name in &self.pending_runtime_name_writes {
+            if callee_private(name) {
+                continue;
+            }
+            if let Some(v) = self.env().get(name).cloned() {
+                restored_env.insert(name.clone(), v);
+            }
+        }
+    }
+
     /// Drain caller-frame-targeted writes (`$CALLER::x = v` / `callframe(d).my.<$x>
     /// = v`). Unlike `pending_rw_writeback_sources`, a source whose slot is NOT in
     /// this frame's `code` is RETAINED rather than dropped, because the target slot
@@ -1925,7 +1964,14 @@ impl Interpreter {
                 {
                     self.locals[slot] = val;
                 }
-                // matched (slot exists in this frame) → applied, do not retain
+                // matched (slot exists in this frame) → applied, do not retain.
+                // Keep the runtime-name list in step: once the frame that owns the
+                // slot has absorbed the value there is nothing left to carry across
+                // further frame exits, and leaving the entry behind would keep
+                // replaying a stale value upward.
+                if !self.pending_runtime_name_writes.is_empty() {
+                    self.pending_runtime_name_writes.retain(|n| n != &source);
+                }
             } else {
                 retained.push(source);
             }
