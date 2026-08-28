@@ -1403,6 +1403,21 @@ pub struct Interpreter {
     /// evaluating typed-attribute default type objects so a suppressed nested
     /// class name resolves within its owning class (see `resolve_suppressed_type`).
     constructing_class: Option<String>,
+    /// The registry storage key (the fully-qualified/mangled name actually
+    /// used as the registry key, NOT the source-level bare name) of the
+    /// class most recently registered by `exec_register_class_op`. Set right
+    /// before that function returns `Ok`, and consumed immediately by the
+    /// very next opcode when it is `PushLastRegisteredClass` — the compiler
+    /// only ever emits that opcode directly after `RegisterClass` for a
+    /// NAMED `class` declaration used in expression position (`(class A
+    /// { ... })`), so nothing else can run between the write and the read.
+    /// Exists so that expression evaluates to the type object the
+    /// declaration just created, rather than a bareword lookup of `A` that
+    /// can resolve to an unrelated, same-named class from a different scope
+    /// (e.g. one declared inside `EVAL`'d code running in a different
+    /// package than the caller). See
+    /// `news/2026-08/class-decl-expr-is-not-a-name-lookup.md`.
+    pub(crate) last_registered_class_key: Option<String>,
     /// Attribute writes observed through an instance's shared cell while its
     /// BUILD phase runs, one frame per instance under construction (BUILD may
     /// itself construct objects, so the frames nest). A frame is keyed by the
