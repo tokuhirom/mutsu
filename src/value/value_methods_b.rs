@@ -533,7 +533,39 @@ impl Value {
         env: Env,
         compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
     ) -> Self {
+        Self::make_sub_for_routine_owning(
+            package,
+            name,
+            params,
+            param_defs,
+            body,
+            is_rw,
+            env,
+            compiled_routine,
+            Vec::new(),
+        )
+    }
+
+    /// [`Self::make_sub_for_routine`] plus [`Self::make_sub_owning`]'s vouch:
+    /// the named lexicals are installed from the captured env with OVERWRITE at
+    /// call time instead of losing to a same-named lexical in the calling
+    /// frame. Used when a named `sub` escapes its declaring routine as that
+    /// routine's return value — the declaring frame is gone, so its captured
+    /// bindings are lexically authoritative and can never go stale.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn make_sub_for_routine_owning(
+        package: Symbol,
+        name: Symbol,
+        params: Vec<String>,
+        param_defs: Vec<ParamDef>,
+        body: Vec<Stmt>,
+        is_rw: bool,
+        env: Env,
+        compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
+        authoritative_captures: Vec<Symbol>,
+    ) -> Self {
         let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        data.authoritative_captures = authoritative_captures;
         // Declaration source location for `Code.line`/`Code.file`. Both already
         // ride on the routine's own `CompiledFunction` — the line stamped by
         // `Compiler::compile_sub_body`, the file by

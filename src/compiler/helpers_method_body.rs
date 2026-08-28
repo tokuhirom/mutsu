@@ -273,6 +273,44 @@ impl Compiler {
         out
     }
 
+    /// Fold the outer lexicals a signature's *declaration-time* expressions
+    /// (parameter defaults and `where` constraints) reference into `code`'s OWN
+    /// capture set.
+    ///
+    /// Those expressions are evaluated from the `ParamDef` AST at **call** time
+    /// (`bind_function_args_values`) and never compile into `code.ops`, so
+    /// [`crate::opcode::CompiledCode::compute_free_vars`] — a pure op scan —
+    /// cannot see them. Without this fold the name is absent from
+    /// `free_var_syms`, `capture_closure_env` drops it as a non-free plain user
+    /// lexical, and the constraint/default silently resolves against whatever
+    /// the **calling** frame happens to hold under that name: lexical scoping
+    /// degrading into dynamic scoping (`sub outer { my $a = 2; sub inner($x
+    /// where $a) {...} }` checked `$x` against the caller's `$a`).
+    ///
+    /// A name the routine declares itself — a parameter referenced by a later
+    /// parameter's constraint (`sub f($a, $b where $a)`) — is bound into the
+    /// callee env by the binder before the constraint runs, so it is excluded.
+    pub(crate) fn fold_decl_time_param_captures(
+        &self,
+        code: &mut crate::opcode::CompiledCode,
+        param_defs: &[crate::ast::ParamDef],
+    ) {
+        if param_defs
+            .iter()
+            .all(|pd| pd.default.is_none() && pd.where_constraint.is_none())
+        {
+            return;
+        }
+        for sym in self.decl_time_param_free_var_syms(param_defs) {
+            if sym.with_str(|s| code.locals.iter().any(|l| l == s)) {
+                continue;
+            }
+            if !code.free_var_syms.contains(&sym) {
+                code.free_var_syms.push(sym);
+            }
+        }
+    }
+
     /// [`Self::decl_time_param_free_var_syms`] for one expression.
     pub(crate) fn decl_time_expr_free_var_syms(&self, expr: &Expr) -> Vec<Symbol> {
         let mut chunk_compiler = Compiler::new();

@@ -435,16 +435,33 @@ impl Interpreter {
                 .get(&Symbol::intern(&single_key))
                 .cloned();
             ret_val = if let Some(def) = registered {
-                Value::make_sub_for_routine(
+                // Flatten: a Sub returned as a value is dispatched cross-scope.
+                let mut captured = self.clone_env();
+                let mut owned: Vec<Symbol> = Vec::new();
+                // ...but the flattened env only has what `env` holds. A `my` in
+                // THIS routine's body lives in a local slot, so the returned Sub
+                // would resolve the name against its caller (or, under
+                // shadowing, against an enclosing scope's same-named binding)
+                // instead of its declaration scope. Overwrite with the live slot
+                // value, exactly as `capture_closure_env` does for an anonymous
+                // closure.
+                if let Some(callee) = def.compiled.as_ref() {
+                    owned = self.inject_frame_locals_for_free_vars(
+                        &cf.code,
+                        &callee.code,
+                        &mut captured,
+                    );
+                }
+                Value::make_sub_for_routine_owning(
                     def.package,
                     def.name,
                     def.params.clone(),
                     def.param_defs.clone(),
                     def.body.clone(),
                     def.is_rw,
-                    // Flatten: a Sub returned as a value is dispatched cross-scope.
-                    self.clone_env(),
+                    captured,
                     def.compiled.clone(),
+                    owned,
                 )
             } else {
                 // The plan's own compiled routine (same key this call's
