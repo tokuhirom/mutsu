@@ -218,6 +218,19 @@ impl RuntimeError {
         Self::typed("X::Method::NotFound", attrs)
     }
 
+    /// `X::Obsolete` for a Perl 5 dereference block (`${$x}`, `@{$x}`, `%{$x}`).
+    ///
+    /// rakudo names the *written* construct rather than a placeholder, and
+    /// offers both Raku spellings — the hard ref and the symbolic ref — so
+    /// `.old`/`.replacement` (which roast matches on) read e.g.
+    /// `${$scalar}` / `$($scalar) for hard ref or $::($scalar) for symbolic ref`.
+    pub(crate) fn obsolete_p5_deref(sigil: char, inner: &str) -> Self {
+        Self::obsolete(
+            &format!("{sigil}{{{inner}}}"),
+            &format!("{sigil}({inner}) for hard ref or {sigil}::({inner}) for symbolic ref"),
+        )
+    }
+
     /// X::Obsolete - Obsolete syntax
     #[allow(dead_code)]
     pub(crate) fn obsolete(old: &str, replacement: &str) -> Self {

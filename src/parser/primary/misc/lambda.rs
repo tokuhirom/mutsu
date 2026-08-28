@@ -308,6 +308,51 @@ fn inject_rw_trait(params: &mut [crate::ast::ParamDef]) {
 }
 
 /// Parse a block `{ stmts }` as AnonSub or `{}` / `{ key => val, ... }` as Hash.
+/// rakudo's "Malformed double closure" check for a bare `{ ... }` term.
+///
+/// A `*`-curry is already a closure, so wrapping one in braces builds a block
+/// that merely *returns* a `WhateverCode` — almost never what was meant.
+/// rakudo rejects it with `X::Syntax::Malformed`, and only in exactly this
+/// shape: the block's SOLE statement is an expression that curries. Verified
+/// against `raku`:
+///
+/// * `{ *.abs }`, `{ * + 1 }`, `{ *.abs, 1 }`, `{*.{}}` — malformed;
+/// * `{ * }` (the proto stub) and `{ *, 1 }` — fine, a bare `*` does not curry;
+/// * `{ my $x = 1; * + 1 }` and `{ * + 1; 2 }` — fine, more than one statement;
+/// * `-> $x { * + 1 }`, `sub { * + 1 }`, `if 1 { * + 1 }` — fine, those are not
+///   bare `{ }` terms and never reach this parser.
+pub(crate) fn double_closure_error(stmts: &[crate::ast::Stmt]) -> Option<PError> {
+    let mut body = stmts.iter().filter(|s| !is_line_marker(s));
+    let only = body.next()?;
+    if body.next().is_some() {
+        return None;
+    }
+    let crate::ast::Stmt::Expr(expr) = only else {
+        return None;
+    };
+    // The expression parser may already have planted the priming-scope marker
+    // (ADR-0033), so look through it — but ask the same question of the body
+    // either way. A planted marker is NOT proof on its own: `{ * ~~ /<$_>/ }`
+    // carries one and is perfectly legal (a bare `*` on the left of `~~` is
+    // auto-primed at run time, not curried), which is exactly the shape
+    // `roast/S02-types/whatever.t` uses.
+    let body_expr = match expr {
+        Expr::WhateverCurry(inner) => inner.as_ref(),
+        other => other,
+    };
+    let curries = crate::parser::expr::should_wrap_whatevercode(body_expr);
+    curries.then(|| {
+        PError::malformed(
+            "double closure; WhateverCode is already a closure without curlies, \
+             so either remove the curlies or use valid parameter syntax instead of *",
+        )
+    })
+}
+
+fn is_line_marker(stmt: &crate::ast::Stmt) -> bool {
+    matches!(stmt, crate::ast::Stmt::SetLine(_))
+}
+
 pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('{') {
         return Err(PError::expected("block or hash"));
@@ -336,6 +381,9 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("'}'"));
         }
         let r = &r[1..];
+        if let Some(err) = double_closure_error(&stmts) {
+            return Err(err);
+        }
         // In Raku a block's `}` at end of line terminates the statement, so an
         // infix word on the next line (`g { 1 }` NL `before { 2 }`) starts a
         // new statement instead of taking this block as its left operand.

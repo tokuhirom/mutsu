@@ -66,6 +66,29 @@ fn split_interp_var_name(var_rest: &str) -> Option<(&str, &str)> {
     Some((&var_rest[..total], &var_rest[total..]))
 }
 
+/// Build the `die X::Obsolete` node for a Perl 5 dereference block written
+/// inside an interpolating string (`"${$x}"` / `"@{$x}"`).
+///
+/// rakudo rejects these while *parsing* the string, but mutsu's interpolation
+/// pipeline (`interpolate_string_content` and friends) returns a bare `Expr`
+/// with no error channel, so the diagnosis is carried as an expression that
+/// throws when the string is built. What matters either way is that a REAL
+/// `X::Obsolete` instance reaches `$!`: spelling it as `die "X::Obsolete: ..."`
+/// produced an `X::AdHoc` whose class only survived through the native
+/// `throws-like`'s message sniffing, so the exception is constructed here with
+/// its `.old`/`.replacement` attributes and embedded as a literal.
+fn obsolete_p5_deref_throw(sigil: char, inner: &str) -> Expr {
+    let err = crate::value::RuntimeError::obsolete_p5_deref(sigil, inner);
+    let payload = match err.exception {
+        Some(exception) => *exception,
+        None => literal_str(err.message.clone()),
+    };
+    Expr::Call {
+        name: Symbol::intern("die"),
+        args: vec![Expr::Literal(payload)],
+    }
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(crate) fn try_interpolate_var<'a>(
@@ -337,15 +360,9 @@ pub(crate) fn try_interpolate_var<'a>(
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
-            parts.push(Expr::Call {
-                name: Symbol::intern("die"),
-                args: vec![Expr::Literal(literal_str(
-                    "X::Obsolete: Unsupported use of ${expr}. In Raku please use: $(expr)."
-                        .to_string(),
-                ))],
-            });
             let after_brace = &rest[2..];
             let end = after_brace.find('}').unwrap_or(after_brace.len());
+            parts.push(obsolete_p5_deref_throw('$', &after_brace[..end]));
             return Some(if end < after_brace.len() {
                 &after_brace[end + 1..]
             } else {
@@ -450,15 +467,9 @@ pub(crate) fn try_interpolate_var<'a>(
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
-            parts.push(Expr::Call {
-                name: Symbol::intern("die"),
-                args: vec![Expr::Literal(literal_str(
-                    "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr)."
-                        .to_string(),
-                ))],
-            });
             let after_brace = &rest[2..];
             let end = after_brace.find('}').unwrap_or(after_brace.len());
+            parts.push(obsolete_p5_deref_throw('@', &after_brace[..end]));
             return Some(if end < after_brace.len() {
                 &after_brace[end + 1..]
             } else {

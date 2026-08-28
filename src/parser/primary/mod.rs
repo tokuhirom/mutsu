@@ -267,12 +267,18 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // `==>` (the feed operator) is a 3-character prefix and does not
         // match this 2-character check.
         // See `news/2026-08/infix-in-term-position-diagnosis.md`.
-        if input.starts_with("=>") {
-            update_best_error(
-                &mut best_error,
-                PError::infix_in_term_position("=>", input),
-                input_len,
-            );
+        // `,` is the same story: no term begins with the comma infix, so an
+        // empty slot in a list or an argument list (`(1, , 3)`, `f(1, , 3)`,
+        // `my @a = 1, , 2`) is rakudo's `X::Syntax::InfixInTermPosition` too,
+        // not a generic "Confused".
+        for op in ["=>", ","] {
+            if input.starts_with(op) {
+                update_best_error(
+                    &mut best_error,
+                    PError::infix_in_term_position(op, input),
+                    input_len,
+                );
+            }
         }
         macro_rules! try_primary {
             ($expr:expr) => {

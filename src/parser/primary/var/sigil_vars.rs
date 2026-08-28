@@ -249,10 +249,17 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     // @{expr} is Perl 5 array dereference syntax — throw X::Obsolete
     if twigil.is_empty()
         && rest.starts_with('{')
-        && let Ok((_r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
+        && let Ok((r2, inner)) = crate::parser::primary::misc::block_or_hash_expr(rest)
         && !matches!(inner, crate::ast::Expr::Hash(_))
     {
-        return Err(PError::obsolete("@{expr}", "@(expr)"));
+        let block_src = &rest[..rest.len() - r2.len()];
+        let deref_inner = block_src
+            .strip_prefix('{')
+            .and_then(|s| s.strip_suffix('}'))
+            .unwrap_or("expr");
+        return Err(PError::from_typed(
+            crate::value::RuntimeError::obsolete_p5_deref('@', deref_inner),
+        ));
     }
     // Handle @<name> — list coercion of a named capture variable from $/
     // (e.g., after a regex match, @<fie> gives the positional elements of $<fie>)

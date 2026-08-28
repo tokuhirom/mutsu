@@ -345,11 +345,21 @@ impl Interpreter {
         let (type_ok, exception_val, err_message) = match &result {
             Ok(_) => (false, None, String::new()),
             Err(err) => {
-                // Check exception field first for structured exceptions. See
-                // through a `but role` mixin (`X::Foo.new but role {…}`) to the
-                // wrapped instance so a mixed-in exception is matched by its type.
-                let ex_class = err.exception.as_ref().and_then(|ex| {
-                    let mut cur = ex.as_ref().clone();
+                // The class is read off the very object `$!` / `CATCH` would
+                // see -- `RuntimeError::exception_value()` -- not off the raw
+                // `exception` field. The two differ for every error that only
+                // carries the `"X::Type: text"` message convention or a parse
+                // code: the raw field is `None` there, so the type check used
+                // to fall through to the message-substring branches below
+                // while the named matchers (which already go through
+                // `exception_value`) answered off a real instance. Reading one
+                // object for both is what lets the widenings shrink.
+                //
+                // See through a `but role` mixin (`X::Foo.new but role {…}`) to
+                // the wrapped instance so a mixed-in exception is matched by
+                // its type.
+                let ex_class = {
+                    let mut cur = err.exception_value();
                     loop {
                         match cur.view() {
                             ValueView::Instance { class_name, .. } => {
@@ -359,7 +369,7 @@ impl Interpreter {
                             _ => break None,
                         }
                     }
-                });
+                };
                 let type_matched = if matcher_is_regex {
                     let actual = err.exception.as_ref().map(|e| e.as_ref().clone());
                     let message = err.message.clone();
@@ -388,43 +398,15 @@ impl Interpreter {
                         // in the mro), e.g. `throws-like $code, X::Syntax` against an
                         // exception that only does X::Syntax.
                         || self.class_does_role(cls, expected_normalized)
-                        // X::Comp::Group wraps compile-time errors: match any class that
-                        // does X::Comp specifically, even though the expected type here
-                        // is X::Comp::Group itself (a deliberate broadening -- X::Comp::Group
-                        // is used as a generic "compile-time error" bucket in tests).
-                        || (expected_normalized == "X::Comp::Group" && self.class_does_role(cls, "X::Comp"))
                         // X::AdHoc wrapping a die'd string that encodes a type name
                         // (e.g., die "X::Syntax::UnlessElse: ..."): fall through to
                         // message-based matching below.
                         || (cls == "X::AdHoc"
                             && err.message.contains(expected_normalized))
-                } else if expected_normalized == "X::Syntax::Confused" {
-                    err.message.contains("Confused") || err.message.contains("parse error")
-                } else if expected_normalized.starts_with("X::Syntax") {
-                    err.message.contains(expected_normalized)
-                        || err.message.contains("parse error")
-                        // A parse failure with no structured exception matches any
-                        // `X::Syntax` type here, and "parse error" in the message
-                        // text is a fragile way to recognise one: a failure the
-                        // parser diagnosed precisely says only what is wrong
-                        // ("Missing block"). Read the structured code instead, the
-                        // way the `X::Comp` branch below already does.
-                        || err.code().is_some_and(|c| c.is_parse())
-                } else if expected_normalized == "X::Comp"
-                    || expected_normalized == "X::Comp::Group"
-                {
-                    err.message.contains("X::Syntax")
-                        || err.message.contains("X::Comp")
-                        || err.message.contains("X::Undeclared")
-                        || err.message.contains("X::Obsolete")
-                        || err.message.contains("X::Redeclaration")
-                        || err.message.contains("parse error")
-                        // Any error with a parse error code is a compile-time error
-                        || err.code().is_some_and(|c| c.is_parse())
-                } else if expected_normalized == "X::AdHoc" {
-                    // X::AdHoc matches any ad-hoc error
-                    true
                 } else {
+                    // `exception_value()` always produces an instance, so this
+                    // is unreachable in practice; keep the message fallback for
+                    // an exception carrier that is not an Instance at all.
                     err.message.contains(expected_normalized)
                 };
                 // Named matchers are answered off the exception OBJECT the way

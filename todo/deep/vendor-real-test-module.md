@@ -3488,6 +3488,7 @@ under `raku`, under mutsu's native provider and under `MUTSU_REAL_TEST=1`);
 sweep over every whitelisted file in the synopses that consume bare-name type
 resolution and EVAL plumbing (`S02`-`S06`, `S09`-`S12`, `S14`, `S32-exceptions`,
 `integration`) is green on a release build.
+
 ## 2026-08-28 (fourth entry that day): the 5-file native-typed-array roast cluster closed — two `ContainerRef`-blind read sites
 
 The largest single cluster among the 60 correctness regressions of the entry
@@ -3811,3 +3812,94 @@ The general lesson, sharper than the one above: when a fast path "delegates to
 the interpreter", check *which* interpreter arm it lands in. Two arms
 implementing one operation will differ, and the intercept silently picks the
 poorer one.
+
+## 2026-08-28 (sixth entry that day): the nine wrong-exception-class rows are all fixed, and the native `throws-like`'s parse-error leniency is now GONE
+
+The 2026-08-28 third entry filed
+`todo/tickets/parse-errors-collapse-to-x-syntax-confused.md` — nine assertions
+across seven whitelisted files where mutsu raised a generic
+`X::Syntax::Confused` / `X::AdHoc` and only the native `throws-like`'s message
+sniffing kept them green. All nine now raise the class `raku` raises, each
+re-derived against `raku` before and after the fix.
+
+| snippet (inside `EVAL`) | before | after (= raku) | root cause |
+| --- | --- | --- | --- |
+| `@arr [0]` | `X::Syntax::Confused` | `X::Syntax::Missing` (`what => 'infix inside []'`) | a `[...]` in *infix* position is the reduce metaoperator, so its content must name an infix; the user-infix branch of `parse_list_infix_loop_impl` reported only "expected expression after bracket user infix op" |
+| `42.:all` | `X::Syntax::Confused` | `X::Syntax::Number::IllegalDecimal` | `.:name` is a valid reified-operator postfix, so rakudo's decimal-point *sorrow* is its only complaint and is thrown alone; mutsu let `.:` + identifier through as a method-call attempt instead |
+| `say 42.:all` | `X::Syntax::Confused` | `X::Syntax::Number::IllegalDecimal` | same |
+| `"${$scalar}"` | `X::AdHoc` | `X::Obsolete` | the interpolation path injected `die "X::Obsolete: …"` — a *string*, so `$!` saw an `X::AdHoc`; it now embeds the real `X::Obsolete` instance (with `.old`/`.replacement`) |
+| `"@{$array}"` | `X::AdHoc` | `X::Obsolete` | same |
+| `rt54804( 1, , 3, )` | `X::Syntax::Confused` | `X::Syntax::InfixInTermPosition` | `primary()` seeded that diagnosis for `=>` only; `,` is the same story and no term can begin with it |
+| `{my $foo; $^foo;}(1)` | `X::AdHoc` | `X::Redeclaration` | `check_placeholder_conflicts` returned a `"X::Type: text"` *string* for this one branch while its two sibling branches already returned instances |
+| `{*.{}}()` | `X::Syntax::Confused` | `X::Syntax::Malformed` | two gaps: a bare `{ *-curry }` was accepted at all (rakudo: "Malformed double closure"), and `.{}` / `.[]` — the dotted zen slice — did not parse, so the body collapsed to "Confused" before the diagnosis could fire |
+| `'RT' ~~ m\c[SNOWMAN].\c[COMET]` | `X::Syntax::Confused` | `X::Comp::Group` | `delim_commits_to_regex` committed only for `/ { [ ( <`, so an unterminated non-ASCII-delimited `m☃…` backtracked out to "Bogus postfix: ☃" instead of the existing "Regex not terminated" group |
+
+Three general improvements fell out that were not asked for by any assertion:
+
+* `42. i` / `42. foo` now raise a lone `X::Syntax::Number::IllegalDecimal` and
+  `42.` / `42.,` / `42.:` / `42.:1` an `X::Comp::Group`, exactly as rakudo
+  splits them (the sorrow stands alone iff the retried `.` still forms a valid
+  postfix). That also fixes `minimal-whitespace.t` #9, which expects `X::Comp`
+  and was getting an `X::Comp::Group` — not a subclass of it in rakudo.
+* `%h.{}` / `@a.[]` parse (they were "Confused"), and `*.{}` / `*[]` curry into
+  a `WhateverCode` that actually returns the container.
+* `.old` / `.replacement` on the `${…}` / `@{…}` `X::Obsolete` now name the
+  construct as written, matching rakudo's text.
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real) | after (real) | native |
+| --- | --- | --- | --- |
+| `S02-lexical-conventions/minimal-whitespace.t` | 3 failures | **PASS** | still PASS |
+| `S03-operators/context.t` | 2 failures | **PASS** | still PASS |
+| `S06-signature/optional.t` | 1 failure | **PASS** | still PASS |
+| `S06-signature/positional-placeholders.t` | 1 failure | **PASS** | still PASS |
+| `S02-types/whatever.t` | 1 failure (+2 TODO) | **PASS** (2 TODO only) | still PASS |
+| `S02-literals/quoting-unicode.t` | 1 failure | **PASS** | still PASS |
+| `S12-enums/misc.t` | 1 failure | 1 (unchanged — the empty `.enum` attribute, a different bug) | still PASS |
+
+**So: roast correctness regressions 55 -> 46** against the baseline of the third
+entry that day (nine assertions across six files; `S12-enums/misc.t` is
+untouched and stays on the list). This slice ran concurrently with the two
+`ContainerRef`-blind entries above, which took the same 57-file baseline down to
+47 on a **disjoint** file set (`S09-typed-arrays`, `S32-hash`, `integration`);
+composed, the three land at **47 -> 38**.
+
+### The narrowing experiment: the leniency is retired, and the real bug was reading the WRONG OBJECT
+
+The ticket asked, once the classes were right, whether the native provider's
+widening could be removed. Deleting the message-substring branches outright
+broke **20 whitelisted files** — every one of them on `right exception type
+(X::Comp)` or `(X::Syntax::Confused)`. Reading the failures showed why, and it
+was not "mutsu still raises the wrong class": those errors carry **no
+structured exception object at all** in `RuntimeError::exception`, so
+`ex_class` was `None` and the type check skipped the class/MRO/role branches
+entirely.
+
+But `throws-like` was already computing the right object two hundred lines
+lower: the *named matchers* answer off `err.exception_value()`, which derives a
+real instance from the `"X::Type: text"` convention or the parse code (that is
+why `$!.^name` said `X::Syntax::Confused` all along, while the type check saw
+`None`). The type check simply read a different field than the matchers did.
+
+Pointing both at `exception_value()` makes the widenings dead, and they are
+deleted:
+
+* the `X::Syntax::Confused` message-substring branch,
+* the `starts_with("X::Syntax")` branch (message substring + `parse error` +
+  parse-code),
+* the `X::Comp` / `X::Comp::Group` message-substring branch,
+* the `expected == "X::Comp::Group" && class_does_role(cls, "X::Comp")`
+  broadening inside the class branch,
+* and the `expected == "X::AdHoc"` "matches any ad-hoc error" catch-all.
+
+**Measured: a full sweep of all 1436 whitelisted roast files is green with all
+five removed** (release build). `make test` is green too. So the native
+provider no longer has any parse-error leniency left to pay back — its type
+check is now the same class/MRO/role question the real `Test.rakumod` asks,
+against the same object.
+
+Verification for this entry: `t/parse-error-exception-classes.t` (20
+assertions, green under `raku` unchanged and under mutsu); `make test` green
+(3520 files, 35081 tests); the seven ticket files green under BOTH providers;
+and a full 1436-file whitelisted roast sweep green on a release build.

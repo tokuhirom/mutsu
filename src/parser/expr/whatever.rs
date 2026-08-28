@@ -272,6 +272,10 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
         // Only check target, not index: @a[*-1] should NOT make the whole expr a WhateverCode.
         // The [*-1] subscript handles its own WhateverCode wrapping.
         Expr::Index { target, .. } => contains_whatever(target) || is_wrapped_whatevercode(target),
+        // A zen slice is just the empty-subscript postcircumfix, so it curries
+        // its target exactly as `Expr::Index` does: `*.{}` and `*[]` are
+        // `WhateverCode`, not a bare `Whatever` (verified against raku).
+        Expr::ZenSlice(target) => contains_whatever(target) || is_wrapped_whatevercode(target),
         // User-defined infix operators: `* quack 5`, `3 quack *`, etc.
         // Exclude flip-flop operators (ff, fff and variants) since `ff *` means
         // "stay true forever" and `*` should not trigger WhateverCode wrapping.

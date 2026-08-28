@@ -23,7 +23,8 @@ pub(super) use reduction::reduction_op;
 
 pub(in crate::parser) use colonpair::{colonpair_expr, wrap_colonpair_sink_source};
 pub(in crate::parser) use lambda::{
-    block_or_hash_expr, parse_block_body, parse_block_body_routine, parse_tracked_block_body,
+    block_or_hash_expr, double_closure_error, parse_block_body, parse_block_body_routine,
+    parse_tracked_block_body,
 };
 pub(in crate::parser) use reduction::reduction_call_style_expr;
 

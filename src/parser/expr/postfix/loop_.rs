@@ -672,6 +672,22 @@ pub(in crate::parser) fn brace_newline_state(consumed: &str) -> (bool, bool) {
 /// `.message` is the sorrow's message and the panic's message joined by a
 /// newline (`"Decimal point must be followed by digit\nMalformed postfix
 /// call"`), matching rakudo exactly.
+/// The decimal-point diagnosis on its own, with no follow-up panic.
+///
+/// rakudo bundles the sorrow with a panic only when the retry of the leftover
+/// `.` *also* fails. When the rest still forms a valid postfix — a method name
+/// after whitespace (`42. i`, `42. foo`) or the `.:name` reified-operator
+/// postfix (`42.:all`) — the sorrow is the compiler's single complaint, so it
+/// collapses to a lone `X::Syntax::Number::IllegalDecimal` rather than an
+/// `X::Comp::Group` (verified against `raku` for all four spellings).
+fn illegal_decimal_point_sorrow() -> PError {
+    const MSG: &str = "Decimal point must be followed by digit";
+    PError::from_typed(crate::value::RuntimeError::typed_msg(
+        "X::Syntax::Number::IllegalDecimal",
+        MSG,
+    ))
+}
+
 fn illegal_decimal_point_error() -> PError {
     const MSG: &str = "Decimal point must be followed by digit";
     const PANIC_WHAT: &str = "postfix call";
@@ -864,15 +880,42 @@ fn postfix_expr_loop_from(
             // "Decimal point must be followed by digit" error rather than a
             // method-call attempt.
             const DEAD_END: [char; 6] = [';', ',', ')', ']', '}', '\n'];
-            if dot_target_is_numeric_literal
-                && (after_dot_raw.is_empty()
+            // `<digit>.` here can never continue as a decimal fraction, so
+            // rakudo's "Decimal point must be followed by digit" sorrow always
+            // fires. What differs is whether it arrives ALONE or bundled with a
+            // follow-up panic: rakudo retries the leftover `.` as a postfix, and
+            // when that retry SUCCEEDS — a method name after whitespace
+            // (`42. i`, `42. foo`), or the `.:name` reified-operator postfix
+            // (`42.:all`) — the sorrow is its only complaint and is thrown by
+            // itself. Everything else (`42.`, `42.,`, `42.:`, `42.:1`) panics as
+            // well and becomes an X::Comp::Group.
+            if dot_target_is_numeric_literal {
+                let ident_start =
+                    |s: &str| s.starts_with(crate::parser::helpers::is_raku_identifier_start);
+                let after_ws = after_dot_raw.trim_start_matches([' ', '\t']);
+                let recovers_as_postfix = (after_ws.len() != after_dot_raw.len()
+                    && ident_start(after_ws))
+                    || after_dot_raw.strip_prefix(':').is_some_and(ident_start);
+                if recovers_as_postfix {
+                    return Err(illegal_decimal_point_sorrow());
+                }
+                // `.:<op>` / `.:«op»` / `.:[…]` are the reified-operator postfix
+                // spellings (`42.:<->` is -42, roast/S02-literals/numeric.t) and
+                // `.::Pkg::meth` is the class-qualified method call
+                // (roast/S12-methods/qualified.t), so a `:` opening one of those
+                // is not a dead end. Any other `:` leads nowhere, which is the
+                // panic that makes this a group.
+                let colon_leads_nowhere =
+                    after_dot_raw.strip_prefix(':').is_some_and(|after_colon| {
+                        !after_colon.starts_with(['<', '\u{00AB}', '[', ':'])
+                    });
+                if after_dot_raw.is_empty()
                     || after_dot_raw.starts_with(DEAD_END)
                     || after_dot_raw.starts_with('=')
-                    || (after_dot_raw.starts_with(':')
-                        && (after_dot_raw[1..].is_empty()
-                            || after_dot_raw[1..].starts_with(DEAD_END))))
-            {
-                return Err(illegal_decimal_point_error());
+                    || colon_leads_nowhere
+                {
+                    return Err(illegal_decimal_point_error());
+                }
             }
             if after_dot_raw.starts_with(' ') || after_dot_raw.starts_with('\t') {
                 if dot_target_is_numeric_literal {
@@ -926,6 +969,28 @@ fn postfix_expr_loop_from(
             if r.starts_with(">>") || r.starts_with('\u{00BB}') {
                 rest = r;
                 continue;
+            }
+            // The dotted spelling of the ZEN SLICE: `.[]` / `.{}` select the
+            // whole container, exactly as the undotted `@a[]` / `%h{}` do
+            // (`%h.{}` prints `{a => 1}` under raku). Without these two arms the
+            // empty subscript had no `parse_bracket_indices` to fall back on and
+            // the whole expression collapsed to "Confused" — which is what hid
+            // the real diagnosis in `{*.{}}()`.
+            if let Some(r_inner) = r.strip_prefix('[') {
+                let (r_empty, _) = ws(r_inner)?;
+                if let Some(r_empty) = r_empty.strip_prefix(']') {
+                    expr = Expr::ZenSlice(Box::new(expr));
+                    rest = r_empty;
+                    continue;
+                }
+            }
+            if let Some(r_inner) = r.strip_prefix('{') {
+                let (r_empty, _) = ws(r_inner)?;
+                if let Some(r_empty) = r_empty.strip_prefix('}') {
+                    expr = Expr::ZenSlice(Box::new(expr));
+                    rest = r_empty;
+                    continue;
+                }
             }
             // Check for .[index] syntax: object.[expr] or .[expr1, expr2, ...]
             if let Some(r_inner) = r.strip_prefix('[') {

@@ -45,7 +45,17 @@ use super::trans::{parse_trans_adverbs, process_trans_escapes};
 /// `m-bar` is an ordinary identifier, and the existing statement-boundary check
 /// below exists precisely because those candidates are ambiguous.
 fn delim_commits_to_regex(open_ch: char) -> bool {
+    // A NON-ASCII symbol delimiter commits too. The ambiguity the ASCII
+    // delimiters have does not exist there: `m☃…` cannot be an identifier
+    // (`☃` is not an identifier character) and cannot be `m` followed by an
+    // operator, so once it is read the only reading left is a regex. Without
+    // this, an unterminated `m☃.☄` backtracked all the way out and was
+    // reported as a generic `X::Syntax::Confused` ("Bogus postfix: ☃") instead
+    // of the `X::Comp::Group` rakudo raises
+    // (`roast/S02-literals/quoting-unicode.t`). Letters stay excluded so a
+    // unicode *identifier* (`mλ`) is still an identifier.
     matches!(open_ch, '/' | '{' | '[' | '(' | '<')
+        || (!open_ch.is_ascii() && !open_ch.is_alphanumeric() && !open_ch.is_whitespace())
 }
 
 /// The error rakudo raises for a regex whose closing delimiter never arrives:

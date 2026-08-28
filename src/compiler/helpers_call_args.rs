@@ -729,12 +729,29 @@ impl Compiler {
             } else {
                 continue;
             };
-            // Check for `my $name` in the same scope → X::Redeclaration
+            // Check for `my $name` in the same scope → X::Redeclaration.
+            // rakudo names the placeholder as the redeclared symbol and says
+            // what kind of redeclaration it is in `.postfix`, which the message
+            // repeats ("Redeclaration of symbol '$^foo' as a placeholder
+            // parameter."). Spelling this as a bare `"X::Type: text"` string
+            // instead lost the class: `$!` saw an `X::AdHoc`, and only the
+            // native `throws-like`'s message sniffing kept
+            // `roast/S06-signature/positional-placeholders.t` green.
             if has_var_decl(body, bare_name) {
-                return Some(Value::str(format!(
-                    "X::Redeclaration: Redeclaration of symbol '$^{}'",
-                    bare_name
-                )));
+                let symbol = format!("$^{}", bare_name);
+                let postfix = "as a placeholder parameter";
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+                attrs.insert("what".to_string(), Value::str("symbol".to_string()));
+                attrs.insert("postfix".to_string(), Value::str(postfix.to_string()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("Redeclaration of symbol '{symbol}' {postfix}.")),
+                );
+                return Some(Value::make_instance(
+                    Symbol::intern("X::Redeclaration"),
+                    attrs,
+                ));
             }
             // Check if bare var precedes placeholder in the body
             if bare_precedes_placeholder(body, bare_name) {

@@ -458,6 +458,14 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
     let (rest, body) = block(input)?;
+    // A bare `{ *-curry }` statement is rakudo's "Malformed double closure"
+    // just as much as one in expression position (`my $f = { *.abs }`) — the
+    // block-as-statement path reaches a different parser, so the check has to
+    // be repeated here. Control-flow blocks (`if 1 { * + 1 }`) go through
+    // `block()` from elsewhere and stay legal, matching rakudo.
+    if let Some(err) = crate::parser::primary::misc::double_closure_error(&body) {
+        return Err(err);
+    }
     let (r_ws, _) = ws(rest)?;
     // Check for postfix operators on the block:
     // - `.method(...)` after optional whitespace
