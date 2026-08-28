@@ -3955,3 +3955,51 @@ The remaining named clusters are `S24-testing/{10-is-approx,14-like-unlike,3-out
 `S24-testing/{2-force_todo,6-done_testing}.t` remain the native-provider-only
 pair, which needs the `#?rakudo eval` fudge directive or an un-whitelisting
 rather than an interpreter fix.
+
+## 2026-08-29: the Buf/handle-I/O cluster, part 1 — `infix:<eq>` across Blob types (40 -> 38)
+
+Taking the `S32-io/{slurp,spurt}.t` pair named in the residue above. Both
+regressed for one reason, and it was a general interpreter bug rather than
+anything about I/O: **`eq`/`ne` between two Blob values of *different* Blob
+types answered the wrong result.**
+
+The two assertions are `is slurp($path, :bin), $test-contents.encode` and
+`is slurp($path, :bin), $buf` / `($buf ~ $buf)` — in each case a `Buf` coming
+back from `slurp :bin` compared against a `utf8` produced by `.encode`. Rakudo's
+`(Blob:D, Blob:D)` `eq` candidate compares the bytes whatever the two Blob types
+are (measured: `"hi".encode eq Buf[uint8].new(104,105)` is `True`, as are the
+swapped and `Blob[uint8]` forms), so the assertion holds there. mutsu answered
+`False` for every such pair. The native `is` never surfaced it because it
+byte-compares Bufs itself (`runtime/test_functions/basic.rs`), bypassing
+`infix:<eq>` entirely.
+
+Root cause: `coerce_str_compare_operands`
+(`src/vm/vm_comparison_order_ops.rs`) decoded a `utf8` operand to a `Str`
+**per operand**, before the comparator body ran. Every comparator already had
+the correct `is_buf_value(&l) && is_buf_value(&r)` byte branch — it was just
+unreachable for a mixed pair, because the decode had already dissolved the Blob
+pair. The surviving Buf then stringified to its gist (`Buf[uint8]:0x<68 69>`),
+which no decoded text ever equals. Fixed by deciding the decode for the *pair*:
+skip it when both operands are Blobs, keep it otherwise (so
+`"hi".encode eq "hi"` still holds).
+
+Per-file, release build, `MUTSU_BIN` set both ways:
+
+| file | native, before | real Test, before | native, after | real Test, after |
+| --- | --- | --- | --- | --- |
+| `roast/S32-io/slurp.t` | PASS 21/21 | FAIL, test 12 | PASS 21/21 | PASS 21/21 |
+| `roast/S32-io/spurt.t` | PASS 62/62 | FAIL, tests 1, 4, 12, 15 | PASS 62/62 | PASS 62/62 |
+
+(The spurt helper `all-basic` runs twice, once per path form, which is why the
+two failing assertions show up as four subtests.)
+
+**Count: 40 -> 38 correctness regressions.** Pinned by
+`t/blob-comparison-across-types.t` (33 assertions, green under real `raku` as
+well as under mutsu). Two adjacent divergences were deliberately left out of
+scope because they require mutsu to start *throwing* where it currently answers
+(`Buf[uint8] eq "hi"` should be `X::Buf::AsStr`; mixed-Blob-type `lt`/`cmp`
+should be a type-check failure); they are written up with the dozen other
+gist-comparing sites they would have to move with in
+`todo/tickets/blob-comparison-should-die-instead-of-answering.md`.
+
+Remaining in this cluster: `S16-io/words.t` and `S32-io/io-cathandle.t`.
