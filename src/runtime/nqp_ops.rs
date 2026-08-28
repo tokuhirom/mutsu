@@ -180,6 +180,19 @@ impl Interpreter {
                     // encoding (`nqp::istype($_, Nil)` on an array element bound
                     // to Nil via BIND-POS) hit exactly this gap, always False.
                     Some(ValueView::Nil) => "Nil".to_string(),
+                    // A role's pun (`R.^pun`) — and `R.^pun.WHAT`, which the
+                    // real `Test.rakumod`'s `isa-ok` calls when its expected
+                    // type isn't a `Str:D` (`nqp::istype($var, $type.WHAT)`)
+                    // — is a `Mixin`-wrapped `Package`/`Instance` (see
+                    // `punned_role_type_object`), not a bare `Package`.
+                    // Unwrap it so a pun used as a type argument here behaves
+                    // like the class it puns to, exactly as the `isa`/`~~`
+                    // fixes for the same shape do.
+                    Some(ValueView::Mixin(inner, _)) => match inner.view() {
+                        ValueView::Package(p) => p.resolve().to_string(),
+                        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                        _ => String::new(),
+                    },
                     _ => String::new(),
                 };
                 Ok(bool_int(

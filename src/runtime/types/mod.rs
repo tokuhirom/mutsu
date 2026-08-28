@@ -118,6 +118,16 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         // test the *inner* value, not the wrapper, so an undefined element still
         // triggers the `//` fallback even when it has been promoted to a cell.
         ValueView::ContainerRef(arc) => value_is_defined(&arc.lock().unwrap()),
+        // A role-mixed value (`but`/`does`) is only as defined as what it
+        // wraps: `Any but role {...}` is a type object (`:U`), while
+        // `Any.new but role {...}` is a concrete instance (`:D`) -- the
+        // mixin wrapper itself carries no definedness of its own. Without
+        // this arm, EVERY `Mixin` (including one wrapping an undefined
+        // `Package`) fell through to the `_ => true` default below and was
+        // reported as defined, which broke `:U`-constrained parameter
+        // binding for a role-mixed type object (`sub f(Mu:U $x) {...}`
+        // rejected `Any but role {...}` as "not a type object").
+        ValueView::Mixin(inner, _) => value_is_defined(inner),
         _ => true,
     }
 }

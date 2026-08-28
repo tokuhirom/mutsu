@@ -497,6 +497,15 @@ impl Interpreter {
                     .class_mro(&name.resolve())
                     .contains(&crate::symbol::Symbol::intern("Promise"))
                 {
+                    // Keep the raw (possibly ADR-0047-mangled, e.g.
+                    // `Meows\u{0}<decl-id>` for a `my class`) internal storage
+                    // name here, consistent with how `ValueView::Instance`
+                    // stores its `class_name` — every internal comparison
+                    // (`class_mro`, `isa_check`, another `.isa(Meows)` whose
+                    // `Meows` argument resolves to the same mangled key) must
+                    // see the same representation on both sides. Only
+                    // *display* sites (`.^name`, `.WHAT`'s `Package` value)
+                    // strip the mangling, via `user_facing_type_name`.
                     Some(name.resolve())
                 } else {
                     None

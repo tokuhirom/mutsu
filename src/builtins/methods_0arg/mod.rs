@@ -652,6 +652,30 @@ pub(crate) fn native_method_0arg(
                 return Some(Ok(Value::str(rendered)));
             }
         }
+        // A type object (a bare `Package`, e.g. `Any but role Meows {...}`)
+        // names its own composed type in `.gist`/`.raku`/`.perl`, the same
+        // way a Set/Bag/Mix does just above — but unlike an INSTANCE (which
+        // reaches a composed-name-aware retargeting step further down the
+        // slow path, in `methods_call_dispatch.rs`, when this fast path
+        // returns `None`), a bare type object's `inner` here IS the terminal
+        // value (there's no user-class dispatch below it to fall through
+        // to), so without this arm it fell straight to `native_method_0arg
+        // (inner, ...)` at the bottom of this function and rendered the
+        // plain base type, silently dropping the mixin (`(Any but role
+        // Meows{}).gist` was `(Any)`, losing the `+{Meows}` that `.^name`
+        // already reports correctly via `what_type_name`).
+        if matches!(method, "raku" | "perl" | "gist")
+            && matches!(inner.view(), ValueView::Package(_))
+            && crate::value::role_mixin_suffix(mixins).is_some()
+        {
+            let composed = crate::value::what_type_name(target);
+            let rendered = if method == "gist" {
+                format!("({composed})")
+            } else {
+                composed
+            };
+            return Some(Ok(Value::str(rendered)));
+        }
         // `^name` on a role-mixed value is deliberately NOT fast-pathed here
         // (ADR-0060): a rename can live on the composition-keyed shared
         // `.WHAT` node instead of this instance's own `overrides` (e.g.
