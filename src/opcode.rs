@@ -773,6 +773,17 @@ pub(crate) enum OpCode {
     /// does in Rakudo, while the installed name `R` keeps resolving to the
     /// `ParametricRoleGroupHOW` group.
     RoleGroupToCandidate,
+    /// Push the type object of the class most recently registered by
+    /// `RegisterClass` in THIS bytecode stream (no intervening opcode may run
+    /// between the two). Emitted right after a NAMED `class` declaration used
+    /// in expression position (`(class A { ... })`), so the expression
+    /// evaluates to the type object the declaration just created — never a
+    /// name-based lookup of the bareword `A`, which can resolve to an
+    /// unrelated, same-named class from a completely different scope (e.g. a
+    /// class re-declared inside `EVAL`'d code that runs in a different
+    /// package than the caller — see
+    /// `news/2026-08/class-decl-expr-is-not-a-name-lookup.md`).
+    PushLastRegisteredClass,
 
     // -- Arithmetic --
     Add,

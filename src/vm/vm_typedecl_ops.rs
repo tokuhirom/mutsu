@@ -636,10 +636,31 @@ impl Interpreter {
             // outer `code`.
             self.apply_pending_rw_writeback(code);
 
+            // Record the actual registry key this declaration ended up
+            // stored under (the qualified/lexical-mangled `storage_name`,
+            // NOT the source-level bare `name`) for `PushLastRegisteredClass`
+            // to consume — see `Interpreter::last_registered_class_key`.
+            self.last_registered_class_key = Some(storage_name.clone());
+
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterClass expects ClassDecl"))
         }
+    }
+
+    /// Push the type object of the class most recently registered by
+    /// `exec_register_class_op` (`Interpreter::last_registered_class_key`).
+    /// The compiler only ever emits this directly after `RegisterClass` for
+    /// a NAMED `class` declaration used in expression position, so the field
+    /// is always fresh here — see its doc comment. Falls back to `Nil` if
+    /// somehow nothing was registered (defensive; should not happen given
+    /// the emission discipline above).
+    pub(super) fn exec_push_last_registered_class_op(&mut self) {
+        let val = match self.last_registered_class_key.take() {
+            Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
+            None => Value::NIL,
+        };
+        self.stack.push(val);
     }
 
     /// Whether a *typed* user `trait_mod:<is>` candidate matches `call_args`

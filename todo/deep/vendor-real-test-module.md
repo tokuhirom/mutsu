@@ -4999,3 +4999,75 @@ never happens, rather than happening and being misdelivered) — filed
 separately as `todo/tickets/lazylist-sink-method-does-not-force-gather-body.md`
 rather than folded into this fix, since it is not required by any
 currently-tracked roast test.
+
+## 2026-08-29/30 — `S12-class/attributes.t`: a class-decl EXPRESSION did a name lookup, not a value
+
+Closes the row this file already carried: `S12-class/attributes.t`, "HOW on
+attributes lives, custom class" / `No such method 'x' for invocant of type
+'A'`. NOT a `Test.rakumod`/exception-object gap at all — a genuine, general
+VM bug in how `(class A { ... })` used as an EXPRESSION is compiled, that the
+real Test module's `eval-lives-ok` merely happened to be the first thing to
+surface.
+
+**Root cause:** the compiler's expression-position arm for `Stmt::ClassDecl`
+(`compile_expr_do_stmt` in `src/compiler/expr_block.rs`) compiled `(class A
+{ ... })` as "run `RegisterClass`, then look up the bareword `A`"
+(`GetBareWord`). That is wrong in general, not just under `EVAL`: Raku says a
+class declaration used as an expression evaluates to the type object the
+declaration just created, full stop — no name lookup, so an unrelated
+same-named class anywhere else is irrelevant. mutsu's bareword resolution
+(`resolve_bareword_type_name`) checks a direct bare-name hit FIRST, before
+ever considering the current package — so whenever the class body registers
+under a package-qualified key (`current_package`-based qualification in
+`exec_register_class_op`, same mechanism as `module M { class A {...} }`
+registering `M::A`), the bareword lookup found the CALLER's pre-existing,
+unrelated `A` instead of the freshly-declared one.
+
+**`EVAL` was a red herring, confirmed the hard way**: the bug reproduces with
+NO `EVAL` at all —
+
+```raku
+class A { }
+module M {
+    my $t = (class A { has $.x = 42 });
+    say $t.new.x;          # mutsu (pre-fix): "No such method 'x'"; raku: 42
+}
+```
+
+`Test.rakumod`'s `eval-lives-ok` hits it only because it calls `EVAL` from
+inside `sub eval_exception`, a routine defined in the *separate compilation
+unit* `Test.rakumod` — so the class the `EVAL`'d code declares registers
+under `Test::A` (verified with `rust-gdb`: `register_class_decl`'s `name`
+argument was literally `"Test::A"`), a different scope's `A` from whatever
+the caller's own script had already declared, hitting the exact same
+package-qualification path as the module repro above.
+
+**Fix**: removed the bareword lookup for a named class-decl expression
+entirely. `exec_register_class_op` now records the *actual* registry key it
+just stored the class under (`storage_name` — already correctly qualified/
+lexically-mangled, the same value every other post-registration reference in
+that function uses) into a new `Interpreter::last_registered_class_key`
+field, and the compiler emits a new payload-free `PushLastRegisteredClass`
+opcode immediately after `RegisterClass` to push that type object directly —
+no lookup, so no way to hit the wrong same-named entry. Write-up:
+`news/2026-08/class-decl-expr-is-not-a-name-lookup.md`. Pin:
+`t/class-decl-expr-value.t` (5 subtests: mainline, inside a routine, a
+same-named class in an enclosing `module`, `EVAL` from a different
+compilation unit with a same-named caller-scope class, and the pre-existing
+anonymous `(class { ... })` path — all green under real `raku` too).
+
+`Stmt::RoleDecl` (and possibly `Stmt::Package`) has the identical bug shape
+— verified with an analogous `role` repro — but fixing those was out of
+scope for this slice; filed as
+`todo/tickets/role-decl-expr-value-name-lookup.md`.
+
+### Measured, file by file (release build, `scripts/run-roast-test.sh`, both providers)
+
+| file | before (real, `MUTSU_REAL_TEST=1`) | after (real) | native (`roast-whitelist.txt`) |
+| --- | --- | --- | --- |
+| `S12-class/attributes.t` | fails test 23/44 ("HOW on attributes lives, custom class": `No such method 'x' for invocant of type 'A'`) | **PASS** (44/44) | still PASS (44/44), unaffected by the fix |
+
+Also re-swept the full whitelisted `S12-*`, `S02-*`, `S10-packages`,
+`S11-modules`, `S14-*`, `S32-exceptions`, and `integration` directories (407
+files) under the native provider with the fix applied — all still PASS, so
+the `PushLastRegisteredClass` change is not a native-provider regression.
