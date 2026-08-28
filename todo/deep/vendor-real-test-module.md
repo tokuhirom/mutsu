@@ -4744,6 +4744,67 @@ Fix and pin: `news/2026-08/operator-scope-is-lexical-not-dynamic.md`,
 Per the counting note above, this closes **two** named files; re-measure the
 sweep rather than trusting a running total.
 
+## 2026-08-28: END phaser refresh clobbered a frozen capture by name, not binding (`S04-phasers/end.t`)
+
+Worked from `todo/tickets/end-phaser-captured-lexical-clobbered-by-a-later-same-named-capture.md`
+(already had a measured repro and a located root cause) rather than starting
+from a roast diff. Re-derived the repro against the current build first, per
+the ticket-can-go-stale warning — it reproduced exactly as recorded:
+
+```raku
+sub callit(&c) { c() }
+{ my $a = 42; END { say "END1 (want 42): ", $a.raku }; }
+my $a = 0;                 # a DIFFERENT binding that merely shares the name
+callit { $a };             # a called closure that only READS it
+```
+mutsu printed `END1 (want 42): 0` (raku: `42`); the write-side variant
+(`callit { $::('a') = 7 }`) leaked `7` into the phaser instead of leaving it
+at `42`.
+
+**Root cause confirmed as the ticket located it, but the actual fix is
+narrower than the ticket's "compare binding identity / ContainerRef cells"
+framing suggested.** `Interpreter::update_end_phaser_envs_for_keys()`
+(`src/runtime/accessors_misc.rs`) runs after every closure call and, for each
+name the *called closure itself* captured, walks every registered `END`
+phaser and overwrites its captured entry for that name if present — purely
+name-keyed, no check that the two captures were the same binding. mutsu
+already has the right binding-identity signal sitting right next to it and
+unused here: `EndPhaser::dead_keys`, populated by the sibling function
+`update_end_phaser_envs()` at the moment a phaser's declaring scope actually
+dies (block exit, call-frame return). A key in `dead_keys` is that phaser's
+own frozen, authoritative binding — it does not need value-identity
+comparison (no `ContainerRef`/`Gc::ptr_eq` machinery required) because
+"already frozen" already answers "is this someone else's binding" for every
+case the bug reaches. The fix is one guard: skip a key already in
+`phaser.dead_keys` in `update_end_phaser_envs_for_keys()`. The legitimate
+propagation this refresh exists for (a closure mutating the SAME still-live
+binding an END phaser captured, directly or through another sub) is
+unaffected, since a still-live binding's key is never in `dead_keys`.
+
+Both repros (read-side and write-side) fixed; both ticket-listed negative
+controls (`callit { END { 1 } }`, `callit { 1 }`) still correct; the
+ordering ticket (`todo/tickets/end-phaser-run-order-is-not-reverse-installation.md`)
+verified independent and left untouched (repro still reproduces byte-for-byte
+after this fix — the ordering bug and this clobber bug share no code path).
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S04-phasers/end.t` | 2 failures (tests 6, 7) | **PASS** (8/8) | PASS | PASS |
+
+Fix and pin: `news/2026-08/end-phaser-name-shadow-does-not-clobber-a-frozen-capture.md`,
+`t/end-phaser-same-name-different-binding.t` (7 assertions — read-side,
+write-side, two negative controls, a two-dead-scope-phasers case, and two
+same-binding positive controls — green under real `raku`).
+
+Full `make test` green (3540 files / 35486 tests) and a 174-file targeted
+native-provider sweep (`S04-phasers`, `S04-declarations`, `S02-names-vars`,
+`S06-*`, `S11-modules`, `S32-exceptions`, `integration`) came back clean
+except one pre-existing, unrelated debug-build-only stack overflow
+(`roast/integration/deep-recursion-initing-native-array.t`, confirmed via
+`git stash` to reproduce identically without this change — release build
+passes cleanly, and `make test`'s `t/` suite never runs release-sensitive
+deep-recursion roast files, so CI's `test` job never sees it).
+
 ### Session-opening sweep for the record
 
 `scripts/roast-test-module-sweep.sh` on `main` @ `1d698c171` (release, 1436

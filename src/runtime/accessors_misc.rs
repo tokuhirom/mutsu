@@ -119,6 +119,17 @@ impl Interpreter {
     /// Update captured envs of ALL END phasers, but only for the specified
     /// variable names.  Used after closure calls to propagate changes to
     /// captured variables without overwriting unrelated variables.
+    ///
+    /// `keys` names the *calling closure's* own captured free variables, which
+    /// only coincidentally share a name with a phaser's captured entry — they
+    /// are not necessarily the same binding (a same-named `my` in a sibling
+    /// scope is a common case: `{ my $a = 42; END { say $a } }; my $a = 0;
+    /// callit { $a }` calls a closure that captured the SECOND `$a`, which must
+    /// not clobber the phaser's captured FIRST `$a`). A key already in
+    /// `phaser.dead_keys` (frozen at the moment its own declaring scope died —
+    /// see `update_end_phaser_envs`) is the phaser's authoritative surviving
+    /// binding for that name and must never be overwritten by an unrelated
+    /// same-named capture from elsewhere.
     pub(crate) fn update_end_phaser_envs_for_keys(
         &mut self,
         keys: &std::collections::HashSet<&str>,
@@ -127,6 +138,9 @@ impl Interpreter {
         for phaser in self.end_phasers.iter_mut() {
             let captured = &mut phaser.env;
             for k in keys {
+                if phaser.dead_keys.contains(&Symbol::intern(k)) {
+                    continue;
+                }
                 if captured.contains_key(k)
                     && let Some(v) = current_env.get(k)
                 {
