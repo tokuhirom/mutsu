@@ -167,3 +167,86 @@ wobbles 8%) that a candidate actually consumes time. **Reducing opcode count ≠
 `SetSourceLine` removal was 21% of executed opcodes on fib but only -3.4% instructions (±0 on the
 JIT path), and a first implementation that refreshed on every instruction was a +7.8% deficit. See
 [ADR-0006](../../docs/adr/0006-baseline-interpreter-optimizations.md) §"Measurement protocol".
+
+## Re-measured 2026-08-29: the real blocker is the `&`-SIGIL PARAMETER, and "~1.5×" above is wrong by an order of magnitude
+
+The section above says "passing the block through a *module* sub (`sub s-amp(&code) { code() }`)
+adds a further **~1.5×** on top of every row". Re-measured standalone on `main` @ `aca4c1616`
+(release, 200 000 iterations, accumulator returned so neither implementation can delete the loop),
+it is **6.75×**, it does not need a *module* sub, and it does not need the block to be invoked at
+all.
+
+### The isolate: one sigil
+
+| | shape | mutsu | full by-name resolves of `f` |
+| --- | --- | --- | --- |
+| **A** | `sub f(&c) { 1 }`, called `f(&c)` — declares an `&` param, **never invokes it** | **4.32 µs/iter** | **200 001** |
+| **B** | `sub f($c) { 1 }`, called `f(&c)` — same call, same body, `$` sigil | **0.64 µs/iter** | **1** |
+| C | `sub f(&c) { c() }` | 7.05 µs/iter | 200 001 |
+| D | `sub f($c) { $c() }` | 6.94 µs/iter | 200 001 |
+| E | `my &c = { 1 }; c()` at mainline, no wrapper sub | 2.06 µs/iter | — |
+| — | plain `sub plain($a) { $a }`, called `plain(1)` | **0.41 µs/iter** | 1 |
+
+**A vs B is the whole finding.** Identical callsite, identical body, identical arity; the only
+difference is the parameter's sigil. `&` costs **6.75×** and makes the callee **fully re-resolved by
+name on every single call** (`MUTSU_VM_STATS=1`, `function-full-resolve`: 200 001 vs 1). B stays on
+the cached light path; A does not.
+
+There is a second, independent cost on top: *invoking* a Callable value. C/D add ~2.7 µs over A, and
+E shows a bare `c()` at mainline costs 2.06 µs against a plain sub call's 0.41 µs — 5×. `c()`
+compiles to `MakeNamedArg` + `CallOnCodeVar` (`--dump-bytecode`), i.e. it builds a named-args
+structure even for a **zero-argument** call and dispatches through the named/slow path this ticket
+already identifies as the untuned one.
+
+`MUTSU_VM_STATS=1` opcode totals for a 200 000-iteration loop, same call either way:
+
+```
+$-param : 200 529 opcodes   (CheckReadOnly 200 000; the JIT owns the rest)
+&-param : 1 000 631 opcodes (CallOnCodeVar, GetCodeVar, MakeNamedArg, WrapVarRef, CheckReadOnly
+                             -- 200 000 each)
+```
+
+### Why this is the vendored-`Test` blocker specifically
+
+Every assertion in the real `Test.rakumod` is this shape: `dies-ok(&code)`, `lives-ok(&code)`,
+`throws-like`, `subtest(&subtests)` all declare `&`-sigil parameters and invoke them. Measured
+per-assertion cost (2 000 iterations each, release):
+
+| routine | raku | mutsu real `Test` | mutsu native provider |
+| --- | --- | --- | --- |
+| `ok` | 0.009 ms | **0.224 ms** (25×) | 0.002 ms |
+| `is` | 0.007 ms | **0.287 ms** (41×) | 0.001 ms |
+| `dies-ok` | 0.008 ms | **0.320 ms** (40×) | 0.014 ms |
+| `lives-ok` | 0.006 ms | **0.288 ms** (48×) | 0.009 ms |
+
+The overhead is **uniform across routines** — it is not `dies-ok`'s exception handling. It is the
+per-assertion `&`-parameter call path, applied 2 500-4 500 times per heavy roast file.
+
+### What this changes about the campaign's remaining perf blocker
+
+Re-measured the three files this ticket and `todo/deep/vendor-real-test-module.md` named as the
+timeout class (release, `scripts/run-roast-test.sh`, both providers):
+
+| file | 2026-08-03 (real) | **2026-08-29 (real)** | native | raku |
+| --- | --- | --- | --- | --- |
+| `S04-declarations/state.t` | 61.8 s | **15.1 s** | 6.8 s | 0.5 s |
+| `S32-str/sprintf-d.t` | 22.2 s | **11.4 s** | 1.1 s | 12.3 s (mutsu faster) |
+| `S03-buf/write-int.t` | — | **30 s timeout** | 2.0 s | 1.2 s |
+
+So the "10 files exceed the 30 s budget even alone" claim is **stale**: the `sprintf-*` family and
+`state.t` now fit. What is left is the `S03-buf/{write-int,read-write-bits}.t` pair — 2 530
+assertions each, dominated by `dies-ok`/`subtest` inside nested loops, i.e. precisely the A-vs-B
+shape above.
+
+### Where to start
+
+`sub f(&c) { 1 }` never touching `c` must cost what `sub f($c) { 1 }` costs. Find why an `&`-sigil
+parameter in a signature disqualifies the callee from the cached light-call path and forces
+`function-full-resolve` per call — that is a signature-shape gate, not a property of the argument,
+and B proves the argument itself is free. The Callable-invocation half (`MakeNamedArg` on a
+zero-arg `c()`) is a separate, smaller win and should be measured separately.
+
+**Do not re-measure this with `for ^N { f(&c) }` and no accumulator** — the trap section above
+applies, and raku's optimizer additionally inlines a wrapper whose `&`-argument is a known constant,
+so raku's own absolute numbers for A/B are not a fair per-call baseline. The un-confoundable number
+is mutsu's A/B ratio against mutsu's own plain-call cost.
