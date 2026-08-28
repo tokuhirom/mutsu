@@ -5189,3 +5189,64 @@ it was written in).
 
 Per the counting note above, this closes **three** named files; re-measure the
 sweep rather than trusting a running total.
+
+## 2026-08-29 (end of session): the confirmed sweep, and the one file it turned up
+
+`scripts/roast-test-module-sweep.sh` on `main` @ `dbf79578c` — after all eight of
+the day's PRs landed (#7096, #7097, #7098, #7099, #7100, #7101, #7102, #7103) —
+reports **11 raw regressions, minus 2 `exit 124` performance artifacts
+(`6.d/S32-str/sprintf-d.t`, `S03-buf/write-int.t`) = 9 correctness regressions**,
+down from the session-opening **25**. `pass under both` 1425, `fail under both` 0.
+Detail preserved at `tmp/real-test-regressions-2026-08-29-eod.txt`.
+
+Remaining, and what each is:
+
+| file | what it is |
+| --- | --- |
+| `S06-other/main.t` | `require`-ing a module that declares `MAIN` reports `Redeclaration of routine 'MAIN'` |
+| `S32-io/io-cathandle.t` | `todo/tickets/cathandle-handles-map-pipe-never-forces.md` |
+| `S32-list/skip.t` | routine-value self-recursion after an import scope pops |
+| `S32-num/rat.t` | test 749 closed by #7096; the file now stops later on an unrelated `is copy` binding bug (`todo/tickets/is-copy-param-not-decoupled-through-sigilless-capture-chain.md`) |
+| `S24-testing/{10-is-approx,3-output}.t` | the real module's own spec — genuine gaps, not provider artifacts |
+| `S24-testing/{2-force_todo,6-done_testing}.t` | native-provider-only; need `#?rakudo eval` fudge support or un-whitelisting, not an interpreter fix |
+| `6.d/S32-str/sprintf-d.t`, `S03-buf/write-int.t` | the timeout class — performance, not correctness |
+
+### One file on that list was NOT there in the morning
+
+`S32-temporal/DateTime.t` appeared for the first time in the closing sweep, so it
+was checked before anything else. It is the shape this file should expect more
+of as the routine/operator forms converge: **a fix surfacing an older defect
+rather than causing one.** #7096 made `&infix:<==>` share the operator's
+implementation; the routine form had previously gone through a separate static
+fold that happened to numify two `DateTime`s and answer `True`, while
+`$a == $b` had been answering `False` all along. `cmp-ok` uses only the routine
+form, so the file had never exercised the operator's wrong answer.
+
+Root cause and fix: `DateTime` does not do `Real` or `Numeric` (nor does it in
+rakudo), so what makes `==` work there is the last-resort candidate
+`multi infix:<==>(Any \a, Any \b) { a.Numeric == b.Numeric }`. mutsu's
+Instance->numeric bridge only numifies an object that does `Real`/`Numeric` or
+has a *user-written* `Numeric`; `has_user_method` cannot see a native one.
+`num_eq_values` now applies the `.Numeric` fallback itself, using it only when
+BOTH operands numify to something that is no longer an object.
+
+**Scoped to `==`/`!=` deliberately.** Widening the shared bridge instead — the
+obvious place — was implemented, measured and reverted: it also serves `-`,
+`<=>`, `cmp` and arithmetic, and numifying a `DateTime` there broke three more
+assertions in the same file under *both* providers (`DateTime - DateTime`
+stopped being a `Duration`, `DateTime <=> DateTime` stopped ordering). The pin
+asserts those two behaviours so a future widening cannot repeat it.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S32-temporal/DateTime.t` | 1 failure (#287) | **PASS** | PASS | PASS |
+
+Fix and pin: `news/2026-08/numeric-equality-falls-back-to-the-numeric-method.md`,
+`t/numeric-equality-falls-back-to-the-numeric-method.t` (10 assertions, green
+under real `raku`). Verification: `make test` green (3549 files, 35578 tests);
+an 867-file targeted native-provider roast sweep (`S02-*`, `S03-*`, `S06-*`,
+`S12-*`, `S24-*`, `S29-*`, `S32-*`, `integration`) PASS (89127 tests);
+`scripts/battery-testsuite.sh` GATE PASSED (273/297). A divergence the pin
+documents but cannot assert — an object with no `.Numeric` makes rakudo die
+where mutsu answers `False` — is filed as
+`todo/tickets/numeric-op-on-an-object-without-numeric-answers-instead-of-dying.md`.
