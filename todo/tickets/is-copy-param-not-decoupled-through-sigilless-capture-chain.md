@@ -89,6 +89,18 @@ This was NOT investigated further (no VM/compiler code read for the `is copy`
 parameter-binding path) — this ticket is a traced-but-unfixed finding, not a
 diagnosis of the exact compiler/VM site.
 
+## Resolution (2026-08-30)
+
+Fixed in `runtime/types/binding_signature.rs`. A sigilless capture stores
+`__mutsu_sigilless_alias::*` and `__mutsu_sigilless_readonly::*` metadata in
+the call environment. An `is copy` parameter begins a detached binding, so its
+binder now removes inherited metadata for its own name before binding the
+copied value. This prevents an assignment in the copy's body from following an
+outer raw alias or inheriting that alias's immutable-literal marker.
+
+Pin: `t/is-copy-sigilless-capture-chain.t`. The originally blocked
+`roast/S32-num/rat.t` completes under `MUTSU_REAL_TEST=1`.
+
 ## Affected files (starting points for whoever picks this up)
 
 - Wherever `is copy` parameter binding is compiled/executed (likely
