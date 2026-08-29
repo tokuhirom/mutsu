@@ -3,6 +3,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test::Util;
 
 BEGIN %*ENV<MUTSU_REAL_TEST> = '1';
+BEGIN %*ENV<MUTSU_PRECOMP> = '0';
 
 plan 1;
 

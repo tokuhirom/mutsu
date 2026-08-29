@@ -406,6 +406,24 @@ impl Interpreter {
             candidates.extend(more);
         }
         self.sort_candidates_by_specificity(&mut candidates);
+        let exact_candidate_consumes_optional = candidates.iter().any(|(_, def)| {
+            def.param_defs
+                .iter()
+                .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
+        });
+        // An exact-arity candidate with no optional positional parameter is
+        // already narrower than every default-arity fallback. Preserve that
+        // fast path; otherwise `multi f(Int $x)` would lose to
+        // `multi f(Int $x, Int $y = 7)` for `f(1)`. When an exact candidate
+        // does consume an optional argument, however, it must compete with
+        // longer signatures whose required parameters may describe the call
+        // more precisely (the `is-approx` tolerance overloads).
+        if !exact_candidate_consumes_optional
+            && let Some(def) =
+                self.choose_best_matching_candidate(name, arg_values, candidates.clone())
+        {
+            return Some(def);
+        }
         // Include optional/default candidates with different registered arities
         // before choosing a winner. A candidate such as `(Numeric, Numeric,
         // Numeric, $desc = '')` is applicable to a three-argument call even
