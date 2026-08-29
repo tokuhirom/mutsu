@@ -1030,8 +1030,17 @@ impl Interpreter {
         // under such a name describe the *shadowed* outer binding, and
         // preferring them makes a routine's (or a worker's) own `my @a` read as
         // the caller's. See `container_name_is_redeclared`.
+        //
+        // The probe is skipped entirely until some atomic array/hash lane entry
+        // has actually been created (`atomic_lane_entries_exist`). A lane can
+        // only be *read* after it has been *written*, and the write arms the
+        // flag, so this changes nothing for concurrent programs — but it keeps
+        // every `@`/`%` read in a program that never runs an atomic container op
+        // from building a `format!` key and walking the store chain for an entry
+        // that cannot exist. That probe was ~1 heap allocation + 1 chained hash
+        // lookup on every array/hash variable read.
         let redeclared = self.container_name_is_redeclared(name);
-        if redeclared {
+        if redeclared || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the env read below
         } else if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");

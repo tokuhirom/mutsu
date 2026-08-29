@@ -27,6 +27,19 @@ impl Interpreter {
         if let Some(func_ref) = func.as_ref()
             && let ValueView::Sub(data) = func_ref.view()
         {
+            // Nothing to iterate: the block is never invoked, so no element can
+            // be produced and nothing can be written back. Both branches below
+            // reach exactly this value for an empty input — returning here just
+            // skips the setup they would do first (block compile lookup, the
+            // env save/restore of every key the block captured, the
+            // nested-register frame). `@!resources.map(*.flat)` over an empty
+            // attribute array is the shape a `TWEAK` body uses, and paying that
+            // setup per construction was the single largest component of
+            // bench-ctor. It also stops an inner empty map from removing the
+            // enclosing map's `topic_key` mid-iteration.
+            if list_items.is_empty() {
+                return Ok((Value::array(Vec::new()), false));
+            }
             let data = data.clone();
             let requires_full_binding = data.param_defs.iter().any(|pd| {
                 pd.named
@@ -149,17 +162,24 @@ impl Interpreter {
                 .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
             let mut result = Vec::new();
 
-            // Compile once, reuse VM for every iteration (same as eval_map_over_items).
+            // Compile once, reuse VM for every iteration (and reuse a cached
+            // compile across repeated calls to this same closure literal — see
+            // `compile_loop_block_cached`, which the List sibling
+            // `eval_map_over_items`, `eval_first_over_items` and the grep loop
+            // below all already go through). Without the cache every single
+            // `@a.map(...)` call re-ran the whole compiler on the block's AST:
+            // `@!resources.map(*.flat)` inside a TWEAK cost ~19us per
+            // construction on an EMPTY array, which was the largest single
+            // component of bench-ctor.
             // Normalize a bare tail `Stmt::Call` carrying named/slip args (how an
             // imported sub call like `f(k => v)` parses) into `Stmt::Expr(Expr::Call)`
             // so its value is preserved as the block's result; otherwise it compiles
             // as a value-discarding statement and the map result wrongly falls back
             // to the topic `$_` (see `eval_map_over_items`).
-            let compiler = crate::compiler::Compiler::new();
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
             let tail_is_when = super::resolution_map_grep::tail_is_when_chain(&normalized_body);
-            let (code, compiled_fns) = compiler.compile(&normalized_body);
+            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();
