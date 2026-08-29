@@ -435,19 +435,16 @@ impl Interpreter {
                     None
                 }
             });
-        // Whether concrete multi-candidate bodies exist for this name (stored
-        // with arity/type-mangled `name/N` suffixes), regardless of whether it
-        // also has an explicit `proto sub`. A cheap key-prefix scan first, so
-        // the common non-multi resolution (most `&name` lookups) pays only
-        // this scan and not the fuller candidate walk below.
-        let has_multi_keys = def.is_none() && {
-            let prefix_local = format!("{}::{}/", self.current_package(), lookup_name);
-            let prefix_global = format!("GLOBAL::{}/", lookup_name);
-            self.registry().functions.keys().any(|k| {
-                let ks = k.resolve();
-                ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
-            })
-        };
+        // Whether concrete multi-candidate bodies exist for this name,
+        // regardless of whether it also has an explicit `proto sub`. This
+        // must use the normal lexical package search, rather than checking
+        // only the current and GLOBAL registry-key prefixes: an imported
+        // multi lives in its defining package (for example `Test::skip`) but
+        // is callable through its lexical short-name alias.  Otherwise
+        // `.&skip` resolves its CodeVar to core `skip` before reaching the
+        // imported Test multi.
+        let has_multi_keys =
+            def.is_none() && !self.resolve_all_multi_candidates(lookup_name).is_empty();
         if has_multi_keys {
             // Multi subs (with or without an explicit proto): create a Sub
             // that captures all candidate bodies BY VALUE now, so the

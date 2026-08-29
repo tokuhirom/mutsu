@@ -6,8 +6,20 @@ impl Interpreter {
     /// callwith(), which may re-dispatch with different arguments.
     pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
         let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
-        let prefixes: Vec<String> = self
-            .bare_name_packages()
+        let mut packages = self.bare_name_packages();
+        // An imported proto is registered under the importing lexical scope,
+        // while its multi candidates remain in the defining module. Include
+        // that owner so a first-class `&name` can materialize the same
+        // candidates an ordinary `name(...)` call reaches. This matters for
+        // real Test's `proto sub skip(|)`: `.&skip` must invoke Test::skip,
+        // not the core list builtin of the same name.
+        if let Some(proto) = self.resolve_proto_function(name) {
+            let owner = proto.package.resolve();
+            if !packages.iter().any(|pkg| pkg == &owner) {
+                packages.insert(0, owner);
+            }
+        }
+        let prefixes: Vec<String> = packages
             .iter()
             .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
