@@ -659,6 +659,29 @@ impl Interpreter {
             target
         };
 
+        // A CodeVar referring to an imported proto/multi is materialized as a
+        // dispatcher Sub whose candidates are captured by value. Its dispatch
+        // needs the same scope-aware proto resolution as callwith/nextsame;
+        // otherwise a same-named core builtin (notably `skip`) wins an
+        // indirect call such as `.&skip`.
+        if let ValueView::Sub(data) = target.view()
+            && data.env.contains_key("__mutsu_multi_dispatch_candidates")
+        {
+            if let Some(ValueView::Str(name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                && self.has_proto_cached(&name)
+                && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
+            {
+                let empty_fns = CompiledFns::default();
+                return self.compile_and_call_function_def(
+                    &def,
+                    args,
+                    compiled_fns.unwrap_or(&empty_fns),
+                );
+            }
+            return self.call_sub_value(target, args, false);
+        }
+
         // NativeCall: a sub declared `is native(...)` carries a `{ * }` stub
         // body, so it must be dispatched over C FFI no matter how the callsite
         // reached it — including through a code object (`my &f = &dlsym; f(...)`).

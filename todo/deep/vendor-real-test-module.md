@@ -5417,3 +5417,32 @@ because the native Test provider's older `throws-like` path can accept the
 generic error whereas the vendored Test module checks the actual exception
 type. All 28 assertions pass under raku, the native provider, and
 `MUTSU_REAL_TEST=1`.
+
+## 2026-08-30: first-class imported proto/multis keep their defining candidates (`S24-testing/fails-like.t`)
+
+The freshly re-run release sweep found one correctness regression beyond the
+known timeout and native-only rows: `S24-testing/fails-like.t` stopped in the
+first `fails-like` error-path subtest. Upstream `Test.rakumod` uses `. &skip`
+there to turn the second assertion into a skipped TAP line. Mutsu resolved the
+code variable `&skip` to the core list builtin, rather than the lexically
+imported `Test` proto/multi; calling it with no list raised `Too few
+positionals passed to 'skip'`.
+
+An imported proto is registered in the importer's scope but its multi
+candidates remain under the defining module. `resolve_all_multi_candidates`
+now includes that proto owner, so `&skip` captures the actual `Test` candidates.
+The VM recognizes that captured dispatcher and uses its native trivial-proto
+dispatch, which retains the multi-dispatch frame required by `nextsame` while
+avoiding a same-named builtin fallback.
+
+Pin: `t/dynamic-code-var-imported-test-multi.t`, which exercises
+`'indirect Test skip'.&skip` under both providers and real raku. The target
+roast file passes with `MUTSU_REAL_TEST=1`; the existing
+`t/nextsame-in-the-only-candidate.t` and `t/vendored-real-test-module.t` pins
+remain green.
+
+The 2026-08-30 release sweep reported 1427 files passing under both providers,
+8 initial regressions, and 1 pre-existing failure. This fix removes the sole
+correctness regression: the remaining 7 are the five known performance
+timeouts (`sprintf-{b,d,x}.t`, `read-write-bits.t`, `write-int.t`) and the two
+native-provider-only fudge cases (`2-force_todo.t`, `6-done_testing.t`).
