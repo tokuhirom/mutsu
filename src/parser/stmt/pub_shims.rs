@@ -100,6 +100,16 @@ pub(crate) fn lazy_for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::lazy_for_body(input)
 }
 
+/// Public accessor for `hyper for` in expression position. Input starts at `for`.
+pub(crate) fn hyper_for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::hyper_for_body(input)
+}
+
+/// Public accessor for `race for` in expression position. Input starts at `for`.
+pub(crate) fn race_for_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::race_for_body(input)
+}
+
 /// Public accessor for `if` statement parser (used by primary.rs for `if` expressions).
 pub(crate) fn if_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::if_stmt(input)

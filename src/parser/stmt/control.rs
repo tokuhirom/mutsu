@@ -265,7 +265,8 @@ mod with_stmt;
 // Re-exports preserving each function's original visibility (all `pub(super)`).
 pub(super) use conditionals::{if_stmt, unless_stmt};
 pub(super) use for_loops::{
-    for_stmt, foreach_stmt, hyper_for_stmt, lazy_for_body, placeholder_loop_params, race_for_stmt,
+    for_stmt, foreach_stmt, hyper_for_body, hyper_for_stmt, lazy_for_body, placeholder_loop_params,
+    race_for_body, race_for_stmt,
 };
 pub(super) use for_params::parse_for_params;
 pub(super) use given_when::{default_stmt, given_stmt, when_stmt};
