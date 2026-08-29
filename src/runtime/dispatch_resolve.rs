@@ -406,16 +406,35 @@ impl Interpreter {
             candidates.extend(more);
         }
         self.sort_candidates_by_specificity(&mut candidates);
-        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
+        let exact_candidate_consumes_optional = candidates.iter().any(|(_, def)| {
+            def.param_defs
+                .iter()
+                .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
+        });
+        // An exact-arity candidate with no optional positional parameter is
+        // already narrower than every default-arity fallback. Preserve that
+        // fast path; otherwise `multi f(Int $x)` would lose to
+        // `multi f(Int $x, Int $y = 7)` for `f(1)`. When an exact candidate
+        // does consume an optional argument, however, it must compete with
+        // longer signatures whose required parameters may describe the call
+        // more precisely (the `is-approx` tolerance overloads).
+        if !exact_candidate_consumes_optional
+            && let Some(def) =
+                self.choose_best_matching_candidate(name, arg_values, candidates.clone())
+        {
             return Some(def);
         }
-        // Try optional/default candidates with different arities.
-        // These can match calls with fewer positional arguments.
+        // Include optional/default candidates with different registered arities
+        // before choosing a winner. A candidate such as `(Numeric, Numeric,
+        // Numeric, $desc = '')` is applicable to a three-argument call even
+        // though its registration arity is four, and must compete with the
+        // exact-arity `(Numeric, Numeric, $desc = '')` candidate rather than
+        // being considered only after that wider candidate has already won.
         let optional_prefixes: Vec<String> = search_pkgs
             .iter()
             .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
-        let mut optional_candidates: Vec<(String, Arc<FunctionDef>)> = self
+        let optional_candidates: Vec<(String, Arc<FunctionDef>)> = self
             .registry()
             .functions
             .iter()
@@ -434,19 +453,9 @@ impl Interpreter {
         if !optional_candidates.is_empty() {
             found_multi_candidates = true;
         }
-        optional_candidates.sort_by(|a, b| {
-            let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
-            let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
-            let a_has_subsig = a.1.param_defs.iter().any(|p| p.sub_signature.is_some());
-            let b_has_subsig = b.1.param_defs.iter().any(|p| p.sub_signature.is_some());
-            b_has_where
-                .cmp(&a_has_where)
-                .then(b_has_subsig.cmp(&a_has_subsig))
-                .then(a.0.cmp(&b.0))
-        });
-        if let Some(def) =
-            self.choose_best_matching_candidate(name, arg_values, optional_candidates)
-        {
+        candidates.extend(optional_candidates);
+        self.sort_candidates_by_specificity(&mut candidates);
+        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
             return Some(def);
         }
         // Try slurpy candidates with different arities (slurpy params accept
