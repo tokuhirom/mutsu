@@ -290,6 +290,7 @@ impl Compiler {
         body: &[Stmt],
         label: &Option<String>,
         is_statement_modifier: bool,
+        mode: crate::ast::ForMode,
     ) {
         // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
         // a dummy single-iteration `for Nil` with a label. Preserve block semantics
@@ -420,7 +421,7 @@ impl Compiler {
                 label: label.clone(),
                 arity,
                 collect: true,
-                threaded: false,
+                threaded: matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper),
                 is_rw: has_rw || has_copy,
                 do_writeback: has_rw && !has_copy,
                 rw_param_names,

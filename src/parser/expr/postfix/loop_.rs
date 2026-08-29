@@ -452,10 +452,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // hyper prefix: eager materialization variant (same surface semantics as `.hyper`)
+    // hyper prefix: `hyper for` is the statement-prefix form (ForMode::Hyper),
+    // matching `lazy for`. `hyper LIST` is eager materialization (`.hyper`).
     if input.starts_with("hyper") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];
         let (r, _) = ws(r)?;
+        if let Ok((r2, stmt)) = crate::parser::stmt::hyper_for_stmt_pub(r) {
+            return Ok((r2, Expr::DoStmt(Box::new(stmt))));
+        }
         let (r, expr) = parse_prefix_listop_operand(r)?;
         return Ok((
             r,
@@ -468,14 +472,14 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // race prefix: the unordered sibling of `hyper` (same surface semantics as
-    // `.race`). In *expression* position the statement-prefix form is not
-    // reachable, so `my $r = race for ^10 { ... }` used to parse `race` as a
-    // bare listop term and leave the `for` behind as a separate, sunk
-    // statement. Mirrors the `hyper` arm directly above.
+    // race prefix: `race for` is the statement-prefix form (ForMode::Race).
+    // `race LIST` wraps the operand in `.race`, same as `hyper LIST`.
     if input.starts_with("race") && !is_ident_char(input.as_bytes().get(4).copied()) {
         let r = &input[4..];
         let (r, _) = ws(r)?;
+        if let Ok((r2, stmt)) = crate::parser::stmt::race_for_stmt_pub(r) {
+            return Ok((r2, Expr::DoStmt(Box::new(stmt))));
+        }
         let (r, expr) = parse_prefix_listop_operand(r)?;
         return Ok((
             r,

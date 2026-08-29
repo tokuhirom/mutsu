@@ -108,14 +108,24 @@ pub(crate) fn for_stmt(input: &str) -> PResult<'_, Stmt> {
 pub(crate) fn race_for_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("race", input).ok_or_else(|| PError::expected("race for statement"))?;
     let (rest, _) = ws1(rest)?;
-    for_stmt_with_mode(rest, crate::ast::ForMode::Race)
+    race_for_body(rest)
 }
 
 /// Parse `hyper for ...` statement prefix.
 pub(crate) fn hyper_for_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("hyper", input).ok_or_else(|| PError::expected("hyper for statement"))?;
     let (rest, _) = ws1(rest)?;
-    for_stmt_with_mode(rest, crate::ast::ForMode::Hyper)
+    hyper_for_body(rest)
+}
+
+/// Parse `for ...` with Hyper mode (input starts at `for`, not `hyper`).
+pub(crate) fn hyper_for_body(input: &str) -> PResult<'_, Stmt> {
+    for_stmt_with_mode(input, crate::ast::ForMode::Hyper)
+}
+
+/// Parse `for ...` with Race mode (input starts at `for`, not `race`).
+pub(crate) fn race_for_body(input: &str) -> PResult<'_, Stmt> {
+    for_stmt_with_mode(input, crate::ast::ForMode::Race)
 }
 
 /// Parse `for ...` with Lazy mode (input starts at `for`, not `lazy`).

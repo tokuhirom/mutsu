@@ -304,25 +304,32 @@ impl Interpreter {
         let loop_end = spec.body_end as usize;
 
         if spec.threaded {
-            // race for / hyper for: run the loop body in a spawned thread
-            // so that $*THREAD.id returns a different value.
-            let result = std::thread::scope(|s| {
-                s.spawn(|| {
-                    self.exec_for_loop_body(
-                        code,
-                        spec,
-                        &items,
-                        body_start,
-                        loop_end,
-                        compiled_fns,
-                        0,
-                    )
+            // race for / hyper for: batch iterations across workers (order
+            // preserved so `hyper` stays ordered). A writeback loop stays on
+            // the historical one-thread path so concurrent element stores
+            // cannot race.
+            let result = if spec.do_writeback {
+                std::thread::scope(|s| {
+                    s.spawn(|| {
+                        self.exec_for_loop_body(
+                            code,
+                            spec,
+                            &items,
+                            body_start,
+                            loop_end,
+                            compiled_fns,
+                            0,
+                        )
+                    })
+                    .join()
+                    .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
                 })
-                .join()
-                .unwrap_or_else(|_| Err(RuntimeError::new("thread panicked in race/hyper for")))
-            });
+                .map(|_| ())
+            } else {
+                self.exec_threaded_for_loop(code, spec, &items, body_start, loop_end, compiled_fns)
+            };
             *ip = loop_end;
-            return result.map(|_| ());
+            return result;
         }
 
         // Live-array iteration (RT113026): `for @a -> $n { @a.push: ... }` must
