@@ -63,8 +63,14 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
     let v6e = v6e_active();
     while pos < len {
         if bytes[pos] != b'%' {
-            out.push(bytes[pos] as char);
-            pos += 1;
+            // Literal text is UTF-8. Copy through to the next ASCII `%` (which
+            // cannot sit inside a multi-byte sequence) so glyphs such as √/≈/π
+            // survive, rather than each byte becoming a Latin-1 codepoint.
+            let start = pos;
+            while pos < len && bytes[pos] != b'%' {
+                pos += 1;
+            }
+            out.push_str(&fmt[start..pos]);
             continue;
         }
         pos += 1; // skip '%'
@@ -139,8 +145,10 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             }
         }
         let spec = if pos < len {
-            let s = bytes[pos] as char;
-            pos += 1;
+            // Directives are ASCII; consume a full scalar so a stray non-ASCII
+            // after `%` cannot leave `pos` in the middle of a UTF-8 sequence.
+            let s = fmt[pos..].chars().next().unwrap();
+            pos += s.len_utf8();
             s
         } else {
             's'
