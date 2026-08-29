@@ -5,7 +5,7 @@ use Test;
 # concurrently, CR-LF is one line ending and normalizes to "\n", and a lazy
 # `for $cat.lines` interleaves with the body so the cat stays mid-stream.
 
-plan 13;
+plan 15;
 
 my $seq = 0;
 sub tmpfile($content) {
@@ -44,7 +44,10 @@ sub tmpfile($content) {
     my $handles = $cat.handles;
     is $handles.^name, 'Seq', 'handles reports Seq';
     nok $handles.is-lazy, 'handles is not lazy externally';
-    is-deeply $handles.map({ eager .lines: 2 }),
+    my $mapped = $handles.map({ eager .lines: 2 });
+    isnt $mapped.raku, '(...)', 'map over finite handles forces for raku';
+    is $mapped.cache.^name, 'List', 'cache materializes a finite handles map';
+    is-deeply $mapped,
         (<a1 a2>, <b1 b2>, <c1 c2>).Seq, 'lazy .handles: reads 2 lines per handle';
 }
 
