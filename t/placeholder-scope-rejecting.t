@@ -1,6 +1,6 @@
 use Test;
 
-plan 27;
+plan 28;
 
 # ADR-0048 Phase 2: constructs whose body may NOT take a signature.
 # `raku` gives the exact same `X::Placeholder::Block` for all of these
@@ -62,6 +62,16 @@ throws-like 'CHECK { $^c }', X::Placeholder::Block,
 
 throws-like 'INIT { $^c }', X::Placeholder::Block,
     'INIT {} rejects a placeholder';
+
+# Keep a direct EVAL pin in addition to `throws-like`: mutsu's native Test
+# provider accepts the older generic error, while the vendored Test module
+# checks the exception type.  INIT reordering must therefore preserve enough
+# phaser context for EVAL to create X::Placeholder::Block itself.
+{
+    try EVAL q[INIT { $^c }];
+    is $!.^name, 'X::Placeholder::Block',
+        'EVAL preserves INIT phaser context for the placeholder error';
+}
 
 # PRE {}/POST {} at the true mainline used to be a silent no-op (see
 # `news/2026-08/pre-post-phasers-enforced-at-mainline.md`); now that they are

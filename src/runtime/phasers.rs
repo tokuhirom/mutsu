@@ -946,8 +946,19 @@ fn reorder_at_level(
     // TODO: For multiple CHECK PhaserExprs, pairs should be reversed.
     // For now, just extend in forward order (correct for single CHECK).
     stmts.extend(extra_check);
+    // Keep statement-level INIT bodies wrapped as phasers.  Compiling an INIT
+    // node runs its body inline just as the old raw-body expansion did, but
+    // retaining the node preserves compile-time checks that are specific to a
+    // phaser body (notably that it cannot take placeholder parameters).
+    // Expanding the body here made `INIT { $^x }` look like an ordinary
+    // mainline `$^x` to the compiler after reordering, bypassing
+    // `emit_block_placeholder_die`.
     for body in &init {
-        stmts.extend(body.iter().cloned());
+        stmts.push(Stmt::Phaser {
+            kind: PhaserKind::Init,
+            body: body.clone(),
+            condition: None,
+        });
     }
     stmts.extend(extra_init);
     stmts.extend(rest);
