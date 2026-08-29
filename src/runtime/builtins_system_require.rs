@@ -1,6 +1,14 @@
 use super::*;
 use crate::value::ValueView;
 
+/// What [`Interpreter::hide_toplevel_global_routines`] set aside, to be
+/// handed back to [`Interpreter::restore_toplevel_global_routines`] once the
+/// loaded compunit's own body has finished running.
+pub(crate) struct HiddenToplevelRoutines {
+    functions: Vec<(Symbol, std::sync::Arc<FunctionDef>)>,
+    amp_env: Vec<(String, Value)>,
+}
+
 impl Interpreter {
     fn missing_symbol_name_from_failure(value: &Value) -> Option<String> {
         let ValueView::Instance {
@@ -162,23 +170,31 @@ impl Interpreter {
             }
             _ => self.set_current_package("GLOBAL".to_string()),
         }
+        // See `hide_toplevel_global_routines`: a package-less top-level routine
+        // in the required file (e.g. its own `sub MAIN`) must not collide with
+        // -- or silently overwrite -- a same-named one the requiring scope
+        // already declared.
+        let hidden_toplevel = self.hide_toplevel_global_routines();
         let run_result = self.run_block(&stmts);
         self.set_current_package(saved_package);
-        run_result?;
-
-        // A `sub MAIN` defined in a required module is NOT the program's MAIN
-        // and must not be auto-dispatched at program end -- unless the module
-        // *exported* MAIN (`proto MAIN(|) is export`, as zef does), in which case
-        // it becomes the importer's MAIN. Remove only non-exported leaked MAINs.
-        self.promote_exported_main_to_global();
-        let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
-        Self::remove_leaked_main_routines(
-            &mut self.registry_mut().functions,
-            &before_function_keys,
-            main_exported,
-        );
+        if run_result.is_ok() {
+            // A `sub MAIN` defined in a required module is NOT the program's MAIN
+            // and must not be auto-dispatched at program end -- unless the module
+            // *exported* MAIN (`proto MAIN(|) is export`, as zef does), in which
+            // case it becomes the importer's MAIN. Remove only non-exported
+            // leaked MAINs.
+            self.promote_exported_main_to_global();
+            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
+            Self::remove_leaked_main_routines(
+                &mut self.registry_mut().functions,
+                &before_function_keys,
+                main_exported,
+            );
+        }
+        self.restore_toplevel_global_routines(hidden_toplevel);
         // Invalidate name-keyed resolution caches.
         self.fn_resolve_gen += 1;
+        run_result?;
 
         if let Some(pkg) = package_hint
             && !pkg.is_empty()
@@ -296,6 +312,146 @@ impl Interpreter {
         }
     }
 
+    /// True when `key` is a bare, package-less **single** (non-multi)
+    /// top-level routine's registry key: `GLOBAL::<name>`, with no further
+    /// `::` and no multi-candidate `/<sig>` suffix in `<name>`.
+    ///
+    /// Deliberately excludes two shapes: a `package Foo { ... }`-scoped
+    /// routine (`GLOBAL::Foo::bar`, or one declared directly under a named
+    /// package) is a real, shared global stash entry, not the package-less
+    /// declaration this machinery targets. And a **multi** candidate slot
+    /// (`GLOBAL::<name>/<sig>`) is deliberately additive across compunits --
+    /// unlike a plain `sub`, several independent modules contributing a
+    /// candidate to the same package-less multi (e.g. a custom
+    /// `multi trait_mod:<is>(...) is export` from one module alongside
+    /// another module's own candidates of the same name) is the intended,
+    /// legitimate pattern, not a collision to guard against. Hiding a
+    /// multi's existing candidates before a module's own body registers a
+    /// new one -- then blindly restoring the old ones by key afterward --
+    /// would silently overwrite the new candidate whenever it lands on the
+    /// same derived slot key as an old one (`roast/integration/advent2011-day14.t`'s
+    /// `Advent::MetaBoundaryAspect` fixture, whose own `multi trait_mod:<is>`
+    /// candidate was getting clobbered by Test.rakumod's own candidates this
+    /// way). So multi routines are left alone entirely: only a genuinely
+    /// `!multi` package-less top-level `sub` is ever hidden/restored/reaped.
+    ///
+    /// Also excludes `EXPORT`: a `sub EXPORT {...}` always registers as
+    /// `GLOBAL::EXPORT` regardless of the module's own package (see
+    /// `Interpreter::apply_module_export`), but it is a transient, per-load
+    /// magic name that `apply_module_export` calls and then immediately
+    /// deletes via `remove_export_routine`, entirely *after* this module's
+    /// own `run_block` (and this hide/restore) has already finished. Hiding
+    /// it like an ordinary top-level sub, for a nested `use` reached from
+    /// inside another module's own `EXPORT` call, restored an *outer*
+    /// module's stale `GLOBAL::EXPORT` over the inner module's fresh one
+    /// before `apply_module_export` got to read it, silently breaking every
+    /// `is export`/`sub EXPORT` symbol in that shape (`t/sub-export.t`).
+    fn is_toplevel_global_routine_key(key: &str) -> bool {
+        key.strip_prefix("GLOBAL::")
+            .is_some_and(|tail| !tail.contains("::") && !tail.contains('/') && tail != "EXPORT")
+    }
+
+    /// Temporarily remove every already-registered package-less top-level
+    /// routine (and its bare `&name` env binding, if any) before a
+    /// `require`d/`use`d compunit's own body runs. Pair with
+    /// [`Self::restore_toplevel_global_routines`] once that body finishes.
+    ///
+    /// Raku scopes a package-less top-level `sub name {...}` lexically to its
+    /// own compilation unit -- it is NOT installed as a shared `GLOBAL::name`
+    /// stash entry the way an `our sub`/package-scoped routine is, even
+    /// though mutsu currently registers it that way (both here and in the
+    /// calling script). Two independent compunits that happen to declare a
+    /// same-named top-level routine -- a script and a module it requires both
+    /// declaring `sub MAIN`, or two sibling modules each with a private `sub
+    /// helper` -- must not collide with each other, and the loaded compunit's
+    /// own routines must not silently overwrite the calling scope's. Hiding
+    /// the calling scope's entries while the loaded compunit's own body runs
+    /// (so its own registrations land on a clean slate, without erroring) and
+    /// restoring them afterward achieves both at once.
+    pub(crate) fn hide_toplevel_global_routines(&mut self) -> HiddenToplevelRoutines {
+        let keys: Vec<Symbol> = self
+            .registry()
+            .functions
+            .keys()
+            .filter(|k| Self::is_toplevel_global_routine_key(&k.resolve()))
+            .copied()
+            .collect();
+        let mut functions = Vec::with_capacity(keys.len());
+        for k in keys {
+            if let Some(v) = self.registry_mut().functions.remove(&k) {
+                functions.push((k, v));
+            }
+        }
+        let amp_keys: Vec<String> = self
+            .env
+            .keys()
+            .map(|k| k.resolve())
+            .filter(|k| {
+                k.strip_prefix('&').is_some_and(|name| {
+                    !name.is_empty()
+                        && Self::is_toplevel_global_routine_key(&format!("GLOBAL::{name}"))
+                })
+            })
+            .collect();
+        let mut amp_env = Vec::with_capacity(amp_keys.len());
+        for k in amp_keys {
+            if let Some(v) = self.env.remove(&k) {
+                amp_env.push((k, v));
+            }
+        }
+        if !functions.is_empty() || !amp_env.is_empty() {
+            self.fn_resolve_gen += 1;
+        }
+        HiddenToplevelRoutines { functions, amp_env }
+    }
+
+    /// Restore what [`Self::hide_toplevel_global_routines`] hid, undoing any
+    /// same-keyed registration the loaded compunit's own body made -- its own
+    /// top-level routines are private to it. An `is export`ed one reaches the
+    /// caller through the separate `register_exported_sub`/
+    /// `apply_module_export` path (and, for the `MAIN`-dispatch case,
+    /// `promote_exported_main_to_global`), independent of this restore.
+    pub(crate) fn restore_toplevel_global_routines(&mut self, hidden: HiddenToplevelRoutines) {
+        let HiddenToplevelRoutines { functions, amp_env } = hidden;
+        if !functions.is_empty() {
+            for (k, v) in functions {
+                self.registry_mut().functions.insert(k, v);
+            }
+            self.fn_resolve_gen += 1;
+        }
+        for (k, v) in amp_env {
+            self.env.insert(k, v);
+        }
+    }
+
+    /// Remove top-level `MAIN` routines that were registered while loading a
+    /// module (via `require`/`use`). A `sub MAIN` declared in a loaded module
+    /// is not the program's MAIN and must not be auto-dispatched at program
+    /// end. `before_keys` is the set of function-registry keys that existed
+    /// before the module body ran; only newly-added MAIN keys are removed.
+    ///
+    /// Deliberately scoped to `MAIN` only, not every package-less top-level
+    /// routine a module declares. An earlier version of this fix generalized
+    /// it to sweep any newly-registered, non-`is export`ed top-level name,
+    /// matching how raku scopes a package-less `sub name {...}` lexically to
+    /// its own compilation unit -- but that generalization kept colliding
+    /// with other ambient/ephemeral top-level mechanisms this codebase
+    /// already relies on: a module's own private helper subs its `sub
+    /// EXPORT` body reads before installing its exports
+    /// (`t/sub-export.t`), and NativeCall's prelude helpers
+    /// (`nativesizeof`/`nativecast`/...), which are deliberately spliced as
+    /// package-less `GLOBAL::` routines into every compunit that uses
+    /// NativeCall and are never `is export`ed themselves
+    /// (`PRELUDE_SUB_TRAIT` in `runtime/mod.rs`). Each fix widened the
+    /// exemption list; rather than keep discovering new ambient mechanisms
+    /// case-by-case, the general "reap a module's non-exported package-less
+    /// top-level routines after it loads" cleanup is left as a follow-up
+    /// (`todo/deep/module-toplevel-private-sub-leak-cleanup.md`) and only the
+    /// MAIN-specific removal -- proven safe for years -- is kept here.
+    /// [`Self::hide_toplevel_global_routines`] /
+    /// [`Self::restore_toplevel_global_routines`] still fix the acute bug
+    /// (the false `X::Redeclaration` and the caller-binding clobber) for
+    /// every package-less top-level single routine, not just MAIN.
     pub(crate) fn remove_leaked_main_routines(
         functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
         before_keys: &std::collections::HashSet<Symbol>,

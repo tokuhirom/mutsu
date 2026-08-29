@@ -5320,3 +5320,66 @@ under real `raku`). Verification: `make test` green; a targeted
 native-provider roast sweep over `S32-list`, `S11-modules`, `S10-packages`,
 `S02-names`, `S06-*`, `S04-phasers`, `integration` green;
 `scripts/battery-testsuite.sh` gate passed.
+
+## 2026-08-29/30: `S06-other/main.t` closed -- a `require`d module's top-level MAIN collided with the caller's
+
+`require`-ing (or `use`-ing) a module whose own top-level `sub MAIN` collided
+with the requiring script's own top-level `sub MAIN` raised a spurious
+`X::Redeclaration`, which is test 2 of this file
+(`lives-ok { require HasMain }, 'MAIN in a module did not get executed'`).
+Reducing the case showed the bug is not MAIN-specific at all: an ordinary
+top-level `sub helper` collides identically, because mutsu always registers a
+package-less top-level routine under the literal `GLOBAL::<name>`
+function-registry key -- the same key the requiring script's own top-level
+declarations use, and raku instead scopes lexically to each compilation unit.
+
+Fix: `Interpreter::hide_toplevel_global_routines` /
+`restore_toplevel_global_routines` (`src/runtime/builtins_system_require.rs`)
+temporarily hide the loading scope's own package-less top-level **single**
+(non-`multi`) routines while a `require`d/`use`d compunit's own body runs, and
+restore them afterward -- no collision, and no risk of clobbering what was
+hidden. Two iterations of this fix regressed other whitelisted files before
+landing (both caught by `make test`, not by this sweep):
+
+- Hiding/leak-sweeping **multi** candidates too broke
+  `roast/integration/advent2011-day14.t`: multis are additive across
+  compunits by design (`Advent::MetaBoundaryAspect`'s own
+  `multi trait_mod:<is>(...) is export` candidate alongside `Test.rakumod`'s
+  own), so multis are now left alone entirely by this mechanism.
+- A generalized "reap a module's own non-exported top-level routines after
+  loading" cleanup (an attempted bonus fix for the sibling leak direction)
+  broke `t/sub-export.t` and NativeCall-using tests by deleting a module's own
+  `sub EXPORT` and its helper subs before `apply_module_export` could read
+  them, and NativeCall's prelude helpers (`nativesizeof`/`nativecast`/...)
+  once an unrelated later module finished loading. That generalization was
+  reverted; the leak-cleanup this PR ships stays scoped to `MAIN` only,
+  matching the pre-existing, long-safe `remove_leaked_main_routines`
+  behavior. The general non-`MAIN` leak (a module's own non-exported
+  top-level `sub` can still become reachable bare from the loading scope) is
+  a known, still-open gap filed as
+  `todo/deep/module-toplevel-private-sub-leak-cleanup.md`.
+
+| file | real Test before | after | native before | after |
+| --- | --- | --- | --- | --- |
+| `S06-other/main.t` | 1 failure (test 2, `X::Redeclaration`) | **PASS** (23/23) | PASS | PASS |
+| `integration/advent2011-day14.t` | PASS | PASS (8/8, regressed then re-fixed mid-PR) | PASS | PASS |
+
+Fix and pin: `news/2026-08/require-toplevel-routine-scoped-to-compunit.md`,
+`t/require-toplevel-routine-scoped-to-compunit.t` (4 assertions) and
+`t/require-toplevel-multi-candidate-not-leaked.t` (2 assertions), both green
+under real `raku`. Verification: `make test` green (3551 files, 35583 tests);
+a 254-file targeted native-provider roast sweep (`S06-*`, `S11-modules`,
+`S10-packages`, `S02-names`, `S32-exceptions`, `integration`) on a release
+build PASS (5150 tests); `scripts/battery-testsuite.sh` GATE PASSED
+(273/297); a full `scripts/roast-test-module-sweep.sh` re-run (1436
+whitelisted files, both providers, release): `pass under both` 1425,
+`regressed under the real Test` 11 -- all 11 are the pre-existing, already
+documented residue (4 `exit 124` timeout artifacts under `-j6` load in the
+sprintf/buf family, plus `S24-testing/{10-is-approx,2-force_todo,3-output,
+6-done_testing}.t`, `S32-io/io-cathandle.t`, `S32-list/skip.t`,
+`S32-num/rat.t`), `fail under both` 0. Closes this file's row in the
+"Remaining, and what each is" table above. `S32-list/skip.t` was in that
+residue list at measurement time; a sibling PR closed it independently in the
+same window (see the "routine-value self-recursion" entry immediately above)
+-- re-verify before trusting this file's residue count going forward, per
+this ticket's own standing rule.
