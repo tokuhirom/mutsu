@@ -248,6 +248,42 @@ impl fmt::Display for Symbol {
     }
 }
 
+/// Fixed names the runtime interns over and over on hot paths.
+///
+/// `Symbol::intern` is already memoized per thread, but the memo is a
+/// `FxHashMap<String, Symbol>` — a repeat intern still hashes the whole string
+/// and compares it. For a literal that is re-interned on *every* closure
+/// creation or method dispatch, that is pure waste: symbol ids are process-global
+/// and append-only, so the id can be computed once and copied thereafter.
+///
+/// Add a name here only when a profile shows the intern on a per-operation hot
+/// path; a `LazyLock` read is cheap but not free.
+pub(crate) mod well_known {
+    use super::Symbol;
+    use std::sync::LazyLock;
+
+    /// The empty name every anonymous closure value carries.
+    #[inline]
+    pub(crate) fn anon() -> Symbol {
+        static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern(""));
+        *SYM
+    }
+
+    /// Closure-identity metadata: the `WhateverCode` marker.
+    #[inline]
+    pub(crate) fn callable_type() -> Symbol {
+        static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_callable_type"));
+        *SYM
+    }
+
+    /// The declared return type a routine's env carries for its own body.
+    #[inline]
+    pub(crate) fn return_type() -> Symbol {
+        static SYM: LazyLock<Symbol> = LazyLock::new(|| Symbol::intern("__mutsu_return_type"));
+        *SYM
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

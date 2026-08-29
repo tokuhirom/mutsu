@@ -4295,6 +4295,13 @@ pub(crate) struct CompiledCode {
     /// once per chunk keeps the twigil string parse *and* `Symbol::intern` off
     /// the per-access `$!x` / `$.x` read-write path (ADR-0006 §2.4).
     pub(crate) local_attr_keys: std::sync::OnceLock<LocalAttrKeys>,
+    /// Lazily-built `Symbol` sets over [`free_var_syms`](Self::free_var_syms)
+    /// and [`locals_sym`](Self::locals_sym), for `capture_closure_env`'s
+    /// membership tests. Both are pure functions of the chunk, but the capture
+    /// used to rebuild them (two `HashSet` allocations plus their fills) on
+    /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
+    pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     pub(crate) jit: JitCodeState,
 }
@@ -4630,6 +4637,8 @@ impl CompiledCode {
             env_only_decls: Vec::new(),
             const_syms: std::sync::OnceLock::new(),
             local_attr_keys: std::sync::OnceLock::new(),
+            free_var_sym_set: std::sync::OnceLock::new(),
+            local_sym_set: std::sync::OnceLock::new(),
             jit: JitCodeState::default(),
         }
     }
@@ -4649,6 +4658,33 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().flatten()
+    }
+
+    /// This chunk's free variables as a `Symbol` set, built once. The closure
+    /// capture (`capture_closure_env`) tests membership per env key, and used to
+    /// `collect()` this set afresh on every closure creation.
+    pub(crate) fn capture_free_var_set(&self) -> &rustc_hash::FxHashSet<Symbol> {
+        self.free_var_sym_set
+            .get_or_init(|| self.free_var_syms.iter().copied().collect())
+    }
+
+    /// This chunk's own local/parameter names as a `Symbol` set, built once.
+    /// The capture drops a same-named enclosing binding for each of these (a
+    /// WhateverCode's `_` param must not inherit the creating frame's topic), and
+    /// used to `collect()` a `HashSet<&str>` over `locals` per closure creation.
+    /// `locals_sym` is the interned twin of `locals`, so `Symbol` membership is
+    /// exactly string membership — without hashing the string.
+    pub(crate) fn capture_local_set(&self) -> &rustc_hash::FxHashSet<Symbol> {
+        self.local_sym_set.get_or_init(|| {
+            // A hand-built chunk that never ran `compute_locals_sym` has an
+            // empty `locals_sym` (see `local_sym`), so intern from `locals` in
+            // that case rather than silently returning an empty set.
+            if self.locals_sym.len() == self.locals.len() {
+                self.locals_sym.iter().copied().collect()
+            } else {
+                self.locals.iter().map(|s| Symbol::intern(s)).collect()
+            }
+        })
     }
 
     /// The `Symbol` for the string constant at `idx`, interned once per slot
