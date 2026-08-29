@@ -818,6 +818,11 @@ impl Interpreter {
             // mainline runs in this interpreter, so restore the caller's mode
             // after it finishes instead of letting `use strict` leak outward.
             let saved_strict_mode = self.strict_mode;
+            // See `hide_toplevel_global_routines`: a package-less top-level
+            // routine in the module (e.g. its own `sub MAIN`) must not collide
+            // with -- or silently overwrite -- a same-named one the loading
+            // scope already declared.
+            let hidden_toplevel = self.hide_toplevel_global_routines();
             let result = self.run_block(&stmts);
             self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
@@ -871,19 +876,27 @@ impl Interpreter {
                 self.unit_module_loading_stack.pop();
             }
             self.set_current_package(saved_package);
-            result?;
-            // A `sub MAIN` defined in a used module is NOT the program's MAIN
-            // and must not be auto-dispatched at program end -- unless the module
-            // *exported* MAIN (`proto MAIN(|) is export`, as zef's CLI does).
-            self.promote_exported_main_to_global();
-            let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
-            Self::remove_leaked_main_routines(
-                &mut self.registry_mut().functions,
-                &before_function_keys,
-                main_exported,
-            );
+            if result.is_ok() {
+                // A `sub MAIN` defined in a used module is NOT the program's MAIN
+                // and must not be auto-dispatched at program end -- unless the
+                // module *exported* MAIN (`proto MAIN(|) is export`, as zef's CLI
+                // does). Remove only non-exported leaked MAINs.
+                self.promote_exported_main_to_global();
+                let main_exported = self.exported_subs.values().any(|m| m.contains_key("MAIN"));
+                Self::remove_leaked_main_routines(
+                    &mut self.registry_mut().functions,
+                    &before_function_keys,
+                    main_exported,
+                );
+            }
+            // See `hide_toplevel_global_routines`: restore the loading scope's
+            // own top-level routines regardless of whether the module's body
+            // ran to completion -- a partial/aborted load must not leave them
+            // hidden.
+            self.restore_toplevel_global_routines(hidden_toplevel);
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
+            result?;
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope.
             self.apply_module_export(export_args.unwrap_or_default())?;
