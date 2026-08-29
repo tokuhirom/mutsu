@@ -42,10 +42,13 @@ rm -f "$ROOT/temp-file-RT-126006-test"
 run_one() {
     local f="$1" name
     name="$(echo "$f" | tr '/' '_')"
-    ( cd "$ROOT" && MUTSU_REAL_TEST= ./scripts/run-roast-test.sh "$f" \
+    # The sweep measures Test-provider semantics.  Disable the optional module
+    # precomp cache so an unwritable cache directory in a child `is_run` process
+    # cannot turn into unexpected stderr under the real Raku Test module.
+    ( cd "$ROOT" && MUTSU_PRECOMP=0 MUTSU_REAL_TEST= ./scripts/run-roast-test.sh "$f" \
         > "$WORK/out/$name.native" 2>&1 )
     echo "$?" > "$WORK/out/$name.native.st"
-    ( cd "$ROOT" && MUTSU_REAL_TEST=1 ./scripts/run-roast-test.sh "$f" \
+    ( cd "$ROOT" && MUTSU_PRECOMP=0 MUTSU_REAL_TEST=1 ./scripts/run-roast-test.sh "$f" \
         > "$WORK/out/$name.real" 2>&1 )
     echo "$?" > "$WORK/out/$name.real.st"
     echo "$f" > "$WORK/out/$name.path"
