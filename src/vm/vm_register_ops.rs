@@ -670,7 +670,7 @@ impl Interpreter {
             // mis-treated as a WhateverCode itself — e.g. the `.map` loop would
             // then hold `$_` at the outer topic instead of binding it to the
             // element (`*.map({ $_ })` saw the whole list, not each item).
-            flat.remove_sym(Symbol::intern("__mutsu_callable_type"));
+            flat.remove_sym(crate::symbol::well_known::callable_type());
             // Attribute-twigil keys are per-frame materializations of `self`'s
             // attributes — never snapshot them (see the filtered branch below).
             flat.retain(|k, _| !k.with_str(Self::is_attr_twigil_env_key));
@@ -678,14 +678,18 @@ impl Interpreter {
             self.materialize_frame_self_into_capture(code, &mut flat);
             return flat;
         }
-        let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
+        // Both sets are pure functions of `cc`, so they are built once per chunk
+        // rather than re-collected on every closure creation (this runs for every
+        // `.map({...})` / callback literal in a loop). `own_locals` compares by
+        // `Symbol` instead of by `&str`: `locals_sym` is the interned twin of
+        // `locals`, so membership is identical without hashing the key's string.
+        let free = cc.capture_free_var_set();
         // The closure's own parameters/locals (e.g. a WhateverCode's `_` param)
         // shadow any same-named enclosing binding, so they must NOT be inherited
         // from the creating frame's env. Capturing the enclosing `_` (a `for`/map
         // topic) into a `_`-param WhateverCode would leak that stale topic back to
         // the caller on return (`* ~~ /<$r>/` invoked inside a grep-in-`for`).
-        let own_locals: std::collections::HashSet<&str> =
-            cc.locals.iter().map(|s| s.as_str()).collect();
+        let own_locals = cc.capture_local_set();
         // Keep only the upvalue set, shadow-meta, and system names, walking the
         // env tiers directly (`filtered_flat`) — flattening first (`clone_env`)
         // deep-cloned the entire parent-chain map per lambda creation. The
@@ -695,8 +699,9 @@ impl Interpreter {
         // the genuine closure's own env after capture — never inherit it, or an
         // ordinary inner block would be mis-detected as a WhateverCode (see the
         // by-name path above).
+        let callable_type_sym = crate::symbol::well_known::callable_type();
         let mut env = self.env().filtered_flat(&|k, _v| {
-            if k.with_str(|s| s == "__mutsu_callable_type") {
+            if k == callable_type_sym {
                 return false;
             }
             // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
@@ -709,7 +714,8 @@ impl Interpreter {
                 return false;
             }
             free.contains(&k)
-                || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s))
+                || (!own_locals.contains(&k)
+                    && k.with_str(|s| !crate::env::is_plain_user_lexical(s)))
         });
         // Upvalue read: override this frame's own free-var slots with the live
         // local value. Authoritative even after the closure-driven env flush is

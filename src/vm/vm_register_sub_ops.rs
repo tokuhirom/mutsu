@@ -92,13 +92,20 @@ impl Interpreter {
             // routine's `__mutsu_return_type`, which would then be enforced on
             // this block's own return (`sub f(--> blob32) { ({ $^a + $^b })[0](…) }`
             // reported the inner block's Int as a bad `blob32` return).
-            env.remove("__mutsu_return_type");
+            // Symbol-keyed: this runs on EVERY closure creation, and the
+            // `String`-keyed twins would allocate the literal, re-hash it in the
+            // intern memo and re-scan it in `note_env_key` (which sets no flag
+            // for either of these names) each time. See `symbol::well_known`.
+            env.remove_sym(crate::symbol::well_known::return_type());
             if let Some(rt) = return_type {
-                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+                env.insert_sym(
+                    crate::symbol::well_known::return_type(),
+                    Value::str(rt.clone()),
+                );
             }
             if is_whatever_code {
-                env.insert(
-                    "__mutsu_callable_type".to_string(),
+                env.insert_sym(
+                    crate::symbol::well_known::callable_type(),
                     Value::str_from("WhateverCode"),
                 );
             }
@@ -112,7 +119,7 @@ impl Interpreter {
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.lexical_closure_package()),
-                name: Symbol::intern(""),
+                name: crate::symbol::well_known::anon(),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
                 body: body.clone(),
@@ -171,7 +178,7 @@ impl Interpreter {
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: Symbol::intern(&self.lexical_closure_package()),
-                name: Symbol::intern(""),
+                name: crate::symbol::well_known::anon(),
                 params: vec![],
                 param_defs: Vec::new(),
                 body: body.clone(),
