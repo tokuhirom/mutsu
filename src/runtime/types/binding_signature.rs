@@ -1963,6 +1963,19 @@ impl Interpreter {
                     // detach HERE or `@b.push` inside the sub would reach the
                     // caller's `@a`.
                     if is_copy {
+                        // A sigilless parameter (`\\value`) records an env-level
+                        // alias to its caller so assignments propagate through the
+                        // raw binding. An `is copy` parameter with the same bare
+                        // name must start a new, detached binding instead. Leaving
+                        // the inherited alias or readonly marker in this call frame
+                        // makes a compiled store to the copy follow the caller's
+                        // alias chain (or reject the store outright), which can
+                        // reach an immutable literal through an intermediate plain
+                        // scalar parameter.
+                        self.env
+                            .remove(&crate::runtime::sigilless_alias_key(&pd.name));
+                        self.env
+                            .remove(&crate::runtime::sigilless_readonly_key(&pd.name));
                         value = value.detach_shared_container();
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
