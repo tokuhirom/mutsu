@@ -141,7 +141,9 @@ impl Interpreter {
             env: HashMap::new(),
             env_explicit: false,
             capture_err: false,
+            err_explicit: false,
             capture_out: false,
+            out_explicit: false,
             capture_in: false,
             in_pipe_pid: None,
             in_pipe_content: None,
@@ -166,9 +168,11 @@ impl Interpreter {
                             }
                         }
                         "err" => {
+                            opts.err_explicit = true;
                             opts.capture_err = inner.truthy();
                         }
                         "out" => {
+                            opts.out_explicit = true;
                             Self::extract_out_option(inner, &mut opts);
                         }
                         "in" => {
@@ -198,8 +202,14 @@ impl Interpreter {
                             }
                         }
                     }
-                    "err" => opts.capture_err = inner.truthy(),
-                    "out" => Self::extract_out_option(inner, &mut opts),
+                    "err" => {
+                        opts.err_explicit = true;
+                        opts.capture_err = inner.truthy();
+                    }
+                    "out" => {
+                        opts.out_explicit = true;
+                        Self::extract_out_option(inner, &mut opts);
+                    }
                     "in" => Self::extract_in_option(inner, &mut opts),
                     "bin" => opts.bin = inner.truthy(),
                     "merge" => opts.merge = inner.truthy(),

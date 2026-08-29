@@ -128,8 +128,10 @@ impl Interpreter {
             cmd.stdout(std::process::Stdio::from(cloned));
         } else if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
-        } else {
+        } else if opts.out_explicit {
             cmd.stdout(std::process::Stdio::null());
+        } else {
+            cmd.stdout(std::process::Stdio::inherit());
         }
         if opts.merge {
             if let Some(file) = stdout_file_for_merge {
@@ -140,8 +142,10 @@ impl Interpreter {
             }
         } else if opts.capture_err {
             cmd.stderr(std::process::Stdio::piped());
-        } else {
+        } else if opts.err_explicit {
             cmd.stderr(std::process::Stdio::null());
+        } else {
+            cmd.stderr(std::process::Stdio::inherit());
         }
         let mut piped_from_live = false;
         if let Some(src_pid) = opts.in_pipe_pid {
@@ -292,13 +296,17 @@ impl Interpreter {
                         Self::apply_run_args(&mut retry, rest_args, opts.win_verbatim_args);
                         if opts.capture_out {
                             retry.stdout(std::process::Stdio::piped());
-                        } else {
+                        } else if opts.out_explicit {
                             retry.stdout(std::process::Stdio::null());
+                        } else {
+                            retry.stdout(std::process::Stdio::inherit());
                         }
                         if opts.capture_err {
                             retry.stderr(std::process::Stdio::piped());
-                        } else {
+                        } else if opts.err_explicit {
                             retry.stderr(std::process::Stdio::null());
+                        } else {
+                            retry.stderr(std::process::Stdio::inherit());
                         }
                         if let Some(cwd) = opts_cwd.clone() {
                             retry.current_dir(cwd);
@@ -414,13 +422,17 @@ impl Interpreter {
 
         if opts.capture_out {
             command.stdout(std::process::Stdio::piped());
-        } else {
+        } else if opts.out_explicit {
             command.stdout(std::process::Stdio::null());
+        } else {
+            command.stdout(std::process::Stdio::inherit());
         }
         if opts.capture_err {
             command.stderr(std::process::Stdio::piped());
-        } else {
+        } else if opts.err_explicit {
             command.stderr(std::process::Stdio::null());
+        } else {
+            command.stderr(std::process::Stdio::inherit());
         }
 
         // shell() defaults the child's working directory to the dynamic $*CWD

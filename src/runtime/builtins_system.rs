@@ -168,7 +168,9 @@ pub(super) struct ProcOptions {
     /// apart from "explicitly clear the child's environment".
     pub(super) env_explicit: bool,
     pub(super) capture_err: bool,
+    pub(super) err_explicit: bool,
     pub(super) capture_out: bool,
+    pub(super) out_explicit: bool,
     pub(super) capture_in: bool,
     pub(super) in_pipe_pid: Option<i64>,
     pub(super) in_pipe_content: Option<String>,
