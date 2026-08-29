@@ -129,7 +129,7 @@ impl Interpreter {
         } else if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
         } else {
-            cmd.stdout(std::process::Stdio::null());
+            cmd.stdout(std::process::Stdio::inherit());
         }
         if opts.merge {
             if let Some(file) = stdout_file_for_merge {
@@ -141,7 +141,7 @@ impl Interpreter {
         } else if opts.capture_err {
             cmd.stderr(std::process::Stdio::piped());
         } else {
-            cmd.stderr(std::process::Stdio::null());
+            cmd.stderr(std::process::Stdio::inherit());
         }
         let mut piped_from_live = false;
         if let Some(src_pid) = opts.in_pipe_pid {
@@ -293,12 +293,12 @@ impl Interpreter {
                         if opts.capture_out {
                             retry.stdout(std::process::Stdio::piped());
                         } else {
-                            retry.stdout(std::process::Stdio::null());
+                            retry.stdout(std::process::Stdio::inherit());
                         }
                         if opts.capture_err {
                             retry.stderr(std::process::Stdio::piped());
                         } else {
-                            retry.stderr(std::process::Stdio::null());
+                            retry.stderr(std::process::Stdio::inherit());
                         }
                         if let Some(cwd) = opts_cwd.clone() {
                             retry.current_dir(cwd);
@@ -415,12 +415,12 @@ impl Interpreter {
         if opts.capture_out {
             command.stdout(std::process::Stdio::piped());
         } else {
-            command.stdout(std::process::Stdio::null());
+            command.stdout(std::process::Stdio::inherit());
         }
         if opts.capture_err {
             command.stderr(std::process::Stdio::piped());
         } else {
-            command.stderr(std::process::Stdio::null());
+            command.stderr(std::process::Stdio::inherit());
         }
 
         // shell() defaults the child's working directory to the dynamic $*CWD
