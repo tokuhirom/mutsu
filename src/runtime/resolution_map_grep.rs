@@ -253,6 +253,58 @@ impl Interpreter {
         (code, fns)
     }
 
+    /// Compiled bytecode for a `gather` block body, cached on the body's
+    /// analysis chunk (see `Interpreter::gather_compile_cache`).
+    ///
+    /// `exec_make_gather_op` compiles the body for Interpreter-native forcing.
+    /// That compile is a pure function of the body, but it ran on every
+    /// evaluation of the `gather` EXPRESSION -- so a `gather` inside a loop
+    /// re-ran the whole compiler per iteration. Measured before this cache:
+    /// `add_constant` grew by 3 per gather creation, and adding 20 statements to
+    /// the body took a 20000-iteration loop from 0.11s to 0.81s (rakudo: 0.23s
+    /// to 0.27s).
+    ///
+    /// A body that declares routines is compiled through a wrapping
+    /// `Stmt::Block`, whose `BlockScope` restores the routine registry -- that
+    /// decision is itself a pure function of the body, so it stays inside the
+    /// cached computation. A gather with no analysis chunk (an `EVAL`-built one)
+    /// compiles fresh, exactly like the map/grep sibling.
+    pub(crate) fn compile_gather_body_cached(
+        &mut self,
+        analysis_cc: &Option<std::sync::Arc<crate::opcode::CompiledCode>>,
+        body: &[crate::ast::Stmt],
+    ) -> (
+        std::sync::Arc<crate::opcode::CompiledCode>,
+        std::sync::Arc<crate::opcode::CompiledFns>,
+    ) {
+        let key = analysis_cc.as_ref().map(|cc| MapGrepCacheKey {
+            origin: cc.clone(),
+            lexically_in_routine: false,
+        });
+        if let Some(key) = &key
+            && let Some((code, fns)) = self.gather_compile_cache.get(key)
+        {
+            return (code.clone(), fns.clone());
+        }
+        let compiler = crate::compiler::Compiler::new();
+        let scoped_body: Vec<crate::ast::Stmt>;
+        let compile_target: &[crate::ast::Stmt] =
+            if crate::compiler::Compiler::stmts_declare_routines(body) {
+                scoped_body = vec![crate::ast::Stmt::Block(body.to_vec())];
+                &scoped_body
+            } else {
+                body
+            };
+        let (code, fns) = compiler.compile(compile_target);
+        let code = std::sync::Arc::new(code);
+        let fns = std::sync::Arc::new(fns);
+        if let Some(key) = key {
+            self.gather_compile_cache
+                .insert(key, (code.clone(), fns.clone()));
+        }
+        (code, fns)
+    }
+
     pub(super) fn eval_map_over_items(
         &mut self,
         func: Option<Value>,

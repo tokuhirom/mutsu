@@ -644,6 +644,7 @@ impl Interpreter {
             carrier_compile_cache: HashMap::new(),
             subst_repl_plans: HashMap::new(),
             map_grep_compile_cache: HashMap::new(),
+            gather_compile_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
             subset_where_fail: None,
             private_zeroarg_method_cache: HashMap::new(),
