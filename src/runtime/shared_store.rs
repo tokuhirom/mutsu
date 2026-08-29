@@ -52,6 +52,34 @@ fn atomic_lane_base_name(key: &str) -> Option<&str> {
         .or_else(|| key.strip_prefix("__mutsu_atomic_hash::"))
 }
 
+/// Set once any atomic array/hash lane entry has been created anywhere in the
+/// process. It is never cleared: `remove` leaving it set only restores the old
+/// (always-probe) behaviour, which is correct, just slower.
+static ATOMIC_LANE_ENTRY_EXISTS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Record that `key` is being inserted, arming the lane probe if it is one.
+fn note_inserted_key(key: &str) {
+    if atomic_lane_base_name(key).is_some() {
+        ATOMIC_LANE_ENTRY_EXISTS.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Whether any `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::` lane entry has
+/// ever been created.
+///
+/// Every `@`/`%` variable READ used to build a `format!("__mutsu_atomic_arr::{name}")`
+/// String and walk the store chain for it, to see whether a concurrent CAS/push
+/// had published an authoritative copy. In a program that never runs an atomic
+/// array/hash op — which is nearly every program, and every iteration of
+/// bench-ctor — that is one heap allocation plus a hash lookup per read, for a
+/// lane that cannot exist. Guarding the probe on this flag keeps the
+/// concurrent behaviour identical (the lane must be *written* before any read
+/// can want it, and the write arms the flag) while making the common case free.
+pub(crate) fn atomic_lane_entries_exist() -> bool {
+    ATOMIC_LANE_ENTRY_EXISTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug)]
 pub(crate) struct SharedStore {
     own: RwLock<HashMap<String, Value>>,
@@ -128,6 +156,11 @@ impl SharedStore {
     /// in `builtins_atomic_shared.rs`). Must stay in lockstep with
     /// `scope_for`'s atomic-lane branch or the two paths split-brain.
     pub(crate) fn atomic_lane_scope(self: &Arc<Self>, base_name: &str) -> Arc<Self> {
+        // Callers that reach for a lane scope go on to lock `own_map()` and
+        // insert the lane entry themselves, bypassing the `set`/`declare`
+        // arming below — so arm here too. Arming on the read-only callers as
+        // well is deliberate: `true` only restores the always-probe behaviour.
+        ATOMIC_LANE_ENTRY_EXISTS.store(true, std::sync::atomic::Ordering::Relaxed);
         let mut cur = Arc::clone(self);
         loop {
             if cur.owns(base_name) {
@@ -179,6 +212,7 @@ impl SharedStore {
     /// Falls back to this lineage when the name is new (a first write with no
     /// prior declaration behaves as a declaration here).
     pub(crate) fn set(&self, key: &str, value: Value) {
+        note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
     }
@@ -187,6 +221,7 @@ impl SharedStore {
     /// `my`-declaration seeding: a re-declared name is a fresh binding whose
     /// writes must not leak to the lineage that shared the old one.
     pub(crate) fn declare(&self, key: &str, value: Value) {
+        note_inserted_key(key);
         self.scope_for(key)
             .own
             .write()
@@ -203,6 +238,7 @@ impl SharedStore {
         if self.contains_key(key) {
             return false;
         }
+        note_inserted_key(key);
         self.scope_for(key)
             .own
             .write()
@@ -229,6 +265,7 @@ impl SharedStore {
         {
             return existing.clone();
         }
+        note_inserted_key(key);
         let cell = make();
         own.insert(key.to_string(), cell.clone());
         cell

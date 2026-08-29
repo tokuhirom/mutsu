@@ -393,6 +393,88 @@ pipeline. Next actionable, if wanted: extend the `fast_method_cache` tier to
 the same named shapes, and look at per-call closure-literal reuse for
 immediately-invoked WhateverCode.
 
+## Update (2026-08-29, round 5 — the `.map` in TWEAK was re-running the COMPILER)
+
+Rounds 2-4 all concluded "no dominant function; the cost is spread across
+malloc/NaN-box/hashing" from flat perf profiles. That conclusion was wrong, and
+the reason it survived four rounds is instructive: **a per-call compile does not
+show up as one hot symbol.** It is spread across `compile_expr`,
+`compile_expr_var`, `compile_unit`, `add_constant`, `ws_inner_with_bol`, plus the
+`Vec`/`HashMap` allocation those do — i.e. it lands in exactly the flat
+"malloc/hashing/no dominant function" bucket the earlier rounds attributed to
+construction itself.
+
+A `rust-gdb -batch` breakpoint on `CompiledCode::add_constant`, skipping the
+startup hits, printed the answer in one run:
+
+```
+#0 CompiledCode::add_constant
+#1 compile_expr_var  #2 compile_expr_method_on_var  #3 compile_expr
+#4 Compiler::compile_unit  #5 Compiler::compile
+#6 eval_map_over_items_rw          <-- per .map CALL, not per program
+```
+
+`eval_map_over_items_rw` was the one map/grep loop that never got
+`compile_loop_block_cached` (added by #6710, which did cover
+`eval_map_over_items`, `eval_first_over_items` and the rw grep loop). Every
+`@array.map(...)` / `@!attr.map(...)` in the whole interpreter re-ran the
+compiler on the block AST. `MUTSU_VM_STATS` over a 100000-call loop:
+`add_constant` **300017 → 20**.
+
+Two more per-call costs found from the same repro:
+
+- an EMPTY `.map` still paid the block compile, the captured-key env
+  save/restore and the nested-register frame to run the block zero times —
+  `@!resources.map(*.flat)` over an empty attribute array is exactly the
+  benchmark's (and real `TWEAK` bodies') shape;
+- every `@`/`%` variable READ built `format!("__mutsu_atomic_arr::{name}")` and
+  walked the cross-thread store for a lane entry that cannot exist unless a
+  concurrent container op has run. Now gated on a monotonic
+  `shared_store::atomic_lane_entries_exist()` flag, the `@`/`%` twin of the
+  atomic-scalar read gate `t/atomic-read-gate.t` already pins.
+
+Result, from an **interleaved same-session A/B** (release builds of the change and
+of its revert, `taskset -c 2`, best of 9 — an earlier cross-session pair gave a
+much larger apparent win purely from machine drift, so it is not quoted):
+
+| variant | before | after | raku |
+|---|---|---|---|
+| 21-attr class, plain `.new` | 0.0551 | 0.0562 | 0.2208 |
+| + parent `TWEAK` | 0.0737 | 0.0755 | 0.2367 |
+| + `method new(*%_) { self.bless(\|%_, :meta(%_)) }` | 0.1365 | 0.1354 | 0.2561 |
+| + child `TWEAK` (attributive params, `--> Nil`) | 0.1545 | 0.1544 | 0.2691 |
+| + `@!resources.map(*.flat)` | **0.2515** | **0.2191** | 0.2904 |
+
+bench-ctor **−12.9% wall clock**, `perf stat` 2.172G → 1.951G instructions
+(**434k → 390k per construction, −10.1%**). The whole win is the last row;
+everything above it is unchanged (the ±2% spread is binary-layout noise). The
+isolated micro — 5000 empty `.map` calls inside a method — went 0.0985s →
+0.0789s (−20%). Do NOT quote a local raku ratio for this bench: this box's rakudo
+v2026.06 is far faster than the CI runner's pinned build, so the local ratio sits
+well under 1.0 both before and after while the CI ratio is 1.31. `bench-data`'s
+`bench-history.tsv` is the authority.
+
+**Lesson for the next round: do not conclude "flat profile, no dominant cost"
+without first proving nothing is being COMPILED per call.** `MUTSU_VM_STATS`'s
+`const-pool: add_constant=` is the cheap oracle — on a steady-state loop it must
+stay near-constant, and any growth with iteration count is a runtime compile.
+
+**Still open after round 5.** The `.map` line is no longer the gap; the largest
+remaining slice is the custom-`new`→`bless` plumbing (row 2→3 above: mutsu pays
++0.059s where raku pays +0.007s, i.e. ~11.6us vs ~1.4us per construction for
+`*%_` slurpy bind → `|%_` spread → `:meta(%_)` → `bless`). Two concrete leads
+inside `dispatch_bless` not yet measured: the named-arg override loop does a
+linear `plan.class_attrs.iter().position(...)` string scan per argument (7 args ×
+21 attributes = ~147 `memcmp`s per construction — `__memcmp_avx2_movbe` is 2.3%
+of the profile), and the no-initializer attribute seeds re-run
+`Symbol::intern("Any")` / `nominal_type_object_name_for_constraint` per attribute
+per construction although `NativeCtorPlan` could precompute them. Also still
+open, from the same repro: `CheckReadOnly` builds
+`format!("__mutsu_sigilless_readonly::{name}")` on every whole-variable
+assignment once `closure_meta_keys_possible()` is armed — and that flag is shared
+with `__mutsu_state_key::` / `__mutsu_sigilless_alias::` / predictive-seq keys, so
+creating any of those arms the readonly probe too; it wants its own flag.
+
 ## Measurement notes
 
 - Iterate counters with the debug build (`MUTSU_VM_STATS=1`, identical to
