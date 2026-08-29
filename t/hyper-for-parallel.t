@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 14;
 
 # `my @a = hyper for LIST { BODY }` used to parse as `.hyper(do for ...)`:
 # the loop ran sequentially on the main thread and `.hyper` only wrapped the
@@ -55,4 +55,14 @@ plan 12;
     my $r = race for ^10 -> $n { $n if $n %% 2 };
     is $r.elems, 5, 'race for in assignment still skips false if-modifier values';
     is $r.sort.join(','), '0,2,4,6,8', '... with the expected values';
+}
+
+{
+    my @got = hyper for ^20 -> $n { last if $n == 5; $n };
+    is-deeply @got, [0, 1, 2, 3, 4], 'hyper for last stops the whole loop, not one batch';
+}
+
+{
+    my @got = race for ^20 -> $n { last if $n == 5; $n };
+    is @got.sort.join(','), '0,1,2,3,4', 'race for last stops the whole loop, not one batch';
 }

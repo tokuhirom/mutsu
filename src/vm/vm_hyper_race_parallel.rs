@@ -29,6 +29,23 @@ impl Interpreter {
         loop_end: usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // A `last` or `return` in the body controls the enclosing loop/routine,
+        // not merely the worker batch that happens to encounter it.  Submitted
+        // batches cannot retract work that has already started, so preserve the
+        // sequential control-flow semantics for such bodies.  This deliberately
+        // also catches a nested-loop control op: losing parallelism there is safe,
+        // while guessing which loop a labelled control targets is not.
+        let has_nonlocal_control = code.ops[body_start..loop_end].iter().any(|op| {
+            matches!(
+                op,
+                OpCode::Last(_) | OpCode::Return | OpCode::ReturnFromNonRoutine(..)
+            )
+        });
+        if has_nonlocal_control {
+            return self
+                .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
+                .map(|_| ());
+        }
         if items.is_empty() {
             return self
                 .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
@@ -48,58 +65,55 @@ impl Interpreter {
         type ThreadResult = (Result<Vec<Value>, RuntimeError>, Vec<Value>, String, String);
         let mut batch_results: Vec<ThreadResult> = Vec::with_capacity(batches.len());
         let collect = spec.collect;
-        std::thread::scope(|s| {
-            let mut handles = Vec::with_capacity(batches.len());
-            for batch in batches {
-                let mut vm = self.clone_for_thread();
-                // The for-loop body is the enclosing frame's bytecode, so
-                // GetLocal slots must exist. `clone_for_thread` starts a
-                // fresh frame for `start {}` / Promise workers; copy the
-                // current locals (and upvalues) so the body can run here.
-                vm.locals.clone_from(&locals_snapshot);
-                vm.upvalues.clone_from(&self.upvalues);
-                handles.push(s.spawn(move || {
-                    let run = crate::vm::guard_worker_panic(|| {
-                        vm.exec_for_loop_body(
-                            code,
-                            spec,
-                            &batch,
-                            body_start,
-                            loop_end,
-                            compiled_fns,
-                            0,
-                        )?;
-                        let collected = if collect {
-                            match vm.stack.pop() {
-                                Some(v) => match v.view() {
-                                    ValueView::Array(items, _) => items.to_vec(),
-                                    _ => vec![v],
-                                },
-                                None => Vec::new(),
-                            }
-                        } else {
-                            Vec::new()
-                        };
-                        Ok(collected)
-                    });
-                    let wlocals = vm.locals.clone();
-                    let output = vm.take_output();
-                    let stderr = vm.take_stderr_output();
-                    (run, wlocals, output, stderr)
-                }));
-            }
-            for handle in handles {
-                let joined = crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
-                    (
-                        Err(RuntimeError::new("thread panicked in race/hyper for")),
-                        Vec::new(),
-                        String::new(),
-                        String::new(),
-                    )
+        let mut handles = Vec::with_capacity(batches.len());
+        for batch in batches {
+            let mut vm = self.clone_for_thread();
+            let task_code = code.clone();
+            let task_spec = spec.clone();
+            let task_fns = compiled_fns.clone();
+            // The for-loop body is the enclosing frame's bytecode, so
+            // GetLocal slots must exist. `clone_for_thread` starts a
+            // fresh frame for `start {}` / Promise workers; copy the
+            // current locals (and upvalues) so the body can run here.
+            vm.locals.clone_from(&locals_snapshot);
+            vm.upvalues.clone_from(&self.upvalues);
+            // Joined hyper/race fan-out belongs on the elastic worker pool
+            // (ADR-0020 §3.6), not on one fresh OS thread per batch.
+            handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                let run = crate::vm::guard_worker_panic(|| {
+                    vm.exec_for_loop_body(
+                        &task_code, &task_spec, &batch, body_start, loop_end, &task_fns, 0,
+                    )?;
+                    let collected = if collect {
+                        match vm.stack.pop() {
+                            Some(v) => match v.view() {
+                                ValueView::Array(items, _) => items.to_vec(),
+                                _ => vec![v],
+                            },
+                            None => Vec::new(),
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    Ok(collected)
                 });
-                batch_results.push(joined);
-            }
-        });
+                let wlocals = vm.locals.clone();
+                let output = vm.take_output();
+                let stderr = vm.take_stderr_output();
+                (run, wlocals, output, stderr)
+            }));
+        }
+        for handle in handles {
+            let joined = crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
+                (
+                    Err(RuntimeError::new("thread panicked in race/hyper for")),
+                    Vec::new(),
+                    String::new(),
+                    String::new(),
+                )
+            });
+            batch_results.push(joined);
+        }
         crate::gc::gc_safepoint(crate::gc::SafepointKind::ThreadJoin);
         let mut all_collected = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;
