@@ -9,7 +9,8 @@ plan 1;
 sub foo-ok() is test-assertion { flunk "foo-ok" }
 foo-ok;
 END
-my $proc = run($*EXECUTABLE, $script, :!out, :err);
+# Capture the child's TAP output so it cannot become part of this test's TAP stream.
+my $proc = run($*EXECUTABLE, $script, :out, :err);
 my $err := $proc.err.slurp;
 like $err,
     /'Failed test ' (\N* \n \N*)? 'at ' $script ' line ' 4/,
