@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 12;
 
 # run with :err captures stderr
 my $p1 = run("echo", "hello", :err);
@@ -31,3 +31,10 @@ my $shell_default = run($exe, '-e',
     'shell "printf shell-out; printf shell-err >&2"', :out, :err);
 is $shell_default.out.slurp, 'shell-out', 'shell inherits stdout by default';
 is $shell_default.err.slurp, 'shell-err', 'shell inherits stderr by default';
+
+# Explicit false capture options discard output instead of inheriting it.
+my $explicit_discard = run($exe, '-e',
+    'run "sh", "-c", "printf run-out; printf run-err >&2", :!out, :!err; '
+    ~ 'shell "printf shell-out; printf shell-err >&2", :!out, :!err', :out, :err);
+is $explicit_discard.out.slurp, '', ':!out discards run and shell stdout';
+is $explicit_discard.err.slurp, '', ':!err discards run and shell stderr';
