@@ -747,7 +747,7 @@ mod tests {
             name: crate::symbol::Symbol::intern("__gc_test__"),
             params: vec![],
             param_defs: vec![],
-            body: vec![],
+            body: std::sync::Arc::new(vec![]),
             is_rw: false,
             is_raw: false,
             env,

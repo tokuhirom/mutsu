@@ -397,7 +397,7 @@ impl Interpreter {
 
             // Extract LAST phaser bodies so they can be run after the map loop
             let mut last_phaser_bodies: Vec<Vec<crate::ast::Stmt>> = Vec::new();
-            for stmt in &data.body {
+            for stmt in data.body.iter() {
                 if let crate::ast::Stmt::Phaser {
                     kind: crate::ast::PhaserKind::Last,
                     body,

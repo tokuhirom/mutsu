@@ -73,12 +73,26 @@ A cheaper alternative worth costing first: keep the capture semantics but stop
 rebuilding the map — e.g. share the system-name portion through the `Env` parent
 chain instead of copying it, if snapshot semantics allow.
 
-Also still unmeasured on this path: `SubData` holds `body: Vec<Stmt>`, so every
-closure creation deep-clones the block's AST (`body.clone()`, plus
-`params.clone()` / `param_defs.clone()`). Making it an `Arc<Vec<Stmt>>` is
-mechanical but wide (every `data.body` reader) and wants its own slice.
-`Symbol::intern(&self.lexical_closure_package())` also allocates a `String` per
-creation.
+## Part C — DONE (2026-08-29): the body is shared, not deep-cloned
+
+`SubData::body` was a `Vec<Stmt>`, so every creation deep-cloned the block's AST.
+Creation was **O(body size)**: 8.2us for a 29-statement block against ~2us for a
+one-statement one. It is now `Arc<Vec<Stmt>>`, built once per `stmt_pool` slot by
+`CompiledCode::closure_body_arc`, and the two are the same number. The 29-statement
+micro dropped 70%; `bench-ctor` −11.2%, `word-count` −5.2%.
+
+## Still open beyond Part B
+
+- `params.clone()` / `param_defs.clone()` per creation (small next to the body,
+  but the same shape — both are pool-owned and immutable).
+- `Symbol::intern(&self.lexical_closure_package())` allocates a `String` per
+  creation just to intern it.
+- **`exec_make_gather_op` runs `Compiler::new().compile(...)` on every `gather`
+  block creation** — the identical per-creation-compile shape that
+  `eval_map_over_items_rw` had (fixed in #7109). It compiles the gather body to
+  bytecode each time the `gather` expression is evaluated, so a `gather` inside a
+  loop re-runs the compiler per iteration. Same fix shape: cache keyed on the
+  chunk + pool slot. Not measured yet — measure before assuming it is hot.
 
 ## Repro
 

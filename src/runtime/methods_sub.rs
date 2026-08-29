@@ -89,7 +89,7 @@ impl Interpreter {
                 name: Symbol::intern(name),
                 params: Vec::new(),
                 param_defs: Vec::new(),
-                body: vec![],
+                body: std::sync::Arc::new(vec![]),
                 is_rw: false,
                 is_raw: false,
                 env: self.env().clone(),

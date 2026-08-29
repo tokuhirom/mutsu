@@ -118,7 +118,7 @@ impl Interpreter {
             name: Symbol::intern(""),
             params: Vec::new(),
             param_defs: Vec::new(),
-            body,
+            body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,
             env: crate::runtime::Env::new(),

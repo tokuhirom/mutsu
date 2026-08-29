@@ -204,7 +204,7 @@ impl Interpreter {
             name: crate::symbol::Symbol::intern(name),
             params: Vec::new(),
             param_defs: Vec::new(),
-            body: Vec::new(),
+            body: std::sync::Arc::new(Vec::new()),
             is_rw: false,
             is_raw: false,
             env: Env::new(),

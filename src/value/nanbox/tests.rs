@@ -214,7 +214,7 @@ fn sample_sub() -> Gc<SubData> {
         name: Symbol::intern("nanbox-test-sub"),
         params: vec![],
         param_defs: Vec::<ParamDef>::new(),
-        body: vec![],
+        body: std::sync::Arc::new(vec![]),
         is_rw: false,
         is_raw: false,
         env: Env::new(),

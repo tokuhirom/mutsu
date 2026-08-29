@@ -3611,7 +3611,7 @@ mod tests {
             name: Symbol::intern("__protect_test__"),
             params: vec![],
             param_defs: vec![],
-            body: vec![Stmt::Expr(Expr::Literal(Value::int(0)))],
+            body: std::sync::Arc::new(vec![Stmt::Expr(Expr::Literal(Value::int(0)))]),
             is_rw: false,
             is_raw: false,
             env,

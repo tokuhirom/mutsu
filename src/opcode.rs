@@ -4302,6 +4302,10 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Lazily-built shared body per `stmt_pool` slot (see `closure_body_arc`).
+    /// A `SubData`'s body used to be deep-cloned out of the pool on every
+    /// closure creation; the `Arc` is built once per slot instead.
+    pub(crate) stmt_pool_bodies: std::sync::OnceLock<StmtPoolBodies>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     pub(crate) jit: JitCodeState,
 }
@@ -4310,6 +4314,11 @@ pub(crate) struct CompiledCode {
 /// [`CompiledCode::local_attr_keys`]): one entry per slot, `Some((bare attribute
 /// `Symbol`, is_private))` for an attribute twigil and `None` otherwise.
 pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool)>]>;
+
+/// The per-`stmt_pool`-slot shared closure body of a chunk (see
+/// [`CompiledCode::closure_body_arc`]): one lazily-filled slot per pool entry,
+/// each holding the `Arc` every closure created from that entry shares.
+pub(crate) type StmtPoolBodies = Box<[std::sync::OnceLock<std::sync::Arc<Vec<Stmt>>>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
 /// `entry` caches the compiled native entry so the per-call cost once compiled
@@ -4639,6 +4648,7 @@ impl CompiledCode {
             local_attr_keys: std::sync::OnceLock::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            stmt_pool_bodies: std::sync::OnceLock::new(),
             jit: JitCodeState::default(),
         }
     }
@@ -4658,6 +4668,36 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().flatten()
+    }
+
+    /// The shared body of the closure declaration at `stmt_pool[idx]`, built
+    /// once per slot. `Stmt::SubDecl`/`Stmt::Block` bodies live in the pool and
+    /// are never mutated through the `SubData` that carries them, so every
+    /// closure created from this slot can share one `Arc` instead of deep-cloning
+    /// the `Vec<Stmt>`. That clone was O(body size) on a path that runs once per
+    /// `.map({...})` CALL: ~5.9us per creation for a 29-statement block.
+    ///
+    /// `extract` yields the body for the two closure-declaring statement kinds;
+    /// any other pool entry (never asked for here) shares an empty body.
+    pub(crate) fn closure_body_arc(&self, idx: usize) -> std::sync::Arc<Vec<Stmt>> {
+        let extract = |i: usize| -> std::sync::Arc<Vec<Stmt>> {
+            match self.stmt_pool.get(i) {
+                Some(Stmt::SubDecl { body, .. }) => std::sync::Arc::new(body.clone()),
+                Some(Stmt::Block(body)) => std::sync::Arc::new(body.clone()),
+                _ => std::sync::Arc::new(Vec::new()),
+            }
+        };
+        let slots = self.stmt_pool_bodies.get_or_init(|| {
+            (0..self.stmt_pool.len())
+                .map(|_| std::sync::OnceLock::new())
+                .collect()
+        });
+        match slots.get(idx) {
+            Some(slot) => slot.get_or_init(|| extract(idx)).clone(),
+            // The pool grew after the side table was sized (a chunk still being
+            // built): fall back to an uncached clone rather than mis-indexing.
+            None => extract(idx),
+        }
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure

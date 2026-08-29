@@ -316,7 +316,7 @@ impl Interpreter {
                 name: Symbol::intern(""),
                 params,
                 param_defs: Vec::new(),
-                body: body.clone(),
+                body: code.closure_body_arc(idx as usize),
                 is_rw: false,
                 is_raw: false,
                 // Upvalue snapshot (single-store Slice E): capture only free vars,
@@ -370,7 +370,9 @@ impl Interpreter {
             params,
             param_defs,
             return_type,
-            body,
+            // The body itself comes from `closure_body_arc` (shared, built once
+            // per pool slot) rather than being deep-cloned out of the pool here.
+            body: _,
             is_rw,
             is_raw,
             ..
@@ -393,13 +395,19 @@ impl Interpreter {
             );
             // See the note in `vm_register_sub_ops`: a lexically-inherited
             // `__mutsu_return_type` would be enforced on this closure's return.
-            env.remove("__mutsu_return_type");
+            // Symbol-keyed, like the `MakeLambda` twin in `vm_register_sub_ops`:
+            // this runs on every closure creation and the `String`-keyed forms
+            // would allocate and re-hash the literal each time.
+            env.remove_sym(crate::symbol::well_known::return_type());
             if let Some(rt) = return_type {
-                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+                env.insert_sym(
+                    crate::symbol::well_known::return_type(),
+                    Value::str(rt.clone()),
+                );
             }
             if is_whatever_code {
-                env.insert(
-                    "__mutsu_callable_type".to_string(),
+                env.insert_sym(
+                    crate::symbol::well_known::callable_type(),
                     Value::str_from("WhateverCode"),
                 );
             }
@@ -418,7 +426,7 @@ impl Interpreter {
                 name: *name,
                 params: params.clone(),
                 param_defs: param_defs.clone(),
-                body: body.clone(),
+                body: code.closure_body_arc(idx as usize),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 env,
