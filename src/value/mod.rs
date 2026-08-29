@@ -629,7 +629,13 @@ pub struct SubData {
     pub name: Symbol,
     pub params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
-    pub(crate) body: Vec<Stmt>,
+    /// The block's AST, shared. Closure creation happens once per `.map({...})`
+    /// CALL, so a `Vec<Stmt>` here meant deep-cloning the whole body every time
+    /// -- 5.9us per creation for a 29-statement block, and O(body) for any
+    /// realistic one. The body is never mutated through a `SubData`, so it is
+    /// shared instead: `CompiledCode::closure_body_arc` builds the `Arc` once
+    /// per stmt-pool slot and every later creation is an `Arc` bump.
+    pub(crate) body: std::sync::Arc<Vec<Stmt>>,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
     pub env: Env,

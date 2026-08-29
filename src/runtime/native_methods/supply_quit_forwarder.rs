@@ -160,7 +160,7 @@ impl Interpreter {
                 shape_constraints: None,
                 block_param: false,
             }],
-            body,
+            body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,
             env: Env::new(),

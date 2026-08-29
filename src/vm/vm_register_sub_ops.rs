@@ -73,7 +73,8 @@ impl Interpreter {
             params,
             param_defs,
             return_type,
-            body,
+            // See `closure_body_arc`: the body is shared, not cloned out here.
+            body: _,
             is_rw,
             is_raw,
             ..
@@ -122,7 +123,7 @@ impl Interpreter {
                 name: crate::symbol::well_known::anon(),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
-                body: body.clone(),
+                body: code.closure_body_arc(idx as usize),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 env,
@@ -162,7 +163,7 @@ impl Interpreter {
         // See `closures_created` doc comment.
         self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::Block(body) = stmt {
+        if let Stmt::Block(_body) = stmt {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
@@ -181,7 +182,7 @@ impl Interpreter {
                 name: crate::symbol::well_known::anon(),
                 params: vec![],
                 param_defs: Vec::new(),
-                body: body.clone(),
+                body: code.closure_body_arc(idx as usize),
                 is_rw: false,
                 is_raw: false,
                 // Upvalue snapshot (single-store Slice E); see capture_closure_env.

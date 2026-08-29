@@ -1001,7 +1001,7 @@ impl Interpreter {
                             crate::ast::Stmt::MarkSigillessReadonly(inv_name),
                         ];
                         body.extend(sub_data.body.iter().cloned());
-                        (body, None)
+                        (std::sync::Arc::new(body), None)
                     }
                     None => (sub_data.body.clone(), sub_data.compiled_code.clone()),
                 };
@@ -1029,7 +1029,7 @@ impl Interpreter {
                     lexical_package: sub_data.package.resolve(),
                     params: filtered_params,
                     param_defs: filtered_param_defs,
-                    body: std::sync::Arc::new(method_body),
+                    body: method_body,
                     is_rw: sub_data.is_rw,
                     is_private: false,
                     is_multi: false,
@@ -1109,7 +1109,7 @@ impl Interpreter {
                     lexical_package: sub_data.package.resolve(),
                     params: sub_data.params.clone(),
                     param_defs: sub_data.param_defs.clone(),
-                    body: std::sync::Arc::new(sub_data.body.clone()),
+                    body: sub_data.body.clone(),
                     is_rw: sub_data.is_rw,
                     is_private: false,
                     is_multi: true,

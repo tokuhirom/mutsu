@@ -271,7 +271,7 @@ impl Interpreter {
                     name: Symbol::intern("<attribute-build>"),
                     params: Vec::new(),
                     param_defs: Vec::new(),
-                    body,
+                    body: std::sync::Arc::new(body),
                     is_rw: false,
                     is_raw: false,
                     env: self.env().clone(),
