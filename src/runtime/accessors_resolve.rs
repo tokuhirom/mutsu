@@ -435,20 +435,47 @@ impl Interpreter {
                     None
                 }
             });
-        let is_multi = if def.is_none() && !self.has_proto(lookup_name) {
-            // Check if there are multi-dispatch variants (stored with arity/type suffixes)
+        // Whether concrete multi-candidate bodies exist for this name (stored
+        // with arity/type-mangled `name/N` suffixes), regardless of whether it
+        // also has an explicit `proto sub`. A cheap key-prefix scan first, so
+        // the common non-multi resolution (most `&name` lookups) pays only
+        // this scan and not the fuller candidate walk below.
+        let has_multi_keys = def.is_none() && {
             let prefix_local = format!("{}::{}/", self.current_package(), lookup_name);
             let prefix_global = format!("GLOBAL::{}/", lookup_name);
             self.registry().functions.keys().any(|k| {
                 let ks = k.resolve();
                 ks.starts_with(&prefix_local) || ks.starts_with(&prefix_global)
             })
-        } else {
-            false
         };
-        if is_multi {
-            // Multi subs: create a Sub that captures all candidates so the
-            // callable works even after the defining scope exits.
+        if has_multi_keys {
+            // Multi subs (with or without an explicit proto): create a Sub
+            // that captures all candidate bodies BY VALUE now, so the
+            // resulting callable keeps working even after the defining scope
+            // exits or the registry entries it was found through change.
+            //
+            // This used to be restricted to a multi with no `proto sub` at
+            // all (`!self.has_proto(lookup_name)`); a proto'd multi instead
+            // captured a lazy `Value::routine_parts(current_package, name)`
+            // reference that re-resolves the name at call time. That is
+            // fine for an ordinarily-declared proto (its package registration
+            // never goes away), but breaks for one reached only through an
+            // import: `my (&plan) = do { use Test; &plan }`
+            // (roast/S32-list/skip.t's selective import, done precisely so
+            // the core `skip` routine stays visible under its own name).
+            // `has_proto`/`bare_name_packages()` found "plan" via the
+            // *importing* package's alias (`GLOBAL::plan`), so the lazy
+            // reference captured that alias, not the routine. An import is
+            // lexically scoped to its block, so `pop_import_scope` correctly
+            // removes `GLOBAL::plan` once the block ends — after which the
+            // dangling reference died with "Unknown function: plan" even
+            // though `Test::plan` was still perfectly declared. Materializing
+            // the candidates now (while the import is still active) instead
+            // sidesteps that: nothing about calling the resulting Sub later
+            // depends on the registry still holding the alias, matching
+            // Raku's real semantics (a captured `&code` value stays bound to
+            // the actual routine regardless of whether the short name used
+            // to capture it is still lexically visible).
             let candidates = self.resolve_all_multi_candidates(lookup_name);
             let mut candidate_subs = Vec::new();
             for cand in &candidates {
@@ -490,6 +517,10 @@ impl Interpreter {
             || self.resolve_token_defs(lookup_name).is_some()
             || self.has_proto_token(lookup_name)
         {
+            // No concrete multi-candidate bodies exist to materialize (an
+            // empty-sig proto with no candidates yet, or a grammar
+            // token/rule) — fall back to the lazy by-name reference; there is
+            // nothing to capture by value instead.
             Value::routine_parts(
                 Symbol::intern(&self.current_package()),
                 Symbol::intern(lookup_name),
@@ -505,12 +536,33 @@ impl Interpreter {
             // just call-syntax macros. They dispatch through the builtin-function
             // path (see `builtins.rs`), so expose them as Routine values here.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
-        } else if self.test_module_loaded() && Self::is_test_function_name(lookup_name) {
+        } else if self.test_module_loaded()
+            && Self::is_test_function_name(lookup_name)
+            && !Self::real_test_module_enabled()
+        {
             // Test-framework functions (&is-deeply, &pass, ...) are implemented
             // as Rust methods (runtime/test_functions.rs), not declared subs, so
             // the function-def lookup above misses them. Expose them as Routine
             // values so `my &fn = &is-deeply; fn(...)` dispatches through the
             // Routine call path, which routes test names to the Test dispatcher.
+            //
+            // Under MUTSU_REAL_TEST=1 there is no such native fallback: `plan`,
+            // `is`, etc. are ordinary Raku subs from the vendored Test.rakumod,
+            // reachable only through the normal declaration/import machinery
+            // (the `def`/`is_multi`/`has_proto` branches above). Synthesizing a
+            // by-name Routine reference here was wrong in that mode — worse,
+            // `test_module_loaded()` reads `loaded_modules`, which (correctly,
+            // matching Raku's own "a module stays loaded forever, only its
+            // exported symbols are lexically scoped" semantics) never rolls
+            // back when a `use Test;` block's import scope pops. So this
+            // branch kept firing for a bareword `plan` at outer scope even
+            // after `pop_import_scope` had correctly removed GLOBAL::plan's
+            // proto/multi registrations, returning a dangling by-name
+            // reference instead of Nil. With Nil, callers like
+            // `exec_call_on_code_var_op` fall back to the frame's own local
+            // slot, which is where a selective import
+            // (`my (&plan) = do { use Test; (&plan) }`, roast/S32-list/skip.t)
+            // actually stores the real imported Sub value.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if self.json_module_loaded() && matches!(lookup_name, "to-json" | "from-json") {
             // Native JSON routines (runtime/json.rs) have no declared sub either;

@@ -2,8 +2,8 @@
 //! candidate routine lookup, and arity/count Value builders.
 use super::*;
 use crate::value::signature::{
-    SubSignatureKey, cache_sub_signature, cached_sub_signature, make_signature_value_with_owner,
-    param_defs_to_sig_info,
+    SubSignatureKey, cache_sub_signature, cached_sub_signature, extract_sig_info,
+    make_signature_value_with_owner, param_defs_to_sig_info,
 };
 
 impl Interpreter {
@@ -486,5 +486,43 @@ impl Interpreter {
             }
         }
         Value::int(max_count)
+    }
+
+    /// `.arity`/`.count` computed from a list of multi-candidate `Sub` VALUES
+    /// (as opposed to re-resolving a name in the registry). Shared by the
+    /// `Routine`-value handler (`dispatch_routine_method`, name-based lookup)
+    /// and the materialized-dispatcher `Sub`-value handler
+    /// (`dispatch_sub_method`, candidates captured at `&name` capture time —
+    /// see `resolve_code_var`, accessors_resolve.rs, and
+    /// `__mutsu_multi_dispatch_candidates`). Returns `None` only when
+    /// `candidates` itself is empty, so a caller can fall through to its own
+    /// default; a non-empty `candidates` whose signatures could not be
+    /// extracted still answers `Some(0)`, matching the pre-existing
+    /// name-based behavior.
+    pub(super) fn multi_candidate_arity_count(
+        &self,
+        candidates: &[Value],
+        method: &str,
+    ) -> Option<Value> {
+        if candidates.is_empty() {
+            return None;
+        }
+        let mut infos = Vec::new();
+        for candidate in candidates {
+            if let ValueView::Sub(data) = candidate.view() {
+                let sig = self.sub_signature_value(&data);
+                if let Some(info) = extract_sig_info(&sig) {
+                    infos.push(info);
+                }
+            }
+        }
+        if infos.is_empty() {
+            return Some(Value::int(0));
+        }
+        Some(if method == "arity" {
+            Self::candidate_arity_value(&infos)
+        } else {
+            Self::candidate_count_value(&infos)
+        })
     }
 }

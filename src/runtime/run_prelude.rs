@@ -543,10 +543,27 @@ impl Interpreter {
     ///   throw — both of which are handled correctly only by the mainline path
     ///   (which wraps BEGIN-time errors in `X::Comp::BeginTime`).
     ///
-    /// The `BareWord(`/`Call` markers are matched in the AST debug form, which
-    /// catches them at any nesting depth without a bespoke full-AST walker. All
-    /// call-shaped `Expr` variants (`Call`, `MethodCall`, `HyperMethodCall`,
-    /// `CallOn`, `DynamicMethodCall`, ...) contain `Call` in their name.
+    /// The `BareWord(`/`Call`/`Use` markers are matched in the AST debug form,
+    /// which catches them at any nesting depth without a bespoke full-AST
+    /// walker. All call-shaped `Expr` variants (`Call`, `MethodCall`,
+    /// `HyperMethodCall`, `CallOn`, `DynamicMethodCall`, ...) contain `Call` in
+    /// their name.
+    ///
+    /// The top-level `matches!` below only sees `body`'s own statements, so a
+    /// `use` NESTED inside a `do {}` (`my &f = do { use Test; &f }` — a
+    /// selective import, done precisely so the module's other exports stay out
+    /// of scope) slipped past it: `Stmt::Use` was listed in the top-level
+    /// match, but this BEGIN's only top-level statement is the `my`
+    /// declaration, and the `use` lives inside the `do` block's own body.
+    /// `has_decl` therefore said "no declarations", and — since there was no
+    /// bareword/call either — this BEGIN was hoisted and pre-run through
+    /// `eval_block_value`, whose merge-back into the shared `env` isolates
+    /// `&`-callable keys (deliberately, to keep a hoisted BEGIN's closures from
+    /// leaking); the imported routine value captured by `&f` never reached the
+    /// mainline, so the later call died with "Unknown function". Search the
+    /// same whole-tree debug string the `Call`/`BareWord` checks already use so
+    /// a `use` anywhere in the body — not just at the top level — disqualifies
+    /// hoisting, exactly like an unqualified top-level `use` already does.
     fn begin_body_is_hoistable(body: &[Stmt]) -> bool {
         let has_decl = body.iter().any(|s| {
             matches!(
@@ -578,7 +595,7 @@ impl Interpreter {
             return false;
         }
         let debug = format!("{body:?}");
-        !debug.contains("BareWord(") && !debug.contains("Call")
+        !debug.contains("BareWord(") && !debug.contains("Call") && !debug.contains("Use {")
     }
 
     /// Remove the no-init reset of plain `my`/`our`-free declarations whose
