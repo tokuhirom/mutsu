@@ -188,8 +188,8 @@ impl LazyList {
     /// force it to completion instead of keeping it lazy. Conservative: returns
     /// `true` ONLY when every stage of the source chain is provably finite
     /// (a `gather` coroutine — gathers always terminate —, a finite `Array`/
-    /// `Seq`/`Slip`, or a finite `Range`); returns `false` for an infinite range,
-    /// an infinite sequence/closure spec, a `cat_pull`, or any unrecognized
+    /// `Seq`/`Slip`, a finite `Range`, or a `CatHandle` pull); returns `false`
+    /// for an infinite range, an infinite sequence/closure spec, or any unrecognized
     /// source. Worst case a genuinely-finite pipe stays lazy (status quo) — it
     /// never turns an infinite pipe into a hang.
     pub(crate) fn pipe_bottoms_out_finite(&self) -> bool {
@@ -218,7 +218,13 @@ impl LazyList {
             ValueView::LazyList(ll) => {
                 if ll.lazy_pipe.is_some() {
                     ll.pipe_bottoms_out_finite()
-                } else if ll.is_infinite_spec() || ll.cat_pull.is_some() {
+                } else if ll.cat_pull.is_some() {
+                    // `IO::CatHandle.lines` / `.handles` pull incrementally but
+                    // always terminate at the end of the cat's finite handle
+                    // list. A map/grep pipe above one is therefore safe for
+                    // strict consumers to reify.
+                    true
+                } else if ll.is_infinite_spec() {
                     false
                 } else if ll.has_finite_closure_endpoint() {
                     true
