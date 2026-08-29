@@ -5399,3 +5399,21 @@ message is needed to recover the exception class for `throws-like`. Pin:
 `t/eval-parse-error-diagnostic.t`, green under both providers and Rakudo. The
 target roast file passes with `MUTSU_REAL_TEST=1`; the typed-error coverage in
 `S02-lexical-conventions/comments.t` remains green.
+
+## 2026-08-29: `INIT { $^c }` keeps its phaser context through reordering
+
+Closes the final named `t/`-side placeholder gap,
+`todo/tickets/init-phaser-does-not-reject-a-placeholder-parameter.md`.
+`reorder_at_level` used to flatten each statement-level INIT body into the
+ordinary statement list. That let `INIT { $^c }` reach the compiler as a bare
+mainline `$^c`, bypassing `emit_block_placeholder_die`; in an EVAL it therefore
+completed successfully instead of producing `X::Placeholder::Block`. Keeping
+the `Stmt::Phaser { kind: Init, ... }` node preserves the existing compiler
+guard while retaining INIT's execution order. The block-inline tail phaser
+path now applies that guard too.
+
+`t/placeholder-scope-rejecting.t` adds a direct EVAL exception-class pin,
+because the native Test provider's older `throws-like` path can accept the
+generic error whereas the vendored Test module checks the actual exception
+type. All 28 assertions pass under raku, the native provider, and
+`MUTSU_REAL_TEST=1`.

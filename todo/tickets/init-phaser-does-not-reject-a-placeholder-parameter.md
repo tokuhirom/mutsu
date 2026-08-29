@@ -1,5 +1,13 @@
 # `INIT { $^c }` does not raise `X::Placeholder::Block`
 
+**Closed 2026-08-29.** Phaser reordering had expanded statement-level `INIT`
+bodies into ordinary statements, losing the phaser context before compilation.
+It now retains `Stmt::Phaser { kind: Init, ... }`, so the existing compiler
+guard emits `X::Placeholder::Block`. A tail-position INIT now takes the same
+guard through `compile_block_inline`. Pinned by the direct EVAL assertion in
+`t/placeholder-scope-rejecting.t`; that 28-test file passes under raku and
+under both mutsu Test providers.
+
 A phaser block is not a routine, so a placeholder parameter (`$^c`) in one is
 `X::Placeholder::Block`. mutsu enforces that for every phaser
 `t/placeholder-scope-rejecting.t` covers -- `BEGIN`, `CHECK`, `PRE`, `CATCH`,

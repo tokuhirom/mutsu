@@ -395,6 +395,10 @@ impl Compiler {
                         // Phasers in block-final position should leave their
                         // last expression value on the stack (e.g. when used
                         // inside string interpolation blocks).
+                        if self.emit_block_placeholder_die(body) {
+                            self.pop_dynamic_scope_lexical(saved);
+                            return;
+                        }
                         self.compile_block_inline(body);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
