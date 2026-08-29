@@ -2,27 +2,42 @@ use Test;
 
 plan 3;
 
-# A captured `&name` reference to a popped proto/multi import used to
-# stack-overflow instead of dying. `my (&xrecur) = do { use
-# ProtoRecursionFixture; (&xrecur) }` binds a name-based
-# `Routine{package:"GLOBAL", name:"xrecur"}` value into the outer `&xrecur`
-# local -- a proto/multi has no single candidate to point at, so it is a
-# name reference, not a bound closure. Once the `do` block's import scope
-# pops, `GLOBAL::xrecur` is removed from the proto tables (correctly).
-# Calling `xrecur(...)` afterwards used to recurse forever: call_sub_value's
-# unconditional call_function fallback re-dispatches "xrecur" by name,
-# call_function_fallback's env-based callable lookup finds the SAME Routine
-# value bound to the outer `&xrecur` local, and calls it again -- no base
-# case, so it stack-overflowed instead of raising a catchable error.
-# (`ProtoRecursionFixture`'s export name deliberately does not collide with
-# any mutsu builtin/listop -- unlike e.g. `head` -- so the call is forced
-# through the exact registry/env path this bug lives in.)
+# A captured `&name` reference to a proto/multi export whose import scope has
+# since popped. `my (&xrecur) = do { use lib 't/lib'; use
+# ProtoRecursionFixture; (&xrecur) }` captures `xrecur` -- a `proto`/`multi`
+# pair, so there is no single candidate body to point at -- out of a `do {}`
+# block, exactly the shape a selective import uses (`roast/S32-list/skip.t`:
+# `my (&plan, &subtest, ...) = do { use Test; (&plan, &subtest, ...) }`,
+# done so `Test`'s own exported `&skip` does not shadow the core `skip`
+# routine). Once the `do` block's import scope pops, the importing
+# package's alias for `xrecur` is correctly removed (an import is lexically
+# scoped to its block) -- but `&xrecur` itself must keep working, because
+# Raku's real semantics bind a captured `&code` value to the actual routine,
+# independent of whether the short name used to capture it stays visible.
 #
-# The fix does not make this construct actually WORK (raku itself would
-# have already reported "Undeclared routine" at compile time for the
-# equivalent construct, since it resolves names lexically) -- it only
-# ensures mutsu fails with a normal, catchable runtime error instead of
-# crashing the process.
+# 2026-08-18 (#... commit 1237ce8e8): calling `xrecur(...)` after the import
+# scope popped used to recurse forever and abort with a Rust stack overflow
+# instead of raising a catchable error -- fixed by making
+# `call_function_fallback` recognize a dead-end self-referential `Routine`
+# value instead of redispatching it. That fix stopped the crash but did NOT
+# make the construct actually run: it still died with "Unknown function:
+# xrecur", a regression from real Raku (confirmed directly against `raku`:
+# this exact construct runs cleanly and returns the dispatched candidate's
+# result).
+#
+# 2026-08-29 (todo/deep/vendor-real-test-module.md, "routine-value
+# self-recursion after an import scope pops"): the DANGLING reference itself
+# was the real bug. `resolve_code_var` captured `&xrecur` as a LAZY
+# `Value::routine_parts(current_package, name)` reference that re-resolves
+# "xrecur" BY NAME at call time -- which only worked through the *importing*
+# package's alias, exactly the one `pop_import_scope` correctly removes.
+# Fixed by materializing the actual multi-candidate bodies BY VALUE at
+# capture time instead (mirroring how a multi with no explicit proto was
+# already captured), so the resulting Sub keeps working regardless of what
+# the registry does to the name afterward. See
+# `news/2026-08/begin-selective-import-proto-multi-value-capture.md` and
+# `t/begin-selective-import-proto-multi.t` for the fuller BEGIN/list-binding
+# matrix this also covers.
 
 my $code = q:to/CODE/;
     my (&xrecur) = do {
@@ -30,22 +45,15 @@ my $code = q:to/CODE/;
         use ProtoRecursionFixture;
         (&xrecur)
     };
-    xrecur(1);
+    say xrecur(1);
+    say xrecur("hi");
     CODE
 
 my $proc = run $*EXECUTABLE, '-e', $code, :out, :err;
-$proc.out.slurp(:close);
+my $out = $proc.out.slurp(:close);
 my $err = $proc.err.slurp(:close);
 
-isnt $proc.exitcode, 0, 'the construct still fails (not silently succeeding)';
-# A crashed (aborted/segfaulted) child reports a negative `.exitcode` under
-# mutsu's own `Proc` (confirmed via a direct repro: exitcode -1, stderr
-# containing the Rust "has overflowed its stack" abort message) rather than
-# a shell's usual 128+signal convention. A normal, catchable runtime error
-# exits with mutsu's ordinary positive error status instead -- assert we
-# are in that range, not the crash range, and that the crash's own
-# telltale message is gone from stderr.
-ok $proc.exitcode > 0,
-    'fails with a normal (positive) error exit code, not a crashed/signal-killed process';
-unlike $err, /'overflowed its stack' | 'fatal runtime error'/,
-    'stderr does not contain the stack-overflow abort message';
+is $proc.exitcode, 0, 'the captured proto/multi dispatches after its import scope pops';
+is $out, "xrecur-int(1)\nxrecur-str(hi)\n",
+    'dispatch actually picked the matching multi candidate for each call';
+is $err, '', 'no crash / error output on stderr';

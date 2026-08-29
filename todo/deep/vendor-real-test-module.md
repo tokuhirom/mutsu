@@ -5250,3 +5250,73 @@ an 867-file targeted native-provider roast sweep (`S02-*`, `S03-*`, `S06-*`,
 documents but cannot assert — an object with no `.Numeric` makes rakudo die
 where mutsu answers `False` — is filed as
 `todo/tickets/numeric-op-on-an-object-without-numeric-answers-instead-of-dying.md`.
+
+## 2026-08-29 (later): `S32-list/skip.t` — the "routine-value self-recursion" was two separate value-capture bugs
+
+The prior sweep's row for this file said "routine-value self-recursion after
+an import scope pops" — an accurate symptom description, but the actual root
+cause was two independent bugs in how `&`-sigil capture of a `proto`/`multi`
+routine interacts with a selective, lexically-scoped import
+(`my (&plan) = do { use Test; &plan }`, done so the core `skip` routine keeps
+its own meaning instead of being shadowed by `Test`'s own exported `&skip`).
+Re-derived from scratch with a minimal 6-line reduction (dropping `Test`
+entirely once the shape was isolated), not from the row's own framing — see
+the working notes below and `news/2026-08/begin-selective-import-proto-multi-value-capture.md`
+for the full account.
+
+**Bug A** (`src/runtime/accessors_resolve.rs`, `resolve_code_var`): a name
+with an explicit `proto sub` captured `&name` as a LAZY
+`Value::routine_parts(current_package, name)` reference that re-resolves the
+bareword by name at call time — fine when the proto is an ordinary
+declaration, wrong when `has_proto` only found it via the *importing*
+package's alias (`GLOBAL::plan`), which `pop_import_scope` correctly removes
+once the importing block ends. The sibling branch for a multi with NO
+explicit proto already captured candidates BY VALUE for exactly this reason;
+extended that same materialization to the proto'd case whenever concrete
+multi-candidate bodies exist.
+
+**Bug B** (`src/runtime/run_prelude.rs`, `begin_body_is_hoistable`): a
+top-level `BEGIN` whose body has no top-level declaration/bareword/call is
+pre-run at compile time via a separate `eval_block_value` sub-interpreter,
+which deliberately does not persist `&`-callable writes into the shared
+`env`. The hoistability check's `use`-detection only looked at the BEGIN's
+own top-level statements, missing one nested inside a `do {}` — so
+`BEGIN my &plan = do { use Test; &plan }` (single-variable binding) was
+wrongly hoisted and lost its captured value before the mainline even ran. A
+list-destructured binding (`BEGIN my (&plan, &is) = do {...}`, the shape this
+file actually uses) happened to dodge hoisting by accident (its desugared AST
+contains `Call` in Debug form, already disqualifying it for an unrelated
+reason) — so Bug B stayed masked here and only surfaced once Bug A was
+isolated with a single-variable reduction. Fixed by extending the same
+whole-tree Debug-string search the `Call`/`BareWord` checks already use to
+also catch a nested `use`.
+
+Neither bug is specific to `Test` — both reproduce with a plain
+user-declared `proto`+`multi` module (`t/lib/ProtoMultiCapture.rakumod`)
+under the DEFAULT native provider too, since a user routine name is never a
+hardcoded builtin the way `plan`/`is` are shielded by
+`is_builtin_function`.
+
+| file | real Test before | real Test after | native before | native after |
+| --- | --- | --- | --- | --- |
+| `S32-list/skip.t` | dies at the first `plan` call (0 assertions run) | **PASS** | PASS | PASS |
+
+Bug A's fix also caught a real, pre-existing gap `make test` surfaced:
+`t/signature-arity-count.t`'s `my proto sub a($, $?) {*}` capture started
+answering `&a.arity`/`&a.count` as `0`/`0` instead of `1`/`2`, because the
+materialized dispatcher `Sub` carries no `param_defs` of its own — the real
+signature lives in its `__mutsu_multi_dispatch_candidates` env key, which
+`.candidates`/`.signature`/`.cando`/`.wrap` already knew to consult but
+`.arity`/`.count` did not. Fixed alongside (`src/runtime/methods_sub.rs`,
+`src/runtime/methods_signature_candidates.rs`); the existing test now covers
+it (was already asserting on it, previously against the non-proto'd-only
+materialization path).
+
+Fix and pin: `news/2026-08/begin-selective-import-proto-multi-value-capture.md`,
+`t/begin-selective-import-proto-multi.t` (8 assertions covering all four
+combinations of BEGIN/no-BEGIN x single-variable/list-destructured binding,
+plus the `Test.rakumod` scenario toggled through `MUTSU_REAL_TEST`; green
+under real `raku`). Verification: `make test` green; a targeted
+native-provider roast sweep over `S32-list`, `S11-modules`, `S10-packages`,
+`S02-names`, `S06-*`, `S04-phasers`, `integration` green;
+`scripts/battery-testsuite.sh` gate passed.

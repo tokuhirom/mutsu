@@ -346,23 +346,9 @@ impl Interpreter {
         if matches!(method, "arity" | "count") && args.is_empty() {
             let candidates = self.routine_candidate_subs(package, name);
             if !candidates.is_empty() {
-                let mut infos = Vec::new();
-                for candidate in candidates {
-                    if let ValueView::Sub(data) = candidate.view() {
-                        let sig = self.sub_signature_value(&data);
-                        if let Some(info) = extract_sig_info(&sig) {
-                            infos.push(info);
-                        }
-                    }
-                }
-                if infos.is_empty() {
-                    return Some(Ok(Value::int(0)));
-                }
-                return Some(Ok(if method == "arity" {
-                    Self::candidate_arity_value(&infos)
-                } else {
-                    Self::candidate_count_value(&infos)
-                }));
+                return Some(Ok(self
+                    .multi_candidate_arity_count(&candidates, method)
+                    .unwrap_or(Value::int(0))));
             }
 
             let (params, param_defs) = self.callable_signature(target);
@@ -815,6 +801,36 @@ impl Interpreter {
             return Some(Ok(Value::truth(!data.is_rw)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
+            // Multi-dispatch dispatcher (`&mm` for a `multi sub mm`, with or
+            // without an explicit `proto`): this Sub's OWN param_defs are
+            // empty (it is a synthesized dispatcher, not a declared body), so
+            // reading `arity`/`count` off `data` directly always answered 0.
+            // Mirrors the "signature"/"candidates"/"cando" handling just
+            // above: try the live name-based candidates first (keeps working
+            // if the name is still declared and picks up any candidate added
+            // since capture), falling back to the candidates captured BY
+            // VALUE at `&name` capture time — the only source left once the
+            // name's own import scope has popped (see `resolve_code_var`,
+            // accessors_resolve.rs).
+            if let Some(ValueView::Str(disp_name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+            {
+                let name_based =
+                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+                if !name_based.is_empty()
+                    && let Some(result) = self.multi_candidate_arity_count(&name_based, method)
+                {
+                    return Some(Ok(result));
+                }
+            }
+            if let Some(ValueView::Array(cands, _)) = data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
+                && let Some(result) = self.multi_candidate_arity_count(&cands, method)
+            {
+                return Some(Ok(result));
+            }
             let sig = self.sub_signature_value(data);
             if let Some(info) = extract_sig_info(&sig) {
                 return Some(Ok(if method == "arity" {
