@@ -5383,3 +5383,19 @@ residue list at measurement time; a sibling PR closed it independently in the
 same window (see the "routine-value self-recursion" entry immediately above)
 -- re-verify before trusting this file's residue count going forward, per
 this ticket's own standing rule.
+
+## 2026-08-29: `S24-testing/3-output.t` — EVAL exposed a parser-internal diagnostic
+
+`Test.rakumod`'s `eval-lives-ok` catches an EVAL parse failure in `$!` and
+prints it through `_diag("Error: $ee")`. Mutsu exposed the raw parser text
+(`Confused. parse error ... expected expected statement ...`) there, including
+internal location and duplicated `near` context. Rakudo's equivalent
+diagnostic begins `Unable to parse`, which the spec test matches.
+
+`eval_eval_string` now normalizes only untyped `Confused. parse error` results
+to begin `Unable to parse expression;`, retaining the structured parse code
+and location. Typed parser errors are deliberately excluded: their `X::...`
+message is needed to recover the exception class for `throws-like`. Pin:
+`t/eval-parse-error-diagnostic.t`, green under both providers and Rakudo. The
+target roast file passes with `MUTSU_REAL_TEST=1`; the typed-error coverage in
+`S02-lexical-conventions/comments.t` remains green.

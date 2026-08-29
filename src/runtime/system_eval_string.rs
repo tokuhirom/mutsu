@@ -584,6 +584,20 @@ impl Interpreter {
         }
         crate::runtime::registration_sub::pop_eval_outer_amp_names();
         crate::runtime::registration_sub::pop_eval_outer_routine_keys();
+        // An EVAL parse failure is exposed as `$!`, whose string form is what
+        // Test.rakumod's `eval-lives-ok` prints after `# Error:`.  The raw
+        // parser diagnostic is useful to the CLI renderer, but starts with an
+        // internal "Confused. parse error ..." wrapper that is neither useful
+        // nor compatible with Raku's EVAL diagnostic.  Keep the structured
+        // parse code and location intact while giving the caught exception the
+        // EVAL-facing prefix Raku uses.
+        if let Err(err) = &mut result
+            && err.code().is_some_and(|code| code.is_parse())
+            && err.message.starts_with("Confused. parse error")
+            && !err.message.starts_with("Unable to parse")
+        {
+            err.message = format!("Unable to parse expression; {}", err.message);
+        }
         result
     }
 }
