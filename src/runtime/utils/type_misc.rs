@@ -17,8 +17,9 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Bool(_) => "Bool",
         ValueView::Array(_, kind) if kind.is_real_array() => "Array",
         ValueView::Array(_, _) => "List",
-        // A `gather` block evaluates to a `Seq` in Raku; other lazy lists
-        // (`lazy for`, arithmetic/closure sequences) present as `Array`/`List`.
+        // A `gather` block and finite closure sequence evaluate to a `Seq` in
+        // Raku; other lazy lists (`lazy for`, arithmetic/closure sequences)
+        // present as `Array`/`List`.
         // `.List`/`.Array`/`.cache` on a lazy Seq changes the reported type
         // without forcing reification, so honour those context markers first.
         ValueView::LazyList(ll) if ll.in_array_context() => "Array",
@@ -27,6 +28,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // but Rakudo exposes both `.lines` and `.handles` as eager `Seq`s.
         ValueView::LazyList(ll) if ll.is_cat_pull() => "Seq",
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
+        ValueView::LazyList(ll) if ll.has_finite_closure_endpoint() => "Seq",
         // An untagged genuinely-lazy list (an infinite arithmetic/closure
         // sequence, `1…∞`, that was never assigned into an `@` slot or given
         // an explicit `.List`/`.Array` context) is a bare `Seq` in Raku —

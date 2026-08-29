@@ -198,6 +198,7 @@ mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
 pub(crate) mod vm_meta_ops;
+mod vm_meta_ops_zip;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_misc_assign;
 pub(crate) mod vm_misc_block;
