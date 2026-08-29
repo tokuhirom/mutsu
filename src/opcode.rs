@@ -4305,8 +4305,7 @@ pub(crate) struct CompiledCode {
     /// Lazily-built shared body per `stmt_pool` slot (see `closure_body_arc`).
     /// A `SubData`'s body used to be deep-cloned out of the pool on every
     /// closure creation; the `Arc` is built once per slot instead.
-    pub(crate) stmt_pool_bodies:
-        std::sync::OnceLock<Box<[std::sync::OnceLock<std::sync::Arc<Vec<Stmt>>>]>>,
+    pub(crate) stmt_pool_bodies: std::sync::OnceLock<StmtPoolBodies>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     pub(crate) jit: JitCodeState,
 }
@@ -4315,6 +4314,11 @@ pub(crate) struct CompiledCode {
 /// [`CompiledCode::local_attr_keys`]): one entry per slot, `Some((bare attribute
 /// `Symbol`, is_private))` for an attribute twigil and `None` otherwise.
 pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool)>]>;
+
+/// The per-`stmt_pool`-slot shared closure body of a chunk (see
+/// [`CompiledCode::closure_body_arc`]): one lazily-filled slot per pool entry,
+/// each holding the `Arc` every closure created from that entry shares.
+pub(crate) type StmtPoolBodies = Box<[std::sync::OnceLock<std::sync::Arc<Vec<Stmt>>>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
 /// `entry` caches the compiled native entry so the per-call cost once compiled
