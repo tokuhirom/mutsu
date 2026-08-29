@@ -87,12 +87,15 @@ micro dropped 70%; `bench-ctor` −11.2%, `word-count` −5.2%.
   but the same shape — both are pool-owned and immutable).
 - `Symbol::intern(&self.lexical_closure_package())` allocates a `String` per
   creation just to intern it.
-- **`exec_make_gather_op` runs `Compiler::new().compile(...)` on every `gather`
-  block creation** — the identical per-creation-compile shape that
-  `eval_map_over_items_rw` had (fixed in #7109). It compiles the gather body to
-  bytecode each time the `gather` expression is evaluated, so a `gather` inside a
-  loop re-runs the compiler per iteration. Same fix shape: cache keyed on the
-  chunk + pool slot. Not measured yet — measure before assuming it is hot.
+- ~~`exec_make_gather_op` runs `Compiler::new().compile(...)` on every `gather`
+  block creation~~ — **DONE (2026-08-29)**. It was the identical
+  per-creation-compile shape `eval_map_over_items_rw` had (#7109), and it was
+  hot: `add_constant` grew by 3 per gather creation (60013 over a 20000-iteration
+  loop), and adding 20 statements to the body took that loop from 0.11s to 0.81s
+  while rakudo went 0.23s to 0.27s. `Interpreter::gather_compile_cache` keys the
+  compile on the body's analysis chunk: `add_constant` 60013 → 16, the small-body
+  loop −34%, the large-body loop −71% (0.80s → 0.23s, now faster than rakudo's
+  0.27s).
 
 ## Repro
 

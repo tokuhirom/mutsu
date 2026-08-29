@@ -1,5 +1,4 @@
 use super::*;
-use crate::compiler::Compiler;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -143,22 +142,22 @@ impl Interpreter {
             // `Stmt::Block` (whose `BlockScope` restores the routine registry) when there
             // is one. Without it two sibling `gather { sub foo {...} }` blocks collided
             // with X::Redeclaration, and the first block's `foo` stayed callable outside.
-            let compiler = Compiler::new();
-            let scoped_body: Vec<Stmt>;
-            let compile_target: &[Stmt] = if Compiler::stmts_declare_routines(body) {
-                scoped_body = vec![Stmt::Block(body.clone())];
-                &scoped_body
-            } else {
-                body
-            };
-            let (compiled_code, compiled_fns) = compiler.compile(compile_target);
+            //
+            // Cached on the body's analysis chunk (`gather_compile_cache`): the
+            // compile is a pure function of the body, but this runs every time
+            // the `gather` EXPRESSION is evaluated, so a `gather` in a loop used
+            // to re-run the whole compiler per iteration -- ~1.75us per body
+            // statement per creation, and 3 constant-pool additions each. A
+            // gather whose body has no analysis chunk (an `EVAL`-built one)
+            // compiles fresh, exactly as the map/grep sibling does.
+            let (compiled_code, compiled_fns) = self.compile_gather_body_cached(&analysis_cc, body);
             let list = LazyList {
                 body: body.clone(),
                 env,
                 cache: std::sync::Mutex::new(None),
                 generation_state: std::sync::Mutex::new(None),
-                compiled_code: Some(std::sync::Arc::new(compiled_code)),
-                compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
+                compiled_code: Some(compiled_code),
+                compiled_fns: Some(compiled_fns),
                 elems_count: None,
                 scan_spec: None,
                 sequence_spec: None,

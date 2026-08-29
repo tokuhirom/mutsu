@@ -1760,6 +1760,18 @@ pub struct Interpreter {
     /// recomputable optimization).
     map_grep_compile_cache:
         HashMap<MapGrepCacheKey, (std::sync::Arc<CompiledCode>, std::sync::Arc<CompiledFns>)>,
+    /// Compiled bytecode for `gather` block bodies, keyed the same way (pointer
+    /// identity of the body's analysis `CompiledCode`). `exec_make_gather_op`
+    /// used to run the whole compiler on the body every time the `gather`
+    /// EXPRESSION was evaluated, so a `gather` inside a loop re-compiled per
+    /// iteration: 3 constant-pool additions per creation, and ~1.75us per body
+    /// statement per creation. Kept separate from `map_grep_compile_cache`
+    /// because the compile target differs (a body that declares routines is
+    /// wrapped in a `Stmt::Block` first), so the two must never share a slot for
+    /// the same origin chunk. Starts empty per thread (a pure recomputable
+    /// optimization).
+    gather_compile_cache:
+        HashMap<MapGrepCacheKey, (std::sync::Arc<CompiledCode>, std::sync::Arc<CompiledFns>)>,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire
