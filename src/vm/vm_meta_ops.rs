@@ -1,3 +1,4 @@
+use super::vm_meta_ops_zip::{MAX_ZIP_EXPAND, ZipIter};
 use super::*;
 
 impl Interpreter {
@@ -83,7 +84,9 @@ impl Interpreter {
             }
             "X" => {
                 let value_is_lazy = |v: &Value| match v.view() {
-                    ValueView::LazyList(_) => true,
+                    // A finite closure sequence must be forced below. Its
+                    // cache only holds the seed until that happens.
+                    ValueView::LazyList(list) => !list.has_finite_closure_endpoint(),
                     ValueView::Range(_, end)
                     | ValueView::RangeExcl(_, end)
                     | ValueView::RangeExclStart(_, end)
@@ -96,17 +99,23 @@ impl Interpreter {
                 };
                 let lazy_inputs = value_is_lazy(&left) || value_is_lazy(&right);
                 let lazy_limit = 256usize;
-                let materialize_side = |v: &Value| -> Vec<Value> {
-                    if value_is_lazy(v) {
-                        let iter = ZipIter::from_value(v);
-                        let len = iter.len().min(lazy_limit);
-                        (0..len).map(|i| iter.nth(i)).collect()
-                    } else {
-                        runtime::value_to_list(v)
-                    }
-                };
-                let left_list = materialize_side(&left);
-                let right_list = materialize_side(&right);
+                let materialize_side =
+                    |vm: &mut Self, v: &Value| -> Result<Vec<Value>, RuntimeError> {
+                        if let ValueView::LazyList(list) = v.view()
+                            && list.has_finite_closure_endpoint()
+                        {
+                            return vm.force_lazy_list_vm(&list);
+                        }
+                        if value_is_lazy(v) {
+                            let iter = ZipIter::from_value(v);
+                            let len = iter.len().min(lazy_limit);
+                            Ok((0..len).map(|i| iter.nth(i)).collect())
+                        } else {
+                            Ok(runtime::value_to_list(v))
+                        }
+                    };
+                let left_list = materialize_side(self, &left)?;
+                let right_list = materialize_side(self, &right)?;
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for l in &left_list {
@@ -466,142 +475,5 @@ impl Interpreter {
             };
         }
         Ok(acc)
-    }
-}
-
-/// Maximum elements to produce from Z (zip) when iterating over ranges.
-/// This caps the output for infinite ranges (e.g., `1..* Z** 1..*`).
-/// Kept small because the meta-operator (e.g. `**`) may be expensive
-/// for large values. The caller (e.g., `.[^5]`) will further limit.
-// TODO: Ideally Z should return a lazy Seq and only compute elements on demand.
-const MAX_ZIP_EXPAND: usize = 1_000;
-
-/// Helper for lazy index-based iteration over values in Z (zip) operations.
-/// Avoids materializing huge ranges like `1..*` into million-element Vecs.
-enum ZipIter {
-    /// Inclusive integer range: elements are start, start+1, ..., end
-    IntRange { start: i64, count: usize },
-    /// Exclusive-end integer range: elements are start, start+1, ..., end-1
-    IntRangeExcl { start: i64, count: usize },
-    /// Already-materialized list
-    List(Vec<Value>),
-    /// A list that ends with `*` (Whatever): the last real element is repeated
-    /// to extend the list to any requested length.
-    ExtendedList {
-        items: Vec<Value>,
-        /// The last real element (before `*`), used for extension
-        fill: Value,
-    },
-    /// A lazy list (preserves laziness for is-lazy propagation)
-    Lazy(Vec<Value>),
-}
-
-impl ZipIter {
-    fn from_value(val: &Value) -> Self {
-        match val.view() {
-            ValueView::Range(a, b) => {
-                let count = if b >= a {
-                    b.saturating_sub(a)
-                        .saturating_add(1)
-                        .try_into()
-                        .unwrap_or(usize::MAX)
-                        .min(MAX_ZIP_EXPAND)
-                } else {
-                    0
-                };
-                ZipIter::IntRange { start: a, count }
-            }
-            ValueView::RangeExcl(a, b) => {
-                let count = if b > a {
-                    ((b - a) as usize).min(MAX_ZIP_EXPAND)
-                } else {
-                    0
-                };
-                ZipIter::IntRangeExcl { start: a, count }
-            }
-            ValueView::RangeExclStart(a, b) => {
-                let start = a.saturating_add(1);
-                let count = if b >= start {
-                    b.saturating_sub(start)
-                        .saturating_add(1)
-                        .try_into()
-                        .unwrap_or(usize::MAX)
-                        .min(MAX_ZIP_EXPAND)
-                } else {
-                    0
-                };
-                ZipIter::IntRange { start, count }
-            }
-            ValueView::RangeExclBoth(a, b) => {
-                let start = a.saturating_add(1);
-                let count = if b > start {
-                    b.saturating_sub(start)
-                        .try_into()
-                        .unwrap_or(usize::MAX)
-                        .min(MAX_ZIP_EXPAND)
-                } else {
-                    0
-                };
-                ZipIter::IntRangeExcl { start, count }
-            }
-            // Nil in zip context is a 1-element list (not empty), matching Raku behavior
-            // where `Nil Z+ 2` yields `(2)` (Nil coerces to 0).
-            ValueView::Nil => ZipIter::List(vec![Value::NIL]),
-            ValueView::LazyList(_) => {
-                let list = runtime::value_to_list(val);
-                let len = list.len().min(MAX_ZIP_EXPAND);
-                ZipIter::Lazy(list[..len].to_vec())
-            }
-            _ => {
-                let list = runtime::value_to_list(val);
-                // Check for trailing Whatever (*) — extends the list by
-                // repeating the last real element.
-                if list.len() >= 2
-                    && matches!(list.last().map(Value::view), Some(ValueView::Whatever))
-                {
-                    let items: Vec<Value> = list[..list.len() - 1].to_vec();
-                    let fill = items.last().cloned().unwrap_or(Value::NIL);
-                    ZipIter::ExtendedList { items, fill }
-                } else {
-                    ZipIter::List(list)
-                }
-            }
-        }
-    }
-
-    /// Returns true if this side represents an infinite / lazy source.
-    fn is_lazy(&self) -> bool {
-        match self {
-            ZipIter::IntRange { count, .. } | ZipIter::IntRangeExcl { count, .. } => {
-                *count >= MAX_ZIP_EXPAND
-            }
-            ZipIter::ExtendedList { .. } | ZipIter::Lazy(_) => true,
-            ZipIter::List(_) => false,
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            ZipIter::IntRange { count, .. } | ZipIter::IntRangeExcl { count, .. } => *count,
-            ZipIter::List(v) | ZipIter::Lazy(v) => v.len(),
-            // Extended lists can match any length from the other side
-            ZipIter::ExtendedList { .. } => usize::MAX,
-        }
-    }
-
-    fn nth(&self, i: usize) -> Value {
-        match self {
-            ZipIter::IntRange { start, .. } | ZipIter::IntRangeExcl { start, .. } => {
-                Value::int(*start + i as i64)
-            }
-            ZipIter::List(v) | ZipIter::Lazy(v) => v[i].clone(),
-            ZipIter::ExtendedList { items, fill } => {
-                if i < items.len() {
-                    items[i].clone()
-                } else {
-                    fill.clone()
-                }
-            }
-        }
     }
 }
