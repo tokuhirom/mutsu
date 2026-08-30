@@ -461,12 +461,34 @@ impl Interpreter {
             .keys()
             .filter_map(|key| key.strip_prefix_str("__mutsu_eval_role::"))
             .collect();
+        // An EVAL may return a role type object (`my $r = EVAL 'unit role R;'`).
+        // That object remains usable by its caller, so preserve exactly that
+        // role's registry entries while isolating every other EVAL-local role.
+        let returned_role_names: std::collections::HashSet<String> = result
+            .as_ref()
+            .ok()
+            .and_then(|value| match value.view() {
+                crate::value::ValueView::Package(name)
+                    if eval_role_names.contains(&name.resolve()) =>
+                {
+                    Some(name.resolve().to_string())
+                }
+                _ => None,
+            })
+            .into_iter()
+            .collect();
+        let current_roles = self.registry().roles.clone();
+        let current_role_candidates = self.registry().role_candidates.clone();
+        let current_role_type_params = self.registry().role_type_params.clone();
+        let current_role_parents = self.registry().role_parents.clone();
+        let current_role_hides = self.registry().role_hides.clone();
         let is_eval_role_artifact = |name: &str| {
             eval_role_names.iter().any(|role| {
-                name == role
-                    || name
-                        .strip_prefix(role)
-                        .is_some_and(|suffix| suffix.starts_with('['))
+                !returned_role_names.contains(role)
+                    && (name == role
+                        || name
+                            .strip_prefix(role)
+                            .is_some_and(|suffix| suffix.starts_with('[')))
             })
         };
         let mut current_classes = self.registry().classes.clone();
@@ -517,9 +539,34 @@ impl Interpreter {
         self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
         self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
         // Roles declared in EVAL, including `my role`, are lexical to that
-        // compilation unit.  Restore the caller's role registries unchanged
-        // so an EVAL-local definition cannot overwrite a same-named role the
-        // caller declares later.
+        // compilation unit. Preserve only a role type object returned directly
+        // from EVAL; every other EVAL-local role must not overwrite a same-named
+        // role the caller declares later.
+        for name in &returned_role_names {
+            if let Some(role) = current_roles.get(name) {
+                self.registry_mut().roles.insert(name.clone(), role.clone());
+            }
+            if let Some(candidates) = current_role_candidates.get(name) {
+                self.registry_mut()
+                    .role_candidates
+                    .insert(name.clone(), candidates.clone());
+            }
+            if let Some(params) = current_role_type_params.get(name) {
+                self.registry_mut()
+                    .role_type_params
+                    .insert(name.clone(), params.clone());
+            }
+            if let Some(parents) = current_role_parents.get(name) {
+                self.registry_mut()
+                    .role_parents
+                    .insert(name.clone(), parents.clone());
+            }
+            if let Some(hides) = current_role_hides.get(name) {
+                self.registry_mut()
+                    .role_hides
+                    .insert(name.clone(), hides.clone());
+            }
+        }
         self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
