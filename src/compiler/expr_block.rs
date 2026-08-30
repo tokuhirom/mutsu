@@ -648,6 +648,7 @@ impl Compiler {
                 params_def,
                 body,
                 label,
+                mode,
                 rw_block,
                 explicit_zero_params,
                 is_statement_modifier,
@@ -664,6 +665,7 @@ impl Compiler {
                     body,
                     label,
                     *is_statement_modifier,
+                    *mode,
                 );
             }
             Stmt::While { cond, body, label } => {

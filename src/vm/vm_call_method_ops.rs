@@ -1469,7 +1469,9 @@ impl Interpreter {
                     // For small lists, use parallel execution so inter-item
                     // synchronization (e.g. Promise await chains) works.
                     // For large lists, fall through to the sequential array
-                    // map/grep path which is more efficient.
+                    // map/grep path.  The worker batches retain every expanded
+                    // result until their join, which makes the large Slip-heavy
+                    // stress shape GC-bound rather than faster.
                     if items_arc.len() < 1000 {
                         let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
                         let block = if !args.is_empty() {
@@ -1492,7 +1494,7 @@ impl Interpreter {
                         self.stack.push(wrapped);
                         return Ok(());
                     }
-                    // Large list: fall through to array-based dispatch
+                    // Large list: fall through to array-based dispatch.
                     Some(matches!(target.view(), ValueView::HyperSeq(_)))
                 }
                 "iterator" if args.is_empty() => {

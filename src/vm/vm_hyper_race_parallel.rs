@@ -1,6 +1,158 @@
+use super::vm_control_ops::ForLoopSpec;
 use super::*;
+use crate::opcode::{CompiledCode, CompiledFns};
 
 impl Interpreter {
+    /// Worker count for a hyper/race op over `n` iterations: one worker per
+    /// item for tiny lists (so inter-item `await` still sees a peer thread),
+    /// otherwise `available_parallelism` (at least 1).
+    fn hyper_worker_degree(n: usize) -> usize {
+        if n == 0 {
+            return 1;
+        }
+        let cores = std::thread::available_parallelism()
+            .map(|c| c.get())
+            .unwrap_or(4)
+            .max(1);
+        n.min(cores)
+    }
+
+    /// Parallel `hyper for` / `race for`: split the item list into batches,
+    /// run the compiled body on a cloned interpreter per batch, concatenate
+    /// collected results in input order.
+    pub(super) fn exec_threaded_for_loop(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        items: &[Value],
+        body_start: usize,
+        loop_end: usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        // A `last` or `return` in the body controls the enclosing loop/routine,
+        // not merely the worker batch that happens to encounter it.  Submitted
+        // batches cannot retract work that has already started, so preserve the
+        // sequential control-flow semantics for such bodies.  This deliberately
+        // also catches a nested-loop control op: losing parallelism there is safe,
+        // while guessing which loop a labelled control targets is not.
+        let has_nonlocal_control = code.ops[body_start..loop_end].iter().any(|op| {
+            matches!(
+                op,
+                OpCode::Last(_) | OpCode::Return | OpCode::ReturnFromNonRoutine(..)
+            )
+        });
+        if has_nonlocal_control {
+            return self
+                .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
+                .map(|_| ());
+        }
+        if items.is_empty() {
+            return self
+                .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
+                .map(|_| ());
+        }
+        let arity = spec.arity.max(1) as usize;
+        let n_iters = items.len().div_ceil(arity);
+        let degree = Self::hyper_worker_degree(n_iters);
+        let iters_per_batch = n_iters.div_ceil(degree);
+        let batch_size = iters_per_batch.saturating_mul(arity).max(arity);
+        let batches: Vec<Vec<Value>> = items
+            .chunks(batch_size)
+            .map(|chunk| chunk.to_vec())
+            .collect();
+        let pre_shared_keys = self.shared_var_keys_snapshot();
+        let locals_snapshot = self.locals.clone();
+        type ThreadResult = (Result<Vec<Value>, RuntimeError>, Vec<Value>, String, String);
+        let mut batch_results: Vec<ThreadResult> = Vec::with_capacity(batches.len());
+        let collect = spec.collect;
+        let mut handles = Vec::with_capacity(batches.len());
+        for batch in batches {
+            let mut vm = self.clone_for_thread();
+            let task_code = code.clone();
+            let task_spec = spec.clone();
+            let task_fns = compiled_fns.clone();
+            // The for-loop body is the enclosing frame's bytecode, so
+            // GetLocal slots must exist. `clone_for_thread` starts a
+            // fresh frame for `start {}` / Promise workers; copy the
+            // current locals (and upvalues) so the body can run here.
+            vm.locals.clone_from(&locals_snapshot);
+            vm.upvalues.clone_from(&self.upvalues);
+            // Joined hyper/race fan-out belongs on the elastic worker pool
+            // (ADR-0020 §3.6), not on one fresh OS thread per batch.
+            handles.push(crate::runtime::worker_pool::submit_joinable(move || {
+                let run = crate::vm::guard_worker_panic(|| {
+                    vm.exec_for_loop_body(
+                        &task_code, &task_spec, &batch, body_start, loop_end, &task_fns, 0,
+                    )?;
+                    let collected = if collect {
+                        match vm.stack.pop() {
+                            Some(v) => match v.view() {
+                                ValueView::Array(items, _) => items.to_vec(),
+                                _ => vec![v],
+                            },
+                            None => Vec::new(),
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    Ok(collected)
+                });
+                let wlocals = vm.locals.clone();
+                let output = vm.take_output();
+                let stderr = vm.take_stderr_output();
+                (run, wlocals, output, stderr)
+            }));
+        }
+        for handle in handles {
+            let joined = crate::gc::block_quiescent(|| handle.join()).unwrap_or_else(|_| {
+                (
+                    Err(RuntimeError::new("thread panicked in race/hyper for")),
+                    Vec::new(),
+                    String::new(),
+                    String::new(),
+                )
+            });
+            batch_results.push(joined);
+        }
+        crate::gc::gc_safepoint(crate::gc::SafepointKind::ThreadJoin);
+        let mut all_collected = Vec::with_capacity(items.len());
+        let mut first_error: Option<RuntimeError> = None;
+        for (batch_result, wlocals, output, stderr) in batch_results {
+            self.emit_output(&output);
+            self.emit_stderr(&stderr);
+            match batch_result {
+                Ok(vals) => {
+                    if first_error.is_none() {
+                        all_collected.extend(vals);
+                    }
+                }
+                Err(e) => {
+                    if first_error.is_none() {
+                        first_error = Some(e);
+                    }
+                }
+            }
+            // Last-writer-wins merge of outer lexicals the body assigned
+            // (`$saw = True if $*THREAD.id != $main`). Raku tells you not
+            // to share mutable state in a hyper/race loop; this is enough
+            // for the $*THREAD.id probe and similar flags.
+            for (i, val) in wlocals.iter().enumerate() {
+                if i < self.locals.len() && *val != locals_snapshot[i] {
+                    self.locals[i] = val.clone();
+                }
+            }
+        }
+        self.sync_shared_vars_to_env();
+        self.retain_shared_var_keys(&pre_shared_keys);
+        if let Some(e) = first_error {
+            return Err(e);
+        }
+        if collect {
+            self.stack.push(Value::array(all_collected));
+        }
+        Ok(())
+    }
+
     /// Parallel map/grep for HyperSeq/RaceSeq.
     /// Each item is processed in its own thread to support concurrent
     /// operations like `await` inside the map/grep block.
@@ -28,9 +180,14 @@ impl Interpreter {
         }
         // Cap concurrency. For small lists (<=64 items), give each item its
         // own thread so that inter-item synchronization (e.g. Promises) works.
-        // The caller ensures items.len() < 1000 before calling this method.
+        // Larger lists use one worker per CPU (not a hard cap of 4, and not
+        // a sequential fallback past 1000 items).
         // TODO: store batch/degree on HyperSeq/RaceSeq so user params are used.
-        let degree = if items.len() <= 64 { items.len() } else { 4 };
+        let degree = if items.len() <= 64 {
+            items.len()
+        } else {
+            Self::hyper_worker_degree(items.len())
+        };
         let batch_size = std::cmp::max(1, items.len().div_ceil(degree));
         let batches: Vec<Vec<Value>> = items
             .chunks(batch_size)
