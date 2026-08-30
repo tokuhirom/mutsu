@@ -69,11 +69,18 @@ handoff state.
 
 These are timeouts under real `Test`, not known semantic divergences:
 
-- `6.d/S32-str/sprintf-{b,d,x}.t`
 - `S03-buf/{read-write-bits,write-int}.t`
 
-The blocker is the hot function-call path, especially `&`-sigil parameters
-passed through module routines. Follow
+The earlier `6.d/S32-str/sprintf-{b,d,x}.t` rows and
+`S04-declarations/state.t` are no longer timeout blockers: the 2026-08-29
+release measurement recorded them within the per-file budget. Commit
+`a7373e323` (`perf: cache positional callable parameter calls`) also removed
+the full name-resolution cost of a positional `&` parameter that is merely
+bound. Its regression coverage is `t/amp-param-positional-light.t`.
+
+The remaining blocker is invoking that Callable value: `c()` still compiles to
+`CallOnCodeVar` and follows the generic closure-call path. Real `Test` uses
+this shape in `dies-ok` and nested `subtest` loops. Follow
 `todo/perf/interpreter-call-path-in-hot-loops.md`; do not weaken roast timeouts
 or special-case `Test` to hide it.
 
