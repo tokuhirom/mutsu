@@ -140,6 +140,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "lines",
     "get",
     "prompt",
+    "repl",
 ];
 
 impl Interpreter {
@@ -650,6 +651,7 @@ impl Interpreter {
             // EVAL
             "EVALFILE" => self.builtin_evalfile(&args),
             "EVAL" => self.builtin_eval(&args),
+            "repl" => self.builtin_repl(&args),
             // NQP functions (minimal compatibility)
             "nqp::atkey" => {
                 let hash = args.first().cloned().unwrap_or(Value::NIL);

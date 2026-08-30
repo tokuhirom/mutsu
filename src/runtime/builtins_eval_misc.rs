@@ -438,6 +438,54 @@ impl Interpreter {
         result
     }
 
+    /// Enter a REPL in the current interpreter and lexical environment.
+    ///
+    /// Unlike the CLI REPL, this is an ordinary core routine and therefore
+    /// reads the current dynamic `$*IN`.  Each complete input unit goes through
+    /// EVAL so reads and writes resolve against the caller's live lexicals.
+    pub(super) fn builtin_repl(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if !args.is_empty() {
+            return Err(RuntimeError::new("repl() does not take arguments"));
+        }
+
+        let input = self
+            .get_dynamic_handle("$*IN")
+            .or_else(|| self.default_input_handle())
+            .ok_or_else(|| RuntimeError::new("No input handle available for repl()"))?;
+        let mut accumulated = String::new();
+
+        while let Some(line) = self.read_line_from_handle_value(&input)? {
+            if accumulated.is_empty() {
+                accumulated.push_str(&line);
+            } else {
+                accumulated.push('\n');
+                accumulated.push_str(&line);
+            }
+            if crate::repl_core::is_incomplete(&accumulated) {
+                continue;
+            }
+            if accumulated.trim().is_empty() {
+                accumulated.clear();
+                continue;
+            }
+
+            let value = self.builtin_eval(&[Value::str(accumulated.clone())])?;
+            if !value.is_nil() {
+                let text = self
+                    .call_method_with_values(value.clone(), "gist", Vec::new())
+                    .unwrap_or(value)
+                    .to_string_value();
+                self.write_to_named_handle("$*OUT", &text, true)?;
+            }
+            accumulated.clear();
+        }
+
+        if !accumulated.trim().is_empty() {
+            return Err(RuntimeError::new("Incomplete input at end of repl()"));
+        }
+        Ok(Value::NIL)
+    }
+
     /// ADR-0037 §2.3: classify `ctx`'s (an `EVAL ..., context => $ctx`
     /// argument) routine identity into what the EVAL unit's `return` should
     /// do. `Mainline` both when `ctx` carries no routine identity at all

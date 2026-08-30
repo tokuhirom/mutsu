@@ -234,6 +234,7 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "unival"
             | "univals"
             | "lines"
+            | "repl"
             | "slurp"
             | "spurt"
             | "localtime"

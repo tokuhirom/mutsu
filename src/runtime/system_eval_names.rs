@@ -188,6 +188,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "rand",
     "reduce",
     "rename",
+    "repl",
     "repeated",
     "require",
     "return",
