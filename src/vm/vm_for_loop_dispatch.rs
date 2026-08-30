@@ -80,12 +80,15 @@ impl Interpreter {
                 crate::value::ForLoopResumeState::List {
                     items,
                     next_index,
+                    container_binding,
                     resume_body_ip,
                     inner,
                     ..
                 } => {
                     self.gather_for_loop_resume = inner.map(|b| *b);
                     self.gather_resume_body_ip = resume_body_ip;
+                    self.container_ref_var = container_binding
+                        .map(|(name, slot)| (name, slot, Self::resume_code_fp(code)));
                     let _ = self.exec_for_loop_body(
                         code,
                         spec,

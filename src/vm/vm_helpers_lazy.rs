@@ -964,8 +964,13 @@ impl Interpreter {
             if let Some(initial) = list.env.get_sym(*k) {
                 // Variable existed in both outer and gather env.
                 // Only propagate if the value actually changed during execution.
-                // Compare string representations as a proxy for value equality.
-                if v.to_string_value() != initial.to_string_value() {
+                // Compare string representations as a proxy for value equality,
+                // except a newly-promoted scalar cell: it deliberately has the
+                // same visible value as its source while changing the storage
+                // identity (`take-rw $x` must not lose that cell on gather exit).
+                if v.to_string_value() != initial.to_string_value()
+                    || (v.is_container_ref() && !initial.is_container_ref())
+                {
                     merged_env.insert_sym(*k, v.clone());
                 }
             } else {

@@ -1055,14 +1055,26 @@ impl Interpreter {
                             e.set_take_suspend_site(None);
                         }
                         let resume_body_ip = take_site.map(|(_, t)| t + 1);
+                        // Keep promoted items in the continuation snapshot.  A
+                        // resumed gather may have let its consumer mutate an
+                        // earlier element before the producer re-enters; the
+                        // source-entry guard must compare the same cell, not
+                        // the old by-value snapshot that preceded promotion.
+                        let mut resume_items = items.to_vec();
+                        if let Some(slot) = resume_items.get_mut(idx) {
+                            *slot = item.clone();
+                        }
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::List {
-                                items: items.to_vec(),
+                                items: resume_items,
                                 next_index: if nested.is_some() || resume_body_ip.is_some() {
                                     idx
                                 } else {
                                     idx + 1
                                 },
+                                container_binding: container_binding
+                                    .clone()
+                                    .map(|name| (name, container_source_slot)),
                                 code_id,
                                 loop_ip: body_start - 1,
                                 resume_body_ip,

@@ -2,6 +2,49 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Load the live scalar container denoted by `take-rw $var`.
+    ///
+    /// Normal `GetLocal`/`GetGlobal` reads decontainerize cells, which is right
+    /// for value context but loses the alias a gather must retain.  When the
+    /// scalar has not yet been boxed, promote its authoritative store and make
+    /// env agree so closure and dynamic reads see the same cell.
+    pub(super) fn exec_get_scalar_container_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        local_idx: Option<u32>,
+    ) {
+        let name = Self::const_str(code, name_idx);
+        // The loop topic is refreshed in env for every iteration.  Its compiled
+        // local slot belongs to the enclosing gather body and can therefore be
+        // a stale prior item; prefer the live topic binding.
+        let current = if name == "_" {
+            self.env()
+                .get(name)
+                .cloned()
+                .or_else(|| local_idx.and_then(|idx| self.locals.get(idx as usize).cloned()))
+        } else {
+            local_idx
+                .and_then(|idx| self.locals.get(idx as usize).cloned())
+                .or_else(|| self.get_env_with_main_alias(name))
+        }
+        .unwrap_or(Value::NIL);
+        let cell = if current.is_container_ref() {
+            current
+        } else {
+            current.into_container_ref()
+        };
+
+        if let Some(idx) = local_idx {
+            self.locals[idx as usize] = cell.clone();
+            let sym = code.locals_sym.get(idx as usize).copied();
+            self.set_env_with_main_alias_sym(name, sym, cell.clone());
+        } else {
+            self.set_env_with_main_alias(name, cell.clone());
+        }
+        self.stack.push(cell);
+    }
+
     /// Like `exec_get_local_op` but does NOT resolve HashEntryRef.
     /// Pushes the raw local value, preserving container references for `=:=` checks.
     pub(super) fn exec_get_local_raw_op(&mut self, idx: u32) {

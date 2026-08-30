@@ -1807,6 +1807,11 @@ pub(crate) enum ForLoopResumeState {
     List {
         items: Vec<Value>,
         next_index: usize,
+        /// The source tag consumed by the original ForLoop entry.  A gather
+        /// coroutine resumes at the loop opcode without re-running that tag,
+        /// so it must travel with the continuation for element-container
+        /// bindings such as `take-rw $_`.
+        container_binding: Option<(String, Option<u32>)>,
         code_id: usize,
         loop_ip: usize,
         resume_body_ip: Option<usize>,
