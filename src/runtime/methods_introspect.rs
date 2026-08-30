@@ -400,6 +400,8 @@ impl Interpreter {
             "Perl6::Metamodel::SubsetHOW"
         } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
             "Perl6::Metamodel::CoercionHOW"
+        } else if self.class_is_grammar(&type_name) {
+            "Perl6::Metamodel::GrammarHOW"
         } else {
             "Perl6::Metamodel::ClassHOW"
         };
