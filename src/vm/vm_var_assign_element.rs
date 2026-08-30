@@ -641,8 +641,32 @@ impl Interpreter {
         } else {
             None
         };
+        // Hash-subclass element assignment temporarily projects the Instance
+        // into a plain Hash for the generic hash store below. Keep the original
+        // object so the projection can be committed back in place afterwards:
+        // replacing the closure's captured `$obj` with that temporary Hash loses
+        // both its class identity and the shared scalar container that carries
+        // the write back to the caller.
+        let saved_hash_subclass_instance = self.env().get(&save_var_name).cloned().and_then(|v| {
+            let instance = v.deref_container();
+            if let ValueView::Instance { class_name, .. } = instance.view()
+                && self.is_container_subclass(&class_name.resolve())
+            {
+                Some(instance)
+            } else {
+                None
+            }
+        });
         let result =
             self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional, target_slot);
+        if result.is_ok()
+            && let Some(instance) = saved_hash_subclass_instance
+            && let ValueView::Instance { attributes, .. } = instance.view()
+            && let Some(ValueView::Hash(hash)) = self.env().get(&save_var_name).map(Value::view)
+        {
+            attributes.commit_attrs(hash.map.clone().into());
+            self.env_mut().insert(save_var_name.clone(), instance);
+        }
         // Restore metadata on the post-assignment container when the
         // identity-keyed map lost it OR holds a stale entry. Copy-on-write
         // changes the hash's Arc pointer (the metadata key), and freed pointers

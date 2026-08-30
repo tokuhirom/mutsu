@@ -966,6 +966,11 @@ impl Interpreter {
         //       escape signal excludes the immediately-invoked closure
         //       (`lives-ok {...}` / `map {...}`, call args / control blocks),
         //       bounding boxing cost and avoiding the broad-boxing perf blowup.
+        //   (D) Instance receivers of an element assignment: object subscript
+        //       dispatch can replace the receiver in the closure's env overlay.
+        //       Unlike an Array or Hash, that replacement is not intrinsically
+        //       shared, so an immediately-called closure must retain the scalar
+        //       container to write the result back to its creator.
         // Read-only loop captures are handled by `owned_captures` (value-freeze).
         // §1.3 (shadow slots only): a captured-and-mutated local whose name
         // occupies MORE THAN ONE slot (a genuine inner-block shadow under
@@ -977,17 +982,24 @@ impl Interpreter {
         // structurally impossible and this is byte-identical.
         let dup_shadow_possible =
             crate::compiler::shadow_slots_active() && code.dup_named_locals.iter().any(|d| *d);
-        if code.captured_mutated_locals.is_empty()
+        let has_mutated_instance_capture =
+            cc.free_var_syms.iter().enumerate().any(|(fv_i, sym)| {
+                code.captured_mutated_locals.contains(sym)
+                    && Self::resolve_capture_slot(code, &cc.free_var_parent_slots, fv_i, *sym)
+                        .is_some_and(|idx| {
+                            matches!(self.locals[idx].view(), ValueView::Instance { .. })
+                        })
+            });
+        if (code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
             || (self.loop_local_vars.is_empty()
                 && code.needs_cell_locals.is_empty()
-                && !dup_shadow_possible)
+                && !dup_shadow_possible
+                && !has_mutated_instance_capture)
         {
             return;
         }
         for (fv_i, sym) in cc.free_var_syms.iter().enumerate() {
-            if !code.captured_mutated_locals.contains(sym) {
-                continue;
-            }
+            let captured_mutated = code.captured_mutated_locals.contains(sym);
             let needs_cell = code.needs_cell_locals.contains(sym);
             // Resolve to an owned String instead of `with_str`: `with_str` holds
             // the global symbol table's READ lock across its closure, and the
@@ -1011,9 +1023,15 @@ impl Interpreter {
             let is_dup_shadow = dup_shadow_possible
                 && baked_idx
                     .is_some_and(|b| code.dup_named_locals.get(b).copied().unwrap_or(false));
+            let is_instance_capture = baked_idx
+                .is_some_and(|idx| matches!(self.locals[idx].view(), ValueView::Instance { .. }));
+            if !captured_mutated {
+                continue;
+            }
             if !is_loop_local {
-                // Non-loop escaping path (B) / shadow path (C) only.
-                if !needs_cell && !is_dup_shadow {
+                // Non-loop escaping path (B), shadow path (C), or Instance
+                // element-store path (D) only.
+                if !needs_cell && !is_dup_shadow && !is_instance_capture {
                     continue;
                 }
                 // HISTORY: a type/`where`-constrained scalar used to be skipped

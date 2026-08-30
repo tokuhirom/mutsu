@@ -5494,7 +5494,11 @@ impl CompiledCode {
             | OpCode::GetHashVar(idx)
             | OpCode::AssignExpr(idx)
             | OpCode::TopicDotAssign(idx)
-            | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
+            | OpCode::AtomicCompoundVar { name_idx: idx, .. }
+            | OpCode::IndexAssignExprNamed { name_idx: idx, .. }
+            | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+            | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+            | OpCode::IndexElemAutoviv { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
     }
@@ -5551,7 +5555,7 @@ impl CompiledCode {
             || name.starts_with("%.")
     }
 
-    fn op_name_write_const_idx(op: &OpCode) -> Option<u32> {
+    fn op_name_write_const_idx(&self, op: &OpCode) -> Option<u32> {
         match op {
             OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)
@@ -5563,6 +5567,18 @@ impl CompiledCode {
             | OpCode::AssignExpr(idx)
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
+            // `$obj<key> = value` may copy-on-write a user-class instance,
+            // so its scalar container is a real write target for closure
+            // capture analysis. `@`/`%` element stores remain in the separate
+            // in-place-container lane below.
+            OpCode::IndexAssignExprNamed { name_idx: idx, .. }
+            | OpCode::IndexAssignExprNested { name_idx: idx, .. }
+            | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+            | OpCode::IndexElemAutoviv { name_idx: idx, .. }
+                if matches!(self.constants.get(*idx as usize).map(Value::view), Some(ValueView::Str(name)) if name.starts_with('$')) =>
+            {
+                Some(*idx)
+            }
             _ => None,
         }
     }
@@ -5970,7 +5986,7 @@ impl CompiledCode {
                 free.insert(Symbol::intern(&name));
             }
             // Name-based writes: either a free-var write or an own-local mutation.
-            if let Some(idx) = Self::op_name_write_const_idx(op)
+            if let Some(idx) = self.op_name_write_const_idx(op)
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
             {
