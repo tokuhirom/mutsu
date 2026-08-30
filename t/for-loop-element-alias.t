@@ -93,12 +93,6 @@ plan 70;
     is-deeply @a[0], [9], 'row 14: rebinding the alias to a fresh container writes through';
 }
 
-# row 27 lives at the very END of this file, not here: a `start` block anywhere
-# in a program corrupts every LATER `for @m -> @row { ... }` loop, which would
-# otherwise sink the `-> @row` invariant rows 32 and 37 below. That is a
-# pre-existing, unrelated bug — see
-# `todo/tickets/at-sigil-for-param-rebinds-stale-container-after-start-block.md`.
-
 # row 36 — one closure writes, a sibling closure reads the new value.
 {
     my @a = 1;
@@ -566,8 +560,7 @@ plan 70;
     is @big[19999], 20000, 'the mutating `<->` loop actually wrote every element';
 }
 
-# row 27 — the binding also outlives the THREAD that captured it. Deliberately
-# last: see the note where this row would otherwise sit.
+# row 27 — the binding also outlives the THREAD that captured it.
 {
     my @a = 10, 20;
     my @p;
