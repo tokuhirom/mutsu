@@ -6,6 +6,12 @@
 - **Related**: [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md) (gave `Seq` a real body and split reify from consume — this ADR fills the gap that `.cache`'s *return type* was never in its scope), [ADR-0030](0030-native-array-decode-cache-interior-mutability.md) (the `SyncUnsafeCell` primitive `SeqBody` already uses), [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (the "one dispatch entry" ambition this ADR applies to type-name answering)
 - **Ticket**: [todo/deep/seq-cache-does-not-narrow-to-list-stack-overflow.md](../../todo/deep/seq-cache-does-not-narrow-to-list-stack-overflow.md)
 
+**Amendment (2026-08-30):** `SeqView` also has an `ItemList` handle tag. Assigning a deferred
+List-view handle to a `$` scalar retags only that handle, without forcing the shared source; `.raku`
+normalizes it to `ArrayKind::ItemList`. This is the handle-local equivalent of scalar assignment
+retagging a real `List` as `ItemList`, and preserves the ADR's requirement that an infinite cached
+source remain deferred.
+
 ---
 
 ## 1. Context

@@ -391,7 +391,7 @@ impl Value {
         Value::Seq(body.as_list_view())
     }
 
-    /// `Some(list)` when `value` is a `SeqView::List` handle (what
+    /// `Some(list)` when `value` is a `SeqView::List`/`ItemList` handle (what
     /// [`Value::seq_list_view`] produced) — i.e. a value that Raku calls a
     /// `List` even though mutsu still represents it with a `Seq` body.
     ///
@@ -406,9 +406,11 @@ impl Value {
     /// exactly as a direct element read of the `Seq` handle would.
     pub(crate) fn seq_list_view_as_list(value: &Self) -> Option<Self> {
         match value.view() {
-            ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
-                Some(Value::array(body.to_vec()))
-            }
+            ValueView::Seq(body) => match body.view() {
+                crate::value::SeqView::List => Some(Value::array(body.to_vec())),
+                crate::value::SeqView::ItemList => Some(Value::array(body.to_vec()).item()),
+                crate::value::SeqView::Seq => None,
+            },
             _ => None,
         }
     }
