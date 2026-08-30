@@ -426,10 +426,11 @@ impl Interpreter {
         // in this frame as well, so only this block's match publication writes
         // through that cell; routines called by the block retain fresh matches.
         if !cc.is_routine
-            && let Some(scope) = data.env.get("__mutsu_block_match_scope").cloned()
+            && data.env.contains_key("__mutsu_block_match_scope")
+            && let Some(scope) = data.env.get("/").cloned()
         {
             self.env_mut()
-                .insert_sym(Symbol::intern("__mutsu_block_match_scope"), scope.clone());
+                .insert_sym(Symbol::intern("__mutsu_block_match_scope"), Value::TRUE);
             self.env_mut().insert_sym(Symbol::intern("/"), scope);
         }
         // `self` may live in a PARENT tier of the captured env: the loop above

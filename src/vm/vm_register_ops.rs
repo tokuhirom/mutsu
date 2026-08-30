@@ -311,8 +311,7 @@ impl Interpreter {
             let mut upvalues = self.capture_upvalues(code, &compiled_code);
             let mut captured_env = self.capture_closure_env(code, &compiled_code);
             if is_block {
-                let scope = self.env().get("/").cloned().unwrap_or(Value::NIL);
-                captured_env.insert("__mutsu_block_match_scope".to_string(), scope);
+                captured_env.insert("__mutsu_block_match_scope".to_string(), Value::TRUE);
             }
             self.freeze_readonly_owned_captures(
                 code,
