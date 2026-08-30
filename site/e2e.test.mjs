@@ -504,6 +504,52 @@ try {
   assert(await page.inputValue('#code') === shared, 'and still carries its code');
 
   /* =============================================================== *
+   * Embeddable Web Component
+   * =============================================================== */
+
+  console.log('Test: drop-in mutsu-code component');
+  await page.goto(`${BASE}/embed-demo.html`, { waitUntil: 'networkidle' });
+  const component = page.locator('mutsu-code');
+  await component.locator('output').waitFor({ state: 'visible', timeout: 30000 });
+  await page.waitForFunction(
+    () => document.querySelector('mutsu-code').shadowRoot
+      .querySelector('.status').textContent === 'Ready',
+    { timeout: 30000 });
+  assert((await component.locator('output').textContent()).includes('Hello from an embedded mutsu!'),
+         'autorun executes the embedded Raku source');
+
+  await component.locator('textarea').fill('say 6 * 7;');
+  await component.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('mutsu-code').shadowRoot.querySelector('.run').disabled);
+  assert((await component.locator('output').textContent()).trim() === '42',
+         'the Run button evaluates edited source');
+
+  await component.locator('.reset').click();
+  assert((await component.locator('textarea').inputValue()).includes('Hello from an embedded mutsu!'),
+         'Reset restores the original source');
+
+  await page.evaluate(() => {
+    const el = document.createElement('mutsu-code');
+    el.setAttribute('session', '');
+    el.textContent = 'my $answer = 42;';
+    el.id = 'session-example';
+    document.body.appendChild(el);
+  });
+  const sessionComponent = page.locator('#session-example');
+  await page.waitForFunction(
+    () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
+  await sessionComponent.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
+  await sessionComponent.locator('textarea').fill('say $answer;');
+  await sessionComponent.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
+  assert((await sessionComponent.locator('output').textContent()).trim() === '42',
+         'the session attribute retains declarations between runs');
+
+  /* =============================================================== *
    * REPL — one line at a time, in a session that remembers
    * =============================================================== */
 
