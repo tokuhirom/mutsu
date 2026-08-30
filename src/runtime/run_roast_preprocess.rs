@@ -108,6 +108,7 @@ impl Interpreter {
             "pass ",
             "pass(",
             "flunk ",
+            "flunk(",
             "is-deeply",
             "is-approx",
             "is-primed-sig",
@@ -290,6 +291,16 @@ impl Interpreter {
                 || trimmed.starts_with("#?rakudo.js.browser emit"))
                 && !trimmed.contains(".moar")
             {
+                output.push('\n');
+                continue;
+            }
+
+            // `#?rakudo eval` marks a statement that roast evaluates only on
+            // Rakudo. mutsu is not Rakudo, so preserve the TAP plan by
+            // skipping the following assertion or block. This also keeps
+            // Rakudo-specific Test extensions out of the upstream Test module.
+            if trimmed == "#?rakudo eval" || trimmed.starts_with("#?rakudo eval ") {
+                skip_block_pending = Some("Rakudo-only eval".to_string());
                 output.push('\n');
                 continue;
             }
