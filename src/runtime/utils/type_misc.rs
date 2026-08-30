@@ -263,11 +263,22 @@ pub(crate) fn identity_callable() -> Value {
     )
 }
 
-pub(crate) fn reduction_identity(op: &str) -> Value {
-    if is_chain_comparison_op(op) {
-        return Value::TRUE;
+/// Return the zero-argument identity for a reduction operator.
+///
+/// `None` distinguishes operators with no zero-argument meaning from operators
+/// whose identity is itself undefined (notably `orelse`).  Callers which are
+/// actually evaluating an empty reduction must turn `None` into the
+/// `X::NoZeroArgMeaning` Failure required by Raku.
+pub(crate) fn reduction_identity_opt(op: &str) -> Option<Value> {
+    // `%%` is chain-associative for non-empty reductions, but unlike the
+    // comparison operators it has no zero-argument candidate in Rakudo.
+    if op == "%%" {
+        return None;
     }
-    match op {
+    if is_chain_comparison_op(op) {
+        return Some(Value::TRUE);
+    }
+    Some(match op {
         "+" | "-" | "+|" | "+^" => Value::int(0),
         "*" | "**" => Value::int(1),
         "+&" => Value::int(-1), // +^0 (all bits set)
@@ -275,11 +286,18 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         "&&" | "and" | "?&" => Value::TRUE,
         "||" | "or" | "?|" | "^^" => Value::FALSE,
         "?^" => Value::FALSE,
-        "//" | "orelse" => Value::package(Symbol::intern("Any")),
+        "//" => Value::package(Symbol::intern("Any")),
+        "orelse" => Value::NIL,
         "andthen" | "notandthen" => Value::TRUE,
         "xor" => Value::FALSE,
         "min" => Value::num(f64::INFINITY),
         "max" => Value::num(f64::NEG_INFINITY),
+        "minmax" => Value::generic_range(
+            Value::num(f64::INFINITY),
+            Value::num(f64::NEG_INFINITY),
+            false,
+            false,
+        ),
         // Junction operators
         "&" => Value::junction(crate::value::JunctionKind::All, Vec::new()),
         "|" => Value::junction(crate::value::JunctionKind::Any, Vec::new()),
@@ -293,7 +311,7 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
             ArrayKind::List,
         ),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
-        "Z" => Value::seq(Vec::new()),
+        "X" | "Z" => Value::seq(Vec::new()),
         // Function composition: the identity element of `∘` is the identity
         // FUNCTION, so `[∘]` over an empty operand list is a working `Callable`
         // (`my &composed = [∘]; composed("foo")` returns `"foo"`), not a scalar.
@@ -301,11 +319,17 @@ pub(crate) fn reduction_identity(op: &str) -> Value {
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
             if let Some(inner) = strip_hyper_delimiters_for_identity(op) {
-                return reduction_identity(inner);
+                return reduction_identity_opt(inner);
             }
-            Value::NIL
+            return None;
         }
-    }
+    })
+}
+
+/// Identity lookup for contexts where an unknown operator historically means
+/// `Nil`. Empty reduction evaluation should use [`reduction_identity_opt`].
+pub(crate) fn reduction_identity(op: &str) -> Value {
+    reduction_identity_opt(op).unwrap_or(Value::NIL)
 }
 
 /// Strip hyper operator delimiters to find the inner operator for identity lookup.
