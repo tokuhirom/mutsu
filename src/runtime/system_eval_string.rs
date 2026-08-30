@@ -456,24 +456,63 @@ impl Interpreter {
         self.fatal_mode = saved_fatal_mode;
         self.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
+        let current_env = self.env.clone();
+        let eval_role_names: std::collections::HashSet<String> = current_env
+            .keys()
+            .filter_map(|key| key.strip_prefix_str("__mutsu_eval_role::"))
+            .collect();
+        // An EVAL may return a role type object (`my $r = EVAL 'unit role R;'`).
+        // That object remains usable by its caller, so preserve exactly that
+        // role's registry entries while isolating every other EVAL-local role.
+        let returned_role_names: std::collections::HashSet<String> = result
+            .as_ref()
+            .ok()
+            .and_then(|value| match value.view() {
+                crate::value::ValueView::Package(name)
+                    if eval_role_names.contains(&name.resolve()) =>
+                {
+                    Some(name.resolve().to_string())
+                }
+                _ => None,
+            })
+            .into_iter()
+            .collect();
         let current_roles = self.registry().roles.clone();
         let current_role_candidates = self.registry().role_candidates.clone();
         let current_role_type_params = self.registry().role_type_params.clone();
         let current_role_parents = self.registry().role_parents.clone();
         let current_role_hides = self.registry().role_hides.clone();
-        let current_classes = self.registry().classes.clone();
+        let keep_role =
+            |name: &str| !eval_role_names.contains(name) || returned_role_names.contains(name);
+        let is_eval_role_artifact = |name: &str| {
+            eval_role_names.iter().any(|role| {
+                !returned_role_names.contains(role)
+                    && (name == role
+                        || name
+                            .strip_prefix(role)
+                            .is_some_and(|suffix| suffix.starts_with('[')))
+            })
+        };
+        let mut current_classes = self.registry().classes.clone();
+        current_classes.retain(|name, _| !is_eval_role_artifact(name));
         let current_hidden_classes = self.registry().hidden_classes.clone();
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
-        let current_class_composed_roles = self.registry().class_composed_roles.clone();
-        let current_class_direct_composed_roles =
+        let mut current_class_composed_roles = self.registry().class_composed_roles.clone();
+        current_class_composed_roles.retain(|name, roles| {
+            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+        });
+        let mut current_class_direct_composed_roles =
             self.registry().class_direct_composed_roles.clone();
-        let current_class_role_param_bindings = self.registry().class_role_param_bindings.clone();
-        let current_env = self.env.clone();
-        let current_type_keys: std::collections::HashSet<String> = self
-            .registry()
-            .roles
+        current_class_direct_composed_roles.retain(|name, roles| {
+            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+        });
+        let mut current_class_role_param_bindings =
+            self.registry().class_role_param_bindings.clone();
+        current_class_role_param_bindings.retain(|name, _| !is_eval_role_artifact(name));
+        let current_type_keys: std::collections::HashSet<String> = current_roles
             .keys()
-            .chain(self.registry().classes.keys())
+            .filter(|name| keep_role(name))
+            .chain(current_classes.keys())
             .cloned()
             .collect();
         let snapshot_type_keys: std::collections::HashSet<String> = roles_snapshot
@@ -507,19 +546,34 @@ impl Interpreter {
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
         self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
         self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
-        self.registry_mut().roles.extend(current_roles);
-        // Don't extend user_declared_roles: roles declared in EVAL are EVAL-scoped
-        // and should not affect the parent's redeclaration detection.
-        self.registry_mut()
-            .role_candidates
-            .extend(current_role_candidates);
-        self.registry_mut()
-            .role_type_params
-            .extend(current_role_type_params);
-        self.registry_mut()
-            .role_parents
-            .extend(current_role_parents);
-        self.registry_mut().role_hides.extend(current_role_hides);
+        // Package-scoped roles declared by EVAL remain visible to later EVALs.
+        // Lexical `my role` declarations do not, unless their type object is
+        // returned directly from EVAL and remains reachable by the caller.
+        self.registry_mut().roles.extend(
+            current_roles
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_candidates.extend(
+            current_role_candidates
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_type_params.extend(
+            current_role_type_params
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_parents.extend(
+            current_role_parents
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_hides.extend(
+            current_role_hides
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
         self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
@@ -576,6 +630,8 @@ impl Interpreter {
                 self.env.remove(&key);
             }
         }
+        self.env
+            .retain(|key, _| !key.starts_with("__mutsu_eval_role::"));
         // Restore $_ so EVAL does not clobber the caller's topic variable
         if let Some(topic) = saved_topic {
             self.env.insert("_".to_string(), topic);
