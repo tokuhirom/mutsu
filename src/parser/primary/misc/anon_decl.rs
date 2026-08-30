@@ -177,12 +177,22 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, body) = parse_block_body(rest)?;
     Ok((
         rest,
-        Expr::DoStmt(Box::new(Stmt::Package {
+        Expr::DoStmt(Box::new(Stmt::ClassDecl {
             name: Symbol::intern(&name),
+            name_expr: None,
+            parents: vec!["Grammar".to_string()],
+            class_is_rw: false,
+            is_hidden: false,
+            is_lexical: false,
+            hidden_parents: Vec::new(),
+            does_parents: Vec::new(),
+            repr: None,
             body,
-            kind: crate::ast::PackageKind::Grammar,
+            language_version: crate::parser::current_language_version(),
+            custom_traits: Vec::new(),
             is_unit: false,
-            is_my: false,
+            decl_id: crate::ast::next_class_decl_id(),
+            parent_args: Vec::new(),
         })),
     ))
 }
@@ -278,8 +288,6 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
 /// class-redeclaration check skips them — though with the name now
 /// site-unique by construction, two `anon class Foo {}` declarations in one
 /// scope would not collide in that check even without the marker.
-/// `Stmt::Package` (the `anon grammar` route) has no `custom_traits` field
-/// and needs no such skip.
 pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
     let Expr::DoStmt(stmt) = expr else { return };
     match stmt.as_mut() {
