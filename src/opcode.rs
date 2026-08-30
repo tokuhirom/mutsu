@@ -661,6 +661,14 @@ pub(crate) enum OpCode {
     /// Unlike `GetLocalRaw` this keeps the env fallback, which a method frame's
     /// parameter slot depends on.
     GetLocalDeferred(u32),
+    /// Load a scalar variable's container for `take-rw`.  A plain scalar is
+    /// promoted to a shared cell in its authoritative store; an already-bound
+    /// scalar keeps its existing cell.  Ordinary reads must continue to
+    /// decontainerize, so this is deliberately a distinct lvalue opcode.
+    GetScalarContainer {
+        name_idx: u32,
+        local_idx: Option<u32>,
+    },
     SetLocal(u32),
     /// `SetLocal` fused with the declaration markers that always precede it in a
     /// `my $x = <expr>` (ADR-0006 §2.3 peephole): `MarkExplicitInitializerContext`
@@ -5475,6 +5483,7 @@ impl CompiledCode {
         match op {
             OpCode::GetUpvalue { name_idx: idx, .. }
             | OpCode::GetGlobal(idx)
+            | OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)
             | OpCode::SetGlobalRaw(idx)
             | OpCode::PostIncrement(idx, _)
@@ -5544,7 +5553,8 @@ impl CompiledCode {
 
     fn op_name_write_const_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::SetGlobal(idx)
+            OpCode::GetScalarContainer { name_idx: idx, .. }
+            | OpCode::SetGlobal(idx)
             | OpCode::SetGlobalRaw(idx)
             | OpCode::PostIncrement(idx, _)
             | OpCode::PostDecrement(idx, _)
@@ -6698,7 +6708,8 @@ impl CompiledCode {
         if !self.has_env_writes {
             self.has_env_writes = matches!(
                 op,
-                OpCode::SetGlobal(_)
+                OpCode::GetScalarContainer { .. }
+                    | OpCode::SetGlobal(_)
                     | OpCode::SetGlobalRaw(_)
                     | OpCode::AssignExpr(_)
                     | OpCode::TopicDotAssign(_)

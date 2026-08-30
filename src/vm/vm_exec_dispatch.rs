@@ -5131,6 +5131,13 @@ impl Interpreter {
                 self.exec_get_local_deferred_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::GetScalarContainer {
+                name_idx,
+                local_idx,
+            } => {
+                self.exec_get_scalar_container_op(code, *name_idx, *local_idx);
+                *ip += 1;
+            }
             OpCode::SetLocal(idx) => {
                 self.exec_set_local_op(code, *idx)?;
                 self.publish_state_local(code, *idx);

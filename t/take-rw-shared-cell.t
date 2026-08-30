@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 10;
 
 # `take-rw <lvalue>` must capture the *source container* (a shared cell), so the
 # gathered value keeps container identity (`=:=`) with the original element and a
@@ -42,4 +42,26 @@ plan 7;
     my @spot = 10, 20, 30;
     my @got = eager gather for 0, 5 { take-rw @spot[$_] // next };
     is @got.elems, 1, '// next skips the undefined (out-of-range) element';
+}
+
+# A plain scalar has no subscript terminal to promote.  `take-rw` itself must
+# box that named scalar, and the gathered topic must write through the cell.
+{
+    my $x = 1;
+    for (gather { take-rw $x }) { $_ = 42 }
+    is $x, 42, 'take-rw of a plain scalar writes through its promoted cell';
+}
+
+# ADR-0045 makes a `for` topic the array element container.  `take-rw $_`
+# must retain that existing cell rather than decontainerizing it before take.
+{
+    my @a = 1, 2, 3;
+    sub aliases(@list) { gather for @list { take-rw $_ } }
+    for aliases(@a) { $_ = $_ * 10 }
+    is-deeply @a, [10, 20, 30], 'take-rw of the for topic retains each element cell';
+
+    my @b = 1, 2, 3;
+    my @g = gather for @b { take-rw $_ };
+    @g[0] = 99;
+    is-deeply @b, [99, 2, 3], 'a stored take-rw topic alias writes through after gather';
 }

@@ -3667,13 +3667,32 @@ impl Compiler {
                     // cell; `bind_terminal` marks the leaf so a scalar element is
                     // boxed. A leading `// next` guard preserves the cell because
                     // `//` returns its (peeked) left operand unchanged when defined.
-                    let saved_av = self.scalar_bind_autovivify;
-                    let saved_term = self.bind_terminal;
-                    self.scalar_bind_autovivify = true;
-                    self.bind_terminal = true;
-                    self.compile_expr(expr);
-                    self.scalar_bind_autovivify = saved_av;
-                    self.bind_terminal = saved_term;
+                    if let Expr::Var(name) = expr {
+                        // A variable has no terminal Index at which the bind
+                        // flags above could promote it.  Ask the VM to retain
+                        // (or install) its scalar cell instead of compiling a
+                        // normal, decontainerizing variable read.
+                        let name = self.resolve_self_lexical(name);
+                        let local_idx = self.local_map.get(name).copied();
+                        let resolved_name = if local_idx.is_some() {
+                            name.to_string()
+                        } else {
+                            self.qualify_variable_name(name)
+                        };
+                        let name_idx = self.code.add_constant(Value::str(resolved_name));
+                        self.code.emit(OpCode::GetScalarContainer {
+                            name_idx,
+                            local_idx,
+                        });
+                    } else {
+                        let saved_av = self.scalar_bind_autovivify;
+                        let saved_term = self.bind_terminal;
+                        self.scalar_bind_autovivify = true;
+                        self.bind_terminal = true;
+                        self.compile_expr(expr);
+                        self.scalar_bind_autovivify = saved_av;
+                        self.bind_terminal = saved_term;
+                    }
                 } else {
                     self.compile_expr(expr);
                 }
