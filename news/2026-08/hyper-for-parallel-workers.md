@@ -10,7 +10,6 @@ enough to use more than one core.
 Expression-position `hyper for` / `race for` now parse like `lazy for`
 (`ForMode::Hyper` / `Race` on a `DoStmt`), `compile_do_for_expr` honours that
 mode, and the VM batches iterations across `available_parallelism` workers,
-concatenating collected results in input order. `HyperSeq.map` / `.grep` no
-longer fall back to sequential dispatch past 1000 items.
+concatenating collected results in input order.
 
 Pinned by `t/hyper-for-parallel.t`.

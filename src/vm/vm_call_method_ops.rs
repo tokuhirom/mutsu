@@ -1466,26 +1466,36 @@ impl Interpreter {
                         ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
-                    let block = if !args.is_empty() {
-                        args[0].clone()
-                    } else {
-                        Value::NIL
-                    };
-                    let is_map = method == "map";
-                    let result =
-                        self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
-                    let wrapped = if is_hyper {
-                        Value::hyper_seq(result)
-                    } else {
-                        Value::race_seq(result)
-                    };
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "hyperseq-map-grep",
-                    );
-                    self.stack.push(wrapped);
-                    return Ok(());
+                    // For small lists, use parallel execution so inter-item
+                    // synchronization (e.g. Promise await chains) works.
+                    // For large lists, fall through to the sequential array
+                    // map/grep path.  The worker batches retain every expanded
+                    // result until their join, which makes the large Slip-heavy
+                    // stress shape GC-bound rather than faster.
+                    if items_arc.len() < 1000 {
+                        let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
+                        let block = if !args.is_empty() {
+                            args[0].clone()
+                        } else {
+                            Value::NIL
+                        };
+                        let is_map = method == "map";
+                        let result =
+                            self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
+                        let wrapped = if is_hyper {
+                            Value::hyper_seq(result)
+                        } else {
+                            Value::race_seq(result)
+                        };
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "hyperseq-map-grep",
+                        );
+                        self.stack.push(wrapped);
+                        return Ok(());
+                    }
+                    // Large list: fall through to array-based dispatch.
+                    Some(matches!(target.view(), ValueView::HyperSeq(_)))
                 }
                 "iterator" if args.is_empty() => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
