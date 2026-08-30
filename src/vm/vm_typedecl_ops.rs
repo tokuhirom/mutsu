@@ -822,6 +822,7 @@ impl Interpreter {
                 )
             )?;
             if self.env().contains_key("__mutsu_in_eval")
+                && !name_str.contains("::")
                 && custom_traits
                     .iter()
                     .any(|(trait_name, _)| trait_name == "__my_scoped")
