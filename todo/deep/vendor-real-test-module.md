@@ -79,11 +79,12 @@ or special-case `Test` to hide it.
 
 ### Native-provider-only whitelist rows
 
-`S24-testing/2-force_todo.t` and `S24-testing/6-done_testing.t` rely on the
-native provider's handling of `#?rakudo eval`. Resolve this by implementing the
-needed fudge support or by removing the rows from the whitelist if they are not
-valid for mutsu's supported fudge subset. This is not a vendored-`Test`
-interpreter compatibility fix.
+`S24-testing/2-force_todo.t` uses `#?rakudo eval` around Rakudo-only
+`force_todo` calls. The roast preprocessor must skip that backend-specific
+block while preserving its TAP plan. `S24-testing/6-done_testing.t` is not a
+valid whitelist row: current Rakudo also rejects its `ok 0, :todo(1)` call
+against `Test`'s signature, so it must remain out of the whitelist. Neither is
+a vendored-`Test` interpreter compatibility fix.
 
 ## Completion criteria
 

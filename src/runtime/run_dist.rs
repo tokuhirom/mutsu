@@ -421,6 +421,15 @@ mod tests {
     }
 
     #[test]
+    fn preprocess_rakudo_eval_skips_the_following_block() {
+        let src = "use Test; plan 2;\n#?rakudo eval\n{\n    pass 'one';\n    flunk 'two';\n}\n";
+        let out = Interpreter::preprocess_roast_directives(src);
+        assert_eq!(out.matches("skip 'Rakudo-only eval', 1;").count(), 2);
+        assert!(!out.contains("pass 'one'"));
+        assert!(!out.contains("flunk 'two'"));
+    }
+
+    #[test]
     fn preprocess_block_skip_counts_tap_ok_as_test_assertion() {
         let src = "#?rakudo skip 'reason'\n{\n    tap-ok $s, [1], 'tap';\n    ok True, 'ok';\n}\n";
         let out = Interpreter::preprocess_roast_directives(src);
