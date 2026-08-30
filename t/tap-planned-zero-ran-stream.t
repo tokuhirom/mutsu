@@ -17,7 +17,7 @@ is_run 'use Test; plan 1; say "done";',
     {
         status => 255,
         out    => "1..1\ndone\n# You planned 1 test, but ran 0\n",
-        err    => '',
+        err    => -> $err { $err eq '' || $err eq "Warning: precompilation cache is unavailable: Read-only file system (os error 30)\n" },
     },
     'a plan with zero tests run prints the summary on stdout, matching raku';
 
@@ -25,6 +25,9 @@ is_run 'use Test; plan 2; ok True, "one"; say "done";',
     {
         status => 255,
         out    => "1..2\nok 1 - one\ndone\n",
-        err    => "# You planned 2 tests, but ran 1\n",
+        err    => -> $err {
+            $err eq "# You planned 2 tests, but ran 1\n"
+                || $err eq "Warning: precompilation cache is unavailable: Read-only file system (os error 30)\n# You planned 2 tests, but ran 1\n"
+        },
     },
     'a plan with at least one test run still prints the summary on stderr';
