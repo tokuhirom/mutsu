@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 18;
 
 # A genuine bare block `{ ... }` is a Raku callframe: a backtrace captured while
 # executing inside it must include an anonymous (non-routine) frame for the
@@ -21,6 +21,22 @@ plan 12;
         }}
     }
 }
+
+# Native `die` is implemented outside Raku source, but its logical `throw` and
+# `die` setting frames still precede the real user frames. The explicit try
+# source block is itself one of those user frames.
+sub zipi { { { die "Something bad happened" }() }() }
+try { zipi }
+my $die_bt = $!.backtrace;
+is $die_bt.list.elems, 7, 'die through nested blocks has the full logical frame count';
+is-deeply $die_bt.list[0, 1].map(*.subname).list, <throw die>,
+    'native die contributes throw and die setting frames';
+is $die_bt.list[0, 1].grep(*.is-setting).elems, 2,
+    'native die frames are marked as setting frames';
+is $die_bt.list[2..*].grep(*.is-setting).elems, 0,
+    'user frames are not marked as setting frames';
+is $die_bt.list[5].subname, '', 'the explicit try block is an anonymous callframe';
+is $die_bt.list[*-1].subname, '<unit>', 'the full logical trace still ends at <unit>';
 
 # A single bare block around a failing sub -> foo, block, <unit> = 3.
 {

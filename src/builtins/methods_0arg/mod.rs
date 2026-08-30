@@ -1652,11 +1652,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 // `Backtrace.is-runtime` distinguishes a backtrace captured
                 // while *running* from one attached to a compile-time
-                // diagnosis. rakudo decides it by looking for a `SETTING::`
-                // frame; mutsu has no setting frames, so the two runtime
-                // Backtrace builders (`vm_helpers.rs`) stamp the flag directly
-                // and a compile-time backtrace, which never reaches them,
-                // answers False.
+                // diagnosis. The Backtrace builders (`vm_helpers.rs`) stamp
+                // the flag directly; a compile-time backtrace answers False.
                 "is-runtime" => {
                     let is_runtime = attributes
                         .as_map()
@@ -1675,12 +1672,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     for frame in &frames {
                         if let ValueView::Instance { attributes: fa, .. } = frame.view() {
                             let is_routine = backtrace_frame_is_routine(&fa);
-                            // is-hidden / is-setting are always false here (mutsu
-                            // does not track hidden or CORE-setting frames).
                             // concise: only non-hidden, non-setting routines.
                             // summary: non-hidden items that are routines or
-                            // non-setting (i.e. everything here).
-                            let keep = if want_summary { true } else { is_routine };
+                            // non-setting. Native setting frames carry the
+                            // explicit marker inserted by the backtrace builder.
+                            let is_setting =
+                                fa.as_map().get("is-setting").is_some_and(Value::truthy);
+                            let keep = if want_summary {
+                                is_routine || !is_setting
+                            } else {
+                                is_routine && !is_setting
+                            };
                             if keep {
                                 out.push_str(&backtrace_frame_str(&fa));
                             }
@@ -1749,9 +1751,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 "is-routine" => {
                     return Some(Ok(Value::truth(backtrace_frame_is_routine(&attributes))));
                 }
-                "is-hidden" | "is-setting" => {
-                    // mutsu does not track hidden or CORE-setting frames.
+                "is-hidden" => {
                     return Some(Ok(Value::FALSE));
+                }
+                "is-setting" => {
+                    return Some(Ok(attributes
+                        .as_map()
+                        .get("is-setting")
+                        .cloned()
+                        .unwrap_or(Value::FALSE)));
                 }
                 _ => {}
             }

@@ -8,16 +8,9 @@
 //!
 //! ## How mutsu's frame model differs from Rakudo's
 //!
-//! Rakudo's frame 0 is always a CORE-setting frame (`Exception.throw` /
-//! `Backtrace.new`), and its `Backtrace` filters those out when rendering.
-//! mutsu has no Raku-written setting -- its `die`/`throw` are Rust functions
-//! with no callframe -- so frame 0 is already the innermost *user* frame and
-//! `.is-setting` / `.is-hidden` are uniformly `False`. The filters below are
-//! still written in terms of those predicates (so they keep working if mutsu
-//! ever grows hidden frames), but the *entry point* differs: `nice` starts at
-//! index 0 inclusive, where Rakudo starts at index 1. See
-//! `todo/tickets/backtrace-frame-indexing-returns-nil.md` for why matching
-//! Rakudo's absolute frame count is deliberately not attempted.
+//! Native setting routines have no VM callframes, so backtrace construction
+//! synthesizes the logical `throw`/`die` prefix and marks those frames as
+//! setting frames. Rendering and introspection filter them like Rakudo does.
 
 use crate::gc::Gc;
 use crate::symbol::Symbol;
@@ -115,15 +108,19 @@ fn is_routine(frame: &Value) -> bool {
     }
 }
 
-/// mutsu tracks neither `is hidden-from-backtrace` routines nor CORE-setting
-/// frames, so both predicates are uniformly false -- the same answer
-/// `Backtrace::Frame.is-hidden` / `.is-setting` give.
+/// mutsu does not track `is hidden-from-backtrace` routines.
 fn is_hidden(_frame: &Value) -> bool {
     false
 }
 
-fn is_setting(_frame: &Value) -> bool {
-    false
+fn is_setting(frame: &Value) -> bool {
+    match frame.view() {
+        ValueView::Instance { attributes, .. } => attributes
+            .as_map()
+            .get("is-setting")
+            .is_some_and(Value::truthy),
+        _ => false,
+    }
 }
 
 /// `Backtrace.next-interesting-index(Int $idx = 0, :$named, :$noproto, :$setting)`.

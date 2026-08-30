@@ -740,6 +740,11 @@ impl Compiler {
     /// TryCatch opcode. This region *traps*: an exception that no handler
     /// matched is swallowed into `$!`.
     pub(super) fn compile_try(&mut self, body: &[Stmt], catch: &Option<Vec<Stmt>>) {
+        // The source block belonging to `try { ... }` is a genuine anonymous
+        // Raku callframe, just like a standalone bare block.  The TryCatch
+        // boundary carries that fact to the VM so a backtrace captured in the
+        // body includes it.
+        self.next_try_is_bare_block = true;
         self.compile_try_region(body, catch, true);
     }
 
@@ -826,8 +831,9 @@ impl Compiler {
             .as_deref()
             .map(Self::control_block_handles_take)
             .unwrap_or(false);
-        // Emit TryCatch placeholder. Mark it a bare-block callframe only when the
-        // `Stmt::Block` arm requested it for a genuine source `{ ...; CATCH { } }`.
+        // Emit TryCatch placeholder. Mark it a bare-block callframe when the
+        // `Stmt::Block` arm requested it for a genuine source
+        // `{ ...; CATCH { } }`, or for the source block of an explicit `try`.
         let is_bare_block = std::mem::take(&mut self.next_try_is_bare_block);
         let try_idx = self.code.emit(OpCode::TryCatch {
             catch_start: 0,
