@@ -1418,6 +1418,10 @@ pub struct Interpreter {
     /// package than the caller). See
     /// `news/2026-08/class-decl-expr-is-not-a-name-lookup.md`.
     pub(crate) last_registered_class_key: Option<String>,
+    /// The qualified registry key most recently installed by
+    /// `exec_register_role_op`. Consumed immediately by
+    /// `PushLastRegisteredRole` for a named role declaration expression.
+    pub(crate) last_registered_role_key: Option<String>,
     /// Attribute writes observed through an instance's shared cell while its
     /// BUILD phase runs, one frame per instance under construction (BUILD may
     /// itself construct objects, so the frames nest). A frame is keyed by the

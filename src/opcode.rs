@@ -792,6 +792,11 @@ pub(crate) enum OpCode {
     /// package than the caller — see
     /// `news/2026-08/class-decl-expr-is-not-a-name-lookup.md`).
     PushLastRegisteredClass,
+    /// Push the role group type object most recently installed by
+    /// `RegisterRole`. Emitted immediately after a named role declaration in
+    /// expression position so lookup uses the declaration's actual qualified
+    /// registry key rather than its potentially shadowed bare source name.
+    PushLastRegisteredRole,
 
     // -- Arithmetic --
     Add,

@@ -706,15 +706,18 @@ impl Compiler {
                     self.code.emit(OpCode::PushLastRegisteredClass);
                 }
             }
-            Stmt::RoleDecl { name, .. } => {
+            Stmt::RoleDecl { .. } => {
                 // Register the role and return the role type object. Rakudo
                 // hands back the INDIVIDUAL parametric role just declared (a
                 // `ParametricRoleHOW`), not the same-named role *group* the
                 // installed name resolves to (a `ParametricRoleGroupHOW`) —
-                // `RoleGroupToCandidate` narrows the bareword lookup to it.
+                // `PushLastRegisteredRole` starts from the actual qualified
+                // group this declaration installed; a bareword lookup can
+                // select an unrelated same-named role from another scope.
+                // `RoleGroupToCandidate` then narrows that group to the new
+                // individual candidate.
                 self.compile_stmt(stmt);
-                let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                self.code.emit(OpCode::GetBareWord(name_idx));
+                self.code.emit(OpCode::PushLastRegisteredRole);
                 self.code.emit(OpCode::RoleGroupToCandidate);
             }
             Stmt::Package { name, .. } => {
