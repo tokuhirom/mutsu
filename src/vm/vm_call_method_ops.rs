@@ -530,6 +530,7 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
+        let reflect_var_container = std::mem::take(&mut self.var_container_meta_pending);
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -568,7 +569,7 @@ impl Interpreter {
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
         // so the method runs on the inner value (Raku container semantics). `.VAR`
         // is the one introspection method that wants the container itself, and
-        // `^name` right after a `.VAR` reports the container type (raku:
+        // `WHAT` / `^name` right after a `.VAR` report the container type (raku:
         // `$obj.attr.VAR.^name` is "Scalar", not the inner value's type).
         //
         // `WHAT` is deliberately NOT in that set: raku decontainerizes it, so a
@@ -578,19 +579,25 @@ impl Interpreter {
         // ADR-0045 slice 4 hand elements out in bulk — `@a.pairs[0].value.WHAT`
         // would have started answering `Scalar` where it answers `Int` today.
         //
-        // The residual gap is that mutsu cannot tell a cell reached *through*
-        // `.VAR` from a cell that is simply an aliased value, so `.VAR.WHAT` and
-        // a bare `.^name` on a cell are still the container's, not the value's;
-        // see `todo/tickets/var-on-a-containerref-is-not-distinguishable.md`.
+        // The compiler marks that explicit syntactic chain for one dispatch, so
+        // an unrelated ContainerRef arriving directly from an lvalue return is
+        // transparent even for these introspection methods.
         let target = if method != "VAR" {
             match target.view() {
                 ValueView::ContainerRef(_) => {
-                    if args.is_empty() && method == "^name" {
+                    if reflect_var_container
+                        && args.is_empty()
+                        && matches!(method, "WHAT" | "^name")
+                    {
                         crate::vm::vm_stats::record_dispatch_entry_intercept(
                             "callmethod",
                             "containerref-scalar-meta",
                         );
-                        self.stack.push(Value::str("Scalar".to_string()));
+                        if method == "WHAT" {
+                            self.stack.push(Value::package(Symbol::intern("Scalar")));
+                        } else {
+                            self.stack.push(Value::str("Scalar".to_string()));
+                        }
                         return Ok(());
                     }
                     target.deref_container()

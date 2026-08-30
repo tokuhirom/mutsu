@@ -2283,6 +2283,10 @@ impl Interpreter {
                 self.accessor_ref_pending = true;
                 *ip += 1;
             }
+            OpCode::MarkVarContainerMetaContext => {
+                self.var_container_meta_pending = true;
+                *ip += 1;
+            }
             OpCode::MarkArrayShareSource(name_idx) => {
                 self.array_share_context.set(true);
                 self.array_share_source

@@ -3,7 +3,7 @@ use Test;
 # ADR-0059 Slice 2: `return-rw` hands the caller a first-class container, for a
 # bare scalar lexical and for a list of them -- not only for a subscript.
 
-plan 39;
+plan 44;
 
 # --- A. binding a returned scalar container ---------------------------------
 {
@@ -58,6 +58,12 @@ plan 39;
     my $r := e();
     $r = 9;
     is-deeply @a, [9, 2, 3], 'return-rw of an array element still binds the element';
+}
+
+{
+    class C { has $.value is rw = 1 }
+    my $c = C.new;
+    is $c.value.VAR.WHAT, Scalar, 'explicit attribute .VAR.WHAT still reflects its container';
 }
 
 # --- return-rw of a hash element -------------------------------------------
@@ -123,6 +129,8 @@ plan 39;
     is f3() + 1, 2, 'arithmetic decontainerizes';
     ok f3() == 1, 'numeric comparison decontainerizes';
     is f3().succ, 2, 'method dispatch runs on the inner value';
+    is f3().WHAT, Int, '.WHAT of a returned scalar container is the value type';
+    is f3().^name, 'Int', '.^name of a returned scalar container is the value type';
     my $copy = f3();
     $copy = 99;
     is $v, 1, 'plain assignment from a return-rw call copies, it does not alias';
@@ -130,6 +138,13 @@ plan 39;
     is (f3(), 2)[0], 1, 'list context holds the value';
     sub what-of($x) { $x.WHAT }
     is what-of(f3()), Int, 'parameter binding decontainerizes';
+}
+
+{
+    my @a = 1, 2, 3;
+    sub element() { return-rw @a[0] }
+    is element().WHAT, Int, '.WHAT of a returned element container is the value type';
+    is element().^name, 'Int', '.^name of a returned element container is the value type';
 }
 
 # --- cell invisibility: the SOURCE container must not change shape ---------
