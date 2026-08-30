@@ -408,6 +408,22 @@ impl Compiler {
         modifier: &Option<char>,
         quoted: bool,
     ) {
+        let outer_name = name.resolve();
+        let is_var_meta_method = (outer_name.as_str() == "WHAT" && modifier.is_none())
+            || (outer_name.as_str() == "name" && *modifier == Some('^'));
+        let reflects_var_container = args.is_empty()
+            && !quoted
+            && is_var_meta_method
+            && matches!(
+                target,
+                Expr::MethodCall {
+                    name: inner_name,
+                    args: inner_args,
+                    modifier: None,
+                    quoted: false,
+                    ..
+                } if inner_name.resolve().as_str() == "VAR" && inner_args.is_empty()
+            );
         // Lower index :delete adverb to dedicated delete opcodes.
         if name == "DELETE-KEY"
             && args.is_empty()
@@ -579,6 +595,9 @@ impl Compiler {
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
+        if reflects_var_container {
+            self.code.emit(OpCode::MarkVarContainerMetaContext);
+        }
         self.code.emit(OpCode::CallMethod {
             name_idx,
             arity,
