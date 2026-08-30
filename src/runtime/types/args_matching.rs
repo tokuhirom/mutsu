@@ -345,7 +345,9 @@ impl Interpreter {
                     });
                     if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
                         self.bind_type_capture(captured_name, &dispatch_arg);
-                    } else if pd.name == "__type_only__" {
+                    } else if pd.name == "__type_only__"
+                        && !self.is_resolvable_type(&resolved_constraint)
+                    {
                         // Bare identifier param (e.g., enum value) -- resolve from env and compare
                         if let Some(expected_val) = self.env.get(&resolved_constraint).cloned() {
                             if dispatch_arg != expected_val {
