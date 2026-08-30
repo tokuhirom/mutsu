@@ -860,6 +860,9 @@ impl Interpreter {
         };
         self.shared_vars.remove(value_key.as_str());
         self.shared_vars.remove(&name_key);
+        if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+            dirty.remove(&value_key);
+        }
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
@@ -870,10 +873,15 @@ impl Interpreter {
         }
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
-        if let Some(v) = self.shared_vars.get(&name_key)
-            && let Some(value_key) = v.as_str()
-        {
-            self.shared_vars.remove(value_key);
+        let value_key = self
+            .shared_vars
+            .get(&name_key)
+            .and_then(|v| v.as_str().map(str::to_string));
+        if let Some(value_key) = value_key {
+            self.shared_vars.remove(&value_key);
+            if let Ok(mut dirty) = self.shared_vars_dirty.write() {
+                dirty.remove(&value_key);
+            }
         }
         self.shared_vars.remove(&name_key);
     }
