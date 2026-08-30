@@ -69,12 +69,12 @@ impl Interpreter {
         }
     }
 
-    /// Drop the cross-thread bare-name-lane masks a multi-param `for` loop
+    /// Drop the cross-thread bare-name-lane masks a named-param `for` loop
     /// installed on entry. Only the names the loop itself added are dropped —
     /// an enclosing `my` of the same name keeps its own mask. Called on every
     /// exit path, including the error returns, so a mask can never outlive the
     /// binding it describes.
-    fn unmask_for_multi_params(&mut self, names: &[String]) {
+    fn unmask_for_params(&mut self, names: &[String]) {
         let mut redeclared = self.thread_redeclared_vars.borrow_mut();
         for name in names {
             redeclared.remove(name);
@@ -374,22 +374,26 @@ impl Interpreter {
                 self.vm_set_var_type_constraint(name, None);
             }
         }
-        // A multi-param loop variable is a FRESH per-iteration binding, so it must
+        // A named loop variable is a FRESH per-iteration binding, so it must
         // not join the cross-thread bare-name lane — the same rule a `my`
-        // re-declaration gets in `exec_set_var_dynamic_op`. `build_for_bind_stmts`
-        // binds these via a plain `Stmt::Assign`, which reaches
-        // `set_shared_var_sym` and publishes every iteration's value under the
-        // BARE NAME, where any *unrelated* frame using the same name then reads
-        // it back at the next `await` (`sync_shared_vars_to_env`). That is how
+        // re-declaration gets in `exec_set_var_dynamic_op`. Both the native
+        // single-param bind and `build_for_bind_stmts`' multi-param assignments
+        // otherwise publish every iteration's value under the BARE NAME, where
+        // a later cross-thread drain can read an older value back over the fresh
+        // binding. For `@row`, that made every iteration after a `start` mutate
+        // the first row's stale container. The same lane also let an unrelated
+        // frame using the same name read the loop binding back at its next
+        // `await` (`sync_shared_vars_to_env`). That is how
         // Cro's `for @components-in.kv -> $i, $comp` pipeline compose rewrote the
         // `$i` of a `for 1..5 -> $i` loop in the user's own test file
         // (`todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`).
         // A `start` block that genuinely captures such a variable is unaffected:
         // it gets a per-binding `ContainerRef` cell from `box_captured_lexicals`,
         // which is the mechanism the lane is redundant with.
-        let masked_multi_params: Vec<String> = spec
+        let masked_params: Vec<String> = spec
             .multi_param_names
             .iter()
+            .chain(param_name.iter())
             .filter(|name| !name.starts_with('&') && name.as_str() != "_")
             .filter(|name| {
                 self.thread_redeclared_vars
@@ -561,7 +565,7 @@ impl Interpreter {
                     && !self.type_matches_value(tc, &item)
                 {
                     let display = Self::for_param_display_name(name);
-                    self.unmask_for_multi_params(&masked_multi_params);
+                    self.unmask_for_params(&masked_params);
                     return Err(RuntimeError::typecheck_binding_parameter_with_repr(
                         &display, tc, &item,
                     ));
@@ -580,7 +584,7 @@ impl Interpreter {
                             .get(i)
                             .map(|n| Self::for_param_display_name(n))
                             .unwrap_or_default();
-                        self.unmask_for_multi_params(&masked_multi_params);
+                        self.unmask_for_params(&masked_params);
                         return Err(RuntimeError::typecheck_binding_parameter_with_repr(
                             &display, tc, v,
                         ));
@@ -1093,7 +1097,7 @@ impl Interpreter {
                         self.quanthash_bind_params = saved_quanthash_bind.clone();
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
-                        self.unmask_for_multi_params(&masked_multi_params);
+                        self.unmask_for_params(&masked_params);
                         return Err(e);
                     }
                     Err(e) => {
@@ -1134,7 +1138,7 @@ impl Interpreter {
                         }
                         self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         self.pop_loop_local_scope(code);
-                        self.unmask_for_multi_params(&masked_multi_params);
+                        self.unmask_for_params(&masked_params);
                         return Err(e);
                     }
                 }
@@ -1198,7 +1202,7 @@ impl Interpreter {
                 self.env_mut().remove(&sigilless_key);
             }
         }
-        self.unmask_for_multi_params(&masked_multi_params);
+        self.unmask_for_params(&masked_params);
         // Restore the enclosing type constraint each multi-param name shadowed.
         for (name, tc) in saved_multi_param_types {
             if tc.is_some() {
