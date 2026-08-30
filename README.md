@@ -11,6 +11,10 @@ and running mutsu, the module search path, `mzef`, compatibility), a
 and a [playground](https://tokuhirom.github.io/mutsu/playground.html). Everything on
 it runs locally as WebAssembly — the site is running mutsu itself.
 
+To add an editable Raku example to another web page, use the npm package's
+drop-in `<mutsu-code>` component, or call the WebAssembly API directly. See
+[Run mutsu in a browser](docs/browser-embedding.md) for copy-and-paste examples.
+
 ## Install
 
 ### With [mise](https://mise.jdx.dev/) (recommended)

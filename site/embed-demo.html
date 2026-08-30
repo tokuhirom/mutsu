@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Embed mutsu in a web page</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="container">
+  <header class="page-head">
+    <h1>Embed mutsu</h1>
+    <p class="page-intro">This runnable example is a drop-in <code>&lt;mutsu-code&gt;</code> component.</p>
+  </header>
+
+  <mutsu-code autorun>
+    <script type="text/raku">
+say "Hello from an embedded mutsu!";
+say (^10).grep(* %% 2).sum;
+    </script>
+  </mutsu-code>
+
+  <p>See the <a href="https://github.com/tokuhirom/mutsu/blob/main/docs/browser-embedding.md">embedding guide</a> for the copy-and-paste HTML.</p>
+</div>
+<script type="module" src="assets/embed.js"></script>
+</body>
+</html>

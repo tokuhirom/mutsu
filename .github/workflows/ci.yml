@@ -41,7 +41,7 @@ jobs:
       docs-only: ${{ steps.detect.outputs.docs-only }}
       gc-value: ${{ steps.detect.outputs.gc-value }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: scripts/ci-docs-only.sh
           sparse-checkout-cone-mode: false
@@ -87,11 +87,11 @@ jobs:
       # the crash-report step collects. See the note on that step below.
       MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           components: clippy, rustfmt
 
@@ -103,7 +103,7 @@ jobs:
       # they compile byte-identical artifacts (GC/JIT are runtime env vars, not
       # cargo features), so one shared dependency cache serves all three.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
           # Only PRs restore; only main pushes save. This keeps the cache warm
@@ -297,7 +297,7 @@ jobs:
         # diagnosed from the artifact even when the web log viewer truncates the
         # step. Retained briefly; this is a debugging aid, not a release artifact.
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: roast-log
           path: tmp/roast.log
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload crash reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: crash-reports
           path: tmp/crash/
@@ -374,7 +374,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Miri only ships on nightly, and the nightly must be PINNED: an unpinned
       # `nightly` silently changes the interpreter (and its Stacked Borrows
@@ -387,7 +387,7 @@ jobs:
           components: miri, rust-src
 
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-miri"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -483,9 +483,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           targets: wasm32-unknown-unknown
 
@@ -493,7 +493,7 @@ jobs:
       # here: this builds for wasm32-unknown-unknown, whose linker is wasm-ld,
       # not the host cc — the `-fuse-ld=mold` flag would not apply.
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-wasm"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -506,7 +506,7 @@ jobs:
           wasm-pack build --target web --no-default-features --features wasm
           mv pkg site/pkg
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
 
@@ -582,16 +582,16 @@ jobs:
       # Link with mold (installed below); shared with the other native jobs.
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
 
       # Shares the "ci-linux" dependency cache with the test/jit-stress jobs:
       # identical build artifacts (MUTSU_GC is a runtime env var, not a feature).
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -692,7 +692,7 @@ jobs:
 
       - name: Upload GC stress crash reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gc-stress-crash-reports
           path: tmp/crash/
@@ -701,7 +701,7 @@ jobs:
 
       - name: Upload GC stress logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gc-stress-logs
           path: |
@@ -736,16 +736,16 @@ jobs:
       # Link with mold (installed below); shared with the other native jobs.
       RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
 
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
 
       # Shares the "ci-linux" dependency cache with the test/gc-stress jobs:
       # identical build artifacts (MUTSU_JIT is a runtime env var, not a feature).
       - name: Cache cargo (rust-cache)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -809,7 +809,7 @@ jobs:
 
       - name: Upload JIT stress crash reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jit-stress-crash-reports
           path: tmp/crash/
@@ -818,7 +818,7 @@ jobs:
 
       - name: Upload JIT stress logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jit-stress-logs
           path: |
