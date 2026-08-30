@@ -456,26 +456,35 @@ impl Interpreter {
         self.fatal_mode = saved_fatal_mode;
         self.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
-        let current_roles = self.registry().roles.clone();
-        let current_role_candidates = self.registry().role_candidates.clone();
-        let current_role_type_params = self.registry().role_type_params.clone();
-        let current_role_parents = self.registry().role_parents.clone();
-        let current_role_hides = self.registry().role_hides.clone();
-        let current_classes = self.registry().classes.clone();
+        let current_env = self.env.clone();
+        let eval_role_names: std::collections::HashSet<String> = current_env
+            .keys()
+            .filter_map(|key| key.strip_prefix_str("__mutsu_eval_role::"))
+            .collect();
+        let is_eval_role_artifact = |name: &str| {
+            eval_role_names.iter().any(|role| {
+                name == role
+                    || name
+                        .strip_prefix(role)
+                        .is_some_and(|suffix| suffix.starts_with('['))
+            })
+        };
+        let mut current_classes = self.registry().classes.clone();
+        current_classes.retain(|name, _| !is_eval_role_artifact(name));
         let current_hidden_classes = self.registry().hidden_classes.clone();
         let current_hidden_defer_parents = self.registry().hidden_defer_parents.clone();
-        let current_class_composed_roles = self.registry().class_composed_roles.clone();
-        let current_class_direct_composed_roles =
+        let mut current_class_composed_roles = self.registry().class_composed_roles.clone();
+        current_class_composed_roles.retain(|name, roles| {
+            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+        });
+        let mut current_class_direct_composed_roles =
             self.registry().class_direct_composed_roles.clone();
-        let current_class_role_param_bindings = self.registry().class_role_param_bindings.clone();
-        let current_env = self.env.clone();
-        let current_type_keys: std::collections::HashSet<String> = self
-            .registry()
-            .roles
-            .keys()
-            .chain(self.registry().classes.keys())
-            .cloned()
-            .collect();
+        current_class_direct_composed_roles.retain(|name, roles| {
+            !is_eval_role_artifact(name) && !roles.iter().any(|role| eval_role_names.contains(role))
+        });
+        let mut current_class_role_param_bindings =
+            self.registry().class_role_param_bindings.clone();
+        current_class_role_param_bindings.retain(|name, _| !is_eval_role_artifact(name));
         let snapshot_type_keys: std::collections::HashSet<String> = roles_snapshot
             .keys()
             .chain(classes_snapshot.keys())
@@ -507,19 +516,10 @@ impl Interpreter {
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
         self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
         self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
-        self.registry_mut().roles.extend(current_roles);
-        // Don't extend user_declared_roles: roles declared in EVAL are EVAL-scoped
-        // and should not affect the parent's redeclaration detection.
-        self.registry_mut()
-            .role_candidates
-            .extend(current_role_candidates);
-        self.registry_mut()
-            .role_type_params
-            .extend(current_role_type_params);
-        self.registry_mut()
-            .role_parents
-            .extend(current_role_parents);
-        self.registry_mut().role_hides.extend(current_role_hides);
+        // Roles declared in EVAL, including `my role`, are lexical to that
+        // compilation unit.  Restore the caller's role registries unchanged
+        // so an EVAL-local definition cannot overwrite a same-named role the
+        // caller declares later.
         self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
@@ -551,7 +551,7 @@ impl Interpreter {
             self.registry_mut().restore_user_method_rows(owner, rows);
             self.registry_mut().sync_accessor_entries(owner);
         }
-        for key in current_type_keys.union(&snapshot_type_keys) {
+        for key in &snapshot_type_keys {
             if let Some(value) = current_env.get(key).cloned() {
                 self.env.insert(key.clone(), value);
             } else if let Some(value) = env_snapshot.get(key).cloned() {
@@ -576,6 +576,8 @@ impl Interpreter {
                 self.env.remove(&key);
             }
         }
+        self.env
+            .retain(|key, _| !key.starts_with("__mutsu_eval_role::"));
         // Restore $_ so EVAL does not clobber the caller's topic variable
         if let Some(topic) = saved_topic {
             self.env.insert("_".to_string(), topic);

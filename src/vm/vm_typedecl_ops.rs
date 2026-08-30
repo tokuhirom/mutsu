@@ -821,6 +821,10 @@ impl Interpreter {
                     *role_id,
                 )
             )?;
+            if self.env().contains_key("__mutsu_in_eval") {
+                self.env_mut()
+                    .insert(format!("__mutsu_eval_role::{qualified_name}"), Value::TRUE);
+            }
             // Link `is Parent` references on this role to the lexical class visible
             // in this scope (which may be stored under a mangled name), matching
             // the class-parent remapping in `exec_register_class_op`.
