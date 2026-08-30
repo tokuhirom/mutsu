@@ -196,3 +196,44 @@ fn unsuppressed_write_publishes_to_the_shared_lane() {
     );
     assert!(interp.is_shared_var_dirty("url"));
 }
+
+fn seed_dirty_atomic_lane(interp: &mut Interpreter, name: &str, value_key: &str) {
+    interp.mark_atomic_var_seen();
+    let name_key = format!("__mutsu_atomic_name::{name}");
+    interp
+        .shared_vars
+        .declare(&name_key, Value::str(value_key.to_string()));
+    interp.shared_vars.declare(value_key, Value::int(1));
+    interp.mark_shared_var_dirty(name);
+    interp.mark_shared_var_dirty(value_key);
+}
+
+#[test]
+fn reset_atomic_var_key_removes_only_retired_value_key_from_dirty_set() {
+    let mut interp = Interpreter::new();
+    let value_key = "__mutsu_atomic_value::unit-reset";
+    seed_dirty_atomic_lane(&mut interp, "x", value_key);
+
+    interp.reset_atomic_var_key("x");
+
+    assert!(!interp.is_shared_var_dirty(value_key));
+    assert!(
+        interp.is_shared_var_dirty("x"),
+        "the bare name remains load-bearing for published atomic seeds"
+    );
+}
+
+#[test]
+fn reset_atomic_var_key_decl_removes_only_retired_value_key_from_dirty_set() {
+    let mut interp = Interpreter::new();
+    let value_key = "__mutsu_atomic_value::unit-decl-reset";
+    seed_dirty_atomic_lane(&mut interp, "x", value_key);
+
+    interp.reset_atomic_var_key_decl("x");
+
+    assert!(!interp.is_shared_var_dirty(value_key));
+    assert!(
+        interp.is_shared_var_dirty("x"),
+        "declaration retirement must not clear the bare name"
+    );
+}
