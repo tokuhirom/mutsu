@@ -27,7 +27,8 @@ mod system;
 
 // Re-export pub(crate) items accessed from outside `runtime` module
 pub(crate) use state::{
-    SupplyEvent, has_supply_channel, split_supply_chunks_into_lines, take_supply_channel,
+    SupplyEvent, has_supply_channel, is_whenever_closed, next_whenever_id,
+    split_supply_chunks_into_lines, take_supply_channel,
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 

@@ -485,8 +485,8 @@ impl Interpreter {
                 // TcpStream, so a client on the main thread sees the data over the
                 // OS socket).
                 if !self.supply_emit_buffer.is_empty() {
-                    // Same 4-element shape as every other whenever subscription
-                    // marker ([source, body, [LAST…], [QUIT…]]) so the supply-
+                    // Same 5-element shape as every other whenever subscription
+                    // marker ([source, body, [LAST…], [QUIT…], id]) so the supply-
                     // block tap path recognises it; a 2-element array fell
                     // through as a plain emitted value there. The listener
                     // whenever's own LAST/QUIT phasers are not routed here.
@@ -496,6 +496,7 @@ impl Interpreter {
                         callback,
                         Value::array(Vec::new()),
                         Value::array(Vec::new()),
+                        Value::NIL,
                     ]);
                     if let Some(last) = self.supply_emit_buffer.last_mut() {
                         last.push(sub);

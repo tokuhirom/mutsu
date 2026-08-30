@@ -2084,7 +2084,10 @@ pub(crate) enum OpCode {
         /// ADR-0018's env-consumer analysis.
         analysis_cc_idx: u32,
         param_idx: Option<u32>,
-        target_var_idx: Option<u32>,
+        /// Whether this statement is the operand of `do` and therefore leaves
+        /// the newly-created Tap on the value stack. A statement-form
+        /// `whenever` deliberately sinks that value.
+        yields_value: bool,
         /// Constant index of the pointy param's declared type constraint
         /// (`whenever $s -> Int $x { }`), if any.
         param_type_idx: Option<u32>,

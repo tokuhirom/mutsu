@@ -4563,24 +4563,11 @@ impl Compiler {
                 let param_type_idx = param_type
                     .as_ref()
                     .map(|t| self.code.add_constant(Value::str(t.clone())));
-                // Only bridge the tap handle out through `env[$s]` when this
-                // whenever is the value of a `do whenever $s {...}` expression
-                // (`whenever_bind_target`). A bare `whenever $s {...}` statement
-                // must NOT clobber `$s` with its Tap — otherwise re-tapping the
-                // same supply on a later iteration (a nested `whenever` inside
-                // `whenever Supply.interval(...)`) would see a Tap, not the Supply.
-                let target_var_idx = if self.whenever_bind_target
-                    && let Expr::Var(name) = supply
-                {
-                    Some(self.code.add_constant(Value::str(name.clone())))
-                } else {
-                    None
-                };
                 self.code.emit(OpCode::WheneverScope {
                     body_idx,
                     analysis_cc_idx,
                     param_idx,
-                    target_var_idx,
+                    yields_value: self.do_stmt_yields_value,
                     param_type_idx,
                 });
             }

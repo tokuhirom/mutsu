@@ -170,12 +170,11 @@ impl Interpreter {
         body_idx: u32,
         analysis_cc_idx: u32,
         param_idx: &Option<u32>,
-        target_var_idx: &Option<u32>,
+        yields_value: bool,
         param_type_idx: &Option<u32>,
     ) -> Result<(), RuntimeError> {
         let supply_val = self.stack.pop().unwrap_or(Value::NIL);
         let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
         let param_type = param_type_idx.map(|idx| Self::const_str(code, idx).to_string());
         let stmt = &code.stmt_pool[body_idx as usize];
         if let Stmt::Block(body) = stmt {
@@ -265,37 +264,19 @@ impl Interpreter {
                 }
                 self.share_supply_block_lexicals(code);
             }
-            loan_env!(
+            let tap = loan_env!(
                 self,
                 run_whenever_with_value(
                     supply_val,
-                    target_var,
+                    yields_value,
                     &param,
                     &param_type,
                     body,
                     &owned_lexicals
                 )
             )?;
-            // Slice F (env<->locals coherence): a `my $tap = do whenever $sup {…}`
-            // binds the tap handle by writing `env[target_var]` directly (see
-            // `run_whenever_with_value`), but never updates the caller's local
-            // slot. With the reverse env->locals pull disabled, a later read of
-            // that variable *within the same react block* (e.g.
-            // `isa-ok $tap, Tap`) sees the stale slot (the `do` block's own
-            // result) instead of the bound tap. Reconcile the caller's slots from
-            // env here so the binding is visible immediately. Byte-identical with
-            // the reverse pull enabled.
-            //
-            // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): the
-            // bound name is known exactly (`target_var`), so write just that slot
-            // through from env — the precise form of the blanket reconcile below.
-            // Armed only under boxing; the default build keeps the blanket pull.
-            if let Some(name) = target_var
-                && let Some(slot) = self.find_local_slot(code, name)
-                && !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
-                && let Some(val) = self.env().get(name).cloned()
-            {
-                self.locals[slot] = val;
+            if yields_value {
+                self.stack.push(tap);
             }
             Ok(())
         } else {

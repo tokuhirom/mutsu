@@ -14,6 +14,30 @@ pub(in crate::runtime) fn proc_stdin_map() -> &'static StdinMap {
 
 type SupplyTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
 
+type ClosedWheneverMap = std::sync::Mutex<std::collections::HashSet<u64>>;
+
+fn closed_whenever_map() -> &'static ClosedWheneverMap {
+    static MAP: OnceLock<ClosedWheneverMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+pub(crate) fn next_whenever_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+pub(crate) fn close_whenever(id: u64) {
+    if let Ok(mut closed) = closed_whenever_map().lock() {
+        closed.insert(id);
+    }
+}
+
+pub(crate) fn is_whenever_closed(id: u64) -> bool {
+    closed_whenever_map()
+        .lock()
+        .is_ok_and(|closed| closed.contains(&id))
+}
+
 fn supply_taps_map() -> &'static SupplyTapsMap {
     static MAP: OnceLock<SupplyTapsMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))

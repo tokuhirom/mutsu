@@ -252,14 +252,13 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Whenever { supply, .. } => {
-                        // `do whenever ...` should produce the created Tap in expression context.
+                    Stmt::Whenever { .. } => {
+                        // A block-final `whenever` is the value of `do { ... }`.
+                        // Let the opcode put its Tap on the ordinary value stack.
+                        let saved_yields_value = self.do_stmt_yields_value;
+                        self.do_stmt_yields_value = true;
                         self.compile_stmt(stmt);
-                        if let Expr::Var(name) = supply {
-                            self.compile_expr(&Expr::Var(name.clone()));
-                        } else {
-                            self.code.emit(OpCode::LoadNil);
-                        }
+                        self.do_stmt_yields_value = saved_yields_value;
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }

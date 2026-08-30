@@ -51,6 +51,13 @@ impl Interpreter {
                 if key >= react_subs.len() || react_subs[key].done {
                     continue;
                 }
+                if react_subs[key]
+                    .whenever_id
+                    .is_some_and(crate::runtime::native_methods::is_whenever_closed)
+                {
+                    react_subs[key].done = true;
+                    continue;
+                }
                 match event {
                     SinkEvent::Emit(value) => {
                         if let Some(limit) = react_subs[key].head_limit
@@ -365,18 +372,26 @@ impl Interpreter {
         result
     }
 
-    /// Is this value one of the 4-element `[source, body, [LAST…], [QUIT…]]`
+    /// Is this value one of the 5-element `[source, body, [LAST…], [QUIT…], id]`
     /// arrays `whenever` registers, rather than a value a supply body emitted?
     fn is_whenever_subscription_marker(value: &Value) -> bool {
         let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
-        items.len() == 4
+        items.len() == 5
             && matches!(
                 items[0].view(),
                 ValueView::Promise(_) | ValueView::Channel(_) | ValueView::Instance { .. }
             )
             && matches!(items[1].view(), ValueView::Sub(_))
+    }
+
+    fn whenever_marker_is_closed(marker: &Value) -> bool {
+        let ValueView::Array(items, ..) = marker.view() else {
+            return false;
+        };
+        matches!(items.get(4).map(Value::view), Some(ValueView::Int(id)) if id >= 0
+            && crate::runtime::native_methods::is_whenever_closed(id as u64))
     }
 
     /// Adopt any `whenever` subscription registered while the drive loop was
@@ -392,7 +407,10 @@ impl Interpreter {
         if self.pending_react_subscriptions.is_empty() {
             return Ok(false);
         }
-        let pending = std::mem::take(&mut self.pending_react_subscriptions);
+        let pending: Vec<Value> = std::mem::take(&mut self.pending_react_subscriptions)
+            .into_iter()
+            .filter(|marker| !Self::whenever_marker_is_closed(marker))
+            .collect();
         for marker in &pending {
             if let ValueView::Array(items, ..) = marker.view()
                 && items.len() >= 2
@@ -459,6 +477,14 @@ impl Interpreter {
             // never fired at all).
             if self.adopt_newly_registered_subscriptions(react_subs, waker, sink_regs)? {
                 break 'react_loop;
+            }
+            for sub in react_subs.iter_mut() {
+                if sub
+                    .whenever_id
+                    .is_some_and(crate::runtime::native_methods::is_whenever_closed)
+                {
+                    sub.done = true;
+                }
             }
             // GC park point: an idle react loop blocks on the waker without
             // dispatching bytecode, so it would never reach the backedge

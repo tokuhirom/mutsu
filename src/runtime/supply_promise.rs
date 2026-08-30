@@ -46,6 +46,14 @@ impl Interpreter {
         } else {
             tap
         };
+        if tap.as_sub().is_some_and(|data| {
+            matches!(
+                data.env.get("__mutsu_whenever_id").map(Value::view),
+                Some(ValueView::Int(id)) if crate::runtime::native_methods::is_whenever_closed(id as u64)
+            )
+        }) {
+            return Ok(Value::NIL);
+        }
         // `(emitter, is_stamped)`: only a stamped emitter is authoritative.
         let (emitter, stamped) = Self::whenever_tap_emitter(&tap);
         if let Some(ref e) = emitter {
@@ -251,7 +259,13 @@ impl Interpreter {
                 });
                 self.pending_promise_whenever_arms
                     .push((promise.clone(), supplier));
-                Value::array(vec![supply, arr[1].clone(), arr[2].clone(), arr[3].clone()])
+                Value::array(vec![
+                    supply,
+                    arr[1].clone(),
+                    arr[2].clone(),
+                    arr[3].clone(),
+                    arr[4].clone(),
+                ])
             })
             .collect()
     }
@@ -259,7 +273,7 @@ impl Interpreter {
     /// True for a `whenever` subscription marker whose source is a `Promise`.
     pub(crate) fn is_promise_whenever_marker(item: &Value) -> bool {
         matches!(item.view(), ValueView::Array(arr, ..)
-            if arr.len() == 4 && matches!(arr[0].view(), ValueView::Promise(_)))
+            if arr.len() == 5 && matches!(arr[0].view(), ValueView::Promise(_)))
     }
 
     /// Arm every promise parked by [`Self::normalize_promise_whenever_markers`]:
@@ -487,7 +501,7 @@ impl Interpreter {
         let mut plain_values = Vec::new();
         for item in emitted {
             let is_supply_sub = if let ValueView::Array(arr, ..) = item.view() {
-                arr.len() == 4
+                arr.len() == 5
                     && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
             } else {
                 false
