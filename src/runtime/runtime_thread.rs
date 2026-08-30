@@ -196,6 +196,13 @@ impl Interpreter {
         captured_scalars: &std::collections::HashSet<String>,
         referenced_containers: Option<&std::collections::HashSet<String>>,
     ) -> Self {
+        // A worker has no mainline callframe of its own. Preserve the spawning
+        // source location separately so an anonymous callback can still expose
+        // a useful bottom backtrace frame without duplicating a located entry
+        // block (see `thread_origin_frame`).
+        let thread_spawn_origin = self
+            .current_source_file_sym()
+            .zip(self.current_source_line());
         // A thread spawned BEFORE the first test call must still share the TAP
         // counter: the first `ok` of the whole program can run on the spawned
         // thread (e.g. supply-tap check closures in Cro's HTTP/2 serializer
@@ -583,6 +590,7 @@ impl Interpreter {
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,
             cur_source_line: 1,
+            thread_spawn_origin,
             locals_pool: Vec::new(),
             control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),

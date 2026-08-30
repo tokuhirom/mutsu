@@ -1462,6 +1462,11 @@ pub struct Interpreter {
     /// that push a `CallFrameEntry` restore it on pop from the entry's `line`;
     /// the frame-less VM fast paths save/restore it manually.
     pub(crate) cur_source_line: i64,
+    /// Source location at which this worker interpreter was spawned. A worker
+    /// starts with an empty routine stack, so an anonymous callback can have no
+    /// rendered frame of its own; this origin supplies its enclosing location
+    /// without inventing a mainline frame for every worker backtrace.
+    pub(crate) thread_spawn_origin: Option<(Symbol, u32)>,
     /// Recycled `locals` backing vectors. The frame-less VM fast paths take the
     /// caller's `locals` aside and need a fresh Vec per call; popping one here
     /// instead of allocating removes a malloc/free pair per call (recursion

@@ -198,6 +198,21 @@ impl Interpreter {
             .is_some_and(|f| f.name == "<unit>" || (f.name.is_empty() && !f.is_block))
     }
 
+    /// A callback run by a thread clone can leave only an anonymous block at
+    /// the bottom of its stack. That frame is deliberately omitted from concise
+    /// backtraces, so retain the source location of the spawn as one synthetic
+    /// bottom frame. A named entry block already renders its own location and
+    /// must not receive another frame (the Promise.start duplicate-frame case).
+    fn thread_origin_frame(&self, stack: &[crate::runtime::RoutineFrame]) -> Option<(String, u32)> {
+        let bottom_is_anon_block = stack
+            .first()
+            .is_some_and(|frame| frame.is_block && frame.name.is_empty());
+        (self.is_thread_clone() && bottom_is_anon_block)
+            .then_some(self.thread_spawn_origin.as_ref())
+            .flatten()
+            .map(|(file, line)| (file.resolve(), *line))
+    }
+
     /// Build a backtrace string from the interpreter's routine stack.
     /// Each frame is formatted as "  in sub <name> at <file> line <N>".
     ///
@@ -247,6 +262,9 @@ impl Interpreter {
         // Add the <unit> frame at the bottom
         if stack.is_empty() {
             let location = Self::format_location(current_file.as_deref(), current_line);
+            lines.push(format!("  in block <unit>{}", location));
+        } else if let Some((file, line)) = self.thread_origin_frame(stack) {
+            let location = Self::format_location(Some(&file), Some(line));
             lines.push(format!("  in block <unit>{}", location));
         } else if !self.stack_bottom_is_mainline_unit(stack) {
             // The outermost routine frame's stored call-site is where
@@ -406,6 +424,18 @@ impl Interpreter {
                     .map(|l| Value::int(l as i64))
                     .unwrap_or(Value::int(0)),
             );
+            frames.push(Value::make_instance(
+                Symbol::intern("Backtrace::Frame"),
+                frame_attrs,
+            ));
+        } else if let Some((file, line)) = self.thread_origin_frame(stack) {
+            let location = Self::format_location(Some(&file), Some(line));
+            text_lines.push(format!("  in block <unit>{}", location));
+
+            let mut frame_attrs = HashMap::new();
+            frame_attrs.insert("subname".to_string(), Value::str("<unit>".to_string()));
+            frame_attrs.insert("file".to_string(), Value::str(file));
+            frame_attrs.insert("line".to_string(), Value::int(line as i64));
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,

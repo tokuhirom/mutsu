@@ -3,7 +3,7 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Get the current source line number from the interpreter.
-    pub(super) fn current_source_line(&self) -> Option<u32> {
+    pub(crate) fn current_source_line(&self) -> Option<u32> {
         Some(self.cur_source_line as u32)
     }
 
