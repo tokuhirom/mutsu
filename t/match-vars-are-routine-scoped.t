@@ -6,7 +6,7 @@ use Test;
 # block is the opposite case: it shares its enclosing routine's `$/`, so a match
 # inside `if`/`for`/`{ }` must stay visible to the enclosing scope.
 
-plan 14;
+plan 16;
 
 sub inner-match() { "zz" ~~ /(z)/; 1 }
 method-holder-check();
@@ -37,13 +37,19 @@ is ~$0, 'b',  '... nor the caller $0';
 
 # A Callable invoked through another routine is still a routine boundary for
 # the routine, and the block itself is not.
-# (A BLOCK invoked through a routine should publish its match to the scope the
-# block was written in; mutsu does not yet -- see
-# todo/tickets/a-blocks-match-does-not-reach-its-defining-scope-through-a-callable.md.)
+# A bare block remains lexical when it crosses a Callable boundary: its match
+# reaches the scope where the block was written, not the invoking routine.
 sub call-it(&c) { c() }
 "abc" ~~ /(b)(c)/;
 call-it(&inner-match);
 is ~$/, 'bc', 'a SUB invoked through a Callable still keeps its match private';
+
+call-it({ "yy" ~~ /(y)/ });
+is ~$/, 'y', 'a BLOCK invoked through a Callable writes its defining scope $/';
+
+"abc" ~~ /(b)(c)/;
+call-it({ inner-match() });
+is ~$/, 'bc', 'a BLOCK does not publish a nested routine match';
 
 # The converse the routine gate must preserve: a bare block writes the
 # enclosing routine's `$/`, and so does a conditional.

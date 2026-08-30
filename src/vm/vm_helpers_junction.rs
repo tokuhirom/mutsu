@@ -213,7 +213,15 @@ impl Interpreter {
         if is_regex {
             // When $/ is a Junction (from :nth with junction argument),
             // the ~~ operator collapses the result to a Bool.
-            let slash = self.env().get("/").cloned().unwrap_or(Value::NIL);
+            // A bare block may hold its lexically captured `$/` in a shared
+            // cell. Smartmatch returns the Match value, never the container
+            // implementing that lexical binding.
+            let slash = self
+                .env()
+                .get("/")
+                .cloned()
+                .unwrap_or(Value::NIL)
+                .deref_container();
             if matches!(slash.view(), ValueView::Junction { .. }) {
                 Ok(Value::truth(matched))
             } else if matched {

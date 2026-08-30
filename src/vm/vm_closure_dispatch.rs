@@ -1206,6 +1206,27 @@ impl Interpreter {
             }
         }
 
+        // A matching bare block is lexical, not a routine boundary: publish its
+        // final match into the `$/` cell it captured from the scope where it was
+        // written. A block without its own regex must not publish a nested
+        // routine's match into that scope.
+        if !cc.is_routine
+            && cc.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::SmartMatchExpr {
+                        rhs_pure_regex: true,
+                        ..
+                    }
+                )
+            })
+            && let Some(captured) = data.env.get("/")
+            && let ValueView::ContainerRef(cell) = captured.view()
+            && let Some(current) = self.env().get("/").cloned()
+        {
+            Value::store_through_cell(&cell, &current.deref_container());
+        }
+
         // Environment writeback: merge changes back to caller
         let frame = self.pop_call_frame();
         let mut restored_env = frame.saved_env;

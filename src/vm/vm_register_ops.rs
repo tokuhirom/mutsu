@@ -281,6 +281,42 @@ impl Interpreter {
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders_shallow(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            // A bare block that performs a regex match is not a routine
+            // boundary: its `$/` belongs to the lexical scope where it was
+            // written, even when another routine invokes the block. Only such
+            // blocks capture the match variable: capturing it for every callback
+            // lets an unrelated nested routine's match shadow grammar-action
+            // `$/` bindings (YAMLish is a representative failure).
+            let block_writes_match = is_block
+                && compiled_code.as_ref().is_some_and(|cc| {
+                    cc.ops.iter().any(|op| {
+                        matches!(
+                            op,
+                            OpCode::SmartMatchExpr {
+                                rhs_pure_regex: true,
+                                ..
+                            }
+                        )
+                    })
+                });
+            if block_writes_match && !self.env().get("/").is_some_and(Value::is_container_ref) {
+                let slash = self
+                    .env()
+                    .get("/")
+                    .cloned()
+                    .unwrap_or(Value::NIL)
+                    .into_container_ref();
+                self.env_mut().insert("/".to_string(), slash.clone());
+                // `$/` can also occupy a local slot in the defining compiled
+                // frame. Keep that slot on the same cell; otherwise a later
+                // caller-return reconciliation would restore its stale Match
+                // value over the captured binding.
+                for (slot, name) in code.locals.iter().enumerate() {
+                    if name == "/" && slot < self.locals.len() {
+                        self.locals[slot] = slash.clone();
+                    }
+                }
+            }
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
             let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
