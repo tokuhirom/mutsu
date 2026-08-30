@@ -482,6 +482,8 @@ impl Interpreter {
         let current_role_type_params = self.registry().role_type_params.clone();
         let current_role_parents = self.registry().role_parents.clone();
         let current_role_hides = self.registry().role_hides.clone();
+        let keep_role =
+            |name: &str| !eval_role_names.contains(name) || returned_role_names.contains(name);
         let is_eval_role_artifact = |name: &str| {
             eval_role_names.iter().any(|role| {
                 !returned_role_names.contains(role)
@@ -507,6 +509,12 @@ impl Interpreter {
         let mut current_class_role_param_bindings =
             self.registry().class_role_param_bindings.clone();
         current_class_role_param_bindings.retain(|name, _| !is_eval_role_artifact(name));
+        let current_type_keys: std::collections::HashSet<String> = current_roles
+            .keys()
+            .filter(|name| keep_role(name))
+            .chain(current_classes.keys())
+            .cloned()
+            .collect();
         let snapshot_type_keys: std::collections::HashSet<String> = roles_snapshot
             .keys()
             .chain(classes_snapshot.keys())
@@ -538,35 +546,34 @@ impl Interpreter {
         self.registry_mut().class_composed_roles = class_composed_roles_snapshot;
         self.registry_mut().class_direct_composed_roles = class_direct_composed_roles_snapshot;
         self.registry_mut().class_role_param_bindings = class_role_param_bindings_snapshot;
-        // Roles declared in EVAL, including `my role`, are lexical to that
-        // compilation unit. Preserve only a role type object returned directly
-        // from EVAL; every other EVAL-local role must not overwrite a same-named
-        // role the caller declares later.
-        for name in &returned_role_names {
-            if let Some(role) = current_roles.get(name) {
-                self.registry_mut().roles.insert(name.clone(), role.clone());
-            }
-            if let Some(candidates) = current_role_candidates.get(name) {
-                self.registry_mut()
-                    .role_candidates
-                    .insert(name.clone(), candidates.clone());
-            }
-            if let Some(params) = current_role_type_params.get(name) {
-                self.registry_mut()
-                    .role_type_params
-                    .insert(name.clone(), params.clone());
-            }
-            if let Some(parents) = current_role_parents.get(name) {
-                self.registry_mut()
-                    .role_parents
-                    .insert(name.clone(), parents.clone());
-            }
-            if let Some(hides) = current_role_hides.get(name) {
-                self.registry_mut()
-                    .role_hides
-                    .insert(name.clone(), hides.clone());
-            }
-        }
+        // Package-scoped roles declared by EVAL remain visible to later EVALs.
+        // Lexical `my role` declarations do not, unless their type object is
+        // returned directly from EVAL and remains reachable by the caller.
+        self.registry_mut().roles.extend(
+            current_roles
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_candidates.extend(
+            current_role_candidates
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_type_params.extend(
+            current_role_type_params
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_parents.extend(
+            current_role_parents
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
+        self.registry_mut().role_hides.extend(
+            current_role_hides
+                .into_iter()
+                .filter(|(name, _)| keep_role(name)),
+        );
         self.registry_mut().classes.extend(current_classes);
         self.registry_mut()
             .hidden_classes
@@ -598,7 +605,7 @@ impl Interpreter {
             self.registry_mut().restore_user_method_rows(owner, rows);
             self.registry_mut().sync_accessor_entries(owner);
         }
-        for key in &snapshot_type_keys {
+        for key in current_type_keys.union(&snapshot_type_keys) {
             if let Some(value) = current_env.get(key).cloned() {
                 self.env.insert(key.clone(), value);
             } else if let Some(value) = env_snapshot.get(key).cloned() {

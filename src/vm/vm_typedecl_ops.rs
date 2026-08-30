@@ -821,7 +821,11 @@ impl Interpreter {
                     *role_id,
                 )
             )?;
-            if self.env().contains_key("__mutsu_in_eval") {
+            if self.env().contains_key("__mutsu_in_eval")
+                && custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__my_scoped")
+            {
                 self.env_mut()
                     .insert(format!("__mutsu_eval_role::{qualified_name}"), Value::TRUE);
             }
