@@ -8,6 +8,75 @@ use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
+    fn is_pod_block_instance(&mut self, value: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = value.view() else {
+            return false;
+        };
+        self.class_mro(&class_name.resolve())
+            .iter()
+            .any(|name| name.resolve() == "Pod::Block")
+    }
+
+    fn pod_gist(&mut self, target: &Value, level: usize) -> String {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return target.to_string_value();
+        };
+        let attrs = attributes.as_map();
+        let mut rendered = format!("{}{}", " ".repeat(level), class_name.resolve());
+        let mut pairs = Vec::new();
+        for name in ["config", "name", "level", "caption", "type", "term"] {
+            let Some(value) = attrs.get(name) else {
+                continue;
+            };
+            if value.is_nil() || value.to_string_value().is_empty() {
+                continue;
+            }
+            let value =
+                if value.as_list_items().is_some() || matches!(value.view(), ValueView::Hash(..)) {
+                    crate::builtins::methods_0arg::raku_repr::raku_value(value)
+                } else {
+                    value.to_string_value()
+                };
+            pairs.push(format!(
+                ":{}({})",
+                name,
+                crate::builtins::methods_0arg::raku_repr::raku_value(&Value::str(value))
+            ));
+        }
+        if !pairs.is_empty() {
+            rendered.push_str(&format!("{{{}}}", pairs.join(", ")));
+        }
+        let is_table = class_name.resolve() == "Pod::Block::Table";
+        if let Some(contents) = attrs.get("contents").and_then(Value::as_list_items) {
+            for content in contents {
+                rendered.push('\n');
+                if self.is_pod_block_instance(content) {
+                    rendered.push_str(&self.pod_gist(content, level + 2));
+                } else {
+                    let text = if is_table && content.as_list_items().is_some() {
+                        crate::builtins::methods_0arg::raku_repr::raku_value(content)
+                    } else {
+                        content.to_string_value()
+                    };
+                    let indent = " ".repeat(level + 2);
+                    rendered.push_str(
+                        &text
+                            .lines()
+                            .map(|line| format!("{indent}{line}"))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    );
+                }
+            }
+        }
+        rendered
+    }
+
     /// Whether an unqualified private call is permitted *lexically*: the
     /// executing code's `self` is an instance of the owning class.
     ///
@@ -125,6 +194,12 @@ impl Interpreter {
             return Some(Ok(Value::str(format!(
                 "X::AdHoc.new(payload => {payload_raku})"
             ))));
+        }
+        if method == "gist"
+            && class_name.resolve() != "Pod::Block::Declarator"
+            && self.is_pod_block_instance(target)
+        {
+            return Some(Ok(Value::str(self.pod_gist(target, 0))));
         }
         match class_name.resolve().as_str() {
             // A declarator block *is* its documentation text: rakudo renders
