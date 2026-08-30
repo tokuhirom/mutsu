@@ -200,7 +200,8 @@ impl Interpreter {
                         .strip_prefix("infix:<")
                         .and_then(|s| s.strip_suffix('>'))
                         .unwrap_or(op.as_str());
-                    crate::runtime::reduction_identity(bare_op)
+                    crate::runtime::reduction_identity_opt(bare_op)
+                        .unwrap_or_else(|| crate::runtime::no_zero_arg_meaning_failure(bare_op))
                 }
                 None => Value::NIL,
             });

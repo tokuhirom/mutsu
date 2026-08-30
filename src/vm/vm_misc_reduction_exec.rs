@@ -415,7 +415,10 @@ impl Interpreter {
             return Ok(());
         }
         if list.is_empty() {
-            self.stack.push(runtime::reduction_identity(&base_op));
+            self.stack.push(
+                runtime::reduction_identity_opt(&base_op)
+                    .unwrap_or_else(|| runtime::no_zero_arg_meaning_failure(&base_op)),
+            );
         } else {
             // Chain-associative operators (built-in comparisons and user-defined
             // `is assoc<chain>` infixes) reduce as a conjunction of pairwise

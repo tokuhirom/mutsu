@@ -136,6 +136,29 @@ pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// Build the Failure returned by an empty reduction whose operator has no
+/// identity element.
+pub(crate) fn no_zero_arg_meaning_failure(op: &str) -> Value {
+    // Operators containing a closing angle bracket use Raku's alternate
+    // guillemet form for their long name so the `name` attribute is exact.
+    let long_name = if op.contains('>') || op.ends_with('<') {
+        format!("infix:«{}»", op)
+    } else {
+        format!("infix:<{}>", op)
+    };
+    let mut ex_attrs = HashMap::new();
+    ex_attrs.insert(
+        "message".to_string(),
+        Value::str(format!("No zero-argument meaning for: {}", long_name)),
+    );
+    ex_attrs.insert("name".to_string(), Value::str(long_name));
+    let exception = Value::make_instance(Symbol::intern("X::NoZeroArgMeaning"), ex_attrs);
+    let mut failure_attrs = HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
+    Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+}
+
 /// If `value` is an infinite *integer* range (`1..*`, `^Inf`, `0..^*`, …),
 /// return a reify-on-demand `LazyList` (arithmetic sequence, step 1) tagged as
 /// living in `@` array context, so `my @a = 1..*` stays lazy (`@a[200000]`
