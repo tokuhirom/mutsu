@@ -647,16 +647,24 @@ impl Interpreter {
         // replacing the closure's captured `$obj` with that temporary Hash loses
         // both its class identity and the shared scalar container that carries
         // the write back to the caller.
-        let saved_hash_subclass_instance = self.env().get(&save_var_name).cloned().and_then(|v| {
-            let instance = v.deref_container();
-            if let ValueView::Instance { class_name, .. } = instance.view()
+        let saved_hash_subclass_instance = save_var_name
+            .starts_with('$')
+            .then(|| self.env().get(&save_var_name).cloned())
+            .flatten()
+            .and_then(|v| {
+                let instance = v.deref_container();
+                if let ValueView::Instance { class_name, .. } = instance.view()
                 && self.is_container_subclass(&class_name.resolve())
-            {
-                Some(instance)
-            } else {
-                None
-            }
-        });
+                // SetHash/BagHash/MixHash subclasses use their own element
+                // representation; their existing assignment path deliberately
+                // projects them to the corresponding builtin container.
+                && !self.class_inherits_from_immutable_setty(&class_name.resolve())
+                {
+                    Some(instance)
+                } else {
+                    None
+                }
+            });
         let result =
             self.exec_index_assign_expr_named_op_inner(code, name_idx, is_positional, target_slot);
         if result.is_ok()
