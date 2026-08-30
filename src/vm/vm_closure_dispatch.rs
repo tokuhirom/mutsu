@@ -421,6 +421,17 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
+        // A bare block owns no routine-local `$/`: its match variable is the
+        // cell captured from the scope that wrote the block. Install the marker
+        // in this frame as well, so only this block's match publication writes
+        // through that cell; routines called by the block retain fresh matches.
+        if !cc.is_routine
+            && let Some(scope) = data.env.get("__mutsu_block_match_scope").cloned()
+        {
+            self.env_mut()
+                .insert_sym(Symbol::intern("__mutsu_block_match_scope"), scope.clone());
+            self.env_mut().insert_sym(Symbol::intern("/"), scope);
+        }
         // `self` may live in a PARENT tier of the captured env: the loop above
         // iterates the own tier only (`Env::iter` does not walk the chain,
         // unlike `get`), so the lexical-self install in the loop never fires
