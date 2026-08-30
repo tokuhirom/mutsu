@@ -32,10 +32,14 @@ run_one() {
     local f="$1" name
     name="$(basename "$f")"
     cp "$f" "$WORK/t/$name"
-    ( cd "$WORK" && MUTSU_REAL_TEST= timeout 90 "$MUTSU" -I "$ROOT/t/lib" "t/$name" \
+    # Some local regressions exercise Test::Util.  It is an upstream roast
+    # helper module, not part of mutsu's native Test provider, so both halves
+    # must load it from the same source.  Otherwise the native half silently
+    # ignores a missing module while real Test sees its actual imports.
+    ( cd "$WORK" && MUTSU_REAL_TEST= timeout 90 "$MUTSU" -I "$ROOT/t/lib" -I "$ROOT/roast/packages/Test-Helpers/lib" "t/$name" \
         > "$WORK/$name.native" 2>&1 )
     echo "$?" > "$WORK/$name.native.st"
-    ( cd "$WORK" && MUTSU_REAL_TEST=1 timeout 90 "$MUTSU" -I "$ROOT/t/lib" "t/$name" \
+    ( cd "$WORK" && MUTSU_REAL_TEST=1 timeout 90 "$MUTSU" -I "$ROOT/t/lib" -I "$ROOT/roast/packages/Test-Helpers/lib" "t/$name" \
         > "$WORK/$name.real" 2>&1 )
     echo "$?" > "$WORK/$name.real.st"
     # A failing file exits non-zero, and a short plan exits 255 -- which xargs
