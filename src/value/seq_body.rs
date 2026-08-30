@@ -126,6 +126,10 @@ pub(crate) enum SeqView {
     #[default]
     Seq,
     List,
+    /// A `List`-view handle stored in a `$` Scalar container. This stays on
+    /// the handle (not the shared core), just like `ArrayKind::ItemList`, so
+    /// itemizing the cached handle cannot change the original `Seq` handle.
+    ItemList,
 }
 
 /// The shared reification/consumption machinery a `Seq`, `HyperSeq`, or
@@ -224,6 +228,14 @@ impl SeqBody {
         Arc::new(SeqBody {
             core: Arc::clone(&self.core),
             view: SeqView::List,
+        })
+    }
+
+    /// Itemize a List-view handle without touching its deferred source.
+    pub(crate) fn as_item_list_view(self: &Arc<Self>) -> Arc<Self> {
+        Arc::new(SeqBody {
+            core: Arc::clone(&self.core),
+            view: SeqView::ItemList,
         })
     }
 

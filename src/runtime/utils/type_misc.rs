@@ -117,7 +117,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // phase 3) rather than forcing — read that tag here so `.^name`
         // agrees with `type_matches_value` without pulling anything.
         ValueView::Seq(body) => match body.view() {
-            crate::value::SeqView::List => "List",
+            crate::value::SeqView::List | crate::value::SeqView::ItemList => "List",
             crate::value::SeqView::Seq => "Seq",
         },
         ValueView::HyperSeq(_) => "HyperSeq",

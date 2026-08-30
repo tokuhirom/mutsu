@@ -647,10 +647,10 @@ impl Interpreter {
             // `.cache` on a not-yet-reified Seq, ADR-0038 S2) is a
             // `List`, and `eqv` is type-strict — rebuilding it as a plain
             // `Seq` here would make `$seq.cache eqv (1, 2, 3)` answer False.
-            if body.view() == crate::value::SeqView::List {
-                Value::array(items)
-            } else {
-                Value::seq(items)
+            match body.view() {
+                crate::value::SeqView::List => Value::array(items),
+                crate::value::SeqView::ItemList => Value::array(items).item(),
+                crate::value::SeqView::Seq => Value::seq(items),
             }
         } else {
             value

@@ -946,6 +946,10 @@ impl Interpreter {
                 Value::array_with_kind(items.clone(), kind.itemize())
             }
             ValueView::Hash(_) => val.with_hash_itemized(true),
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => val,
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
+                Value::seq_body(body.as_item_list_view())
+            }
             ValueView::Seq(body) => Value::scalar(Value::seq_body(body.clone())),
             // `{ ... } but R` is a Mixin wrapping the container, and the
             // itemization the `$` confers belongs to the container inside it:
@@ -984,6 +988,12 @@ impl Interpreter {
             // `HashData` Gc, so `=`-shared mutation still tracks, and the view
             // stays a plain hash so every consumer is transparent.
             ValueView::Hash(_) => val.with_hash_itemized(true),
+            // A deferred `.cache` result is a List-view handle rather than a
+            // real Array. Retag the handle without pulling its source, exactly
+            // as the Array arm changes List -> ItemList without copying data.
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
+                Value::seq_body(body.as_item_list_view())
+            }
             // A `but`-mixed container keeps the itemization the `$` confers —
             // see the Mixin arm of `itemize_value`.
             ValueView::Mixin(inner, overrides) => Value::mixin_parts(

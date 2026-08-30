@@ -11,7 +11,7 @@ use Test;
 #   2. `&infix:<eqv>($a, $b)` behaves exactly like `$a eqv $b`, including the
 #      Seq reify/consume protocol that raises `X::Seq::Consumed`.
 
-plan 38;
+plan 41;
 
 sub make-deferred() {
     Seq.new(class :: does Iterator {
@@ -31,6 +31,20 @@ sub make-deferred() {
     nok $cached eqv <a b c>.Seq, '.cache result is NOT eqv to a Seq';
     nok $cached eqv ['a', 'b', 'c'], '.cache result is NOT eqv to an Array';
     is $cached.elems, 3, '.cache result has the right elements';
+}
+
+{
+    my $cached = make-deferred().cache;
+    is $cached.raku, '$("a", "b", "c")',
+        'a deferred cache List is itemized by scalar assignment';
+    is $cached.^name, 'List', 'an itemized deferred cache handle is still a List';
+}
+
+{
+    my $cached = Seq.new(class :: does Iterator {
+        method pull-one { die 'scalar assignment forced the cached Seq' }
+    }.new).cache;
+    pass 'scalar assignment leaves a deferred cache source untouched';
 }
 
 {
