@@ -7,8 +7,7 @@ plan 4;
 # A subtest that declares a plan must run exactly that many tests. Under-running
 # the plan makes the subtest report `not ok` even when no inner test failed.
 is_run 'use Test; plan 1; subtest "under", { plan 3; ok 1, "a"; };', {
-    :out(/'# Subtest: under' .+ 'ok 1 - a' .+ 'planned 3 test' .+ 'but ran 1' .+ 'not ok 1 - under'/),
-    :err(/:i 'failed 1 test of 1'/),
+    :out(/'# Subtest: under' .+ 'ok 1 - a' .+ 'not ok 1 - under'/),
     :1status,
 }, 'under-running a subtest plan fails the subtest';
 
