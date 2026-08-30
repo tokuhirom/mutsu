@@ -191,11 +191,15 @@ impl Interpreter {
                         .type_constraint
                         .as_deref()
                         .is_none_or(Self::is_fast_type_name)
-                    // Exclude @/% params which need special collection semantics
-                    // and & params which need callable binding
+                    // Exclude @/% params which need special collection semantics.
+                    // A plain `&` parameter is a scalar Callable binding: the
+                    // positional binder already installs its value in the
+                    // sigiled local slot, so it can use this path too.  Keeping
+                    // it out forced every `sub f(&c)` call through full
+                    // name/type resolution, even when `c` was never invoked.
+                    // Code-signature params remain excluded above.
                     && !pd.name.starts_with('@')
                     && !pd.name.starts_with('%')
-                    && !pd.name.starts_with('&')
                     // Exclude internal/anonymous params (__ANON_STATE__, __type_only__, etc.)
                     && !pd.name.starts_with("__")
                     // Exclude dynamic variable params ($*var)
