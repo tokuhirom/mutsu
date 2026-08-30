@@ -421,18 +421,6 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
-        // A bare block owns no routine-local `$/`: its match variable is the
-        // cell captured from the scope that wrote the block. Install the marker
-        // in this frame as well, so only this block's match publication writes
-        // through that cell; routines called by the block retain fresh matches.
-        if !cc.is_routine
-            && data.env.contains_key("__mutsu_block_match_scope")
-            && let Some(scope) = data.env.get("/").cloned()
-        {
-            self.env_mut()
-                .insert_sym(Symbol::intern("__mutsu_block_match_scope"), Value::TRUE);
-            self.env_mut().insert_sym(Symbol::intern("/"), scope);
-        }
         // `self` may live in a PARENT tier of the captured env: the loop above
         // iterates the own tier only (`Env::iter` does not walk the chain,
         // unlike `get`), so the lexical-self install in the loop never fires
@@ -1216,6 +1204,19 @@ impl Interpreter {
             if let Some(val) = self.env().get_sym(*k).cloned() {
                 self.set_closure_captured_state(data.id, *k, val);
             }
+        }
+
+        // A bare block is lexical, not a routine boundary: publish its final
+        // match into the `$/` cell it captured from the scope where it was
+        // written. The block frame itself keeps an ordinary Match value while
+        // it runs, so regex internals and routines it invokes retain their
+        // normal value-based match semantics.
+        if !cc.is_routine
+            && let Some(captured) = data.env.get("/")
+            && let ValueView::ContainerRef(cell) = captured.view()
+            && let Some(current) = self.env().get("/").cloned()
+        {
+            Value::store_through_cell(&cell, &current.deref_container());
         }
 
         // Environment writeback: merge changes back to caller

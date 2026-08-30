@@ -701,25 +701,6 @@ impl Env {
 
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
-        // A bare block captures its defining scope's `$/` in a shared cell so a
-        // match it performs through another routine still updates that lexical
-        // scope. Match engines publish their result through this generic env
-        // insertion path, so preserve the cell rather than replacing it with a
-        // detached Match value.
-        if key == "/"
-            && self
-                .inner
-                .contains_key(&Symbol::intern("__mutsu_block_match_scope"))
-        {
-            let sym = Symbol::intern("/");
-            if let Some(crate::value::ValueView::ContainerRef(cell)) =
-                self.inner.get(&sym).map(Value::view)
-            {
-                let cell = cell.clone();
-                Value::store_through_cell(&cell, &value);
-                return Some(Value::container_ref(cell));
-            }
-        }
         note_env_key(&key);
         let sym = Symbol::intern(&key);
         self.untombstone(sym);
@@ -728,17 +709,6 @@ impl Env {
 
     #[inline]
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
-        if key == Symbol::intern("/")
-            && self
-                .inner
-                .contains_key(&Symbol::intern("__mutsu_block_match_scope"))
-            && let Some(crate::value::ValueView::ContainerRef(cell)) =
-                self.inner.get(&key).map(Value::view)
-        {
-            let cell = cell.clone();
-            Value::store_through_cell(&cell, &value);
-            return Some(Value::container_ref(cell));
-        }
         self.untombstone(key);
         self.cow_mut().insert(key, value)
     }
