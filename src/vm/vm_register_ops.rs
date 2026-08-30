@@ -281,13 +281,25 @@ impl Interpreter {
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders_shallow(body);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
-            // A bare block is not a routine boundary: its `$/` belongs to the
-            // lexical scope where it was written, even when another routine
-            // invokes the block. Capture that match variable in a shared cell
-            // before snapshotting the closure env. Match publication preserves
-            // the cell (`Env::insert`), so the defining scope observes the new
-            // Match without leaking the invoking routine's own `$/`.
-            if is_block && !self.env().get("/").is_some_and(Value::is_container_ref) {
+            // A bare block that performs a regex match is not a routine
+            // boundary: its `$/` belongs to the lexical scope where it was
+            // written, even when another routine invokes the block. Only such
+            // blocks capture the match variable: capturing it for every callback
+            // lets an unrelated nested routine's match shadow grammar-action
+            // `$/` bindings (YAMLish is a representative failure).
+            let block_writes_match = is_block
+                && compiled_code.as_ref().is_some_and(|cc| {
+                    cc.ops.iter().any(|op| {
+                        matches!(
+                            op,
+                            OpCode::SmartMatchExpr {
+                                rhs_pure_regex: true,
+                                ..
+                            }
+                        )
+                    })
+                });
+            if block_writes_match && !self.env().get("/").is_some_and(Value::is_container_ref) {
                 let slash = self
                     .env()
                     .get("/")

@@ -1206,12 +1206,20 @@ impl Interpreter {
             }
         }
 
-        // A bare block is lexical, not a routine boundary: publish its final
-        // match into the `$/` cell it captured from the scope where it was
-        // written. The block frame itself keeps an ordinary Match value while
-        // it runs, so regex internals and routines it invokes retain their
-        // normal value-based match semantics.
+        // A matching bare block is lexical, not a routine boundary: publish its
+        // final match into the `$/` cell it captured from the scope where it was
+        // written. A block without its own regex must not publish a nested
+        // routine's match into that scope.
         if !cc.is_routine
+            && cc.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::SmartMatchExpr {
+                        rhs_pure_regex: true,
+                        ..
+                    }
+                )
+            })
             && let Some(captured) = data.env.get("/")
             && let ValueView::ContainerRef(cell) = captured.view()
             && let Some(current) = self.env().get("/").cloned()

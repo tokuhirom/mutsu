@@ -6,7 +6,7 @@ use Test;
 # block is the opposite case: it shares its enclosing routine's `$/`, so a match
 # inside `if`/`for`/`{ }` must stay visible to the enclosing scope.
 
-plan 15;
+plan 16;
 
 sub inner-match() { "zz" ~~ /(z)/; 1 }
 method-holder-check();
@@ -46,6 +46,10 @@ is ~$/, 'bc', 'a SUB invoked through a Callable still keeps its match private';
 
 call-it({ "yy" ~~ /(y)/ });
 is ~$/, 'y', 'a BLOCK invoked through a Callable writes its defining scope $/';
+
+"abc" ~~ /(b)(c)/;
+call-it({ inner-match() });
+is ~$/, 'bc', 'a BLOCK does not publish a nested routine match';
 
 # The converse the routine gate must preserve: a bare block writes the
 # enclosing routine's `$/`, and so does a conditional.
