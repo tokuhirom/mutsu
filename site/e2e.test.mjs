@@ -540,8 +540,12 @@ try {
   await page.waitForFunction(
     () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
   await sessionComponent.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
   await sessionComponent.locator('textarea').fill('say $answer;');
   await sessionComponent.locator('.run').click();
+  await page.waitForFunction(
+    () => !document.querySelector('#session-example').shadowRoot.querySelector('.run').disabled);
   assert((await sessionComponent.locator('output').textContent()).trim() === '42',
          'the session attribute retains declarations between runs');
 
