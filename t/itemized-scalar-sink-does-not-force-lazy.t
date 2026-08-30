@@ -15,7 +15,27 @@ use Test;
 # the moment the value flowed back out through a routine/closure return
 # whose caller discarded it. raku never reifies in either case.
 
-plan 8;
+plan 11;
+
+# Exact shape from the follow-up ticket: a callable returns a scalar-itemized
+# lazy map as the tail value of `try`. Discarding the try's value must neither
+# force the map nor abort the remainder of the enclosing routine.
+{
+    my $after-try = False;
+    my $try-error-defined = True;
+    sub live-ok-shape(Callable $code) {
+        try { $code() }
+        $try-error-defined = $!.defined;
+        $after-try = True;
+        return 'reached-the-end';
+    }
+    my $result = live-ok-shape({
+        my $seq = map -> $x, $y { ... }, 1..6;
+    });
+    is $result, 'reached-the-end', 'an itemized lazy Seq cannot escape try as the routine result';
+    ok $after-try, 'the enclosing routine continues after try';
+    nok $try-error-defined, 'sinking the itemized lazy Seq does not run its stub callback';
+}
 
 # The exact roast/S02-types/array.t assertion this fix targets: a zen slice
 # on a lazy gather does not reify, even under `lives-ok`/a plain sub call
