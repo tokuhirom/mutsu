@@ -4,6 +4,7 @@ use crate::symbol::Symbol;
 
 /// A subscription registered by a `whenever` block inside a `react` block.
 pub(crate) struct ReactSubscription {
+    pub whenever_id: Option<u64>,
     pub receiver: Option<SupplyReceiver>,
     pub supplier_id: Option<u64>,
     pub callback: Value,
@@ -52,6 +53,7 @@ impl ReactSubscription {
     /// phaser callbacks via struct-update syntax (`..ReactSubscription::new(cb)`).
     pub(crate) fn new(callback: Value) -> Self {
         ReactSubscription {
+            whenever_id: None,
             receiver: None,
             supplier_id: None,
             callback,
@@ -358,12 +360,21 @@ impl Interpreter {
     pub(crate) fn run_whenever_with_value(
         &mut self,
         supply_val: Value,
-        target_var: Option<&str>,
+        yields_value: bool,
         param: &Option<String>,
         param_type: &Option<String>,
         body: &[Stmt],
         owned_lexicals: &[Symbol],
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Value, RuntimeError> {
+        let whenever_id = crate::runtime::native_methods::next_whenever_id();
+        let stamp_tap = |tap: Value| Self::stamp_whenever_tap(tap, whenever_id);
+        let result_tap = |tap: Value| {
+            if yields_value {
+                stamp_tap(tap)
+            } else {
+                Value::NIL
+            }
+        };
         // If the source is a Supplier, convert it to its associated Supply
         // so that subscription registration and tap dispatch work correctly.
         // Without this, `whenever $supplier { ... }` inside a `supply` block
@@ -479,17 +490,27 @@ impl Interpreter {
                     "act",
                     vec![callback.clone()],
                 )?;
-                if let Some(name) = target_var {
-                    self.env.insert(name.to_string(), tap);
-                }
-                return Ok(());
+                // Listener taps already carry their close identity
+                // (`listener-id`), so preserve the object `.act` returned.
+                return Ok(result_tap(tap));
             }
+            // Proc::Async's legacy direct-tap path dispatches the callback
+            // without entering the react drive loop. Mark this non-listener
+            // callback so `Tap.close` can suppress it too. Do this only after
+            // the listener return above: sub_with_env_key shares closure state,
+            // and listener `.act` needs its original lexical `self`.
+            let callback_with_id = Self::sub_with_env_key(
+                &callback,
+                "__mutsu_whenever_id",
+                Value::int(whenever_id as i64),
+            );
             // In react mode: register the subscription for the event loop
             let sub = Value::array(vec![
                 supply_val.clone(),
-                callback.clone(),
+                callback_with_id.clone(),
                 Value::array(last_callbacks.clone()),
                 Value::array(quit_callbacks.clone()),
+                Value::int(whenever_id as i64),
             ]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
                 last.push(sub);
@@ -513,7 +534,7 @@ impl Interpreter {
                 {
                     crate::runtime::native_methods::register_supply_tap(
                         sid as u64,
-                        callback.clone(),
+                        callback_with_id.clone(),
                     );
                 }
                 // Also register on parent for lines supplies
@@ -522,15 +543,12 @@ impl Interpreter {
                 {
                     crate::runtime::native_methods::register_supply_tap(
                         pid as u64,
-                        callback.clone(),
+                        callback_with_id.clone(),
                     );
                 }
             }
 
-            if let Some(name) = target_var {
-                self.env.insert(name.to_string(), supply_val);
-            }
-            return Ok(());
+            return Ok(result_tap(Self::new_whenever_tap(whenever_id)));
         }
 
         // Not in react mode: original behavior.
@@ -573,16 +591,12 @@ impl Interpreter {
                 tap_args.push(Value::pair("quit".to_string(), quit_cb));
             }
             let updated = self.call_method_with_values(supply_val.clone(), "tap", tap_args)?;
-            if let Some(name) = target_var {
-                self.env.insert(name.to_string(), updated);
-            }
+            return Ok(result_tap(updated));
         } else if let ValueView::Instance { class_name, .. } = supply_val.view()
             && class_name == "IO::Socket::Async::Listener"
         {
             let tap = self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
-            if let Some(name) = target_var {
-                self.env.insert(name.to_string(), tap);
-            }
+            return Ok(result_tap(tap));
         } else if let ValueView::Promise(shared) = supply_val.view() {
             // A promise source is a one-shot supply: run the body once with the
             // kept result, then the LAST phasers; a broken promise runs the QUIT
@@ -641,6 +655,26 @@ impl Interpreter {
             // group join so the enclosing supply's done is not held hostage.
             self.invoke_done_callback(marker)?;
         }
-        Ok(())
+        Ok(result_tap(Self::new_whenever_tap(whenever_id)))
+    }
+
+    fn new_whenever_tap(whenever_id: u64) -> Value {
+        let mut attributes = HashMap::new();
+        attributes.insert("whenever_id".to_string(), Value::int(whenever_id as i64));
+        Value::make_instance(Symbol::intern("Tap"), attributes)
+    }
+
+    fn stamp_whenever_tap(tap: Value, whenever_id: u64) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = tap.view()
+        else {
+            return Self::new_whenever_tap(whenever_id);
+        };
+        let mut attributes = attributes.as_map().clone();
+        attributes.insert("whenever_id".to_string(), Value::int(whenever_id as i64));
+        Value::make_instance(class_name, attributes)
     }
 }

@@ -171,6 +171,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "cancel" | "close" => {
+                if let Some(ValueView::Int(whenever_id)) =
+                    attributes.get("whenever_id").map(Value::view)
+                {
+                    close_whenever(whenever_id as u64);
+                }
                 if let Some(ValueView::Int(listener_id)) =
                     attributes.get("listener-id").map(Value::view)
                 {

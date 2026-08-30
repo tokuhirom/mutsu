@@ -88,8 +88,8 @@ plan 4;
 }
 
 # A bare `whenever $sup { }` statement must NOT clobber `$sup` with its Tap: the
-# supply variable stays a Supply and can be tapped again. (The `do whenever`
-# expression bridge is covered by t/react-do-whenever-tap-coherence.t.)
+# supply variable stays a Supply and can be tapped again. (`do whenever`
+# expression values are covered by t/react-do-whenever-tap-value.t.)
 {
     my $sup = Supplier.new.Supply;
     react {

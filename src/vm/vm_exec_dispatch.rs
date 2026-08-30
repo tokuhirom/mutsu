@@ -5095,7 +5095,7 @@ impl Interpreter {
                 body_idx,
                 analysis_cc_idx,
                 param_idx,
-                target_var_idx,
+                yields_value,
                 param_type_idx,
             } => {
                 self.sync_source_line(code, *ip);
@@ -5104,7 +5104,7 @@ impl Interpreter {
                     *body_idx,
                     *analysis_cc_idx,
                     param_idx,
-                    target_var_idx,
+                    *yields_value,
                     param_type_idx,
                 )?;
                 *ip += 1;

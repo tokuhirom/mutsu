@@ -431,7 +431,7 @@ impl Interpreter {
                         .iter()
                         .filter(|item| {
                             if let ValueView::Array(arr, ..) = item.view()
-                                && arr.len() == 4
+                                && arr.len() == 5
                                 && let ValueView::Instance {
                                     class_name,
                                     attributes,
@@ -478,7 +478,7 @@ impl Interpreter {
                     let body_done = body_ran_done;
                     for item in emitted {
                         if let ValueView::Array(arr, ..) = item.view()
-                            && arr.len() == 4
+                            && arr.len() == 5
                             && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                         {
                             let inner_supply = &arr[0];

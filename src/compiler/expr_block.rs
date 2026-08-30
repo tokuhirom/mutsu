@@ -729,18 +729,13 @@ impl Compiler {
                 // Map as the declaration's value.
                 self.compile_stmt(stmt);
             }
-            Stmt::Whenever { supply, .. } => {
-                // Expression-position `do whenever $s {...}`: bind the tap handle
-                // to `env[$s]` so it can be read back as the do-block's value.
-                let saved = self.whenever_bind_target;
-                self.whenever_bind_target = true;
+            Stmt::Whenever { .. } => {
+                // A `do whenever` expression gets its Tap directly from the
+                // opcode, just like every other value-producing expression.
+                let saved = self.do_stmt_yields_value;
+                self.do_stmt_yields_value = true;
                 self.compile_stmt(stmt);
-                self.whenever_bind_target = saved;
-                if let Expr::Var(name) = supply {
-                    self.compile_expr(&Expr::Var(name.clone()));
-                } else {
-                    self.code.emit(OpCode::LoadNil);
-                }
+                self.do_stmt_yields_value = saved;
             }
             // A `when`/`default` clause used as a TERM. A clause that MATCHES
             // never falls through to the next op: it raises `succeed` carrying

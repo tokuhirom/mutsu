@@ -217,6 +217,10 @@ impl Interpreter {
                     .get(3)
                     .and_then(crate::runtime::Interpreter::value_array_items)
                     .unwrap_or_default();
+                let whenever_id = items.get(4).and_then(|value| match value.view() {
+                    ValueView::Int(id) if id >= 0 => Some(id as u64),
+                    _ => None,
+                });
 
                 match source.view() {
                     // Supply with a channel
@@ -244,6 +248,7 @@ impl Interpreter {
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
                             react_subs.push(ReactSubscription {
+                                whenever_id,
                                 receiver: Some(rx),
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     &(attributes).as_map(),
@@ -268,6 +273,7 @@ impl Interpreter {
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
                             react_subs.push(ReactSubscription {
+                                whenever_id,
                                 supplier_id: Some(supplier_id as u64),
                                 close_callbacks: Self::extract_supply_on_close_callbacks(
                                     &(attributes).as_map(),
@@ -451,6 +457,7 @@ impl Interpreter {
                                     // poll in `vm_react_subscriptions.rs` can reach
                                     // them.
                                     react_subs.push(ReactSubscription {
+                                        whenever_id,
                                         close_callbacks: close_cbs,
                                         quit_callbacks: quit_callbacks.clone(),
                                         on_demand_done: Some(done_promise.clone()),
@@ -511,6 +518,7 @@ impl Interpreter {
                             },
                         );
                         react_subs.push(ReactSubscription {
+                            whenever_id,
                             receiver: Some(rx),
                             promise: Some(shared.clone()),
                             ..ReactSubscription::new(callback)
@@ -523,6 +531,7 @@ impl Interpreter {
                             .and_then(crate::runtime::Interpreter::value_array_items)
                             .unwrap_or_default();
                         react_subs.push(ReactSubscription {
+                            whenever_id,
                             last_callbacks,
                             channel: Some(ch.clone()),
                             ..ReactSubscription::new(callback)
