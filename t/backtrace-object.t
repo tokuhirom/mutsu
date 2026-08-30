@@ -1,5 +1,5 @@
 use Test;
-plan 14;
+plan 15;
 
 # Basic: .backtrace returns a Backtrace object
 try { die "oops" };
@@ -39,7 +39,9 @@ try { foo() };
 my $bt2 = $!.backtrace;
 my @frames2 = $bt2.list;
 ok @frames2.elems >= 2, 'multi-frame backtrace has >= 2 frames';
-is @frames2[0].subname, 'foo', 'first frame subname is foo';
+is-deeply @frames2[0, 1].map(*.subname).list, <throw die>,
+    'die starts with its native setting frames';
+is @frames2[2].subname, 'foo', 'first user frame subname is foo';
 is @frames2[*-1].subname, '<unit>', 'last frame subname is <unit>';
 
 # Backtrace stringifies when used in string context

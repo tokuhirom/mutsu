@@ -4348,7 +4348,7 @@ impl Interpreter {
                     val
                 };
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
-                self.attach_backtrace_to_error(&mut err);
+                self.attach_backtrace_to_error_with_leading(&mut err, &["throw", "die"]);
                 return Err(err);
             }
             OpCode::Fail => {

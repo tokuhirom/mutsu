@@ -282,7 +282,7 @@ impl Interpreter {
     /// `Backtrace::Frame` instances (each with `.subname`, `.file`, `.line`)
     /// and whose `text` attribute is the formatted backtrace string.
     pub(crate) fn build_backtrace_value(&self) -> Value {
-        self.build_backtrace_value_with_leading(None)
+        self.build_backtrace_value_with_leading(&[])
     }
 
     /// [`Self::build_backtrace_value`] with an explicit `is-runtime` stamp.
@@ -292,7 +292,7 @@ impl Interpreter {
     /// live routine stack of the code that triggered the compilation is the
     /// best frame set mutsu can offer for the latter.
     pub(crate) fn build_backtrace_value_with_runtime(&self, is_runtime: bool) -> Value {
-        let bt = self.build_backtrace_value_with_leading(None);
+        let bt = self.build_backtrace_value_with_leading(&[]);
         Self::stamp_backtrace_runtime(bt, is_runtime)
     }
 
@@ -305,15 +305,15 @@ impl Interpreter {
     }
 
     /// Build a `Backtrace` value from the current routine stack, optionally
-    /// prepending a synthetic leading routine frame (e.g. `throw`).
+    /// prepending synthetic leading routine frames (e.g. `throw` and `die`).
     ///
     /// An explicit `ExceptionObject.throw` is dispatched natively, so the
     /// `throw` invocation never appears as its own callframe on the routine
     /// stack. Raku, by contrast, includes the `Exception.throw` setting frame at
     /// the top of `.backtrace().list` (it is hidden from the rendered gist as a
     /// setting frame, but still counts toward `.list.elems`). Passing the method
-    /// name here reproduces that extra structured-only frame.
-    pub(super) fn build_backtrace_value_with_leading(&self, leading: Option<&str>) -> Value {
+    /// names here reproduces those extra structured-only frames.
+    pub(super) fn build_backtrace_value_with_leading(&self, leading: &[&str]) -> Value {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
@@ -327,9 +327,10 @@ impl Interpreter {
 
         // Synthetic leading frame (setting `throw`/`rethrow`): structured-only,
         // omitted from the rendered text just like Raku hides setting frames.
-        if let Some(name) = leading {
+        for name in leading {
             let mut frame_attrs = HashMap::new();
-            frame_attrs.insert("subname".to_string(), Value::str(name.to_string()));
+            frame_attrs.insert("subname".to_string(), Value::str((*name).to_string()));
+            frame_attrs.insert("is-setting".to_string(), Value::TRUE);
             frame_attrs.insert(
                 "file".to_string(),
                 current_file
@@ -442,8 +443,17 @@ impl Interpreter {
             ));
         } else if !self.stack_bottom_is_mainline_unit(stack) {
             let outermost = &stack[0];
-            let location =
-                Self::format_location(outermost.file.map(|s| s.as_str()), outermost.line);
+            // If every live frame is an anonymous block (not rendered above),
+            // the synthetic unit line is the only visible location and must
+            // retain the actual throw site rather than the block-entry line.
+            let only_anonymous_blocks = stack
+                .iter()
+                .all(|frame| frame.is_block && frame.name.is_empty());
+            let location = if only_anonymous_blocks {
+                Self::format_location(current_file.as_deref(), current_line)
+            } else {
+                Self::format_location(outermost.file.map(|s| s.as_str()), outermost.line)
+            };
             text_lines.push(format!("  in block <unit>{}", location));
 
             let mut frame_attrs = HashMap::new();
@@ -567,6 +577,16 @@ impl Interpreter {
     /// every other runtime error (method-not-found, type-check, ...) so CLI
     /// output and `$!.backtrace` report the failing line for all of them.
     pub(super) fn attach_backtrace_to_error(&self, err: &mut RuntimeError) {
+        self.attach_backtrace_to_error_with_leading(err, &[]);
+    }
+
+    /// [`Self::attach_backtrace_to_error`] with native setting routines that
+    /// participated in raising the exception but have no VM callframes.
+    pub(super) fn attach_backtrace_to_error_with_leading(
+        &self,
+        err: &mut RuntimeError,
+        leading: &[&str],
+    ) {
         if err.backtrace().is_none() {
             let backtrace_str = self.build_backtrace_string();
             // An error raised by USING an unhandled Failure renders rakudo's
@@ -584,7 +604,10 @@ impl Interpreter {
             && let ValueView::Instance { attributes, .. } = exc_box.view()
             && !attributes.as_map().contains_key("backtrace")
         {
-            attributes.insert("backtrace".to_string(), self.build_backtrace_value());
+            attributes.insert(
+                "backtrace".to_string(),
+                self.build_backtrace_value_with_leading(leading),
+            );
             if let Some(line) = self.current_source_line() {
                 attributes.insert_if_absent("line".to_string(), Value::int(line as i64));
             }
