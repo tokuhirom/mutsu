@@ -663,6 +663,17 @@ impl Interpreter {
         self.stack.push(val);
     }
 
+    /// Push the role group most recently installed by `RegisterRole`.
+    /// `RoleGroupToCandidate` immediately converts it to the individual role
+    /// declaration that expression position must yield.
+    pub(super) fn exec_push_last_registered_role_op(&mut self) {
+        let val = match self.last_registered_role_key.take() {
+            Some(key) => Value::package(crate::symbol::Symbol::intern(&key)),
+            None => Value::NIL,
+        };
+        self.stack.push(val);
+    }
+
     /// Whether a *typed* user `trait_mod:<is>` candidate matches `call_args`
     /// (`[class_type, parent_type]`): a candidate whose SECOND positional
     /// parameter carries a non-universal type constraint that the parent
@@ -952,6 +963,8 @@ impl Interpreter {
                     }
                 }
             }
+
+            self.last_registered_role_key = Some(qualified_name.clone());
 
             Ok(())
         } else {

@@ -806,6 +806,10 @@ impl Interpreter {
                 self.exec_push_last_registered_class_op();
                 *ip += 1;
             }
+            OpCode::PushLastRegisteredRole => {
+                self.exec_push_last_registered_role_op();
+                *ip += 1;
+            }
             OpCode::GetOurVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 let val = self

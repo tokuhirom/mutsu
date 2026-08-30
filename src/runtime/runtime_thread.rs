@@ -582,6 +582,7 @@ impl Interpreter {
             method_class_stack: Vec::new(),
             constructing_class: None,
             last_registered_class_key: None,
+            last_registered_role_key: None,
             build_attr_writes: std::cell::RefCell::new(Vec::new()),
             defining_class: None,
             pending_call_arg_sources: None,
