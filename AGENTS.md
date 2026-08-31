@@ -79,6 +79,8 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 ## Commit & Pull Request Guidelines
 - Use short, imperative commit subjects; optional scope prefixes are common (for example, `parser: accept ...`, `compiler: add ...`, `Fix ...`).
 - Keep commits focused on one logical change.
+- Do not commit directly to `main`; create a feature branch and open a pull request.
+- Write repository artifacts in English, including commit messages, PR titles/descriptions, documentation, and code comments.
 - Before pushing or opening a PR, always run `cargo fmt --all` and `cargo clippy -- -D warnings`.
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
@@ -92,12 +94,18 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
   protection remains the merge gate, so the PR merges only after required checks and reviews pass.
 - Do not report PR publication as complete until both conditions are verified on GitHub:
   `isDraft == false` and auto-merge is enabled.
+- Immediately verify that a new PR is mergeable with
+  `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`.
+  If it is `DIRTY`, rebase onto `origin/main`, resolve the conflict, and force-push with lease;
+  auto-merge and CI will not make progress on a conflicted PR.
 - After publishing or updating a PR, monitor its required checks with
   `gh pr checks <pr-number> --watch --fail-fast`. Prefer this foreground command over custom
   polling loops or background watchers: it refreshes the check table, exits immediately after a
   failure, and returns success only when all required checks have completed successfully. If a
   check fails, inspect its logs, fix forward on the same branch, push, and run the watch command
   again. This rule supersedes any background-only CI-watch guidance in `CLAUDE.md`.
+- Do not use stacked PRs. Never close a PR merely to discard its work; rebase and preserve its
+  knowledge, or re-implement the documented diff on a new branch.
 
 ## External Repository Policy
 - Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
