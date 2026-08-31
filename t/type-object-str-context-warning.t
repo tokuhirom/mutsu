@@ -1,4 +1,6 @@
 use Test;
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use Test::Util;
 
 # Using a bare type object in a string context warns
 # "Use of uninitialized value of type X in string context." (or, inside string
@@ -17,7 +19,7 @@ use Test;
 # interpolation with no warning at all (only `print` and the `.Str` method
 # warned).
 
-plan 20;
+plan 22;
 
 # --- prefix:<~> operator ---
 is (quietly ~Int), '', '~Int is the empty string';
@@ -96,6 +98,19 @@ is (quietly "a{Int}b"), 'ab', 'interpolating a type object yields the empty stri
     class WithStringy { method Stringy { 'STRINGY' } }
     is (~WithStringy), 'STRINGY', '~TypeObject dispatches a user .Stringy';
 }
+
+# --- print/put use .Str, not .Stringy ---
+is_run 'class WithStringy { method Stringy { "STRINGY" } }; print WithStringy; put WithStringy;',
+    {
+        :out("\n"),
+        :err(/'Use of uninitialized value of type WithStringy in string context.'/),
+        :0status,
+    },
+    'print and put ignore a type object\'s user .Stringy';
+
+is_run 'class WithBoth { method Stringy { "STRINGY" }; method Str { "STR" } }; print WithBoth; put WithBoth;',
+    { :out("STRSTR\n"), :err(''), :0status },
+    'print and put prefer a type object\'s user .Str over .Stringy';
 
 # --- .gist / .raku are unaffected (no warning, render the type name) ---
 is Int.gist, '(Int)', 'Int.gist is "(Int)" (unaffected)';
