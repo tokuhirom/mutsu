@@ -300,6 +300,11 @@ impl Interpreter {
         merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         merged_supply_attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
         merged_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
+        // The merged stream has stricter tap timing than `.stdout`/`.stderr`:
+        // fetching it before `.start` is fine, but registering a tap after the
+        // process has begun would lose output.  Keep its identity on every
+        // derived Supply so registration can consult the lifecycle registry.
+        merged_supply_attrs.insert("proc_async_merged".to_string(), Value::TRUE);
 
         let mut attrs = HashMap::new();
         attrs.insert("cmd".to_string(), Value::array(positional));

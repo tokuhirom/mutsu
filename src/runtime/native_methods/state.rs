@@ -14,6 +14,47 @@ pub(in crate::runtime) fn proc_stdin_map() -> &'static StdinMap {
 
 type SupplyTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
 
+/// Merged `Proc::Async` Supply ids whose process has started.  A merged output
+/// stream must be tapped before spawn: otherwise data emitted before the tap
+/// would be silently lost.  Per-stream accessors enforce that rule directly on
+/// the `Proc::Async`; merged Supplies need this small lifecycle registry because
+/// the Supply value can outlive the accessor call that produced it.
+type StartedProcAsyncMergedSupplies = std::sync::Mutex<std::collections::HashSet<u64>>;
+
+fn started_proc_async_merged_supplies() -> &'static StartedProcAsyncMergedSupplies {
+    static SET: OnceLock<StartedProcAsyncMergedSupplies> = OnceLock::new();
+    SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+pub(crate) fn mark_proc_async_merged_supply_started(supply_id: u64) {
+    if let Ok(mut started) = started_proc_async_merged_supplies().lock() {
+        started.insert(supply_id);
+    }
+}
+
+/// Whether this Supply is a merged `Proc::Async` output whose owner has
+/// started.  Derived Supplies retain `proc_async_merged` but refer to their
+/// source through `parent_supply_id`, so resolve that id first.
+pub(crate) fn proc_async_merged_supply_started(attributes: &AttrMap) -> bool {
+    if !attributes
+        .get("proc_async_merged")
+        .is_some_and(Value::truthy)
+    {
+        return false;
+    }
+    let supply_id = attributes
+        .get("parent_supply_id")
+        .or_else(|| attributes.get("supply_id"))
+        .and_then(Value::as_int)
+        .filter(|id| *id >= 0)
+        .map(|id| id as u64);
+    supply_id.is_some_and(|id| {
+        started_proc_async_merged_supplies()
+            .lock()
+            .is_ok_and(|started| started.contains(&id))
+    })
+}
+
 type ClosedWheneverMap = std::sync::Mutex<std::collections::HashSet<u64>>;
 
 fn closed_whenever_map() -> &'static ClosedWheneverMap {

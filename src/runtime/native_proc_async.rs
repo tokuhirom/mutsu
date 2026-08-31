@@ -201,6 +201,19 @@ impl Interpreter {
                 }
                 attrs.insert("started".to_string(), Value::TRUE);
 
+                // The merged Supply may have been fetched before `.start()`;
+                // its later `.tap`/`whenever` registration must still reject
+                // the race even though it no longer has the Proc instance.
+                if let Some(ValueView::Instance { attributes, .. }) =
+                    attrs.get("supply").map(Value::view)
+                    && let Some(ValueView::Int(supply_id)) =
+                        attributes.as_map().get("supply_id").map(Value::view)
+                {
+                    crate::runtime::native_methods::mark_proc_async_merged_supply_started(
+                        supply_id as u64,
+                    );
+                }
+
                 // Extract command and args
                 let mut cmd_arr = match attrs.get("cmd").map(Value::view) {
                     Some(ValueView::Array(arr, ..)) => arr.to_vec(),
