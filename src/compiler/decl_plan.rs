@@ -656,6 +656,11 @@ impl Compiler {
             body,
             &package_name.unwrap_or_else(|| self.qualified_role_decl_name(&name.resolve())),
         );
+        let method_outer_lexical_slots = self
+            .local_map
+            .iter()
+            .map(|(name, slot)| (crate::symbol::Symbol::intern(name), *slot))
+            .collect();
         self.code.add_role_decl_plan(
             stmt,
             trait_args,
@@ -663,6 +668,7 @@ impl Compiler {
             method_name_chunks,
             parent_ops,
             method_compiled_keys,
+            method_outer_lexical_slots,
             deferred_body_ops,
         )
     }
