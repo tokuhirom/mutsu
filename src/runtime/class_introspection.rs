@@ -43,10 +43,15 @@ impl Interpreter {
                     let has_matching_positional = method.param_defs.iter().any(|pd| {
                         !pd.named
                             && !pd.is_invocant
+                            // An UNTYPED positional is an `Any` parameter, which
+                            // accepts the value: `method new($v) { self.bless(:$v) }`
+                            // is an explicit positional constructor and rakudo
+                            // coerces through it. Only the default constructor
+                            // (named-only params) must stay out of coercion.
                             && pd
                                 .type_constraint
                                 .as_deref()
-                                .is_some_and(|tc| self.type_matches_value(tc, value))
+                                .is_none_or(|tc| self.type_matches_value(tc, value))
                     });
                     if has_matching_positional {
                         return true;
@@ -55,6 +60,19 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    /// Whether any class in `class_name`'s MRO declares a user-written `new`.
+    /// `false` means every `new` reachable on it is the native/default
+    /// constructor, whose signature is not in the method registry — so
+    /// [`Self::class_has_new_accepting_positional`], which only inspects user
+    /// overloads, cannot answer for it.
+    pub(super) fn class_declares_user_new(&mut self, class_name: &str) -> bool {
+        self.class_mro(class_name).iter().any(|cn| {
+            self.registry()
+                .user_method_overloads(cn.as_str(), "new")
+                .is_some()
+        })
     }
 
     /// Hardcoded native-method names for the handful of built-in classes

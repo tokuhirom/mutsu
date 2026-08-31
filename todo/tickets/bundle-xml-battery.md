@@ -77,7 +77,43 @@ and [proxy-what-reports-proxy-instead-of-fetching.md](proxy-what-reports-proxy-i
 **Re-measure before starting** — per `selection-method.md`, a readiness claim
 nobody just re-measured is not evidence.
 
-## Follow-up re-measurement (2026-08-31): still blocked at 9/15
+## Follow-up re-measurement (2026-08-31, later the same day): 13/15
+
+The 9/15 measurement recorded below was superseded within the day. Re-run of
+the v0.3.6 suite (`mutsu -I lib t/*.rakutest` from the dist's own checkout):
+mutsu now reaches **13/15** files and **149** assertions — the same assertion
+count `raku -I lib` reaches at 15/15.
+
+`example`, `proxies`, `query-methods` and `open-xml` were cleared by fixes that
+came out of this re-measurement, each a general interpreter defect:
+
+- **A junction argument bound by a SLURPY was auto-threaded.** `method m(*%q)`
+  slurps its named arguments as raw values, so rakudo passes a `Junction`
+  whole; mutsu's *method* autothread path inspected no parameters at all and
+  called the method once per eigenstate.
+  `XML::Element.lookfor(:class(Nil | "skip"))` therefore answered
+  `any(elem, elem)` — one junction — instead of the two matching elements. The
+  sub path already had the rule; both share one helper now.
+- **`IO::Path(Str)` was an impossible coercion.** Rakudo's coercion protocol
+  ends in `TargetType.new($value)`; mutsu only tried it for classes with a
+  *user-written* `new`, so every native target failed.
+- **A `where` on a coercion parameter ran against the RAW argument.**
+  `IO::Path(Str) $src where :f` means "coerce, then ask the IO::Path `.f`";
+  mutsu called `.f` on the Str, so `multi sub open-xml (IO::Path(Str) $src
+  where :f)` was silently rejected and the plain-`Str` candidate answered
+  instead.
+- **A coercion parameter did not accept its TARGET type.** Rakudo compiles
+  `T(F)` into two candidates, one taking `T` directly, so `open-xml($path.IO)`
+  binds; mutsu accepted only `F` and matched no candidate at all.
+
+### What still blocks it
+
+Two files: `t/make.rakutest` (`make-xml worked.` fails) and
+`t/namespaces.rakutest` (2 assertions: default-namespace content,
+`elements(:URI)`). Neither is bisected yet. Re-measure before starting the
+vendoring steps.
+
+## Superseded re-measurement (2026-08-31, earlier): blocked at 9/15
 
 The required fresh measurement was repeated from the v0.3.6 tag
 (`0349d282e257be61075f55abfde4c42a01bc8f10`) with a release mutsu build, from

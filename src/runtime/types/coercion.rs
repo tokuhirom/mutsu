@@ -298,7 +298,20 @@ impl Interpreter {
             // but only if there's an explicit `new` variant that accepts a
             // positional parameter matching the value type.  The default
             // constructor (named-only params) must NOT be used for coercion.
-            if self.class_has_new_accepting_positional(&remapped_base_target, &value)
+            // A class whose MRO declares no user `new` at all is a NATIVE class
+            // (`IO::Path`, `Version`, ...). `class_has_new_accepting_positional`
+            // only inspects user overloads, so it can never say yes for one, and
+            // its `new` is a native constructor whose signature is not in the
+            // registry to inspect. Rakudo's coercion protocol ends in
+            // `TargetType.new($value)` either way — `IO::Path(Str)` binds through
+            // `IO::Path.new("...")` (`XML`'s
+            // `multi sub open-xml (IO::Path(Str) $src where :f)`), which mutsu
+            // used to reject with X::Coerce::Impossible. The result still has to
+            // type-match the target, so a `new` that does not build one falls
+            // through to the error below exactly as before.
+            let try_new = self.class_has_new_accepting_positional(&remapped_base_target, &value)
+                || !self.class_declares_user_new(&remapped_base_target);
+            if try_new
                 && let Ok(coerced) = self.call_method_with_values(
                     Value::package(Symbol::intern(&remapped_base_target)),
                     "new",
