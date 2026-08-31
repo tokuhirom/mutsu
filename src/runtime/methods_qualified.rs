@@ -1055,7 +1055,7 @@ impl Interpreter {
         }
         if matches!(
             method,
-            "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+            "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
         ) {
             return None;
         }
