@@ -21,6 +21,20 @@ pub(crate) fn parse_source(input: &str) -> Result<(Vec<Stmt>, Option<String>), R
     result
 }
 
+/// Parse an internal expression *fragment* re-parsed while the program is
+/// already running (a parametric role's type argument, ...).
+///
+/// Like [`parse_source`] for language-version handling, but the fragment is not
+/// a compilation unit: its statements are not in mainline sink context, so it
+/// raises no "Useless use of ... in sink context" warnings of its own, and it
+/// leaves the enclosing unit's already-collected warnings intact.
+pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    let saved_language_version = parser::current_language_version();
+    let result = parser::parse_fragment(input);
+    parser::set_current_language_version(&saved_language_version);
+    result
+}
+
 /// Parse source code as a compilation unit whose body is about to run: the main
 /// program, a `use`d module, a `require`d file. Unlike `parse_source` this keeps
 /// the unit's own `use vX` pragma in effect, because the statements that follow

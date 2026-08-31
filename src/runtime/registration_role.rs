@@ -34,7 +34,7 @@ impl Interpreter {
                 let trimmed = expr.trim();
                 if !trimmed.contains(['[', '(', ' '])
                     && trimmed.contains("::")
-                    && let Ok(value) = crate::parse_dispatch::parse_source(expr)
+                    && let Ok(value) = crate::parse_dispatch::parse_fragment(expr)
                         .and_then(|(stmts, _)| self.eval_block_value(&stmts))
                     && matches!(value.view(), ValueView::Enum { .. })
                 {
@@ -60,7 +60,7 @@ impl Interpreter {
                     expr.as_str()
                 }
             };
-            match crate::parse_dispatch::parse_source(eval_expr)
+            match crate::parse_dispatch::parse_fragment(eval_expr)
                 .and_then(|(stmts, _)| self.eval_block_value(&stmts))
             {
                 Ok(value) => values.push(Self::namify_reparsed_colonpair_role_arg(expr, value)),

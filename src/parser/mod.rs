@@ -112,6 +112,12 @@ thread_local! {
     /// Consumed (reset to false) by that call, so nested parses (e.g. a `use`
     /// inside the EVAL'd code) fall back to mainline sink semantics.
     static EVAL_VALUE_TAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// When set, the next `parse_program` call skips the sink-context warning
+    /// pass entirely. Armed by [`parse_fragment`] for a run-time re-parse of an
+    /// expression *fragment* (a role type argument, ...): such a fragment is
+    /// not a compilation unit, so its statements are not in mainline sink
+    /// context and must never raise a "Useless use of ..." warning.
+    static SUPPRESS_SINK_WARNINGS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Arm the value-tail sink semantics for the next `parse_program` call (see
@@ -127,6 +133,31 @@ pub(crate) fn set_eval_value_tail() {
 /// Consume the value-tail flag (one-shot).
 fn take_eval_value_tail() -> bool {
     EVAL_VALUE_TAIL.with(|f| f.replace(false))
+}
+
+/// Consume the sink-warning suppression flag (one-shot).
+fn take_suppress_sink_warnings() -> bool {
+    SUPPRESS_SINK_WARNINGS.with(|f| f.replace(false))
+}
+
+/// Parse an internal expression *fragment* (a role type argument re-parsed at
+/// run time, ...) rather than a compilation unit.
+///
+/// Two things separate this from [`parse_program`]. A fragment's statements are
+/// not in mainline sink context, so the "Useless use of ... in sink context"
+/// pass is skipped — otherwise re-parsing the `Int` of `R1[Int]` reported a
+/// spurious `Useless use of constant value Int`. And because `parse_program`
+/// clears the warning buffer up front, an unguarded nested parse also *dropped*
+/// the enclosing unit's real warnings, so they are saved and restored here.
+pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
+    let saved_markers = VCS_CONFLICT_MARKERS.with(|m| std::mem::take(&mut *m.borrow_mut()));
+    SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
+    let result = parse_program(input);
+    SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    PARSE_WARNINGS.with(|w| *w.borrow_mut() = saved_warnings);
+    VCS_CONFLICT_MARKERS.with(|m| *m.borrow_mut() = saved_markers);
+    result
 }
 
 /// Add a warning message during parsing, tagged with `line` (1-based, the
@@ -371,6 +402,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     // Consume the EVAL value-tail flag up front so any nested parse this
     // program triggers (module loads, ...) uses plain mainline semantics.
     let eval_value_tail = take_eval_value_tail();
+    let suppress_sink = take_suppress_sink_warnings();
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -428,7 +460,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // same scope is a compile-time X::Redeclaration::Outer in rakudo.
                 Err(build_outer_redeclaration_error(&symbol, line))
             } else {
-                if eval_value_tail {
+                if suppress_sink {
+                    // An internal fragment re-parse (see `parse_fragment`).
+                } else if eval_value_tail {
                     sink_warn::add_sink_warnings_value_tail(&stmts);
                 } else {
                     sink_warn::add_sink_warnings(&stmts);
