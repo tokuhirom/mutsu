@@ -136,73 +136,7 @@ impl Interpreter {
         let pds = param_defs.unwrap();
 
         // Filter to only junction args whose parameter does NOT accept Junction
-        let autothread_indices: Vec<usize> = junction_indices
-            .into_iter()
-            .filter(|&idx| {
-                // Check if the arg is a named arg (Pair) — find matching named param
-                if let ValueView::Pair(key, _) = args[idx].view() {
-                    if let Some(pd) = pds
-                        .iter()
-                        .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
-                    {
-                        if let Some(tc) = &pd.type_constraint {
-                            let nominal = Self::nominal_type(tc.as_str());
-                            if matches!(nominal, "Mu" | "Junction") {
-                                return false;
-                            }
-                            let resolved_base = self.resolve_subset_base_type(nominal);
-                            return !matches!(resolved_base.as_str(), "Mu" | "Junction");
-                        }
-                        return true; // No type constraint = default Any
-                    }
-                    // No explicit named param matched. A slurpy hash (`*%h`, the
-                    // implicit `%_`, `+%h`) captures the named argument as a raw
-                    // value, so a Junction is stored as-is rather than threaded.
-                    // A slurpy hash is a slurpy param whose sigil is `%` (a
-                    // slurpy `*@a` only collects positionals, not named args).
-                    if pds.iter().any(|pd| {
-                        (pd.slurpy || pd.double_slurpy || pd.onearg) && pd.name.starts_with('%')
-                    }) {
-                        return false;
-                    }
-                    return true; // No slurpy hash to collect it — auto-thread
-                }
-
-                // Positional arg — find corresponding positional param
-                let positional_pds: Vec<&crate::ast::ParamDef> =
-                    pds.iter().filter(|pd| !pd.named).collect();
-                if let Some(pd) = positional_pds.get(idx) {
-                    // A slurpy param (`*@a`, `+@a`, `**@a`) collects its elements
-                    // as raw Mu values, so a Junction argument is captured as-is
-                    // rather than auto-threaded.
-                    if pd.slurpy || pd.onearg || pd.double_slurpy {
-                        return false;
-                    }
-                    // Don't auto-thread if param accepts Mu or Junction.
-                    // For coercion types like `Bool(Mu)`, the nominal type is the
-                    // inner type (Mu here) — autothreading is based on the nominal.
-                    if let Some(tc) = &pd.type_constraint {
-                        let nominal = Self::nominal_type(tc.as_str());
-                        if matches!(nominal, "Mu" | "Junction") {
-                            return false;
-                        }
-                        // Don't auto-thread if the type constraint is a subset
-                        // whose ultimate base type is Mu or Junction — the
-                        // junction should be passed as-is to the subset's
-                        // where-clause check.
-                        let resolved_base = self.resolve_subset_base_type(nominal);
-                        if matches!(resolved_base.as_str(), "Mu" | "Junction") {
-                            return false;
-                        }
-                        return true;
-                    }
-                    // No type constraint means default Any — needs auto-threading
-                    return true;
-                }
-                // If param is slurpy or we're past the defined params, don't auto-thread
-                false
-            })
-            .collect();
+        let autothread_indices = self.autothread_indices_for_params(args, &junction_indices, &pds);
 
         if autothread_indices.is_empty() {
             return Ok(None);
@@ -435,6 +369,33 @@ impl Interpreter {
             return Ok(None);
         }
 
+        // When the receiver is a user class instance whose method we can resolve,
+        // apply the same parameter rules the sub path uses: a junction bound by a
+        // slurpy (`*%query`, `*@a`) or by a `Mu`/`Junction`-typed parameter is
+        // passed whole, not threaded. Without this a junction NAMED argument to a
+        // `method m(*%query)` called the method once per eigenstate and handed
+        // back a junction of results (`XML::Element.lookfor(:class(Nil | "skip"))`
+        // answered `any(elem, elem)` instead of the two matching elements).
+        // A method we cannot resolve — a native method, a non-instance receiver —
+        // keeps the previous "thread every junction argument" behaviour.
+        let junction_indices = match target.view() {
+            ValueView::Instance { class_name, .. } => {
+                let resolved_args: Vec<Value> =
+                    args.iter().map(Self::unwrap_junction_deep).collect();
+                match self.resolve_method_with_owner(&class_name.resolve(), method, &resolved_args)
+                {
+                    Some((_, def)) => {
+                        self.autothread_indices_for_params(args, &junction_indices, &def.param_defs)
+                    }
+                    std::option::Option::None => junction_indices,
+                }
+            }
+            _ => junction_indices,
+        };
+        if junction_indices.is_empty() {
+            return Ok(None);
+        }
+
         // Pick the junction to thread over based on priority
         let thread_idx = self.pick_autothread_junction_index(args, &junction_indices);
 
@@ -537,6 +498,80 @@ impl Interpreter {
     }
 
     /// Try to get param_defs for a function to determine which params accept Junction.
+    /// Narrow `junction_indices` to the arguments whose *parameter* does not
+    /// accept a `Junction` — the ones Raku actually auto-threads over. A
+    /// parameter typed `Mu`/`Junction` (or a subset resolving to one) binds the
+    /// junction whole, and so does any slurpy: `*@a` / `+@a` / `**@a` collect
+    /// positionals as raw values, and a slurpy hash (`*%h`, `+%h`, the implicit
+    /// `%_`) collects named arguments the same way. Shared by the sub and the
+    /// method call paths so both obey one rule.
+    fn autothread_indices_for_params(
+        &mut self,
+        args: &[Value],
+        junction_indices: &[usize],
+        pds: &[crate::ast::ParamDef],
+    ) -> Vec<usize> {
+        let accepts_junction = |me: &Self, pd: &crate::ast::ParamDef| -> bool {
+            let Some(tc) = &pd.type_constraint else {
+                // No type constraint means default Any — needs auto-threading.
+                return false;
+            };
+            // For coercion types like `Bool(Mu)`, the nominal type is the inner
+            // type (Mu here) — autothreading is based on the nominal. A subset
+            // whose ultimate base type is Mu/Junction passes the junction
+            // through to its where-clause check as well.
+            let nominal = Self::nominal_type(tc.as_str());
+            if matches!(nominal, "Mu" | "Junction") {
+                return true;
+            }
+            matches!(
+                me.resolve_subset_base_type(nominal).as_str(),
+                "Mu" | "Junction"
+            )
+        };
+        let mut out = Vec::new();
+        for &idx in junction_indices {
+            // A named arg (Pair) — find the matching named param.
+            if let ValueView::Pair(key, _) = args[idx].view() {
+                if let Some(pd) = pds
+                    .iter()
+                    .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
+                {
+                    if !accepts_junction(self, pd) {
+                        out.push(idx);
+                    }
+                    continue;
+                }
+                // No explicit named param matched. A slurpy hash (`*%h`, the
+                // implicit `%_`, `+%h`) captures the named argument as a raw
+                // value, so a Junction is stored as-is rather than threaded.
+                // A slurpy hash is a slurpy param whose sigil is `%` (a slurpy
+                // `*@a` only collects positionals, not named args).
+                let has_slurpy_hash = pds.iter().any(|pd| {
+                    (pd.slurpy || pd.double_slurpy || pd.onearg) && pd.name.starts_with('%')
+                });
+                if !has_slurpy_hash {
+                    out.push(idx); // No slurpy hash to collect it — auto-thread
+                }
+                continue;
+            }
+
+            // Positional arg — find the corresponding positional param.
+            let positional_pds: Vec<&crate::ast::ParamDef> =
+                pds.iter().filter(|pd| !pd.named).collect();
+            // A positional past the last declared one is collected by a slurpy
+            // if there is one, and is an arity error otherwise; either way it is
+            // not threaded.
+            if let Some(pd) = positional_pds.get(idx)
+                && !(pd.slurpy || pd.onearg || pd.double_slurpy)
+                && !accepts_junction(self, pd)
+            {
+                out.push(idx);
+            }
+        }
+        out
+    }
+
     fn get_func_param_defs_for_autothread(
         &mut self,
         name: &str,

@@ -53,6 +53,14 @@ impl Interpreter {
 
     fn coercion_dispatch_value(&mut self, constraint: &str, arg: &Value) -> Option<Value> {
         let (target, source) = parse_coercion_type(constraint)?;
+        // Rakudo compiles `T(F)` into TWO candidates — one taking `T` directly
+        // and one taking `F` and coercing (see `effective_dispatch_constraint`).
+        // An argument that is already a `T` therefore binds without any
+        // coercion: `multi sub open-xml (IO::Path(Str) $src)` accepts an
+        // `IO::Path` as well as a `Str`.
+        if self.type_matches_value(target, arg) {
+            return Some(arg.clone());
+        }
         if let Some(src) = source
             && !self.type_matches_value(src, arg)
         {
@@ -285,6 +293,12 @@ impl Interpreter {
                 {
                     return false;
                 }
+                // A coercion parameter's `where` (and sub-/code-signature) runs
+                // against the COERCED value in rakudo, not the raw argument:
+                // `IO::Path(Str) $s where :f` calls `.f` on the IO::Path.
+                // Filled in by the type-constraint block below, applied to
+                // `arg_for_checks` once its borrow of it has ended.
+                let mut coerced_for_checks: Option<Value> = None;
                 if let Some(constraint) = &pd.type_constraint
                     && let Some(arg) = arg_for_checks.as_ref()
                 {
@@ -385,6 +399,12 @@ impl Interpreter {
                     } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {
                         return false;
                     }
+                    if is_coercion_constraint(&resolved_constraint) {
+                        coerced_for_checks = Some(dispatch_arg);
+                    }
+                }
+                if let Some(coerced) = coerced_for_checks {
+                    arg_for_checks = Some(coerced);
                 }
                 // Implicit Any constraint: untyped $ parameters reject Junction type objects
                 if pd.type_constraint.is_none()
