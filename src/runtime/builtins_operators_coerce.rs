@@ -69,7 +69,41 @@ impl Interpreter {
             false
         };
         if !known_numeric && !has_numeric_method {
-            return Ok(value);
+            // DateTime has a native Numeric method, but it also has dedicated
+            // temporal infix candidates (`DateTime - DateTime`, in particular)
+            // that must see the original operands. `num_eq_values` invokes its
+            // Numeric method only in its DateTime-specific equality fallback.
+            if matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "DateTime")
+            {
+                return Ok(value);
+            }
+            // Some built-in value types expose a native `Numeric` method
+            // without doing the `Numeric` role or registering a user method.
+            // Give that candidate the same chance before declaring the generic
+            // infix candidate unresolved.
+            if let Ok(numified) = self.call_method_with_values(value.clone(), "Numeric", vec![]) {
+                return Ok(numified);
+            }
+            // The generic numeric infix candidates end in `.Numeric`, so an
+            // otherwise opaque object must fail their dispatch rather than
+            // reaching the structural / `to_float_value` fallback (which used
+            // to make `Opaque.new == Opaque.new` answer False and `+` yield 0).
+            // This deliberately applies only to instances: non-numeric Str
+            // operands retain the lenient `==` behavior needed for mutsu's
+            // bare-string enum representation.
+            let class_name = match value.view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
+                _ => unreachable!("non-instance values return before numeric coercion"),
+            };
+            let message = format!(
+                "Cannot resolve caller Numeric({class_name}:D: ); none of these signatures matches:\n    (Mu:U \\v:: *%_)"
+            );
+            return Err(RuntimeError::typed(
+                "X::Multi::NoMatch",
+                [("message".to_string(), Value::str(message))]
+                    .into_iter()
+                    .collect(),
+            ));
         }
         // For an object that does `Real`, rakudo's generic infix candidates are
         // written in terms of `.Bridge` (`multi sub infix:<+>(Real \a, Real \b)
