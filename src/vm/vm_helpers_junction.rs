@@ -250,14 +250,24 @@ impl Interpreter {
     /// live value instead of the cell.
     pub(super) fn resolve_bound_array_elements(&self, val: Value) -> Value {
         if let ValueView::Array(items, kind) = val.view() {
-            let needs_resolve = items.iter().any(Value::is_container_ref);
+            let needs_resolve = items
+                .iter()
+                .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value());
             if !needs_resolve {
                 return val;
             }
             let resolved: Vec<Value> = items
                 .iter()
                 .map(|v| match v.view() {
-                    ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                    ValueView::ContainerRef(cell) => {
+                        let inner = cell.lock().unwrap().clone();
+                        if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
+                            inner.hash_entry_read()
+                        } else {
+                            inner
+                        }
+                    }
+                    ValueView::HashEntryRef { .. } => v.hash_entry_read(),
                     _ => v.clone(),
                 })
                 .collect();

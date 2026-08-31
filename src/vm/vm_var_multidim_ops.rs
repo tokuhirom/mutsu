@@ -85,7 +85,12 @@ impl Interpreter {
             // single-index `:=` bind (`my $s := @a[5]`). Restricted to holes by
             // `ensure_array_child` / `array_slot_ref`, so a read-only use over an
             // existing structure is untouched.
-            self.stack.push(cell);
+            self.stack
+                .push(if matches!(cell.view(), ValueView::HashEntryRef { .. }) {
+                    cell.into_container_ref()
+                } else {
+                    cell
+                });
             return Ok(());
         }
         let result = self.multi_dim_index_read(&target, &dims)?;
@@ -118,14 +123,9 @@ impl Interpreter {
                 .unwrap_or_else(|| dim.clone());
             let idx = Self::index_to_usize(&resolved)?;
             if terminal {
-                // TODO: hand out the deferred array token here too. This path is
-                // explicitly the EAGER one (see the caller's comment): its result
-                // is pushed straight onto the stack for `MultiDimIndexBindRef`,
-                // where a `HashEntryRef` token would leak into a plain read
-                // (`roast/S32-array/multislice-6e.t`'s `@array[0;0;3] gives Any`
-                // rows read the raw token instead of the hole). Grow first so the
-                // promotion still yields a cell.
-                cur.array_grow_to(idx);
+                // A missing terminal leaf stays deferred until a write through
+                // the bind. The normal token read and store paths supply its hole
+                // value and materialize the path when needed.
                 return cur.array_slot_ref(idx, true);
             }
             cur = cur.ensure_array_child(idx)?;
@@ -232,15 +232,15 @@ impl Interpreter {
         // dim) autovivifies, matching the assignment semantics.
         for i in indices {
             if terminal {
-                // TODO: hand out the deferred array token here too. Like the
-                // all-scalar autoviv path, this one is EAGER on purpose: the
-                // cells it collects become the elements of the slice list the
-                // caller pushes, and a `HashEntryRef` token there is neither
-                // decontainerized on read nor written through on assignment
-                // (`roast/S32-array/multislice-6e.t`'s `@array[*;0;3] = 999`).
-                // Grow first so the promotion still yields a cell.
-                cur.array_grow_to(i);
-                out.push(cur.array_slot_ref(i, true)?);
+                // Slice holders can carry deferred terminal tokens. Reads see
+                // their hole value and the first write replaces each token with
+                // its shared cell, so do not grow the source array here.
+                let slot = cur.array_slot_ref(i, true)?;
+                out.push(if matches!(slot.view(), ValueView::HashEntryRef { .. }) {
+                    slot.into_container_ref()
+                } else {
+                    slot
+                });
             } else {
                 let child = cur.ensure_array_child(i)?;
                 self.collect_multi_dim_leaf_cells(&child, rest, out)?;

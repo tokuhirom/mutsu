@@ -5,7 +5,7 @@ use Test;
 # grow the array at bind time (`array_slot_ref` pushed holes unconditionally),
 # so `@a.elems` reported 6 where rakudo reports 2.
 
-plan 23;
+plan 28;
 
 # --- bind without write: no growth, no pollution -------------------------
 {
@@ -86,4 +86,20 @@ plan 23;
     nok %h<zz>:exists, 'the hash :exists is still not polluted';
     $v = 5;
     is %h.raku, '{:a(1), :zz(5)}', 'the hash write still vivifies the key';
+}
+
+# --- bound slices defer out-of-range elements too ------------------------
+{
+    my @a = 1, 2;
+    my @s := @a[1,5];
+    is @a.raku, '[1, 2]', 'a bound slice does not grow its source at bind time';
+    is @s.raku, '(2, Any)', 'the deferred slice entry reads as its hole value';
+    @s = 8, 9;
+    is @a.raku, '[1, 8, Any, Any, Any, 9]',
+        'the first slice write fills the gap and writes through';
+    @a[5] = 99;
+    is @s.raku, '(8, 99)', 'a source write remains visible through the slice';
+    @s[1] = 77;
+    is @a.raku, '[1, 8, Any, Any, Any, 77]',
+        'an element write through the slice remains an alias';
 }

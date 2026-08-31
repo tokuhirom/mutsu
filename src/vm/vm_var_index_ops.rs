@@ -297,17 +297,15 @@ impl Interpreter {
                     let cells = indices
                         .into_iter()
                         .map(|idx| {
-                            // TODO: compile to a deferred token like the
-                            // single-index bind above. A bound slice stays
-                            // EAGER for now: its promoted cells live in the
-                            // slice array itself, and an out-of-range index
-                            // would put a `HashEntryRef` vivification token
-                            // there, which the array read/display chokepoints
-                            // do not decontainerize. Growing first keeps the
-                            // aliasing exact at the cost of `my @s := @a[1,5]`
-                            // extending `@a` at bind time (raku defers).
-                            resolved.array_grow_to(idx);
-                            resolved.array_slot_ref(idx, true).unwrap_or(Value::NIL)
+                            // An out-of-range index is a deferred entry token.
+                            // Array reads and bound-slice assignment both handle
+                            // it, preserving the source array until first write.
+                            let slot = resolved.array_slot_ref(idx, true).unwrap_or(Value::NIL);
+                            if matches!(slot.view(), ValueView::HashEntryRef { .. }) {
+                                slot.into_container_ref()
+                            } else {
+                                slot
+                            }
                         })
                         .collect();
                     self.stack.push(Value::array(cells));
