@@ -29,8 +29,16 @@ Do not special-case one method or test where the ticket establishes a general me
 
 ## Implement and validate a ticket-sized fix
 
-Work on a fresh branch from `origin/main` without overwriting unrelated changes. Follow the Parser
--> Compiler -> VM architecture, add focused regressions, and run targeted tests while iterating.
+Before starting **every** ticket, return to `main` and update it from the remote:
+
+```sh
+git switch main
+git pull --ff-only origin main
+```
+
+Then create a fresh focused branch from that updated `main`, without overwriting unrelated changes.
+Follow the Parser -> Compiler -> VM architecture, add focused regressions, and run targeted tests
+while iterating.
 
 Before publishing, run `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and
 `make roast` once each. Inspect `tmp/make-test.log` and `tmp/make-roast.log` instead of rerunning a
