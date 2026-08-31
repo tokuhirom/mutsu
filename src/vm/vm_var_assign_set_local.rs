@@ -1990,9 +1990,14 @@ impl Interpreter {
             // Aggregate/native scalar values have specialized lvalue paths
             // which do not yet accept a scalar cell wrapper. Their own
             // container metadata already carries the relevant constraint.
+            && !crate::runtime::native_types::is_native_int_type(&constraint)
             && !matches!(
                 constraint.as_str(),
                 "atomicint"
+                    | "num"
+                    | "num32"
+                    | "num64"
+                    | "str"
                     | "Array"
                     | "Hash"
                     | "List"
