@@ -833,7 +833,7 @@ impl Interpreter {
         increment: bool,
         post: bool,
     ) -> Result<bool, RuntimeError> {
-        let guard = arc.lock().unwrap();
+        let mut guard = arc.lock().unwrap();
         if matches!(guard.view(), ValueView::Instance { .. }) {
             return Ok(false);
         }
@@ -843,9 +843,17 @@ impl Interpreter {
         } else {
             Self::decrement_value(&old)
         };
-        drop(guard);
-        self.check_container_cell_constraint(arc, &new_val)?;
-        let mut guard = arc.lock().unwrap();
+        if let Some(constraint) = crate::value::lookup_container_constraint(arc)
+            && !matches!(constraint.as_str(), "Any" | "Mu")
+            && !new_val.is_nil()
+            && !self.type_matches_value(&constraint, &new_val)
+        {
+            return Err(RuntimeError::typecheck_assignment(
+                &constraint,
+                &new_val,
+                None,
+            ));
+        }
         *guard = new_val.clone();
         drop(guard);
         self.stack.push(if post { old } else { new_val });
