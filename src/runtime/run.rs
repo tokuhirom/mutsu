@@ -486,16 +486,24 @@ impl Interpreter {
         // even if the main body dies or throws an exception.
         // Also filter them out of the body so they don't get registered again
         // by the PhaserEnd opcode during VM execution.
+        // Track the `SetLine` markers while filtering: the END's own source
+        // line is what orders it against the compunit's other ENDs (rakudo
+        // installs each as its compiler walks past it), and the eager hoist
+        // below destroys the positional information otherwise.
+        let mut end_line: Option<u32> = None;
         let body_main: Vec<Stmt> = body_main
             .into_iter()
             .filter(|stmt| {
+                if let Stmt::SetLine(n) = stmt {
+                    end_line = Some(*n as u32);
+                }
                 if let Stmt::Phaser {
                     kind: crate::ast::PhaserKind::End,
                     body,
                     ..
                 } = stmt
                 {
-                    self.push_end_phaser_main(body.clone());
+                    self.push_end_phaser_main(body.clone(), end_line);
                     false
                 } else {
                     true

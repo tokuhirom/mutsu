@@ -432,7 +432,17 @@ impl Interpreter {
         }
         let stmt = &code.stmt_pool[idx as usize];
         if let crate::ast::Stmt::Phaser { body, .. } = stmt {
-            loan_env!(self, push_end_phaser(body.clone()));
+            // An `EVAL`'d snippet has its own line numbering, unrelated to the
+            // main compunit's, and rakudo compiles it at run time — so its ENDs
+            // install last rather than at a source position. Withhold the line
+            // for those; `push_end_phaser` then keeps them in the RUNTIME class.
+            let line = if self.env().get("__mutsu_in_eval").is_some() {
+                None
+            } else {
+                self.current_source_line()
+            };
+            let body = body.clone();
+            loan_env!(self, push_end_phaser(body, line));
         }
     }
 

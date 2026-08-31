@@ -1231,12 +1231,30 @@ pub(crate) mod end_order {
     /// A module's ENDs, in load order — a nested `use` installs the inner
     /// module's first, exactly as rakudo does.
     pub(crate) const MODULE: u64 = 0;
-    /// The main compunit's top-level ENDs, in source order.
+    /// The main compunit's ENDs, keyed by SOURCE POSITION — a top-level one
+    /// and one inside a block or a sub share this class, because rakudo
+    /// installs both as its compiler walks past them. Ordering them by
+    /// registration instead put every top-level END (mutsu hoists those) ahead
+    /// of every block-scoped one, so `{ END {…} } END {…}` ran the block's
+    /// first where rakudo runs the mainline's first.
     pub(crate) const MAIN: u64 = 1 << 40;
-    /// ENDs the main compunit registers while running (inside a block, a sub,
-    /// an `EVAL`). rakudo installs these as it compiles past them, i.e. after
-    /// everything a `use` at the top of the file brought in.
+    /// ENDs registered from inside an `EVAL`. rakudo compiles an EVAL'd snippet
+    /// at RUN time, so its ENDs install after everything the main compunit
+    /// declared and run before them — the opposite of a plain `use`
+    /// (`File::Temp`'s `03-tempfile.rakutest` turns on exactly this).
     pub(crate) const RUNTIME: u64 = 2 << 40;
+
+    /// Position of one END within its class. A main-compunit END is keyed by
+    /// its source LINE, with the monotonic registration sequence only breaking
+    /// ties (several ENDs on one line, or one line reached repeatedly); a
+    /// module's or an EVAL's END has no meaningful line in the main compunit's
+    /// numbering and is keyed by the sequence alone.
+    pub(crate) fn slot(line: Option<u32>, seq: u64) -> u64 {
+        match line {
+            Some(line) => ((line as u64) << 20) | (seq & 0xF_FFFF),
+            None => seq,
+        }
+    }
 }
 
 /// What a name in `pos_light_call_cache` resolves to.

@@ -50,27 +50,40 @@ impl Interpreter {
     /// which case rakudo would have installed it at the `use`, before anything
     /// the main compunit declares) or inside a block/sub/`EVAL` of the main
     /// compunit (installed as the compiler walked past it, after any `use`).
-    pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>) {
-        let base = self
-            .module_load_order
-            .last()
-            .copied()
-            .unwrap_or(super::end_order::RUNTIME);
-        self.push_end_phaser_ordered(body, base);
+    /// `line` is the END's source line in the MAIN compunit, used to order it
+    /// against the compunit's other ENDs; pass `None` when the registration is
+    /// not in the main compunit's line numbering (a module body, an `EVAL`).
+    pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>, line: Option<u32>) {
+        match self.module_load_order.last().copied() {
+            // Inside a module body: install order is the load order, and the
+            // module's own line numbers say nothing about the main compunit.
+            Some(base) => self.push_end_phaser_ordered(body, base, None),
+            // Inside a block or a sub of the main compunit: rakudo installs it
+            // as the compiler walks past it, so it sorts by SOURCE POSITION
+            // among the compunit's ENDs — the same class as a top-level one.
+            // An `EVAL`'s ENDs are the exception: that snippet is compiled at
+            // run time, so they install after everything the compunit declared.
+            None => match line {
+                Some(line) => {
+                    self.push_end_phaser_ordered(body, super::end_order::MAIN, Some(line))
+                }
+                None => self.push_end_phaser_ordered(body, super::end_order::RUNTIME, None),
+            },
+        }
     }
 
     /// Register one of the main compunit's top-level END phasers. These are
     /// registered eagerly, before the body runs, so that they still run when
     /// the body dies — which is why they need an explicit install order rather
     /// than the position they happen to land in.
-    pub(crate) fn push_end_phaser_main(&mut self, body: Vec<Stmt>) {
-        self.push_end_phaser_ordered(body, super::end_order::MAIN);
+    pub(crate) fn push_end_phaser_main(&mut self, body: Vec<Stmt>, line: Option<u32>) {
+        self.push_end_phaser_ordered(body, super::end_order::MAIN, line);
     }
 
-    fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64) {
+    fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64, line: Option<u32>) {
         let captured_env = self.env.clone();
         let package = self.current_package();
-        let order = order_base + self.end_phaser_seq;
+        let order = order_base + super::end_order::slot(line, self.end_phaser_seq);
         self.end_phaser_seq += 1;
         self.end_phasers.push(super::EndPhaser {
             body,
