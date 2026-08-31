@@ -10,10 +10,8 @@
 <nav class="site-nav"></nav>
 
 <main class="manual section">
-  <h1>Embed mutsu in a web page</h1>
-  <p class="page-intro">The GitHub Pages site uses the published
-    <code>@tokuhirom/mutsu</code> npm package. The runnable component below is
-    the same Web Component that applications install.</p>
+  <h1 id="embed-title"></h1>
+  <p class="page-intro" id="embed-intro"></p>
 
   <mutsu-code autorun>
     <script type="text/raku">
@@ -23,10 +21,8 @@ say (^10).grep(* %% 2).sum;
   </mutsu-code>
 
   <section class="manual-section manual-body" id="cdn">
-    <h2><a href="#cdn">Use it directly from a CDN</a></h2>
-    <p>For a static page, add the component and load its module from jsDelivr.
-      Pin a released version in production so an existing page does not change
-      unexpectedly.</p>
+    <h2><a href="#cdn" id="cdn-title"></a></h2>
+    <p id="cdn-body"></p>
     <pre><code>&lt;mutsu-code autorun&gt;
   &lt;script type="text/raku"&gt;
 say "Hello from mutsu!";
@@ -39,17 +35,15 @@ say "Hello from mutsu!";
   </section>
 
   <section class="manual-section manual-body" id="npm">
-    <h2><a href="#npm">Install it with npm</a></h2>
-    <p>Bundled applications can import the component from the package. Its
-      WebAssembly binary is included; users do not need Rust or wasm-pack.</p>
+    <h2><a href="#npm" id="npm-title"></a></h2>
+    <p id="npm-body"></p>
     <pre><code>npm install @tokuhirom/mutsu</code></pre>
     <pre><code>import '@tokuhirom/mutsu/element';</code></pre>
   </section>
 
   <section class="manual-section manual-body" id="api">
-    <h2><a href="#api">Use the JavaScript API</a></h2>
-    <p>Use the lower-level API when the application provides its own editor or
-      output UI.</p>
+    <h2><a href="#api" id="api-title"></a></h2>
+    <p id="api-body"></p>
     <pre><code>import init, { evaluate, Repl } from '@tokuhirom/mutsu';
 
 await init();
@@ -58,18 +52,37 @@ console.log(evaluate('say "Hello"'));
 const repl = new Repl();
 console.log(JSON.parse(repl.evalLine('my $answer = 40')));
 console.log(JSON.parse(repl.evalLine('$answer + 2')));</code></pre>
-    <p>The component also supports <code>readonly</code> and
-      <code>session</code> attributes and emits a <code>mutsu-run</code> event.
-      See the <a href="https://github.com/tokuhirom/mutsu/blob/main/docs/browser-embedding.md">complete embedding reference</a>
-      for those options and the browser limitations.</p>
+    <p id="embed-reference"></p>
   </section>
 </main>
 
 <footer class="site-footer"></footer>
 <script type="module" src="pkg/embed.js"></script>
 <script type="module">
-import { renderChrome } from './assets/i18n.js';
+import { renderChrome, currentLang } from './assets/i18n.js';
+import embedEn from './content/embed.en.js';
+import embedJa from './content/embed.ja.js';
+
+const TEXT = { en: embedEn, ja: embedJa };
+
+function paint() {
+  const T = TEXT[currentLang()];
+  document.title = `${T.title} — mutsu`;
+  document.getElementById('embed-title').textContent = T.title;
+  document.getElementById('embed-intro').innerHTML = T.intro;
+  document.getElementById('cdn-title').textContent = T.cdnTitle;
+  document.getElementById('cdn-body').textContent = T.cdnBody;
+  document.getElementById('npm-title').textContent = T.npmTitle;
+  document.getElementById('npm-body').textContent = T.npmBody;
+  document.getElementById('api-title').textContent = T.apiTitle;
+  document.getElementById('api-body').textContent = T.apiBody;
+  document.getElementById('embed-reference').innerHTML = T.reference;
+}
+
 renderChrome('embed');
+paint();
+window.addEventListener('langchange', paint);
+document.body.dataset.ready = '1';
 </script>
 </body>
 </html>

@@ -513,6 +513,12 @@ try {
          'the demo includes npm installation guidance');
   assert(await page.locator('a[aria-current="page"]').textContent() === 'Embed',
          'the embedding guide is linked from the site navigation');
+  await page.locator('.lang-switch button[data-lang="ja"]').click();
+  assert(await page.locator('#embed-title').textContent() === 'mutsu を Web ページに組み込む',
+         'switching to Japanese translates the embedding guide');
+  assert((await page.locator('#npm-body').textContent()).includes('WebAssembly バイナリ'),
+         'the Japanese view translates the integration instructions');
+  await page.locator('.lang-switch button[data-lang="en"]').click();
   const component = page.locator('mutsu-code');
   await component.locator('output').waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForFunction(
