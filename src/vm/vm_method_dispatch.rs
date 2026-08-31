@@ -469,15 +469,22 @@ impl Interpreter {
             }
         }
 
-        // A method installed via `.^add_method` with a closure literal
-        // (`anon method { $captured }` — OO::Monitors' POPULATE hook) carries
-        // the frozen creating-scope env so its captures still resolve after
-        // that scope is gone. Merge those names in (self/params inserted
-        // above/below win). Mirrors the same merge in the fast path.
+        // A method can carry its defining lexical environment either from an
+        // `.^add_method` closure literal or from a class declared in a routine.
+        // Install these true lexical captures before parameter binding.
         if let Some(captured) = &method_def.captured_env {
             let env = self.env_mut();
+            let authoritative = captured.contains_key_sym(crate::symbol::Symbol::intern(
+                "__mutsu_declared_method_capture",
+            ));
             for (sym, val) in captured.iter() {
-                if !env.contains_key_sym(*sym) {
+                if !sym.with_str(|name| {
+                    matches!(
+                        name,
+                        "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
+                    )
+                }) && (authoritative || !env.contains_key_sym(*sym))
+                {
                     env.insert_sym(*sym, val.clone());
                 }
             }
@@ -1689,15 +1696,22 @@ impl Interpreter {
             self.env_mut().insert("%_".to_string(), slurpy.clone());
         }
 
-        // A method installed via `.^add_method` with a closure literal
-        // (`method { $captured }`) carries the frozen creating-scope env so its
-        // captures still resolve after that scope is gone. Merge those names in
-        // (params/self/attrs inserted above win) so the locals-population loop
-        // below picks them up via its by-name `self.env().get(name)` fallback.
+        // A method can carry its defining lexical environment either from an
+        // `.^add_method` closure literal or from a class declared in a routine.
+        // The fast path populates free-variable locals from this overlay.
         if let Some(captured) = &method_def.captured_env {
             let env = self.env_mut();
+            let authoritative = captured.contains_key_sym(crate::symbol::Symbol::intern(
+                "__mutsu_declared_method_capture",
+            ));
             for (sym, val) in captured.iter() {
-                if !env.contains_key_sym(*sym) {
+                if !sym.with_str(|name| {
+                    matches!(
+                        name,
+                        "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
+                    )
+                }) && (authoritative || !env.contains_key_sym(*sym))
+                {
                     env.insert_sym(*sym, val.clone());
                 }
             }

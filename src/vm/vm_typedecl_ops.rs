@@ -162,6 +162,7 @@ impl Interpreter {
             attr_decls,
             method_name_chunks,
             method_decls,
+            method_outer_lexical_slots,
             declared_static_names,
             parent_arg_chunks,
             body_plan,
@@ -378,6 +379,7 @@ impl Interpreter {
             // compiles that one body on demand.
             if !is_hoisted_shell {
                 self.compile_class_methods(&storage_name);
+                self.capture_declared_method_envs(code, &storage_name, method_outer_lexical_slots);
             }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.

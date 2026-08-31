@@ -126,15 +126,12 @@ pub(crate) struct MethodDef {
     pub(crate) deprecated_message: Option<String>,
     /// Whether this is a submethod (not inherited by subclasses).
     pub(crate) is_submethod: bool,
-    /// Frozen closure environment for a method installed via `.^add_method`
-    /// with a closure literal (`method { $captured }`). A method AST normally
-    /// carries no captured lexicals, but a meta-programmed method can close over
-    /// its creating scope (e.g. Attribute::Predicate's `is predicate` builds
-    /// `method { attr.get_value(self).defined }`, capturing `attr`). Those
-    /// captures live only in the source `Sub`'s env, which the plain
-    /// body+compiled_code MethodDef would drop. When set, the method dispatch
-    /// merges these names into the body env (params/self take precedence) so a
-    /// by-name read resolves the capture. `None` for ordinary declared methods.
+    /// Captured lexical environment for a method. This is populated for a method
+    /// installed via `.^add_method` with a closure literal and for a class method
+    /// declared inside a routine. In both cases, the plain body+compiled-code
+    /// `MethodDef` would otherwise drop the defining scope. Method dispatch and
+    /// candidate matching overlay these bindings so body reads and declaration-
+    /// time parameter expressions resolve lexically.
     pub(crate) captured_env: Option<crate::env::Env>,
     /// Source file the method body was declared in (None = main script or a
     /// synthetic/native method with no real source). Flows into the pushed
