@@ -541,16 +541,11 @@ impl Interpreter {
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
         // Printing a type object stringifies to "" with rakudo's
         // uninitialized-value warning suggesting .^name/.raku/.gist/.say —
-        // unless its class defines a user `.Stringy`/`.Str`, which dispatches
-        // instead (`class A { method Str {"foo"} }` then `print A` renders
-        // "foo", matching Rakudo).
+        // unless its class defines a user `.Str`, which dispatches instead
+        // (`class A { method Str {"foo"} }` then `print A` renders "foo",
+        // matching Rakudo). Unlike prefix `~`, print/put do not use `.Stringy`.
         if let ValueView::Package(name) = value.view() {
             let n = name.resolve().to_string();
-            if self.has_user_method(&n, "Stringy")
-                && let Ok(r) = self.call_method_with_values(value.clone(), "Stringy", vec![])
-            {
-                return r.to_string_value();
-            }
             if self.has_user_method(&n, "Str")
                 && let Ok(r) = self.call_method_with_values(value.clone(), "Str", vec![])
             {
