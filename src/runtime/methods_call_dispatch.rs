@@ -3806,6 +3806,12 @@ impl Interpreter {
         {
             let saved_env = self.env.clone();
             let items = self.force_lazy_list_bridge(&ll)?;
+            // A successful `.sink` consumes the original gather Seq as well
+            // as the temporary Seq used for re-dispatch. Mark only after the
+            // bridge returns: a gather body that throws was not sunk.
+            if method == "sink" && ll.is_from_gather() {
+                crate::value::lazylist_consume(&ll);
+            }
             if !matches!(method, "elems" | "hyper" | "race") {
                 self.env = saved_env;
             }
