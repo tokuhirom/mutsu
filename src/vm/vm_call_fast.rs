@@ -68,8 +68,15 @@ impl Interpreter {
         // iterate the env for a full lexical view: no inner subs (no
         // closure/thread/block creation) and no reflective by-name access
         // (EVAL / CALLER:: / symbolic deref / pseudo-stash).
-        let use_scoped =
-            has_locals && !cf.has_inner_subs && !crate::opcode::reflective_name_access_possible();
+        // A routine with no compiled locals may still write implicit match
+        // state by name. It needs the same boundary: in particular,
+        // `reset_capture_env_vars` removes inherited `$<name>` keys, which
+        // must become callee-local tombstones instead of deleting the caller's
+        // binding directly. Ordinary no-write helpers retain the allocation-free
+        // in-place path.
+        let use_scoped = (has_locals || (cf.code.is_routine && cf.code.has_env_writes))
+            && !cf.has_inner_subs
+            && !crate::opcode::reflective_name_access_possible();
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.

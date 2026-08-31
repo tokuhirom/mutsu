@@ -6737,6 +6737,12 @@ impl CompiledCode {
             self.has_env_writes = matches!(
                 op,
                 OpCode::GetScalarContainer { .. }
+                    // A smartmatch updates the implicit match state (`$/`,
+                    // numeric captures, and named captures) in the env. This
+                    // matters even for a 0-local routine: its capture reset
+                    // must execute in a scoped overlay rather than removing a
+                    // caller's named-capture key directly.
+                    | OpCode::SmartMatchExpr { .. }
                     | OpCode::SetGlobal(_)
                     | OpCode::SetGlobalRaw(_)
                     | OpCode::AssignExpr(_)
