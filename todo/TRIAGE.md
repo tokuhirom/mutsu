@@ -204,7 +204,6 @@ CI.
 | [grammar-action-ordering-vs-inline-code-blocks](deep/grammar-action-ordering-vs-inline-code-blocks.md) | L | A `make`-bearing embedded code block runs at reduce time, not in match order. ADR-0009 part B. |
 | [native-method-accepted-named-declarations](deep/native-method-accepted-named-declarations.md) | L | Native methods have no declared accepted-named set, so wrong-arm selection is *silent*. |
 | [user-prefix-op-candidate-beats-builtin-typed-candidate](deep/user-prefix-op-candidate-beats-builtin-typed-candidate.md) | M | A user `multi prefix:<++>` wins over the builtin for `Int`/`Bool`/`Num`. |
-| [boxed-int-smartmatches-as-a-native-type](deep/boxed-int-smartmatches-as-a-native-type.md) | XL | mutsu cannot tell a boxed `Int` from a native `int`. ADR-scale — `Value`'s layout is pinned by NaN-boxing. |
 | [definiteness-constrained-type-object-identity-lost](deep/definiteness-constrained-type-object-identity-lost.md) | M-L | A bare `Type:D`/`Type:U` term loses its definiteness constraint entirely. |
 | [resume-does-not-return-to-die-call-site-in-nested-sub](deep/resume-does-not-return-to-die-call-site-in-nested-sub.md) | L | `.resume` doesn't resume at the `die`'s call site in a nested sub; tied to how mutsu unwinds Rust frames. |
 | [run-shell-discard-stdout-stderr-by-default](deep/run-shell-discard-stdout-stderr-by-default.md) | M | `run`/`shell` silently discard the child's output instead of inheriting the parent's. |
