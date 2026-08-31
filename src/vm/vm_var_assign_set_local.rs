@@ -1987,11 +1987,11 @@ impl Interpreter {
                     | ValueView::Mix(..)
             )
             && let Some(constraint) = loan_env!(self, var_type_constraint(name))
-            // The generic cell path currently covers the ordinary scalar
-            // constraints exercised by the shadowing regression. Other
-            // constraints retain their specialized lvalue/CAS paths until
-            // those paths accept the cell wrapper as well.
-            && matches!(constraint.as_str(), "Int" | "Str")
+            // Only a binding with a same-named lexical shadow needs a cell to
+            // retain its own constraint.  Keeping ordinary typed locals in
+            // their existing representation preserves specialized CAS and
+            // subset-predicate paths.
+            && code.locals.iter().filter(|local| local.as_str() == name).count() > 1
             // Aggregate/native scalar values have specialized lvalue paths
             // which do not yet accept a scalar cell wrapper. Their own
             // container metadata already carries the relevant constraint.
