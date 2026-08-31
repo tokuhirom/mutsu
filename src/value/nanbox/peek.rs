@@ -590,6 +590,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             }
             Kind::LazyList => ValueView::LazyList(gc_guard(bits)),
             Kind::ContainerRef => ValueView::ContainerRef(gc_guard(bits)),
+            Kind::ContainerView => ValueView::ContainerView(gc_guard(bits)),
             Kind::Promise => ValueView::Promise(RefGuard::from_reconstructed(SharedPromise {
                 inner: take_gc(bits),
             })),

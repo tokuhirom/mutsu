@@ -223,6 +223,7 @@ impl NanBox {
                 crate::vm::vm_jit::note_container_cell();
                 pack_gc(Kind::ContainerRef, cell)
             }
+            ValueRepr::ContainerView(cell) => pack_gc(Kind::ContainerView, cell),
             ValueRepr::LazyThunk(t) => pack_arc(Kind::LazyThunk, t),
             ValueRepr::HashEntryRef { root, path, eager } => pack_arc(
                 Kind::HashEntryRef,

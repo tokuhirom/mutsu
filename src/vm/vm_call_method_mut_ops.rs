@@ -549,10 +549,6 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
-        // This path currently cannot be the outer call of `X.VAR.WHAT` /
-        // `X.VAR.^name`, but consume the one-shot marker defensively so it can
-        // never leak if compiler lowering changes.
-        let _reflect_var_container = std::mem::take(&mut self.var_container_meta_pending);
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let method_raw = Self::const_str(code, name_idx);
         let target_name = Self::const_str(code, target_name_idx).to_string();

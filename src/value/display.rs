@@ -1110,6 +1110,7 @@ impl Value {
             ValueView::CustomTypeInstance(d) => format!("{}()", d.type_name),
             ValueView::Scalar(inner) => inner.to_string_value(),
             ValueView::ContainerRef(_) => self.with_deref(Value::to_string_value),
+            ValueView::ContainerView(_) => self.with_deref(Value::to_string_value),
             ValueView::LazyThunk(thunk_data) => {
                 // If already forced, display the cached value
                 let cache = thunk_data.cache.lock().unwrap();

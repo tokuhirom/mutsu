@@ -372,7 +372,6 @@ impl Interpreter {
         self.bound_decont_active.set(false);
         self.rebind_context.set(false);
         self.accessor_ref_pending = false;
-        self.var_container_meta_pending = false;
         self.constant_context.set(false);
         self.array_share_context.set(false);
         self.array_share_source.set(None);

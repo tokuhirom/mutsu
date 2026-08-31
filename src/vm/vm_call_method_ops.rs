@@ -530,7 +530,6 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
-        let reflect_var_container = std::mem::take(&mut self.var_container_meta_pending);
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -564,6 +563,18 @@ impl Interpreter {
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // `.VAR` of a first-class element cell must preserve the fact that the
+        // cell was reflected. A bare `ContainerRef` is otherwise transparent to
+        // dispatch, and returning it unchanged made a later `.WHAT`/`.^name`
+        // indistinguishable from an aliased value. Keep the same cell identity
+        // in a distinct view value instead.
+        if method == "VAR"
+            && args.is_empty()
+            && let ValueView::ContainerRef(cell) = target.view()
+        {
+            self.stack.push(Value::container_view(cell.clone()));
+            return Ok(());
+        }
         // A method invocant that is a first-class element container
         // (`ContainerRef`, e.g. a `.grep` rw alias / `:=`-bound slot extracted via
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
@@ -579,29 +590,21 @@ impl Interpreter {
         // ADR-0045 slice 4 hand elements out in bulk — `@a.pairs[0].value.WHAT`
         // would have started answering `Scalar` where it answers `Int` today.
         //
-        // The compiler marks that explicit syntactic chain for one dispatch, so
-        // an unrelated ContainerRef arriving directly from an lvalue return is
-        // transparent even for these introspection methods.
+        // A raw ContainerRef arriving directly from an lvalue return remains
+        // transparent, including for introspection methods. Only the distinct
+        // `.VAR` view above reflects its Scalar container identity.
         let target = if method != "VAR" {
             match target.view() {
-                ValueView::ContainerRef(_) => {
-                    if reflect_var_container
-                        && args.is_empty()
-                        && matches!(method, "WHAT" | "^name")
-                    {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethod",
-                            "containerref-scalar-meta",
-                        );
-                        if method == "WHAT" {
-                            self.stack.push(Value::package(Symbol::intern("Scalar")));
-                        } else {
-                            self.stack.push(Value::str("Scalar".to_string()));
-                        }
-                        return Ok(());
-                    }
-                    target.deref_container()
+                // A `.VAR` view answers container metadata as Scalar. Other
+                // methods retain ordinary value semantics by reading through the
+                // same cell, exactly as a bare ContainerRef does.
+                ValueView::ContainerView(_)
+                    if args.is_empty() && matches!(method, "WHAT" | "^name") =>
+                {
+                    target
                 }
+                ValueView::ContainerView(_) => target.deref_container(),
+                ValueView::ContainerRef(_) => target.deref_container(),
                 // ADR-0040 slice 1: a reference-pushed element
                 // (`@a.push(@b)`; `@a[0]` is `$`-itemized around a shared
                 // `ContainerRef` alias, i.e. `Scalar(ContainerRef(cell))`)

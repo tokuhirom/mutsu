@@ -234,6 +234,7 @@ impl Interpreter {
             ValueView::ContainerRef(_) => {
                 return target.with_deref(|inner| self.dispatch_what(inner, args));
             }
+            ValueView::ContainerView(_) => "Scalar",
         };
         let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
             ""

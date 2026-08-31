@@ -473,13 +473,11 @@ impl Value {
         }
     }
 
-    /// Read through a `ContainerRef` and apply `f` to the inner value WITHOUT
-    /// cloning it. Non-ContainerRef values are passed to `f` as-is. This is the
-    /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of
-    /// the decont family); prefer it over hand-rolled `arc.lock().unwrap()` reads.
+    /// Read through a `ContainerRef` or explicit `.VAR` container view and apply
+    /// `f` to the inner value WITHOUT cloning it.
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self.view() {
-            ValueView::ContainerRef(arc) => f(&arc.lock().unwrap()),
+            ValueView::ContainerRef(arc) | ValueView::ContainerView(arc) => f(&arc.lock().unwrap()),
             _ => f(self),
         }
     }

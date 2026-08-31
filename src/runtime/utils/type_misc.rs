@@ -166,6 +166,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         }
         ValueView::HashEntryRef { .. } => value_type_name(&value.hash_entry_read()),
         ValueView::ContainerRef(_) => value.with_deref(value_type_name),
+        ValueView::ContainerView(_) => "Scalar",
     }
 }
 
