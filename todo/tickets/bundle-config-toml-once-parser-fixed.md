@@ -15,7 +15,24 @@ as an actual battery — once its blockers clear. It is intentionally separate
 from the blockers themselves so none of those interpreter fixes is scoped to
 also cover packaging/docs/CI work.
 
-## Current measurement (2026-08-26)
+## Current measurement (2026-08-31)
+
+Re-run of the `Crane` v0.1.2 suite against a debug build: still **3/15**
+(`at`, `exists`, `test` — the ticket's earlier list named `flatten` instead of
+`exists`, so the passing set has shifted without the count moving). The gate is
+still closed; do not start the vendoring steps.
+
+What did change: blocker 2 below (`t/patch.rakutest` fails to *parse*) is
+**fixed**. It bisected to the hash-literal colonpair argument reader, which
+demanded at least one expression between the parens and so rejected both
+`{ :path() }` (an empty argument list) and `{ :path('a',) }` (a trailing
+comma) — the two shapes every `Crane` patch element is written in. Both are
+general parser bugs unrelated to `Crane`; fixed with
+`t/hash-literal-colonpair-arglist-edges.t` as the pin. `t/patch.rakutest` now
+compiles and runs, and fails on blocker 1 (the array-path descent) like the
+rest of the suite.
+
+## Previous measurement (2026-08-26)
 
 Re-measured from a fresh REA fetch of both dists, running each upstream suite
 from its own directory (`Config::TOML` with `Crane` on `MUTSULIB`) against a
@@ -52,7 +69,9 @@ first:
    vivification token both landed 2026-08-22 — ADR-0059 and
    `news/2026-08/deferred-vivification-path-steps-are-typed.md` — so those two
    are no longer the gate.)
-2. `t/patch.rakutest` fails to *parse* under mutsu; not yet bisected.
+2. ~~`t/patch.rakutest` fails to *parse* under mutsu; not yet bisected.~~
+   **Fixed 2026-08-31** — see the measurement note above. The file parses and
+   runs now; it fails on blocker 1.
 3. The 8-hex `\UXXXXXXXX` string escape still reports
    "bad string escape sequence 「U」", blocking `grammar/04` and
    `grammar-actions/04`.

@@ -317,6 +317,14 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     if r.starts_with('(') {
         let (r, _) = parse_char(r, '(')?;
         let (r, _) = ws_inner(r);
+        // `:name()` — an EMPTY argument list. There is no expression to parse,
+        // so the general path below would fail the whole brace body and the
+        // enclosing statement with it (`my @a = { :op<replace>, :path(), ... }`
+        // used to be a parse error). The value is the empty list, matching the
+        // colonpair parser used outside a hash literal.
+        if let Some(after) = r.strip_prefix(')') {
+            return Ok((after, (name, Some(Expr::ArrayLiteral(Vec::new())))));
+        }
         let (r, first) = expression(r)?;
         let (r, _) = ws_inner(r);
         if r.starts_with(',') {
@@ -325,6 +333,13 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
             while r.starts_with(',') {
                 let (r2, _) = parse_char(r, ',')?;
                 let (r2, _) = ws_inner(r2);
+                // A TRAILING comma (`:path('a',)`) closes the list. Raku reads
+                // it as a one-element List, so keep the collected items and
+                // stop rather than demanding another expression.
+                if r2.starts_with(')') {
+                    r = r2;
+                    break;
+                }
                 let (r2, next) = expression(r2)?;
                 let (r2, _) = ws_inner(r2);
                 items.push(next);
