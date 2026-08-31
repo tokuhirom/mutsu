@@ -664,8 +664,8 @@ impl Interpreter {
         // A lexical receiver uses CallMethodMut even for a read-only method.
         // Read through scalar itemization for Range methods, while retaining the
         // wrapper for the renderers that expose itemization.
-        let target = if target.descalarize().is_range()
-            && !matches!(method.as_str(), "VAR" | "gist" | "raku" | "perl")
+        let target = if matches!(method.as_str(), "ACCEPTS" | "combinations" | "int-bounds")
+            && target.descalarize().is_range()
         {
             target.descalarize().clone()
         } else {

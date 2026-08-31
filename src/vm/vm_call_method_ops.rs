@@ -625,7 +625,8 @@ impl Interpreter {
                 // Scalar itemization must not hide a Range's methods.  Keep it
                 // visible to renderers, which deliberately show itemization.
                 ValueView::Scalar(inner)
-                    if inner.is_range() && !matches!(method, "raku" | "gist" | "perl") =>
+                    if matches!(method, "ACCEPTS" | "combinations" | "int-bounds")
+                        && inner.is_range() =>
                 {
                     inner.clone()
                 }
