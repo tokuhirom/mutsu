@@ -78,19 +78,18 @@ impl Interpreter {
                 return Ok(());
             }
         } else if let Some(cell) = self.multi_dim_scalar_autoviv_cell(&target, &dims) {
-            // All-scalar dims over a MISSING leaf: autovivify the path (creating
-            // any absent intermediate arrays) and promote the terminal element
-            // to a shared `ContainerRef` cell, so a `\raw` / `is rw` bind can
-            // write to a not-yet-existent leaf (`@a[0;0;3] = v`). Eager, like the
-            // single-index `:=` bind (`my $s := @a[5]`). Restricted to holes by
-            // `ensure_array_child` / `array_slot_ref`, so a read-only use over an
-            // existing structure is untouched.
-            self.stack
-                .push(if matches!(cell.view(), ValueView::HashEntryRef { .. }) {
-                    cell.into_container_ref()
-                } else {
-                    cell
-                });
+            // All-scalar dims over a MISSING leaf: descend to the terminal
+            // element and hand it back, so a `\raw` / `is rw` / `:=` bind can
+            // write to a not-yet-existent leaf (`@a[0;0;3] = v`). An element
+            // that already exists becomes a shared `ContainerRef` cell; a hole
+            // — at the leaf or at any intermediate level — stays a deferred
+            // `HashEntryRef` token carrying the rest of the path, exactly as
+            // the single-index `:=` bind (`my $s := @a[5]`) does, so the bind
+            // alone grows nothing and the eventual write walk-creates the
+            // whole path. Restricted to holes by `array_index_is_hole` /
+            // `array_slot_ref`, so a read-only use over an existing structure
+            // is untouched.
+            self.stack.push(cell);
             return Ok(());
         }
         let result = self.multi_dim_index_read(&target, &dims)?;
@@ -128,9 +127,54 @@ impl Interpreter {
                 // value and materialize the path when needed.
                 return cur.array_slot_ref(idx, true);
             }
+            // A missing INTERMEDIATE level is deferred too: creating it here
+            // would make the bind alone grow the array (`my @a;
+            // my $x := @a[0;0;3]` must leave `@a` empty in raku). Hand back one
+            // token carrying the whole remaining path instead — the eventual
+            // write walk-creates every level, and a bind that is never written
+            // leaves the source untouched.
+            if Self::array_index_is_hole(&cur, idx) {
+                return Self::deferred_multi_dim_token(&cur, idx, &dims[i + 1..]);
+            }
             cur = cur.ensure_array_child(idx)?;
         }
         None
+    }
+
+    /// True when `idx` selects nothing real in the array `cur`: past the end, or
+    /// an unfilled hole (`Nil` / a type object) that a descent would have to
+    /// vivify.
+    fn array_index_is_hole(cur: &Value, idx: usize) -> bool {
+        let ValueView::Array(arc, _) = cur.view() else {
+            return false;
+        };
+        match arc.get(idx) {
+            None => true,
+            Some(v) => match v.view() {
+                ValueView::ContainerRef(cell) => {
+                    crate::value::is_container_hole(&cell.lock().unwrap_or_else(|e| e.into_inner()))
+                }
+                other => matches!(other, ValueView::Nil | ValueView::Package(..)),
+            },
+        }
+    }
+
+    /// Build the deferred vivification token for a bind whose descent ran into a
+    /// hole at `idx`: rooted on `cur`'s storage, with one positional step per
+    /// remaining dimension. Returns `None` when a remaining dimension is not a
+    /// plain index (the caller then falls back to a plain read).
+    fn deferred_multi_dim_token(cur: &Value, idx: usize, rest: &[Value]) -> Option<Value> {
+        let ValueView::Array(arc, _) = cur.view() else {
+            return None;
+        };
+        let mut path = vec![crate::value::EntryStep::Index(idx)];
+        for dim in rest {
+            path.push(crate::value::EntryStep::Index(Self::index_to_usize(dim)?));
+        }
+        Some(Value::hash_entry_ref(
+            crate::value::EntryRoot::Array(arc.clone()),
+            path,
+        ))
     }
 
     /// Descend a nested array through the (possibly slice) dimensions, promoting

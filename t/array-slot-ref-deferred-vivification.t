@@ -5,7 +5,7 @@ use Test;
 # grow the array at bind time (`array_slot_ref` pushed holes unconditionally),
 # so `@a.elems` reported 6 where rakudo reports 2.
 
-plan 28;
+plan 36;
 
 # --- bind without write: no growth, no pollution -------------------------
 {
@@ -102,4 +102,31 @@ plan 28;
     @s[1] = 77;
     is @a.raku, '[1, 8, Any, Any, Any, 77]',
         'an element write through the slice remains an alias';
+}
+
+# --- multi-dim binds defer every level, not just the leaf ----------------
+# `MultiDimIndexBindRef`'s all-scalar descent used to create each intermediate
+# array eagerly (`ensure_array_child`) and wrap the leaf in a detached cell, so
+# `my @a; my $x := @a[0;0;3]` both grew `@a` at bind time and then swallowed
+# the write. The whole remaining path is one deferred token now.
+{
+    my @a;
+    my $x := @a[0;0;3];
+    is @a.raku, '[]', 'a multi-dim bind creates no intermediate level';
+    is $x.raku, 'Any', 'the unwritten multi-dim bind reads its hole value';
+    is @a.raku, '[]', 'reading through it still creates nothing';
+    $x = 5;
+    is @a.raku, '[[[Any, Any, Any, 5],],]',
+        'the write walk-creates every level of the path';
+    $x = 6;
+    is @a.raku, '[[[Any, Any, Any, 6],],]', 'a second write goes through too';
+}
+{
+    my @b = [[[42, 666],],];
+    my $y := @b[0;0;5];
+    is @b.raku, '[[[42, 666],],]', 'an existing structure is not grown by the bind';
+    is $y.raku, 'Any', 'the missing leaf reads as its hole value';
+    $y = 'z';
+    is @b.raku, '[[[42, 666, Any, Any, Any, "z"],],]',
+        'the write fills only the leaf gap';
 }

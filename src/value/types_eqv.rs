@@ -27,6 +27,16 @@ impl Value {
         if matches!(other.view(), ValueView::ContainerRef(_)) {
             return self.eqv(&other.deref_container());
         }
+        // A deferred vivification token (an out-of-range `:=`-bound element, or a
+        // multi-dim subscript whose path does not exist yet) is a container
+        // wrapper like the two above, not a value: compare the hole value it
+        // reads back as, never the token itself.
+        if matches!(self.view(), ValueView::HashEntryRef { .. }) {
+            return self.hash_entry_read().eqv(other);
+        }
+        if matches!(other.view(), ValueView::HashEntryRef { .. }) {
+            return self.eqv(&other.hash_entry_read());
+        }
         // ADR-0038 S2: `.cache` on a not-yet-reified `Seq` hands back a SECOND
         // handle over the same body tagged `SeqView::List`. That handle
         // IS a `List` as far as Raku is concerned (`value_type_name` says so),
