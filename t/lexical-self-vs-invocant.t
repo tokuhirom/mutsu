@@ -8,7 +8,7 @@ use Test;
 # the closure was next called with, and the `Proxy` form of that recursed into
 # `FETCH` until the process died. ADR-0061 gives the lexical its own key.
 
-plan 29;
+plan 32;
 
 class Outer { method tag { 'OUTER' } }
 class Inner { method tag { 'INNER' } }
@@ -91,6 +91,27 @@ class Inner { method tag { 'INNER' } }
     }
     my $doc = C5b.new(attribs => { a => 1 });
     is $doc<a>, 1, 'a `my $self` + Proxy AT-KEY reads through FETCH';
+}
+
+# --- 5c. An ordinary same-named outer lexical must not replace a method-local
+#        capture in a deferred Proxy callback; the indexed lvalue must retain
+#        that Proxy long enough to invoke STORE.
+{
+    my $slf = 'mainline';
+    class C5c {
+        has @.nodes;
+        method AT-POS($offset) is rw {
+            my $slf = self;
+            Proxy.new(
+                FETCH => method () { $slf.nodes[$offset] },
+                STORE => method ($val) { $slf.nodes[$offset] = $val },
+            )
+        }
+    }
+    my $doc = C5c.new(nodes => ['x', 'y']);
+    is $doc[1], 'y', 'a Proxy FETCH keeps its method-local ordinary lexical capture';
+    is ($doc[0] = 'z'), 'z', 'an indexed rw AT-POS assignment invokes Proxy STORE';
+    is $doc[0], 'z', 'Proxy STORE persists through the captured method-local object';
 }
 
 # --- 6. NEGATIVE: an explicit invocant parameter genuinely named `self`.

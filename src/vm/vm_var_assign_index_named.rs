@@ -353,6 +353,35 @@ impl Interpreter {
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cls = class_name.resolve();
+            // A user-defined `is rw` AT-POS/AT-KEY owns the element container
+            // it returns.  In particular it may be a Proxy: evaluating the
+            // accessor as a normal rvalue FETCHes the Proxy before this store
+            // path can discover it, silently dropping its STORE callback.
+            // Route the indexed spelling through the established method-lvalue
+            // machinery, which invokes the accessor in lvalue context and
+            // writes through its returned container exactly once.
+            let at_method = if is_positional { "AT-POS" } else { "AT-KEY" };
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            if self
+                .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
+                .is_some_and(|(_, def)| def.is_rw)
+            {
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                let assigned = self.assign_method_lvalue_with_values(
+                    Some(&var_name),
+                    target,
+                    at_method,
+                    vec![idx_arg],
+                    val,
+                    false,
+                )?;
+                self.stack.push(assigned);
+                return Ok(());
+            }
             // A `:=` element bind (`%h<c> := $x`) arrives with the RHS wrapped in
             // a `__mutsu_bind_index_value` marker; route it to the class's
             // BIND-KEY/BIND-POS when declared, so the class controls the bind
