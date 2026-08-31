@@ -792,7 +792,12 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let mark_scalar_readonly =
         !s.is_array && !bound_name.starts_with('%') && super::scalar_binding_rhs_is_readonly(&expr);
     let bind_to_var = matches!(expr, Expr::Var(_));
-    let bind_to_index = matches!(expr, Expr::Index { .. });
+    // A multi-dimensional subscript RHS (`my $x := @a[0;0;3]`) binds the leaf
+    // element's container exactly like the single-dimension form, so it takes
+    // the same `MarkBind` route: the compiler then emits `MultiDimIndexBindRef`
+    // (via `compile_call_arg`) instead of a plain read, and a later `$x = v`
+    // writes through to the real nested slot.
+    let bind_to_index = matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. });
     // A `$` scalar bound (`:=`) to a value is NOT a Scalar container, so
     // `@a = $bound` must flatten a Positional value rather than itemize it.
     // Mark the VarDecl with an internal trait the compiler reads to emit
