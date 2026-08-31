@@ -993,6 +993,15 @@ impl Interpreter {
             ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
                 Value::seq_body(body.as_item_list_view())
             }
+            // Unlike Arrays and Hashes, a Range has no itemized representation
+            // of its own. A scalar container therefore keeps it as a Scalar
+            // wrapper, making `$range` one subscript whose numeric value is the
+            // range's element count rather than a slice selector.
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => val.item(),
             // A `but`-mixed container keeps the itemization the `$` confers —
             // see the Mixin arm of `itemize_value`.
             ValueView::Mixin(inner, overrides) => Value::mixin_parts(

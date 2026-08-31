@@ -684,7 +684,14 @@ impl Compiler {
             is_positional: *is_positional,
         };
 
-        let idx_decl = Self::init_decl(&idx_tmp, (**index).clone());
+        // Preserve the subscript's existing itemization when snapshotting it.
+        // In particular, `$r := 0..2` is a bare Range slice selector; a plain
+        // `=` store here would turn the temporary into a Scalar-wrapped Range
+        // and misclassify the bound range as a single element.
+        let idx_decl = Stmt::SyntheticBlock(vec![
+            Stmt::MarkBind,
+            Self::init_decl(&idx_tmp, (**index).clone()),
+        ]);
         let slice_decl = Self::init_decl(
             &slice_tmp,
             Expr::Binary {
@@ -1837,7 +1844,7 @@ impl Compiler {
                         if *is_our && !is_constant {
                             self.code.emit(OpCode::Dup);
                         }
-                        if bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
+                        if bind_vardecl {
                             self.code.emit(OpCode::MarkBindContext);
                         }
                         // Mark constant context so SetLocal uses List coercion for @ and
