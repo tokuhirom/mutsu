@@ -15,6 +15,7 @@ const STRINGS = {
     'nav.tutorial': 'Tutorial',
     'nav.playground': 'Playground',
     'nav.repl': 'REPL',
+    'nav.embed': 'Embed',
     'nav.batteries': 'Bundled Libraries',
     'nav.bench': 'Benchmarks',
     'nav.github': 'GitHub',
@@ -110,6 +111,7 @@ const STRINGS = {
     'nav.tutorial': 'チュートリアル',
     'nav.playground': 'プレイグラウンド',
     'nav.repl': 'REPL',
+    'nav.embed': '組み込み',
     'nav.batteries': '同梱ライブラリ',
     'nav.bench': 'ベンチマーク',
     'nav.github': 'GitHub',
@@ -246,6 +248,7 @@ const NAV = [
   { key: 'nav.tutorial', href: 'tutorial.html', page: 'tutorial' },
   { key: 'nav.playground', href: 'playground.html', page: 'playground' },
   { key: 'nav.repl', href: 'repl.html', page: 'repl' },
+  { key: 'nav.embed', href: 'embed-demo.html', page: 'embed' },
   { key: 'nav.batteries', href: 'batteries.html', page: 'batteries' },
   { key: 'nav.bench', href: 'bench-trend.html', page: 'bench' },
 ];

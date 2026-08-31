@@ -1,10 +1,9 @@
 name: Deploy WASM Demo to GitHub Pages
 
 on:
-  # A deploy is a full `wasm-pack build` — ~3 min to compile plus ~9 min of
-  # `wasm-opt` on the 17 MB artifact. Running that on every main push costs
-  # ~12 min of CI per merge to republish a byte-identical page, so the push
-  # trigger is narrowed to the files the deployed site is actually built from.
+  # The interpreter comes from the latest published npm package. Keep the push
+  # trigger narrowed to files that change the site itself; a newly published
+  # interpreter can be picked up immediately with workflow_dispatch.
   #
   # Deliberately NOT listed: `src/**`. Nearly every commit touches it, which
   # would restore the every-merge build. The consequence is that the playground
@@ -19,6 +18,11 @@ on:
       - 'scripts/bench-visualize.py'   # renders bench-trend.html
       - 'scripts/gen-batteries-manifest.py'
       - '.github/workflows/pages.yml'
+  # A successful tagged release publishes npm before the Release workflow
+  # completes, so this deploy picks up the new `latest` package automatically.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -32,21 +36,25 @@ concurrency:
 
 jobs:
   build:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          targets: wasm32-unknown-unknown
+          node-version: 24
 
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-      - name: Build WASM
+      - name: Install the published browser package
         run: |
-          wasm-pack build --target web --no-default-features --features wasm
-          mv pkg site/pkg
+          npm install --prefix tmp/pages-package --ignore-scripts --no-audit --no-fund \
+            @tokuhirom/mutsu@latest
+          mkdir -p site/pkg
+          cp -R tmp/pages-package/node_modules/@tokuhirom/mutsu/. site/pkg/
+          node -e 'const p = require("./site/pkg/package.json"); console.log(`using ${p.name}@${p.version}`)'
 
       - name: Generate the batteries listing
         # The batteries page (batteries.html) is generated from the vendored

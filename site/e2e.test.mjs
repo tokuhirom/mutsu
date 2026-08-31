@@ -509,6 +509,10 @@ try {
 
   console.log('Test: drop-in mutsu-code component');
   await page.goto(`${BASE}/embed-demo.html`, { waitUntil: 'networkidle' });
+  assert((await page.locator('main').textContent()).includes('npm install @tokuhirom/mutsu'),
+         'the demo includes npm installation guidance');
+  assert(await page.locator('a[aria-current="page"]').textContent() === 'Embed',
+         'the embedding guide is linked from the site navigation');
   const component = page.locator('mutsu-code');
   await component.locator('output').waitFor({ state: 'visible', timeout: 30000 });
   await page.waitForFunction(

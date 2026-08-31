@@ -7,11 +7,13 @@
 <link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
-<div class="container">
-  <header class="page-head">
-    <h1>Embed mutsu</h1>
-    <p class="page-intro">This runnable example is a drop-in <code>&lt;mutsu-code&gt;</code> component.</p>
-  </header>
+<nav class="site-nav"></nav>
+
+<main class="manual section">
+  <h1>Embed mutsu in a web page</h1>
+  <p class="page-intro">The GitHub Pages site uses the published
+    <code>@tokuhirom/mutsu</code> npm package. The runnable component below is
+    the same Web Component that applications install.</p>
 
   <mutsu-code autorun>
     <script type="text/raku">
@@ -20,8 +22,54 @@ say (^10).grep(* %% 2).sum;
     </script>
   </mutsu-code>
 
-  <p>See the <a href="https://github.com/tokuhirom/mutsu/blob/main/docs/browser-embedding.md">embedding guide</a> for the copy-and-paste HTML.</p>
-</div>
-<script type="module" src="assets/embed.js"></script>
+  <section class="manual-section manual-body" id="cdn">
+    <h2><a href="#cdn">Use it directly from a CDN</a></h2>
+    <p>For a static page, add the component and load its module from jsDelivr.
+      Pin a released version in production so an existing page does not change
+      unexpectedly.</p>
+    <pre><code>&lt;mutsu-code autorun&gt;
+  &lt;script type="text/raku"&gt;
+say "Hello from mutsu!";
+  &lt;/script&gt;
+&lt;/mutsu-code&gt;
+
+&lt;script type="module"
+  src="https://cdn.jsdelivr.net/npm/@tokuhirom/mutsu@0.23.0/embed.js"&gt;
+&lt;/script&gt;</code></pre>
+  </section>
+
+  <section class="manual-section manual-body" id="npm">
+    <h2><a href="#npm">Install it with npm</a></h2>
+    <p>Bundled applications can import the component from the package. Its
+      WebAssembly binary is included; users do not need Rust or wasm-pack.</p>
+    <pre><code>npm install @tokuhirom/mutsu</code></pre>
+    <pre><code>import '@tokuhirom/mutsu/element';</code></pre>
+  </section>
+
+  <section class="manual-section manual-body" id="api">
+    <h2><a href="#api">Use the JavaScript API</a></h2>
+    <p>Use the lower-level API when the application provides its own editor or
+      output UI.</p>
+    <pre><code>import init, { evaluate, Repl } from '@tokuhirom/mutsu';
+
+await init();
+console.log(evaluate('say "Hello"'));
+
+const repl = new Repl();
+console.log(JSON.parse(repl.evalLine('my $answer = 40')));
+console.log(JSON.parse(repl.evalLine('$answer + 2')));</code></pre>
+    <p>The component also supports <code>readonly</code> and
+      <code>session</code> attributes and emits a <code>mutsu-run</code> event.
+      See the <a href="https://github.com/tokuhirom/mutsu/blob/main/docs/browser-embedding.md">complete embedding reference</a>
+      for those options and the browser limitations.</p>
+  </section>
+</main>
+
+<footer class="site-footer"></footer>
+<script type="module" src="pkg/embed.js"></script>
+<script type="module">
+import { renderChrome } from './assets/i18n.js';
+renderChrome('embed');
+</script>
 </body>
 </html>
