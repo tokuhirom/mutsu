@@ -397,6 +397,11 @@ impl Interpreter {
             index = Value::int(items.len() as i64);
         }
         let mut target = self.stack.pop().unwrap();
+        // A scalar-held Range is a Range receiver for its own positional
+        // indexing; only an itemized Range *index* above remains a single index.
+        if target.descalarize().is_range() {
+            target = target.descalarize().clone();
+        }
         // An empty positional subscript (`$parts[]`) asks a Positional object
         // for all of its elements. IO::Path::Parts stores its three elements
         // as named attributes, so materialize them in positional order rather

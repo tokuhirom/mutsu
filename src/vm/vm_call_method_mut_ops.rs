@@ -661,6 +661,16 @@ impl Interpreter {
         } else {
             target
         };
+        // A lexical receiver uses CallMethodMut even for a read-only method.
+        // Read through scalar itemization for Range methods, while retaining the
+        // wrapper for the renderers that expose itemization.
+        let target = if matches!(method.as_str(), "ACCEPTS" | "combinations" | "int-bounds")
+            && target.descalarize().is_range()
+        {
+            target.descalarize().clone()
+        } else {
+            target
+        };
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched

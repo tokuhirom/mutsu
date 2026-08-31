@@ -622,6 +622,14 @@ impl Interpreter {
                 {
                     inner.deref_container()
                 }
+                // Scalar itemization must not hide a Range's methods.  Keep it
+                // visible to renderers, which deliberately show itemization.
+                ValueView::Scalar(inner)
+                    if matches!(method, "ACCEPTS" | "combinations" | "int-bounds")
+                        && inner.is_range() =>
+                {
+                    inner.clone()
+                }
                 _ => target,
             }
         } else {

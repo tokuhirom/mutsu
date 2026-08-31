@@ -383,6 +383,19 @@ impl RuntimeError {
         Self::typed("X::Assignment::RO", attrs)
     }
 
+    /// X::Assignment::RO with the immutable value retained for exception
+    /// matching (for example, an immutable Range used as a Positional target).
+    pub(crate) fn assignment_ro_value(value: Value) -> Self {
+        let message = format!(
+            "Cannot modify an immutable value ({})",
+            value.to_string_value()
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(message));
+        attrs.insert("value".to_string(), value);
+        Self::typed("X::Assignment::RO", attrs)
+    }
+
     /// X::Role::Initialization - supplied an initialization value to a role that
     /// does not have exactly one public attribute.
     pub(crate) fn role_initialization(role_name: &str) -> Self {

@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 29;
+plan 31;
 
 # A subscript selects a slice or a single element according to the *runtime
 # value* of the subscript (Rakudo dispatches postcircumfix:<[ ]> on Iterable),
@@ -34,6 +34,12 @@ my @numbers = <4 8 15 16 23 42>;
     @seen2.push($_) for @numbers[my $ = 1..3];
     is @seen2.elems, 1, 'itemized Range subscript is a single index, not a slice';
     is @seen2[0], 16, 'itemized Range subscript numifies to its element count';
+
+    my $assigned = 1..3;
+    is @numbers[$assigned], 16, 'assigned Range subscript is a single index, not a slice';
+    my @seen3;
+    @seen3.push($_) for @numbers[$assigned];
+    is @seen3.elems, 1, 'assigned Range subscript iterates one selected element';
 }
 
 # --- Array of indices --------------------------------------------------------

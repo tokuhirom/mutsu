@@ -39,6 +39,11 @@ impl Interpreter {
             }
         }
 
+        // A scalar variable is an item container, but a `** { ... }` code
+        // block consumes the value it returns as a quantifier specification.
+        // Inspect that value here rather than treating the Scalar itself as an
+        // exact numeric count.
+        let val = val.descalarize();
         match val.view() {
             ValueView::Range(start, end) => {
                 let min = start.max(0) as usize;

@@ -71,6 +71,7 @@ pub(crate) fn native_function_2arg(
             // needs -- it strips an itemized `Array` kind (the shape this arm
             // used to unwrap by hand) AND an itemized `Hash` flag, which an
             // element read out of a container now also carries.
+            let arg1 = arg1.descalarize();
             let items = match arg1.view() {
                 ValueView::Array(..)
                 | ValueView::Seq(..)

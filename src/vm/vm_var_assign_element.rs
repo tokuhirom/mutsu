@@ -461,6 +461,25 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // The VM local slot is authoritative for a lexical scalar between env
+        // synchronization points.  A Range receiver is immutable even when the
+        // scalar wrapper came from ordinary `my $r = ...` assignment.
+        if let Some(value) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize))
+            .map(|value| value.deref_container().descalarize().clone())
+            .filter(|value| value.is_range())
+        {
+            return Err(RuntimeError::assignment_ro_value(value));
+        }
+        let var_name = Self::const_str(code, name_idx);
+        if let Some(value) = self
+            .env()
+            .get(var_name)
+            .map(|value| value.deref_container().descalarize().clone())
+            .filter(|value| value.is_range())
+        {
+            return Err(RuntimeError::assignment_ro_value(value));
+        }
         // A variable still holding a DEFERRED vivification token has no
         // container to assign into yet (`my $x := %h<g>; $x[0] = 'x'`); every
         // helper below resolves the token to `Any` and drops the write. Handle

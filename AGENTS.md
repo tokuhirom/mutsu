@@ -82,6 +82,7 @@ Existing interpreter fallbacks are technical debt. When you encounter one while 
 - Do not commit directly to `main`; create a feature branch and open a pull request.
 - Write repository artifacts in English, including commit messages, PR titles/descriptions, documentation, and code comments.
 - Before pushing or opening a PR, always run `cargo fmt --all` and `cargo clippy -- -D warnings`.
+- **Do not open a PR until both `make test` and `make roast` have completed successfully on the branch.** A targeted test run, partial log, timeout, or CI-only run is not a substitute. If either command fails, fix the failure before publishing the PR.
 - PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
 - Link related issues/PRs when applicable (for example, `(#150)`).
 - Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
