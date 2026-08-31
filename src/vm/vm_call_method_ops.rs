@@ -1130,7 +1130,8 @@ impl Interpreter {
         {
             self.skip_pseudo_method_native = Some(method.to_string());
         }
-        // Auto-FETCH Proxy containers for non-meta method calls
+        // Auto-FETCH Proxy containers for reads, including `.WHAT`: type
+        // introspection describes the fetched value, not the Proxy container.
         // Skip auto-FETCH for Proxy subclass attribute access and decontainerized proxies
         let target = if let ValueView::Proxy {
             subclass,
@@ -1140,7 +1141,7 @@ impl Interpreter {
             && !decontainerized
             && !matches!(
                 method,
-                "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
+                "VAR" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
             ) {
             let has_subclass_attr = if let Some((_, attrs)) = subclass {
                 attrs.lock().unwrap().contains_key(method)
