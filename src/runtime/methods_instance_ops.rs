@@ -2989,6 +2989,16 @@ impl Interpreter {
         attributes: &AttrMap,
     ) -> Vec<String> {
         let class_attrs = self.collect_class_attributes_display_order(class_name);
+        // A punned role is materialized as a temporary class during `.new`, then
+        // withdrawn so its type object remains a role. Its instance still carries
+        // the role's attribute values, so render from the composed role metadata
+        // when the class shell is no longer in the registry.
+        let class_attrs =
+            if class_attrs.is_empty() && self.registry().roles.contains_key(class_name) {
+                self.collect_role_attributes_for_class(class_name)
+            } else {
+                class_attrs
+            };
         let mut parts = Vec::new();
         for attr in &class_attrs {
             let (attr_name, is_public, sigil) = (&attr.name, attr.is_public, attr.sigil);
