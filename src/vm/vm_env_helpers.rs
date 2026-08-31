@@ -484,7 +484,7 @@ impl Interpreter {
     pub(crate) fn unit_lexical_container_cell(
         &self,
         name: &str,
-    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         if name.contains("__ANON") {
             return None;
         }
@@ -756,7 +756,7 @@ impl Interpreter {
     pub(crate) fn mainline_lexical_cell(
         &self,
         name: &str,
-    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         match self
             .unit_lexicals
             .get(crate::runtime::MAINLINE_UNIT_KEY)?

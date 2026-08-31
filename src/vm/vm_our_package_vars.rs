@@ -143,7 +143,7 @@ impl Interpreter {
     fn our_package_scalar_cell(
         &self,
         name: &str,
-    ) -> Option<(String, crate::gc::Gc<std::sync::Mutex<Value>>)> {
+    ) -> Option<(String, crate::gc::Gc<crate::value::ContainerCell>)> {
         // Cheap pre-gate: empty for any program with no package `our` scalar,
         // so an ordinary variable read pays one hash-set check. It also keeps
         // the `current_package()` lock read and the `locals` scan below off the

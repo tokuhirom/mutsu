@@ -433,7 +433,7 @@ impl Trace for super::MatchNode {
     }
 }
 
-impl Trace for Mutex<Value> {
+impl Trace for super::ContainerCell {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         // The bind cell's inner value is the single edge out of a `ContainerRef`
         // node — this is what makes self-binding cycles (`%h<k> := %h`,
@@ -714,7 +714,9 @@ mod tests {
 
     #[test]
     fn container_ref_visits_its_locked_value() {
-        let cell = Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(Value::Int(7))));
+        let cell = Value::ContainerRef(crate::gc::Gc::new(crate::value::ContainerCell::new(
+            Value::Int(7),
+        )));
         let mut visitor = CountingVisitor { count: 0 };
         cell.visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 1);
@@ -806,8 +808,8 @@ mod tests {
         // The closures form a genuine garbage cycle through `ContainerRef`
         // cells in their (owned, always-traced) assumed args:
         //   sub1 -> cellA -> sub2 -> cellB -> sub1
-        let cell_a = crate::gc::Gc::new(std::sync::Mutex::new(Value::Nil));
-        let cell_b = crate::gc::Gc::new(std::sync::Mutex::new(Value::Nil));
+        let cell_a = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Nil));
+        let cell_b = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Nil));
         let mut sd1 = sub_capturing(env.clone(), 1);
         sd1.assumed_positional
             .push(Value::ContainerRef(cell_a.clone()));
@@ -917,10 +919,10 @@ mod tests {
     #[test]
     fn hash_entry_ref_traces_a_cell_root() {
         // The other `EntryRoot`: a token anchored on the shared cell an empty
-        // array element was promoted to. It holds a strong `Gc<Mutex<Value>>`,
+        // array element was promoted to. It holds a strong `Gc<crate::value::ContainerCell>`,
         // so gc_trace must yield that node too, or a cycle routed through a
         // deferred element bind is under-collected.
-        let cell = crate::gc::Gc::new(Mutex::new(Value::NIL));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::NIL));
         let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
             root: crate::value::EntryRoot::Cell(cell),
             path: vec![crate::value::EntryStep::Index(0)],

@@ -493,7 +493,7 @@ impl Compiler {
     /// with `push_loop_local_scope`/`pop_loop_local_scope`, which is exactly the
     /// env-restore guarantee `lexically_in_block` stands for, so a `my TYPE $x`
     /// here can use the env-only `SetVarTypeScoped` instead of also writing the
-    /// process-global `var_type_constraints` map.
+    /// enclosing scope's type metadata.
     pub(super) fn compile_scope_restored_loop_body(&mut self, stmts: &[Stmt]) {
         self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
     }

@@ -197,7 +197,7 @@ fn array_kind_and_container_flags_travel_in_the_tag() {
 
 #[test]
 fn container_ref_cell_identity_survives() {
-    let cell = Gc::new(Mutex::new(Value::int(7)));
+    let cell = Gc::new(crate::value::ContainerCell::new(Value::int(7)));
     match roundtrip(ValueRepr::ContainerRef(cell.clone())) {
         ValueRepr::ContainerRef(back) => {
             assert!(Gc::ptr_eq(&back, &cell), ":= binding identity preserved");
@@ -528,7 +528,7 @@ fn every_variant_roundtrips_losslessly() {
             id: 2,
         })),
         ValueRepr::Scalar(Box::new(Value::int(11))),
-        ValueRepr::ContainerRef(Gc::new(Mutex::new(Value::int(3)))),
+        ValueRepr::ContainerRef(Gc::new(crate::value::ContainerCell::new(Value::int(3)))),
         ValueRepr::LazyThunk(Arc::new(LazyThunkData {
             thunk: Value::NIL,
             cache: Mutex::new(Some(Value::int(5))),

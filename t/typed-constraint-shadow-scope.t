@@ -141,29 +141,21 @@ dies-ok { sub f { my Str @a; if True { my Int @a; }; @a.push(1) }; f() },
     dies-ok { @ta.push(1) }, 'mainline typed outer container still enforces after an inner shadow';
 }
 
-# The mirror-image divergence is a SEPARATE, pre-existing bug that this fix
-# neither causes nor closes: a typed outer SCALAR loses its constraint once an
-# inner declaration of the same name (typed OR untyped) has shadowed it in a
-# branch/loop body. Measured identical before and after this fix. Containers
-# are immune because their constraint rides on the value (ADR-0042 §3); a
-# scalar's has nowhere to live until ADR-0042 slice 2 gives the scalar cell an
-# `of`, which is what these rows are waiting for. Tracked in
-# todo/deep/shadowing-declaration-drops-the-outer-typed-scalar-constraint.md.
+# A scalar's constraint now rides on its ContainerRef cell just like an array
+# or hash constraint rides on the container value.  Restoring a shadowed outer
+# scalar therefore restores its enforcement without name-keyed metadata.
 {
-    todo "ADR-0042 slice 2 (cell-carried scalar `of`) -- see todo/deep";
     dies-ok { sub f { my Str $x; if True { my Int $x = 1; }; $x = 42 }; f() },
-        'typed outer scalar still enforces after an inner shadow (TODO)';
+        'typed outer scalar still enforces after an inner shadow';
 }
 {
-    todo "ADR-0042 slice 2 (cell-carried scalar `of`) -- see todo/deep";
     dies-ok { sub f { my Str $x; for 1..1 { my Int $x = 1; }; $x = 42 }; f() },
-        'typed outer scalar still enforces after an inner for-body shadow (TODO)';
+        'typed outer scalar still enforces after an inner for-body shadow';
 }
 {
     my Str $tx;
     if True { my Int $tx = 1; }
-    todo "ADR-0042 slice 2 (cell-carried scalar `of`) -- see todo/deep";
-    dies-ok { $tx = 42 }, 'mainline typed outer scalar still enforces after an inner shadow (TODO)';
+    dies-ok { $tx = 42 }, 'mainline typed outer scalar still enforces after an inner shadow';
 }
 
 # A typed declaration in a loop body enforces on EVERY iteration, not just the

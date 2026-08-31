@@ -202,12 +202,15 @@ impl InstanceAttrs {
                 if let ValueView::ContainerRef(cell) = slot.view() {
                     return Value::ContainerRef(cell.clone());
                 }
-                let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(slot, Value::Nil)));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(std::mem::replace(
+                    slot,
+                    Value::Nil,
+                )));
                 *slot = Value::ContainerRef(cell.clone());
                 Value::ContainerRef(cell)
             }
             None => {
-                let cell = crate::gc::Gc::new(Mutex::new(Value::Nil));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Nil));
                 guard.insert(key, Value::ContainerRef(cell.clone()));
                 Value::ContainerRef(cell)
             }

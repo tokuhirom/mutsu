@@ -419,36 +419,47 @@ pub(crate) struct InstanceAttrs {
     finalized: std::sync::atomic::AtomicBool,
 }
 
-/// Type constraints for typed scalar `ContainerRef` cells, keyed by the cell's
-/// `Arc` pointer. A free typed container (e.g. `my Int $` used as a value, then
-/// stored as a `Pair` value) carries no name, so its `of`-type cannot live in
-/// the name-keyed `var_type_constraint` map; this side table lets the
-/// `ContainerRef` write chokepoint enforce the constraint and raise
-/// `X::TypeCheck::Assignment` on a bad assignment. Only `my T $` typed-anonymous
-/// scalars register here, so the table stays tiny.
-static TYPED_CONTAINER_CONSTRAINTS: OnceLock<Mutex<HashMap<usize, String>>> = OnceLock::new();
+/// The shared scalar cell used by `:=`, closure capture, and other lvalue paths.
+///
+/// The constraint belongs to this cell, not to the variable name through which
+/// it happens to be reached.  Keeping both pieces in one GC allocation makes a
+/// typed scalar's `of` travel through aliases and survive lexical shadowing.
+#[derive(Debug)]
+pub struct ContainerCell {
+    value: Mutex<Value>,
+    constraint: Mutex<Option<String>>,
+}
 
-fn typed_container_constraints() -> &'static Mutex<HashMap<usize, String>> {
-    TYPED_CONTAINER_CONSTRAINTS.get_or_init(|| Mutex::new(HashMap::new()))
+impl ContainerCell {
+    pub fn new(value: Value) -> Self {
+        Self {
+            value: Mutex::new(value),
+            constraint: Mutex::new(None),
+        }
+    }
+
+    pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Value>> {
+        self.value.lock()
+    }
+
+    pub fn get_mut(&mut self) -> std::sync::LockResult<&mut Value> {
+        self.value.get_mut()
+    }
 }
 
 /// Record that the `ContainerRef` cell `cell` has the `of`-type `type_name`.
-pub fn register_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>, type_name: &str) {
-    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
-    typed_container_constraints()
-        .lock()
-        .unwrap()
-        .insert(ptr, type_name.to_string());
+pub fn register_container_constraint(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    type_name: &str,
+) {
+    *cell.constraint.lock().unwrap() = Some(type_name.to_string());
 }
 
 /// Look up the `of`-type constraint of a `ContainerRef` cell, if any.
-pub fn lookup_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>) -> Option<String> {
-    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
-    typed_container_constraints()
-        .lock()
-        .unwrap()
-        .get(&ptr)
-        .cloned()
+pub fn lookup_container_constraint(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+) -> Option<String> {
+    cell.constraint.lock().unwrap().clone()
 }
 
 /// Cells that have been made read-only via `Pair.freeze`. A frozen `ContainerRef`
@@ -462,13 +473,13 @@ fn frozen_container_cells() -> &'static Mutex<HashSet<usize>> {
 }
 
 /// Mark a `ContainerRef` cell as frozen (read-only) — see `Pair.freeze`.
-pub fn mark_container_frozen(cell: &crate::gc::Gc<Mutex<Value>>) {
+pub fn mark_container_frozen(cell: &crate::gc::Gc<crate::value::ContainerCell>) {
     let ptr = crate::gc::Gc::as_ptr(cell) as usize;
     frozen_container_cells().lock().unwrap().insert(ptr);
 }
 
 /// Whether the given `ContainerRef` cell has been frozen (read-only).
-pub fn is_container_frozen(cell: &crate::gc::Gc<Mutex<Value>>) -> bool {
+pub fn is_container_frozen(cell: &crate::gc::Gc<crate::value::ContainerCell>) -> bool {
     let ptr = crate::gc::Gc::as_ptr(cell) as usize;
     frozen_container_cells().lock().unwrap().contains(&ptr)
 }
@@ -476,7 +487,7 @@ pub fn is_container_frozen(cell: &crate::gc::Gc<Mutex<Value>>) -> bool {
 /// Build a fresh read-only (frozen) `ContainerRef` holding `value`, optionally
 /// carrying an `of`-type constraint. Backs `Pair.freeze`.
 pub fn make_frozen_container(value: Value, constraint: Option<&str>) -> Value {
-    let cell = crate::gc::Gc::new(Mutex::new(value));
+    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(value));
     if let Some(c) = constraint {
         register_container_constraint(&cell, c);
     }
@@ -1311,12 +1322,12 @@ pub(in crate::value) enum ValueRepr {
     Scalar(Box<Value>),
     /// A shared mutable Scalar container for `:=` binding.
     /// Two variables bound together share the same `ContainerRef`.
-    ContainerRef(Gc<Mutex<Value>>),
+    ContainerRef(Gc<crate::value::ContainerCell>),
     /// An explicit view of a `ContainerRef` returned by `.VAR`.
     ///
     /// It carries the same cell identity as `ContainerRef`, but stays distinct
     /// so dispatch can tell a reflected container from an aliased value.
-    ContainerView(Gc<Mutex<Value>>),
+    ContainerView(Gc<crate::value::ContainerCell>),
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
@@ -1588,7 +1599,7 @@ impl Value {
         Value::from_repr(ValueRepr::Scalar(inner))
     }
     #[inline]
-    pub(in crate::value) fn ContainerRef(cell: Gc<Mutex<Value>>) -> Value {
+    pub(in crate::value) fn ContainerRef(cell: Gc<crate::value::ContainerCell>) -> Value {
         Value::from_repr(ValueRepr::ContainerRef(cell))
     }
     #[inline]
@@ -2187,7 +2198,7 @@ mod hash_chokepoint_tests {
         // A `:=`-bound element holds a shared `ContainerRef` cell; a later
         // assignment to the key must write *through* the cell (preserving the
         // binding), not replace the entry with a bare value.
-        let cell = crate::gc::Gc::new(Mutex::new(Value::Int(1)));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(Value::Int(1)));
         let mut map = HashMap::new();
         map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));

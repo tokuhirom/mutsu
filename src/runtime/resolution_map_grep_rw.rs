@@ -106,7 +106,9 @@ impl Interpreter {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
                     let value = if rw_param.is_some() {
-                        let cell = crate::gc::Gc::new(std::sync::Mutex::new(list_items[i].clone()));
+                        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
+                            list_items[i].clone(),
+                        ));
                         let res = self.call_sub_value(
                             Value::sub_value(data.clone()),
                             vec![Value::container_ref(cell.clone())],
@@ -266,7 +268,7 @@ impl Interpreter {
                     // iteration's param is bound to, read back after the call
                     // instead of `topic_key` (which never mirrors a NAMED
                     // param write, only `$_`/`_`).
-                    let mut rw_cell: Option<crate::gc::Gc<std::sync::Mutex<Value>>> = None;
+                    let mut rw_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = None;
                     {
                         let assumed_count = data.assumed_positional.len();
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
@@ -280,8 +282,9 @@ impl Interpreter {
                             let item = list_items[i].clone();
                             if let Some(p) = data.params.get(assumed_count) {
                                 if rw_param.is_some() {
-                                    let cell =
-                                        crate::gc::Gc::new(std::sync::Mutex::new(item.clone()));
+                                    let cell = crate::gc::Gc::new(
+                                        crate::value::ContainerCell::new(item.clone()),
+                                    );
                                     vm.env_mut()
                                         .insert(p.clone(), Value::container_ref(cell.clone()));
                                     rw_cell = Some(cell);

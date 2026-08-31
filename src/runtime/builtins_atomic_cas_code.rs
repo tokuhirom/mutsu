@@ -73,7 +73,7 @@ impl Interpreter {
     pub(super) fn cas_cell_code_loop(
         &mut self,
         name: &str,
-        cell: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
         code: &Value,
     ) -> Result<Value, RuntimeError> {
         loop {

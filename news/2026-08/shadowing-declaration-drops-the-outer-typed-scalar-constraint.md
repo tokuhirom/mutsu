@@ -1,5 +1,12 @@
 # A shadowing declaration in a branch/loop body permanently drops the OUTER typed SCALAR's constraint
 
+## Resolved 2026-08-31
+
+Ordinary named typed scalars now carry their constraint in a shared
+`ContainerCell`. Restoring the outer value after a branch or loop therefore
+restores its own constraint as well. The three TODO-marked pins in
+`t/typed-constraint-shadow-scope.t` are now ordinary passing tests.
+
 ## Found while
 
 Fixing the mirror-image bug — `news/2026-08/typed-declaration-shadow-scope-leak.md`

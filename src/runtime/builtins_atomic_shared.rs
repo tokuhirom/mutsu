@@ -12,7 +12,7 @@ impl Interpreter {
         if v.is_container_ref() {
             v
         } else {
-            Value::container_ref(crate::gc::Gc::new(std::sync::Mutex::new(v)))
+            Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(v)))
         }
     }
 
@@ -103,7 +103,7 @@ impl Interpreter {
         atomic_key: &str,
         hash_name: &str,
         key: &str,
-    ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
+    ) -> crate::gc::Gc<crate::value::ContainerCell> {
         {
             let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
             let shared = atomic_root.own_map().read().unwrap();
@@ -134,7 +134,7 @@ impl Interpreter {
             }
             None => Value::int(0),
         };
-        let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(seed));
         data.map
             .insert(key.to_string(), Value::container_ref(cell.clone()));
         let updated = Value::hash_with_data(crate::gc::Gc::new(data));
@@ -152,23 +152,24 @@ impl Interpreter {
         atomic_key: &str,
         arr_name: &str,
         index: i64,
-    ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
-        let resolve =
-            |arr: &Value, index: i64| -> (usize, Option<crate::gc::Gc<std::sync::Mutex<Value>>>) {
-                if let ValueView::Array(elements, _) = arr.view() {
-                    let idx = if index < 0 {
-                        (elements.len() as i64 + index).max(0) as usize
-                    } else {
-                        index as usize
-                    };
-                    if let Some(ValueView::ContainerRef(c)) = elements.get(idx).map(Value::view) {
-                        return (idx, Some(c.clone()));
-                    }
-                    (idx, None)
+    ) -> crate::gc::Gc<crate::value::ContainerCell> {
+        let resolve = |arr: &Value,
+                       index: i64|
+         -> (usize, Option<crate::gc::Gc<crate::value::ContainerCell>>) {
+            if let ValueView::Array(elements, _) = arr.view() {
+                let idx = if index < 0 {
+                    (elements.len() as i64 + index).max(0) as usize
                 } else {
-                    (index.max(0) as usize, None)
+                    index as usize
+                };
+                if let Some(ValueView::ContainerRef(c)) = elements.get(idx).map(Value::view) {
+                    return (idx, Some(c.clone()));
                 }
-            };
+                (idx, None)
+            } else {
+                (index.max(0) as usize, None)
+            }
+        };
         {
             let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
             let shared = atomic_root.own_map().read().unwrap();
@@ -213,7 +214,7 @@ impl Interpreter {
             }
             v.clone()
         };
-        let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(seed));
         data.items_mut()[idx] = Value::container_ref(cell.clone());
         let updated = Value::array_with_kind(crate::gc::Gc::new(data), kind);
         shared.insert(atomic_key.to_string(), updated.clone());
@@ -711,7 +712,7 @@ impl Interpreter {
     pub(super) fn scalar_cell_target(
         &self,
         name: &str,
-    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return None;
         }
@@ -850,7 +851,7 @@ impl Interpreter {
     pub(super) fn atomic_scalar_cell(
         &mut self,
         name: &str,
-    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         if let Some(cell) = self.scalar_cell_target(name) {
             return Some(cell);
         }
@@ -942,7 +943,7 @@ impl Interpreter {
     fn box_package_scope_lexical_cell(
         &mut self,
         bare: &str,
-    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         let pkg = self.current_package();
         if pkg.is_empty() || pkg == "GLOBAL" {
             return None;

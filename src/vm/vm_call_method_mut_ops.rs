@@ -2001,8 +2001,9 @@ impl Interpreter {
                             let cell = match self.env().get(&var_name).map(Value::view) {
                                 Some(ValueView::ContainerRef(cell)) => cell.clone(),
                                 _ => {
-                                    let cell =
-                                        crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
+                                    let cell = crate::gc::Gc::new(
+                                        crate::value::ContainerCell::new(value.clone()),
+                                    );
                                     bind_source_install =
                                         Some((var_name, Value::container_ref(cell.clone())));
                                     cell
@@ -2044,8 +2045,9 @@ impl Interpreter {
                             let cell = match self.env().get(&var_name).map(Value::view) {
                                 Some(ValueView::ContainerRef(cell)) => cell.clone(),
                                 _ => {
-                                    let cell =
-                                        crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
+                                    let cell = crate::gc::Gc::new(
+                                        crate::value::ContainerCell::new(value.clone()),
+                                    );
                                     bind_source_install =
                                         Some((var_name, Value::container_ref(cell.clone())));
                                     cell
@@ -2187,7 +2189,8 @@ impl Interpreter {
                     let cell = match self.env().get(&source_var).map(Value::view) {
                         Some(ValueView::ContainerRef(cell)) => cell.clone(),
                         _ => {
-                            let cell = crate::gc::Gc::new(std::sync::Mutex::new(value.clone()));
+                            let cell =
+                                crate::gc::Gc::new(crate::value::ContainerCell::new(value.clone()));
                             bind_source_install =
                                 Some((source_var, Value::container_ref(cell.clone())));
                             cell

@@ -727,7 +727,7 @@ impl Interpreter {
             ValueView::ContainerRef(arc) => arc.clone(),
             _ => match self.env().get(&resolved_source).map(Value::view) {
                 Some(ValueView::ContainerRef(arc)) => arc.clone(),
-                _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
+                _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
             },
         };
         let container = Value::container_ref(cell);

@@ -434,9 +434,12 @@ opcode, so the exclusions §5.1 relies on are untouched.
 constraint once any inner declaration of the same name — typed *or* untyped —
 has shadowed it in a branch/loop body. It reproduces identically before and
 after this fix and is scalar-only, precisely because a container carries its
-constraint on the value and a scalar has nowhere to put one (§3). Tracked in
-`todo/deep/shadowing-declaration-drops-the-outer-typed-scalar-constraint.md`
-and pinned as three `# TODO` rows in `t/typed-constraint-shadow-scope.t`.
+constraint on the value and a scalar has nowhere to put one (§3). **Resolved
+2026-08-31:** ordinary typed scalars now carry their constraint in a
+`ContainerCell`; see
+`news/2026-08/shadowing-declaration-drops-the-outer-typed-scalar-constraint.md`.
+The three rows in `t/typed-constraint-shadow-scope.t` are now ordinary
+`dies-ok` assertions.
 
 Pinned by `t/typed-constraint-shadow-scope.t` (35 `raku`-verified assertions,
 replacing the expected-failing `t/typed-constraint-shadow-leak-unfixed.t`).

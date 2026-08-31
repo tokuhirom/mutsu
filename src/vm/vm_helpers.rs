@@ -91,7 +91,7 @@ impl Interpreter {
     /// the Pair.value enforcement in `methods_mut_method_lvalue.rs`.
     pub(super) fn check_container_cell_constraint(
         &mut self,
-        cell: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) -> Result<(), RuntimeError> {
         if let Some(constraint) = crate::value::lookup_container_constraint(cell)
@@ -160,7 +160,7 @@ impl Interpreter {
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
     /// detached rather than emptied; every alias of the cell observes the clear.
-    pub(super) fn clear_aggregate_cell(cell: &crate::gc::Gc<std::sync::Mutex<Value>>) {
+    pub(super) fn clear_aggregate_cell(cell: &crate::gc::Gc<crate::value::ContainerCell>) {
         let mut guard = cell.lock().unwrap();
         if (*guard)
             .with_array_mut(|arc, _| crate::gc::Gc::make_mut(arc).items_mut().clear())

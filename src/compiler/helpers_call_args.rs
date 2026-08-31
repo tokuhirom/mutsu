@@ -27,7 +27,7 @@ impl Compiler {
     /// An inline declaration operand (`return-rw my $x = 1`) is the same shape
     /// once the declaration has run: the value is on the stack and the local
     /// slot exists, so the identical two-op tail boxes that slot. The cell
-    /// outlives the callee frame because it is a GC'd `Gc<Mutex<Value>>`, not a
+    /// outlives the callee frame because it is a GC'd `Gc<crate::value::ContainerCell>`, not a
     /// frame reference.
     pub(super) fn compile_return_rw_arg(&mut self, arg: &Expr) {
         let saved_rw = self.rw_return_operand;

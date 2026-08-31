@@ -1,5 +1,18 @@
 # Bare-name type-constraint store is scope-blind (residual: containers and mainline blocks)
 
+## Status 2026-08-31: typed outer scalar shadow enforcement is fixed
+
+The three expected-failing rows in `t/typed-constraint-shadow-scope.t` now
+pass: `ContainerRef` is a `ContainerCell` that stores its own optional scalar
+constraint, and ordinary named typed scalars are boxed at declaration. An outer
+typed scalar therefore retains enforcement after a typed or untyped shadow in a
+branch or loop body.
+
+Aggregate and native scalar values retain their existing specialized lvalue
+paths; their metadata already travels with their underlying value. The
+name-keyed bridge remains for compatibility paths, so ADR-0042 slice 3 is
+still open.
+
 `Interpreter::var_type_constraints` is a single global `HashMap<String,
 String>` keyed by BARE variable name, and it is never frame-scoped.
 
