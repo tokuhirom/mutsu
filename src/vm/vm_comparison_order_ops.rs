@@ -42,6 +42,12 @@ impl Interpreter {
             )
         };
         self.reconcile_caller_after_internal_dispatch(caller_code);
+        if Self::is_buf_value(&left) && !Self::is_buf_value(&right) {
+            return Err(Self::buf_as_str_error(&left, "Str"));
+        }
+        if Self::is_buf_value(&right) && !Self::is_buf_value(&left) {
+            return Err(Self::buf_as_str_error(&right, "Str"));
+        }
         Ok((left, right))
     }
 
@@ -59,6 +65,37 @@ impl Interpreter {
             return decoded;
         }
         v
+    }
+
+    pub(crate) fn stringify_compare_operand(v: &Value) -> Result<String, RuntimeError> {
+        if let Some(class_name) = Self::buf_class_name(v) {
+            if class_name == "utf8"
+                && let Some(Ok(decoded)) = crate::builtins::decode_buf_method(v, Some("utf-8"))
+            {
+                return Ok(decoded.to_string_value());
+            }
+            return Err(Self::buf_as_str_error(v, "Str"));
+        }
+        Ok(v.to_string_value())
+    }
+
+    pub(crate) fn blob_ordering(
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<std::cmp::Ordering>, RuntimeError> {
+        let (Some(left_class), Some(right_class)) =
+            (Self::buf_class_name(left), Self::buf_class_name(right))
+        else {
+            return Ok(None);
+        };
+        if crate::runtime::utils::normalize_buf_type_name(&left_class)
+            != crate::runtime::utils::normalize_buf_type_name(&right_class)
+        {
+            return Err(RuntimeError::new(format!(
+                "Type check failed in binding to parameter 'other'; expected {left_class} but got {right_class}"
+            )));
+        }
+        Ok(Some(Self::buf_cmp_bytes(left, right)))
     }
 
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
@@ -109,10 +146,8 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Less,
-                ))
+            if let Some(ord) = Self::blob_ordering(&l, &r)? {
+                Ok(Value::truth(ord == std::cmp::Ordering::Less))
             } else {
                 Ok(Value::truth(l.to_str_context() < r.to_str_context()))
             }
@@ -126,10 +161,8 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Greater,
-                ))
+            if let Some(ord) = Self::blob_ordering(&l, &r)? {
+                Ok(Value::truth(ord == std::cmp::Ordering::Greater))
             } else {
                 Ok(Value::truth(l.to_str_context() > r.to_str_context()))
             }
@@ -143,10 +176,8 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Greater,
-                ))
+            if let Some(ord) = Self::blob_ordering(&l, &r)? {
+                Ok(Value::truth(ord != std::cmp::Ordering::Greater))
             } else {
                 Ok(Value::truth(l.to_str_context() <= r.to_str_context()))
             }
@@ -160,10 +191,8 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) != std::cmp::Ordering::Less,
-                ))
+            if let Some(ord) = Self::blob_ordering(&l, &r)? {
+                Ok(Value::truth(ord != std::cmp::Ordering::Less))
             } else {
                 Ok(Value::truth(l.to_str_context() >= r.to_str_context()))
             }
@@ -471,34 +500,35 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn exec_before_after_op(&mut self, is_before: bool) {
+    pub(super) fn exec_before_after_op(&mut self, is_before: bool) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let blob_ord = Self::blob_ordering(&left, &right)?;
         let (left, right) = self
             .coerce_numeric_bridge_pair(left.clone(), right.clone())
             .unwrap_or((left, right));
-        let ord = Self::spaceship_ordering(&left, &right);
+        let ord = blob_ord.unwrap_or_else(|| Self::spaceship_ordering(&left, &right));
         let result = if is_before {
             ord == std::cmp::Ordering::Less
         } else {
             ord == std::cmp::Ordering::Greater
         };
         self.stack.push(Value::truth(result));
+        Ok(())
     }
 
-    pub(super) fn exec_cmp_op(&mut self) {
+    pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
-            let ord = Self::buf_cmp_bytes(&left, &right);
+        if let Some(ord) = Self::blob_ordering(&left, &right)? {
             self.stack.push(runtime::make_order(ord));
-            return;
+            return Ok(());
         }
         // NaN in cmp context: compare as string "NaN"
         if is_nan_value(&left) || is_nan_value(&right) {
             let ord = left.to_string_value().cmp(&right.to_string_value());
             self.stack.push(runtime::make_order(ord));
-            return;
+            return Ok(());
         }
         // For lists, ranges, and mixed-type comparisons (e.g. Pair cmp Inf),
         // use cmp_values which handles these cases correctly.
@@ -513,45 +543,50 @@ impl Interpreter {
         {
             let ord = cmp_values(&left, &right);
             self.stack.push(runtime::make_order(ord));
-            return;
+            return Ok(());
         }
         let (left, right) = self
             .coerce_numeric_bridge_pair(left.clone(), right.clone())
             .unwrap_or((left, right));
         let ord = Self::spaceship_ordering(&left, &right);
         self.stack.push(runtime::make_order(ord));
+        Ok(())
     }
 
-    pub(super) fn exec_coll_op(&mut self) {
+    pub(super) fn exec_coll_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let left_s = left.to_string_value();
-        let right_s = right.to_string_value();
+        let left_s = Self::stringify_compare_operand(&left)?;
+        let right_s = Self::stringify_compare_operand(&right)?;
 
         // Get $*COLLATION settings
         let settings = self.get_collation_settings();
         let result = crate::builtins::collation::coll_compare(&left_s, &right_s, &settings);
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_unicmp_op(&mut self) {
+    pub(super) fn exec_unicmp_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let left_s = left.to_string_value();
-        let right_s = right.to_string_value();
+        let left_s = Self::stringify_compare_operand(&left)?;
+        let right_s = Self::stringify_compare_operand(&right)?;
 
         // Unlike `coll`, `unicmp` always uses the default Unicode collation and
         // is not influenced by the `$*COLLATION` dynamic variable.
         let settings = crate::builtins::collation::CollationSettings::default();
         let result = crate::builtins::collation::coll_compare(&left_s, &right_s, &settings);
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_leg_op(&mut self) {
+    pub(super) fn exec_leg_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let ord = left.to_string_value().cmp(&right.to_string_value());
+        let ord =
+            Self::stringify_compare_operand(&left)?.cmp(&Self::stringify_compare_operand(&right)?);
         self.stack.push(runtime::make_order(ord));
+        Ok(())
     }
 
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {

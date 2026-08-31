@@ -1,24 +1,6 @@
 use super::*;
 
 impl Interpreter {
-    fn buf_class_name(val: &Value) -> Option<String> {
-        if let ValueView::Instance { class_name, .. } = val.view() {
-            let cn = class_name.resolve();
-            if cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
-            {
-                return Some(cn.to_string());
-            }
-        }
-        None
-    }
-
     pub(crate) fn str_bitwise_op(
         left: &Value,
         right: &Value,

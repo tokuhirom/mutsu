@@ -74,12 +74,29 @@ impl Interpreter {
             ValueView::Str(op) => match Self::normalize_unicode_infix(op.as_str()) {
                 "~~" => self.smart_match(&left, &right),
                 "!~~" => !self.smart_match(&left, &right),
-                "eq" => left.to_string_value() == right.to_string_value(),
-                "ne" => left.to_string_value() != right.to_string_value(),
-                "lt" => left.to_string_value() < right.to_string_value(),
-                "le" => left.to_string_value() <= right.to_string_value(),
-                "gt" => left.to_string_value() > right.to_string_value(),
-                "ge" => left.to_string_value() >= right.to_string_value(),
+                "eq" | "ne" => {
+                    let equal = if Self::is_buf_value(&left) && Self::is_buf_value(&right) {
+                        Self::extract_buf_bytes(&left) == Self::extract_buf_bytes(&right)
+                    } else {
+                        Self::stringify_compare_operand(&left)?
+                            == Self::stringify_compare_operand(&right)?
+                    };
+                    if op.as_str() == "eq" { equal } else { !equal }
+                }
+                "lt" | "le" | "gt" | "ge" => {
+                    let ord = match Self::blob_ordering(&left, &right)? {
+                        Some(ord) => ord,
+                        None => Self::stringify_compare_operand(&left)?
+                            .cmp(&Self::stringify_compare_operand(&right)?),
+                    };
+                    match op.as_str() {
+                        "lt" => ord == std::cmp::Ordering::Less,
+                        "le" => ord != std::cmp::Ordering::Greater,
+                        "gt" => ord == std::cmp::Ordering::Greater,
+                        "ge" => ord != std::cmp::Ordering::Less,
+                        _ => unreachable!(),
+                    }
+                }
                 "==" => super::super::to_float_value(&left) == super::super::to_float_value(&right),
                 "!=" => super::super::to_float_value(&left) != super::super::to_float_value(&right),
                 "<" => super::super::to_float_value(&left) < super::super::to_float_value(&right),

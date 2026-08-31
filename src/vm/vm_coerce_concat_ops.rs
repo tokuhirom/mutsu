@@ -423,18 +423,36 @@ impl Interpreter {
 
     pub fn is_buf_value(val: &Value) -> bool {
         if let ValueView::Instance { class_name, .. } = val.view() {
-            let cn = class_name.resolve();
-            cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
+            crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         } else {
             false
         }
+    }
+
+    pub(crate) fn buf_class_name(val: &Value) -> Option<String> {
+        match val.view() {
+            ValueView::Instance { class_name, .. }
+                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+            {
+                Some(class_name.resolve().to_string())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn buf_as_str_error(val: &Value, method: &str) -> RuntimeError {
+        let class_name = Self::buf_class_name(val).unwrap_or_else(|| "Blob".to_string());
+        let mut err = RuntimeError::new(format!(
+            "Cannot use a {class_name} as a Str. You can use .decode to convert to Str."
+        ));
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("payload".to_string(), val.clone());
+        err.exception = Some(Box::new(Value::make_instance(
+            crate::symbol::Symbol::intern("X::Buf::AsStr"),
+            attrs,
+        )));
+        err
     }
 
     pub fn extract_buf_bytes(val: &Value) -> Vec<u8> {

@@ -545,35 +545,44 @@ impl Interpreter {
             ">" => Ok(Value::truth(to_num(left) > to_num(right))),
             "<=" => Ok(Value::truth(to_num(left) <= to_num(right))),
             ">=" => Ok(Value::truth(to_num(left) >= to_num(right))),
-            "eq" => Ok(Value::truth(
-                left.to_string_value() == right.to_string_value(),
-            )),
-            "ne" => Ok(Value::truth(
-                left.to_string_value() != right.to_string_value(),
-            )),
-            "lt" => Ok(Value::truth(
-                left.to_string_value() < right.to_string_value(),
-            )),
-            "gt" => Ok(Value::truth(
-                left.to_string_value() > right.to_string_value(),
-            )),
-            "le" => Ok(Value::truth(
-                left.to_string_value() <= right.to_string_value(),
-            )),
-            "ge" => Ok(Value::truth(
-                left.to_string_value() >= right.to_string_value(),
-            )),
-            "after" => Ok(Value::truth(
-                left.to_string_value() > right.to_string_value(),
-            )),
-            "before" => Ok(Value::truth(
-                left.to_string_value() < right.to_string_value(),
-            )),
+            "eq" | "ne" => {
+                let equal = if Self::is_buf_value(left) && Self::is_buf_value(right) {
+                    Self::extract_buf_bytes(left) == Self::extract_buf_bytes(right)
+                } else {
+                    Self::stringify_compare_operand(left)?
+                        == Self::stringify_compare_operand(right)?
+                };
+                Ok(Value::truth(if op == "eq" { equal } else { !equal }))
+            }
+            "lt" | "gt" | "le" | "ge" | "after" | "before" => {
+                let ord = match Self::blob_ordering(left, right)? {
+                    Some(ord) => ord,
+                    None => Self::stringify_compare_operand(left)?
+                        .cmp(&Self::stringify_compare_operand(right)?),
+                };
+                let answer = match op {
+                    "lt" | "before" => ord == std::cmp::Ordering::Less,
+                    "gt" | "after" => ord == std::cmp::Ordering::Greater,
+                    "le" => ord != std::cmp::Ordering::Greater,
+                    "ge" => ord != std::cmp::Ordering::Less,
+                    _ => unreachable!(),
+                };
+                Ok(Value::truth(answer))
+            }
             "leg" => {
-                let ord = left.to_string_value().cmp(&right.to_string_value());
+                let ord = Self::stringify_compare_operand(left)?
+                    .cmp(&Self::stringify_compare_operand(right)?);
                 Ok(super::make_order(ord))
             }
             "cmp" => {
+                if let Some(ord) = Self::blob_ordering(left, right)? {
+                    return Ok(super::make_order(ord));
+                }
+                if Self::is_buf_value(left) || Self::is_buf_value(right) {
+                    let ord = Self::stringify_compare_operand(left)?
+                        .cmp(&Self::stringify_compare_operand(right)?);
+                    return Ok(super::make_order(ord));
+                }
                 let ord = match (left.view(), right.view()) {
                     (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
                     (

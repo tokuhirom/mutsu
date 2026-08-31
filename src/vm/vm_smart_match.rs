@@ -343,21 +343,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             ValueView::Instance {
                 class_name: cn_b, ..
             },
-        ) if {
-            let a = cn_a.resolve();
-            let b = cn_b.resolve();
-            let is_buf = |cn: &str| {
-                cn == "Buf"
-                    || cn == "Blob"
-                    || cn == "utf8"
-                    || cn == "utf16"
-                    || cn.starts_with("Buf[")
-                    || cn.starts_with("Blob[")
-                    || cn.starts_with("buf")
-                    || cn.starts_with("blob")
-            };
-            is_buf(&a) && is_buf(&b)
-        } =>
+        ) if crate::runtime::utils::is_buf_or_blob_class(&cn_a.resolve())
+            && crate::runtime::utils::is_buf_or_blob_class(&cn_b.resolve()) =>
         {
             let lb = Interpreter::extract_buf_bytes(left);
             let rb = Interpreter::extract_buf_bytes(right);

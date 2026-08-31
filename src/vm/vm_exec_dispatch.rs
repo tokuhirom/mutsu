@@ -2416,23 +2416,23 @@ impl Interpreter {
             }
             OpCode::Before | OpCode::After => {
                 let is_before = matches!(code.ops[*ip], OpCode::Before);
-                self.exec_before_after_op(is_before);
+                self.exec_before_after_op(is_before)?;
                 *ip += 1;
             }
             OpCode::Cmp => {
-                self.exec_cmp_op();
+                self.exec_cmp_op()?;
                 *ip += 1;
             }
             OpCode::Coll => {
-                self.exec_coll_op();
+                self.exec_coll_op()?;
                 *ip += 1;
             }
             OpCode::Unicmp => {
-                self.exec_unicmp_op();
+                self.exec_unicmp_op()?;
                 *ip += 1;
             }
             OpCode::Leg => {
-                self.exec_leg_op();
+                self.exec_leg_op()?;
                 *ip += 1;
             }
 
