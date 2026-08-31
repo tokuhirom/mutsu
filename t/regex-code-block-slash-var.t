@@ -6,7 +6,7 @@ use Test;
 # unparsed input" at the `}`) because the closing-delimiter scanner saw the `/`
 # of `$/` inside the block.
 
-plan 6;
+plan 8;
 
 lives-ok {
     'ab' ~~ / a { my $z = $/; } b /;
@@ -27,3 +27,10 @@ lives-ok {
 # Existing constructs still parse correctly.
 ok 'aa' ~~ / a ** {2} /, 'a {n} quantifier still works';
 ok 'abc' ~~ /abc$/, 'a trailing $ anchor still works';
+
+# A scalar Range returned by a quantifier block is a range specification, not
+# an exact numeric count. Scalar assignment itemizes the Range, so the
+# quantifier evaluator must decontainerize it before dispatching on its kind.
+my $quantifier-range = 1..3;
+is ~('aaaa' ~~ / a ** {$quantifier-range} /), 'aaa', 'scalar Range bounds a greedy quantifier';
+is ~('aaaa' ~~ / a **? {$quantifier-range} /), 'a', 'scalar Range bounds a frugal quantifier';
