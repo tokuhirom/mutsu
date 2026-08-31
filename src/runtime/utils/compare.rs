@@ -3,6 +3,7 @@ use super::*;
 pub(crate) fn to_float_value(val: &Value) -> Option<f64> {
     match val.view() {
         ValueView::ContainerRef(cell) => to_float_value(&cell.lock().unwrap()),
+        ValueView::Scalar(inner) => to_float_value(inner),
         ValueView::Mixin(inner, _) => to_float_value(inner),
         ValueView::Num(f) => Some(f),
         ValueView::Int(i) => Some(i as f64),
@@ -341,6 +342,7 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         // Phase 2 element container: a `:=`-bound element cell that leaked into
         // a numeric context reads through to its inner value.
         ValueView::ContainerRef(cell) => to_int(&cell.lock().unwrap()),
+        ValueView::Scalar(inner) => to_int(inner),
         ValueView::Mixin(inner, _) => to_int(inner),
         ValueView::Int(i) => i,
         ValueView::BigInt(n) => {

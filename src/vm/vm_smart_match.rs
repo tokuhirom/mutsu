@@ -142,6 +142,19 @@ fn io_path_file_test_result(key: &str, negated: bool, path_str: Option<String>) 
 }
 
 pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
+    // Scalar itemization does not change a Range's smart-match value semantics.
+    // Preserve the wrapper for item/list-context decisions elsewhere, then read
+    // through it here before the Range-specific arms below.
+    if let ValueView::Scalar(inner) = left.view()
+        && inner.is_range()
+    {
+        return pure_smart_match(inner, right);
+    }
+    if let ValueView::Scalar(inner) = right.view()
+        && inner.is_range()
+    {
+        return pure_smart_match(left, inner);
+    }
     // An allomorph / numeric mixin (`<5.0>` RatStr) on the LHS compares by its
     // numeric base when the matcher is numeric: `<5.0> ~~ 5` and `<5.0> ~~ <5>`
     // are True. Guard on a numeric RHS so a Str matcher keeps the allomorph's

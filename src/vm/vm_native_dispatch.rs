@@ -24,6 +24,17 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A scalar-held Range is still a Range receiver.  Most scalar
+        // itemization is intentionally visible to renderers, but Range's
+        // native value methods (notably `int-bounds`) must dispatch on the
+        // held Range when it arrived through a plain `$` parameter.
+        let target = if target.descalarize().is_range()
+            && !matches!(method_sym.as_str(), "VAR" | "gist" | "raku" | "perl")
+        {
+            target.descalarize()
+        } else {
+            target
+        };
         let result = self.try_native_method_raw(target, method_sym, args);
         if let Some(Err(e)) = &result
             && e.is_warn()

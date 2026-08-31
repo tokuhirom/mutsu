@@ -260,6 +260,7 @@ pub(crate) fn native_method_1arg(
         }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
         "ACCEPTS" if target.is_range() => {
+            let arg = arg.descalarize();
             let result = if arg.is_range() {
                 // Range ~~ Range: subset check — delegate to pure_smart_match
                 crate::vm::vm_smart_match::pure_smart_match(arg, target).unwrap_or(false)

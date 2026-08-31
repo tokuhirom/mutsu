@@ -3694,6 +3694,14 @@ impl Interpreter {
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         let idx = self.stack.pop().unwrap_or(Value::NIL);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+        // A Range (including one held in an itemized Scalar) is Positional but
+        // immutable.  Reject a computed-target element write before the generic
+        // path treats it as a scalar to auto-vivify.
+        if target.descalarize().is_range() {
+            return Err(RuntimeError::assignment_ro_value(
+                target.descalarize().clone(),
+            ));
+        }
         let key = idx.to_string_value();
         // A single scalar index names one element, so the assignment's rvalue is
         // itemized (like a scalar-variable / named single-index assignment);
