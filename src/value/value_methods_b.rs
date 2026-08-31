@@ -268,7 +268,10 @@ impl Value {
             if !terminal && matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 return Some(elem.clone());
             }
-            let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+            let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(std::mem::replace(
+                elem,
+                Value::Nil,
+            )));
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))
         } else {

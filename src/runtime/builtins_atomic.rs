@@ -137,7 +137,7 @@ impl Interpreter {
     /// unrelated `my $i` anywhere else in the program reset the counter (see
     /// `reset_atomic_var_key_decl`). A cell cannot collide.
     fn atomic_cell_update(
-        cell: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
         f: impl FnOnce(Value) -> Result<Value, RuntimeError>,
     ) -> Result<(Value, Value), RuntimeError> {
         let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());

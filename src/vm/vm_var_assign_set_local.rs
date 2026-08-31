@@ -1578,7 +1578,7 @@ impl Interpreter {
                         _ => self
                             .mainline_lexical_cell(&effective_source)
                             .unwrap_or_else(|| {
-                                crate::gc::Gc::new(std::sync::Mutex::new(val.clone()))
+                                crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()))
                             }),
                     },
                 };
@@ -1965,6 +1965,61 @@ impl Interpreter {
             // and keeps its identity.)
             let cur = std::mem::replace(&mut self.locals[idx], Value::NIL);
             self.locals[idx] = Self::detach_shared_container(cur);
+        }
+        // A typed scalar declaration owns a scalar container even when nothing
+        // else (closure capture, `:=`, `.VAR`) would have forced boxing.  Its
+        // `of` belongs to that cell, so restoring a shadowed outer value also
+        // restores its constraint without consulting either name-keyed lane.
+        if is_vardecl
+            && !is_bind
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && !self.legacy_atomic_lane_owns(name.trim_start_matches('$'))
+            && !self.locals[idx].is_container_ref()
+            && !matches!(
+                self.locals[idx].view(),
+                ValueView::Array(..)
+                    | ValueView::BufStorage(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Set(..)
+                    | ValueView::Bag(..)
+                    | ValueView::Mix(..)
+            )
+            && let Some(constraint) = loan_env!(self, var_type_constraint(name))
+            // Only a binding with a same-named lexical shadow needs a cell to
+            // retain its own constraint.  Keeping ordinary typed locals in
+            // their existing representation preserves specialized CAS and
+            // subset-predicate paths.
+            && code.locals.iter().filter(|local| local.as_str() == name).count() > 1
+            // Aggregate/native scalar values have specialized lvalue paths
+            // which do not yet accept a scalar cell wrapper. Their own
+            // container metadata already carries the relevant constraint.
+            && !crate::runtime::native_types::is_native_int_type(&constraint)
+            && !matches!(
+                constraint.as_str(),
+                "atomicint"
+                    | "num"
+                    | "num32"
+                    | "num64"
+                    | "str"
+                    | "Array"
+                    | "Hash"
+                    | "List"
+                    | "Buf"
+                    | "Blob"
+                    | "Set"
+                    | "SetHash"
+                    | "Bag"
+                    | "BagHash"
+                    | "Mix"
+                    | "MixHash"
+            )
+        {
+            let cell =
+                crate::gc::Gc::new(crate::value::ContainerCell::new(self.locals[idx].clone()));
+            crate::value::register_container_constraint(&cell, &constraint);
+            self.locals[idx] = Value::container_ref(cell);
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();

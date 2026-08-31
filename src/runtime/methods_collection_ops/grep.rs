@@ -350,9 +350,9 @@ impl Interpreter {
                     }
                     let cell = match promoted[i].view() {
                         ValueView::ContainerRef(_) => promoted[i].clone(),
-                        _ => Value::container_ref(crate::gc::Gc::new(std::sync::Mutex::new(
-                            promoted[i].clone(),
-                        ))),
+                        _ => Value::container_ref(crate::gc::Gc::new(
+                            crate::value::ContainerCell::new(promoted[i].clone()),
+                        )),
                     };
                     promoted[i] = cell.clone();
                     shared_cells.push(cell);

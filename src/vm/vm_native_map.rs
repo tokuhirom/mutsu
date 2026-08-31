@@ -211,7 +211,7 @@ impl Interpreter {
                 // it. The existing binder already treats a bare `ContainerRef`
                 // argument as a writable lvalue (see
                 // `bind_function_args_values`), so no other plumbing is needed.
-                let cell = crate::gc::Gc::new(std::sync::Mutex::new(chunk[0].clone()));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(chunk[0].clone()));
                 let res = match self.call_sub_value(
                     block.clone(),
                     vec![Value::container_ref(cell.clone())],

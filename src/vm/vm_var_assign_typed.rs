@@ -828,14 +828,14 @@ impl Interpreter {
     /// caller falls back to the (non-atomic) smart path.
     pub(super) fn atomic_container_incdec(
         &mut self,
-        arc: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        arc: &crate::gc::Gc<crate::value::ContainerCell>,
         name: &str,
         increment: bool,
         post: bool,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let mut guard = arc.lock().unwrap();
         if matches!(guard.view(), ValueView::Instance { .. }) {
-            return false;
+            return Ok(false);
         }
         let old = self.normalize_incdec_source_with_type(name, guard.clone());
         let new_val = if increment {
@@ -843,10 +843,21 @@ impl Interpreter {
         } else {
             Self::decrement_value(&old)
         };
+        if let Some(constraint) = crate::value::lookup_container_constraint(arc)
+            && !matches!(constraint.as_str(), "Any" | "Mu")
+            && !new_val.is_nil()
+            && !self.type_matches_value(&constraint, &new_val)
+        {
+            return Err(RuntimeError::typecheck_assignment(
+                &constraint,
+                &new_val,
+                None,
+            ));
+        }
         *guard = new_val.clone();
         drop(guard);
         self.stack.push(if post { old } else { new_val });
-        true
+        Ok(true)
     }
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.

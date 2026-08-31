@@ -351,7 +351,7 @@ impl Interpreter {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(&arc, name, true, false) {
+                if self.atomic_container_incdec(&arc, name, true, false)? {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -408,7 +408,7 @@ impl Interpreter {
         // closures over this lexical observe the change and the smart string/Int
         // increment semantics are preserved (the slot holds the same Arc).
         if let ValueView::ContainerRef(arc) = val.view() {
-            if self.atomic_container_incdec(&arc, name, true, false) {
+            if self.atomic_container_incdec(&arc, name, true, false)? {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();
@@ -470,7 +470,7 @@ impl Interpreter {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(&arc, name, false, false) {
+                if self.atomic_container_incdec(&arc, name, false, false)? {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -527,7 +527,7 @@ impl Interpreter {
         // closures over this lexical observe the change and the smart string/Int
         // decrement semantics are preserved (the slot holds the same Arc).
         if let ValueView::ContainerRef(arc) = val.view() {
-            if self.atomic_container_incdec(&arc, name, false, false) {
+            if self.atomic_container_incdec(&arc, name, false, false)? {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();

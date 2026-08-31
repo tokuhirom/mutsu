@@ -21,7 +21,7 @@ impl Interpreter {
     /// The container flavours a routine can return, all of which already exist
     /// as `Value` variants:
     /// - `Proxy` — a user-written FETCH/STORE pair; STORE performs the write.
-    /// - `ContainerRef` — a shared `Gc<Mutex<Value>>` cell, which is what
+    /// - `ContainerRef` — a shared `Gc<crate::value::ContainerCell>` cell, which is what
     ///   `array_slot_ref` / `hash_slot_ref` promote an existing element to. The
     ///   cell is aliased by identity, so the write is visible through every
     ///   other reference to that element and survives COW clones of the

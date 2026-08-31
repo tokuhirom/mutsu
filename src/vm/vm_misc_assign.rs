@@ -110,7 +110,7 @@ impl Interpreter {
         // celled `@`/`%` aggregate (a `state @foo` / captured boxed container)
         // holds a `ContainerRef` — capture the cell so the store below goes
         // THROUGH it (identity + copy semantics) instead of clobbering it.
-        let mut inplace_container_cell: Option<crate::gc::Gc<std::sync::Mutex<Value>>> = None;
+        let mut inplace_container_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = None;
         let mut inplace_old_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
         let old_hash_arc = if name.starts_with('%') {
             let current = self.get_env_with_main_alias(&name).or_else(|| {
@@ -455,7 +455,7 @@ impl Interpreter {
                 && let Some(token) = current.as_ref()
                 && let Some(terminal) = token.hash_entry_terminal()
             {
-                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()));
                 terminal.insert(Value::container_ref(cell.clone()));
                 let cell_val = Value::container_ref(cell);
                 if let Some(idx) = code.locals.iter().position(|n| n == &name)

@@ -1713,7 +1713,8 @@ impl Interpreter {
                         && matches!(token.view(), ValueView::HashEntryRef { .. })
                         && let Some(terminal) = token.hash_entry_terminal()
                     {
-                        let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
+                        let cell =
+                            crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()));
                         terminal.insert(Value::container_ref(cell.clone()));
                         self.set_env_with_main_alias(&name, Value::container_ref(cell));
                         *ip += 1;
@@ -2236,7 +2237,7 @@ impl Interpreter {
                 // value (e.g. into a Pair value) and is enforced on assignment.
                 let type_name = Self::const_str(code, *type_idx).to_string();
                 let val = self.stack.pop().unwrap_or(Value::NIL);
-                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val));
                 crate::value::register_container_constraint(&cell, &type_name);
                 self.stack.push(Value::container_ref(cell));
                 *ip += 1;

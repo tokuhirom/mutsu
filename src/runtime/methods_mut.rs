@@ -349,7 +349,7 @@ impl Interpreter {
         // variable's own value — matches `needle`. Write the replacement THROUGH
         // the cell (never replace the var's value, which would sever the share)
         // so every alias of the cell observes the element write.
-        let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
+        let mut cells: Vec<crate::gc::Gc<crate::value::ContainerCell>> = Vec::new();
         for (name, value) in self.env.iter() {
             match value.view() {
                 ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(&existing, needle) => {
@@ -387,7 +387,7 @@ impl Interpreter {
         replacement: Value,
     ) {
         let mut keys: Vec<Symbol> = Vec::new();
-        let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
+        let mut cells: Vec<crate::gc::Gc<crate::value::ContainerCell>> = Vec::new();
         for (name, value) in self.env.iter() {
             match value.view() {
                 ValueView::Hash(existing) if crate::gc::Gc::ptr_eq(&existing, needle) => {

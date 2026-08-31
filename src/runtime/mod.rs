@@ -2170,7 +2170,8 @@ pub struct Interpreter {
     /// `use attributes :D/:U/:_` pragma — applies default smiley to unsmiley'd attribute type constraints.
     /// Empty string means no pragma active.
     pub(crate) attributes_pragma: String,
-    /// Variable type constraints used to enforce typed re-assignment across closures.
+    /// Legacy name-keyed bridge for EVAL and specialized compatibility paths.
+    /// Ordinary scalar enforcement lives on ContainerCell.
     var_type_constraints: HashMap<String, String>,
     /// Monotonic flag: set once any `atomicint` variable / atomic storage has been
     /// registered in this interpreter (or inherited from a parent thread). The
@@ -2188,11 +2189,8 @@ pub struct Interpreter {
     /// written (via `set_var_type_constraint`'s `env.insert` branch or
     /// `bind_param_type_constraint`). The hot `var_type_constraint` read does a
     /// `format!("__mutsu_type::{}")` + `env.get` on every variable write-back to
-    /// support env-first, block-scoped constraints (typed params shadowing
-    /// lexicals). When this flag is clear no env constraint exists, so the
-    /// name-keyed global `var_type_constraints` map is authoritative and the
-    /// `format!`+env lookup can be skipped entirely. Never cleared, so a program
-    /// that stops using env-scoped constraints still resolves correctly.
+    /// support env-first, block-scoped constraints. When this flag is clear the
+    /// name-keyed bridge is authoritative and the env lookup can be skipped.
     env_type_constraint_seen: bool,
     /// Monotonic flag: set once any sigilless-parameter alias
     /// (`__mutsu_sigilless_alias::name` env key, created when binding a `\target`

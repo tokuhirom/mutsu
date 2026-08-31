@@ -85,7 +85,7 @@ impl Interpreter {
             let Some(terminal) = token.hash_entry_terminal() else {
                 return false;
             };
-            let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
+            let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val));
             terminal.insert(Value::container_ref(cell.clone()));
             cell
         } else {

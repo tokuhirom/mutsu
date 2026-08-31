@@ -1486,7 +1486,7 @@ impl Interpreter {
                                 .filter(|s| s.starts_with('@') || s.starts_with('%'))
                         {
                             bound_value = Value::container_ref(crate::gc::Gc::new(
-                                std::sync::Mutex::new(bound_value),
+                                crate::value::ContainerCell::new(bound_value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
                         }
@@ -1542,7 +1542,7 @@ impl Interpreter {
                                             bound_value
                                         } else {
                                             Value::container_ref(crate::gc::Gc::new(
-                                                std::sync::Mutex::new(bound_value),
+                                                crate::value::ContainerCell::new(bound_value),
                                             ))
                                         };
                                         self.env.insert(src, cell.clone());
@@ -2344,7 +2344,7 @@ impl Interpreter {
                             && (source_name.starts_with('@') || source_name.starts_with('%'))
                         {
                             value = Value::container_ref(crate::gc::Gc::new(
-                                std::sync::Mutex::new(value),
+                                crate::value::ContainerCell::new(value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
                         }
@@ -2375,7 +2375,7 @@ impl Interpreter {
                                         value
                                     } else {
                                         Value::container_ref(crate::gc::Gc::new(
-                                            std::sync::Mutex::new(value),
+                                            crate::value::ContainerCell::new(value),
                                         ))
                                     };
                                     self.env.insert(cell_key, cell.clone());

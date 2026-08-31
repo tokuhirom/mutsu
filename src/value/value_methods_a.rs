@@ -513,7 +513,10 @@ impl Value {
     /// intermediate hashes), so the hash entry and every holder of the cell
     /// alias the same container from then on. A plain `clone_from` would
     /// overwrite the token and silently drop the hash alias.
-    pub(crate) fn store_through_cell(arc: &crate::gc::Gc<Mutex<Value>>, val: &Value) {
+    pub(crate) fn store_through_cell(
+        arc: &crate::gc::Gc<crate::value::ContainerCell>,
+        val: &Value,
+    ) {
         let mut inner = arc.lock().unwrap();
         if matches!(inner.view(), ValueView::HashEntryRef { .. })
             && let Some(terminal) = inner.hash_entry_terminal()
@@ -561,7 +564,7 @@ impl Value {
 
     /// Create a new shared container holding this value.
     pub fn into_container_ref(self) -> Value {
-        Value::ContainerRef(crate::gc::Gc::new(Mutex::new(self)))
+        Value::ContainerRef(crate::gc::Gc::new(crate::value::ContainerCell::new(self)))
     }
 
     /// Assign `val` into an array/hash element `slot`. When the slot already
@@ -669,7 +672,9 @@ impl Value {
                     if matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                         return Some(elem.clone());
                     }
-                    let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
+                        std::mem::replace(elem, Value::Nil),
+                    ));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }
@@ -721,7 +726,9 @@ impl Value {
                         // `HashEntryRef` back-reference needed).
                         return Some(elem.clone());
                     }
-                    let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
+                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
+                        std::mem::replace(elem, Value::Nil),
+                    ));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }

@@ -758,7 +758,7 @@ impl Interpreter {
     /// indefinite-length array).
     pub(super) fn cell_store_preserving_container_identity(
         name: &str,
-        arc: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        arc: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) {
         let is_anon_container = name.contains("__ANON");

@@ -296,9 +296,6 @@ impl Interpreter {
         None
     }
 
-    /// Fast type constraint lookup — only checks the `var_type_constraints` HashMap,
-    /// skipping the `format!("__mutsu_type::...")` + env lookup. Used by the SetLocal
-    /// fast path for simple scalar variables where the env-based constraint is never set.
     pub(crate) fn var_type_constraint_fast(&self, name: &str) -> Option<&String> {
         self.var_type_constraints.get(name)
     }

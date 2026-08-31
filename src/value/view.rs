@@ -125,8 +125,8 @@ pub enum ValueView<'a> {
     CustomType(&'a CustomTypeData),
     CustomTypeInstance(&'a CustomTypeInstanceData),
     Scalar(&'a Value),
-    ContainerRef(GcRef<'a, Mutex<Value>>),
-    ContainerView(GcRef<'a, Mutex<Value>>),
+    ContainerRef(GcRef<'a, crate::value::ContainerCell>),
+    ContainerView(GcRef<'a, crate::value::ContainerCell>),
     LazyThunk(ArcRef<'a, LazyThunkData>),
     HashEntryRef {
         root: &'a crate::value::EntryRoot,
@@ -274,13 +274,13 @@ impl Value {
 
     /// Construct a `ContainerRef` cell value from an existing cell.
     #[inline]
-    pub(crate) fn container_ref(cell: Gc<Mutex<Value>>) -> Self {
+    pub(crate) fn container_ref(cell: Gc<crate::value::ContainerCell>) -> Self {
         Value::ContainerRef(cell)
     }
 
     /// Construct an explicit `.VAR` view of an existing container cell.
     #[inline]
-    pub(crate) fn container_view(cell: Gc<Mutex<Value>>) -> Self {
+    pub(crate) fn container_view(cell: Gc<crate::value::ContainerCell>) -> Self {
         Value::ContainerView(cell)
     }
 

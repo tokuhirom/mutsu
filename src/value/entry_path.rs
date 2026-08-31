@@ -29,7 +29,6 @@
 
 use super::{ArrayData, HashData, Value, ValueView};
 use crate::gc::Gc;
-use std::sync::Mutex;
 
 /// What a deferred vivification path is anchored to.
 ///
@@ -50,7 +49,7 @@ pub(crate) enum EntryRoot {
     /// An array the first step indexes into.
     Array(Gc<ArrayData>),
     /// A shared scalar cell; the first step's container is created *inside* it.
-    Cell(Gc<Mutex<Value>>),
+    Cell(Gc<crate::value::ContainerCell>),
 }
 
 /// One step of a deferred vivification path.
