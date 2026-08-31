@@ -266,6 +266,117 @@ impl Interpreter {
         installed
     }
 
+    /// Snapshot the lexical variables a class method closes over at its
+    /// declaration site.  Class registration stores a `MethodDef`, rather than
+    /// a `SubData`, so it does not otherwise go through `capture_closure_env`.
+    /// In particular, a `my` declared in a routine body can exist only in that
+    /// frame's local-slot store when the class is registered.
+    pub(crate) fn capture_declared_method_envs(
+        &mut self,
+        code: &CompiledCode,
+        class: &str,
+        outer_lexical_slots: &[(Symbol, u32)],
+    ) {
+        let method_codes: Vec<(std::sync::Arc<CompiledCode>, Vec<Symbol>)> = {
+            let registry = self.registry();
+            registry
+                .owner_method_names(class)
+                .into_iter()
+                .flat_map(|name| {
+                    registry
+                        .user_method_overloads(class, &name.resolve())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|def| {
+                            (def.role_origin.is_none())
+                                .then(|| def.compiled_code.clone())
+                                .flatten()
+                                .map(|code| {
+                                    let compiler = crate::compiler::Compiler::new();
+                                    let signature_reads =
+                                        compiler.decl_time_param_free_var_syms(&def.param_defs);
+                                    (code, signature_reads)
+                                })
+                        })
+                })
+                .collect()
+        };
+        let mut captures: std::collections::HashMap<usize, Vec<Env>> =
+            std::collections::HashMap::new();
+        for (method_code, signature_reads) in method_codes {
+            let mut capture_syms = method_code.free_var_syms.clone();
+            for sym in signature_reads {
+                if !capture_syms.contains(&sym) {
+                    capture_syms.push(sym);
+                }
+            }
+            // The method compiler is deliberately independent of its enclosing
+            // scope. Restrict its free reads to lexicals actually in scope at
+            // this class declaration, rather than guessing from every slot in
+            // this chunk: a class static or later `$x` must not replace the
+            // method's normal environment.
+            capture_syms.retain(|sym| outer_lexical_slots.iter().any(|(outer, _)| outer == sym));
+            if capture_syms.is_empty() {
+                continue;
+            }
+            // A class may be used before its declaring routine returns, so this
+            // is a live lexical capture, not merely an escaping-value snapshot.
+            // Put each directly-owned captured slot in a shared cell before the
+            // method environment takes its copy; later stores in the routine and
+            // reads/writes through the method then keep one container.
+            let capture_slots: Vec<(Symbol, usize)> = capture_syms
+                .iter()
+                .filter_map(|sym| {
+                    outer_lexical_slots
+                        .iter()
+                        .find(|(outer, _)| outer == sym)
+                        .map(|(_, slot)| (*sym, *slot as usize))
+                })
+                .collect();
+            for (_, slot) in &capture_slots {
+                self.box_decl_local_cell(code, *slot);
+            }
+            let mut env = Env::new();
+            // Declaration-time parameter expressions are evaluated from their
+            // AST, not from bytecode. Keep their reads in the method capture
+            // even when an older/on-demand compiled body did not fold them into
+            // `free_var_syms` yet.
+            for (sym, slot) in &capture_slots {
+                if let Some(value) = self.locals.get(*slot) {
+                    env.insert_sym(*sym, value.clone());
+                }
+            }
+            let declared_method_capture = Symbol::intern("__mutsu_declared_method_capture");
+            env.insert_sym(declared_method_capture, Value::int(1));
+            env.retain(|sym, _| {
+                *sym == declared_method_capture
+                    || (capture_syms.contains(sym)
+                        && sym.with_str(crate::env::is_plain_user_lexical))
+            });
+            if !env.is_empty() {
+                captures
+                    .entry(std::sync::Arc::as_ptr(&method_code) as usize)
+                    .or_default()
+                    .push(env);
+            }
+        }
+        if captures.is_empty() {
+            return;
+        }
+        self.registry_mut().map_user_methods_in_place(
+            crate::symbol::Symbol::intern(class),
+            |def| {
+                let Some(method_code) = &def.compiled_code else {
+                    return;
+                };
+                let key = std::sync::Arc::as_ptr(method_code) as usize;
+                if let Some(env) = captures.get_mut(&key).and_then(Vec::pop) {
+                    def.captured_env = Some(env);
+                }
+            },
+        );
+    }
+
     pub(super) fn exec_make_anon_sub_op(
         &mut self,
         code: &CompiledCode,

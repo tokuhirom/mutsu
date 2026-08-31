@@ -233,6 +233,11 @@ impl Compiler {
         } else {
             None
         };
+        let method_outer_lexical_slots = self
+            .local_map
+            .iter()
+            .map(|(name, slot)| (crate::symbol::Symbol::intern(name), *slot))
+            .collect();
         // Class-body methods auto-detect a bare `@_` read the way
         // `class_body_method_decl` does (`apply_auto_positional_slurpy:
         // true`); `is_hidden` gates the implicit `*%_` the same way too.
@@ -252,6 +257,7 @@ impl Compiler {
             method_name_chunks,
             parent_arg_chunks,
             method_compiled_keys,
+            method_outer_lexical_slots,
             body_plan,
         )
     }

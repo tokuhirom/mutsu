@@ -37,6 +37,26 @@ impl Interpreter {
                 self.env.insert(name.clone(), value.clone());
             }
         }
+        // A declared class method can close over the routine that registered
+        // its class. Candidate matching evaluates `where` constraints before
+        // the method call installs its bytecode environment, so make the
+        // captured lexical scope available here as well.
+        if let Some(captured) = &def.captured_env {
+            let authoritative = captured.contains_key_sym(crate::symbol::Symbol::intern(
+                "__mutsu_declared_method_capture",
+            ));
+            for (sym, value) in captured.iter() {
+                if !sym.with_str(|name| {
+                    matches!(
+                        name,
+                        "self" | "?CLASS" | "?ROLE" | "__mutsu_declared_method_capture"
+                    )
+                }) && (authoritative || !self.env.contains_key_sym(*sym))
+                {
+                    self.env.insert_sym(*sym, value.clone());
+                }
+            }
+        }
         for pd in &def.param_defs {
             if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
                 continue;

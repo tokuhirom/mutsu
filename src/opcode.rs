@@ -3050,6 +3050,10 @@ pub(crate) struct CompiledClassDeclPlan {
     /// reads a clone by position instead of calling `CompiledMethodDecl::from_stmt`
     /// on the raw statement every time the class declaration executes.
     pub(crate) method_decls: Vec<CompiledMethodDecl>,
+    /// Lexicals visible in the enclosing frame at this declaration site.
+    /// Method compilation uses a fresh scope, so this distinguishes genuine
+    /// outer lexicals from class-body statics and lexicals declared later.
+    pub(crate) method_outer_lexical_slots: Vec<(Symbol, u32)>,
     /// Names the class body `my`/`state`-declares at its own top level
     /// (ADR-0019 D6-1), precomputed at plan lowering instead of
     /// `persist_class_body_statics` re-walking the raw body on every
@@ -7311,6 +7315,7 @@ impl CompiledCode {
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
         method_compiled_keys: Vec<Option<Symbol>>,
+        method_outer_lexical_slots: Vec<(Symbol, u32)>,
         body_plan: Vec<ClassBodyOp>,
     ) -> u32 {
         let Stmt::ClassDecl {
@@ -7372,6 +7377,7 @@ impl CompiledCode {
             attr_decls,
             method_name_chunks,
             method_decls,
+            method_outer_lexical_slots,
             declared_static_names,
             parent_arg_chunks,
             body_plan,
