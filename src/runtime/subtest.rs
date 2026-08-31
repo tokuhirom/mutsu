@@ -397,6 +397,26 @@ impl Interpreter {
             supply_val
         };
 
+        // A `Proc::Async` merge is a live stream, not a replayable output
+        // buffer.  Registering `whenever` after `.start` loses a race with the
+        // child, so match Rakudo's TapBeforeSpawn diagnosis at registration
+        // time.  This path bypasses Supply.tap while setting up `react`.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = supply_val.view()
+            && class_name == "Supply"
+            && crate::runtime::native_methods::proc_async_merged_supply_started(
+                &attributes.as_map(),
+            )
+        {
+            return Err(crate::runtime::native_proc_async::proc_async_error(
+                "X::Proc::Async::TapBeforeSpawn",
+                &[("handle", Value::str_from("merge"))],
+            ));
+        }
+
         let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
         // The `supply` block this `whenever` is written in — its body is what is
         // running right now, so this is unambiguous. Stamped onto every callback

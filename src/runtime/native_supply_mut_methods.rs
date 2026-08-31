@@ -42,6 +42,16 @@ impl Interpreter {
                 Ok((Value::NIL, attrs))
             }
             "tap" | "act" => {
+                // Unlike per-stream Proc::Async accessors, a merged Supply can
+                // be fetched before `.start()`.  Its prohibition is therefore
+                // at tap time: registering after start would silently miss
+                // output the child already wrote.
+                if crate::runtime::native_methods::proc_async_merged_supply_started(&attrs) {
+                    return Err(crate::runtime::native_proc_async::proc_async_error(
+                        "X::Proc::Async::TapBeforeSpawn",
+                        &[("handle", Value::str_from("merge"))],
+                    ));
+                }
                 let mut tap_cb = Self::positional_value(&args, 0)
                     .cloned()
                     .unwrap_or(Value::NIL);

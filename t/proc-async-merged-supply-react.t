@@ -9,7 +9,7 @@ use Test;
 # so nothing here pins either; what is pinned is that every byte arrives, exactly
 # once, and that the stream is properly ended.
 
-plan 13;
+plan 17;
 
 # 1. The headline case: the bare `whenever $proc` coercion.
 {
@@ -20,6 +20,44 @@ plan 13;
         whenever $proc.start { }
     }
     is $got, "merged-hello\n", 'whenever $proc in react receives the merged output';
+}
+
+# 2b. A Proc::Async merge may be obtained before spawn, but it must be tapped
+# before spawn.  The diagnosis is at registration time, including the
+# `whenever $proc` coercion path that bypasses `Supply.tap`.
+{
+    my $proc = Proc::Async.new('true');
+    my $p = $proc.start;
+    my $err = '';
+    try {
+        react {
+            whenever $proc { }
+            whenever $p { }
+        }
+        CATCH { default { $err = $_ } }
+    }
+    isa-ok $err, X::Proc::Async::TapBeforeSpawn,
+        'whenever a started Proc::Async merge throws TapBeforeSpawn';
+    is $err.message,
+        'To avoid data races, you must tap merge before running the process',
+        'the merged-whenever error names merge';
+}
+
+{
+    my $proc = Proc::Async.new('true');
+    my $s = $proc.Supply;
+    my $p = $proc.start;
+    my $err = '';
+    try {
+        $s.tap({ });
+        CATCH { default { $err = $_ } }
+    }
+    isa-ok $err, X::Proc::Async::TapBeforeSpawn,
+        'a merged Supply fetched early still rejects a late direct tap';
+    is $err.message,
+        'To avoid data races, you must tap merge before running the process',
+        'the late direct tap error names merge';
+    await $p;
 }
 
 # 2. The same thing with the coercion written out by hand.

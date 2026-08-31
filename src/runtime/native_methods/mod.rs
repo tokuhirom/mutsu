@@ -37,8 +37,9 @@ pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id,
 // (`crate::vm::vm_react_loop`): the supplier registry accessors it polls.
 pub(in crate::runtime) use state::{
     UdpBoundSocketState, discard_supply_channel, get_supply_collected_output, get_supply_enc,
-    get_supply_quit_taps, get_supply_taps, is_supply_live_tapped, mark_supply_live_tapped,
-    mark_supply_replayed, next_async_socket_id, next_supply_id, proc_stdin_map,
+    get_supply_quit_taps, get_supply_taps, is_supply_live_tapped,
+    mark_proc_async_merged_supply_started, mark_supply_live_tapped, mark_supply_replayed,
+    next_async_socket_id, next_supply_id, proc_async_merged_supply_started, proc_stdin_map,
     register_promise_combinator_sources, register_supply_quit_tap, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output,
     set_supply_enc, supplier_done_deferred, supplier_emit, supplier_id_from_attrs,
