@@ -338,6 +338,17 @@ impl Interpreter {
         // early return AND keep the non-container hot path move-only (into_deref is
         // never reached for non-ContainerRef values).
         if val.is_container_ref() {
+            // A deferred array entry carried by a bound slice lives inside a
+            // temporary cell until its first write. In value context unwrap it
+            // one more step so callers see the array hole, while lvalue context
+            // keeps the cell for `store_through_cell` to materialize.
+            if !keep_deferred_entry {
+                let inner = val.with_deref(|inner| inner.clone());
+                if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
+                    self.stack.push(inner.hash_entry_read());
+                    return Ok(());
+                }
+            }
             // In container mode, an EMPTY cell is a live link of the lvalue
             // chain, not a value: `my @a; my $x := @a[0]; my $y := $x<k>`
             // promoted the array hole to a cell holding `Any`, and dereferencing

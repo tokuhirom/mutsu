@@ -46,7 +46,10 @@ impl Interpreter {
         }
         let cells: Vec<Value> = match holder.view() {
             ValueView::Array(items, ..)
-                if !items.is_empty() && items.iter().all(Value::is_container_ref) =>
+                if !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|v| v.is_container_ref() || v.is_hash_entry_ref_value()) =>
             {
                 items.iter().cloned().collect()
             }
@@ -62,7 +65,11 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
             if let ValueView::ContainerRef(cell) = cell_val.view() {
-                cell.lock().unwrap().clone_from(&v);
+                Value::store_through_cell(&cell, &v);
+            } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
+                Value::store_through_cell(&cell, &v);
+                holder.array_set_in_place(i, Value::container_ref(cell));
             }
         }
         Some(Ok(()))
@@ -714,7 +721,9 @@ impl Interpreter {
                 Some(ValueView::Bool(true))
             )
             && let ValueView::Array(items, ..) = self.locals[idx].view()
-            && items.iter().any(Value::is_container_ref)
+            && items
+                .iter()
+                .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
         {
             let cells: Vec<Value> = items.iter().cloned().collect();
             let rhs_vals = self.assignment_rhs_values(&raw_popped)?;
@@ -724,7 +733,16 @@ impl Interpreter {
                         .get(i)
                         .cloned()
                         .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
-                    *cell.lock().unwrap() = v;
+                    Value::store_through_cell(&cell, &v);
+                } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
+                    let v = rhs_vals
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                    let cell =
+                        crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
+                    Value::store_through_cell(&cell, &v);
+                    self.locals[idx].array_set_in_place(i, Value::container_ref(cell));
                 }
             }
             return Ok(());
@@ -1113,7 +1131,8 @@ impl Interpreter {
             }
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
             // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
-            // cells from the bind-time slice promotion (`vm_var_index_ops.rs`).
+            // cells or deferred entry tokens from the bind-time slice promotion
+            // (`vm_var_index_ops.rs`).
             // This marker is the ONLY safe trigger for the write-through
             // behavior in `vm_var_assign_local.rs`/this file's non-bind path —
             // "elements are cells" alone is NOT a safe signal, since unrelated
@@ -1123,7 +1142,9 @@ impl Interpreter {
             if is_bind
                 && name.starts_with('@')
                 && let ValueView::Array(items, ..) = assigned.view()
-                && items.iter().any(Value::is_container_ref)
+                && items
+                    .iter()
+                    .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
             {
                 self.env_mut()
                     .insert(Self::bound_array_slice_marker_key(name), Value::TRUE);

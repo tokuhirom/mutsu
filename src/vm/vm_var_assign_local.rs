@@ -118,7 +118,9 @@ impl Interpreter {
                 Some(ValueView::Bool(true))
             )
             && let ValueView::Array(items, ..) = self.locals[idx].view()
-            && items.iter().any(Value::is_container_ref)
+            && items
+                .iter()
+                .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
         {
             let cells: Vec<Value> = items.iter().cloned().collect();
             let rhs_vals = self.assignment_rhs_values(&raw_val)?;
@@ -129,7 +131,12 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
                 if let ValueView::ContainerRef(cell) = cell_val.view() {
-                    *cell.lock().unwrap() = v.clone();
+                    Value::store_through_cell(&cell, &v);
+                } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
+                    let cell =
+                        crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
+                    Value::store_through_cell(&cell, &v);
+                    self.locals[idx].array_set_in_place(i, Value::container_ref(cell));
                 }
                 result.push(v);
             }

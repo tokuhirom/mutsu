@@ -489,6 +489,9 @@ fn raku_value_as_element(v: &Value) -> String {
             let inner = cell.lock().unwrap().clone();
             raku_value_as_element(&inner)
         }
+        // An out-of-range `:=`-bound slice element is a deferred entry token.
+        // Render its read-only hole value, never the implementation token.
+        ValueView::HashEntryRef { .. } => raku_value_as_element(&v.hash_entry_read()),
         _ => raku_value(v),
     }
 }
@@ -600,6 +603,7 @@ pub fn raku_value(v: &Value) -> String {
             let inner = cell.lock().unwrap().clone();
             raku_value(&inner)
         }
+        ValueView::HashEntryRef { .. } => raku_value(&v.hash_entry_read()),
         ValueView::Array(items, kind) => {
             // Lazy arrays should not be materialized
             if kind == crate::value::ArrayKind::Lazy {

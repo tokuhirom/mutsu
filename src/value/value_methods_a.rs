@@ -486,7 +486,13 @@ impl Value {
     /// Non-ContainerRef values are cloned as-is. Use [`Value::with_deref`] instead
     /// when you only need to read the inner value (it avoids the clone).
     pub fn deref_container(&self) -> Value {
-        self.with_deref(Value::clone)
+        self.with_deref(|inner| {
+            if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
+                inner.hash_entry_read()
+            } else {
+                inner.clone()
+            }
+        })
     }
 
     /// Owned counterpart of [`Value::deref_container`]: read through a
