@@ -7,6 +7,14 @@ called for **did** land (`src/vm/vm_element_producers.rs`, 2026-08-27) and carri
 `.values`/`.reverse`/`.sort` for ADR-0045 slice 4. `.pairs` was implemented, measured, and backed out
 of the routing list. Rows 3, 4 and 9 of ADR-0036 §1.3 stay `todo`-marked.
 
+### Deep triage — 2026-08-31
+
+This requires a new Pair-value read-boundary decision, owned by ADR-0036's deferred `.pairs` slice.
+The needed distinction between data reads, lvalue reads, and `.VAR` cannot be safely established by
+changing the producer or auditing a small fixed set of consumers: structural Pair destructuring spans
+the coercion layer and any promoted source can reach it. Keep `.pairs` unrouted until that decision
+defines the shared accessor/view and its migration scope.
+
 ## What happens
 
 Routing `.pairs` makes it hand out Pairs whose value is the element's own `Scalar` container. Every

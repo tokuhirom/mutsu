@@ -44,7 +44,7 @@ direct-mutation case (`$_ .= uc for @$hdr` — Text::CSV's header munge) and onl
 one.
 
 This is the same *class* as
-`todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md` — a promoted value
+`todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md` — a promoted value
 reaching code that **type-tests** it rather than reads it — but a different boundary (`nqp::` ops
 rather than Pair-value destructuring), so it wants its own audit.
 

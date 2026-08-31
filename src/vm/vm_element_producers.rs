@@ -52,7 +52,7 @@ use super::*;
 /// route. It needs a read chokepoint for a Pair's value, which conflicts with
 /// ADR-0036 row 6 (`(@a[0]:p).value.VAR.^name` must be `Scalar`) and so wants
 /// its own decision. Tracked in
-/// `todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md`.
+/// `todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md`.
 /// `.values`/`.reverse`/`.sort` do not have the problem: they hand out a flat
 /// list of cells, and list consumers decontainerize.
 ///
