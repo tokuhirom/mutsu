@@ -1603,7 +1603,7 @@ impl Value {
         Value::from_repr(ValueRepr::ContainerRef(cell))
     }
     #[inline]
-    pub(in crate::value) fn ContainerView(cell: Gc<Mutex<Value>>) -> Value {
+    pub(in crate::value) fn ContainerView(cell: Gc<crate::value::ContainerCell>) -> Value {
         Value::from_repr(ValueRepr::ContainerView(cell))
     }
     #[inline]

@@ -280,7 +280,7 @@ impl Value {
 
     /// Construct an explicit `.VAR` view of an existing container cell.
     #[inline]
-    pub(crate) fn container_view(cell: Gc<Mutex<Value>>) -> Self {
+    pub(crate) fn container_view(cell: Gc<crate::value::ContainerCell>) -> Self {
         Value::ContainerView(cell)
     }
 
