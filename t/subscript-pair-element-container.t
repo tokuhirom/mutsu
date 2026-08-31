@@ -23,7 +23,7 @@ use Test;
 #                               through it. `.pairs` itself is DEFERRED: a Pair
 #                               holding a cell leaks through the many consumers
 #                               that destructure a pair's value as data --
-#                               todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md.
+#                               todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md.
 #                               `.antipairs` is deliberately NOT routed: it puts
 #                               the element in the pair's KEY, and a pair key is
 #                               never a container in raku (measured below).
@@ -75,7 +75,7 @@ plan 34;
     my @a = <A B>;
     my $p = @a.pairs[0];
     @a[0] = "Q";
-    todo 'row 3 needs .pairs routed -- deferred, see todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md';
+    todo 'row 3 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is $p.value, "Q", '.pairs pair value tracks a later array write (row 3)';
 }
 
@@ -84,7 +84,7 @@ plan 34;
     my %h = a => 1;
     my $p = %h.pairs[0];
     %h<a> = 7;
-    todo 'row 4 needs .pairs routed -- deferred, see todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md';
+    todo 'row 4 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is $p.value, 7, '.pairs pair value tracks a later hash write (row 4)';
 }
 
@@ -116,7 +116,7 @@ plan 34;
 }
 {
     my @a = <A B>;
-    todo '.pairs routing deferred -- see todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md';
+    todo '.pairs routing deferred -- see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is @a.pairs[0].value.VAR.^name, 'Scalar', '.pairs pair.value is a Scalar container';
 }
 
@@ -156,7 +156,7 @@ plan 34;
     my @a = <A B>;
     my @c = <A B>;
     for @a.pairs -> $p { $p.value = "y" }
-    todo 'row 9 needs .pairs routed -- deferred, see todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md';
+    todo 'row 9 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is-deeply @a, ["y", "y"], 'for @a.pairs writes through even with an equal sibling array (row 9)';
 }
 

@@ -355,7 +355,7 @@ BagHash-from-pairs collapsing every weight to 1 (`roast/S03-metaops/infix.t`, 39
 places, with no accessor to route. `.values`/`.reverse`/`.sort` do not have the problem: they hand
 out a *flat list* of cells, and list consumers decontainerize. It is specifically the **Pair
 wrapper** that carries a cell into code that reads it structurally. Tracked in
-`todo/tickets/pairs-element-containers-leak-through-pair-value-consumers.md`.
+`todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md`.
 
 **This revises §5 Q4's answer.** `resolve_array_entry` is the only chokepoint for *element* reads,
 but bulk iteration (`h.iter()`, `items.iter()`) and `ValueView::Pair(k, v)` destructuring walk the
