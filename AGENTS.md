@@ -1,112 +1,96 @@
-# Repository Guidelines
+# Repository Guidelines for Codex
 
-## Repository Knowledge
-- Before planning or changing code, read `CLAUDE.md` in full. It is the repository's living
-  development knowledge base and its architecture, testing, debugging, planning, and PR workflow
-  guidance applies to Codex as well as Claude.
-- Re-read the task-relevant sections and linked ADRs or design documents before acting; do not rely
-  only on this shorter file.
-- If `AGENTS.md` and `CLAUDE.md` conflict, follow `AGENTS.md`. Adapt instructions that name
-  Claude-specific tools to the equivalent tools available in the current environment.
+`mutsu` is a Rust implementation of a Raku compatibility interpreter. Repository
+artifacts (code, tests, documentation, commits, and PR text) must be in English.
 
-## Project Structure & Module Organization
-`mutsu` is a Rust-based Raku compatibility interpreter.
+## Start Here
 
-- `src/`: core implementation.
-- `src/parser/`, `src/compiler/`, `src/vm/`, `src/runtime/`: main execution pipeline.
-- `src/builtins/` and `src/value/`: built-in behavior and value/type handling.
-- `t/`: primary TAP-style integration tests (`*.t`) run with `prove`.
-- `tests/`: additional TAP test files used by Rust test flows.
-- `docs/`: internal design and parser/GC notes.
-- `roast/`, `raku-doc/`, `old-design-docs/`: git submodules used as spec/reference material.
+Before planning or changing code, read this file in full and then read the
+task-relevant primary material: the selected todo item, its linked ADRs and
+design documents, and the affected code/tests. Re-check ADR status lines rather
+than relying on an old ticket's description.
 
-## Build, Test, and Development Commands
-- `cargo build`: compile the interpreter (`target/debug/mutsu`).
-- `cargo test`: run Rust unit/integration tests.
-- `make test`: run `cargo test`, build, then execute local TAP tests in `t/`.
-- `make roast`: run whitelisted upstream roast tests from `roast-whitelist.txt`.
-- `cargo fmt --all`: format Rust code.
-- `cargo clippy -- -D warnings`: lint with warnings treated as errors.
+For a request to implement a file in `todo/tickets/`, use the
+`mutsu-ticket-flow` skill. It defines the required lifecycle through a verified
+merge and selection of the next ticket.
 
-If submodules are missing, run:
-`git submodule update --init --recursive`
+## Architecture
 
-## Coding Style & Naming Conventions
-- Follow `rustfmt` defaults (4-space indentation, standard Rust formatting).
-- Keep clippy clean; CI enforces `-D warnings`.
-- Use `snake_case` for Rust modules/functions/files, `CamelCase` for types/traits, `SCREAMING_SNAKE_CASE` for constants.
-- Name TAP tests in `t/` as descriptive `kebab-case.t` (for example, `statement-modifiers.t`).
+The execution pipeline is Parser -> Compiler -> VM. Implement language features
+as parser/compiler/VM behavior. Do not add a new interpreter or runtime
+slow-path fallback from VM code (including calls such as
+`call_method_with_values`, `run_instance_method`, or `eval_block`); existing
+fallbacks are debt, not a precedent. Prefer an opcode plus compiler and VM
+support when an operation needs new execution behavior.
 
-## Trust the Main Branch
-- The `main` branch is protected by GitHub branch protection — only code that passes CI is merged.
-- **Never** check whether a failing test also fails on `main`. If `make test` or `make roast` fails on your feature branch, the problem is in your changes. Do not waste time or resources switching to `main` to "verify".
+Key directories:
 
-## Architecture: No New Interpreter Fallbacks
+- `src/parser/`, `src/compiler/`, `src/vm/`: execution pipeline.
+- `src/builtins/`, `src/value/`: native behavior and values.
+- `src/runtime/`: remaining dispatch/runtime machinery.
+- `t/`: local TAP integration tests.
+- `tests/`: Rust-driven TAP tests.
+- `roast/`: read-only upstream specification tests.
+- `docs/adr/`: architectural decisions; read applicable ADRs before changing
+  their area.
+- `todo/`: work queue. `tickets/` contains self-contained slices; `deep/`
+  contains work that needs architectural design or a broader campaign.
 
-The execution pipeline is: Parser → Compiler → VM. The tree-walking `Interpreter` (`runtime/`) is **legacy code being eliminated**.
+Do not implement ecosystem modules as native replacements. Grow the interpreter
+so vendored upstream modules run unchanged, unless the user explicitly approves
+an exception. Do not confuse helpers supplied by a test module with Raku core
+builtins; verify core routines against both a bare `raku` invocation and the
+Raku documentation.
 
-**Do NOT add new calls from VM code to interpreter methods.** This includes:
-- `interpreter.call_method_with_values()`
-- `interpreter.run_instance_method()`
-- `interpreter.eval_block()`
-- Any other `self.interpreter.*` call from `src/vm/*.rs`
+## Development and Tests
 
-**Why:** Duplicating logic between VM and interpreter causes:
-- AI agents to be confused about which path to modify
-- Bugs where one path is fixed but the other isn't
-- Performance overhead from crossing the VM/interpreter boundary
+- `cargo build`: build `target/debug/mutsu`.
+- `cargo test`: Rust tests.
+- `make test`: Rust tests, build, and local TAP tests; its log is
+  `tmp/make-test.log`.
+- `make roast`: whitelisted roast tests; its log is `tmp/make-roast.log`.
+- `cargo fmt --all`: format Rust.
+- `cargo clippy -- -D warnings`: lint with warnings denied.
 
-**Instead:** Implement new features by:
-1. Adding bytecode opcodes in `src/opcode.rs`
-2. Compiling to those opcodes in `src/compiler/`
-3. Executing them in `src/vm/`
+Add a focused regression test for each behavior change, normally under `t/`.
+Run a targeted test while iterating. Before publishing a code PR, run
+`cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and `make roast`
+once each. After either full command runs, inspect its saved log rather than
+rerunning it; never rerun the same full command in one work session. A failing
+full test belongs to the branch: diagnose it and use only the smallest targeted
+check for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
 
-Existing interpreter fallbacks are technical debt. When you encounter one while fixing a bug, consider migrating it to pure VM code if feasible.
+For an individual roast test, use `MUTSU_FUDGE=1`; do not set that variable for
+ordinary Raku programs. Do not modify `roast/`, `raku-doc/`, or other upstream
+submodules. Initialize missing submodules with
+`git submodule update --init --recursive`.
 
-## Testing Guidelines
-- Add or update tests for every behavior change, especially parser/runtime fixes.
-- Prefer targeted TAP regression tests in `t/` for language behavior changes.
-- Run `make test` before opening a PR; run `make roast` when touching spec-facing behavior.
-- **Test log files**: `make test` and `make roast` save their full output to `tmp/make-test.log` and `tmp/make-roast.log` respectively. **After running tests, always grep the log file instead of re-running the test command.** Do NOT re-run `make test` or `make roast` just to search the output.
-- **Never re-run a full test command in the same work session.** This prohibition also applies when
-  the first run failed because of sandbox permissions, cache permissions, infrastructure, or an
-  apparently unrelated/flaky test. Diagnose the saved log, run only the smallest targeted check if
-  further evidence is essential, and leave the full retry to CI. Do not request elevated permissions
-  merely to repeat `make test` or `make roast`.
-- Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
-- No fixed coverage threshold is configured; rely on regression-focused test additions.
+Use rustfmt defaults and standard Rust naming (`snake_case` functions/modules,
+`CamelCase` types, `SCREAMING_SNAKE_CASE` constants). Avoid unrelated rewrites,
+hardcoded outputs, stubs, and early-return test workarounds. Use ephemeral test
+files only under the gitignored `tmp/` directory.
 
-## Commit & Pull Request Guidelines
-- Use short, imperative commit subjects; optional scope prefixes are common (for example, `parser: accept ...`, `compiler: add ...`, `Fix ...`).
-- Keep commits focused on one logical change.
-- Do not commit directly to `main`; create a feature branch and open a pull request.
-- Write repository artifacts in English, including commit messages, PR titles/descriptions, documentation, and code comments.
-- Before pushing or opening a PR, always run `cargo fmt --all` and `cargo clippy -- -D warnings`.
-- **Do not open a PR until both `make test` and `make roast` have completed successfully on the branch.** A targeted test run, partial log, timeout, or CI-only run is not a substitute. If either command fails, fix the failure before publishing the PR.
-- PRs should include: concise problem statement, approach, and test evidence (`make test` / `make roast` results).
-- Link related issues/PRs when applicable (for example, `(#150)`).
-- Ensure CI passes format, clippy, unit tests, TAP tests, and roast checks before merge.
-- After completing and validating an implementation, proactively create and publish its PR without
-  waiting for a separate user request. Treat PR publication as part of finishing the implementation
-  unless the user explicitly asks to keep the changes local.
-- When asked to open a PR, create it as **ready for review (`draft: false`) from the start** and
-  enable GitHub auto-merge after opening it unless the user explicitly asks not to. Do not create a
-  draft PR and then convert it to ready: GitHub cannot enable auto-merge on draft PRs. Branch
-  protection remains the merge gate, so the PR merges only after required checks and reviews pass.
-- Do not report PR publication as complete until both conditions are verified on GitHub:
-  `isDraft == false` and auto-merge is enabled.
-- Immediately verify that a new PR is mergeable with
-  `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`.
-  If it is `DIRTY`, rebase onto `origin/main`, resolve the conflict, and force-push with lease;
-  auto-merge and CI will not make progress on a conflicted PR.
-- After publishing or updating a PR, monitor its required checks with
-  `gh pr checks <pr-number> --watch --fail-fast`. Prefer this foreground command over custom
-  polling loops or background watchers: it refreshes the check table, exits immediately after a
-  failure, and returns success only when all required checks have completed successfully. If a
-  check fails, inspect its logs, fix forward on the same branch, push, and run the watch command
-  again. This rule supersedes any background-only CI-watch guidance in `CLAUDE.md`.
-- Do not use stacked PRs. Never close a PR merely to discard its work; rebase and preserve its
-  knowledge, or re-implement the documented diff on a new branch.
+## Git and Pull Requests
 
-## External Repository Policy
-- Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
+Never commit to `main`; create a focused feature branch. Preserve unrelated
+working-tree changes. Do not use destructive Git operations to discard work.
+Use conventional PR titles such as `fix: ...` or `parser: ...`.
+
+After validation, proactively commit, push, and open a ready-for-review PR.
+Enable auto-merge using merge or rebase (not squash). Immediately verify that it
+is ready and auto-merge is enabled, then check its merge state:
+
+```sh
+gh pr view <number> --json isDraft,autoMergeRequest,mergeStateStatus,state
+gh pr view <number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'
+```
+
+If it is `DIRTY`, rebase onto `origin/main`, resolve it, and force-push with
+lease. Monitor required checks with `gh pr checks <number> --watch --fail-fast`.
+Fix failures forward on the same branch, push, and monitor again. A PR is not
+complete merely because checks passed or auto-merge was requested: verify GitHub
+reports `state == MERGED`, and verify its merge commit is reachable from
+`origin/main` before reporting completion or taking the next ticket.
+
+Do not create stacked PRs or close a PR simply to discard its work. Do not open
+PRs or issues against Raku organization repositories from this workspace.
