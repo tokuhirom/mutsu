@@ -39,7 +39,16 @@ are declared.
   role's methods take into a composing class, so `role P[::T] { method go { $v } }`
   still read `Nil` until it was carried through.
 
-### The trap: a role's type parameters are not captures
+### Trap 2: a role must not re-capture what it COMPOSED
+
+`role B does A[:a(1)] { }` holds a *copy* of `A`'s methods, and that copy closes
+over `A`'s declaration site — which `A` already recorded. Capturing again at `B`
+bound `B`'s own enclosing lexicals over `A`'s parameters, so
+`role A [:$a = 1, :$b = $a * 2]` composed into `B` read a file-scope `my $a = 0`
+(`roast/S14-roles/parameterized-mixin.t` 27-28). The role pass skips
+`role_origin.is_some()` methods for exactly the reason the class-side pass does.
+
+### Trap 1: a role's type parameters are not captures
 
 `my role R[Str:D $s] { method tag { $s } }` reads `$s` from the binding
 `does R["x"]` makes. mutsu allocates one local slot per name for a whole chunk,
@@ -51,9 +60,10 @@ own `type_param_defs` names out of the candidate slots first.
 
 ## Coverage
 
-`t/class-in-routine-lexical-capture.t` grows from 5 to 10 assertions: a composed
+`t/class-in-routine-lexical-capture.t` grows from 5 to 12 assertions: a composed
 role method's capture, a live capture written after composition and read
 through the object, a parameterized role's capture surviving type substitution,
-a punned role, and a shadowing variant where the routine lexical must beat a
-same-named caller lexical. The whole file passes under `raku` as well as mutsu.
+a punned role, a shadowing variant where the routine lexical must beat a
+same-named caller lexical, and a role composed into a role keeping the source
+role's parameters. The whole file passes under `raku` as well as mutsu.
 The bundled-library gate goes 273/297 → **274/297**.

@@ -377,6 +377,15 @@ impl Interpreter {
                 .methods
                 .values()
                 .flatten()
+                // Skip a method this role COMPOSED from another role
+                // (`role B does A[...] { }`): it closes over `A`'s declaration
+                // site, and `A` recorded that capture itself. Capturing it again
+                // here would bind `B`'s enclosing lexicals over `A`'s parameters
+                // — `role A [:$a = 1, :$b = $a * 2]` composed into `B` read a
+                // file-scope `my $a = 0` (roast S14-roles/parameterized-mixin.t).
+                // The class-side pass skips `role_origin.is_some()` for the same
+                // reason.
+                .filter(|def| def.role_origin.is_none())
                 .filter_map(|def| {
                     def.compiled_code.clone().map(|code| {
                         let compiler = crate::compiler::Compiler::new();

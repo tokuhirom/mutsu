@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 12;
 
 sub make-reader() {
     my $captured = 2;
@@ -84,3 +84,21 @@ sub shadowing-role-reader() {
 }
 is shadowing-role-reader().value, 'inner',
     'the routine lexical wins over a same-named caller lexical';
+
+# A role that COMPOSES another role must not re-capture: the composed copy
+# closes over the SOURCE role's declaration site, which that role recorded
+# itself. Re-capturing at the composing role bound its own enclosing lexicals
+# over the source role's parameters — `role A [:$a = 1, :$b = $a * 2]` composed
+# into `role B does A[:a(1)]` read a file-scope `my $a` instead
+# (roast/S14-roles/parameterized-mixin.t 27-28).
+my $a = 0;
+my $b = 0;
+{
+    role ParamDefaults[:$a = 1, :$b = $a * 2] { method pair { $a ~ "-" ~ $b } }
+    role ComposesOne does ParamDefaults[:a(1)] { }
+    role ComposesTwo does ParamDefaults[:a(2)] { }
+    is ComposesOne.new.pair, '1-2',
+        'a role composed into a role keeps the source role parameters';
+    is ComposesTwo.new.pair, '2-4',
+        'and a second composition keeps its own';
+}
