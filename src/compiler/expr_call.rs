@@ -274,12 +274,7 @@ impl Compiler {
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
                 let vn = vn.as_ref().clone();
-                // `cas` is excluded from the free-var *write* fold: it already
-                // resolves a boxed target through `scalar_cell_target`, and its
-                // cross-thread behaviour rides on the name-keyed lane that the
-                // fold's cell promotion would take away
-                // (t/cross-thread-shared-var-writeback-coherence.t).
-                self.note_atomic_env_sync_target(&vn, n != "__mutsu_cas_var");
+                self.note_atomic_env_sync_target(&vn, true);
             }
         });
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
@@ -934,16 +929,13 @@ impl Compiler {
                         let call_name_idx = self
                             .code
                             .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-                        // Keep counts_as_write = false here (matching the
-                        // general `cas` path below), NOT true: this delta
-                        // shape and the general lambda-invoking `cas` path
-                        // both target the SAME variable depending only on
-                        // incidental lambda-body shape, so diverging the
-                        // write-fold classification between them would let
-                        // one call site's `cas` get cell-promoted and
-                        // another's not for the same variable (see
+                        // Same classification as the general `cas` path
+                        // below: this delta shape and that path target the
+                        // SAME variable depending only on incidental
+                        // lambda-body shape, so the write-fold classification
+                        // must not diverge between them (see
                         // todo/tickets/cas-delta-lambda-rewrite-is-dead-code.md).
-                        self.note_atomic_env_sync_target(&var_name, false);
+                        self.note_atomic_env_sync_target(&var_name, true);
                         let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                         self.code.emit(OpCode::LoadConst(name_idx));
                         self.compile_expr(&delta);
@@ -967,7 +959,15 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_var"));
-            self.note_atomic_env_sync_target(&var_name, false);
+            // `cas` WRITES its target, exactly like `⚛++` / `⚛=`. Recording it
+            // as a write is what folds the name into `self_mutated`, which is
+            // what earns a captured lexical its shared cell — without it a
+            // closure created before the `cas` kept a by-value capture and
+            // never saw the swap (`my $x = 1; my $o = { $x }; cas $x, $x, 5;
+            // $o()` answered 1). The name-keyed legacy lane the old exclusion
+            // protected is now guarded by `legacy_atomic_lane_owns`, which
+            // makes the capture side decline while that lane is live.
+            self.note_atomic_env_sync_target(&var_name, true);
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(name_idx));
             for arg in &args[1..] {
