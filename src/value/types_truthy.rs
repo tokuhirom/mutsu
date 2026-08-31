@@ -155,6 +155,7 @@ impl Value {
             ValueView::CustomTypeInstance(_) => true,
             ValueView::Scalar(inner) => inner.truthy(),
             ValueView::ContainerRef(_) => self.with_deref(Value::truthy),
+            ValueView::ContainerView(_) => self.with_deref(Value::truthy),
             ValueView::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {

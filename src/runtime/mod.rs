@@ -2684,10 +2684,6 @@ pub struct Interpreter {
     /// whose result is wanted as a container (`:=` bind RHS / `.VAR` chain).
     /// Consumed and unconditionally cleared at CallMethod entry.
     pub(crate) accessor_ref_pending: bool,
-    /// Set for the one introspection dispatch immediately following an explicit
-    /// `.VAR`, so a raw attribute/element cell reflects as `Scalar` without
-    /// making unrelated ContainerRef call results expose their container.
-    pub(crate) var_container_meta_pending: bool,
     pub(crate) constant_context: Box<Cell<bool>>,
     /// Slice 2a (`docs/scalar-array-sharing.md`): set by `MarkArrayShareContext`
     /// just before a `SetLocal` for `$scalar = @arr` / `$scalar = %hash`. Tells

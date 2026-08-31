@@ -38,7 +38,7 @@ use Test;
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
 
-plan 29;
+plan 34;
 
 # --- §1.3 row 1: :p stale read (Slice 2) -----------------------------------
 {
@@ -46,6 +46,20 @@ plan 29;
     my $p = @a[0]:p;
     @a[0] = "Q";
     is $p.value, "Q", ':p pair value tracks a later array write (row 1)';
+}
+
+# A pair value is a first-class element cell. `.VAR` must preserve that it was
+# explicitly reflected: the bare cell remains transparent, while its view
+# reports the Scalar container even after a `:=` binding carries it onward.
+{
+    my @a = 10, 20;
+    my $p = @a[0]:p;
+    is $p.value.WHAT, Int, ':p pair.value WHAT decontainerizes the cell';
+    is $p.value.VAR.^name, 'Scalar', ':p pair.value .VAR.^name sees Scalar';
+    is $p.value.^name, 'Int', ':p pair.value bare .^name sees the value';
+    is $p.value.VAR.WHAT, Scalar, ':p pair.value .VAR.WHAT sees Scalar';
+    my $view := $p.value.VAR;
+    is $view.WHAT, Scalar, 'a bound .VAR view keeps its Scalar identity';
 }
 
 # --- §1.3 row 2: :kv stale read (Slice 2) -----------------------------------

@@ -148,6 +148,7 @@ pub(in crate::value) enum Kind {
     WeakSub,
     LazyList,
     ContainerRef,
+    ContainerView,
     Promise,
     Channel,
     /// `class_name` and `id` are NOT stored: `Value::Instance` keeps them equal
@@ -437,7 +438,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Sub => gc_op::<SubData>(bits, op),
             Kind::WeakSub => weak_op::<SubData>(bits, op),
             Kind::LazyList => gc_op::<LazyList>(bits, op),
-            Kind::ContainerRef => gc_op::<Mutex<Value>>(bits, op),
+            Kind::ContainerRef | Kind::ContainerView => gc_op::<Mutex<Value>>(bits, op),
             Kind::Promise => gc_op::<(Mutex<PromiseState>, Condvar)>(bits, op),
             Kind::Channel => gc_op::<(Mutex<ChannelState>, Condvar)>(bits, op),
             Kind::Instance => gc_op::<InstanceAttrs>(bits, op),

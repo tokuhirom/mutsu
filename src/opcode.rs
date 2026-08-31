@@ -901,12 +901,6 @@ pub(crate) enum OpCode {
     /// identity. Consumed (and unconditionally cleared) at CallMethod entry, so
     /// it cannot leak past the one dispatch it was emitted for.
     MarkAccessorRefContext,
-    /// Signal that the next method call is introspection immediately following
-    /// an explicit `.VAR` (`X.VAR.WHAT` / `X.VAR.^name`). A raw ContainerRef
-    /// invocant is treated as the reflected Scalar container only at such a
-    /// syntactically marked call site; ordinary lvalue-return invocants remain
-    /// transparent. Consumed at CallMethod entry.
-    MarkVarContainerMetaContext,
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
     /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
     /// named source variable's container should be shared by reference. The

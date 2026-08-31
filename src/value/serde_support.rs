@@ -341,7 +341,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | ValueView::CustomTypeInstance(_)
         | ValueView::LazyThunk(_)
         | ValueView::HashEntryRef { .. }
-        | ValueView::ContainerRef(_) => Err(format!(
+        | ValueView::ContainerRef(_)
+        | ValueView::ContainerView(_) => Err(format!(
             "cannot serialize Value variant: {}",
             super::what_type_name(v)
         )),

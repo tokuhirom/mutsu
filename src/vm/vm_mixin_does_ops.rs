@@ -406,7 +406,7 @@ impl Interpreter {
         // every alias of the container (the attribute slot, a `:=`-bound var)
         // observes the mixin. The expression yields the container itself, so a
         // chained `.name` read/write keeps the container identity.
-        if let ValueView::ContainerRef(cell) = left.view() {
+        if let ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) = left.view() {
             let inner = cell.lock().unwrap().clone();
             let result = self.vm_does_values(inner, right)?;
             *cell.lock().unwrap() = result;

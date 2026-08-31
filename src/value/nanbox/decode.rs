@@ -189,6 +189,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::WeakSub => ValueRepr::WeakSub(unsafe { take_weak::<SubData>(bits) }),
         Kind::LazyList => ValueRepr::LazyList(unsafe { take_gc::<LazyList>(bits) }),
         Kind::ContainerRef => ValueRepr::ContainerRef(unsafe { take_gc::<Mutex<Value>>(bits) }),
+        Kind::ContainerView => ValueRepr::ContainerView(unsafe { take_gc::<Mutex<Value>>(bits) }),
         Kind::Promise => ValueRepr::Promise(SharedPromise {
             inner: unsafe { take_gc::<(Mutex<PromiseState>, Condvar)>(bits) },
         }),

@@ -1312,6 +1312,11 @@ pub(in crate::value) enum ValueRepr {
     /// A shared mutable Scalar container for `:=` binding.
     /// Two variables bound together share the same `ContainerRef`.
     ContainerRef(Gc<Mutex<Value>>),
+    /// An explicit view of a `ContainerRef` returned by `.VAR`.
+    ///
+    /// It carries the same cell identity as `ContainerRef`, but stays distinct
+    /// so dispatch can tell a reflected container from an aliased value.
+    ContainerView(Gc<Mutex<Value>>),
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
@@ -1585,6 +1590,10 @@ impl Value {
     #[inline]
     pub(in crate::value) fn ContainerRef(cell: Gc<Mutex<Value>>) -> Value {
         Value::from_repr(ValueRepr::ContainerRef(cell))
+    }
+    #[inline]
+    pub(in crate::value) fn ContainerView(cell: Gc<Mutex<Value>>) -> Value {
+        Value::from_repr(ValueRepr::ContainerView(cell))
     }
     #[inline]
     pub(in crate::value) fn LazyThunk(data: Arc<LazyThunkData>) -> Value {

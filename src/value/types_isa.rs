@@ -176,6 +176,7 @@ impl Value {
             ValueView::ContainerRef(_) => {
                 return self.with_deref(|inner| inner.isa_or_does_check(type_name, allow_roles));
             }
+            ValueView::ContainerView(_) => "Scalar",
             ValueView::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
