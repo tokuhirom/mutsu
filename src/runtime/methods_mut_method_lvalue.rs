@@ -1034,7 +1034,7 @@ impl Interpreter {
         // `ContainerRef` cell. A role-mixin attribute write updates the mixin
         // override in place through the cell (visible to every alias); any
         // other method-lvalue delegates to the inner value.
-        if let ValueView::ContainerRef(cell) = target.view() {
+        if let ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) = target.view() {
             let inner = cell.lock().unwrap().clone();
             if let ValueView::Mixin(minner, mixins) = inner.view() {
                 let mixin_attr_key = format!("__mutsu_attr__{}", method);

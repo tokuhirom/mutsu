@@ -652,6 +652,15 @@ impl Interpreter {
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
         let target = self.reify_or_consume_seq_target(target, method.as_str())?;
+        // Mutating methods reached through `.VAR` must retain the underlying
+        // cell so the established container writeback paths can update it.
+        let target = if !matches!(method.as_str(), "WHAT" | "^name" | "VAR")
+            && let ValueView::ContainerView(cell) = target.view()
+        {
+            Value::container_ref(cell.clone())
+        } else {
+            target
+        };
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched
