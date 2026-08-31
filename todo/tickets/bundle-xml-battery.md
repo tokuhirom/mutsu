@@ -77,6 +77,33 @@ and [proxy-what-reports-proxy-instead-of-fetching.md](proxy-what-reports-proxy-i
 **Re-measure before starting** — per `selection-method.md`, a readiness claim
 nobody just re-measured is not evidence.
 
+## Follow-up re-measurement (2026-08-31): still blocked at 9/15
+
+The required fresh measurement was repeated from the v0.3.6 tag
+(`0349d282e257be61075f55abfde4c42a01bc8f10`) with a release mutsu build, from
+the distribution's own checkout and with `-I lib`. mutsu remains at **9/15**
+files (141 assertions reached); `raku -I lib` passes **15/15** (149
+assertions). The same six files fail: `example`, `make`, `namespaces`,
+`open-xml`, `proxies`, and `query-methods`.
+
+The apparent `XML::Document` postcircumfix defect was traced one layer deeper.
+Outside a method, `$doc.root[1]` reads correctly. From inside an
+`XML::Document` method, however, an `XML::Element` `AT-POS` Proxy's `FETCH`
+closure resolves its captured `my $self = self` through the calling frame's
+same-named environment rather than the lexical binding created by
+`XML::Element::AT-POS`. This makes the callback see a `Str`/`Any` instead of
+the element, so `$doc[1]`, nested XML walks, and the downstream `.string`
+calls fail.
+
+This is not safe to repair as an XML-specific Proxy exception. It is an open
+instance of [ADR-0055](../../docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md):
+closure captures must resolve to their creating binding, while mutable captures
+need shared cells for freshness. ADR-0055 records that the broad
+caller-priority-to-closure-priority merge change still needs its cell-coverage
+prerequisite; an earlier prototype regressed sequential `Cro::HTTP` requests.
+The remaining XML suite failures therefore stay blocked on general interpreter
+work, and this mechanical bundling ticket must remain open.
+
 ## Steps (once unblocked)
 
 Follow the standard vendoring recipe,
