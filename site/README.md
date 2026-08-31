@@ -17,7 +17,10 @@ one page — an editor whose Run button fed the REPL's transcript and its interp
 which made neither question easy to ask.
 
 The site is deliberately **build-step free**: plain HTML, ES modules and CSS, served
-as-is. The only generated input is `pkg/`, the `wasm-pack` output.
+as-is. The only generated input is `pkg/`, copied from the published
+`@tokuhirom/mutsu` npm package by the Pages workflow.
+Successful tagged releases trigger that workflow after npm publication, so the
+deployed interpreter follows the package's `latest` dist-tag.
 
 ## Layout
 
@@ -27,6 +30,7 @@ index.html          landing page — what mutsu is, install, what is inside,
 tutorial.html       the tutorial: chapter/lesson navigation + one runnable lesson
 playground.html     editor + Run + output: whole programs, one clean run each
 repl.html           the interactive session: one line at a time, state kept
+embed-demo.html     runnable installed-package demo and browser integration guide
 assets/
   site.css          all styling
   i18n.js           language selection, UI strings, shared nav + footer
@@ -46,7 +50,7 @@ content/
   landing.ja.js     landing-page copy (Japanese)
   stats.json        compatibility numbers — generated, git-ignored (see below)
 bench-trend.html    benchmark dashboard — generated, git-ignored (see below)
-pkg/                wasm-pack output — generated, git-ignored
+pkg/                installed npm package — generated, git-ignored
 ```
 
 ## The compatibility headline
@@ -146,10 +150,14 @@ e2e lesson sweep are all derived from the corpus.
 ## Running locally
 
 ```sh
-wasm-pack build --target web --no-default-features --features wasm
-mv pkg site/pkg
+npm install --prefix tmp/pages-package @tokuhirom/mutsu
+mkdir -p site/pkg
+cp -R tmp/pages-package/node_modules/@tokuhirom/mutsu/. site/pkg/
 python3 -m http.server 8000 -d site    # then open http://localhost:8000/
 ```
+
+Use `scripts/build-npm-package.sh` and copy its `pkg/` directory to `site/pkg/`
+instead when testing an unpublished local package change.
 
 ## Tests
 

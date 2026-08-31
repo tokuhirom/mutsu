@@ -501,9 +501,9 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Build WASM
+      - name: Build npm package
         run: |
-          wasm-pack build --target web --no-default-features --features wasm
+          scripts/build-npm-package.sh
           mv pkg site/pkg
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
