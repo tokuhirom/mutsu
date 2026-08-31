@@ -877,10 +877,22 @@ impl Interpreter {
                 // Only plain scalar containers are boxed; reference types
                 // already share, and hiding a type object / Proxy behind a
                 // `ContainerRef` trips the paths that do not deref one. `Any`
-                // is the uninitialized-scalar seed and is boxed like a value
-                // (mirrors `box_captured_lexicals`, including its
-                // Seq/HyperSeq/RaceSeq/Slip exclusion --
-                // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
+                // is the uninitialized-scalar seed and is boxed like a value.
+                //
+                // This list is NOT a mirror of `box_captured_lexicals`', and has
+                // not been one since ADR-0055 slice 1 (2026-08-28) let `Package`,
+                // `Array` and `Hash` out of that one: it stayed WIDER on purpose,
+                // because a refusal here is cheap (the op falls back to the
+                // name-keyed legacy lane) while a refusal there costs the closure
+                // its shared cell. The two only ever have to agree on
+                // Seq/HyperSeq/RaceSeq/Slip
+                // (`news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
+                // The lane fork the difference used to cause — a `cas` on an
+                // Instance-valued scalar landing on the legacy lane while the
+                // capture side held a cell — is fixed on the capture side
+                // instead: `cas` counts as a write for the compiler's mutation
+                // analysis now, so the two lanes are the same cell before this
+                // function is ever consulted (`t/cas-captured-lexical-coherence.t`).
                 if !cur.is_any_type_object()
                     && matches!(
                         cur.view(),
