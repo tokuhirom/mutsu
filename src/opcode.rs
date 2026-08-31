@@ -3507,6 +3507,11 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// variables before evaluation, not via AST substitution, so one
     /// compile-time chunk is sound across every composing class.
     pub(crate) attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
+    /// Lexicals visible in the enclosing frame at this declaration site.
+    /// The role twin of `CompiledClassDeclPlan::method_outer_lexical_slots`:
+    /// a role declared in a routine body has methods that close over that
+    /// routine's `my` variables, which live only in its local slots.
+    pub(crate) method_outer_lexical_slots: Vec<(Symbol, u32)>,
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1). See
     /// `CompiledClassDeclPlan::method_name_chunks`.
@@ -7402,6 +7407,7 @@ impl CompiledCode {
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_ops: Vec<RoleParentOp>,
         method_compiled_keys: Vec<Option<Symbol>>,
+        method_outer_lexical_slots: Vec<(Symbol, u32)>,
         deferred_body_ops: Vec<DeferredBodyOp>,
     ) -> u32 {
         let Stmt::RoleDecl {
@@ -7442,6 +7448,7 @@ impl CompiledCode {
             body_used_modules,
             body_declared_types,
             attr_decls,
+            method_outer_lexical_slots,
             method_name_chunks,
             method_decls,
             is_stub,

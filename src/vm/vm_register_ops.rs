@@ -1,6 +1,16 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Take the next unclaimed capture env recorded for `key`. Each compiled body
+/// can back several `MethodDef`s (multi candidates), so the envs are consumed
+/// one at a time in the order they were built.
+fn captures_pop(
+    captures: &std::collections::HashMap<usize, std::cell::RefCell<Vec<Env>>>,
+    key: usize,
+) -> Option<Env> {
+    captures.get(&key).and_then(|envs| envs.borrow_mut().pop())
+}
+
 impl Interpreter {
     /// Get the current source line number from the interpreter.
     pub(crate) fn current_source_line(&self) -> Option<u32> {
@@ -301,6 +311,136 @@ impl Interpreter {
                 })
                 .collect()
         };
+        let captures = self.declared_method_capture_envs(code, method_codes, outer_lexical_slots);
+        if captures.is_empty() {
+            return;
+        }
+        self.registry_mut().map_user_methods_in_place(
+            crate::symbol::Symbol::intern(class),
+            |def| {
+                let Some(method_code) = &def.compiled_code else {
+                    return;
+                };
+                let key = std::sync::Arc::as_ptr(method_code) as usize;
+                if let Some(env) = captures_pop(&captures, key) {
+                    def.captured_env = Some(env);
+                }
+            },
+        );
+    }
+
+    /// The role analogue of [`Self::capture_declared_method_envs`]. A role
+    /// declared in a routine body has the same problem — its methods' `my`
+    /// captures live only in the declaring frame's local slots — and its
+    /// methods are stored on the `RoleDef`, not in the class method table, so
+    /// the class-side pass never sees them (it skips `role_origin.is_some()`
+    /// methods on purpose: a composed copy closes over the ROLE's declaration
+    /// site, not the composing class's). Setting the capture here means the
+    /// `md.clone()` in `compose_role_into_class` carries it into every
+    /// composing class for free.
+    pub(crate) fn capture_declared_role_method_envs(
+        &mut self,
+        code: &CompiledCode,
+        role: &str,
+        outer_lexical_slots: &[(Symbol, u32)],
+        type_param_defs: &[crate::ast::ParamDef],
+    ) {
+        if outer_lexical_slots.is_empty() {
+            return;
+        }
+        // A role's TYPE PARAMETERS are bound per composition, not captured:
+        // `my role R[Str:D $s] { method tag { $s } }` reads `$s` from the
+        // binding `does R["x"]` makes. mutsu allocates one local slot per name
+        // for the whole chunk, so an unrelated earlier `my $s` in the same file
+        // is in `outer_lexical_slots` and would be captured over the parameter
+        // (`t/positional-read-of-a-non-positional.t`: `C.tag` read `(Any)`).
+        let outer_lexical_slots: Vec<(Symbol, u32)> = outer_lexical_slots
+            .iter()
+            .filter(|(sym, _)| {
+                !type_param_defs.iter().any(|pd| {
+                    let bare = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
+                    sym.with_str(|s| s == bare || s == pd.name.as_str())
+                })
+            })
+            .copied()
+            .collect();
+        if outer_lexical_slots.is_empty() {
+            return;
+        }
+        let outer_lexical_slots = &outer_lexical_slots[..];
+        let method_codes: Vec<(std::sync::Arc<CompiledCode>, Vec<Symbol>)> = {
+            let registry = self.registry();
+            let Some(role_def) = registry.roles.get(role) else {
+                return;
+            };
+            role_def
+                .methods
+                .values()
+                .flatten()
+                // Skip a method this role COMPOSED from another role
+                // (`role B does A[...] { }`): it closes over `A`'s declaration
+                // site, and `A` recorded that capture itself. Capturing it again
+                // here would bind `B`'s enclosing lexicals over `A`'s parameters
+                // — `role A [:$a = 1, :$b = $a * 2]` composed into `B` read a
+                // file-scope `my $a = 0` (roast S14-roles/parameterized-mixin.t).
+                // The class-side pass skips `role_origin.is_some()` for the same
+                // reason.
+                .filter(|def| def.role_origin.is_none())
+                .filter_map(|def| {
+                    def.compiled_code.clone().map(|code| {
+                        let compiler = crate::compiler::Compiler::new();
+                        let signature_reads =
+                            compiler.decl_time_param_free_var_syms(&def.param_defs);
+                        (code, signature_reads)
+                    })
+                })
+                .collect()
+        };
+        let captures = self.declared_method_capture_envs(code, method_codes, outer_lexical_slots);
+        if captures.is_empty() {
+            return;
+        }
+        // Every `RoleDef` copy gets its OWN cursor over the recorded envs: the
+        // registry's `roles` entry and each parameterized candidate hold
+        // independent clones of the same methods, and composition may read
+        // either, so both must end up carrying the capture.
+        let apply = |role_def: &mut crate::runtime::RoleDef| {
+            let cursor: std::collections::HashMap<usize, std::cell::RefCell<Vec<Env>>> = captures
+                .iter()
+                .map(|(k, v)| (*k, std::cell::RefCell::new(v.borrow().clone())))
+                .collect();
+            for defs in role_def.methods.values_mut() {
+                for def in defs.iter_mut() {
+                    let Some(method_code) = &def.compiled_code else {
+                        continue;
+                    };
+                    let key = std::sync::Arc::as_ptr(method_code) as usize;
+                    if let Some(env) = captures_pop(&cursor, key) {
+                        def.captured_env = Some(env);
+                    }
+                }
+            }
+        };
+        let mut registry = self.registry_mut();
+        if let Some(role_def) = registry.roles.get_mut(role) {
+            apply(role_def);
+        }
+        if let Some(candidates) = registry.role_candidates.get_mut(role) {
+            for candidate in candidates.iter_mut() {
+                apply(&mut candidate.role_def);
+            }
+        }
+    }
+
+    /// Shared core of the class and role passes: for each compiled method body,
+    /// build the `Env` of the declaring frame's lexicals it actually closes
+    /// over, keyed by the body's `CompiledCode` identity.
+    fn declared_method_capture_envs(
+        &mut self,
+        code: &CompiledCode,
+        method_codes: Vec<(std::sync::Arc<CompiledCode>, Vec<Symbol>)>,
+        outer_lexical_slots: &[(Symbol, u32)],
+    ) -> std::collections::HashMap<usize, std::cell::RefCell<Vec<Env>>> {
         let mut captures: std::collections::HashMap<usize, Vec<Env>> =
             std::collections::HashMap::new();
         for (method_code, signature_reads) in method_codes {
@@ -360,21 +500,10 @@ impl Interpreter {
                     .push(env);
             }
         }
-        if captures.is_empty() {
-            return;
-        }
-        self.registry_mut().map_user_methods_in_place(
-            crate::symbol::Symbol::intern(class),
-            |def| {
-                let Some(method_code) = &def.compiled_code else {
-                    return;
-                };
-                let key = std::sync::Arc::as_ptr(method_code) as usize;
-                if let Some(env) = captures.get_mut(&key).and_then(Vec::pop) {
-                    def.captured_env = Some(env);
-                }
-            },
-        );
+        captures
+            .into_iter()
+            .map(|(k, v)| (k, std::cell::RefCell::new(v)))
+            .collect()
     }
 
     pub(super) fn exec_make_anon_sub_op(

@@ -379,7 +379,13 @@ pub(super) fn substitute_type_params_in_method(
         is_default: method.is_default,
         deprecated_message: method.deprecated_message.clone(),
         is_submethod: method.is_submethod,
-        captured_env: None,
+        // Carried over like every other field: a role declared inside a routine
+        // records its methods' lexical captures on its own `MethodDef`s, and a
+        // PARAMETERIZED role reaches its composing class through here rather
+        // than through the plain `md.clone()` path. Dropping it made
+        // `sub f { my $v = 8; role P[::T] { method go { $v } };
+        // class H does P[Int] {}; H.new }` read `Nil`.
+        captured_env: method.captured_env.clone(),
         source_file: method.source_file.clone(),
         role_param_bindings: method.role_param_bindings.clone(),
     }

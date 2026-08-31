@@ -788,6 +788,7 @@ impl Interpreter {
             attr_decls,
             method_name_chunks,
             method_decls,
+            method_outer_lexical_slots,
             is_stub,
             our_scope_violation,
             parent_ops,
@@ -965,6 +966,18 @@ impl Interpreter {
                     }
                 }
             }
+
+            // A role declared inside a routine closes over that routine's
+            // lexicals exactly like a class does; its methods are stored on the
+            // `RoleDef`, so the class-side pass never reaches them. Recording
+            // the capture here means `compose_role_into_class`'s `md.clone()`
+            // carries it into every composing class.
+            self.capture_declared_role_method_envs(
+                code,
+                &qualified_name,
+                method_outer_lexical_slots,
+                type_param_defs,
+            );
 
             self.last_registered_role_key = Some(qualified_name.clone());
 
