@@ -2,6 +2,37 @@
 use super::*;
 
 impl Interpreter {
+    /// Resolve the representation-sensitive native type-object match for a
+    /// direct scalar-variable read. Native values are not carried through the
+    /// NaN box as a distinct `Value` tag: their declared container type is the
+    /// provenance that distinguishes `my int $x; $x ~~ int` from `5 ~~ int`.
+    fn direct_native_lhs_match(&self, lhs_var: Option<&String>, right: &Value) -> Option<bool> {
+        let ValueView::Package(type_name) = right.view() else {
+            return None;
+        };
+        let type_name = type_name.resolve();
+        let (base, smiley) = crate::runtime::types::strip_type_smiley(&type_name);
+        let is_native = crate::runtime::native_types::is_native_int_type(base)
+            || matches!(base, "num" | "num32" | "num64" | "str");
+        if !is_native {
+            return None;
+        }
+
+        // Native values are always definite, but Rakudo only permits the
+        // representation-neutral `:_` smiley on a native type object.
+        if smiley.is_some_and(|s| s != ":_") {
+            return Some(false);
+        }
+        let Some(name) = lhs_var else {
+            return Some(false);
+        };
+        let Some(declared) = self.var_type_constraint(name) else {
+            return Some(false);
+        };
+        let (declared, _) = crate::runtime::types::strip_type_smiley(&declared);
+        Some(declared == base)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,
@@ -114,6 +145,7 @@ impl Interpreter {
         }
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::NIL);
+        let native_lhs_match = self.direct_native_lhs_match(lhs_var, &right);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
         // X::Assignment::RO (e.g. `'abc' ~~ s/b/g/`). A non-matching attempt is
@@ -300,7 +332,11 @@ impl Interpreter {
             } else {
                 left
             };
-            self.eval_smartmatch_with_junctions_ex(left, right, negate, rhs_is_match_regex)?
+            if let Some(matched) = native_lhs_match {
+                Value::truth(if negate { !matched } else { matched })
+            } else {
+                self.eval_smartmatch_with_junctions_ex(left, right, negate, rhs_is_match_regex)?
+            }
         };
         self.stack.push(out);
         // Slice 6.3 step 2 — precise env_dirty for smartmatch. Skip the
