@@ -48,6 +48,11 @@ impl Interpreter {
             && !pd.traits.iter().any(|t| t == "invocant")
             && !pd.name.starts_with(['@', '%', '&'])
             && !pd.traits.iter().any(|t| t == "raw" || t == "rw")
+            // A Range parameter remains a Range receiver. Raku's scalar
+            // container is transparent to method dispatch; mutsu represents
+            // Range itemization with a Scalar wrapper, so keep the bare value
+            // until the general method-dispatch decontainerization is complete.
+            && !val.is_range()
         {
             Self::itemize_scalar_store(&pd.name, val)
         } else {

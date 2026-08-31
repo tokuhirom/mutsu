@@ -47,8 +47,11 @@ impl Interpreter {
             .iter()
             .filter(|arg| !matches!(arg.view(), ValueView::Pair(key, _) if key == "todo"))
             .collect();
-        let left = positional.first().cloned().cloned();
-        let right = positional.get(1).cloned().cloned();
+        // Test's `is` compares values, not their Scalar containers.  In
+        // particular, a Range stored in a named scalar must take the Range
+        // comparison path below rather than stringify its wrapper.
+        let left = positional.first().map(|value| value.descalarize().clone());
+        let right = positional.get(1).map(|value| value.descalarize().clone());
         let desc = positional
             .get(2)
             .map(|v| v.to_string_value())
