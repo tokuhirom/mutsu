@@ -4,6 +4,7 @@ const [manifestPath] = process.argv.slice(2);
 if (!manifestPath) throw new Error('usage: prepare-npm-package.mjs <package.json>');
 
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+manifest.name = '@tokuhirom/mutsu';
 manifest.description = 'Run the mutsu Raku interpreter in browsers with WebAssembly';
 manifest.repository = {
   type: 'git',

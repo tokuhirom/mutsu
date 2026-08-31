@@ -3,7 +3,8 @@
 mutsu is available as a WebAssembly npm package. It runs Raku entirely in the
 browser: source code and output do not leave the visitor's page.
 
-Browser-enabled mutsu releases are published under the `mutsu` package name.
+Browser-enabled mutsu releases are published under the `@tokuhirom/mutsu`
+package name.
 
 ## Drop-in runnable examples
 
@@ -18,12 +19,12 @@ say (^10).grep(* %% 2).sum;
 </mutsu-code>
 
 <script type="module"
-  src="https://cdn.jsdelivr.net/npm/mutsu@latest/embed.js"></script>
+  src="https://cdn.jsdelivr.net/npm/@tokuhirom/mutsu@latest/embed.js"></script>
 ```
 
 Once the package is published, replace `latest` with the version shown on npm
-(for example, `mutsu@0.23.0`) so a future release cannot change an existing
-example unexpectedly. The component includes an
+(for example, `@tokuhirom/mutsu@0.23.0`) so a future release cannot change an
+existing example unexpectedly. The component includes an
 editor, Run and Reset buttons, and an output pane. Ctrl+Enter (Command+Enter on
 macOS) also runs the code.
 
@@ -54,11 +55,11 @@ Applications using a bundler can install the same component instead of loading
 it from a CDN:
 
 ```sh
-npm install mutsu
+npm install @tokuhirom/mutsu
 ```
 
 ```js
-import 'mutsu/element';
+import '@tokuhirom/mutsu/element';
 ```
 
 The HTML remains the same. The package includes its WASM binary; no Rust tools
@@ -69,7 +70,7 @@ or separate server-side interpreter are needed.
 Use the lower-level API when the page supplies its own editor or UI:
 
 ```js
-import init, { evaluate, Repl } from 'mutsu';
+import init, { evaluate, Repl } from '@tokuhirom/mutsu';
 
 await init();
 
