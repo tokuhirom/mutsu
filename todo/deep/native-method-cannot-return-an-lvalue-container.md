@@ -47,6 +47,18 @@ lvalue. That is exactly the "make `ContainerRef` deref universal" work
 not a per-method patch. Adding a special case for `.snitch` alone would be a
 band-aid over a general gap.
 
+## Deep-triage update (2026-08-31)
+
+Moved from `todo/tickets/` after rechecking the current ADR outcomes.
+ADR-0001 §7 says its former Track-B/GC coupling is historical: first-class
+element cells now need an independently justified design. ADR-0013 §7 solved
+the interior-mutability safety prerequisite, but it does not define how a
+receiver `ContainerRef` survives every method-dispatch and lvalue-assignment
+path. This item therefore needs a bounded design campaign for universal
+container-reference propagation (including native-method returns) before an
+implementation slice can be selected. The existing `.VAR` and `.snitch`
+repros remain the acceptance cases; do not special-case either method.
+
 ## Affected files (starting point)
 
 - `src/runtime/methods_mut_method_lvalue.rs` — the "cannot assign through .{} on
