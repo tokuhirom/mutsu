@@ -12,6 +12,19 @@ impl Interpreter {
         instance_attrs: &AttrMap,
     ) -> Result<(Value, AttrMap), RuntimeError> {
         if let ValueView::Sub(data) = callback.view() {
+            // A Proxy callback is an ordinary escaping closure.  Its compiled
+            // body owns the lexical/upvalue bindings captured at construction;
+            // running the AST body below re-merges by name and can therefore
+            // replace a method-local capture with a same-named caller lexical.
+            // Keep the legacy path for uncompiled callbacks, but use the VM
+            // closure dispatcher whenever bytecode is available.
+            if let Some(compiled_code) = &data.compiled_code {
+                let empty_fns = crate::opcode::CompiledFns::default();
+                let compiled_fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
+                let result =
+                    self.call_compiled_closure(&data, compiled_code, args, compiled_fns)?;
+                return Ok((result, instance_attrs.clone()));
+            }
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
             // Merge captured env. For user variables that already exist in the
@@ -127,7 +140,14 @@ impl Interpreter {
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
         // Propagate attribute changes back to the instance's live cell.
         if let Some(var_name) = target_var {
-            attrs_cell.commit_attrs(updated);
+            // A VM-dispatched callback mutates captured instance cells directly.
+            // It returns the input snapshot here because it has no AST-env
+            // attribute overlay to merge; committing that unchanged snapshot
+            // would roll the just-completed STORE back. The legacy callback path
+            // still returns a changed map when it performed an overlay write.
+            if &updated != attributes {
+                attrs_cell.commit_attrs(updated);
+            }
             self.env.insert(
                 var_name.to_string(),
                 Value::instance_sharing_cell(attrs_cell, class_name, attrs_cell.instance_id()),
