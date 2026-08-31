@@ -200,6 +200,7 @@ impl Interpreter {
                 | "kv"
                 | "pairs"
                 | "antipairs"
+                | "sink"
         )
     }
 

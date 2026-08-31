@@ -660,17 +660,9 @@ pub(super) fn dispatch(
                 });
                 Some(Ok(Value::NIL))
             }
-            ValueView::LazyList(ll) => {
-                // Sinking a gather-based LazyList marks it as consumed.
-                // Needed for `$s-lazy.sink; $s-lazy.is-lazy` to throw X::Seq::Consumed.
-                let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
-                if is_gather {
-                    crate::value::lazylist_consume(&ll);
-                    Some(Ok(Value::NIL))
-                } else {
-                    None // fall through to runtime for non-gather lazy lists
-                }
-            }
+            // The runtime owns LazyList forcing. In particular, a gather body
+            // may run compiled code and must run before `.sink` returns.
+            ValueView::LazyList(_) => None,
             _ => Some(Ok(Value::NIL)),
         }),
         "item" => Some(match target.view() {
