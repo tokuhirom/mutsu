@@ -6,7 +6,7 @@ use Test;
 # block is the opposite case: it shares its enclosing routine's `$/`, so a match
 # inside `if`/`for`/`{ }` must stay visible to the enclosing scope.
 
-plan 16;
+plan 17;
 
 sub inner-match() { "zz" ~~ /(z)/; 1 }
 method-holder-check();
@@ -21,12 +21,12 @@ is ~$/,  'bc', 'a sub that matches internally does not clobber the caller $/';
 is ~$0,  'b',  '... nor the caller $0';
 is ~$1,  'c',  '... nor the caller $1';
 
-# A named capture's own slot survives a routine call that has no named
-# captures of its own. (The stronger assertion -- that a routine which RESETS
-# named captures does not delete the caller's -- fails for an unrelated reason
-# and is tracked in todo/tickets/named-capture-reset-removes-the-callers-slot.md.)
+# A named capture's own slot must survive a routine call, including when the
+# routine clears its inherited capture environment before matching.
 "abc" ~~ /$<first>=(b)(c)/;
 is ~$<first>, 'b', 'baseline $<first>';
+inner-match();
+is ~$<first>, 'b', 'a sub that resets captures does not delete the caller $<first>';
 
 # A method is a routine too.
 class Matcher { method m() { "yy" ~~ /(y)/; 1 } }

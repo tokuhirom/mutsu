@@ -11,20 +11,25 @@ impl Interpreter {
     /// load-bearing: a present-but-Nil entry would shadow the local-slot
     /// `$/` fallback action methods rely on (`t/capture-var-topic-slot.t`).
     pub(crate) fn reset_capture_env_vars(&mut self) {
+        // A routine executes in a scoped env overlay. Capture vars inherited
+        // from its caller therefore are not in `keys()` (which deliberately
+        // exposes this frame's overlay only), but they must still be shadowed
+        // here. Removing an inherited named capture records an overlay
+        // tombstone, so it cannot reach the caller when this frame is dropped.
         let numeric_keys: Vec<Symbol> = self
             .env
-            .keys()
-            .filter(|k| k.with_str(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit())))
-            .copied()
+            .visible_keys_where(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit()))
+            .into_iter()
+            .map(|key| Symbol::intern(&key))
             .collect();
         for key in numeric_keys {
             self.env.insert_sym(key, Value::NIL);
         }
         let angle_keys: Vec<Symbol> = self
             .env
-            .keys()
-            .filter(|k| k.with_str(|s| s.len() > 2 && s.starts_with('<') && s.ends_with('>')))
-            .copied()
+            .visible_keys_where(|s| s.len() > 2 && s.starts_with('<') && s.ends_with('>'))
+            .into_iter()
+            .map(|key| Symbol::intern(&key))
             .collect();
         for key in angle_keys {
             self.env.remove_sym(key);
