@@ -93,16 +93,7 @@ work.
 | [range-assigned-to-named-scalar-not-itemized-as-subscript](tickets/range-assigned-to-named-scalar-not-itemized-as-subscript.md) | [element-itemization-lost-in-scalar-binding](deep/element-itemization-lost-in-scalar-binding.md) | Attribution corrected 2026-08-27: this is a **scalar** store, outside ADR-0040's array/hash element scope. Do not patch the subscript site. |
 | [io-listops-bind-colonpair-args-as-positional](tickets/io-listops-bind-colonpair-args-as-positional.md) | ADR-0021 pair-namedness (P1-P3 shipped; P4/P5 remain — the originating `deep/` file has since been closed out) | `say :d, "x"` prints `d => Truex`; raku prints `x`. `Stmt::Say(Vec<Expr>)` has no named/positional distinction, and `(a => 1)` must stay positional. Filed 2026-08-27. |
 
-### B — Deliberate non-divergence records (2)
-
-Not bugs. Both exist so the next reader does not "fix" them back.
-
-| Ticket | Why it stays |
-|---|---|
-| [multidim-oob-coordinate-nil-vs-empty-list-version-pragma](tickets/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md) | Matching plain `raku` regresses two whitelisted roast files. roast is authoritative per CLAUDE.md, so the current `Nil` answer is correct for what CI checks. Revisit only if per-language-version multidim branching becomes needed anyway. |
-| [backtrace-has-fewer-frames-than-rakudo](tickets/backtrace-has-fewer-frames-than-rakudo.md) | mutsu has no CORE setting written in Raku, so rakudo's `SETTING::` frames have no mutsu equivalent. Synthesizing them would make `.gist`/`.full` *less* useful, not more. |
-
-### C — Prerequisite not met; the ticket itself is mechanical (2)
+### B — Prerequisite not met; the ticket itself is mechanical (2)
 
 Both are packaging steps deliberately split from the interpreter fixes they
 wait on, so no interpreter fix is scoped to also cover packaging/docs/CI.

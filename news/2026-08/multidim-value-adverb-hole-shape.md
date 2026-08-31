@@ -77,8 +77,8 @@ A shaped array's out-of-range coordinate (`my @a[2;2]; @a[5;5]:v`) now answers `
 matching the roast tests above, but plain (non-`v6.e.PREVIEW`) `raku` answers `()` for that specific
 case. mutsu does not branch multidim-adverb behavior on the language-version pragma, so one rule has
 to serve both, and roast (which is authoritative and gates CI) was chosen over the narrower plain-`raku`
-answer. Filed as
-`todo/tickets/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md` in case a future need for
+answer. The deliberate decision is recorded in
+`news/2026-08/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md` in case a future need for
 per-version multidim semantics makes it worth revisiting.
 
 ## Verification

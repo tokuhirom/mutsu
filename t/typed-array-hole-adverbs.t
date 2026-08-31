@@ -145,7 +145,7 @@ plan 28 + 26;
 # `roast/S32-hash/multislice-6e.t` (both under `use v6.e.PREVIEW`; mutsu does
 # not branch this behavior on the language-version pragma, so it applies the
 # same rule under the default version too -- see
-# `todo/tickets/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md`
+# `news/2026-08/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md`
 # for the narrow divergence that leaves against plain, non-PREVIEW `raku`).
 {
     my @a[2;2];
