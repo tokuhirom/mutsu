@@ -736,10 +736,10 @@ impl Value {
             ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } => {
-                let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
-                format!("({}[{}])", base_name, args.join(","))
-            }
+            } => format!(
+                "({})",
+                crate::value::parametric_role_name(&base_name.resolve(), type_args)
+            ),
             // Rakudo: Code stringifies to its bare name (`~&say` is "say",
             // with a coercion warning mutsu does not emit).
             ValueView::Routine { name, .. } => name.resolve(),

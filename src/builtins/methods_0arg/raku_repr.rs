@@ -967,10 +967,7 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::ParametricRole {
             base_name,
             type_args,
-        } => {
-            let args: Vec<String> = type_args.iter().map(raku_value).collect();
-            format!("{}[{}]", base_name.resolve(), args.join(","))
-        }
+        } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
         ValueView::Range(a, b) => {
             format!(
                 "{}..{}",

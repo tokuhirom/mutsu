@@ -7,6 +7,39 @@ use super::*;
 pub(crate) const VALUE_MIXIN_MARKER: &str = "__mutsu_value_mixin__";
 
 /// Returns the Raku type name for a value (used in error messages).
+/// The name one argument of a CURRIED parametric role contributes to the
+/// role's own name. Rakudo names `R["x"]` after the argument's TYPE
+/// (`R[Str]`), never its value; an argument that already IS a type object
+/// (`R[Int]`) keeps its own name, which is exactly what "the argument's type
+/// name" reduces to there.
+pub(crate) fn parametric_role_arg_name(val: &Value) -> String {
+    match val.view() {
+        ValueView::Package(name) => {
+            crate::value::user_facing_type_name(&name.resolve()).into_owned()
+        }
+        // A role argument is itself a curried role (`Foo[R['x']]` is
+        // `Foo[R[Str]]`), so its own arguments get the same treatment.
+        ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } => parametric_role_name(&base_name.resolve(), type_args),
+        // A NAMED argument keeps its current value-based spelling. Rakudo drops
+        // named arguments from the curried name entirely (`A[:a(1)].^name` is
+        // just `A`), but two distinct concretizations of the same role must
+        // stay distinguishable by name here — the composition machinery keys on
+        // it — so collapsing `A[:a(1)]` and `A[:a(2)]` onto one string is not
+        // safe yet. Left as a separate, narrower divergence.
+        ValueView::Pair(..) | ValueView::ValuePair(..) => val.to_string_value(),
+        _ => what_type_name(val),
+    }
+}
+
+/// The full `Base[Arg,Arg]` name of a curried parametric role.
+pub(crate) fn parametric_role_name(base_name: &str, type_args: &[Value]) -> String {
+    let args: Vec<String> = type_args.iter().map(parametric_role_arg_name).collect();
+    format!("{}[{}]", base_name, args.join(","))
+}
+
 pub(crate) fn what_type_name(val: &Value) -> String {
     match val.view() {
         ValueView::Int(_) | ValueView::BigInt(_) => "Int".to_string(),

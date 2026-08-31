@@ -276,7 +276,7 @@ pub(crate) use seq_body::{
 /// NaN-box word releases its payload). Nil owns no payload, so a static is
 /// free.
 pub(crate) static NIL_VALUE: Value = Value(NanBox::NIL);
-pub(crate) use types::{role_mixin_suffix, what_type_name};
+pub(crate) use types::{parametric_role_name, role_mixin_suffix, what_type_name};
 pub use view::ValueView;
 
 /// Get current time as seconds since UNIX epoch. On WASM the host's

@@ -410,17 +410,7 @@ impl Interpreter {
                     ValueView::ParametricRole {
                         base_name,
                         type_args,
-                    } => {
-                        let args_str = type_args
-                            .iter()
-                            .map(|v| match v.view() {
-                                ValueView::Package(n) => n.resolve(),
-                                _ => v.to_string_value(),
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!("{}[{}]", base_name, args_str)
-                    }
+                    } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
                     // A concrete builtin value (`5`, `"x"`, `%h`, ...): honor
                     // a process-wide rename of its type via
                     // `Hash.^set_name(...)` etc. — see

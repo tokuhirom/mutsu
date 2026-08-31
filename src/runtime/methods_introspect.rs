@@ -191,31 +191,7 @@ impl Interpreter {
                 base_name,
                 type_args,
             } => {
-                let args_str: Vec<String> = type_args
-                    .iter()
-                    .map(|a| match a.view() {
-                        ValueView::Package(n) => {
-                            crate::value::user_facing_type_name(&n.resolve()).into_owned()
-                        }
-                        ValueView::ParametricRole { .. } => {
-                            // Recursively get the WHAT name for nested parametric roles
-                            if let Ok(what) =
-                                self.call_method_with_values(a.clone(), "WHAT", Vec::new())
-                                && let ValueView::Package(n) = what.view()
-                            {
-                                // Strip surrounding parens from (Name)
-                                n.resolve()
-                                    .trim_start_matches('(')
-                                    .trim_end_matches(')')
-                                    .to_string()
-                            } else {
-                                a.to_string_value()
-                            }
-                        }
-                        _ => a.to_string_value(),
-                    })
-                    .collect();
-                let name = format!("{}[{}]", base_name, args_str.join(","));
+                let name = crate::value::parametric_role_name(&base_name.resolve(), type_args);
                 return Ok(Value::package(Symbol::intern(&name)));
             }
             ValueView::Scalar(inner) => {
@@ -283,17 +259,7 @@ impl Interpreter {
             type_args,
         } = target.view()
         {
-            let args_str = type_args
-                .iter()
-                .map(|v| match v.view() {
-                    ValueView::Package(n) => {
-                        crate::value::user_facing_type_name(&n.resolve()).into_owned()
-                    }
-                    _ => v.to_string_value(),
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            let full_name = format!("{}[{}]", base_name, args_str);
+            let full_name = crate::value::parametric_role_name(&base_name.resolve(), type_args);
             let mut attrs = HashMap::new();
             attrs.insert("name".to_string(), Value::str(full_name));
             return Ok(Value::make_instance(
@@ -817,19 +783,7 @@ impl Interpreter {
             ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } => {
-                let args_str = type_args
-                    .iter()
-                    .map(|v| match v.view() {
-                        ValueView::Package(n) => {
-                            crate::value::user_facing_type_name(&n.resolve()).into_owned()
-                        }
-                        _ => v.to_string_value(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                format!("{}[{}]", base_name, args_str)
-            }
+            } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
             ValueView::Sub(data) => {
                 let base = value_type_name(target);
                 // Check for return type to produce Sub+{Callable[Type]} format
