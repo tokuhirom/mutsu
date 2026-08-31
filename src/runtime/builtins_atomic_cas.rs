@@ -35,7 +35,7 @@ impl Interpreter {
         // the swap. Reached by a role/class method that `cas`es an outer lexical
         // (roast S12-construction/roles-6e.t).
         let scalar_cell = if attr_cell.is_none() {
-            self.scalar_cell_target(&name)
+            self.atomic_scalar_cell(&name)
         } else {
             None
         };

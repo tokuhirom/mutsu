@@ -95,8 +95,8 @@ impl Interpreter {
             self.check_atomic_elem_type(name, &new_val)?;
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             if Self::cas_retry_matches(&current, &guard) {
-                *guard = new_val;
-                return Ok(Value::NIL);
+                *guard = new_val.clone();
+                return Ok(new_val);
             }
         }
     }
