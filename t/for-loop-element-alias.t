@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 70;
+plan 72;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -276,8 +276,31 @@ plan 70;
 {
     my $s = [1, 2];
     for @$s <-> $x { $x = $x + 1 }
-    todo 'row 39 deferred: a promoted `for @$s` topic breaks `nqp::` type tests -- todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md';
     is-deeply $s, [2, 3], 'row 39: `for @$s <-> $x` aliases the inner array elements';
+}
+
+# The `$`-tagged source is captured at loop entry, not re-resolved by name each
+# iteration: `for @$s` derefs `$s` once to pick the array it walks. The name is
+# usually `$_` -- `encode($_) for @$_` is the idiomatic recursive structure walk
+# -- and a nested loop rebinds the topic, so a by-name re-resolution aliased
+# into whatever container the INNER loop was walking.
+{
+    my @leaves;
+    my &walk = -> $v {
+        with $v {
+            if $_ ~~ Positional { walk($_) for @$_ }
+            else                { @leaves.push($_) }
+        }
+    };
+    walk([[0, 2], "x"]);
+    is-deeply @leaves, [0, 2, "x"],
+        'row 39c: a nested `for @$_` walk does not redirect the outer loop';
+}
+{
+    my $s = [1, 2];
+    for @$s <-> $x { $s = [9, 9]; $x = $x + 1 }
+    is-deeply $s, [9, 9],
+        'row 39d: reassigning the scalar mid-loop does not redirect the alias';
 }
 
 # The deferred-closure form of each derived producer. These are the rows that
@@ -290,7 +313,6 @@ plan 70;
     for @$s <-> $x { @c.push(-> { $x = $x + 10 }) }
     @c[0]();
     @c[1]();
-    todo 'row 39b deferred with row 39 -- todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md';
     is-deeply $s, [11, 12], 'row 39b: an escaping closure over a `for @$s` alias writes through';
 }
 {
