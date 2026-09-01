@@ -622,7 +622,18 @@ impl Interpreter {
                         let inner = value.clone();
                         if native_pair_new {
                             let slot_hint = a.varref_slot();
-                            self.capture_var_cell(code, &name.resolve(), inner, slot_hint)
+                            // `box_type_objects`, exactly as the fat-arrow
+                            // `MakePair` path does: an UNINITIALIZED declared
+                            // scalar holds a bare type object but is still a
+                            // container, and raku aliases it --
+                            // `my Int $x; my $p = Pair.new("k", $x);
+                            // $p.value = 5` leaves `$x` at 5.
+                            self.capture_var_cell_boxing_type_objects(
+                                code,
+                                &name.resolve(),
+                                inner,
+                                slot_hint,
+                            )
                         } else {
                             inner
                         }

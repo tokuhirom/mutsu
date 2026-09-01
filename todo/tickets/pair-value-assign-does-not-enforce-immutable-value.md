@@ -62,17 +62,47 @@ blamed the env-scan compensator, which measurement showed never fires here) and
 the measured blast radius: 4 hits in 3 whitelisted roast files, ~40 in 10 `t/`
 files.
 
-**One prerequisite is left.** `Pair.new("k", $x)` still does not capture its
-scalar's container, so deleting the rebind would turn its currently-faked write
-into a hard failure —
-`todo/tickets/pair-new-argument-does-not-capture-its-scalar-container.md`. The
-fat-arrow form's half of that prerequisite landed 2026-09-01.
+**Both prerequisites landed 2026-09-01**, so the guard is unblocked. Each was
+the same one-flag fix — capture with `box_type_objects` set, so an
+*uninitialized* declared scalar (a bare type object, but still a container) is
+boxed into its own cell: the fat-arrow form in `MakePair`/`MakeNamedArg`, and
+the `Pair.new("k", $x)` form in `exec_call_method_mut`'s native-Pair unbox.
+Before them, both shapes captured the bare type object and the rebind faked the
+write, printing `k => 5` while `$x` stayed `Int`.
+
+Pinned in `t/pair-value-container.t` (21 tests), including that two undefined
+scalars stay two distinct containers under both construction forms — which is
+the invariant the boxing exists to preserve.
 
 **`t/` tests to correct when the guard lands** (each verified against raku,
 which dies on all of them, so they encode the compensator rather than the
 spec): `t/pair-value-container.t`'s literal-Pair row (already marked DIVERGES),
 and `t/lvalue-method-writeback-coherence.t`'s `my $p = a => 5; $p.value--` and
 `my $q = x => 0; $q.value = 1` blocks.
+
+## The guard's exact shape, as measured
+
+It goes where the `Bool`-only guard already sits, after both backing-container
+lookups (`selected_hash` / `selected_array`) have failed and before the two env
+rebinds — and it replaces all three. At that point a `ContainerRef` pair value
+has already been handled far earlier (it writes through the cell), and a mutable
+QuantHash weight has been handled by the `topic_source_var` arm, so what is left
+is a pair value with nothing behind it.
+
+**Fire only for an immutable scalar variant** — `Int`, `Str`, `Num`, `Rat`,
+`Bool`, `Enum`, `Nil`, a type object — and never for `Array` / `Hash` /
+`Instance` / `Proxy`. That is not a hedge; it is what the single surviving roast
+dependency requires. Across the whole whitelist the two rebinds are reached
+**once**, by `roast/S02-types/pair.t`'s
+`(%(<a b c d>) => %(<e f g h>)).invert`, whose pair value is a **Hash**. A
+reference value is mutable in place and its write must keep working; only a bare
+scalar is what raku calls immutable here. The existing `Bool` arm is then just
+the narrowest case of the new rule, and `Set.pairs[0].value = 0` keeps passing
+for the same reason it does today.
+
+Message: `X::Assignment::RO` via `RuntimeError::assignment_ro_typename`, which
+already renders `Cannot modify an immutable Int (5)` — matching raku verbatim
+for both rows.
 
 ## Where to look
 
