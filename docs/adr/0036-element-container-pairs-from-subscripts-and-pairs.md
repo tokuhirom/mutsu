@@ -720,15 +720,11 @@ groups, **none of them a regression** — every one was re-run against `main` at
    shaped typed array's failure as `Type check failed in assignment to ;` —
    with an empty name — so that row is not a straightforward target.
 
-2. **One row is the QuantHash weight arm's known keying.**
-   `for $b.pairs -> $p { $p.value = 5 }` dies where the *implicit-topic* form
-   `for $b.pairs { .value = 5 }` works, because `topic_source_var` is set when
-   the loop binds the topic and `-> $p` binds a named parameter instead. This is
-   the sharpest repro yet of
-   `todo/tickets/quanthash-pairs-value-write-needs-a-for-loop-to-reach-the-source.md`
-   (two programs differing only in the loop's parameter form), and it has been
-   added there. §5 Q2's decision to keep the weight arm stands; what is wrong is
-   how the arm finds its source.
+2. **One row was the QuantHash weight arm's known keying.** It landed on
+   2026-09-01: mutable QuantHash `.pairs` now stamps each Pair with the source
+   binding, so stored Pairs and explicit loop parameters write their weight back
+   without relying on `topic_source_var`. §5 Q2's decision to keep weights out
+   of element cells stands; zero-removal remains owned by the dedicated arm.
 
 3. **Five rows are one genuinely new finding: subscripting a producer's `Seq`
    drops the element container.** `(@a.values)[0].VAR.^name` is `Str` where raku

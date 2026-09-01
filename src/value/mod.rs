@@ -1235,13 +1235,13 @@ pub(in crate::value) enum ValueRepr {
     /// directly in an argument list) may mint. No value-producing operation
     /// — a literal outside an argument list, a constructor, `.pairs`,
     /// iteration, coercion — may return one; see `ValuePair` below for that.
-    Pair(String, Box<Value>),
+    Pair(String, Box<Value>, Option<String>),
     /// The positional (data) flavour of Pair — the default for everything
     /// that isn't call-site argument syntax, including a plain string key
     /// (not just a non-string typed key, despite the name predating
     /// ADR-0021's minting-default flip; preserves the original key type/
     /// value for `.key`/`.value`).
-    ValuePair(Box<Value>, Box<Value>),
+    ValuePair(Box<Value>, Box<Value>, Option<String>),
     Enum {
         enum_type: Symbol,
         key: Symbol,
@@ -1577,11 +1577,11 @@ impl Value {
     }
     #[inline]
     pub(in crate::value) fn Pair(key: String, val: Box<Value>) -> Value {
-        Value::from_repr(ValueRepr::Pair(key, val))
+        Value::from_repr(ValueRepr::Pair(key, val, None))
     }
     #[inline]
     pub(in crate::value) fn ValuePair(key: Box<Value>, val: Box<Value>) -> Value {
-        Value::from_repr(ValueRepr::ValuePair(key, val))
+        Value::from_repr(ValueRepr::ValuePair(key, val, None))
     }
     #[inline]
     pub(in crate::value) fn Regex(pat: Arc<String>) -> Value {

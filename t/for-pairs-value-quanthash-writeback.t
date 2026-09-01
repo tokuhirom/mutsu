@@ -5,7 +5,7 @@ use Test;
 # Weight 0 (or False for Set) removes the key; a non-numeric Str raises
 # X::Str::Numeric. Immutable Bag/Mix/Set remain read-only.
 
-plan 23;
+plan 26;
 
 # --- Parser: `.value--` is `.value` then postfix `--`, not a method `value--` ---
 {
@@ -23,6 +23,20 @@ plan 23;
 }
 
 # --- BagHash .pairs .value writeback ---
+{
+    my $b = BagHash.new("a" xx 5);
+    my $p = $b.pairs[0];
+    $p.value = 9;
+    is $b<a>, 9, 'a stored QuantHash pair writes its weight back';
+    $p.value--;
+    is $b<a>, 8, 'and .value-- on it writes back too';
+}
+{
+    my $b = BagHash.new("a" xx 5);
+    my $p = $b.pairs[0];
+    $p.value = 0;
+    nok $b<a>:exists, 'weight 0 through a stored pair removes the key';
+}
 {
     my $b = (a => 5).BagHash;
     .value = 999 for $b.pairs;

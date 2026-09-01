@@ -84,8 +84,10 @@ impl NanBox {
             ValueRepr::Mix(data, mutable) => {
                 pack_gc(if mutable { Kind::MixMut } else { Kind::MixImm }, data)
             }
-            ValueRepr::Pair(k, v) => pack_arc(Kind::Pair, Arc::new(PairBox(k, *v))),
-            ValueRepr::ValuePair(k, v) => pack_arc(Kind::ValuePair, Arc::new(ValuePairBox(*k, *v))),
+            ValueRepr::Pair(k, v, source) => pack_arc(Kind::Pair, Arc::new(PairBox(k, *v, source))),
+            ValueRepr::ValuePair(k, v, source) => {
+                pack_arc(Kind::ValuePair, Arc::new(ValuePairBox(*k, *v, source)))
+            }
             ValueRepr::Enum {
                 enum_type,
                 key,

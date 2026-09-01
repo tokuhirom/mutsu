@@ -682,6 +682,13 @@ impl Interpreter {
         } else {
             target
         };
+        if method == "value"
+            && args.is_empty()
+            && let Some(weight) = self.quanthash_weight_pair_value(target.unwrap_varref())
+        {
+            self.stack.push(weight);
+            return Ok(());
+        }
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched
@@ -2709,6 +2716,23 @@ impl Interpreter {
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this.
                 self.method_dispatch_pure = false;
+                if !skip_native
+                    && !self.native_lever_a_user_override(&target, &method)
+                    && let Some(produced) = self.try_quanthash_weight_pair_producer(
+                        &target,
+                        &target_name,
+                        &method,
+                        &args,
+                    )
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome(
+                        "callmethodmut",
+                        "quanthash-weight-pair-producer",
+                    );
+                    self.method_dispatch_pure = true;
+                    self.stack.push(produced);
+                    return Ok(());
+                }
                 // ADR-0036 slice 3 / ADR-0045 slice 4: `.pairs`/`.kv`/
                 // `.antipairs`/`.values`/`.reverse`/`.sort` on a real mutable
                 // container hand out the elements' own `Scalar` containers, not

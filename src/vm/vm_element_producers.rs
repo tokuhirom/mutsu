@@ -83,6 +83,90 @@ use super::*;
 const ELEMENT_PRODUCERS: [&str; 6] = ["Seq", "values", "reverse", "sort", "kv", "pairs"];
 
 impl Interpreter {
+    /// Read the current weight behind a carrier Pair. Its stored value remains
+    /// suitable for ordinary data consumers, while `.value` must be live for a
+    /// following compound assignment.
+    pub(super) fn quanthash_weight_pair_value(&self, pair: &Value) -> Option<Value> {
+        let source = pair.quanthash_weight_source()?;
+        let key = match pair.view() {
+            ValueView::Pair(key, _) => Value::str(key.clone()),
+            ValueView::ValuePair(key, _) => key.clone(),
+            _ => return None,
+        };
+        let (store_key, _) = crate::runtime::utils::quanthash_elem_entry(&key);
+        match self
+            .get_env_with_main_alias(&source)
+            .as_ref()
+            .map(Value::view)
+        {
+            Some(ValueView::Set(set, true)) => {
+                Some(Value::truth(set.elements.contains(&store_key)))
+            }
+            Some(ValueView::Bag(bag, true)) => Some(
+                bag.counts
+                    .get(&store_key)
+                    .map(|weight| Value::from_bigint(weight.clone()))
+                    .unwrap_or_else(|| Value::int(0)),
+            ),
+            Some(ValueView::Mix(mix, true)) => Some(
+                mix.weights
+                    .get(&store_key)
+                    .map(|weight| crate::value::mix_weight_to_value(*weight))
+                    .unwrap_or_else(|| Value::int(0)),
+            ),
+            _ => None,
+        }
+    }
+
+    /// Produce `.pairs` for a mutable QuantHash. A QuantHash weight is not an
+    /// element cell: assigning zero removes the key, so the pair carries the
+    /// source binding as dedicated lvalue metadata instead.
+    pub(super) fn try_quanthash_weight_pair_producer(
+        &mut self,
+        target: &Value,
+        target_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        if method != "pairs" || !args.is_empty() || target_name.is_empty() {
+            return None;
+        }
+        let pairs = match target.view() {
+            ValueView::Set(set, true) => set
+                .iter()
+                .map(|key| {
+                    Value::quanthash_weight_pair(
+                        set.typed_key(key),
+                        Value::TRUE,
+                        target_name.to_string(),
+                    )
+                })
+                .collect(),
+            ValueView::Bag(bag, true) => bag
+                .iter()
+                .map(|(key, weight)| {
+                    Value::quanthash_weight_pair(
+                        bag.typed_key(key),
+                        Value::from_bigint(weight.clone()),
+                        target_name.to_string(),
+                    )
+                })
+                .collect(),
+            ValueView::Mix(mix, true) => mix
+                .iter()
+                .map(|(key, weight)| {
+                    Value::quanthash_weight_pair(
+                        mix.typed_key(key),
+                        crate::value::mix_weight_to_value(*weight),
+                        target_name.to_string(),
+                    )
+                })
+                .collect(),
+            _ => return None,
+        };
+        Some(Value::seq(pairs))
+    }
+
     /// Produce `method`'s result from `target`'s **element containers** instead
     /// of from clones, or `None` to let the ordinary pure-value producer run.
     ///
@@ -99,10 +183,9 @@ impl Interpreter {
     ///   `(1,2).pairs[0].value = 3`, with no new check needed;
     /// * a shaped, native-backed or lazy array, and an immutable `Map` — the
     ///   same carve-outs `vm_for_loop_alias.rs` documents;
-    /// * a mutable `QuantHash` (`BagHash`/`MixHash`/`SetHash`), whose *weights*
-    ///   are not stored element containers and whose `.value = 0` **removes**
-    ///   the key. That is a genuinely different operation and keeps its
-    ///   writeback arm (ADR-0036 §5 Q2, `t/for-pairs-value-quanthash-writeback.t`).
+    /// * a mutable `QuantHash` (`BagHash`/`MixHash`/`SetHash`), which is routed
+    ///   by [`try_quanthash_weight_pair_producer`] because a weight has distinct
+    ///   zero-removal semantics (ADR-0036 §5 Q2).
     pub(super) fn try_element_container_producer(
         &mut self,
         target: &Value,
