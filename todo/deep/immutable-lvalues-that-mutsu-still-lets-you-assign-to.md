@@ -6,6 +6,16 @@ exception a rejected assignment throws; this ticket collects the cases where
 mutsu does not reject the assignment at all, which the same survey surfaced.
 Every row was probed against `raku` v2026.06.
 
+## Deep-triage note (2026-09-01)
+
+Moved from `todo/tickets/` because the remaining rows do not share a bounded
+implementation surface. Immutable List/Seq element stores and `:=` bindings
+need the live element-container semantics owned by ADR-0036 (whose producer
+and compensator work remains open), while implicit closure topics additionally
+need their direct-call and native map/grep writeback paths separated. Keep this
+survey here until those prerequisites make a focused slice independently
+verifiable.
+
 ## Status update (2026-08-27)
 
 Seven more rows are now **fixed** (`news/2026-08/closure-call-and-bareword-term-readonly-gaps.md`):
