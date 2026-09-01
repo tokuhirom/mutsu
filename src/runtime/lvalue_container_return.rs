@@ -38,6 +38,13 @@ impl Interpreter {
         match container.view() {
             ValueView::Proxy { .. } => Some(self.assign_proxy_lvalue(container.clone(), value)),
             ValueView::ContainerRef(cell) => {
+                // A promoted typed element carries its constraint on the cell
+                // (`array_slot_ref` / `hash_slot_ref`), so `tel() = "nope"` on
+                // a `my Int @typed` element is rejected here, as `@typed[0] =
+                // "nope"` would be.
+                if let Err(err) = self.check_container_cell_constraint(&cell, &value) {
+                    return Some(Err(err));
+                }
                 *cell.lock().unwrap() = value.clone();
                 Some(Ok(value))
             }
@@ -68,10 +75,11 @@ impl Interpreter {
     /// legacy chain is all that is left to try and must not be blocked.
     ///
     /// Also false for the *attribute accessor* shape
-    /// (`method x() is rw { $!x }`, `method items { @!items }`): a bare variable
-    /// tail names its location rather than computing one, is not yet compiled to
-    /// a container return (ADR-0059 Slice 2), and is already handled correctly by
-    /// the attribute machinery.
+    /// (`method x() is rw { $!x }`, `method items { @!items }`): an attribute
+    /// tail names its location rather than computing one, is deliberately not
+    /// boxed by the container-mode tail compile (`return_rw_container_name`
+    /// excludes twigils), and is already handled correctly by the attribute
+    /// machinery.
     pub(crate) fn setter_convention_would_preempt_lvalue_return(
         &mut self,
         target: &Value,

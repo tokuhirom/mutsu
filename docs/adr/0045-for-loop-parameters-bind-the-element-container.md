@@ -681,6 +681,11 @@ the reason string. The writeback family survives only as the fallback for shapes
 `write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
 `write_back_hash_value_item` for a hash iteration that could not be promoted.
 
+**Row 28 turned green on 2026-09-01**: the promoted element cell carries its array's `value_type`
+(landed with ADR-0059's bare-tail half, `news/2026-09/is-rw-bare-tail-returns-container.md`), so
+slice 5 keeps only rows 19/30 (bind-time immutable-source rejection). The note below is kept for
+the record.
+
 **A note for slice 5, which is shared three ways.** The element type constraint (row 28) is also
 ADR-0036 slice 4's and ADR-0042's; whichever lands it first owns it. **ADR-0036 slice 4 is the
 natural owner**: it already has to touch `methods_mut_method_lvalue.rs` to delete the env-scan

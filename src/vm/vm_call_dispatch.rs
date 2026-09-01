@@ -261,7 +261,12 @@ impl Interpreter {
             // Resolve $?DISTRIBUTION from the function's defining package (or an
             // enclosing module's distribution for a nested package / role method).
             compiler.current_distribution = self.resolve_package_distribution(&pkg);
-            let cc = compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body);
+            let cc = compiler.compile_routine_closure_body(
+                &def.params,
+                &def.param_defs,
+                &def.body,
+                def.is_rw || def.is_raw,
+            );
             (cc, compiler.take_compiled_functions())
         };
         let deprecated_info = def.deprecated_message.as_ref().map(|msg| {

@@ -461,6 +461,25 @@ impl Compiler {
                 // (`.VAR.^name`) underflowed the stack.
                 self.compile_expr_method_var_on_index(target);
             }
+            // `$m.return-rw` is the method spelling of `return-rw $m`: the
+            // invocant is the location being handed back, so it takes the same
+            // container-producing compile (`compile_return_rw_arg`) as the
+            // listop form. Routed through the listop arm rather than method
+            // dispatch, which would pass the invocant as a decontainerized
+            // value (ADR-0059).
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } if name == "return-rw" && args.is_empty() && modifier.is_none() && !quoted => {
+                let call = Expr::Call {
+                    name: *name,
+                    args: vec![(**target).clone()],
+                };
+                self.compile_expr(&call);
+            }
             Expr::MethodCall {
                 target,
                 name,

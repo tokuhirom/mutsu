@@ -704,7 +704,11 @@ impl Interpreter {
             .get(&source_name)
             .cloned()
             .unwrap_or_else(|| inner.clone());
-        if current.is_container_ref() {
+        // Already a location: a shared cell, or the deferred entry token a
+        // `:=` to a not-yet-existent key left in the variable
+        // (`$current := $current{$k}` in a path-walking `is rw` routine).
+        // Hand it out as-is rather than boxing the token into a fresh cell.
+        if current.is_container_ref() || matches!(current.view(), ValueView::HashEntryRef { .. }) {
             self.stack.push(current);
             return;
         }

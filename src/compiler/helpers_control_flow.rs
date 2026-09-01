@@ -884,7 +884,10 @@ impl Compiler {
                 // statement-context callers.
                 if is_last {
                     if let Stmt::Expr(expr) = stmt {
-                        self.compile_expr(expr);
+                        // The tail of an `is rw` routine body wrapped in an
+                        // implicit try (a body with CATCH/CONTROL) is still the
+                        // routine's lvalue return (ADR-0059 Slice 2).
+                        self.compile_routine_tail_expr(expr);
                         main_leaves_value = true;
                         tail_is_bare_container_read = Self::stmt_value_is_bare_container_read(expr);
                         continue;

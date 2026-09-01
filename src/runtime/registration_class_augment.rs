@@ -370,7 +370,6 @@ impl Interpreter {
                             compiled: None,
                             body_fp_cache: std::sync::OnceLock::new(),
                             body_facts_cache: std::sync::OnceLock::new(),
-                            rw_tail_expr: None,
                         };
                         self.registry_mut().functions.insert(
                             Symbol::intern(&qualified_name),
@@ -403,7 +402,6 @@ impl Interpreter {
                             compiled: None,
                             body_fp_cache: std::sync::OnceLock::new(),
                             body_facts_cache: std::sync::OnceLock::new(),
-                            rw_tail_expr: None,
                         };
                         self.registry_mut().functions.insert(
                             Symbol::intern(&resolved_method_name),

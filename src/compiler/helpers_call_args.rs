@@ -42,6 +42,25 @@ impl Compiler {
                 self.scalar_bind_autovivify = saved_av;
                 self.bind_terminal = saved_terminal;
             }
+            // `$flag ?? c<x> !! c<y>`: the condition is an ordinary value read;
+            // each arm is itself a location the routine may hand back, so both
+            // compile in container mode (raku: an `is rw` routine whose tail is
+            // a ternary over two elements assigns through the taken branch).
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                self.rw_return_operand = saved_rw;
+                self.compile_expr(cond);
+                self.rw_return_operand = true;
+                let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+                self.compile_return_rw_arg(then_expr);
+                let jump_end = self.code.emit(OpCode::Jump(0));
+                self.code.patch_jump(jump_else);
+                self.compile_return_rw_arg(else_expr);
+                self.code.patch_jump(jump_end);
+            }
             _ => {
                 let cell_name = Self::return_rw_container_name(arg);
                 self.compile_expr(arg);

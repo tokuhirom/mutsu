@@ -302,6 +302,11 @@ syntax-specific rewrite.
 - **Rows 1, 2, 5, 6, 7 and 8 of §1.3 turn green** (six rows, not seven — see the row 12 correction
   below). Verified against `raku -e` for each row plus the ambiguity/ `:kv` variants exercised in the
   new test file.
+- **Row 12 turned green on 2026-09-01** — the promoted cell now carries `ArrayData::value_type` /
+  `HashData::value_type` (`array_slot_ref` / `hash_slot_ref` register it, `assign_lvalue_container`
+  checks it), landed with ADR-0059's bare-tail half
+  (`news/2026-09/is-rw-bare-tail-returns-container.md`). What is left of slice 4 is the
+  `methods_mut_method_lvalue.rs` env-scan compensator deletion. The original slice-2 note follows.
 - **Row 12 does NOT turn green in slice 2**, correcting §4's phase list above: enforcing the typed
   array's element constraint requires teaching the promoted cell about `ArrayData::value_type` /
   `HashData::value_type` (`register_container_constraint`), which is explicitly slice 4's job. Slice 2

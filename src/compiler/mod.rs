@@ -1340,6 +1340,16 @@ pub(crate) struct Compiler {
     /// ordinary `is rw` writeback machinery — see `bind_target_direct`).
     /// Cleared while compiling a closure body, which is a fresh routine.
     rw_return_operand: bool,
+    /// ADR-0059 Slice 2: this compiler is compiling the body of an `is rw` /
+    /// `is raw` routine, whose *bare tail expression* (no `return-rw`) denotes
+    /// the storage location the routine hands its caller. The tail is then
+    /// compiled exactly like a `return-rw` operand (`compile_return_rw_arg`),
+    /// so `sub f() is rw { %h<k> }` returns the element's container and
+    /// `sub f() is rw { $x }` returns `$x`'s cell. Set per routine body by
+    /// `compile_sub_body_with_deprecation` / `compile_method_body` /
+    /// the `is rw` anonymous-sub paths; a nested closure gets its own
+    /// compiler with the flag off.
+    rw_tail: bool,
     /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
     /// `:=` bind/rebind target (`my $x := @a[$i]`), not a genuine function-call
     /// argument. `compile_call_arg` reads this once at entry and clears it
@@ -1612,6 +1622,7 @@ impl Compiler {
             scalar_bind_autovivify: false,
             bind_terminal: false,
             rw_return_operand: false,
+            rw_tail: false,
             bind_target_direct: false,
             mint_named_pair: false,
             constant_vars: std::collections::HashSet::new(),
@@ -1666,6 +1677,14 @@ impl Compiler {
     /// Run `f` with the escaping-position flag set to `escaping`, restoring the
     /// previous value afterward. Used to mark which syntactic positions cause a
     /// closure created within them to escape its frame (see `escaping_position`).
+    /// ADR-0059 Slice 2: mark this compiler as compiling an `is rw`/`is raw`
+    /// routine body, whose bare tail compiles to the container it denotes.
+    /// Used by the interpreter's carrier recompile of a `SubData` body, which
+    /// builds its own fresh `Compiler` (`compile_block_value_opts`).
+    pub(crate) fn set_rw_tail(&mut self, rw_tail: bool) {
+        self.rw_tail = rw_tail;
+    }
+
     pub(super) fn with_escape<R>(&mut self, escaping: bool, f: impl FnOnce(&mut Self) -> R) -> R {
         let saved = self.escaping_position;
         self.escaping_position = escaping;
@@ -3479,7 +3498,10 @@ impl Compiler {
                     match stmt {
                         Stmt::Expr(expr) => {
                             // Tail expression becomes the body value -> escapes.
-                            self.with_escape(true, |c| c.compile_expr(expr));
+                            // (`compile_routine_tail_expr`: an `is rw` routine
+                            // body recompiled through the interpreter carrier
+                            // still returns its tail's container, ADR-0059.)
+                            self.with_escape(true, |c| c.compile_routine_tail_expr(expr));
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }
@@ -3728,7 +3750,18 @@ impl Compiler {
                         PhaserBlockResult::Push | PhaserBlockResult::Discard => {
                             self.compile_last_stmt_as_value(s)
                         }
-                        PhaserBlockResult::ReturnViaTopic => self.compile_last_stmt_as_topic(s),
+                        // A routine body's tail (ADR-0059: an `is rw` routine
+                        // with LEAVE/ENTER phasers still returns its tail's
+                        // container); every other tail shape is shared with
+                        // the `let`/`do` block helper.
+                        PhaserBlockResult::ReturnViaTopic => {
+                            if let Stmt::Expr(expr) = s {
+                                self.with_escape(true, |c| c.compile_routine_tail_expr(expr));
+                                self.code.emit(OpCode::SetTopic);
+                            } else {
+                                self.compile_last_stmt_as_topic(s)
+                            }
+                        }
                     }
                 } else {
                     self.compile_stmt(s);

@@ -1,7 +1,8 @@
 # ADR-0059: An `is rw` routine returns a container — retiring caller-side tail re-interpretation
 
-- Status: Accepted (Slices 1-2 implemented, except Slice 2's bare-`is rw`-tail
-  half; Slice 3 open)
+- Status: Accepted (Slices 1-2 implemented — the bare-`is rw`-tail half
+  landed 2026-09-01, see `news/2026-09/is-rw-bare-tail-returns-container.md`;
+  Slice 3 open)
 - Date: 2026-08-22
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline
   lexicals), ADR-0036 (element-container Pairs from subscripts)
@@ -133,21 +134,24 @@ Both lvalue call sites use it:
 
 ## What happens to the old mechanism
 
-`rw_sub_target_expr` / `assign_rw_target_expr` are **demoted, not left
-alongside as a peer**. They no longer decide anything: the routine now always
-runs first, and the tail re-interpretation is consulted only when the routine
-returned a plain value. That happens for exactly one shape — a **bare
-variable or attribute tail** (`sub f() is rw { $x }`, `method x() is rw { $!x }`),
-where the location is *named* rather than computed and the caller-side
-resolution happens to be correct.
+`rw_sub_target_expr` / `is_explicit_return_rw_target` / `assign_rw_target_expr`
+and the `rw_tail_expr` plan field are **deleted** (2026-09-01). The routine
+always runs, and the assignment writes through whatever it returned: the
+compiler produces the container for a `return-rw` operand *and* for the bare
+tail of an `is rw`/`is raw` routine (`Compiler::rw_tail`), so the runtime
+never inspects a body. Whether a routine is rw-capable at all is a
+declaration fact — `is rw`, `is raw`, or a body that spells `return-rw`
+(`RoutineBodyFacts::uses_return_rw`) — and a routine that is not still runs
+before the assignment is refused, as in Rakudo.
 
-Symmetrically, `try_rw_method_container_lvalue` skips the attribute-accessor
-shape (`rw_method_attribute_target`) rather than calling those bodies an extra
-time.
+The one shape the container-mode tail compile deliberately does not box is
+an **attribute** tail (`method x() is rw { $!x }`): `return_rw_container_name`
+excludes twigils, so `try_rw_method_container_lvalue` still skips the
+attribute-accessor shape (`rw_method_attribute_target`) and the attribute
+machinery handles it, as before.
 
-So there is one rule with one stated gap: **the container return owns every
-location a routine computes; a location a routine merely names still resolves
-by name.** Slice 2 closes the gap and deletes the old path.
+So there is one rule with no stated gap: **the container return owns every
+location a routine hands back.**
 
 ## Slices
 
@@ -164,11 +168,19 @@ by name.** Slice 2 closes the gap and deletes the old path.
   `news/2026-08/return-rw-produces-first-class-containers.md`; pinned by
   `t/return-rw-container-values.t`.
 
-  Still open: a **bare `is rw` tail with no `return-rw`**
-  (`sub f() is rw { $x }`), which continues to resolve through the caller-side
-  tail re-interpretation. `rw_sub_target_expr`, `is_explicit_return_rw_target`,
-  `assign_rw_target_expr` and the `rw_tail_expr` plan field are deleted when
-  that lands, not before.
+  **Bare-tail half landed 2026-09-01**
+  (`news/2026-09/is-rw-bare-tail-returns-container.md`): the last expression
+  statement of an `is rw`/`is raw` routine body compiles through
+  `compile_return_rw_arg` (`Compiler::rw_tail` → `compile_routine_tail_expr`),
+  on every body-compile path — named sub, method, anonymous `sub`, the
+  implicit-try and phaser-block wrappers, and the interpreter carrier's
+  recompile (`pending_eval_rw_tail`). A ternary tail compiles each arm in
+  container mode. `rw_sub_target_expr`, `is_explicit_return_rw_target`,
+  `assign_rw_target_expr` and the `rw_tail_expr` plan field are gone;
+  `RoutineBodyFacts::uses_return_rw` is the only body fact the lvalue
+  machinery keeps. Along the way the promoted element cell learned its
+  array's/hash's `value_type` (the core of ADR-0036 slice 4), and a return
+  type constraint now checks through the container it receives.
 - **Slice 3 (open):** extend container mode to *every* single-dimension
   subscript call argument, matching what `MultiDimIndex` arguments already do
   unconditionally, and retire the `__mutsu_index_rw_arg_*` snapshot/writeback

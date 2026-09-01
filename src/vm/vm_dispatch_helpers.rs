@@ -613,8 +613,12 @@ impl Interpreter {
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
         let (cc, own_compiled_fns) = {
             let mut compiler = crate::compiler::Compiler::new();
-            let cc =
-                compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body);
+            let cc = compiler.compile_routine_closure_body(
+                &data.params,
+                &data.param_defs,
+                &data.body,
+                data.is_rw || data.is_raw,
+            );
             (cc, compiler.take_compiled_functions())
         };
         let data = data.clone();
@@ -808,6 +812,7 @@ impl Interpreter {
                     &data.params,
                     &data.param_defs,
                     &data.body,
+                    data.is_rw || data.is_raw,
                 );
                 (cc, compiler.take_compiled_functions())
             };

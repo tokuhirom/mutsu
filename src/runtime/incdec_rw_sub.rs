@@ -22,20 +22,12 @@ use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value};
 
 impl Interpreter {
-    /// Whether a named routine exposes a writable call result: declared `is rw`,
-    /// or with an explicit `return-rw` tail (which is assignable on its own).
+    /// Whether a named routine exposes a writable call result: declared `is rw`
+    /// / `is raw`, or spelling an explicit `return-rw` (which is assignable on
+    /// its own) — see `routine_is_rw_capable`.
     fn named_sub_is_rw_capable(&mut self, name: &str, call_args: &[Value]) -> bool {
-        let Some(def) = self.resolve_function_with_alias(name, call_args) else {
-            return false;
-        };
-        if def.is_rw {
-            return true;
-        }
-        def.rw_tail_expr
-            .as_deref()
-            .cloned()
-            .or_else(|| Self::rw_sub_target_expr(&def.body))
-            .is_some_and(|tail| Self::is_explicit_return_rw_target(&tail))
+        self.resolve_function_with_alias(name, call_args)
+            .is_some_and(|def| Self::routine_is_rw_capable(&def))
     }
 
     /// `__mutsu_incdec_named_sub_lvalue(name, [args], op_label)`

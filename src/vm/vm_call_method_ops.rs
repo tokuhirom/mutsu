@@ -605,6 +605,11 @@ impl Interpreter {
                 }
                 ValueView::ContainerView(_) => target.deref_container(),
                 ValueView::ContainerRef(_) => target.deref_container(),
+                // A deferred hash-entry token straight off an lvalue return
+                // (`sub g() is rw { %h<absent> }; g().defined`) reads as the
+                // entry's current value — `Any` while the key does not exist —
+                // exactly like the `:=`-bound spelling does through `GetLocal`.
+                ValueView::HashEntryRef { .. } => target.deref_container(),
                 // ADR-0040 slice 1: a reference-pushed element
                 // (`@a.push(@b)`; `@a[0]` is `$`-itemized around a shared
                 // `ContainerRef` alias, i.e. `Scalar(ContainerRef(cell))`)

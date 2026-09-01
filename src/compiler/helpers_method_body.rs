@@ -91,6 +91,7 @@ impl Compiler {
             &method_params,
             &effective_param_defs,
             body,
+            is_rw,
         );
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();

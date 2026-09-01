@@ -326,14 +326,6 @@ pub(crate) struct FunctionDef {
     /// `Interpreter::routine_body_facts`. Derived state, like `body_fp_cache`.
     #[serde(skip)]
     pub(crate) body_facts_cache: std::sync::OnceLock<RoutineBodyFacts>,
-    /// The lvalue-assignment target of a routine-level `is rw`/`is raw`
-    /// routine (or an explicit tail `return-rw $var`), seeded from the plan's
-    /// `CompiledRoutineMetadata::rw_tail_expr` at registration. The assign
-    /// machinery (`assign_named_sub_lvalue_with_values`) prefers this over
-    /// re-extracting the tail from `body`, which a body-less plan-derived
-    /// def cannot serve (ADR-0019 C6e-3c lvalue keep-class).
-    #[serde(skip)]
-    pub(crate) rw_tail_expr: Option<std::sync::Arc<Expr>>,
 }
 
 /// Properties of a routine body that the on-the-fly compilation gates ask about.
@@ -350,6 +342,11 @@ pub(crate) struct RoutineBodyFacts {
     pub(crate) needs_interpreter: bool,
     /// The body declares a `state` variable somewhere.
     pub(crate) declares_state: bool,
+    /// The body contains an explicit `return-rw` call somewhere. Such a
+    /// routine hands its caller a container even without the `is rw` trait
+    /// (`sub f() { return-rw $v }; f() = 5` writes `$v` in Rakudo), so the
+    /// lvalue-assignment machinery treats it as rw-capable (ADR-0059).
+    pub(crate) uses_return_rw: bool,
     /// Line-insensitive identity of the declaration (params, param_defs, body
     /// with top-level `SetLine` markers stripped) — the redeclaration
     /// comparison keys on it. Carried here so a plan-derived def keeps its

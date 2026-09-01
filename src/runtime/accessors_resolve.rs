@@ -47,8 +47,12 @@ impl Interpreter {
             "?ROLE".to_string(),
         ];
         method_params.extend(def.params.iter().cloned());
-        let mut cc =
-            compiler.compile_routine_closure_body(&method_params, &def.param_defs, &def.body);
+        let mut cc = compiler.compile_routine_closure_body(
+            &method_params,
+            &def.param_defs,
+            &def.body,
+            def.is_rw,
+        );
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();
         def.compiled_code = Some(std::sync::Arc::new(cc));
