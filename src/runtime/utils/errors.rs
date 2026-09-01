@@ -283,7 +283,13 @@ pub(crate) fn type_check_element_typed_error(
     let msg = type_check_element_error(var_name, expected, val);
     let display_name = format_var_name_for_error(var_name);
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+    // `.expected` is the expected TYPE OBJECT, as raku's X::TypeCheck exposes
+    // it (`$!.expected.^name` is `Int`, not `Str`) -- matching the sibling
+    // `RuntimeError::typecheck_assignment`, which has always used it.
+    attrs.insert(
+        "expected".to_string(),
+        crate::value::expected_type_object(expected),
+    );
     // `.got` is the offending value itself (e.g. `42`), so `$!.got ~~ Int` holds,
     // matching Rakudo's X::TypeCheck.
     attrs.insert("got".to_string(), val.clone());

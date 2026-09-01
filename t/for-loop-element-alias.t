@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 86;
+plan 93;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -401,6 +401,29 @@ plan 86;
     # `value_type` (news/2026-09/is-rw-bare-tail-returns-container.md).
     dies-ok { my Int @a = 1, 2; for @a -> $v is rw { $v = "s" } },
         'row 28: a typed array rejects a bad element through the alias';
+
+    # ... and the write really is refused, not merely reported.
+    my Int @a = 1, 2;
+    try { for @a -> $v is rw { $v = "s" } };
+    is-deeply @a, Array[Int].new(1, 2), 'row 28: the typed array is unchanged';
+
+    my $err;
+    try { my Int @b = 1, 2; for @b -> $v is rw { $v = "s" }; CATCH { default { $err = $_ } } };
+    isa-ok $err, X::TypeCheck::Assignment, 'row 28: the failure is X::TypeCheck::Assignment';
+    is $err.message,
+        'Type check failed for an element of @b; expected Int but got Str ("s")',
+        'row 28: ... and it blames the container, not the alias';
+
+    # The topic form and a derived producer go through the same promoted cell.
+    dies-ok { my Int @c = 1, 2; for @c { $_ = "s" } },
+        'row 28: the implicit topic is constrained too';
+    dies-ok { my Int @d = 1, 2; for @d.values -> $v is rw { $v = "s" } },
+        'row 28: a `.values` producer hands out a constrained cell';
+    dies-ok { my Int %h = a => 1; for %h.values -> $v is rw { $v = "s" } },
+        'row 28: so does a typed hash';
+
+    lives-ok { my Int @e = 1, 2; for @e -> $v is rw { $v = 9 } },
+        'row 28: a well-typed write through the alias still lands';
 }
 
 # ---------------------------------------------------------------------------

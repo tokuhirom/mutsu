@@ -38,7 +38,7 @@ use Test;
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
 
-plan 34;
+plan 35;
 
 # --- §1.3 row 1: :p stale read (Slice 2) -----------------------------------
 {
@@ -202,6 +202,7 @@ plan 34;
     # Green since 2026-09-01: the promoted element cell carries its array's
     # `value_type` (news/2026-09/is-rw-bare-tail-returns-container.md).
     dies-ok { (@a[0]:p).value = 42 }, 'a typed array element constraint is enforced through :p (row 12)';
+    is-deeply @a, Array[Str].new("A", "B"), '... and the rejected write did not land (row 12)';
 }
 
 # --- Slice 3: the producers that now hand out element containers ------------

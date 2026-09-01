@@ -647,6 +647,19 @@ impl Interpreter {
             // writeback that bind depends on. Retiring per LOOP instead of per
             // ITERATION silently drops such an iteration's write.
             let aliased = promoted.is_some() || item_carries_cell;
+            // A cell handed out by a container-aware producer (`.values`,
+            // `.reverse`, `.sort`) carries its container's element constraint
+            // but not the container's NAME -- `vm_element_producers.rs` sees a
+            // receiver value, not a variable. The loop resolved that name for
+            // its own routing, so tell the cell, and an element type-check
+            // failure blames `@a` the way a direct store does instead of the
+            // bare `@` the promotion primitive seeds.
+            if item_carries_cell
+                && let Some(ref source) = container_binding
+                && let ValueView::ContainerRef(cell) = item.view()
+            {
+                crate::value::retag_element_owner(&cell, source);
+            }
             rw_writeback = rw_writeback_base && !aliased;
             writes_back_loop_var = topic_writeback_base && !aliased;
             let item = promoted.unwrap_or(item);
