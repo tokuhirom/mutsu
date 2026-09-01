@@ -98,9 +98,13 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     } else {
         args
     };
+    // Appended elements are COPIES, so a first-class element cell reaching
+    // here as a plain value (`@a.append($p.value)`, ADR-0036) must be read
+    // through rather than stored -- otherwise a later write to the source
+    // rewrites the appended element. Only a bind aliases.
     flattened
         .into_iter()
-        .map(Value::itemize_for_element_store)
+        .map(|v| v.into_deref().itemize_for_element_store())
         .collect()
 }
 

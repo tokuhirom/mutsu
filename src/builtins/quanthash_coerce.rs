@@ -175,6 +175,12 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
 /// or string weight is coerced to an `Int`. `what` only affects which lazy error
 /// is raised by the caller.
 fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
+    // ADR-0036 slice 3: a Pair's value can be the source element's own
+    // `Scalar` container (`%h.pairs`, `key => $x`, `@a[0]:p`). A weight is
+    // read as DATA, so read through the container first -- otherwise every
+    // arm below misses and the truthy `_` fallback silently makes the weight
+    // `1`. Pinned by `t/pairs-element-container.t`.
+    let v = &v.deref_container();
     match v.view() {
         ValueView::Int(i) => Ok(BigInt::from(i)),
         // Weights can exceed i64::MAX (e.g. `{a => 10**20}.Bag`); a BigInt weight
@@ -372,6 +378,9 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
 /// `Real` weight (and raises `X::OutOfRange`/`X::Numeric::Real`/`X::Str::Numeric`
 /// for Inf/NaN/Complex/non-numeric strings, matching Raku).
 pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
+    // See [`pair_weight`]: a Pair's value can be the source element's own
+    // container, and a weight is a DATA read.
+    let v = &v.deref_container();
     match v.view() {
         ValueView::Int(i) => Ok(i as f64),
         ValueView::Num(n) => {
@@ -491,6 +500,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
 /// Delegates to [`mix_pair_weight`] for the Inf/NaN/Complex/bad-Str validation
 /// errors, then returns the exact `Value` rather than that validated f64.
 pub(crate) fn mix_pair_weight_value(v: &Value) -> Result<Value, RuntimeError> {
+    let v = &v.deref_container();
     let f = mix_pair_weight(v)?;
     match v.view() {
         ValueView::Int(_)

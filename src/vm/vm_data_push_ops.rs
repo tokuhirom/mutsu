@@ -193,6 +193,17 @@ impl Interpreter {
             let popped = self.stack.pop().unwrap_or(Value::NIL);
             self.push_nil_to_elem_default(target_name, popped)
         };
+        // A pushed element is a COPY of the value, never the container it was
+        // read out of -- only a bind aliases. The pushed expression can still
+        // BE a first-class element cell whenever it came from a read that does
+        // not decontainerize (a method return, most visibly `.value` on a Pair
+        // carrying an element container, ADR-0036), and storing that cell would
+        // make every later write to the source rewrite the pushed element.
+        // Skipped when `value_source_idx` is set: that is the reference-push
+        // shape (`@a.push(@b)`), which deliberately shares a cell just below.
+        if value_source_idx.is_none() {
+            val = val.into_deref();
+        }
 
         // Reference push (`@a.push(@b)` / `@a.push(%h)`): Raku's non-flattening
         // `**@` slurpy stores the container itself, so later mutations of the

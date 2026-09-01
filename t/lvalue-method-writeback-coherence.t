@@ -68,12 +68,13 @@ plan 15;
     my $r = n => $n;
     my @log;
     for 1..3 {
-        # `.Int` decontainerizes: a bare `$r.value` read hands out the *cell*,
-        # so pushing it would alias every element of @log to the final value.
-        # That read boundary is a separate, still-open problem -- see
-        # todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md
+        # A bare `$r.value` read hands out the element *cell* (that is what
+        # `.VAR` needs), so `push` has to store a COPY of it -- otherwise every
+        # element of @log would alias the final value. Fixed with ADR-0036
+        # slice 3's `.pairs` routing; see
+        # news/2026-09/pairs-hands-out-element-containers.md.
         $r.value++;
-        @log.push($r.value.Int);
+        @log.push($r.value);
     }
     is-deeply @log, [1, 2, 3], '.value++ in a loop reads the live value each iteration';
 }

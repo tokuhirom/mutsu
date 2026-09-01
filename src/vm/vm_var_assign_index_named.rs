@@ -710,6 +710,14 @@ impl Interpreter {
             }
             _ => (raw_val, false, Vec::new()),
         };
+        // An element ASSIGNMENT stores a COPY of the value; only the `:=` bind
+        // handled just above aliases. The RHS can still BE a first-class element
+        // cell whenever it came from a read that does not decontainerize (a
+        // method return, most visibly `.value` on a Pair carrying an element
+        // container, ADR-0036), and storing that cell would make every later
+        // write to the source rewrite this element. Pinned by
+        // `t/pairs-element-container.t`.
+        let val = if bind_mode { val } else { val.into_deref() };
         // Assigning Nil to a container element resets it to its default:
         // ADR-0049 slice 4 -- routed through the same `assign_store_nil_default`
         // helper slice 3 uses for whole-container (list-)assignment, so an
