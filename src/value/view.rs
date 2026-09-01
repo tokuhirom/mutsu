@@ -254,6 +254,25 @@ impl Value {
         Value::ValuePair(Box::new(key), Box::new(val))
     }
 
+    /// Construct a Pair yielded by a mutable QuantHash's `.pairs`. Its source
+    /// binding is private lvalue metadata: reads remain an ordinary Pair value,
+    /// while `.value =` can update the weight (including zero-removal).
+    pub(crate) fn quanthash_weight_pair(key: Value, val: Value, source: String) -> Self {
+        Value::from_repr(ValueRepr::ValuePair(
+            Box::new(key),
+            Box::new(val),
+            Some(source),
+        ))
+    }
+
+    /// Return the mutable QuantHash binding a `.pairs` result writes through.
+    pub(crate) fn quanthash_weight_source(&self) -> Option<String> {
+        match self.clone().into_repr() {
+            ValueRepr::Pair(_, _, source) | ValueRepr::ValuePair(_, _, source) => source,
+            _ => None,
+        }
+    }
+
     /// Construct a `Sub` value from its shared payload.
     #[inline]
     pub(crate) fn sub_value(data: crate::gc::Gc<SubData>) -> Self {

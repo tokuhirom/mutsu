@@ -104,11 +104,11 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         }
         Kind::Pair => {
             let p = Arc::unwrap_or_clone(unsafe { take_arc::<PairBox>(bits) });
-            ValueRepr::Pair(p.0, Box::new(p.1))
+            ValueRepr::Pair(p.0, Box::new(p.1), p.2)
         }
         Kind::ValuePair => {
             let p = Arc::unwrap_or_clone(unsafe { take_arc::<ValuePairBox>(bits) });
-            ValueRepr::ValuePair(Box::new(p.0), Box::new(p.1))
+            ValueRepr::ValuePair(Box::new(p.0), Box::new(p.1), p.2)
         }
         Kind::Enum => {
             let e = Arc::unwrap_or_clone(unsafe { take_arc::<EnumBox>(bits) });

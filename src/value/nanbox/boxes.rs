@@ -30,10 +30,18 @@ pub(in crate::value) struct BigRatBox(
 );
 
 #[derive(Debug, Clone)]
-pub(in crate::value) struct PairBox(pub(in crate::value) String, pub(in crate::value) Value);
+pub(in crate::value) struct PairBox(
+    pub(in crate::value) String,
+    pub(in crate::value) Value,
+    pub(in crate::value) Option<String>,
+);
 
 #[derive(Debug, Clone)]
-pub(in crate::value) struct ValuePairBox(pub(in crate::value) Value, pub(in crate::value) Value);
+pub(in crate::value) struct ValuePairBox(
+    pub(in crate::value) Value,
+    pub(in crate::value) Value,
+    pub(in crate::value) Option<String>,
+);
 
 #[derive(Debug, Clone)]
 pub(in crate::value) struct EnumBox {

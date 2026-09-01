@@ -494,7 +494,11 @@ impl Interpreter {
             return Ok(value);
         }
         if method == "value" {
-            let pair_data = match target.view() {
+            // The lvalue builtin receives its target as a VarRef when the
+            // source Pair was named (`$p.value = ...`); inspect the carried
+            // Pair rather than the call-bound wrapper.
+            let pair_target = target.unwrap_varref();
+            let pair_data = match pair_target.view() {
                 ValueView::Pair(key, current_value) => Some((
                     key.clone(),
                     Value::str(key.clone()),
@@ -508,6 +512,22 @@ impl Interpreter {
                 _ => None,
             };
             if let Some((_key, key_elem, current_value)) = pair_data {
+                // A Pair emitted by a mutable QuantHash's `.pairs` carries the
+                // binding that owns its weight. Unlike an Array/Hash element,
+                // the weight cannot be a ContainerRef: assigning zero removes
+                // the key. This is intentionally attached to the Pair rather
+                // than `topic_source_var`, so storing the Pair or using an
+                // explicit loop parameter keeps the writeback alive.
+                if let Some(source) = pair_target.quanthash_weight_source() {
+                    let code = crate::opcode::CompiledCode::new();
+                    self.quanthash_set_weight_elem(&code, &source, &key_elem, &value)?;
+                    // The lvalue helper has no caller bytecode, so it cannot
+                    // refresh a lexical source slot itself. Let the surrounding
+                    // call boundary pull this explicit producer source just as
+                    // it already does for ordinary method-lvalue writeback.
+                    self.pending_rw_writeback_sources.push(source);
+                    return Ok(value);
+                }
                 // A Pair whose value is a live `HashEntryRef` (a `for %h -> $p`
                 // loop pair) writes `.value` straight through to the shared hash
                 // node in place, so `$p.value = X` updates `%h{$p.key}` and the

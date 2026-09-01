@@ -417,10 +417,11 @@ fn every_variant_roundtrips_losslessly() {
             name: Symbol::intern("frobnicate"),
             is_regex: true,
         },
-        ValueRepr::Pair("key".to_string(), Box::new(Value::int(9))),
+        ValueRepr::Pair("key".to_string(), Box::new(Value::int(9)), None),
         ValueRepr::ValuePair(
             Box::new(Value::int(1)),
             Box::new(Value::str("v".to_string())),
+            None,
         ),
         ValueRepr::Enum {
             enum_type: Symbol::intern("Color"),
@@ -603,12 +604,16 @@ fn promise_and_channel_roundtrip_sharing_state() {
 
 #[test]
 fn debug_matches_the_repr_debug() {
-    let b = NanBox::from_repr(ValueRepr::Pair("k".to_string(), Box::new(Value::int(1))));
+    let b = NanBox::from_repr(ValueRepr::Pair(
+        "k".to_string(),
+        Box::new(Value::int(1)),
+        None,
+    ));
     assert_eq!(
         format!("{b:?}"),
         format!(
             "{:?}",
-            ValueRepr::Pair("k".to_string(), Box::new(Value::int(1)))
+            ValueRepr::Pair("k".to_string(), Box::new(Value::int(1)), None)
         )
     );
 }
