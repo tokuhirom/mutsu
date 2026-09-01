@@ -213,6 +213,32 @@ impl EntryTerminal {
         }
     }
 
+    /// The element type constraint of the container this terminal writes into,
+    /// as `(of-type, owner-sigil)` — the same pair `array_slot_ref` /
+    /// `hash_slot_ref` seed onto a cell they promote (ADR-0036 slice 4).
+    ///
+    /// A DEFERRED vivification token (`my Str @a; my $r := @a[5]`) never
+    /// reaches those primitives: the slot does not exist yet, so the token
+    /// materializes into a *fresh* cell at the first write. Without picking the
+    /// constraint up here that write bypasses the element type check the
+    /// equivalent in-range bind and the direct `@a[5] = v` store both perform.
+    pub(crate) fn element_constraint(&self) -> Option<(String, &'static str)> {
+        match self {
+            // SAFETY: a shared read of the aliased container, mirroring `peek`.
+            // The clone ends the borrow before any caller can mutate through
+            // `gc_contents_mut`.
+            EntryTerminal::Hash(arc, _) => {
+                let data: &HashData = unsafe { &*Gc::as_ptr(arc) };
+                data.value_type.clone().map(|ty| (ty, "%"))
+            }
+            // SAFETY: as above.
+            EntryTerminal::Array(arc, _) => {
+                let data: &ArrayData = unsafe { &*Gc::as_ptr(arc) };
+                data.value_type.clone().map(|ty| (ty, "@"))
+            }
+        }
+    }
+
     /// The raw value currently stored at this slot, without decontainerizing
     /// and without creating anything.
     pub(crate) fn peek(&self) -> Option<Value> {

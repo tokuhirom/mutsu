@@ -455,8 +455,7 @@ impl Interpreter {
                 && let Some(token) = current.as_ref()
                 && let Some(terminal) = token.hash_entry_terminal()
             {
-                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()));
-                terminal.insert(Value::container_ref(cell.clone()));
+                let cell = self.materialize_entry_cell(&terminal, val.clone())?;
                 let cell_val = Value::container_ref(cell);
                 if let Some(idx) = code.locals.iter().position(|n| n == &name)
                     && idx < self.locals.len()

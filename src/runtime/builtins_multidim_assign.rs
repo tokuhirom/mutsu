@@ -300,6 +300,42 @@ impl Interpreter {
             }
         }
 
+        // ADR-0036: `$p.value<k> = v` / `$p.value[i] = v` on a Pair. A Pair
+        // BINDS its value (rakudo's BUILD does `$!value := value`), so the pair
+        // and the variable it was built from are the *same* container and the
+        // element write belongs in it, in place. The clone-and-rebind below
+        // would fork them: `overwrite_*_bindings_by_identity` moves the
+        // variable onto the fresh `Gc` while the pair keeps the old one, so
+        // only the first write is ever visible through both
+        // (`t/pair-value-writethrough-coherence.t`).
+        if matches!(method.as_str(), "value" | "key")
+            && matches!(
+                target.view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..)
+            )
+            && dims.len() < 2
+        {
+            match current.view() {
+                ValueView::Hash(h) if h.key_type.is_none() => {
+                    let key = index.to_string_value();
+                    if let Some(entry) = current.hash_autovivify(&key) {
+                        entry.hash_entry_write(effective_value.clone());
+                        return Ok(effective_value);
+                    }
+                }
+                ValueView::Array(items, _) => {
+                    let idx = crate::runtime::to_int(&index) as usize;
+                    if idx >= items.len() && !crate::runtime::utils::is_shaped_array(&current) {
+                        current.array_grow_to(idx);
+                    }
+                    if current.array_set_in_place(idx, effective_value.clone()) {
+                        return Ok(effective_value);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         // Modify the container
         let updated = if dims.len() >= 2 {
             // Multi-dimensional index assignment (e.g., $c.a[2;1] = value)

@@ -133,9 +133,9 @@ impl Interpreter {
     /// to. `List`/`ItemList` are raku's immutable list types: `my $l = (1, 2);
     /// $l.pairs[0].value = 3` raises "Cannot modify an immutable Int (1)",
     /// while the `Array` kinds write through (`my $l = [1, 2]` gives `[3 2]`).
-    /// The Pair `.value` lvalue path uses this to decide whether an array found
-    /// in `env` may back a pair write; a `List` may not, and the write falls
-    /// through to the read-only guard instead.
+    /// The Pair `.value` lvalue path uses this to decide whether an Array-valued
+    /// pair may be assigned INTO; a `List` may not, and the write falls through
+    /// to the read-only guard instead.
     fn array_kind_is_mutable(kind: crate::value::ArrayKind) -> bool {
         !matches!(
             kind,
@@ -493,23 +493,6 @@ impl Interpreter {
             }
             return Ok(value);
         }
-        if method == "value"
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-            && class_name == "Pair"
-            && let Some(ValueView::Str(key)) = attributes.as_map().get("key").map(Value::view)
-            && let Some(ValueView::Hash(source_hash)) =
-                attributes.as_map().get("__mutsu_hash_ref").map(Value::view)
-        {
-            let mut updated = (**source_hash).clone();
-            updated.insert(key.to_string(), value.clone());
-            let replacement = Value::hash(updated);
-            self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
-            return Ok(value);
-        }
         if method == "value" {
             let pair_data = match target.view() {
                 ValueView::Pair(key, current_value) => Some((
@@ -524,7 +507,7 @@ impl Interpreter {
                 )),
                 _ => None,
             };
-            if let Some((key, key_elem, current_value)) = pair_data {
+            if let Some((_key, key_elem, current_value)) = pair_data {
                 // A Pair whose value is a live `HashEntryRef` (a `for %h -> $p`
                 // loop pair) writes `.value` straight through to the shared hash
                 // node in place, so `$p.value = X` updates `%h{$p.key}` and the
@@ -572,8 +555,8 @@ impl Interpreter {
                 // `$b` a BagHash/MixHash/SetHash) writes the new weight back to
                 // the source container. `topic_source_var` names that container
                 // (set by the for-loop). Weight 0 removes the key; a non-numeric
-                // Str coercion raises X::Str::Numeric. Immutable Bag/Mix/Set fall
-                // through to the read-only Bool guard below.
+                // Str coercion raises X::Str::Numeric. An immutable Bag/Mix/Set
+                // falls through to the read-only guard below.
                 if let Some(source) = self.topic_source_var.clone()
                     && matches!(
                         self.env.get(&source).map(Value::view),
@@ -592,225 +575,59 @@ impl Interpreter {
                     self.quanthash_set_weight_elem(&code, &source, &key_elem, &value)?;
                     return Ok(value);
                 }
-                let mut selected_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
-                // Track the source array's `ArrayKind` so the rebuilt array keeps
-                // its Array/Shaped identity (`for @a.pairs { .value = X }` must not
-                // demote `@a` to a bare List).
-                let mut selected_array: Option<(
-                    crate::gc::Gc<crate::value::ArrayData>,
-                    ArrayKind,
-                )> = None;
-
-                if let Some(var_name) = target_var
-                    && let Some(ValueView::Hash(candidate)) =
-                        self.env.get(var_name).map(Value::view)
-                    && candidate.contains_key(&key)
-                {
-                    selected_hash = Some(candidate.clone());
-                }
-                if selected_hash.is_none()
-                    && let Ok(i) = key.parse::<usize>()
-                    && let Some(var_name) = target_var
-                    && let Some(ValueView::Array(candidate, kind)) =
-                        self.env.get(var_name).map(Value::view)
-                    && Self::array_kind_is_mutable(kind)
-                    && candidate.get(i) == Some(current_value.as_ref())
-                {
-                    selected_array = Some((candidate.clone(), kind));
-                }
-
-                if selected_hash.is_none() {
-                    let mut candidates = self.env.values().filter_map(|bound| match bound.view() {
-                        ValueView::Hash(map)
-                            if map
-                                .get(&key)
-                                .is_some_and(|existing| existing == current_value.as_ref()) =>
-                        {
-                            Some(map.clone())
-                        }
-                        _ => None,
-                    });
-                    if let Some(first) = candidates.next()
-                        && candidates.all(|other| crate::gc::Gc::ptr_eq(&first, &other))
-                    {
-                        selected_hash = Some(first);
-                    }
-                }
-                if selected_array.is_none()
-                    && let Ok(i) = key.parse::<usize>()
-                {
-                    let mut candidates = self.env.values().filter_map(|bound| match bound.view() {
-                        ValueView::Array(arr, kind)
-                            if Self::array_kind_is_mutable(kind)
-                                && arr.get(i) == Some(current_value.as_ref()) =>
-                        {
-                            Some((arr.clone(), kind))
-                        }
-                        _ => None,
-                    });
-                    if let Some(first) = candidates.next()
-                        && candidates.all(|(other, _)| crate::gc::Gc::ptr_eq(&first.0, &other))
-                    {
-                        selected_array = Some(first);
-                    }
-                }
-
-                // A multidimensional shaped-array pair has an Array key such as
-                // `(0, 1)`, not a stringifiable one-dimensional index. Locate
-                // the unique backing shaped array by that full index tuple and
-                // current leaf value, then rebuild it through the existing
-                // multidimensional assignment path.
-                if selected_array.is_none()
-                    && let ValueView::Array(indices, _) = key_elem.view()
-                {
-                    let dims: Option<Vec<usize>> = indices
-                        .iter()
-                        .map(|index| usize::try_from(crate::runtime::to_int(index)).ok())
-                        .collect();
-                    if let Some(dims) = dims {
-                        let dims_i64: Vec<i64> = dims.iter().map(|&index| index as i64).collect();
-                        let mut candidates = self.env.values().filter_map(|bound| {
-                            let ValueView::Array(arr, kind) = bound.view() else {
-                                return None;
-                            };
-                            if !crate::runtime::utils::is_shaped_array(bound) {
-                                return None;
-                            }
-                            crate::runtime::utils::shaped_array_indexed_leaves(bound)
-                                .into_iter()
-                                .find(|(index, leaf)| {
-                                    index == &dims_i64 && leaf == current_value.as_ref()
-                                })
-                                .map(|_| (arr.clone(), kind, bound.clone()))
-                        });
-                        if let Some(first) = candidates.next()
-                            && candidates
-                                .all(|(other, _, _)| crate::gc::Gc::ptr_eq(&first.0, &other))
-                        {
-                            let replacement =
-                                Self::multidim_assign_nested(first.2, &dims, value.clone())?;
-                            self.overwrite_array_bindings_by_identity(&first.0, replacement);
+                // A reference-valued Pair *binds* its value — rakudo's `Pair`
+                // BUILD does `$!value := value`, so the pair holds the
+                // Array/Hash container itself and `.value = X` assigns INTO
+                // that container rather than rebinding the pair:
+                // `my @a = 1,2; my $p = (a => @a); $p.value = (3,4)` leaves
+                // `@a` as `[3 4]`. mutsu already shares the `Gc` here (a
+                // `$p.value.push` writes through), so replacing the contents in
+                // place reaches every alias. An immutable `List`/`ItemList`
+                // value is not assignable: raku list-assigns into it and dies on
+                // the first element (`(a => (1,2))`), or does nothing at all
+                // when it is empty (`(a => ())`).
+                match current_value.as_ref().view() {
+                    ValueView::Array(_, kind) if Self::array_kind_is_mutable(kind) => {
+                        let src = crate::runtime::coerce_to_array(value.clone());
+                        if current_value.as_ref().replace_container_contents(&src) {
                             return Ok(value);
                         }
                     }
-                }
-
-                if let Some(source_hash) = selected_hash {
-                    let mut updated = (*source_hash).clone();
-                    updated.insert(key, value.clone());
-                    let replacement = Value::hash(updated);
-                    self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
-                    return Ok(value);
-                }
-                if let Some((source_array, source_kind)) = selected_array
-                    && let Ok(i) = key.parse::<usize>()
-                {
-                    let mut updated = (*source_array).clone();
-                    if i < updated.len() {
-                        updated[i] = value.clone();
-                        // Preserve the source array's kind (Array/Shaped/…) so the
-                        // writeback does not demote it to a List.
-                        let replacement =
-                            Value::array_with_kind(crate::gc::Gc::new(updated), source_kind);
-                        self.overwrite_array_bindings_by_identity(&source_array, replacement);
-                        return Ok(value);
+                    ValueView::Array(list_items, _) => {
+                        let Some(first) = list_items.first().cloned() else {
+                            return Ok(value);
+                        };
+                        let type_name = crate::value::what_type_name(&first);
+                        return Err(RuntimeError::assignment_ro_typename(
+                            &type_name,
+                            &first.to_string_value(),
+                        ));
                     }
+                    ValueView::Hash(..) => {
+                        let src = crate::runtime::utils::coerce_to_hash(value.clone());
+                        if current_value.as_ref().replace_container_contents(&src) {
+                            return Ok(value);
+                        }
+                    }
+                    _ => {}
                 }
 
                 // Everything that could put a container behind the pair value
                 // has now been tried: a `ContainerRef` wrote through its cell
-                // far above, a mutable QuantHash weight went through
-                // `topic_source_var`, and a backing hash/array was searched for
-                // just now. What is left is a pair holding a *bare* value, and
-                // raku's `rw` `Pair.value` accessor has nothing to assign into:
-                // `my $p = (1 => "a"); $p.value = "z"` dies with
-                // "Cannot modify an immutable Str (a)".
-                //
-                // Fire only for the immutable scalar leaves. A reference value
-                // (Array/Hash/Instance/Proxy/...) is mutable in place and must
-                // still reach the env rebinds below — the one whitelisted roast
-                // consumer of them, `S02-types/pair.t`'s
-                // `(%(<a b c d>) => %(<e f g h>)).invert`, has a Hash value.
-                // The old `Bool`-only guard (`Set.pairs[0].value = 0`) is the
-                // narrowest case of this rule.
-                if matches!(
-                    current_value.as_ref().view(),
-                    ValueView::Int(_)
-                        | ValueView::BigInt(_)
-                        | ValueView::Num(_)
-                        | ValueView::Str(_)
-                        | ValueView::Bool(_)
-                        | ValueView::Rat(..)
-                        | ValueView::FatRat(..)
-                        | ValueView::BigRat(..)
-                        | ValueView::Complex(..)
-                        | ValueView::Enum { .. }
-                        | ValueView::Nil
-                        | ValueView::Package(_)
-                ) {
-                    let has_backing_hash = target_var.is_some_and(|vn| {
-                        matches!(self.env.get(vn).map(Value::view), Some(ValueView::Hash(_)))
-                    });
-                    if !has_backing_hash {
-                        let type_name = crate::value::what_type_name(current_value.as_ref());
-                        return Err(RuntimeError::assignment_ro_typename(
-                            &type_name,
-                            &current_value.to_string_value(),
-                        ));
-                    }
-                }
-
-                // Standalone pair (not derived from a hash or array): update the
-                // pair value directly by replacing the variable binding, and also
-                // propagate to any other environment bindings that hold a pair
-                // with the same key and same original value (simulating Raku
-                // container semantics where pair values are aliases).
-                {
-                    let old_value = current_value.as_ref().clone();
-                    // Collect all variable names in the environment that hold an
-                    // equivalent pair (same key and same old value).
-                    let vars_to_update: Vec<Symbol> = self
-                        .env
-                        .iter()
-                        .filter_map(|(name, val)| {
-                            let matches = match val.view() {
-                                ValueView::Pair(k, v) => k == &key && v == &old_value,
-                                ValueView::ValuePair(k, v) => {
-                                    k.to_string_value() == key && v == &old_value
-                                }
-                                _ => false,
-                            };
-                            if matches { Some(*name) } else { None }
-                        })
-                        .collect();
-
-                    if !vars_to_update.is_empty() {
-                        for var_name in &vars_to_update {
-                            let current = self.env.get_sym(*var_name).cloned();
-                            let new_pair = match current.as_ref().map(Value::view) {
-                                Some(ValueView::Pair(k, _)) => {
-                                    Value::pair(k.clone(), value.clone())
-                                }
-                                Some(ValueView::ValuePair(k, _)) => {
-                                    Value::value_pair(k.clone(), value.clone())
-                                }
-                                _ => continue,
-                            };
-                            self.env.insert_through_sym(*var_name, new_pair);
-                        }
-                        return Ok(value);
-                    } else if let Some(var_name) = target_var {
-                        let new_pair = match target.view() {
-                            ValueView::Pair(k, _) => Value::pair(k.clone(), value.clone()),
-                            ValueView::ValuePair(k, _) => {
-                                Value::value_pair(k.clone(), value.clone())
-                            }
-                            _ => unreachable!(),
-                        };
-                        self.env.insert_through(var_name.to_string(), new_pair);
-                        return Ok(value);
-                    }
-                }
+                // above (ADR-0036 — every element producer hands out the
+                // element's container, so a pair derived from an array or hash
+                // element arrives here already carrying that cell), a live
+                // `HashEntryRef` wrote through its node, a mutable QuantHash
+                // weight went through `topic_source_var`, and a reference value
+                // was assigned into just now. What is left is a pair holding a
+                // *bare* value, and raku's `rw` `Pair.value` accessor has
+                // nothing to assign into: `my $p = (1 => "a"); $p.value = "z"`
+                // dies with "Cannot modify an immutable Str (a)".
+                let type_name = crate::value::what_type_name(current_value.as_ref());
+                return Err(RuntimeError::assignment_ro_typename(
+                    &type_name,
+                    &current_value.to_string_value(),
+                ));
             }
         }
 

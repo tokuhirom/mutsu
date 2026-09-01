@@ -290,3 +290,30 @@ elem, map literal topic, grep topic, block arg topic, bind list assign; plus
 an immutable value (1 2 3)` where raku says `... immutable Range (1..3)`, so it
 belongs in the "close but not exact" section rather than the live harness.
 Blocker attribution (ADR-0036, not ADR-0040) unchanged.
+
+## Status update (2026-09-01): ADR-0036 slice 4 landed and did NOT move these rows either
+
+Slice 4 (the `env`-scan compensator deletion, plus element type constraints on
+deferred `:=`-bound slots — `news/2026-09/pair-value-lvalue-drops-the-env-scan.md`)
+completed ADR-0036's implementation. The harness above was re-run against it:
+**all seven rows answer exactly as they did on 2026-09-01 before the slice.**
+
+So the ADR-0036 attribution needs the same correction ADR-0040's did. ADR-0036
+is about what a *pair producer* hands out; every row here is about what the
+*subscript store path* and the *closure-call topic binding* accept, and neither
+of those is a pair producer. Concretely:
+
+- `(1,2,3)[0] = 9` / the `Seq` element never build a Pair at all — they need the
+  element **store** to know its container is immutable. `array_slot_ref` already
+  declines `ArrayKind::List`/`ItemList`, so the information exists; nothing on the
+  store path consults it.
+- the four topic rows are the closure-call readonly marking this ticket's own
+  "Why `-> $v { $v = 1 }` was fixable" section describes, unchanged.
+- `my $x := (1,2,3); $x = 5` is the bind-side whitelist in
+  `vm_var_assign_set_local.rs`, also untouched by any ADR-0036 slice.
+
+**Do not block this survey on ADR-0036 any longer** — it is finished and these
+rows are still open. The remaining work is two independent, and individually
+small, surfaces: an immutable-container check on the element store, and
+separating the direct-call and native-map callers of
+`call_compiled_closure_with_topic`.

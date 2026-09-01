@@ -93,7 +93,7 @@ impl Interpreter {
         // (`(target = v)`) replaces the token and the hash never sees the write.
         if matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. }) {
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            if self.materialize_bound_slot_to_cell(code, idx, val.clone()) {
+            if self.materialize_bound_slot_to_cell(code, idx, val.clone())? {
                 self.stack.push(val);
                 return Ok(());
             }

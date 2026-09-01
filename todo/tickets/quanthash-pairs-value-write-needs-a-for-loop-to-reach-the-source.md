@@ -97,3 +97,31 @@ worth not mistaking for one.
     nok $b<a>:exists, 'weight 0 removes the key, as it does through the loop form';
 }
 ```
+
+## A third failing shape, found by ADR-0036 slice 5's sweep (2026-09-01)
+
+The title says "only when the pair is a `for` loop's topic", and that is exact:
+a `for` loop with an **explicit named parameter** fails too, even though it
+looks like the working shape.
+
+```
+$ raku  -e 'my $b = <a a b>.BagHash; for $b.pairs -> $p { $p.value = 5 }; say $b'
+BagHash(a(5) b(5))
+$ mutsu -e 'my $b = <a a b>.BagHash; for $b.pairs -> $p { $p.value = 5 }; say $b'
+Cannot modify an immutable Int (2)
+
+$ mutsu -e 'my $b = <a a b>.BagHash; for $b.pairs { .value = 5 }; say $b'
+BagHash(a(5) b(5))          # the implicit-topic form works
+```
+
+`topic_source_var` is set when the loop binds the **topic**; `-> $p` binds a
+named parameter instead, so the arm never fires and the write falls through to
+the read-only guard. This is the sharpest repro of the three, because the two
+programs differ only in the loop's parameter form — and it is the shape
+`t/for-pairs-value-quanthash-writeback.t` happens not to use.
+
+Verified identical on `main` at `f03b85978`, so it is not a regression from
+ADR-0036 slice 4. Any fix should carry the source *with the pair* rather than in
+a loop-scoped side channel; that is the same "the name has to travel with the
+container" shape as
+`promoted-element-cell-does-not-know-its-container-name.md`.

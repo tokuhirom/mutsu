@@ -122,7 +122,7 @@ one landed slice closes several rows at once. Every ADR below had its
 | ADR | Status (verified 2026-09-01) | Deep/ticket rows it would close |
 |---|---|---|
 | [ADR-0045](../docs/adr/0045-for-loop-parameters-bind-the-element-container.md) for-param binds the element container | **CLOSED 2026-09-01 — every slice landed**, §1.3 re-measured 45/45 green | Nothing. The originating deep finding retired to `news/2026-09/for-loop-parameters-bind-the-element-container.md`; slice 6's sweep also filed `pair-value-assign-does-not-enforce-immutable-value`. |
-| [ADR-0036](../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md) element container cells | Slices 1-3 landed (`.pairs` routed 2026-09-01); slice 4's compensator deletion open | `immutable-lvalues-...` (6 rows), row 28 of the for-loop matrix (element type constraint — ADR-0036 slice 4 is the natural owner, shared with ADR-0045 slice 5 and ADR-0042) |
+| [ADR-0036](../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md) element container cells | **CLOSED 2026-09-01 — every slice landed.** §1.3 re-measured 12/12; slice 5's 69-row sweep found 3 residuals, all ticketed, none a regression | Nothing. Residuals: `producer-seq-index-read-decontainerizes-the-element-cell` (new), `promoted-element-cell-does-not-know-its-container-name`, `quanthash-pairs-value-write-needs-a-for-loop-...`. `immutable-lvalues-...` is **no longer blocked on this ADR** — re-measured, no row moved |
 | [ADR-0059](../docs/adr/0059-is-rw-routines-return-a-container.md) `is rw` routines return a container | Slices 1-2 landed **except the bare-`is rw`-tail half**; slice 3 open | `is-rw-sub-implicit-return-element-not-mutable` (Tier S — it *is* the bare-tail half), `rakuast-nodes-...`'s latent crash path (slice 3) |
 | [ADR-0055](../docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md) closure free vars bind their own | **Slice 1 landed 2026-08-28; slices 2-5 not started**; slice 2's prerequisite is the `unvouched-capture-cells` ticket | `call-compiled-closure-lacks-merge-all-...` (Gap 1: `OUTER` vs `CALLER`), `unvouched-capture-cells-leak-state-across-cro-client-requests` |
 | [ADR-0040](../docs/adr/0040-array-hash-elements-are-itemized-at-the-store.md) element itemization at the store | Slices 0-2 landed; **only row 24 (`.VAR`, slice 3) still diverges**; slices 4-5 = constraint + compensator deletion | `element-itemization-lost-in-scalar-binding` (row 24 only), `slurpy-hash-named-arg-...` (fold in) |
@@ -145,10 +145,12 @@ simple case and diverged only on a read through the alias, on a wholesale
 rebind, and on the clock. Consider the same treatment for ADR-0036 and
 ADR-0040 before declaring either done.
 
-What remains in the element-container cluster: **ADR-0036 slice 4** (`.pairs`
-routing, still backed out) and **ADR-0040 row 24** (`.VAR` on a `:=`-bound
-list). Then **ADR-0059's bare-tail half** (Tier S below), then **ADR-0055
-slice 2's prerequisite** (the Cro-blocking cell-freshness fix).
+What remains in the element-container cluster: **ADR-0040 row 24** (`.VAR` on
+a `:=`-bound list) — ADR-0036 closed 2026-09-01, and its sweep is the second
+consecutive one to pay for itself (three residuals the 12-row divergence table
+could not see, one of them three silent no-ops). Then **ADR-0059's bare-tail
+half** (Tier S below), then **ADR-0055 slice 2's prerequisite** (the
+Cro-blocking cell-freshness fix).
 
 **One measured process exception, kept from the previous regen:** when a
 change alters a *universal property of values* ("what is in every

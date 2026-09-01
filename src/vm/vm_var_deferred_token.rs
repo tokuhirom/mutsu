@@ -102,8 +102,10 @@ impl Interpreter {
         // The token's own slot now holds the outermost created container:
         // promote the bound variable to a shared cell over it so the two alias.
         let created = token.hash_entry_locate().and_then(|t| t.peek())?;
-        if !self.materialize_bound_slot_to_cell(code, slot, created) {
-            return None;
+        match self.materialize_bound_slot_to_cell(code, slot, created) {
+            Ok(true) => {}
+            Ok(false) => return None,
+            Err(e) => return Some(Err(e)),
         }
         for _ in 0..depth + 1 {
             self.stack.pop();
