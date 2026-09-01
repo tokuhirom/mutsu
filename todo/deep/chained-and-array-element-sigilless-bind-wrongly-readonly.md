@@ -88,3 +88,12 @@ my \x := @arr[0];
 x = 1000;
 say @arr;   # raku: [1000 2 3]; mutsu: dies "Cannot modify an immutable value (x)"
 ```
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+Both shapes still die, but the message changed: mutsu now says `Cannot modify
+an immutable Int (5)` / `Cannot modify an immutable Int (1)` rather than
+`... immutable value (x)`. The alias apparently resolves to the *value* now
+instead of being flagged read-only by name, so the `is_readonly` /
+`mark_readonly` hypothesis above may be stale — break with `rust-gdb` at the
+site that raises it and read the real path before fixing.

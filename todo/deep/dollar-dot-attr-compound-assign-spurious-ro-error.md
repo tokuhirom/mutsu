@@ -120,3 +120,20 @@ lowering. Worth an ADR before starting.
 - `src/parser/stmt/assign/compound_expr.rs` — the `op=`-through-a-method lowering
 - `src/compiler/expr.rs` / `src/compiler/expr_method.rs` — where a `$.`-twigil
   term would gain its itemization
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): the mutsu column moved
+
+The title's "spurious RO error" no longer happens. For a non-`rw` `has $.x =
+5` inside a method, current `main` gives:
+
+| form | raku | mutsu (2026-09-01) |
+| --- | --- | --- |
+| `$.x = 9` | throws `X::Assignment::RO` | **succeeds and mutates** (unchanged) |
+| `$.x *= 2` | silent no-op, expression value `10`, attr stays `5` | **mutates: attr becomes `10`** (was: threw "method 'x' is not rw") |
+| `self.x *= 2` | throws | throws `X::Assignment::RO: method 'x' is not rw` |
+| `$!x *= 2` | mutates | mutates |
+
+The `.VAR.^name` probes (`Scalar` / `Int` / `Int`) already match raku. Both
+halves still diverge, now as silent over-mutation rather than a throw —
+probably moved by `ffab0eb0c` ("attribute and collection container
+identity"). The "accessor read returns an itemized copy" ADR ask is unchanged.

@@ -181,3 +181,12 @@ partial-whitelist battery and a re-vendoring recipe.
 No design decision is needed for the *bundling*: the candidate, its license,
 and the vendoring recipe are all decided and documented. The remaining
 interpreter blocker is `deep/`, and lives there.
+
+## Note 2026-09-01 (TRIAGE regeneration)
+
+`proxy-at-pos-store-and-shadowed-capture`, which this file names as a
+suspected cause of the remaining failures, was verified **fixed** on `main`
+and closed (`news/2026-09/proxy-at-pos-store-and-shadowed-capture-fixed.md`).
+The 13/15 count above predates that; re-measure `t/make.rakutest` and
+`t/namespaces.rakutest` before bisecting them. The dist was not fetched for
+this re-verification (network), so the count itself is unconfirmed.

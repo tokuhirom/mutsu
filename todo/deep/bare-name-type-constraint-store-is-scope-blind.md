@@ -201,3 +201,18 @@ so residual 1 reduces to routing the `_fast` consultation sites through the
 existing `element_constraint_for` accessor: mechanical, not architectural.
 Scalars are the architectural half, because the scalar cell has no `of` field
 at all. ADR-0042 §3 has the measurements.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): no observable divergence left
+
+The request in the 2026-08-31 status ("re-run §2.1 and §2.2 in full before
+dispatching slice 2") was done: ADR-0042 §2.1's seven scalar shapes, §2.2's
+seven container shapes, the five spot-check rows A/B/C/E/F, and two
+"outer typed `@`/`%` keeps enforcing after a shadow" rows — **21 rows, all
+identical to raku** on `target/debug/mutsu`.
+
+What remains is therefore *not* a correctness bug: it is ADR-0042 slices 2-3
+(a scalar cell carries its `of`; delete `var_type_constraints` and its six
+workarounds). This file stays open only as the tracking record for that
+cleanup, and should be re-scoped as such (or retired once slice 3 lands). Do
+not dispatch it to an agent as "fix the scope-blind constraint store" — there
+is no failing repro to hand it.

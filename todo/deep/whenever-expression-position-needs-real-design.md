@@ -183,3 +183,15 @@ react {
 }'
 # prints "Supply", not "Tap" -- even the narrow do{}-wrapped case is broken
 ```
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): the symptom moved
+
+Both legal shapes (`my $tap = do whenever ...` and `do { whenever ... }`) now
+answer `Tap` for `.WHAT` and deliver `got 1` — the `Str "whenever"` /
+`Supply` / `Any` symptoms above are gone. What is still wrong is the
+**subscription identity** half: after `$s.emit(1); $tap.close; $s.emit(2)`,
+raku prints `got 1` then `done`, but mutsu prints only `done` — closing the
+Tap retroactively drops the value emitted *before* the close. ADR-0053's
+header still says "implementation not started", which is stale relative to
+the `.WHAT` result; whoever picks this up should first reconcile the ADR with
+whatever landed, then implement the identity slice.
