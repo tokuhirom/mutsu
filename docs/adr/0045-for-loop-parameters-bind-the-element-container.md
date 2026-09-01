@@ -1,7 +1,7 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27, slice 5 landed
-  2026-09-01; only row 16 (`.kv`) and slice 6's sweep remain, see §8 "Implementation status")
+- **Status**: Accepted — slices 0-5 implemented (0-4 on 2026-08-27, 5 on 2026-09-01); only slice 6's
+  sweep remains, see §8 "Implementation status"
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (which names
@@ -674,9 +674,10 @@ loop, and those do not bind at the native bind site — they bind through the bi
 `for @a.kv -> $i, $v is rw { $v += $i }`) rather than gaining the deferred one, because the writeback
 that used to carry it had been retired for the iteration. It needs a raw bind for an rw scalar
 multi-parameter first — the shape `@`/`%`-sigil multi-params already have via `Stmt::MarkBind`.
-Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`. This is the "hard half" §8
-predicted, and the prediction was right for a reason nobody had written down: the difficulty is not
-in `.kv` at all.
+This is the "hard half" §8 predicted, and the prediction was right for a reason nobody had written
+down: the difficulty is not in `.kv` at all. **It landed with slice 5 on 2026-09-01** — see that
+section below, and
+[the news entry](../../news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md).
 
 **Perf.** Eager promotion costs a read-only producer pass on a large container (200 000 elements,
 release, best of three, idle machine): `.values` 0.07 s → 0.18 s, `.reverse` 0.07 s → 0.18 s,
@@ -724,10 +725,59 @@ element of @a`, naming the container rather than the alias) on 2026-09-01. The l
 the second piece is a retag — it has already resolved its source name, so it tells the cell which
 container to blame. See ADR-0036's slice-4 status.
 
+### Slice 5, row 16 (`.kv`) — landed 2026-09-01
+
+`.kv` was slice 4's deferred row, and §8 predicted the difficulty was "not in `.kv` at all". That was
+right: the blocker was the **consumer**. A `.kv` loop is a *multi-parameter* loop, and a
+multi-parameter loop binds through the bind-prefix `Stmt::Assign`s `build_for_bind_stmts` emits, each
+reading its chunk slot through the ordinary element chokepoint — which **decontainerizes**. So a cell
+handed out by the producer arrived at `$v` as a bare value, while the writeback that used to carry the
+mutation had already been retired for the iteration precisely *because* the chunk carried a cell.
+
+The fix is the raw bind §8 named: a **writable** scalar multi-parameter (`<->`, `is rw`, or
+sigilless), positional and without a default, now emits `Stmt::SyntheticBlock([MarkBind, decl])` —
+the same shape an `@`/`%`-sigil multi-parameter already used to avoid coercing. `array_slot_ref` is
+idempotent, so binding `_[1]` over a chunk slot that holds a source cell aliases the **source**
+element rather than the temporary chunk. `"kv"` then joins `ELEMENT_PRODUCERS` in both arms (the
+array arm yields a flat `index, cell, …`, the hash arm `key, cell, …`, since the loop chunks by two).
+
+**The bind is not `.kv`-specific, and that is where the value is.** A chunked rw multi-parameter over
+a plain array (`for @a -> $x is rw, $y is rw`) gained the same alias: its deferred-closure write was
+lost before and lands now. Row 16 and its hash twin are green, and the typed-element constraint
+(ADR-0036 slice 4) reaches the `.kv` value slot for free.
+
+**Three counter-currents, all real and all fixed here** — this is the shape §8 warned about ("assume
+any *new* place a cell can reach will be found by a full roast sweep, not by reading"):
+
+- A **mutable QuantHash**'s `.kv` writeback read its param straight out of `env` and got a
+  `ContainerRef`, setting every weight to 1. A QuantHash weight is not a stored element container
+  (§2.4), so that arm decontainerizes now (`t/for-quanthash-values-rw-writeback.t`).
+- An **object hash**'s `.raku` rendered the promoted cell, turning `1 => "a"` into `1 => a` after a
+  bare `%h.values` call. Pre-existing (`.values` alone did it on `main`); `.kv` merely made
+  `t/object-hash-which-keys.t` reach it. `dispatch_constrained_hash_raku` decontainerizes now — row
+  40's "promotion is invisible" invariant, on the one renderer that had not got the memo.
+- An **immutable** Bag/Set/Mix stopped raising `X::Assignment::RO` for a write through the alias
+  (`roast/S02-types/{bag,mix}.t`, "Make sure we cannot assign on a .kv alias"), found only by the full
+  roast run. `immutable_quant_param_mutation` compared the parameter's `env` value against the chunk
+  element, and a raw bind puts the parameter in a local slot as a cell — so `env` had nothing to
+  compare and the write read as no write. The loop snapshots the chunk's contents before the body
+  now. Refusing to promote for an immutable source would have been the wrong fix: the same bind is
+  what makes the *mutable* `BagHash` case work.
+
+**Found along the way, not fixed here.** A deferred *read-only* closure over a multi-parameter
+(`$c = -> { $v }`) still snapshots by value, so it does not see a later write to the element — the
+read half of rows 11/20 for the multi-parameter shapes. It is pre-existing and multi-parameter-wide
+(`for @a -> $x is rw, $y is rw` shows it on `main` with no `.kv` involved), and is filed as
+`todo/tickets/multi-param-read-only-closure-capture-snapshots-the-element.md`. Also
+`todo/tickets/proxy-assigned-into-an-array-is-not-fetched.md`, which is why
+`t/for-loop-element-alias.t`'s new multi-parameter row names its parameters `$p`/`$q`.
+
 ### What slices 5-6 still own
 
-Row 16 (`.kv`), carried over from slice 4 — see above. It is the only `todo`-marked row left in
-`t/for-loop-element-alias.t`; rows 19/30 and 28 all landed 2026-09-01. The writeback family survives only as the fallback for shapes not yet converted:
+Nothing from §1.3: rows 16, 19, 28 and 30 all landed 2026-09-01, and
+`t/for-loop-element-alias.t` has no `todo`-marked row left. **Slice 6 (the sweep) is what remains** —
+re-run §1.5's bench, re-read §1.3's table end to end, and retire the writeback family's surviving
+arms. The writeback family survives only as the fallback for shapes not yet converted:
 `write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
 `write_back_hash_value_item` for a hash iteration that could not be promoted.
 

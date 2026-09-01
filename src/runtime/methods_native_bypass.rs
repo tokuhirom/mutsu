@@ -692,7 +692,12 @@ impl Interpreter {
             let parts: Vec<String> = sorted_keys
                 .iter()
                 .map(|k| {
-                    let v = &map[*k];
+                    // A promoted element cell must be invisible to `.raku`
+                    // (ADR-0045 row 40): render what the element HOLDS, not the
+                    // container an element producer (`.values`/`.kv`/...) left
+                    // in its place. Without this, calling `%h.values` alone
+                    // turned a later `%h.raku` from `1 => "a"` into `1 => a`.
+                    let v = &map[*k].deref_container();
                     let repr = if v.is_nil() {
                         "Any".to_string()
                     } else {
@@ -721,7 +726,9 @@ impl Interpreter {
         let parts: Vec<String> = sorted_keys
             .iter()
             .map(|k| {
-                let v = &map[*k];
+                // See the `Map` arm above: the promoted element cell is not
+                // part of what `.raku` renders.
+                let v = &map[*k].deref_container();
                 let value_repr = if v.is_nil() {
                     "Any".to_string()
                 } else {

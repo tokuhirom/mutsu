@@ -317,7 +317,7 @@ impl Compiler {
             .as_ref()
             .map(|p| self.code.add_constant(Value::str(p.clone())));
         let bind_stmts =
-            Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def);
+            Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def, rw_block);
         if !bind_stmts.is_empty() {
             let mut merged = bind_stmts;
             merged.extend(loop_body);

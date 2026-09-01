@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 97;
+plan 102;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -114,15 +114,60 @@ plan 97;
     is %h<a>, 2, 'row 08: escaping closure over a `%h.values` rw param writes through';
 }
 
-# row 16 — `.kv` is a derived producer (slice 4).
+# row 16 — `.kv` is a derived producer (slice 4), consumed by a MULTI-parameter
+# bind (slice 5): the value slot binds raw, so it aliases the source element.
 {
     my @a = 10, 20;
     my @c;
     for @a.kv -> $i, $v is rw { @c.push(-> { $v = $v + 1 }) }
     @c[0]();
     @c[1]();
-    todo 'row 16 needs a raw multi-param bind -- todo/tickets/for-kv-multi-param-bind-decontainerizes.md';
     is-deeply @a, [11, 21], 'row 16: escaping closure over a `.kv` rw param writes through';
+}
+
+# row 16's hash twin, and the direct write that the retired writeback used to
+# carry (which must not regress when the writeback stops running).
+{
+    my %h = a => 1, b => 2;
+    my @c;
+    for %h.kv -> $k, $v is rw { @c.push(-> { $v = $v + 1 }) }
+    @c[0]();
+    @c[1]();
+    is-deeply %h, {a => 2, b => 3}, 'row 16h: the same through `%h.kv`';
+
+    my @d = 10, 20;
+    for @d.kv -> $i, $v is rw { $v += $i }
+    is-deeply @d, [10, 21], 'row 16: the direct write still lands';
+
+    # The alias is live in BOTH directions inside the loop, like every other
+    # promoted element.
+    my @e = 10, 20;
+    for @e.kv -> $i, $v is rw { @e[0] = 99 if $i == 0; $v = $v + 1 }
+    is-deeply @e, [100, 21], 'row 16: a direct write to the element is seen through the alias';
+
+    # A typed container rejects a bad element through the `.kv` alias too.
+    dies-ok { my Int @f = 1, 2; for @f.kv -> $i, $v is rw { $v = "s" } },
+        'row 16: a typed array constrains the `.kv` value slot';
+}
+
+# The raw multi-parameter bind is not `.kv`-specific: a chunked rw multi-param
+# over a plain array aliases its elements too.
+#
+# The parameters are `$p`/`$q` on purpose. Naming them `$x` makes the Q6 Proxy
+# rows below fail, and that is NOT this row's doing: a *plain* `my $x = 1`
+# anywhere in the file does it too, on `main` as well. mutsu stores a `Proxy`
+# assigned into an Array without FETCHing it (raku's `my @a = Proxy.new(...)`
+# is `[5]`, mutsu's is `[Proxy]`) and compensates inside the loop; a same-named
+# lexical disturbs the compensation and the Proxy's STORE fires. See
+# todo/tickets/proxy-assigned-into-an-array-is-not-fetched.md.
+{
+    my @a = 1, 2, 3, 4;
+    my $c;
+    for @a -> $p is rw, $q is rw { $c = -> { $p = $p + 1 } if $p == 1 }
+    @a[0] = 99;
+    $c();
+    is-deeply @a, [100, 2, 3, 4],
+        'a chunked rw multi-param aliases the element it binds';
 }
 
 # row 44 — the implicit topic (slice 3).

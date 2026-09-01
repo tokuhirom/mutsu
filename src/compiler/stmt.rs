@@ -2545,6 +2545,7 @@ impl Compiler {
                     param_idx,
                     params,
                     params_def,
+                    *rw_block,
                 );
                 // ADR-0061: a loop parameter spelled `$self` is a `ParamDef` named
                 // `self` and binds the plain key, exactly like a routine's `$self`

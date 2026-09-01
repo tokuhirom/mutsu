@@ -2712,6 +2712,7 @@ impl Compiler {
         param_idx: Option<u32>,
         params: &[String],
         params_def: &[crate::ast::ParamDef],
+        rw_block: bool,
     ) -> Vec<Stmt> {
         let bind_stmt = |name: String, expr: Expr| {
             // A destructured signature parameter DECLARES its target, so a
@@ -3079,6 +3080,7 @@ impl Compiler {
                 )),
                 _ => None,
             };
+            let has_fallback = missing_expr.is_some();
             let value_expr = match missing_expr {
                 Some(fallback) => Expr::Ternary {
                     cond: Box::new(Expr::Binary {
@@ -3119,7 +3121,30 @@ impl Compiler {
             // declaration a raw bind rather than a `my @a = expr`-style
             // coercing assignment, which would collapse an already
             // element-typed source array (`array[int8]`) to a plain `Array`.
-            let stmt = if actual_name.starts_with(['@', '%']) {
+            // ADR-0045 row 16: a WRITABLE scalar multi-parameter must bind the
+            // chunk element RAW, for the same reason the `@`/`%` case does.
+            // `for @a.kv -> $i, $v is rw` has to alias the source element, and a
+            // plain `Stmt::Assign` reads the chunk slot through the ordinary
+            // element chokepoint, which decontainerizes -- so the cell the
+            // producer handed out arrived at `$v` as a bare value and the write
+            // was lost, while the writeback that used to carry it had already
+            // been retired for the iteration precisely BECAUSE the chunk carried
+            // a cell. `MarkBind` + a declaration is the shape that does not
+            // coerce, and `array_slot_ref` is idempotent, so binding
+            // `_[1]` over a chunk holding a source cell aliases the SOURCE
+            // element rather than the temporary chunk.
+            //
+            // Restricted to a plain positional with no default: a slurpy binds a
+            // fresh list and a defaulted parameter may bind the default instead
+            // of an element, neither of which is an alias of anything.
+            let rw_scalar_alias = slurpy_kind.is_none()
+                && !has_fallback
+                && !actual_name.starts_with(['@', '%', '&'])
+                && (rw_block
+                    || params_def
+                        .get(i)
+                        .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw")));
+            let stmt = if actual_name.starts_with(['@', '%']) || rw_scalar_alias {
                 Stmt::SyntheticBlock(vec![
                     Stmt::MarkBind,
                     decl_stmt(actual_name.clone(), value_expr),

@@ -221,12 +221,28 @@ impl Interpreter {
         param_name: &Option<String>,
         multi_param_names: &[String],
         item: &Value,
+        chunk_before: Option<&[Value]>,
     ) -> Option<RuntimeError> {
         let changed =
             |name: &str, bound: &Value| self.env().get(name).is_some_and(|cur| cur != bound);
         if !multi_param_names.is_empty() {
             if let ValueView::Array(chunk, _) = item.view() {
                 for (i, name) in multi_param_names.iter().enumerate() {
+                    // A writable multi-parameter binds its chunk slot RAW
+                    // (ADR-0045 row 16), so the assignment lands in a cell the
+                    // bind promoted the slot to and never reaches `env`. The
+                    // pre-body snapshot is what still sees it; `env` only
+                    // answers for the parameter forms that bind by value.
+                    if let Some(before) = chunk_before.and_then(|b| b.get(i)) {
+                        if chunk
+                            .items()
+                            .get(i)
+                            .is_some_and(|now| now.deref_container() != *before)
+                        {
+                            return Some(RuntimeError::assignment_ro(Some(name)));
+                        }
+                        continue;
+                    }
                     if let Some(bound) = chunk.items().get(i)
                         && changed(name, bound)
                     {

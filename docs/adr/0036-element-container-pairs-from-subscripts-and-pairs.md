@@ -383,7 +383,8 @@ on demand, where `.pairs` promotes the whole container and is far likelier to be
   been retired for that iteration, so routing `.kv` *lost* the direct write
   (`for @a.kv -> $i, $v is rw { $v += $i }`) instead of gaining the deferred one. It needs a raw bind
   for an rw scalar multi-parameter first — the shape `@`/`%`-sigil multi-params already have via
-  `Stmt::MarkBind`. Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`.
+  `Stmt::MarkBind`. **That bind landed with ADR-0045 slice 5 on 2026-09-01 and `.kv` is routed now**;
+  see [the news entry](../../news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md).
 
 **Row 10 is deferred to a prerequisite, with a measured reason.** The fix itself is three lines —
 compile a FatArrow's Index RHS in the container-producing mode (`scalar_bind_autovivify` +

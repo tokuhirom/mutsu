@@ -148,12 +148,19 @@ impl Interpreter {
             if rw_param_names.len() < 2 {
                 return Ok(());
             }
+            // A writable multi-parameter binds its chunk slot RAW (ADR-0045 row
+            // 16), so the param may hold a `ContainerRef` rather than the weight
+            // itself. A QuantHash weight is not a stored element container
+            // (ADR-0036 §2.4), so this arm wants the VALUE -- handing the cell to
+            // `quanthash_set_weight_elem` set every weight to 1.
             let Some(key) = self.env().get(&rw_param_names[0]).cloned() else {
                 return Ok(());
             };
+            let key = key.deref_container();
             let Some(value) = self.env().get(&rw_param_names[1]).cloned() else {
                 return Ok(());
             };
+            let value = value.deref_container();
             self.quanthash_set_weight_elem(code, source, &key, &value)
         } else {
             // `.values -> $v is rw`: single rw param, key by captured order.

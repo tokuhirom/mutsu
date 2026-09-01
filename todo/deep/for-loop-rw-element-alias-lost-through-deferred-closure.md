@@ -187,13 +187,20 @@ sources now write through as well, so **rows 17 and 24 pass** — the "still
 open: 16, 17, 24, 39" line above is stale by two rows. What
 `t/for-loop-element-alias.t` still `todo`-marks:
 
-- row 16 (`.kv` + escaping closure) — needs the raw multi-param bind,
-  `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`;
-- rows 39/39b (`for @$s`) — deliberately backed out,
-  `todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`;
-- rows 19/30 (`is rw` over a List/Range must die at bind) — slice 5;
-- row 28 (typed-array element constraint through the alias) — slice 5 /
-  ADR-0036 slice 4 / ADR-0042, whichever lands it first.
+- row 16 (`.kv` + escaping closure) — **landed 2026-09-01**,
+  `news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md`;
+- rows 19/30 (`is rw` over a List/Range must die at bind) — **landed
+  2026-09-01**, `news/2026-09/for-loop-is-rw-over-an-immutable-source-fails-at-bind.md`;
+- row 28 (typed-array element constraint through the alias) — **landed
+  2026-09-01** as ADR-0036 slice 4,
+  `news/2026-09/element-type-check-failures-name-their-container.md`;
+- rows 39/39b (`for @$s`) — deliberately backed out and owned by its own file,
+  `todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
+
+**As of 2026-09-01 this file has no residue of its own.** `t/for-loop-element-alias.t`
+carries no `todo` at all, and every row it still names is another file's. It is
+kept open only because ADR-0045 slice 6 (the sweep) is what closes it out to
+`news/`; do not dispatch it as a bug.
 
 A further producer with the same gap: `for @a.Seq { $_++ }`
 (`todo/tickets/array-seq-view-does-not-carry-element-containers.md`).
