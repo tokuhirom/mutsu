@@ -308,6 +308,20 @@ impl Interpreter {
         self.capture_var_cell_inner(code, name, inner, false, slot_hint)
     }
 
+    /// [`Self::capture_var_cell`] with `box_type_objects` set: a Pair built from
+    /// `key => $var` must alias `$var` even when `$var` is an *uninitialized*
+    /// declared scalar holding a bare type object, because that is still a
+    /// container in raku and `$p.value = X` writes through to it.
+    pub(super) fn capture_var_cell_boxing_type_objects(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        inner: Value,
+        slot_hint: Option<u32>,
+    ) -> Value {
+        self.capture_var_cell_inner(code, name, inner, true, slot_hint)
+    }
+
     /// Like `capture_var_cell`, but when `box_type_objects` is set a plain type
     /// object (an uninitialized `my $a` holds `Any`) is also boxed into a fresh
     /// `ContainerRef` cell. This is required for List container aliasing: four
