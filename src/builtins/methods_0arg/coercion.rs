@@ -207,20 +207,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Pair" => {
-                if let (Some(ValueView::Hash(hash)), Some(ValueView::Str(key))) = (
-                    attributes.as_map().get("__mutsu_hash_ref").map(Value::view),
-                    attributes.as_map().get("key").map(Value::view),
-                ) {
-                    Some(Ok(hash.get(key.as_str()).cloned().unwrap_or(Value::NIL)))
-                } else {
-                    Some(Ok(attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::NIL)))
-                }
-            }
+            } if class_name == "Pair" => Some(Ok(attributes
+                .as_map()
+                .get("value")
+                .cloned()
+                .unwrap_or(Value::NIL))),
             ValueView::Bool(b) => Some(Ok(Value::int(if b { 1 } else { 0 }))),
             _ => None,
         },

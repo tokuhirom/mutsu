@@ -75,21 +75,19 @@ impl Interpreter {
         code: &CompiledCode,
         idx: usize,
         val: Value,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let cell = if matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. }) {
-            let token = &self.locals[idx];
+            let token = self.locals[idx].clone();
             // Walk-create the deferred path (single key for `$e := %m<solo>`,
             // multi-key for `$d := %k<p><q>`) and install the shared cell at
             // the terminal entry so the bound var and the hash entry alias
             // bidirectionally afterwards.
             let Some(terminal) = token.hash_entry_terminal() else {
-                return false;
+                return Ok(false);
             };
-            let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val));
-            terminal.insert(Value::container_ref(cell.clone()));
-            cell
+            self.materialize_entry_cell(&terminal, val)?
         } else {
-            return false;
+            return Ok(false);
         };
         let cell_val = Value::container_ref(cell);
         self.locals[idx] = cell_val.clone();
@@ -107,7 +105,7 @@ impl Interpreter {
                 self.set_env_with_main_alias(&root, cell_val);
             }
         }
-        true
+        Ok(true)
     }
 
     // --- Phase 3 Stage 2: scalar instance attributes as cell-direct (slice 1) ---

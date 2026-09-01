@@ -112,6 +112,28 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Materialize a deferred vivification token's terminal slot into a fresh
+    /// shared `ContainerCell` holding `val`, and install it at the slot.
+    ///
+    /// The cell carries the container's element constraint (ADR-0036 slice 4)
+    /// and this first write is checked against it, so a `:=` bind to a slot
+    /// that did not exist yet (`my Str @a; my $r := @a[5]; $r = 42`) is
+    /// refused exactly like the in-range bind and the direct store are. The
+    /// terminal is only written when the check passes.
+    pub(crate) fn materialize_entry_cell(
+        &mut self,
+        terminal: &crate::value::EntryTerminal,
+        val: Value,
+    ) -> Result<crate::gc::Gc<crate::value::ContainerCell>, RuntimeError> {
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()));
+        if let Some((ty, owner)) = terminal.element_constraint() {
+            crate::value::register_element_constraint(&cell, &ty, owner);
+            self.check_container_cell_constraint(&cell, &val)?;
+        }
+        terminal.insert(Value::container_ref(cell.clone()));
+        Ok(cell)
+    }
+
     /// Enforce a NAME-keyed scalar's registered `var_type_constraint` before a
     /// write reaches it through the `__mutsu_sigilless_alias::` forward chain
     /// (a sigilless `\x := $a` bind, a sigilless routine parameter aliasing a

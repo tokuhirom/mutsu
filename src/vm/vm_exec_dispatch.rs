@@ -1713,9 +1713,7 @@ impl Interpreter {
                         && matches!(token.view(), ValueView::HashEntryRef { .. })
                         && let Some(terminal) = token.hash_entry_terminal()
                     {
-                        let cell =
-                            crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone()));
-                        terminal.insert(Value::container_ref(cell.clone()));
+                        let cell = self.materialize_entry_cell(&terminal, val.clone())?;
                         self.set_env_with_main_alias(&name, Value::container_ref(cell));
                         *ip += 1;
                         return Ok(());

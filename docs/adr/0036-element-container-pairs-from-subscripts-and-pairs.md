@@ -1,9 +1,10 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
-- **Status**: Partially implemented — slices 1-2 landed (2026-08-20); slice 3 completed 2026-09-01
+- **Status**: Slices 1-4 implemented — slices 1-2 landed (2026-08-20); slice 3 completed 2026-09-01
   when `.pairs` finally routed (see "Implementation status — slice 3, `.pairs` (2026-09-01)");
-  slice 4's enforcement half landed with #7190 and its reporting half 2026-09-01, its compensator
-  deletion is still open
+  slice 4 completed 2026-09-01 (enforcement with #7190, reporting and then the compensator
+  deletion — see "Implementation status — slice 4, the deletion"). Slice 5 (the sweep) is what
+  is left
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -617,13 +618,78 @@ env-scan skips `ArrayKind::List`/`ItemList`.
 > the command line and failed in its test file for this reason. Excluding the immutable array kinds
 > from both array lookups is what made the guard reachable there.
 
-The `__mutsu_hash_ref` branch is still untouched, and the rest of the compensator survives for
-reference-valued pairs, which are mutable in place -- `S02-types/pair.t`'s
-`(%(<a b c d>) => %(<e f g h>)).invert` is its one remaining consumer across the whole whitelist.
+The `__mutsu_hash_ref` branch is still untouched at this point, and the rest of the compensator
+survives for reference-valued pairs -- all of which the deletion below retires.
 
 Verified with `make test`, a **full local `make roast`** (required by the "universal property of
 values" rule, since this changes what is inside every promoted container), and the bundled-battery
 gate.
+
+---
+
+## Implementation status — slice 4, the deletion (2026-09-01)
+
+The compensator is gone. `methods_mut_method_lvalue.rs`'s `method == "value"` arm is now the short
+list of container kinds §6 predicted: `HashEntryRef` node, `ContainerRef` cell, mutable-QuantHash
+weight, reference value, then die. The `env` scans (both element lookups, the shaped-array index
+tuple scan and the standalone-Pair rebind), the dead `__mutsu_hash_ref` branch and its only other
+reader in `builtins/methods_0arg/coercion.rs` are deleted — about 220 lines.
+
+**What the deletion actually cost was measured first, not guessed.** Instrumenting each of the ten
+exits of the compensator and sweeping *every* `t/` file and *every* whitelisted roast file found it
+firing in exactly five `t/` files and two roast files:
+
+| exit | fires in |
+| --- | --- |
+| `standalone_rebind_multi` | `t/bound-container-pair-writethrough.t`, `t/pair-value-element-writethrough.t`, `t/pair-value-writethrough-coherence.t`, `roast/S02-types/pair.t` |
+| `scan_array` + `array_writeback` | `t/pairs-value-writeback-array-kind.t` (the 1-D shaped-array row) |
+| `multidim` | `t/shaped-array-pairs-zip-assign.t`, `roast/S02-types/array-shapes.t` |
+| `hashref`, `target_var_hash`, `target_var_array`, `scan_hash`, `hash_writeback` | **never** |
+
+Five of the ten exits were already dead — slice 3's `.pairs` routing had taken every hash-backed
+shape. Three real gaps remained, and each is a piece of the model this ADR is about rather than a
+special case:
+
+1. **A shaped array's `.pairs` did not hand out element containers.** `array_element_producer`
+   declined on `data.shape.is_some()`. A **1-D** shape stores its leaves flat, so it needed only to
+   be let in (its `ArrayKind` is `Shaped`, which the kind filter also had to admit). A
+   **multi-dimensional** shape keeps its leaves in nested inner arrays, so `array_slot_ref` on the
+   outer array would have handed out rows; `.pairs` over it now walks to each leaf and promotes it
+   *there*, keyed by the index tuple raku uses (`(0 1) => …`). The other producers keep their
+   current behaviour for a multi-dim shape.
+
+2. **A reference-valued Pair now assigns INTO its value.** Rakudo's `Pair` binds
+   (`$!value := value`), so `my @a = 1,2; my $p = (a => @a); $p.value = (3,4)` leaves `@a` as
+   `[3 4]`. mutsu already shares the `Gc` there (`$p.value.push` wrote through), so
+   `replace_container_contents` reaches every alias. This *fixed* four divergences the env rebind
+   had been papering over: the write did not reach `@a`/`%h` at all, an Array value came back as a
+   `List`, and `(a => C.new)` / `(a => (1,2))` silently succeeded where raku dies. An empty `List`
+   value is the one shape where raku neither writes nor dies (nothing to assign into), and that is
+   preserved.
+
+3. **`$p.value<k> = v` cloned the container and rebound by name.**
+   `assign_method_lvalue_indexed` built a fresh `Gc`, moved every variable holding the old one onto
+   it, then called the `.value` setter. With the compensator gone that forks the pair away from the
+   variable it aliases, and only the first write is visible through both. For a Pair accessor the
+   element write is now done **in place** on the container the pair holds, which is what "a Pair
+   binds its value" means and what `t/pair-value-writethrough-coherence.t` was always asserting.
+
+**The enforcement half also reached the deferred slots.** `array_slot_ref`/`hash_slot_ref` seed a
+promoted cell with the container's `value_type`, but a `:=` bind to a slot that does not exist yet
+(`my Str @a; my $r := @a[2]`) never reaches them — it materializes a *fresh* cell at the first write,
+which carried no constraint, so `$r = 42` silently stored an `Int` in a `Str` array. All three
+materialization sites now go through `Interpreter::materialize_entry_cell`, which reads the
+constraint off the `EntryTerminal` and checks the write before installing anything. The equivalent
+missing-key hash bind is fixed by the same change.
+
+`t/pair-value-assign-binds-container.t` pins all of the above (21 tests, all verified against real
+raku).
+
+**Still open, and now purely cosmetic:** the promoted cell reports the bare sigil rather than the
+container's name (`Type check failed for an element of @` where raku says `@a`) unless a promotion
+site retagged it — `todo/tickets/promoted-element-cell-does-not-know-its-container-name.md`. The
+bound-slice eager vivification noted above is likewise unchanged
+(`todo/tickets/bound-array-slice-still-vivifies-eagerly.md`).
 
 ## 5. Open questions (the forks for the deciders)
 

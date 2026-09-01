@@ -1843,7 +1843,7 @@ impl Interpreter {
             && !is_rebind
             && matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. })
         {
-            self.materialize_bound_slot_to_cell(code, idx, val);
+            self.materialize_bound_slot_to_cell(code, idx, val)?;
             return Ok(());
         }
         // When binding a Proxy to a variable, update FETCH/STORE closures' captured envs

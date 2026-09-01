@@ -263,6 +263,7 @@ pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
+pub(crate) use entry_path::EntryTerminal;
 pub(crate) use entry_path::is_container_hole;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;

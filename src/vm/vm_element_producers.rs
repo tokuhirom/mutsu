@@ -128,11 +128,24 @@ impl Interpreter {
                 // immutable sequences whose items must stay bare items.
                 if !matches!(
                     kind,
-                    crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
-                ) || data.shape.is_some()
-                    || data.native_storage_node().is_some()
+                    crate::value::ArrayKind::Array
+                        | crate::value::ArrayKind::ItemArray
+                        | crate::value::ArrayKind::Shaped
+                ) || data.native_storage_node().is_some()
                 {
                     return None;
+                }
+                // A MULTI-dimensional shaped array keeps its leaves in nested
+                // inner arrays, so they are not this array's own slots and
+                // `array_slot_ref` would hand out the rows. `.pairs` over it is
+                // keyed by index tuple and takes the recursive path below; the
+                // other producers keep whatever they do today. A ONE-dimensional
+                // shape stores its leaves flat, so it needs nothing special.
+                if data.shape.as_ref().is_some_and(|s| s.len() > 1) {
+                    return match method {
+                        "pairs" => self.shaped_multidim_pairs(target),
+                        _ => None,
+                    };
                 }
                 data.len()
             }
@@ -192,6 +205,60 @@ impl Interpreter {
             }
             _ => return None,
         })
+    }
+
+    /// `.pairs` over a multi-dimensional shaped array. Raku keys each pair by
+    /// the full index *tuple* (`(0 1) => …`) and the value is the LEAF
+    /// element's container — which lives in an inner array, not in `target`'s
+    /// own slot vector, so the promotion has to walk down to it. The nested
+    /// arrays share their `Gc` with the outer array's items, so promoting a
+    /// leaf there is visible through `@a[0;1]` and through any other alias.
+    ///
+    /// Key shape and leaf order mirror the pure-value producer in
+    /// `builtins/methods_0arg/collection.rs` (`shaped_array_indexed_leaves`),
+    /// which is what this replaces for a mutable shaped array.
+    fn shaped_multidim_pairs(&mut self, target: &Value) -> Option<Value> {
+        let mut pairs = Vec::new();
+        let mut indices = Vec::new();
+        Self::collect_leaf_cell_pairs(target, &mut indices, &mut pairs)?;
+        Some(Value::seq(pairs))
+    }
+
+    fn collect_leaf_cell_pairs(
+        node: &Value,
+        indices: &mut Vec<i64>,
+        out: &mut Vec<Value>,
+    ) -> Option<()> {
+        let ValueView::Array(items, _) = node.view() else {
+            return None;
+        };
+        // Clone the children out before promoting: `array_slot_ref` mutates the
+        // node's item vector in place, so no borrow into it may be live.
+        let children: Vec<Value> = items.iter().cloned().collect();
+        if children
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Array(..)))
+        {
+            for (i, child) in children.iter().enumerate() {
+                indices.push(i as i64);
+                let walked = Self::collect_leaf_cell_pairs(child, indices, out);
+                indices.pop();
+                walked?;
+            }
+        } else {
+            for i in 0..children.len() {
+                let cell = node.array_slot_ref(i, true)?;
+                let mut key = indices.clone();
+                key.push(i as i64);
+                let key = if key.len() == 1 {
+                    Value::int(key[0])
+                } else {
+                    Value::array(key.into_iter().map(Value::int).collect())
+                };
+                out.push(Value::value_pair(key, cell));
+            }
+        }
+        Some(())
     }
 
     fn hash_element_producer(&mut self, target: &Value, method: &str) -> Option<Value> {
