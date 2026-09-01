@@ -1,4 +1,20 @@
-# `state` inside a `gather` block is shared across gather instances
+# `state` inside a `gather` block is now scoped per gather instance
+
+Resolved 2026-09-01. A `gather` coroutine already carried a unique
+`state_scope_id`, and bounded lazy pulls installed it correctly. The strict
+force path (`my @a = gather { ... }`) omitted that installation, so every
+strictly forced sibling used the raw compile-position state key instead.
+
+Strict forcing now installs and restores the gather's coroutine scope just as
+the pull/resume path does. `t/gather-state-per-instance.t` pins strict sibling
+gathers, repeated evaluations in a loop, and independently resumed lazy
+gathers.
+
+Validation: `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`
+(3,597 files / 36,101 assertions), and `make roast` (1,435 files / 218,833
+assertions) all pass.
+
+## Original finding
 
 A `state` variable declared inside a `gather { ... }` body should belong to the
 gather **instance** (each evaluation of the `gather` expression makes a fresh
