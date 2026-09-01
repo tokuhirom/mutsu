@@ -47,19 +47,66 @@ the guard has since replaced with `X::Assignment::RO`; the compensator built a
 fresh `Pair` each time and so never touched a cell. Converting the block to the
 container form — the only form raku accepts — is what exposed this.
 
+## Measured 2026-09-01 (`rust-gdb`, no rebuild)
+
+Breaking on the `ContainerRef` store in the Pair `.value` lvalue arm
+(`methods_mut_method_lvalue.rs`, `*cell.lock().unwrap() = value.clone()`) for
+`for 1..3 { $r.value++ }` shows exactly three hits, and the third is the fatal
+one:
+
+| hit | stored `value` (NaN box) | reading |
+| --- | --- | --- |
+| 1 | `281474976710657` | a small `Int` — `1` |
+| 2 | `281474976710657` | the **same** `Int` `1` |
+| 3 | `18444633010847552579` | pointer-tagged — a **`ContainerRef`** |
+
+So there are two distinct faults, in order:
+
+1. **The read is stale.** Iteration 2 computes `0 + 1` again rather than
+   `1 + 1`, which is why the weight never advances past `1`. The cell already
+   held `1`, so `$r.value` inside the loop body is not reading the live cell.
+2. **The third read yields the cell itself**, and storing it into that same
+   cell makes it point at itself. Every later deref then recurses forever —
+   the "stack overflow on a read" the symptom section describes.
+
+Narrowing rules out the obvious suspects: it is the `++`/`--` form **inside a
+loop body** specifically, not repeated execution and not the writeback:
+
+| shape | result |
+| --- | --- |
+| `$r.value++` three times as separate statements | correct (`3`) |
+| `sub f() { $r.value++ }; f(); f(); f()` | correct (`3`) |
+| `for 1..3 { $r.value += 1 }` | correct (`3`) |
+| `for 1..3 { $r.value = $r.value + 1 }` | correct (`3`) |
+| `for 1..3 { $r.value++ }` | stalls, then hangs |
+| `while $i < 3 { $r.value++; $i++ }` | stalls, then hangs |
+
+A sub call reuses the same temp global name and works, so a bare
+"global temp collides across calls" story does not explain it on its own; what
+distinguishes the failing rows is the loop body's env/locals handling.
+
 ## Where to look
 
-`src/runtime/methods_mut_method_lvalue.rs`, the `ContainerRef` arm at the top
-of the Pair `.value` lvalue path (it writes `*cell.lock().unwrap() = value`),
-together with whatever computes the incremented value for a postfix
-`++`/`--` on a method lvalue. The suspicion is that the "old value" read for
-the increment yields the `ContainerRef` itself rather than its contents, so the
-store writes the cell into the cell; the first iteration works because the
-loop's first entry still sees a plain value.
+`src/compiler/expr_postfix.rs`'s `MethodCall` arm of the postfix `++`/`--`
+compiler. It lowers `$r.value++` into: read the accessor, `SetGlobal` the value
+into a temp global (`__mutsu_tmp_method_inc_<N>`), `PostIncrement` that global,
+then call `__mutsu_assign_method_lvalue` with `Expr::Var(tmp)` as the new value.
+The two temp globals are named from `self.code.constants.len()` at compile time,
+so a loop body reuses the same two names on every iteration while the loop's
+env/locals handling decides what a re-read of `$r` and a re-`SetGlobal` of an
+already-populated global actually do. That is the interaction to instrument:
+whether `SetGlobal` on a global already holding a `ContainerRef` rebinds the
+name or writes *through* the cell, and whether the loop body re-reads `$r` or a
+snapshot taken at loop entry.
 
-`rust-gdb -batch` breaking on that store arm and printing whether the incoming
-`value` is a `ContainerRef` should settle it in one run — see the debugging
-guidelines in CLAUDE.md; do not reach for `eprintln!` first.
+Note that `+=` on the same lvalue compiles through
+`method_lvalue_roundtrip_assign_expr` (`compiler/compound_expr.rs`) and is
+correct in all the same shapes, so that path is the working reference to diff
+the postfix lowering against.
+
+Keep using `rust-gdb -batch` rather than `eprintln!` — see the debugging
+guidelines in CLAUDE.md; the table above was produced in a single run with no
+rebuild.
 
 ## Related
 
