@@ -391,12 +391,19 @@ impl Interpreter {
         // Likewise `is rw`/`is raw` binding a non-writable argument
         // (`X::Parameter::RW`) is a genuine runtime check, not a compile-time
         // shape mismatch -- and unlike the exception-carrying errors handled
-        // below, this call site only spells its class via the "X::Type: text"
-        // message convention (`RuntimeError::new`, no `.exception` attached),
-        // so wrapping it in "Calling f(Int) will never work..." would destroy
-        // the only place its class is recorded, losing it to the generic
-        // X::AdHoc fallback (`roast/S06-traits/misc.t`).
-        if err.message.starts_with("X::Parameter::RW:") {
+        // below, wrapping it in "Calling f(Int) will never work..." would
+        // destroy the class the error records, losing it to the generic
+        // X::AdHoc fallback (`roast/S06-traits/misc.t`). Both spellings are
+        // accepted: the real `X::Parameter::RW` instance the signature binder
+        // and the `for`-loop bind site now raise, and the older "X::Type:
+        // text" message convention that other sites still use.
+        if err.message.starts_with("X::Parameter::RW:")
+            || err.exception.as_ref().is_some_and(|ex| {
+                matches!(ex.as_ref().view(),
+                    ValueView::Instance { class_name, .. }
+                        if class_name.resolve() == "X::Parameter::RW")
+            })
+        {
             return err;
         }
         // A signature with a generic type capture (`sub c(::T $x, T $y, $z)`)

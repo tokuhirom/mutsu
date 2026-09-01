@@ -591,6 +591,31 @@ impl Interpreter {
                     }
                 }
             }
+            // ADR-0045 slice 5: an `is rw` / `<->` parameter binds the item the
+            // iterator YIELDS. When the source can only ever yield bare values
+            // -- a literal list (`for 1, 2`, `for <a b>`), a `Range`, `%h.keys`
+            // -- there is no container to alias and raku fails the BIND, before
+            // the body runs and independently of whether the body ever assigns
+            // (rows 19/30). mutsu used to bind a value clone and silently drop
+            // the write instead.
+            //
+            // Gated on the compiler's conservative `source_items_are_bare`, not
+            // on "promotion did not happen": a producer this ADR has not routed
+            // yet (`flat(@a)`, `@a[0,1]`) also fails to promote, but raku
+            // aliases through it -- dying there would trade a lost write for a
+            // spurious death. A sigilless `\v` parameter is excluded: raku
+            // binds it and dies later, at the assignment ("Cannot modify an
+            // immutable Int"), not here.
+            if spec.do_writeback
+                && spec.source_items_are_bare
+                && !spec.param_sigilless
+                && let Some(ref name) = param_name
+                && !name.starts_with(['@', '%', '&'])
+            {
+                let display = Self::for_param_display_name(name);
+                self.unmask_for_params(&masked_params);
+                return Err(RuntimeError::parameter_rw_not_container(&display, &item));
+            }
             // ADR-0045 slices 1-3: promote this element to its own container
             // and bind THAT, so the binding is a real alias for the lifetime of
             // the binding.

@@ -1,7 +1,8 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27; slices 5-6 open, see
-  §8 "Implementation status")
+- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27, slice 5's bind-time
+  rejection 2026-09-01; slice 5's element constraint and slice 6 open, see §8 "Implementation
+  status")
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (which names
@@ -683,11 +684,41 @@ same shape followed, all of them fed by `.pairs`. Slice 5 should assume that any
 can reach will be found this way — by a full roast sweep, not by reading — and that the tell is a
 `match` on `view()`, not a `.value` read.
 
+### Slice 5, the bind-time rejection half — landed 2026-09-01
+
+Rows 19 and 30 are green: `for (1, 2) -> $v is rw { }` and `for 1 .. 2 -> $v is rw { }` now fail the
+**bind**, before the body runs, with raku's own `X::Parameter::RW` and its exact wording (embedded
+newline included) — where mutsu used to bind a value clone and silently drop the write.
+
+**The gate is the source, not the promotion.** The obvious implementation — "the item was not
+promoted to a cell, so reject the `is rw` bind" — is wrong, and measurably so: `for flat(@a)` and
+`for @a[0, 1]` also fail to promote today (their producers are unrouted), yet raku *aliases* through
+both. Keying the rejection off promotion would have traded a lost write for a spurious death, which
+is the worse divergence. It is keyed instead on the compiler's conservative
+`ForLoopSpec::source_items_are_bare` — a literal list, a word list, `%h.keys`, and (added here) any
+`Range` — which answers `true` only for shapes that can never produce a container. Sources raku also
+rejects but the flag does not yet see (`@a.map(...)`, `.List`, `.Seq`, a sub's return, `%h`'s Pairs)
+keep the old silent behaviour; widening the flag is additive and needs no further decision.
+
+A sigilless `\v` parameter is excluded, because raku treats it differently: it binds the bare item
+happily and only dies if the body *assigns* through it ("Cannot modify an immutable Int"). The AST
+stores `\v` as plain `"v"`, so the name cannot carry that distinction — `ForLoopSpec` gained
+`param_sigilless` for it.
+
+**The wording was shared, not duplicated.** `RuntimeError::parameter_rw_not_container` now backs both
+this bind site and the two routine-signature sites in `runtime/types/binding_signature.rs`, which had
+been raising an invented `X::Parameter::RW: 'x' expects a writable variable argument` (no sigil, no
+`.symbol`/`.got`, not an exception instance at all). `sub f($x is rw) {}; f(1)` matches raku's message
+now too.
+
+**Row 28 is NOT part of this** — the element type constraint stays ADR-0036 slice 4's, as the note
+below says.
+
 ### What slices 5-6 still own
 
-Row 16 (`.kv`), carried over from slice 4 — see above — and rows 19, 28
-and 30 (slice 5 — bind-time enforcement). They are `todo`-marked in `t/for-loop-element-alias.t` with the owning reason named in
-the reason string. The writeback family survives only as the fallback for shapes not yet converted:
+Row 16 (`.kv`), carried over from slice 4 — see above — and row 28 (the element type constraint;
+rows 19/30 landed 2026-09-01, see just above). It is `todo`-marked in `t/for-loop-element-alias.t`
+with the owning reason named in the reason string. The writeback family survives only as the fallback for shapes not yet converted:
 `write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
 `write_back_hash_value_item` for a hash iteration that could not be promoted.
 
