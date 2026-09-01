@@ -825,6 +825,14 @@ pub(crate) enum OpCode {
     // by a `**@`-slurpy consumer (say/put/print/note). A `|EXPR` pipe-slip is
     // left untouched (still flattens); an ordinary `.Slip`/`slip(...)` value is
     // kept whole. See exec_say_op / flatten_slip_args.
+    /// Read a `ContainerRef` on the stack top through its cell, pushing the
+    /// plain value it holds (a no-op for everything else). Emitted where a
+    /// compiler-synthesized temp must hold a *value snapshot* rather than an
+    /// alias — the `++`/`--` lowerings on an rw-accessor lvalue, whose temp
+    /// global would otherwise be bound to the accessor's own container and, on
+    /// the next iteration of a loop, be written *through* by `SetGlobal`,
+    /// storing the cell into itself.
+    DerefContainer,
     Decont, // strip ONE level of Scalar for slurpy flattening (NOT the
     // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
     /// Snapshot a list's elements to plain VALUES: pop a list/array and push a

@@ -68,18 +68,14 @@ plan 15;
     my $r = n => $n;
     my @log;
     for 1..3 {
-        # Two pre-existing container-backed-`.value` bugs are avoided here, both
-        # unrelated to this file's subject (the local-slot writeback) and both
-        # tracked elsewhere:
-        #   * `$r.value++` stops accumulating on iteration 2 and hangs on
-        #     iteration 3 -- todo/tickets/container-pair-value-increment-in-loop-stalls-then-hangs.md
-        #   * a bare `$r.value` read hands out the *cell*, so pushing it aliases
-        #     every element of @log to the final value; `.Int` decontainerizes.
-        #     See todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md
-        $r.value = $r.value + 1;
+        # `.Int` decontainerizes: a bare `$r.value` read hands out the *cell*,
+        # so pushing it would alias every element of @log to the final value.
+        # That read boundary is a separate, still-open problem -- see
+        # todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md
+        $r.value++;
         @log.push($r.value.Int);
     }
-    is-deeply @log, [1, 2, 3], '.value = .value + 1 in a loop reads the live value each iteration';
+    is-deeply @log, [1, 2, 3], '.value++ in a loop reads the live value each iteration';
 }
 
 # --- index-assign method lvalue (nested container via accessor) ---

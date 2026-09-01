@@ -83,6 +83,15 @@ impl Compiler {
         // value on the stack), then write the temp back through the accessor and
         // yield the new value.
         self.compile_expr(expr);
+        // The accessor read may hand back the target's own container
+        // (a Pair whose value was captured from a variable, an `is rw`
+        // accessor returning its cell). The temp is a value SNAPSHOT,
+        // never an alias: without this deref the temp global stays
+        // bound to that cell, and on the next iteration of a loop
+        // `SetGlobal` writes the freshly-read cell *through* it —
+        // storing the container into itself, which stalls the
+        // increment and then makes every later read recurse forever.
+        self.code.emit(OpCode::DerefContainer);
         self.code.emit(OpCode::SetGlobal(tmp_value_idx));
         if inc {
             self.code.emit(OpCode::PreIncrement(tmp_value_idx, None));
@@ -211,6 +220,15 @@ impl Compiler {
                 let tmp_value_idx = self.code.add_constant(Value::str(tmp_value_name.clone()));
                 let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
                 self.compile_expr(expr);
+                // The accessor read may hand back the target's own container
+                // (a Pair whose value was captured from a variable, an `is rw`
+                // accessor returning its cell). The temp is a value SNAPSHOT,
+                // never an alias: without this deref the temp global stays
+                // bound to that cell, and on the next iteration of a loop
+                // `SetGlobal` writes the freshly-read cell *through* it —
+                // storing the container into itself, which stalls the
+                // increment and then makes every later read recurse forever.
+                self.code.emit(OpCode::DerefContainer);
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
                 self.code.emit(OpCode::PostIncrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
@@ -307,6 +325,15 @@ impl Compiler {
                 let tmp_value_idx = self.code.add_constant(Value::str(tmp_value_name.clone()));
                 let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
                 self.compile_expr(expr);
+                // The accessor read may hand back the target's own container
+                // (a Pair whose value was captured from a variable, an `is rw`
+                // accessor returning its cell). The temp is a value SNAPSHOT,
+                // never an alias: without this deref the temp global stays
+                // bound to that cell, and on the next iteration of a loop
+                // `SetGlobal` writes the freshly-read cell *through* it —
+                // storing the container into itself, which stalls the
+                // increment and then makes every later read recurse forever.
+                self.code.emit(OpCode::DerefContainer);
                 self.code.emit(OpCode::SetGlobal(tmp_value_idx));
                 self.code.emit(OpCode::PostDecrement(tmp_value_idx, None));
                 self.code.emit(OpCode::SetGlobal(tmp_result_idx));
