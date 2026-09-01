@@ -2647,14 +2647,6 @@ pub(crate) struct CompiledRoutineMetadata {
     /// judgment must come from the declaration, not from the (possibly
     /// dropped) `legacy_body` payload (C6e-3).
     pub(crate) body_is_empty: bool,
-    /// The lvalue-assignment target of a routine-level `is rw`/`is raw`
-    /// routine (or one whose tail is an explicit `return-rw`): the last
-    /// expression statement of the declared body, which the assignment
-    /// machinery (`assign_named_sub_lvalue_with_values`) evaluates as the
-    /// target of `f() = v`. Recorded at plan lowering so the assign path no
-    /// longer needs the AST body — the lvalue keep-class of the C6e-3c
-    /// `legacy_body` drop. `None` for ordinary routines.
-    pub(crate) rw_tail_expr: Option<std::sync::Arc<Expr>>,
 }
 
 /// Registration metadata for one declared signature of a sub declaration,
@@ -2669,14 +2661,10 @@ pub(crate) fn compiled_routine_metadata(
     is_rw: bool,
     is_raw: bool,
 ) -> CompiledRoutineMetadata {
-    // The lvalue-assignment tail (see the field doc): recorded for an
-    // `is rw`/`is raw` routine, or for any routine whose last expression is
-    // an explicit `return-rw $var` (assignable without the routine trait).
-    let rw_tail_expr = crate::runtime::Interpreter::rw_sub_target_expr(body)
-        .filter(|tail| {
-            is_rw || is_raw || crate::runtime::Interpreter::is_explicit_return_rw_target(tail)
-        })
-        .map(std::sync::Arc::new);
+    // `is_rw` / `is_raw` are carried on the plan itself; the only lvalue fact
+    // the body contributes is whether it spells `return-rw` (see
+    // `RoutineBodyFacts::uses_return_rw`).
+    let _ = (is_rw, is_raw);
     let (uses_positional, uses_named) = if params.is_empty() && param_defs.is_empty() {
         let body_shape = format!("{body:?}");
         (
@@ -2712,6 +2700,7 @@ pub(crate) fn compiled_routine_metadata(
         body_facts: crate::ast::RoutineBodyFacts {
             needs_interpreter: crate::runtime::Interpreter::function_body_needs_interpreter(body),
             declares_state: crate::runtime::Interpreter::function_body_declares_state(body),
+            uses_return_rw: body_uses_return_rw(body),
             registration_identity: crate::ast::registration_identity_fingerprint(
                 params,
                 &effective_param_defs,
@@ -2727,7 +2716,71 @@ pub(crate) fn compiled_routine_metadata(
         ),
         body_is_empty: body.is_empty(),
         effective_param_defs,
-        rw_tail_expr,
+    }
+}
+
+/// Whether a routine body contains an explicit `return-rw` call anywhere a
+/// routine's return value can come from: a statement, a `return`, a branch of
+/// an `if`/`given`/`when`/loop body, or a ternary arm
+/// (`$flag ?? return-rw c<x> !! return-rw c<y>`). Such a routine hands its
+/// caller a container without the `is rw` trait (ADR-0059).
+pub(crate) fn body_uses_return_rw(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_uses_return_rw)
+}
+
+fn stmt_uses_return_rw(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(expr) | Stmt::Return(expr) => expr_uses_return_rw(expr),
+        Stmt::Call { name, .. } => name == "return-rw",
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_uses_return_rw(cond)
+                || body_uses_return_rw(then_branch)
+                || body_uses_return_rw(else_branch)
+        }
+        Stmt::While { body, .. }
+        | Stmt::React { body }
+        | Stmt::Whenever { body, .. }
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Block(body)
+        | Stmt::Default(body)
+        | Stmt::Subtest { body, .. }
+        | Stmt::Given { body, .. }
+        | Stmt::When { body, .. }
+        | Stmt::For { body, .. } => body_uses_return_rw(body),
+        Stmt::Loop { init, body, .. } => {
+            init.as_deref().is_some_and(stmt_uses_return_rw) || body_uses_return_rw(body)
+        }
+        Stmt::Label { stmt, .. } => stmt_uses_return_rw(stmt),
+        _ => false,
+    }
+}
+
+fn expr_uses_return_rw(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call { name, args } => name == "return-rw" || args.iter().any(expr_uses_return_rw),
+        Expr::MethodCall {
+            target, name, args, ..
+        } => {
+            name == "return-rw"
+                || expr_uses_return_rw(target)
+                || args.iter().any(expr_uses_return_rw)
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            expr_uses_return_rw(cond)
+                || expr_uses_return_rw(then_expr)
+                || expr_uses_return_rw(else_expr)
+        }
+        Expr::DoStmt(stmt) => stmt_uses_return_rw(stmt),
+        _ => false,
     }
 }
 

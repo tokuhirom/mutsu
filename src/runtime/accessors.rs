@@ -538,8 +538,15 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let resolved_spec = self.resolved_type_capture_name(spec);
         let spec = resolved_spec.as_str();
+        // An `is rw` routine hands back a CONTAINER (ADR-0059). The return
+        // constraint is a claim about the value inside it, and the container
+        // itself must survive the check so the caller can still write through
+        // — so every check below reads `checked`, and the successful paths
+        // return `value`. (roast S06-advanced/return.t: a container holding
+        // `Nil` passes `--> Callable:D`, exactly as a plain `Nil` does.)
+        let checked = value.deref_container();
         // Nil and Failure pass through unconditionally
-        if value.is_nil() || Self::is_failure_value(&value) {
+        if checked.is_nil() || Self::is_failure_value(&checked) {
             return Ok(value);
         }
 
@@ -548,7 +555,7 @@ impl Interpreter {
         if let Some(subset) = subset {
             // For subsets with coercion base types, coerce first then check predicate
             if subset.base.contains('(') && subset.base.ends_with(')') {
-                let coerced = self.enforce_coercion_return(&subset.base, value)?;
+                let coerced = self.enforce_coercion_return(&subset.base, checked)?;
                 if let Some(ref pred) = subset.predicate {
                     let pred_clone = pred.clone();
                     if !self.check_where_constraint(&pred_clone, &coerced) {
@@ -563,15 +570,17 @@ impl Interpreter {
             // `subset Host of Str where /^ ... $/`) evaluated through it came
             // back false, failing every `--> Host` return while `~~ Host` was
             // True.
-            if !self.type_matches_value(spec, &value) {
-                return Err(self.throw_type_check_return(spec, &value));
+            if !self.type_matches_value(spec, &checked) {
+                return Err(self.throw_type_check_return(spec, &checked));
             }
             return Ok(value);
         }
 
         // Check if this is a coercion type like Str(Numeric:D) or Foo:D()
+        // (a coercion produces a fresh value, so the container does not
+        // survive it — raku decontainerizes there too).
         if spec.contains('(') && spec.ends_with(')') {
-            return self.enforce_coercion_return(spec, value);
+            return self.enforce_coercion_return(spec, checked);
         }
 
         // A parameterized Positional/Array/List return type checks the array's
@@ -581,11 +590,11 @@ impl Interpreter {
         if let Some(open) = spec.find('[')
             && spec.ends_with(']')
             && matches!(&spec[..open], "Positional" | "Array" | "List")
-            && matches!(value.view(), ValueView::Array(..))
+            && matches!(checked.view(), ValueView::Array(..))
         {
             let inner = &spec[open + 1..spec.len() - 1];
             let (inner_base, _) = super::types::strip_type_smiley(inner);
-            let ok = match self.container_type_metadata(&value) {
+            let ok = match self.container_type_metadata(&checked) {
                 Some(meta) if !meta.value_type.is_empty() => {
                     let (mvt_base, _) = super::types::strip_type_smiley(&meta.value_type);
                     Self::type_matches(inner_base, mvt_base)
@@ -595,14 +604,14 @@ impl Interpreter {
                 _ => inner_base == "Mu" || inner_base == "Any",
             };
             if !ok {
-                return Err(self.throw_type_check_return(spec, &value));
+                return Err(self.throw_type_check_return(spec, &checked));
             }
             return Ok(value);
         }
 
         // Plain type constraint (e.g., Str, Int:D)
-        if !self.type_matches_value(spec, &value) {
-            return Err(self.throw_type_check_return(spec, &value));
+        if !self.type_matches_value(spec, &checked) {
+            return Err(self.throw_type_check_return(spec, &checked));
         }
         Ok(value)
     }

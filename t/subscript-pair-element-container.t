@@ -199,7 +199,8 @@ plan 34;
 # --- §1.3 row 12: typed-array element constraint enforced on write (Slice 4)
 {
     my Str @a = <A B>;
-    todo 'element type constraint on the promoted cell lands in ADR-0036 slice 4';
+    # Green since 2026-09-01: the promoted element cell carries its array's
+    # `value_type` (news/2026-09/is-rw-bare-tail-returns-container.md).
     dies-ok { (@a[0]:p).value = 42 }, 'a typed array element constraint is enforced through :p (row 12)';
 }
 

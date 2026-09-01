@@ -902,6 +902,10 @@ impl Interpreter {
             // across `run_nested`'s register reset via `pending_nested_state_scope`,
             // which is what actually installs it (see `with_nested_registers`).
             self.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
+            // ADR-0059 Slice 2: an `is rw`/`is raw` code object's bare tail is
+            // its lvalue return, on this recompile path exactly as on the
+            // compiled one (`compile_routine_closure_body`'s `is_rw`).
+            self.pending_eval_rw_tail = data.is_rw || data.is_raw;
             let body_result = self.eval_block_value_cached(&data.body, data.id);
             self.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;

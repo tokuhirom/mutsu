@@ -157,6 +157,9 @@ impl Interpreter {
         // barewords. The fresh compiler otherwise has no signature context.
         compiler.seed_enclosing_sigilless(&self.pending_eval_sigilless);
         compiler.seed_prebound_placeholders(&self.pending_eval_placeholder_params);
+        // ADR-0059 Slice 2: an `is rw`/`is raw` routine body recompiled here
+        // still hands its caller its tail's container.
+        compiler.set_rw_tail(self.pending_eval_rw_tail);
         let scope = if let Some(frame) = self.routine_stack.last() {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine
@@ -286,6 +289,7 @@ impl Interpreter {
             scope,
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
+            rw_tail: self.pending_eval_rw_tail,
             distribution,
             eval_context_routine: if is_eval_unit {
                 self.pending_eval_context_routine
@@ -333,6 +337,9 @@ impl Interpreter {
         record_free_var_writes: bool,
         cache_id: Option<u64>,
     ) -> Result<Value, RuntimeError> {
+        // Taken first, unconditionally: it belongs to THIS body's compile only
+        // (see the field doc), and an empty body must not leave it armed.
+        let rw_tail = std::mem::take(&mut self.pending_eval_rw_tail);
         if body.is_empty() {
             return Ok(Value::NIL);
         }
@@ -386,6 +393,10 @@ impl Interpreter {
             || supply_emitter_sym.is_some()
             || !supply_authoritative_free_vars.is_empty()
             || !whenever_inherited_owned.is_empty();
+        // Re-armed only for the duration of the compile below (the cache key
+        // and `compile_block_value_opts` read it), then cleared before the body
+        // runs so nothing compiled during execution inherits it.
+        self.pending_eval_rw_tail = rw_tail;
         let (code, compiled_fns) = if !needs_fresh_mutation && let Some(id) = cache_id {
             self.compile_block_value_cached(body, is_eval_unit, id)
         } else {
@@ -400,6 +411,7 @@ impl Interpreter {
             }
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };
+        self.pending_eval_rw_tail = false;
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.

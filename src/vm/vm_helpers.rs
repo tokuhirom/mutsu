@@ -89,7 +89,7 @@ impl Interpreter {
     /// write-through (`$ref = v` on a `:=`-bound typed slot — a typed rw
     /// attribute accessor bind, or a `my T $` anonymous typed scalar). Mirrors
     /// the Pair.value enforcement in `methods_mut_method_lvalue.rs`.
-    pub(super) fn check_container_cell_constraint(
+    pub(crate) fn check_container_cell_constraint(
         &mut self,
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,

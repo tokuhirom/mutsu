@@ -74,10 +74,13 @@ impl Compiler {
     /// Bare blocks are NOT routine boundaries for `return`.
     pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool, is_block: bool) {
         if is_rw {
+            // A bare `is rw` block (a `<->`-style loop body) keeps its tail
+            // as a value; only an anonymous `sub ... is rw` hands out its
+            // tail's container (ADR-0059 Slice 2).
             let compiled = if is_block {
                 self.compile_closure_body(&[], &[], body)
             } else {
-                self.compile_routine_closure_body(&[], &[], body)
+                self.compile_routine_closure_body(&[], &[], body, true)
             };
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
@@ -122,7 +125,7 @@ impl Compiler {
             let compiled = if is_block {
                 self.compile_closure_body(&placeholders, &[], body)
             } else {
-                self.compile_routine_closure_body(&placeholders, &[], body)
+                self.compile_routine_closure_body(&placeholders, &[], body, false)
             };
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
@@ -142,6 +145,8 @@ impl Compiler {
             params,
             param_defs,
             body,
+            is_rw,
+            is_raw,
             ..
         } = stmt
         else {
@@ -159,7 +164,8 @@ impl Compiler {
             self.code.emit(OpCode::Die);
             return;
         }
-        let compiled = self.compile_routine_closure_body(params, param_defs, body);
+        let compiled =
+            self.compile_routine_closure_body(params, param_defs, body, *is_rw || *is_raw);
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(stmt.clone());
@@ -291,7 +297,10 @@ impl Compiler {
         } else if is_whatever_code {
             self.compile_closure_body_with_promoted_decls(params, param_defs, body, &promoted_decls)
         } else {
-            self.compile_routine_closure_body(params, param_defs, body)
+            // An anonymous `sub (...) is rw { ... }` hands out its tail's
+            // container (ADR-0059 Slice 2); a pointy block's `is_rw` is a
+            // loop-parameter trait and does not reach here.
+            self.compile_routine_closure_body(params, param_defs, body, is_rw)
         };
         if is_pointy {
             compiled.is_pointy_block = true;

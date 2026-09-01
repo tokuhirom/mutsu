@@ -309,6 +309,10 @@ struct CarrierCompileCtxKey {
     scope: String,
     sigilless: Vec<String>,
     placeholder_params: Vec<String>,
+    /// ADR-0059 Slice 2: whether the body's bare tail compiles in container
+    /// mode (an `is rw`/`is raw` routine body). Part of the key because it
+    /// changes the tail's bytecode.
+    rw_tail: bool,
     distribution: Option<Value>,
     /// ADR-0037 §2.3's classification (only ever set when `is_eval_unit`),
     /// which affects the compiled bytecode beyond what `in_routine` alone
@@ -1650,6 +1654,13 @@ pub struct Interpreter {
     /// bound in env, seeded into `compile_block_value_opts`'s fresh compiler
     /// so its stray-placeholder checks know they are attached.
     pending_eval_placeholder_params: Vec<String>,
+    /// ADR-0059 Slice 2: the interpret-path sub call about to recompile a
+    /// `SubData` body through `eval_block_value_cached` is an `is rw`/`is raw`
+    /// routine, so the fresh compiler must compile the body's bare tail as the
+    /// container it denotes (`Compiler::rw_tail`). Consumed (taken) by
+    /// `eval_block_value_inner` at entry, so it never leaks into a block
+    /// compiled from *inside* that body.
+    pending_eval_rw_tail: bool,
     /// ADR-0037 §2.3: how `EVAL ..., context => $ctx` should classify the
     /// snippet's `return`, computed once by `builtin_eval` from `$ctx`'s
     /// stamped routine identity (`Interpreter::eval_context_routine`) and

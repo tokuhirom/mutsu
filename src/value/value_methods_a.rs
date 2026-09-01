@@ -717,6 +717,9 @@ impl Value {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `gc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
+            // A typed hash's value constraint rides on the promoted cell (see
+            // `array_slot_ref`).
+            let value_type = data.value_type.clone();
             match data.map.get_mut(key) {
                 Some(elem) => {
                     if let ValueView::ContainerRef(cell) = elem.view() {
@@ -735,6 +738,9 @@ impl Value {
                     let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
                         std::mem::replace(elem, Value::Nil),
                     ));
+                    if let Some(tc) = value_type.as_deref() {
+                        crate::value::register_container_constraint(&cell, tc);
+                    }
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }

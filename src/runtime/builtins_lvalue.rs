@@ -141,48 +141,36 @@ impl Interpreter {
         }
     }
 
-    /// The lvalue-assignment target of an `is rw`/`is raw` routine: its trailing
-    /// expression.
+    /// Whether a routine hands its caller a container, so that `f() = v`,
+    /// `++f()` and `my $r := f(); $r = v` may write through the call result:
+    /// declared `is rw` / `is raw`, or spelling an explicit `return-rw`
+    /// anywhere in its body (which is assignable without the trait —
+    /// `sub f() { return-rw $v }; f() = 5` writes `$v` in Rakudo).
     ///
-    /// A plain `return EXPR` does NOT qualify, even in an `is rw` routine —
-    /// `return` decontainerizes, so Rakudo rejects `sub f() is rw { return $v };
-    /// f() = 5` with "Cannot assign to a readonly variable or a value". Only a
-    /// bare tail expression (`sub f() is rw { $v }`) or an explicit `return-rw`
-    /// hands the caller a container. So a plain `return` tail STOPS the walk and
-    /// yields `None`; it must not fall through to an earlier statement, which
-    /// would make some unrelated expression the assignment target.
-    pub(crate) fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
-        for stmt in body.iter().rev() {
-            match stmt {
-                Stmt::Expr(expr) => return Some(expr.clone()),
-                Stmt::Return(_) => return None,
-                _ => continue,
-            }
-        }
-        None
+    /// This is a property of the *declaration*, never of the call result: a
+    /// routine that is not rw-capable still runs (Rakudo evaluates `h()` before
+    /// rejecting `h() = 1`), but whatever it returns is a value and the
+    /// assignment is refused even when that value happens to be a `Proxy`
+    /// (Rakudo: `sub f() { Proxy.new(...) }; f() = 5` is `X::Assignment::RO`).
+    pub(crate) fn routine_is_rw_capable(def: &crate::ast::FunctionDef) -> bool {
+        def.is_rw || def.is_raw || Self::routine_body_facts(def).uses_return_rw
     }
 
-    /// Whether a routine's tail is an explicit `return-rw ...`, which makes the
-    /// call result assignable on its own — the `is rw` trait is NOT required
-    /// (`sub f() { return-rw $v }; f() = 5` writes `$v` in Rakudo).
-    ///
-    /// Any single operand counts, not just a bare `Expr::Var`: `return-rw
-    /// Proxy.new(...)` and `return-rw @a[0]` are equally assignable, and
-    /// restricting this to variables made the non-`is rw` spellings of those die
-    /// with "sub is not rw".
-    pub(crate) fn is_explicit_return_rw_target(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Call { name, args } if name == "return-rw" && args.len() == 1
-        ) || matches!(
-            expr,
-            Expr::MethodCall {
-                target,
-                name,
-                args,
-                ..
-            } if name == "return-rw" && args.is_empty() && matches!(target.as_ref(), Expr::Var(_))
-        )
+    /// The write half of `f() = value` once the routine has run: the routine
+    /// handed back a container (ADR-0059) and `value` is stored through it, or
+    /// it handed back a plain value and the assignment is `X::Assignment::RO`
+    /// with Rakudo's "Cannot modify an immutable <Type> (<value>)" wording.
+    fn assign_through_rw_result(
+        &mut self,
+        result: Value,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(assigned) = self.assign_lvalue_container(&result, value) {
+            return assigned;
+        }
+        let typename = crate::runtime::utils::value_type_name(&result);
+        let repr = result.to_string_value();
+        Err(RuntimeError::assignment_ro_typename(typename, &repr))
     }
 
     pub(crate) fn assign_proxy_lvalue(
@@ -297,106 +285,6 @@ impl Interpreter {
         }
     }
 
-    fn assign_rw_target_expr(
-        &mut self,
-        target: &Expr,
-        value: Value,
-    ) -> Result<Value, RuntimeError> {
-        match target {
-            Expr::Var(name) => {
-                // ADR-0024: `name` was extracted from the callee's OWN AST body
-                // (`rw_sub_target_expr`) but this assignment runs in the
-                // CALLING frame's context, not the callee's — so if `name` is
-                // one of the mainline-captured cells (`unit_lexicals`), write
-                // through that cell directly instead of the blind
-                // `self.env.insert` below, which would REPLACE the cell
-                // reference in env with a plain value. That replacement is
-                // invisible to every OTHER reader of `name` still resolving
-                // through the cell (e.g. a Proxy's FETCH closure calling the
-                // same `is rw` sub later), which would then observe a
-                // permanently stale value — the callee's own captured cell
-                // was never actually written.
-                if let Some(cell) = self.mainline_lexical_cell(name) {
-                    cell.lock().unwrap().clone_from(&value);
-                } else {
-                    self.env.insert(name.clone(), value.clone());
-                }
-                // Slice F (env<->locals coherence): an `is rw` sub returning an
-                // lvalue (`sub () is rw { $value }; f() = 9`) writes the target
-                // variable in env by name and relied on the reverse
-                // `sync_locals_from_env` pull to refresh the caller's local slot.
-                // Record the name so the call-site op (the ExecCall for
-                // `__mutsu_assign_callable_lvalue`) writes it straight through to
-                // the caller's slot via `apply_pending_rw_writeback`.
-                self.pending_rw_writeback_sources.push(name.clone());
-                Ok(value)
-            }
-            Expr::Index {
-                target: base,
-                index,
-                is_positional,
-            } => {
-                // An element tail (`sub elem() is rw { @a[1] }`; `elem() = 99`)
-                // assigns through the ordinary index-assignment path — the same
-                // bytecode `@a[1] = v` compiles to — evaluated in the caller's
-                // env like the Var arm, so element-type checks and autoviv all
-                // apply. The runtime value rides in as an `Expr::Literal`.
-                let assign = Expr::IndexAssign {
-                    target: base.clone(),
-                    index: index.clone(),
-                    value: Box::new(Expr::Literal(value.clone())),
-                    is_positional: *is_positional,
-                };
-                self.eval_block_value(&[Stmt::Expr(assign)])?;
-                Ok(value)
-            }
-            // `sub f() is rw { return-rw $x }`: the tail is the `return-rw`
-            // CALL, not its operand. The container-returning compile path
-            // (`compile_return_rw_arg`) only yields a real container for a
-            // subscript/attribute operand; a bare lexical still returns a plain
-            // value, so the assignment falls back to this caller-side tail
-            // re-interpretation. Unwrap the `return-rw` wrapper and assign
-            // through its operand — otherwise this hit the generic call arm
-            // below and died with "Unknown call: return-rw".
-            Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => {
-                let inner = args[0].clone();
-                self.assign_rw_target_expr(&inner, value)
-            }
-            Expr::Call { name, args } => {
-                let mut eval_args = Vec::with_capacity(args.len());
-                for arg in args {
-                    eval_args.push(self.eval_block_value(&[Stmt::Expr(arg.clone())])?);
-                }
-                self.assign_named_sub_lvalue_with_values(&name.resolve(), eval_args, value)
-            }
-            Expr::CallOn { target, args } => {
-                let callable = self.eval_block_value(&[Stmt::Expr(*target.clone())])?;
-                let mut eval_args = Vec::with_capacity(args.len());
-                for arg in args {
-                    eval_args.push(self.eval_block_value(&[Stmt::Expr(arg.clone())])?);
-                }
-                self.assign_callable_lvalue_with_values(callable, eval_args, value)
-            }
-            Expr::MethodCall {
-                target, name, args, ..
-            } if name == "return-rw" && args.is_empty() => {
-                if let Expr::Var(var_name) = target.as_ref() {
-                    self.env.insert(var_name.clone(), value.clone());
-                    // Slice F: write the `return-rw` target through to the
-                    // caller's slot (see the Expr::Var arm above).
-                    self.pending_rw_writeback_sources.push(var_name.clone());
-                    return Ok(value);
-                }
-                Err(RuntimeError::new(
-                    "X::Assignment::RO: return-rw target is not assignable",
-                ))
-            }
-            _ => Err(RuntimeError::new(
-                "X::Assignment::RO: rw sub does not expose an assignable target",
-            )),
-        }
-    }
-
     pub(super) fn assign_named_sub_lvalue_with_values(
         &mut self,
         name: &str,
@@ -508,63 +396,22 @@ impl Interpreter {
         }
 
         if let Some(def) = self.resolve_function_with_alias(name, &call_args) {
-            // Prefer the plan-recorded lvalue tail (a body-less plan-derived
-            // def has no AST body to extract it from — ADR-0019 C6e-3c);
-            // fall back to the body walk for metadata-less defs.
-            let tail = def
-                .rw_tail_expr
-                .as_deref()
-                .cloned()
-                .or_else(|| Self::rw_sub_target_expr(&def.body));
-            // Lvalue return (the primary mechanism): run the routine and write
-            // through the container it hands back. This is the only mechanism
-            // that can express an element reached through one of the routine's
-            // OWN parameters (`sub g(\c) is rw { return-rw c<a> }`), a computed
-            // tail, or a recursive descent — none of which the caller-side tail
-            // re-interpretation below can resolve, because the caller's frame has
-            // no binding for the callee's parameters.
-            if def.is_rw
-                || tail
-                    .as_ref()
-                    .is_some_and(Self::is_explicit_return_rw_target)
-            {
-                let was_lvalue = self.in_lvalue_assignment;
-                self.in_lvalue_assignment = true;
-                let result = self.call_function(name, call_args.clone());
-                self.in_lvalue_assignment = was_lvalue;
-                let result = result?;
-                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
-                    return assigned;
-                }
-                // The routine returned a plain value. Fall back to the legacy
-                // caller-side tail re-interpretation, which still covers the
-                // bare-lexical tail (`sub f() is rw { $x }`, no `return-rw`) —
-                // that shape is not yet compiled to a container return
-                // (ADR-0059 §Slice 2's remaining half). An explicit `return-rw
-                // $x` now DOES return the variable's container, so it no longer
-                // depends on this path.
-                if let Some(target_expr) = tail {
-                    match self.assign_rw_target_expr(&target_expr, value.clone()) {
-                        Ok(result) => return Ok(result),
-                        Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
-                            return Err(err);
-                        }
-                        Err(_) => {}
-                    }
-                }
-                return Err(RuntimeError::new(format!(
-                    "X::Assignment::RO: sub '{}' is not rw",
-                    name
-                )));
-            }
+            // ADR-0059: the routine always runs, and the assignment writes
+            // through the container it hands back. That container is produced
+            // by the compiler — a `return-rw` operand, or the bare tail of an
+            // `is rw`/`is raw` routine, is compiled in container mode — so
+            // this site never inspects the callee's body: an element reached
+            // through one of the routine's OWN parameters, a computed tail and
+            // a recursive descent all arrive here as the same `ContainerRef` /
+            // `HashEntryRef` / `Proxy`.
+            let rw_capable = Self::routine_is_rw_capable(&def);
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
             let result = self.call_function(name, call_args);
             self.in_lvalue_assignment = was_lvalue;
             let result = result?;
-
-            if def.is_rw && matches!(result.view(), ValueView::Proxy { .. }) {
-                return self.assign_proxy_lvalue(result, value);
+            if rw_capable {
+                return self.assign_through_rw_result(result, value);
             }
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: sub '{}' is not rw",
@@ -595,8 +442,8 @@ impl Interpreter {
             ValueView::Sub(data) => {
                 let data = data.clone();
                 // A body-less routine code object (ADR-0019 C6e-3b registers
-                // safe-class defs with an empty AST body) carries no tail to
-                // extract; its installed def does (`rw_tail_expr`). Delegate
+                // safe-class defs with an empty AST body) cannot answer the
+                // `return-rw` question itself; its installed def can. Delegate
                 // to the named path, which reads the def.
                 if data.body.is_empty() && data.compiled_routine.is_some() && !data.name.is_empty()
                 {
@@ -606,43 +453,17 @@ impl Interpreter {
                         value,
                     );
                 }
-                let tail = Self::rw_sub_target_expr(&data.body);
-                // Lvalue return, the same order as the named path above: run the
-                // routine, write through the container it returns, and only fall
-                // back to the caller-side tail re-interpretation for a routine
-                // that returned a plain value (ADR-0059).
-                if data.is_rw
-                    || tail
-                        .as_ref()
-                        .is_some_and(Self::is_explicit_return_rw_target)
-                {
-                    let was_lvalue = self.in_lvalue_assignment;
-                    self.in_lvalue_assignment = true;
-                    let result =
-                        self.call_sub_value(Value::sub_value(data), call_args.clone(), true);
-                    self.in_lvalue_assignment = was_lvalue;
-                    let result = result?;
-                    if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
-                        return assigned;
-                    }
-                    if let Some(target_expr) = tail {
-                        match self.assign_rw_target_expr(&target_expr, value.clone()) {
-                            Ok(result) => return Ok(result),
-                            Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
-                                return Err(err);
-                            }
-                            Err(_) => {}
-                        }
-                    }
-                    return Err(RuntimeError::assignment_ro(Some("sub is not rw")));
-                }
+                // Same rule as the named path (ADR-0059): run the routine and
+                // write through the container it returns.
+                let rw_capable =
+                    data.is_rw || data.is_raw || crate::opcode::body_uses_return_rw(&data.body);
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;
                 let result = self.call_sub_value(Value::sub_value(data), call_args, true);
                 self.in_lvalue_assignment = was_lvalue;
                 let result = result?;
-                if matches!(result.view(), ValueView::Proxy { .. }) {
-                    return self.assign_proxy_lvalue(result, value);
+                if rw_capable {
+                    return self.assign_through_rw_result(result, value);
                 }
                 Err(RuntimeError::assignment_ro(Some("sub is not rw")))
             }

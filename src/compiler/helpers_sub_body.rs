@@ -227,6 +227,9 @@ impl Compiler {
         sub_compiler.user_listop_shadows = self.user_listop_shadows.clone();
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;
+        // ADR-0059 Slice 2: the bare tail of an `is rw`/`is raw` routine is
+        // compiled as the container it denotes (see `rw_tail`).
+        sub_compiler.rw_tail = is_rw || is_raw;
         // A method body carries the synthetic `?CLASS` parameter injected by the
         // MethodDecl lowering. Methods always provide an implicit `*%_` / `*@_`
         // slurpy, so `%_` / `@_` are valid lexicals anywhere in the body.
@@ -662,6 +665,24 @@ impl Compiler {
         Some(key)
     }
 
+    /// Compile the value-producing tail expression of a routine body.
+    ///
+    /// For an ordinary routine that is a plain value read. For an `is rw` /
+    /// `is raw` routine (`rw_tail`) the tail denotes the *storage location*
+    /// the routine hands its caller (ADR-0059 Slice 2), so it is compiled
+    /// exactly like a `return-rw` operand: a subscript yields the element's
+    /// shared cell (or the deferred entry token for a missing hash key), a
+    /// plain scalar lexical yields its own cell, and a call nested in the tail
+    /// gets container-mode arguments. A plain `return EXPR` is unaffected —
+    /// `return` decontainerizes, in Rakudo too.
+    pub(super) fn compile_routine_tail_expr(&mut self, expr: &Expr) {
+        if self.rw_tail {
+            self.compile_return_rw_arg(expr);
+        } else {
+            self.compile_expr(expr);
+        }
+    }
+
     fn compile_routine_body_stmts(
         sub_compiler: &mut Compiler,
         body: &[Stmt],
@@ -688,7 +709,7 @@ impl Compiler {
                     Stmt::Expr(expr) => {
                         // Tail expression becomes the routine's value (implicit
                         // return) -> a closure here escapes the frame.
-                        sub_compiler.with_escape(true, |c| c.compile_expr(expr));
+                        sub_compiler.with_escape(true, |c| c.compile_routine_tail_expr(expr));
                         // Don't emit Pop — leave value on stack as implicit return
                         continue;
                     }
@@ -933,7 +954,7 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, &[])
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, false, &[])
     }
 
     /// Compile a synthesized WhateverCode body whose expression-position
@@ -945,16 +966,28 @@ impl Compiler {
         body: &[Stmt],
         promoted_decls: &[String],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, promoted_decls)
+        self.compile_closure_body_with_routine_flag(
+            params,
+            param_defs,
+            body,
+            false,
+            false,
+            promoted_decls,
+        )
     }
 
+    /// Compile a routine body (a method, or an anonymous `sub`) as a closure
+    /// chunk. `is_rw` is the routine's `is rw`/`is raw` trait: it makes the
+    /// body's bare tail compile to the container it denotes (ADR-0059 Slice 2,
+    /// see `rw_tail`).
     pub(crate) fn compile_routine_closure_body(
         &mut self,
         params: &[String],
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
+        is_rw: bool,
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, true, &[])
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, true, is_rw, &[])
     }
 
     fn compile_closure_body_with_routine_flag(
@@ -963,9 +996,11 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
         is_routine: bool,
+        rw_tail: bool,
         promoted_decls: &[String],
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
+        sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
@@ -1174,7 +1209,7 @@ impl Compiler {
                 let is_value = !last_is_enter && Some(i) == last_value_idx;
                 if is_value && let Stmt::Expr(expr) = stmt {
                     // Tail expression = implicit return -> closure escapes.
-                    sub_compiler.with_escape(true, |c| c.compile_expr(expr));
+                    sub_compiler.with_escape(true, |c| c.compile_routine_tail_expr(expr));
                     continue;
                 }
                 if is_value && let Stmt::Call { name, args } = stmt {
@@ -1334,7 +1369,7 @@ impl Compiler {
                     match stmt {
                         Stmt::Expr(expr) => {
                             // Tail expression = implicit return -> closure escapes.
-                            sub_compiler.with_escape(true, |c| c.compile_expr(expr));
+                            sub_compiler.with_escape(true, |c| c.compile_routine_tail_expr(expr));
                             continue;
                         }
                         // A tail statement-call must keep its value on the

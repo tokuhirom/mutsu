@@ -254,6 +254,10 @@ impl Value {
             // `gc_contents_mut`. No borrow into the items is live across the
             // promotion below.
             let data = unsafe { crate::value::gc_contents_mut(&arc) };
+            // A typed array's element constraint rides on the promoted cell
+            // (ADR-0036 slice 4), so a write through the cell — an lvalue
+            // return, a `:=` alias — is checked exactly like `@a[i] = v`.
+            let value_type = data.value_type.clone();
             let elem = &mut data[idx];
             if let ValueView::ContainerRef(cell) = elem.view() {
                 return Some(Value::ContainerRef(cell.clone()));
@@ -272,6 +276,9 @@ impl Value {
                 elem,
                 Value::Nil,
             )));
+            if let Some(tc) = value_type.as_deref() {
+                crate::value::register_container_constraint(&cell, tc);
+            }
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))
         } else {

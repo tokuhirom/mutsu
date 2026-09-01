@@ -1,11 +1,11 @@
 use v6;
 use Test;
 
-# An lvalue routine's assign target now comes from plan metadata
-# (CompiledRoutineMetadata::rw_tail_expr), not from re-extracting the tail
-# of the AST body — such routines register body-less like every other
-# safe-class def (ADR-0019 C6e-3c lvalue keep-class). Expected values
-# verified against raku.
+# An lvalue routine hands its caller a CONTAINER: its bare tail (or a
+# `return-rw` operand) is compiled in container mode and the assignment writes
+# through the result (ADR-0059). Nothing here depends on the routine keeping
+# an AST body — such routines register body-less like every other safe-class
+# def (ADR-0019 C6e-3c). Expected values verified against raku.
 
 plan 8;
 

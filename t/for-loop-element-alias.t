@@ -357,7 +357,8 @@ plan 72;
 
 # row 28
 {
-    todo 'ADR-0045 slice 5 / ADR-0042: the promoted cell must carry the element constraint';
+    # Green since 2026-09-01: the promoted element cell carries its array's
+    # `value_type` (news/2026-09/is-rw-bare-tail-returns-container.md).
     dies-ok { my Int @a = 1, 2; for @a -> $v is rw { $v = "s" } },
         'row 28: a typed array rejects a bad element through the alias';
 }

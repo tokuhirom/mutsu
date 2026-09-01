@@ -638,6 +638,7 @@ impl Interpreter {
             closure_env_overrides: self.closure_env_overrides.clone(),
             pending_eval_sigilless: Vec::new(),
             pending_eval_placeholder_params: Vec::new(),
+            pending_eval_rw_tail: false,
             pending_eval_context_routine: None,
             pending_supply_block_body: false,
             pending_supply_emitter_sym: None,

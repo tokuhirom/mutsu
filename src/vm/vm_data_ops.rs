@@ -314,6 +314,16 @@ impl Interpreter {
     /// distinct uninitialized `my` scalars must be four distinct containers
     /// (`$a, $b X!=:= $c, $d` is all-True), which only holds if each gets its own
     /// cell rather than falling back to the shared `Any` type object.
+    /// A slot value that already IS a storage location: a shared cell, or the
+    /// deferred hash-entry token a `:=` bind to a not-yet-existent key leaves
+    /// behind (`$current := $current{$k}`). Capturing such a slot must hand out
+    /// that location itself rather than box it into a fresh cell — otherwise
+    /// an lvalue return of the variable (ADR-0059) writes the box, not the
+    /// entry.
+    fn is_lvalue_container_value(value: &Value) -> bool {
+        value.is_container_ref() || matches!(value.view(), ValueView::HashEntryRef { .. })
+    }
+
     pub(super) fn capture_var_cell_inner(
         &mut self,
         code: &CompiledCode,
@@ -342,7 +352,7 @@ impl Interpreter {
         if let Some(hint) = slot_hint
             && hint != u32::MAX
             && code.locals.get(hint as usize).map(String::as_str) == Some(name)
-            && self.locals[hint as usize].is_container_ref()
+            && Self::is_lvalue_container_value(&self.locals[hint as usize])
         {
             return self.locals[hint as usize].clone();
         }
@@ -392,7 +402,7 @@ impl Interpreter {
             }
             return inner;
         };
-        if self.locals[idx].is_container_ref() {
+        if Self::is_lvalue_container_value(&self.locals[idx]) {
             return self.locals[idx].clone();
         }
         // Only box a plain scalar container; genuine reference values are not
