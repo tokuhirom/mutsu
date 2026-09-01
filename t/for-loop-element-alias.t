@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 102;
+plan 115;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -726,6 +726,99 @@ plan 102;
     for @a -> $v is rw { @p.push(start { $v = $v + 1 }) }
     await @p;
     is-deeply @a, [11, 21], 'row 27: a `start` block over an `is rw` param writes through';
+}
+
+# ---------------------------------------------------------------------------
+# Slice 6 — the two shapes the sweep found still on the writeback.
+#
+# Both reached raku's answer for the SIMPLE write and were therefore invisible
+# to every row above; the sweep found them by tracing which loops still stored a
+# rebuilt container. Both are ordinary ADR-0045 defects, not exotica.
+# ---------------------------------------------------------------------------
+
+# The MULTI-PARAMETER rw loop. It used to reach the write answer by accident:
+# the retained writeback stored the CHUNK's own cell into the source element, so
+# a later write through the parameter did land in `@a` — but only after the
+# iteration had ended. Three things followed, and all three are pinned here.
+{
+    # The read direction (row 41's multi-parameter twin). Before slice 6 this
+    # printed the pre-write value, because the chunk's cell was not `@a`'s yet.
+    my @a = 1, 2, 3, 4;
+    my $seen;
+    for @a -> $p is rw, $q is rw { @a[1] = 55; $seen = $q; last }
+    is $seen, 55, 'multi-param rw: a direct write to the element is seen through the alias';
+}
+{
+    # Class 3 (row 38's multi-parameter twin): the body rebinds the source
+    # wholesale, and the iteration-end snapshot used to clobber it.
+    my @a = 1, 2, 3, 4;
+    for @a -> $x, $y is rw { $y = 9; @a = 7, 8, 7, 8; last }
+    is-deeply @a, [7, 8, 7, 8], 'multi-param rw: a wholesale rebind is not reverted by a snapshot';
+}
+{
+    # The write directions that must keep working with the writeback retired.
+    my @a = 1, 2, 3, 4;
+    for @a -> $x, $y is rw { $y = 0 }
+    is-deeply @a, [1, 0, 3, 0], 'multi-param rw: the direct write still lands';
+
+    my @b = 1, 2, 3, 4;
+    my $c;
+    for @b -> $p is rw, $q is rw { $c = -> { $p = 77 } if $p == 3 }
+    $c();
+    is-deeply @b, [1, 2, 77, 4], 'multi-param rw: an escaping closure writes to its own element';
+}
+{
+    # Only a GENUINELY rw slot may alias. `for @e -> \a, @b {}` forces the loop
+    # into rw mode through the sigilless `\a`, but `@b` binds a Positional and
+    # promoting its slot would hand it a container where a list is expected.
+    my @e = 1, 2, 3, 4;
+    for @e -> \a, @b { }
+    is-deeply @e, [1, 2, 3, 4], 'multi-param: a non-rw sibling slot is left alone';
+}
+{
+    # §1.5's acceptance number, for the multi-parameter shape: it was the ONE
+    # shape slice 1 left quadratic (45.7 s at n=40 000 on a release build).
+    my @big = ^20000;
+    my $t0 = now;
+    for @big -> $x, $y is rw { $y = $y + 1 }
+    my $elapsed = now - $t0;
+    ok $elapsed < 20, "a mutating multi-param rw loop is O(n) ({$elapsed.round(0.01)}s)";
+    is @big[19999], 20000, 'the mutating multi-param loop actually wrote every element';
+}
+
+# A `Pair` ELEMENT. `Pair` is a by-value variant, so the item vector holds a
+# clone and `loop_var_unchanged` had no arm for it — which meant the topic was
+# never promoted over an array of Pairs AND every iteration of even a read-only
+# loop rebuilt the whole backing array. This was the largest surviving consumer
+# of the writeback family by a factor of 400.
+{
+    my @t = (1 => 'a'), (2 => 'b');
+    my @c;
+    for @t { @c.push(-> { $_ = (9 => 'q') }) }
+    @c[0]();
+    is-deeply @t, [(9 => 'q'), (2 => 'b')],
+        'Pair element: an escaping closure over the topic writes through';
+}
+{
+    my @t = (1 => 'a'), (2 => 'b');
+    for @t { $_ = (9 => 'q') }
+    is-deeply @t, [(9 => 'q'), (9 => 'q')], 'Pair element: a direct topic assign still lands';
+
+    my @u = (1 => 'a'), (2 => 'b');
+    my @keys;
+    @keys.push(.key) for @u;
+    is-deeply @keys, [1, 2], 'Pair element: a read-only loop reads the right keys';
+    is-deeply @u, [(1 => 'a'), (2 => 'b')], 'Pair element: a read-only loop mutates nothing';
+}
+{
+    # The same §1.5 bound, for the Pair-element shape: 1.87 s at n=8 000 before.
+    my @big = (^8000).map({ $_ => 'v' }).Array;
+    my $t0 = now;
+    my $sum = 0;
+    $sum += .key for @big;
+    my $elapsed = now - $t0;
+    ok $elapsed < 20, "a read-only loop over Pair elements is O(n) ({$elapsed.round(0.01)}s)";
+    is $sum, 31996000, 'the read-only Pair loop actually visited every element';
 }
 
 done-testing;

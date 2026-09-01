@@ -1,7 +1,8 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — slices 0-5 implemented (0-4 on 2026-08-27, 5 on 2026-09-01); only slice 6's
-  sweep remains, see §8 "Implementation status"
+- **Status**: Accepted — **fully implemented** (slices 0-4 on 2026-08-27, 5-6 on 2026-09-01). §1.3's
+  whole table was re-measured against raku at slice 6 and all 45 rows agree; see §8 "Implementation
+  status"
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (which names
@@ -772,14 +773,120 @@ read half of rows 11/20 for the multi-parameter shapes. It is pre-existing and m
 `todo/tickets/proxy-assigned-into-an-array-is-not-fetched.md`, which is why
 `t/for-loop-element-alias.t`'s new multi-parameter row names its parameters `$p`/`$q`.
 
-### What slices 5-6 still own
+### Slice 6 — the sweep, 2026-09-01
+
+**§1.3 re-measured end to end: 45 of 45 rows agree with raku.** Each row was rebuilt as its own
+one-liner (`tmp/rwalias/rowNN.raku`, one file per row so no earlier statement contaminates the next)
+and run under both `raku` and a release `mutsu`, comparing stdout and stderr verbatim; the three
+`dies` rows (19, 28, 30) match raku's message text as well as the fact of dying. Nothing from the
+divergence table survives, and every invariant row still holds.
+
+**§1.5 re-measured.** `for @a <-> $x { $x = $x + 1 }`, release build, best of three:
+
+| n | before slice 1 | now |
+| --- | --- | --- |
+| 5 000 | 0.073 s | 0.01 s |
+| 10 000 | 0.276 s | 0.01 s |
+| 20 000 | 1.095 s | 0.02 s |
+| 40 000 | 5.157 s | 0.03 s |
+| 80 000 | — | 0.07 s |
+| 160 000 | — | 0.15 s |
+
+Each doubling roughly doubles the time. The quadratic is gone.
+
+#### What the sweep actually found — two shapes still on the writeback
+
+The sweep is what justified doing this slice as measurement rather than as a paperwork exercise.
+`write_back_container_source` — the one function every element writeback funnels its store through —
+was instrumented behind an env var and every file in `t/` and in `roast-whitelist.txt` was run under
+it. **140 251 stores across 766 whitelisted roast files** were still happening, and they fell into
+exactly two shapes, both of which had been invisible to §1.3 because both produced raku's answer for
+the *simple* write:
+
+1. **A `Pair` element — 137 808 of the 140 251 stores.** `loop_var_unchanged` had no `Pair` arm, so
+   an array of `Pair`s failed the identity test in two places at once: `items_are_source_elements`
+   declined the loop, so the topic was **never promoted** over a Pair element, and the writeback's
+   own unchanged-guard never fired, so **even a read-only loop rebuilt the whole backing
+   `ArrayData` once per iteration**. A read-only `$sum += .key for @pairs` was O(n²) — 1.87 s at
+   n = 8 000 against raku's flat 0.02 s. A `Pair` is a by-value variant, so there is no pointer
+   identity to test, but equal key *and* equal value means the store is a no-op, exactly like the
+   `Str`/`Int`/`Rat` arms already there. With that arm the topic promotes, the writeback retires, and
+   the same loop runs in 0.03 s at n = 8 000 and 0.04 s at n = 16 000 — flat. `roast/S32-str/`'s
+   `sprintf-*.t` family alone accounted for over 100 000 of the stores, through one
+   `... for @tests;` statement modifier.
+
+2. **The multi-parameter rw loop.** A multi-parameter loop binds through `build_for_bind_stmts`'s
+   `MarkBind` declarations, which read `_[i]` out of a **chunk** — a fresh `Array` built by
+   `items.chunks(arity)`. Promoting the chunk would alias the temporary, so slice 4 had converted
+   only `.kv`, whose *producer* hands out the source's cells. A plain `for @a -> $x, $y is rw`
+   therefore stayed on the writeback, and reached raku's write answer **by accident**: the retained
+   writeback stored the chunk's own cell *into* the source element, so a later write through the
+   parameter did land in `@a`, only after the iteration had ended. Three things followed from that
+   accident, and the sweep found all three:
+
+   - the **read** direction stayed stale — `for @a -> $p is rw, $q is rw { @a[1] = 55; say $q }`
+     printed `2` where raku prints `55` (row 41's multi-parameter twin);
+   - **class 3 survived** — `for @a -> $x, $y is rw { $y = 9; @a = 7,8,7,8 }` gave `[1 9 7 8]`
+     against raku's `[7 8 7 8]` (row 38's twin), silent corruption with no closure involved;
+   - and the shape stayed **O(n²)**: 45.7 s at n = 40 000, the one place §1.5's quadratic had
+     survived slice 1.
+
+   The fix is the same routing as everywhere else, applied one step earlier:
+   `promote_multi_param_elements` promotes the source's elements **before** the item vector is
+   chunked, so the chunk carries `@a`'s cells and `array_slot_ref`'s idempotence makes the
+   `MarkBind` bind alias the source element. `binding_carries_element_cell` then fires and the
+   writeback retires for the iteration. Only positions whose parameter genuinely aliases are
+   promoted — `rw_param_names` is positionally aligned with the chunk and holds `""` for a non-rw
+   slot, the same distinction `build_for_bind_stmts` already makes, so `for @e -> \a, @b { }` leaves
+   `@b`'s slot alone and rows 45/46's "a plain parameter must not alias" still holds. Measured after:
+   0.01 s / 0.03 s / 0.05 s / 0.11 s / 0.20 s at n = 5 000 … 80 000. Flat.
+
+Both are pinned at the end of `t/for-loop-element-alias.t`, each with its own O(n) bound.
+
+#### What survives, and why it is not debt
+
+The writeback family is **not** deleted, and should not be. What remains is the fallback for the
+shapes this ADR deliberately excluded, each with its own pin:
+
+| surviving arm | serves | why it stays |
+| --- | --- | --- |
+| `write_back_for_rw_param` / `write_back_for_topic_item` | shaped, lazy and native-backed arrays; a `Proxy` element; an iteration whose index/key the body removed | §5 Q5 and Q6. Retiring per *loop* rather than per *iteration* silently drops these writes. |
+| `write_back_hash_value_item` | a hash iteration that could not be promoted | same, for `%h.values`. |
+| `write_back_to_source_var` | a scalar-source loop (`for $x { … }`) and `for ($a, $b, $c) { $_++ }` | not an element source at all; there is no container whose element could be promoted. |
+| `write_back_quanthash_rw` / `write_back_quanthash_value_item` | QuantHash **weights** | §2.4. A weight is not a stored element container and `.value = 0` *removes* the key, so it is a different operation. |
+| `write_back_element_source` | `given`/`when` topic writeback | a different construct that happens to share the store. |
+
+`loop_var_unchanged` also stays: it is now the *promotion* discriminator
+(`items_are_source_elements` consults it) as much as the writeback's skip guard, which is what made
+its missing `Pair` arm cost so much.
+
+#### Two findings recorded rather than fixed here
+
+- **`Pair.value = X` does not enforce an immutable value.** `my $p = (1 => "a"); $p.value = "z"`
+  succeeds in mutsu; raku throws `Cannot modify an immutable Str (a)`. Verified loop-independent (it
+  reproduces with no `for` at all), so it is a `Pair.value` lvalue gap, not this ADR's —
+  `todo/tickets/pair-value-assign-does-not-enforce-immutable-value.md`.
+- **`for $a, 1, $b, 2 -> \x, $v { x = $v }` still writes through to nothing.** The source is a
+  comma-list of *variables*, not a container, so no element exists to promote and §1.3 has no row for
+  it. It stays `todo/deep/for-loop-pointy-sigilless-param-write-through-missing.md`, explicitly out
+  of this ADR's scope.
+- The multi-parameter **read-only closure capture** (`$c = -> { $v }` over a multi-parameter, which
+  snapshots by value) is unchanged by slice 6 and remains
+  `todo/tickets/multi-param-read-only-closure-capture-snapshots-the-element.md`. It is a
+  closure-capture mechanism, not a bind-site one.
+
+### What slices 5-6 owned, as recorded before the sweep
 
 Nothing from §1.3: rows 16, 19, 28 and 30 all landed 2026-09-01, and
-`t/for-loop-element-alias.t` has no `todo`-marked row left. **Slice 6 (the sweep) is what remains** —
-re-run §1.5's bench, re-read §1.3's table end to end, and retire the writeback family's surviving
-arms. The writeback family survives only as the fallback for shapes not yet converted:
-`write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
-`write_back_hash_value_item` for a hash iteration that could not be promoted.
+`t/for-loop-element-alias.t` has no `todo`-marked row left, which is what left slice 6 as a sweep.
+
+This paragraph's guess at what the sweep would find was **half wrong, in the direction that
+mattered**. It expected the surviving writeback arms to be a residue of shapes "not yet converted",
+i.e. bookkeeping. Two of them were live defects instead — the multi-parameter arm and the `Pair`
+element — and neither was visible from §1.3, because both produced raku's answer for the simple
+write and diverged only on a *read* through the alias, on a wholesale rebind, and on the clock. It is
+recorded verbatim as a caution: a table of known divergences is not a proof that a mechanism has been
+retired, and "which code still runs" is a question only instrumentation answers.
 
 **Row 28 turned green on 2026-09-01**: the promoted element cell carries its array's `value_type`
 (landed with ADR-0059's bare-tail half, `news/2026-09/is-rw-bare-tail-returns-container.md`), so
@@ -808,5 +915,5 @@ independent of this ADR — recorded as
 
 ---
 
-*Slices 0-4 of this ADR are implemented; the decision stands. If the mechanism judgment changes
-later, supersede it rather than rewriting it.*
+*Every slice of this ADR is implemented and its §1.3 table re-measured green; the decision stands. If
+the mechanism judgment changes later, supersede it rather than rewriting it.*

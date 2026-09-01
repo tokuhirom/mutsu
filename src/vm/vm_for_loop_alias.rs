@@ -23,7 +23,22 @@
 //! Slices landed here: 1 (direct array source, writable aliasing parameter),
 //! 2 (`%h.values`), 3 (the implicit topic; the plain named parameter is a pure
 //! deletion with no promotion at all — rows 45/46 pin that `-> $v` binds the
-//! *value*).
+//! *value*), and the `$`-tagged deref'd-container shape of slice 4
+//! ([`ForElementAlias::ArrayValue`], row 39).
+//!
+//! **The other half of slice 4 is deliberately NOT here.** `.kv`, `.reverse`,
+//! `.sort` and `.values` alias through their *producers*
+//! (`vm_element_producers.rs`, ADR-0036 slice 3's routing): the producer hands
+//! out the element container, so the item the loop binds already carries its
+//! own identity and this discriminator has nothing left to decide. That is why
+//! `kv_mode` / `container_reversed` / `values_mode` still return
+//! [`ForElementAlias::None`] below — not "not yet supported", but "already
+//! handled one layer up". The bind site recognises such an item with
+//! `binding_carries_element_cell` and retires the writeback for it just the
+//! same (`vm_for_loop_body.rs`).
+//!
+//! Slice 6's sweep (2026-09-01) re-measured the whole of ADR-0045 §1.3 against
+//! raku: all 45 rows agree.
 
 use super::vm_control_ops::ForLoopSpec;
 use super::*;
@@ -76,13 +91,18 @@ impl Interpreter {
     /// here on purpose: `for @a -> $v { @a[0] = 9; say $v }` prints `1` in
     /// raku, and the deferred-read form prints `1 2` (rows 45/46).
     ///
-    /// **Which sources alias**: a direct, real, mutable, plain `Array`, or a
-    /// `%h.values` over a real mutable `Hash`. Derived producers
-    /// (`.kv`/`.pairs`/`.reverse`/`.sort`, and the `$`-tagged `for @$s` shape)
-    /// are excluded until slice 4 makes those producers hand out element
-    /// containers themselves; a multi-parameter loop binds through the
-    /// bind-prefix `Stmt::Assign`s rather than this native bind site, so it is
-    /// excluded too.
+    /// **Which sources alias here**: a direct, real, mutable, plain `Array`, the
+    /// `$`-tagged deref'd-container shape (`for @$s`), or a `%h.values` over a
+    /// real mutable `Hash`.
+    ///
+    /// The order-derived producers (`.kv`, `.reverse`, `.sort`, `.values`) are
+    /// excluded on purpose and permanently: slice 4 routed them at the
+    /// *producer*, so the item they yield already IS the element container and
+    /// there is no index for this discriminator to reconstruct. `.pairs` /
+    /// `.antipairs` yield a `Pair` *wrapping* the element, so the binding is
+    /// not the element at all. A multi-parameter loop binds through the
+    /// bind-prefix `Stmt::Assign`s rather than this native bind site, so it too
+    /// aliases via the producer (row 16).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn plan_for_element_alias(
         &self,
@@ -118,8 +138,9 @@ impl Interpreter {
                 writes_back_topic && !topic_readonly
             };
         // `.pairs`/`.antipairs` yield a `Pair` *wrapping* the element, so the
-        // binding is not the element; `.kv` and `.reverse` are derived orders
-        // whose producers do not hand out containers yet (slice 4).
+        // binding is not the element. `.kv` and `.reverse` are derived orders
+        // that alias at the producer instead (slice 4) — declining here is what
+        // lets the producer's cell reach the bind site unmodified.
         if !aliasing_param || spec.loop_var_wraps_element || spec.kv_mode || container_reversed {
             return ForElementAlias::None;
         }
@@ -134,28 +155,16 @@ impl Interpreter {
         // the array is captured here rather than re-resolved per iteration (see
         // `ForElementAlias::ArrayValue`).
         if source.starts_with('@') || source.starts_with('$') {
-            // `@a.values` is an identity-ordered derived producer, but its
-            // routing belongs with `.reverse`/`.sort`; keep it on the writeback
-            // so the array producers convert together.
+            // `@a.values` is an identity-ordered derived producer, and its
+            // routing lives with `.reverse`/`.sort` at the producer (slice 4),
+            // so it is declined here for the same reason they are.
             if spec.values_mode {
                 return ForElementAlias::None;
             }
-            let arr = self.resolve_for_source_array(code, source);
-            let (len, first) = match arr.as_ref().map(Value::view) {
-                Some(ValueView::Array(data, kind))
-                    if !matches!(
-                        kind,
-                        crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
-                    ) && data.shape.is_none()
-                        && data.native_storage_node().is_none() =>
-                {
-                    (data.len(), data.items().first().cloned())
-                }
-                _ => return ForElementAlias::None,
-            };
-            if items.len() != len || !Self::items_are_source_elements(items, first) {
+            let Some(arr) = self.aliasable_source_array(code, source, items) else {
                 return ForElementAlias::None;
-            }
+            };
+            let arr = Some(arr);
             return match arr {
                 Some(arr) if source.starts_with('$') => ForElementAlias::ArrayValue(arr),
                 _ => ForElementAlias::ArrayIndex(source.to_string()),
@@ -183,6 +192,132 @@ impl Interpreter {
             return ForElementAlias::HashValue(source.to_string(), keys.to_vec());
         }
         ForElementAlias::None
+    }
+
+    /// The `Array` behind a tagged `for` source when this loop may promote its
+    /// elements: a real, mutable, plain `Array` (not shaped, lazy, or
+    /// native-backed) whose elements the loop iterates **one-for-one**.
+    ///
+    /// Factored out of [`Self::plan_for_element_alias`] so the multi-parameter
+    /// plan below applies exactly the same discriminator; the two differ only in
+    /// which positions they promote, never in which sources they accept.
+    fn aliasable_source_array(
+        &self,
+        code: &CompiledCode,
+        source: &str,
+        items: &[Value],
+    ) -> Option<Value> {
+        let arr = self.resolve_for_source_array(code, source)?;
+        let (len, first) = match arr.view() {
+            ValueView::Array(data, kind)
+                if !matches!(
+                    kind,
+                    crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
+                ) && data.shape.is_none()
+                    && data.native_storage_node().is_none() =>
+            {
+                (data.len(), data.items().first().cloned())
+            }
+            _ => return None,
+        };
+        if items.len() != len || !Self::items_are_source_elements(items, first) {
+            return None;
+        }
+        Some(arr)
+    }
+
+    /// ADR-0045 slice 6: promote a **multi-parameter** rw loop's source elements
+    /// before the item vector is chunked, so the chunk the bind-prefix
+    /// statements read from carries the SOURCE's element containers.
+    ///
+    /// A multi-parameter loop does not bind at the native bind site — it binds
+    /// through `build_for_bind_stmts`'s `MarkBind` declarations, which read
+    /// `_[i]` out of a chunk built by `items.chunks(arity)`. That chunk is a
+    /// fresh `Array`, so promoting *it* would alias the temporary, not `@a`.
+    /// Promoting the items first makes `array_slot_ref`'s idempotence do the
+    /// rest: the chunk holds the source's cells, the bind aliases them, and
+    /// `binding_carries_element_cell` retires the writeback for the iteration.
+    ///
+    /// Before this, the multi-parameter arm reached raku's *write* answer by
+    /// accident: the retained writeback stored the chunk's own cell **into** the
+    /// source element, so a later write through the parameter did land in `@a` —
+    /// but only after the iteration ended. The read direction stayed stale
+    /// (`for @a -> $p is rw, $q is rw { @a[1] = 55; say $q }` printed the old
+    /// value), a body that rebound the source wholesale was still clobbered by
+    /// the snapshot (§1.3 class 3), and every iteration still rebuilt the whole
+    /// backing `ArrayData`, so a mutating multi-parameter loop stayed O(n²)
+    /// after slice 1 had removed the quadratic from every other shape.
+    ///
+    /// Only the positions whose parameter actually aliases are promoted.
+    /// `rw_param_names` is positionally aligned with the chunk and holds `""`
+    /// for a slot that is not genuinely rw, which is the same distinction
+    /// `build_for_bind_stmts` makes when it decides between a raw `MarkBind`
+    /// declaration and a coercing `Stmt::Assign`. Promoting a non-rw slot would
+    /// make a plain `-> $x` read-alias, which rows 45/46 forbid.
+    pub(super) fn promote_multi_param_elements(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        container_binding: Option<&str>,
+        container_reversed: bool,
+        items: &[Value],
+    ) -> Option<Vec<Value>> {
+        if !spec.chunks_items()
+            || !spec.do_writeback
+            || spec.kv_mode
+            || spec.values_mode
+            || spec.loop_var_wraps_element
+            || container_reversed
+        {
+            return None;
+        }
+        let arity = spec.arity.max(1) as usize;
+        // Nothing to align the chunk positions against, so nothing to promote.
+        if spec.rw_param_names.len() != arity {
+            return None;
+        }
+        // An `@`/`%`/`&`-sigil parameter binds a Positional/Associative, not a
+        // scalar slot — the same carve-out `plan_for_element_alias` makes.
+        let promotable: Vec<bool> = spec
+            .rw_param_names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                !n.is_empty()
+                    && !spec
+                        .multi_param_names
+                        .get(i)
+                        .is_some_and(|m| m.starts_with(['@', '%', '&']))
+            })
+            .collect();
+        if !promotable.iter().any(|p| *p) {
+            return None;
+        }
+        // Only a direct `@`-array source. The `$`-tagged deref'd shape and the
+        // hash shapes keep the single-parameter routing; a multi-parameter loop
+        // over them is rare and its chunk mapping is not the same one-for-one.
+        let source = container_binding.filter(|s| s.starts_with('@'))?;
+        let arr = self.aliasable_source_array(code, source, items)?;
+        let mut out = items.to_vec();
+        let mut promoted_any = false;
+        for (i, slot) in out.iter_mut().enumerate() {
+            if !promotable[i % arity] {
+                continue;
+            }
+            // A `Proxy` element mediates its own STORE; a cell bound around one
+            // would take a plain write instead of calling it (§5 Q6).
+            if matches!(slot.view(), ValueView::Proxy { .. }) {
+                continue;
+            }
+            if !Self::array_is_aliasable(&arr, Some(i)) {
+                continue;
+            }
+            if let Some(cell) = arr.array_slot_ref(i, true) {
+                *slot = Self::name_element_owner(cell, source);
+                promoted_any = true;
+            }
+        }
+        promoted_any.then_some(out)
     }
 
     /// The element container this iteration's binding should alias, or `None`

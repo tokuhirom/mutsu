@@ -1,52 +1,69 @@
-# `for @arr -> $v is rw { ... }` element aliasing doesn't survive into a closure called after the loop
+# A `for` loop parameter binds the element container (ADR-0045, closed)
 
-## Status
+## Outcome
 
-**Partially fixed (2026-08-27) — ADR-0045 slices 0-3 landed.** The headline symptom below is gone:
-`for @list -> $v is rw { @callbacks.push(-> { $v = $v + 1 }) }` now binds `$v` to the element's own
-`ContainerRef` (`array_slot_ref`) at the bind site, so a closure called after the loop writes through
-and the repro prints raku's `[11 21]`.
+**Closed 2026-09-01.** This began as a bug report — a closure that escaped a
+`for @a -> $v is rw` loop no longer wrote through to `@a` — and grew into
+[ADR-0045](../../docs/adr/0045-for-loop-parameters-bind-the-element-container.md),
+whose §1.3 measured **27 divergences from raku in five classes**, only one of
+which this file had described. All of them are now gone: the ADR's slice 6 sweep
+(2026-09-01) re-ran the whole table against `raku` row by row and **all 45 rows
+agree**, and `t/for-loop-element-alias.t` pins every one of them, with no
+`todo`-marked row left.
 
-Slice 1 turned these ADR-0045 §1.3 rows green: **01, 02, 03, 04, 07, 11, 12, 13, 14, 20, 27, 36, 38,
-41, 43** — the whole deferred-closure class for a direct array source, the stale-read class for it,
-and the class-3 clobber (including row 38, the body rebinding `@a` wholesale). Slices 2 and 3 added
-**08** (hash sources, via `hash_slot_ref`), **21, 42, 44** (the implicit topic, which promotes) and
-**22** (the plain named parameter, which turned out to be a pure deletion — `for @a -> $v { @a[1] =
-99 }`, silent corruption in code using no advanced feature at all).
+The decision was to stop copying the loop variable back into the source at the
+end of each iteration, and instead bind the parameter to the element's own
+`ContainerRef` (`array_slot_ref` / `hash_slot_ref`) at the bind site — the
+primitive [ADR-0036](../../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md)
+had already shipped for `:=`-bound elements. That is what Raku specifies: `for`
+binds the *item the iterator yields*, and for a real mutable `Array`/`Hash` that
+item **is** the element's `Scalar`.
 
-Three measured quadratics went with them: the mutating `<->` loop (160 000 elements: 39.8 s →
-0.16 s), the mutating *topic* loop (43.1 s → 0.16 s) and `for %h.values -> $v is rw` (20 000
-elements: 17.3 s → 0.04 s).
+Three of the five divergence classes needed no closure and no `is rw` at all:
+`for @a -> $v { @a[1] = 99 }` silently lost the write, `for @a.reverse -> $v is
+rw` wrote each value to the *mirror-image* index, and every mutating loop was
+**O(n²)** because each iteration rebuilt the entire backing `ArrayData` to
+change one element. The last of those is the headline number: a mutating `<->`
+loop over 160 000 elements went from 39.4 s to 0.11 s, and it is flat now rather
+than merely faster.
 
-**Still open**, and why this file stays here: rows 16, 17, 24, 39 (derived producers —
-`.kv`/`.reverse`/`.sort`/`@$s`, slice 4) and rows 19, 28, 30 (bind-time enforcement, slice 5). Each
-is `todo`-marked in `t/for-loop-element-alias.t` with its owning slice named. Retire this file to
-`news/2026-08/` when ADR-0045's slice 6 lands, per the note below.
+The slices, and where each is written up:
 
-The mechanism decision lives in
-[ADR-0045](../../docs/adr/0045-for-loop-parameters-bind-the-element-container.md) (2026-08-20):
-bind the loop parameter to the element's `ContainerRef` (`array_slot_ref` / `hash_slot_ref`) at the
-bind site and retire the per-iteration writeback family. Read ADR-0045 before starting — it carries a
-27-row divergence matrix re-measured on `main` (33f75a62f), the invariant table that bounds it, the
-writeback-family inventory, the phasing, and the open questions. This file stays open only as the
-tracking record; retire it to `news/2026-08/` when ADR-0045's slice 6 lands.
+| slice | what | landed |
+| --- | --- | --- |
+| 0-1 | the pin file; the direct array source with a writable aliasing parameter | 2026-08-27 |
+| 2-3 | hash sources; the implicit topic — and the plain named parameter, which turned out to be a *pure deletion* | 2026-08-27 |
+| 4 | derived producers (`.values`, `.reverse`, `.sort`, `.kv`), routed at the producer with ADR-0036 slice 3 | 2026-08-27 / 2026-09-01 |
+| 5 | bind-time rejection of an `is rw` bind against an immutable source, and the element type constraint | 2026-09-01 |
+| 6 | the sweep — and the two shapes it found still on the writeback | 2026-09-01 |
 
-**Two claims below are now known to be wrong, and are kept only for the record:**
+**Slice 6 was not paperwork.** Instrumenting the one function every element
+writeback stores through, and running all of `t/` and the whole roast whitelist
+under it, found **140 251 stores still happening** — and they were not residue.
+An array of `Pair`s had never been promoted at all (`loop_var_unchanged` had no
+`Pair` arm, so the identity test failed twice over), which left even a
+*read-only* `$sum += .key for @pairs` quadratic at 1.87 s for 8 000 elements;
+and the multi-parameter rw loop was reaching raku's write answer **by accident**,
+its retained writeback storing the chunk's own cell into the source element after
+the fact — so a read through the alias stayed stale, a wholesale rebind was still
+clobbered, and that shape stayed O(n²) at 45.7 s for 40 000 elements. Both are
+fixed and pinned. ADR-0045 §8 has the detail.
 
-1. **The stated blocker does not exist.** This file concluded that a fix must wait on a
-   *share-vs-bind distinction at the element-store layer*, because an element store write-throughs
-   any `ContainerRef` element unconditionally. [ADR-0036](../../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md)
-   §7 answers this directly: unconditional write-through **is** the Raku semantics (`@a[0] = "Q"`
-   assigns *into* the element's `Scalar`, it never replaces it), so the distinction must not be
-   built. Re-measured on `main`, the hand-written form of the fix — a `:=`-bound element captured by
-   a closure that escapes and is called later — already produces raku's answer on every probe,
-   including the `.raku`/`.elems` invisibility invariant. The primitive shipped; the work is routing.
-2. **The symptom is much wider than a deferred closure.** The deferred-closure case is one of five
-   divergence classes. Three of the others need no closure and no `is rw` at all: an end-of-iteration
-   whole-container rebuild **clobbers writes the body made directly to the source**
-   (`for @a -> $v { @a[1] = 99 }` loses the write), `for @a.reverse -> $v is rw` writes each value to
-   the *mirror-image* index, and the mutating `<->` loop is **O(n²)** (5.2 s for 40 000 elements
-   against raku's 0.012 s) because of that same rebuild. See ADR-0045 §1.3 and §1.5.
+The two claims this file originally made that turned out to be wrong are kept
+below, verbatim, because they are the useful part of the record.
+
+**Wrong claim 1 — "the fix is blocked on a share-vs-bind distinction at the
+element-store layer."** It is not, and building that distinction would have been
+a bug: unconditional write-through **is** the Raku semantics (`@a[0] = "Q"`
+assigns *into* the element's `Scalar`, it never replaces it), which ADR-0036 §7
+says directly. The hand-written form of the fix already produced raku's answer on
+every probe before a line was written. The work was routing, not invention.
+
+**Wrong claim 2 — "this is about deferred closures."** It was one of five
+classes, and the three that mattered most to ordinary code involved no closure,
+no `rw`, and no concurrency.
+
+The original report follows.
 
 ## Symptom
 
@@ -180,27 +197,26 @@ ticket — see "Where this connects" below before starting design.
 The repro above, no fixtures needed. Expected (raku): `11`, `21`,
 `[11 21]`. Actual (mutsu): `11`, `21`, `[10 20]`.
 
-## Re-verified 2026-09-01 (TRIAGE regeneration)
+## What was still open at the last triage, and where it went
 
-Headline repro prints raku's `11` / `21` / `[11 21]`. `.reverse` and `.sort`
-sources now write through as well, so **rows 17 and 24 pass** — the "still
-open: 16, 17, 24, 39" line above is stale by two rows. What
-`t/for-loop-element-alias.t` still `todo`-marks:
+Recorded 2026-09-01, just before slice 6 closed this file:
 
-- row 16 (`.kv` + escaping closure) — **landed 2026-09-01**,
+- row 16 (`.kv` + escaping closure) — landed,
   `news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md`;
-- rows 19/30 (`is rw` over a List/Range must die at bind) — **landed
-  2026-09-01**, `news/2026-09/for-loop-is-rw-over-an-immutable-source-fails-at-bind.md`;
-- row 28 (typed-array element constraint through the alias) — **landed
-  2026-09-01** as ADR-0036 slice 4,
+- rows 19/30 (`is rw` over a List/Range must die at bind) — landed,
+  `news/2026-09/for-loop-is-rw-over-an-immutable-source-fails-at-bind.md`;
+- row 28 (typed-array element constraint through the alias) — landed as
+  ADR-0036 slice 4,
   `news/2026-09/element-type-check-failures-name-their-container.md`;
-- rows 39/39b (`for @$s`) — deliberately backed out and owned by its own file,
-  `todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
+- rows 39/39b (`for @$s`) — the promotion was deliberately backed out once and
+  re-landed through `ForElementAlias::ArrayValue`; the nqp-type-test fallout it
+  caused is its own file.
 
-**As of 2026-09-01 this file has no residue of its own.** `t/for-loop-element-alias.t`
-carries no `todo` at all, and every row it still names is another file's. It is
-kept open only because ADR-0045 slice 6 (the sweep) is what closes it out to
-`news/`; do not dispatch it as a bug.
+Two neighbouring gaps stay open and are explicitly **not** this ADR's:
 
-A further producer with the same gap: `for @a.Seq { $_++ }`
-(`todo/tickets/array-seq-view-does-not-carry-element-containers.md`).
+- `for $a, 1, $b, 2 -> \x, $v { x = $v }` writes through to nothing. The source
+  is a comma-list of *variables*, not a container, so there is no element to
+  promote — `todo/deep/for-loop-pointy-sigilless-param-write-through-missing.md`.
+- `Pair.value = X` does not enforce an immutable value. Found during the sweep,
+  verified loop-independent —
+  `todo/tickets/pair-value-assign-does-not-enforce-immutable-value.md`.
