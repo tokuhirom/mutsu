@@ -473,6 +473,39 @@ impl Value {
         }
     }
 
+    /// ADR-0040 slice 3: the discriminator, stated once. Are this container's
+    /// elements `Scalar` containers of their own?
+    ///
+    /// Raku's model is that a real, mutable `Array`/`Hash` stores each element
+    /// in a `Scalar` container, while a `List`/`Seq`/`Range` stores the values
+    /// themselves. The *representation* consequence of that (one item in list
+    /// context, a `$` in `.raku`) is what slices 1-2 put at the element store;
+    /// this is the same fact seen from the *reflection* side, which is the one
+    /// place a bare `Int` element still needs the container kind to answer:
+    ///
+    /// ```text
+    /// my @c = 1, (1,2), [3,4];   @c[0..2]>>.VAR>>.^name  is  Scalar Scalar Scalar
+    /// my @l := 1, (1,2), [3,4];  @l[0..2]>>.VAR>>.^name  is  Int    List   Array
+    /// ```
+    ///
+    /// `Shaped` and `Lazy` are real `Array` kinds (`my @a[2;2]`, `my @a = ^Inf`)
+    /// and so answer `true`, even though `ArrayKind::itemize()` is a no-op on
+    /// them. `ItemArray`/`ItemList` are `$[…]`/`$(…)` — the itemization
+    /// describes how the aggregate behaves as somebody else's element and says
+    /// nothing about its own elements, so they answer the same as the kind they
+    /// decontainerize to.
+    pub fn elements_are_containers(&self) -> bool {
+        match self.view() {
+            ValueView::Array(_, kind) => matches!(
+                kind,
+                ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy | ArrayKind::ItemArray
+            ),
+            ValueView::Hash(_) => true,
+            ValueView::Scalar(inner) => inner.elements_are_containers(),
+            _ => false,
+        }
+    }
+
     /// Read through a `ContainerRef` or explicit `.VAR` container view and apply
     /// `f` to the inner value WITHOUT cloning it.
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {

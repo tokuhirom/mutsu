@@ -1,6 +1,6 @@
 # ADR-0040: Array and Hash elements are itemized at the *store*, not compensated at the read
 
-- **Status**: Accepted (Slices 0-2 implemented; see "Implementation status" below)
+- **Status**: Accepted (Slices 0-3 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 / §7 (the
@@ -477,13 +477,14 @@ approximates each separately. Recorded here so a future reader can see the whole
 
 ---
 
-## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27)
+## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slice 3 added 2026-09-01)
 
-Slices 0-2 landed in full. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
+Slices 0-3 landed in full. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
 description (element assign, autovivification — both single- and nested-level — and
 `push`/`unshift`/`append`/`prepend`/`splice` for a real `Array` or `Hash`). Slice 2 covered the
-construction sites, turning §1.3's rows 01-18 and 23 green; **only row 24 (`.VAR` reflection,
-Slice 3) is still `todo`-marked** in the acceptance oracle.
+construction sites, turning §1.3's rows 01-18 and 23 green. Slice 3 covered the reflection side,
+turning row 24 green — **every row of §1.3 now agrees with raku**, and nothing in the acceptance
+oracle is `todo`-marked any more.
 
 - **Slice 0** (acceptance oracle): `t/element-store-itemization.t` — the full §1.3 divergence
   matrix (rows 01-25, dual-oracled against `raku`), the §1.6 agreeing-source rows, the §2.3 arity
@@ -494,8 +495,8 @@ Slice 3) is still `todo`-marked** in the acceptance oracle.
   array/hash autovivification (`@a[5][0] = 1`, `%h<a><b> = 1`), `Hash.push`, and reference-shared
   push (`@a.push(@b)`) including that `@b` read directly stays bare while `@a[0]` is itemized, and
   that a later mutation of `@b` still propagates through the shared cell. 46 assertions total; rows
-  01-18, 23 (construction-site itemization, Slice 2) and 24 (`.VAR` reflection, Slice 3) stay
-  `todo`-marked.
+  01-18, 23 (construction-site itemization, Slice 2) and 24 (`.VAR` reflection, Slice 3) started
+  `todo`-marked and were un-marked by their own slices.
 
 - **Slice 1** (the mutation sites), in two composed layers:
 
@@ -782,6 +783,88 @@ whitelisted files, including `push`/`unshift`/`splice`/`create`/`delete*`/`multi
 variants), `S02-types/{array,array_extending,array_ref,assigning-refs,autovivification,
 flattening,hash,hash_ref,list,multi_dimensional_array}.t`, `S32-list/{pick,roll}.t`, and **all 119
 whitelisted `roast/integration/*.t` files** (release build) — all pass.
+
+### Slice 3 (2026-09-01) — the reflection side
+
+Row 24 is the same model seen through `.VAR`, and it is the one place the *value* cannot carry the
+answer. Slices 1-2 put the property on the stored value, so an element that is an aggregate already
+reflected correctly with no reflection-specific work (`[1,(2,3)][1].VAR.^name` was already `Scalar`,
+because slice 2 itemizes an array literal's elements, and `(1,(2,3))[1].VAR.^name` was already
+`List`). But a bare `Int` element has no flag to carry: `my @c = 1, …` and `my @l := 1, …` hold a
+byte-identical first element and must answer `Scalar` and `Int` respectively. The answer therefore
+has to be read off the **source container's kind** — exactly the discriminator §1.6 established, now
+stated once in code.
+
+**`Value::elements_are_containers`** (`src/value/value_methods_a.rs`), beside slice 1's
+`itemize_for_element_store` and slice 2's `needs_element_itemization`/`deitemize_element`:
+`Array`/`Shaped`/`Lazy`/`ItemArray` and every `Hash` answer `true`; `List`/`ItemList`, `Seq`,
+`Range` and everything else answer `false`; a `Scalar` wrapper recurses into what it holds, so a
+`List` living in a `$` (`my $sl = (1,(1,2),[3,4]); $sl[1].VAR.^name` is `List`) answers from the
+List. `Shaped` and `Lazy` are included even though `ArrayKind::itemize()` is a no-op on them — they
+are real `Array`s, and raku agrees (`my @a = ^Inf; @a[1].VAR.^name` is `Scalar`).
+
+**The consumer is `builtin_index_var_meta`** (`src/runtime/builtins.rs`), the runtime half of the
+compiler's `.VAR`-on-a-subscript rewrite (`compile_expr_method_var_on_index`,
+`src/compiler/expr_method.rs`). It used to synthesize an opaque `Scalar` descriptor
+*unconditionally*, the one pre-existing exception being `Map` — whose values are famously not
+containers, which is the same rule this slice generalizes.
+
+**The compiler hook was rewired rather than the builtin taught to index.** The old shape compiled
+the subscript's *target* purely for side effects, `Pop`ped it, and passed `(name, index)` so the
+builtin could re-derive a `Map` value by key. Re-deriving the element inside a reflection builtin
+would have been a hand-rolled duplicate of the subscript machinery — the compensator-per-site shape
+this ADR exists to avoid, and one that would have had to grow arms for negative indices, `Seq`
+reification, `Range` arithmetic and so on. The hook now compiles the **whole subscript** and passes
+`(element, name)`, so the element is read once by the ordinary machinery and the builtin's only job
+is to decide which of the two things to hand back. That also collapses the `Map` special case into
+the general rule and made the `Seq`- and `Range`-sourced rows fall out for free
+(`my $sq = (…).Seq; $sq[2].VAR.^name`, `my @r := 1..3; @r[1].VAR.^name`), where the hand-rolled
+version answered only `List`.
+
+**One representation ambiguity had to be resolved by the sigil.** mutsu's `ValueView::LazyList` is
+the reified form of *both* a real `Array` assigned a lazy source (`my @a = ^Inf`, `my @a = lazy
+gather {…}` — raku reports `Scalar` elements) and a lazy `Seq` (`my $s = lazy gather {…}` — raku
+reports the values), so the value alone cannot answer. The variable's sigil resolves it, and does
+so soundly rather than heuristically: raku **rejects** binding a `Seq` to an `@` variable outright
+("Type check failed in binding; expected Positional but got Seq"), so an `@`-sigiled `LazyList` can
+only have got there by assignment, i.e. it is a real `Array`. That, plus the `Map` declared-type
+check, is why the two container-level distinctions live in an `Interpreter` wrapper
+(`container_elements_are_containers`) and not in the `Value` method — both need context a `Value`
+does not carry. `@`-assigned `Seq` and `Range` sources need no such rule: mutsu already reifies
+those into a real `Array` at the store (slice 2), so their kind is faithful.
+
+**`.VAR.name` was wrong in the same function and is fixed with it.** Rakudo names an element's
+container after the container it lives in — `@real[0].VAR.name` is `@real`, `%h<a>.VAR.name` is
+`%h` — where mutsu synthesized `@real[]` / `%h[]`. Nothing keyed off the suffix (a `.VAR` reflection
+object is identified by its `__mutsu_var_target` attribute, not by its `name`), and no `t/` or roast
+test pinned it.
+
+**No counter-currents.** Unlike slices 1 and 2 — where the recurring trap was a reader asking a
+question *about the value* while holding something itemized *because it is an element*, 17 such
+sites in slice 2 alone — this slice changes no stored value and no flattening decision. It changes
+what one reflection builtin returns, and the extra element read the rewired hook performs replaces
+a read the subscript would have done anyway in every other context.
+
+**Known remaining `.VAR` divergences, deliberately not chased here**, all of one family: mutsu's
+`.VAR` on a *real* element returns an opaque descriptor carrying `name`/`dynamic`/`default`, while
+raku returns the element's actual container, which delegates value methods through
+(`@real[1].VAR.raku` is `[3, 4]` / `Scalar.new`, `.VAR.elems` `2` / `1`, `.VAR.gist` `$[3, 4]` /
+`Scalar.new`). Fixing that means `.VAR` returning ADR-0036's `ContainerRef` element cell instead of
+a descriptor — the *aliasing* surface, and a representation decision of its own. Recorded with its
+three smaller siblings (the `@a[i;j]` multi-dim subscript never reaching this path at all, `is
+default(0)` not reflected in `.VAR.default`, and native `int @a` elements needing an `IntPosRef`
+mutsu has no representation for) as
+`todo/deep/var-on-a-real-element-is-an-opaque-descriptor-not-the-container.md`.
+
+**Verification**: `cargo fmt --check` and `cargo clippy -- -D warnings` clean.
+`t/element-store-itemization.t` grew from 121 to 149 assertions and is `todo`-free for the first
+time: row 24 un-marked, plus a dedicated slice-3 section dual-oracled against `raku` covering the
+three real-Array-element shapes, seven non-container sources (`:=`-bound List, a List in a `$`, a
+sigilless alias, a cached `Seq`, a raw `Seq` in a `$`, a bound `Range`, a `Range` in a `$`, a lazy
+`gather` in a `$`), the real-`Array` kinds whose lazy or reified source could have been mistaken for
+one of those (`^Inf`, an `@`-assigned lazy `gather`/`Seq`/`Range`, an unfilled element), `Hash` vs
+`Map`, the two unnamed-subscript invariants, and the `.VAR.name` correction. Full local `t/` suite
+passes; `make roast` delegated to CI.
 
 ---
 

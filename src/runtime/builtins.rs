@@ -144,30 +144,37 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
 ];
 
 impl Interpreter {
+    /// `.VAR` on a subscript of a NAMED container (`@a[0]`, `%h<k>`). The
+    /// compiler (`compile_expr_method_var_on_index`) hands us the element the
+    /// ordinary subscript machinery read, plus the name of the container it
+    /// came from.
+    ///
+    /// ADR-0040 slice 3: which of the two we return is decided by the *source
+    /// container*, not by the element. A real, mutable `Array`/`Hash` stores
+    /// each element in a `Scalar` container, so `.VAR` is a container
+    /// descriptor; a `List`/`Seq`/`Range` -- and a `Map`, whose values are
+    /// famously not containers -- stores the values themselves, so `.VAR` IS
+    /// the element. The value side of that model is already carried by the
+    /// store's itemization (slices 1-2), but a bare `Int` element has no flag
+    /// to carry it: `my @c = 1, ...` and `my @l := 1, ...` hold a
+    /// byte-identical first element and must answer `Scalar` and `Int`
+    /// respectively.
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let source_name = args.first().map(Value::to_string_value).unwrap_or_default();
-        let index_key = args.get(1);
+        let element = args.first().cloned().unwrap_or(Value::NIL);
+        let source_name = args.get(1).map(Value::to_string_value).unwrap_or_default();
 
-        // For Map containers, .VAR returns the value itself (no Scalar container)
-        // since Map decontainerizes all values.
         if let Some(container) = self.env.get(&source_name)
-            && let ValueView::Hash(map) = container.view()
+            && !self.container_elements_are_containers(container, &source_name)
         {
-            let is_map = self
-                .container_type_metadata(container)
-                .and_then(|info| info.declared_type)
-                .is_some_and(|dt| dt == "Map");
-            if is_map {
-                if let Some(key) = index_key {
-                    let key_str = key.to_string_value();
-                    return Ok(map.get(&key_str).cloned().unwrap_or(Value::NIL));
-                }
-                return Ok(Value::NIL);
-            }
+            return Ok(element);
         }
 
         let mut attributes = std::collections::HashMap::new();
-        attributes.insert("name".to_string(), Value::str(format!("{source_name}[]")));
+        // Rakudo names an element's container after the container it lives in:
+        // `@real[0].VAR.name` and `%h<a>.VAR.name` are `@real` / `%h`, not a
+        // synthesized `@real[]`. Nothing keys off the old suffix — a `.VAR`
+        // reflection object is identified by `__mutsu_var_target`.
+        attributes.insert("name".to_string(), Value::str(source_name.clone()));
         attributes.insert(
             "__mutsu_var_target".to_string(),
             Value::str(source_name.clone()),
@@ -183,6 +190,34 @@ impl Interpreter {
         };
         attributes.insert("default".to_string(), default_val);
         Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
+    }
+
+    /// [`Value::elements_are_containers`] plus the two distinctions a bare
+    /// `Value` cannot make.
+    ///
+    /// A `Map` is a `Hash` whose values are NOT containers, and mutsu tells it
+    /// from a real `Hash` by the container's declared type, not its
+    /// representation.
+    ///
+    /// A `LazyList` is genuinely ambiguous in mutsu: it is the reified form of
+    /// BOTH a real `Array` assigned a lazy source (`my @a = ^Inf`, whose
+    /// elements raku reports as `Scalar`) and a lazy `Seq` (`my $s = lazy
+    /// gather {...}`, whose elements are the values). The variable's sigil
+    /// resolves it, and does so soundly: raku rejects binding a `Seq` to an
+    /// `@` variable outright ("expected Positional but got Seq"), so an
+    /// `@`-sigiled `LazyList` can only have got there by assignment -- i.e. it
+    /// is a real `Array`.
+    fn container_elements_are_containers(&self, container: &Value, source_name: &str) -> bool {
+        match container.view() {
+            ValueView::Hash(_) => !matches!(
+                self.container_type_metadata(container)
+                    .and_then(|info| info.declared_type)
+                    .as_deref(),
+                Some("Map")
+            ),
+            ValueView::LazyList(_) => source_name.starts_with('@'),
+            _ => container.elements_are_containers(),
+        }
     }
 
     /// `sprintf`/`printf` declare their format as `Str(Cool) $format`, and a

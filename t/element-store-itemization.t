@@ -13,13 +13,12 @@ use Test;
 # Array/Hash), turning rows 19-22 green. Slice 2 fixes the *construction*
 # sites (list-assign into `@a`/`%h`, real-container literal construction,
 # `.Array`/`.Hash` coercion), turning rows 01-18 and 23 green -- every
-# downstream element producer inherits the flag (SS1.6.3). Only row 24
-# (`.VAR` reflection) is still `todo`-marked; it is Slice 3. Row 25 (and the
-# SS1.6 rows) are invariants that must NOT move -- they are what stops a
-# later slice from "fixing" the divergence by over-itemizing.
+# downstream element producer inherits the flag (SS1.6.3). Slice 3 states the
+# same model on the *reflection* side (`.VAR`), turning row 24 green. Row 25
+# (and the SS1.6 rows) are invariants that must NOT move -- they are what
+# stops a later slice from "fixing" the divergence by over-itemizing.
 
 # === SS1.3 divergent rows (25) ===
-# Row 24 is the `.VAR` reflection side and still diverges (Slice 3).
 
 my @c = [<a b>],[<c d>];
 my %h = a => [1,2];
@@ -111,7 +110,6 @@ sub takes(*@a) { @a.elems }
     is takes(@a23[0]), 1, 'row 23: my @a = (1..3),(4..6); takes(@a[0])';
 }
 {
-    todo 'row 24: .VAR reflection is ADR-0040 slice 3';
     my @l := 1, (1, 2), [3, 4];
     is "{@l[1].VAR.^name} {@l[2].VAR.^name}", 'List Array',
         'row 24: @l[1].VAR.^name, @l[2].VAR.^name';
@@ -567,6 +565,75 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is @xs.raku, '[1, 2, 3]', 'staging temp: a := @ target aliases its source';
     my ($b) = ();
     is $b.^name, 'Any', 'staging temp: a missing untyped target is Any, not Nil';
+}
+
+# === Slice 3: `.VAR` reflection -- the discriminator, seen from the
+# reflection side (ADR-0040 SS4 slice 3) ===
+#
+# A real, mutable Array/Hash stores each element in a Scalar container; a
+# List/Seq stores the values themselves. Slices 1-2 put the *representation*
+# half of that at the store (an itemized element renders `$[...]` and counts
+# as one item), but a bare `Int` element cannot carry a flag, so `.VAR` has to
+# read the answer off the SOURCE container's kind --
+# `Value::elements_are_containers`. Every expectation below is dual-oracled
+# against `raku`.
+{
+    my @real = 1, (1, 2), [3, 4];
+    is @real[0].VAR.^name, 'Scalar', 'slice 3: real Array element is a Scalar (Int)';
+    is @real[1].VAR.^name, 'Scalar', 'slice 3: real Array element is a Scalar (List)';
+    is @real[2].VAR.^name, 'Scalar', 'slice 3: real Array element is a Scalar (Array)';
+
+    my @bound := 1, (1, 2), [3, 4];
+    is @bound[0].VAR.^name, 'Int', 'slice 3: bound List element is its own value (Int)';
+    is @bound[1].VAR.^name, 'List', 'slice 3: bound List element is its own value (List)';
+    is @bound[2].VAR.^name, 'Array', 'slice 3: bound List element is its own value (Array)';
+    is @bound[2].VAR.raku, '[3, 4]', 'slice 3: .VAR on a List element is the value itself';
+    is @bound[2].VAR.elems, 2, 'slice 3: .VAR on a List element keeps the value methods';
+
+    # The source container, not the syntax that reads it (SS1.6.2).
+    my $sl = (1, (1, 2), [3, 4]);
+    is $sl[1].VAR.^name, 'List', 'slice 3: a List in a $ scalar still has bare elements';
+    my \sless = (1, (1, 2), [3, 4]);
+    is sless[2].VAR.^name, 'Array', 'slice 3: a sigilless List alias has bare elements';
+    my @cached := (1, (1, 2), [3, 4]).Seq.cache;
+    is @cached[2].VAR.^name, 'Array', 'slice 3: a cached Seq has bare elements';
+    my $sq = (1, (2, 3), [4, 5]).Seq;
+    is $sq[2].VAR.^name, 'Array', 'slice 3: a Seq in a $ scalar has bare elements';
+    my @rb := 1 .. 3;
+    is @rb[1].VAR.^name, 'Int', 'slice 3: a bound Range has bare elements';
+    my $rs = 1 .. 3;
+    is $rs[1].VAR.^name, 'Int', 'slice 3: a Range in a $ scalar has bare elements';
+    my $lz = lazy gather { take $_ for 1, (2, 3) };
+    is $lz[1].VAR.^name, 'List', 'slice 3: a lazy Seq in a $ scalar has bare elements';
+
+    # Real-Array kinds all keep Scalar elements, including the ones on which
+    # `ArrayKind::itemize()` is a no-op, and the lazy sources an `@`-assign
+    # reifies (raku rejects binding a Seq to `@`, so an `@`-sigiled lazy list
+    # can only be a real Array).
+    my @lazy = ^Inf;
+    is @lazy[1].VAR.^name, 'Scalar', 'slice 3: a lazy Array element is a Scalar';
+    my @lza = lazy gather { take $_ for 1, (2, 3) };
+    is @lza[1].VAR.^name, 'Scalar', 'slice 3: an @-assigned lazy gather element is a Scalar';
+    my @sqa = (1, (2, 3)).Seq;
+    is @sqa[1].VAR.^name, 'Scalar', 'slice 3: an @-assigned Seq element is a Scalar';
+    my @rga = 1 .. 3;
+    is @rga[1].VAR.^name, 'Scalar', 'slice 3: an @-assigned Range element is a Scalar';
+    my @empty;
+    is @empty[0].VAR.^name, 'Scalar', 'slice 3: an unfilled Array element is a Scalar';
+    my %hh = a => [1, 2];
+    is %hh<a>.VAR.^name, 'Scalar', 'slice 3: a Hash element is a Scalar';
+    my %mm := Map.new((a => [1, 2]));
+    is %mm<a>.VAR.^name, 'Array', 'slice 3: a Map value is NOT a container';
+
+    # An unnamed subscript answers from the value side alone, and already
+    # agreed before this slice -- it must keep agreeing.
+    is (1, (2, 3))[1].VAR.^name, 'List', 'slice 3: List literal element (invariant)';
+    is [1, (2, 3)][1].VAR.^name, 'Scalar', 'slice 3: Array literal element (invariant)';
+
+    # Rakudo names an element container after the container it lives in.
+    is @real[0].VAR.name, '@real', 'slice 3: an Array element .VAR.name is the array name';
+    is %hh<a>.VAR.name, '%hh', 'slice 3: a Hash element .VAR.name is the hash name';
+    is @real.VAR.name, '@real', 'slice 3: the array own .VAR.name is unchanged';
 }
 
 done-testing;

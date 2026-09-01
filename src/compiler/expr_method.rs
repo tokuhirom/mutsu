@@ -7,20 +7,22 @@ impl Compiler {
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
         if let Expr::Index {
             target: index_target,
-            index,
             ..
         } = target
             && let Some(source_name) = Self::index_assign_target_name(index_target)
         {
-            // Preserve side effects of the indexed expression before producing
-            // element variable metadata for .VAR on @a[0] / %h<k>.
-            self.compile_expr(index_target);
-            self.code.emit(OpCode::Pop);
-            // Pass the index key so __mutsu_index_var_meta can look up the
-            // actual value for Map containers (which decontainerize values).
+            // Read the element with the ordinary subscript machinery and hand
+            // the result to `__mutsu_index_var_meta` along with the name of the
+            // container it came from. The builtin needs the value itself for
+            // every source whose elements are NOT `Scalar` containers -- a
+            // `Map`, and (ADR-0040 slice 3) a `List`/`Seq`/`Range` -- where
+            // `.VAR` IS the element; for a real `Array`/`Hash` it discards the
+            // value and answers from the container's metadata. Compiling the
+            // whole subscript here also keeps the indexed expression's side
+            // effects to exactly one evaluation.
+            self.compile_expr(target);
             let name_idx = self.code.add_constant(Value::str(source_name));
             self.code.emit(OpCode::LoadConst(name_idx));
-            self.compile_expr(index);
             let builtin_idx = self
                 .code
                 .add_constant(Value::str("__mutsu_index_var_meta".to_string()));
