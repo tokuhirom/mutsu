@@ -869,6 +869,23 @@ impl Interpreter {
         // todo/tickets/inline-closure-exec-sites-skip-upvalue-array-install.md.
         let saved_upvalues = std::mem::take(&mut self.upvalues);
 
+        // Each `gather` expression evaluation creates a fresh block clone, so
+        // its `state` variables need the coroutine's per-instance scope even
+        // when a finite gather is forced to completion in this strict path.
+        // The bounded pull/resume sibling installs the same scope around every
+        // coroutine run; without it, strict `my @a = gather { state ... }`
+        // forces use the raw, compile-position-only key and sibling gathers
+        // share a state cell.
+        let saved_state_scope = self.state_scope_id.get();
+        let gather_scope_id = list
+            .coroutine
+            .as_ref()
+            .map(|m| m.lock().unwrap().state_scope_id)
+            .unwrap_or(0);
+        if gather_scope_id != 0 {
+            self.state_scope_id.set(Some(gather_scope_id));
+        }
+
         // Set up the lazy list's environment as a scoped overlay's parent: the
         // gather body reads its captured lexicals through to `list.env` and its
         // own writes land in a fresh born-owned overlay (no fork of `list.env`).
@@ -989,6 +1006,7 @@ impl Interpreter {
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         // Restore Interpreter state
+        self.state_scope_id.set(saved_state_scope);
         self.locals = saved_locals;
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;
