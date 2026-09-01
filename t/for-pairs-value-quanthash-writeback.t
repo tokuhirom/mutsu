@@ -9,7 +9,10 @@ plan 23;
 
 # --- Parser: `.value--` is `.value` then postfix `--`, not a method `value--` ---
 {
-    my $p = a => 5;
+    # The pair value must come from a container: a literal one is immutable and
+    # `.value--` correctly raises X::Assignment::RO, as it does in raku.
+    my $v = 5;
+    my $p = a => $v;
     $p.value--;
     is $p.value, 4, '$pair.value-- decrements the pair value';
 }

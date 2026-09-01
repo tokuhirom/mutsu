@@ -500,8 +500,8 @@ The Pair-value leak that backed `.pairs` out (above) does not bite here: the Fat
 **one** named element on demand, exactly like the `:p`/`:kv` adverbs of slice 2, rather than handing
 a coercion a whole container's worth of cells.
 
-**Still open in slice 3/4**: rows 3, 4, 9 (`.pairs` routing), row 11 (env-scan compensator) and
-row 12 (element type constraint). One divergence is knowingly left behind by the array-token work: a
+**Still open in slice 3/4**: rows 3, 4, 9 (`.pairs` routing). Row 11 landed 2026-09-01 and row 12
+is done. One divergence is knowingly left behind by the array-token work: a
 bound *slice* (`my @s := @a[1,5]`) and the two multi-dim descents still grow the array eagerly,
 because their promoted cells are stored as elements of *another* array and an out-of-range index
 would put a deferred token where neither `resolve_array_entry` nor the bound-slice write-through
@@ -540,9 +540,21 @@ all), the `:=` bind and the subscript adverbs still report `@`/`%`; closing that
 travel *with the container*, which is
 `todo/tickets/promoted-element-cell-does-not-know-its-container-name.md`.
 
-**The compensator deletion (the rest of slice 4) is NOT done** -- `methods_mut_method_lvalue.rs`'s
-env-scan and the `__mutsu_hash_ref` branch are untouched, and §1.3 row 11 is still `todo`-marked in
-`t/subscript-pair-element-container.t`.
+**Row 11 landed 2026-09-01** (`news/2026-09/pair-value-assign-enforces-immutability.md`): the
+`Bool`-only read-only guard now covers every immutable scalar leaf, so the standalone-pair env
+rebind can no longer fake a write through a pair value with nothing behind it, and the array
+env-scan skips `ArrayKind::List`/`ItemList`.
+
+> **Second correction (2026-09-01).** The correction above said the array env-scan "never fires for
+> a `List` receiver". It fires whenever the `List` is bound *directly* rather than behind a
+> `ContainerRef` -- which is the case inside a closure, and therefore inside row 11's own
+> `dies-ok { ... }` block. Instrumenting the top-level shape alone is what hid it: row 11 passed at
+> the command line and failed in its test file for this reason. Excluding the immutable array kinds
+> from both array lookups is what made the guard reachable there.
+
+The `__mutsu_hash_ref` branch is still untouched, and the rest of the compensator survives for
+reference-valued pairs, which are mutable in place -- `S02-types/pair.t`'s
+`(%(<a b c d>) => %(<e f g h>)).invert` is its one remaining consumer across the whole whitelist.
 
 Verified with `make test`, a **full local `make roast`** (required by the "universal property of
 values" rule, since this changes what is inside every promoted container), and the bundled-battery

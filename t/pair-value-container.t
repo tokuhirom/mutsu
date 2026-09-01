@@ -1,6 +1,6 @@
 use Test;
 
-plan 21;
+plan 26;
 
 # `key => $var` captures $var's container, so the Pair's value aliases the
 # variable: assigning `.value` writes through to the source variable, and the
@@ -39,18 +39,27 @@ plan 21;
     is $p.raku, ':k(1)', 'pair value renders correctly';
 }
 
-# A literal value is not a container; assignment still updates the pair.
-#
-# NOTE: this is a DIVERGENCE, pinned as-is only to record the current
-# behaviour. raku dies here -- `my $p = (k => 5); $p.value = 9` raises
-# "Cannot modify an immutable Int (5)", because a Pair built from a literal
-# has no container behind its value. mutsu fakes the write by rebinding `$p`'s
-# own env entry. Removing that fake is ADR-0036 slice 4's remaining half; see
-# todo/tickets/pair-value-assign-does-not-enforce-immutable-value.md.
+# A literal value is not a container, so `Pair.value`'s `rw` accessor has
+# nothing to assign into and the store raises X::Assignment::RO -- the same
+# answer raku gives ("Cannot modify an immutable Int (5)"). mutsu used to fake
+# the write by rebinding `$p`'s own env entry.
 {
     my $p = (k => 5);
-    $p.value = 9;
-    is $p.value, 9, 'pair built from a literal still allows .value assignment (DIVERGES: raku dies)';
+    throws-like { $p.value = 9 }, X::Assignment::RO,
+        'a Pair built from a literal has an immutable value';
+    is $p.value, 5, 'the refused assignment left the pair unchanged';
+}
+# The gap is not specific to a bare scalar variable: it reproduces through an
+# array element and through a `for` loop's topic too.
+{
+    my @t = (1 => "a");
+    dies-ok { @t[0].value = "z" }, 'an array element Pair value is immutable';
+    is @t[0].value, "a", 'the element was left alone';
+}
+{
+    my @t = (1 => "a"), (2 => "b");
+    dies-ok { .value = "z" for @t }, 'a loop topic Pair value is immutable';
+    is @t[1].value, "b", 'no element was mutated';
 }
 
 # An UNINITIALIZED declared scalar is still a container, so the Pair aliases
