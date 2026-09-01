@@ -1,5 +1,15 @@
 # A `Proxy` assigned into an Array is stored, not FETCHed — and a same-named lexical flips the loop that compensates
 
+## Deep triage — 2026-09-01
+
+This is a store-semantics campaign owned by ADR-0040, not an ADR-0045 loop
+slice. The reproduced mismatch covers real-Array construction, whole-array
+assignment, `push`, and indexed assignment; the same invariant must also be
+defined for the remaining mutator and nested-store paths. Establish one
+VM-level real-Array store boundary that FETCHes a non-decontainerized `Proxy`
+before itemization, and route every assignment path through it. Do not retain
+or extend `for`-loop auto-FETCH compensation as the mechanism.
+
 ## Symptom
 
 Raku FETCHes a `Proxy` when it is assigned into an `Array`, so the element that
