@@ -59,6 +59,17 @@ once each. After either full command runs, inspect its saved log. A failing
 full test belongs to the branch: diagnose it and use targeted checks as needed
 for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
 
+Documentation-only PRs, including moving a triaged item from `todo/tickets/`
+to `todo/deep/`, do not require Rust formatting, linting, or either full test
+suite. Verify their patch with `git diff --check` and run a focused check only
+when the documentation change affects generated output, executable scripts, or
+test configuration.
+
+Full-suite reruns are allowed when evidence requires them, but never run the
+same full suite concurrently. The suites share Cargo build locks, temporary
+logs, and test-harness state, so overlapping invocations can create spurious
+failures and invalid logs.
+
 For an individual roast test, use `MUTSU_FUDGE=1`; do not set that variable for
 ordinary Raku programs. Do not modify `roast/`, `raku-doc/`, or other upstream
 submodules. Initialize missing submodules with
