@@ -55,10 +55,9 @@ Raku documentation.
 Add a focused regression test for each behavior change, normally under `t/`.
 Run a targeted test while iterating. Before publishing a code PR, run
 `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and `make roast`
-once each. After either full command runs, inspect its saved log rather than
-rerunning it; never rerun the same full command in one work session. A failing
-full test belongs to the branch: diagnose it and use only the smallest targeted
-check for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
+once each. After either full command runs, inspect its saved log. A failing
+full test belongs to the branch: diagnose it and use targeted checks as needed
+for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
 
 For an individual roast test, use `MUTSU_FUDGE=1`; do not set that variable for
 ordinary Raku programs. Do not modify `roast/`, `raku-doc/`, or other upstream

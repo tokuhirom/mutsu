@@ -639,6 +639,14 @@ value afterwards (which is ambiguous the moment two elements compare equal).
 
 **Rows 17 and 24 turn green**, plus the deferred-closure form of each and of `@a.values`.
 
+**`@a.Seq` is routed too (2026-09-01).** Its native structural coercion had
+been returning a new `Seq` of copied values before the method-dispatch tail
+could reach `vm_element_producers.rs`, so `for @a.Seq { $_++ }` silently left
+`@a` unchanged. The native `Seq` paths now offer a mutable plain `Array` to the
+same producer layer first; it returns a `Seq` of the array's element cells.
+`.List` remains on its deliberately decontainerizing coercion path, so this is
+the producer rule applied to `Seq`, not a change to List immutability.
+
 **Row 39 (`for @$s`) is green.** It did not need the producer layer at all — its `$`-tagged source is
 an ordinary in-order array read, so it joins slices 1-3's bind-site routing via a shared
 `resolve_for_source_array`.

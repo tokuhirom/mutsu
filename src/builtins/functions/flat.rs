@@ -67,6 +67,10 @@ pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
 
 pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
     match v.view() {
+        // Array.Seq may carry an element's Scalar container (ADR-0045). `flat`
+        // is a list consumer, so it observes the contained value just as it
+        // did before the Seq producer started preserving that container.
+        ValueView::ContainerRef(_) => flat_val(&v.deref_container(), out, flatten_arrays),
         // Slips always flatten — slipping is their whole purpose.
         ValueView::Slip(items) => {
             for item in items.iter() {

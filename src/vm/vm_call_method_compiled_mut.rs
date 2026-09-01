@@ -516,8 +516,18 @@ impl Interpreter {
         {
             return result;
         }
-        // Native `.Seq` coercion for variable receivers (`@a.Seq`) — structural
-        // receivers only, same pure value op as the non-mut path.
+        // A real mutable Array's `.Seq` yields its element containers, so it
+        // must reach the VM-aware producer before the pure structural coercion
+        // snapshots the elements.
+        if !lever_a_blocked
+            && args.is_empty()
+            && method == "Seq"
+            && !self.native_lever_a_user_override(&target, method)
+            && let Some(result) = self.try_element_container_producer(&target, method, &args)
+        {
+            return Ok(result);
+        }
+        // Native `.Seq` coercion for the remaining structural receivers.
         if !lever_a_blocked
             && args.is_empty()
             && method == "Seq"

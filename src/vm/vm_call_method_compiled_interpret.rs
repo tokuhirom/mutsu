@@ -726,9 +726,20 @@ impl Interpreter {
         {
             return result;
         }
-        // Native `.Seq` coercion over a structural receiver (Seq/Array/Slip/
-        // Range/bare scalar). Supply/LazyList/Instance need state and fall
-        // through to the interpreter.
+        // A real mutable Array's `.Seq` yields its element containers, so it
+        // must reach the VM-aware producer before the pure structural coercion
+        // snapshots the elements.
+        if !lever_a_blocked
+            && args.is_empty()
+            && method == "Seq"
+            && !self.native_lever_a_user_override(&target, method)
+            && let Some(result) = self.try_element_container_producer(&target, method, &args)
+        {
+            return Ok(result);
+        }
+        // Native `.Seq` coercion over the remaining structural receivers
+        // (Seq/Array/Slip/Range/bare scalar). Supply/LazyList/Instance need
+        // state and fall through to the interpreter.
         if !lever_a_blocked
             && args.is_empty()
             && method == "Seq"
