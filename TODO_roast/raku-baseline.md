@@ -8,8 +8,8 @@ failing `flunk`) is not worth chasing on mutsu.
 
 - **Data:** [`raku-baseline.tsv`](raku-baseline.tsv) — one row per roast `.t` file.
 - **Generator:** [`../scripts/roast-raku-baseline.sh`](../scripts/roast-raku-baseline.sh) — re-run to refresh.
-- **Captured:** 2026-07-12, against `Rakudo v2026.06` (default language **6.d**, MoarVM 2026.06).
-  Previous capture: 2026-07-11 against `Rakudo v2022.12` — see "v2026.06 refresh" below
+- **Captured:** 2026-09-02, against `Rakudo v2026.07` (default language **6.d**, MoarVM 2026.07).
+  Previous capture: 2026-07-12 against `Rakudo v2026.06` — see "v2026.07 refresh" below
   for the diff.
 
 ## Columns
@@ -42,9 +42,9 @@ failing `flunk`) is not worth chasing on mutsu.
    runs *do* apply fudge (`MUTSU_FUDGE=1`). Therefore a **`raku FAIL`/`SORRY` on a
    whitelisted file is usually a fudge artifact, not raku being worse than
    mutsu** — the real roast harness would `skip`/`todo` those subtests. This is why
-   147 whitelisted files show `raku_status=FAIL` and 80 show `SORRY` (see below);
+   148 whitelisted files show `raku_status=FAIL` and 71 show `SORRY` (see below);
    they are noise for the comparison, not regressions.
-2. **The reference raku is now v2026.06** (default language 6.d), so the old
+2. **The reference raku is now v2026.07** (default language 6.d), so the old
    "6.e-only syntax on a 2022 raku" SORRY class is mostly gone. The remaining
    `SORRY` rows are removed constructs, rakudo-NYI syntax (`::=`, regex `::`),
    or unfudged fudge-dependent lines.
@@ -52,82 +52,35 @@ failing `flunk`) is not worth chasing on mutsu.
    lower bound (fudge only ever skips/todos, never turns a pass into a fail), so
    every `PASS` row is a test raku genuinely passes raw.
 
-## Summary (all 1463 roast `.t` files, unfudged raku v2026.06)
+## Summary (all 1464 roast `.t` files, unfudged raku v2026.07)
 
 | raku_status | count | of which whitelisted | not whitelisted |
 |---|---:|---:|---:|
-| PASS    | 1143 | 1097 | **46** |
-| FAIL    |  154 |  147 | 7 |
-| SORRY   |  100 |   80 | 20 |
-| ABORT   |   45 |   39 | 6 |
-| TIMEOUT |   11 |   11 | 0 |
+| PASS    | 1155 | 1154 | **1** |
+| FAIL    |  151 |  148 | 3 |
+| SORRY   |   90 |   71 | 19 |
+| ABORT   |   45 |   40 | 5 |
+| TIMEOUT |   13 |   13 | 0 |
 | NOPLAN  |   10 |    9 | 1 |
 
-The 1097 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
+The 1154 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
 The FAIL/SORRY/ABORT/TIMEOUT columns on whitelisted rows are dominated by the
 unfudged artifacts of caveat 1.
 
-### v2026.06 refresh (2026-07-12) — diff vs the v2022.12 capture
+### v2026.07 refresh (2026-09-02) — diff vs the v2026.06 capture
 
-Raku-side `PASS` grew 1063 → 1143 (+80: 54 `FAIL→PASS`, 19 `ABORT→PASS`,
-7 `TIMEOUT→PASS`, 3 `SORRY→PASS`). All but three of the newly-PASS files were
-already whitelisted (they were unfudged/old-raku artifacts, caveats 1–2).
-The three that matter — newly oracle-verified mutsu gaps — are:
+Raku-side `PASS` grew 1143 → 1155. Eleven existing files became `PASS`
+(three `FAIL→PASS`, three `TIMEOUT→PASS`, and five `SORRY→PASS`); all are
+already whitelisted, so they do not expose a mutsu gap. Five `sprintf` files
+changed from `SORRY` to `TIMEOUT` under the unchanged 25-second cap. The
+reference also now passes `S02-types/quanthash.t`, a new roast file, which
+accounts for the 1,463 → 1,464 file-count increase.
 
-- `S06-advanced/return-prioritization.t` (raku 11/11, mutsu 9/11) — **new ★ in
-  [BLOCKERS.md](BLOCKERS.md)**: `return` inside LEAVE phasers.
-- `S32-str/format.t` (raku 49/49, mutsu 26/49 abort) — oracle available now, but
-  still awaiting infrastructure (needs the RakuAST subsystem).
-- `S02-types/generics.t` (raku 1/1, mutsu 0/1) — oracle available now, still
-  awaiting infrastructure (6.e generics / `Array[T]` subclassing).
+## Actionable: raku PASS but NOT whitelisted (1)
 
-Raku-side reversals, all on whitelisted files (noise for mutsu): 
-`S10-packages/precompilation.t` and `S17-procasync/stress.t` `PASS→TIMEOUT`
-(25s cap, first-run precomp/load cost of the new raku), `S32-array/shift.t`
-`PASS→FAIL`, `S10-packages/require-and-use--dead-file.t` `FAIL→SORRY`.
-
-## Actionable: raku PASS but NOT whitelisted (46)
-
-These are the tests raku passes raw that mutsu has **not** whitelisted. Running
-mutsu (`MUTSU_FUDGE=1`) on each splits them:
-
-### A. mutsu also PASSes — whitelist candidates (0)
-
-All four candidates from the 2026-07-11 capture (`6.c/MISC/misc-6.c.t`,
-`integration/advent2010-day04.t`, `advent2013-day19.t`,
-`lazy-bentley-generator.t`) were whitelisted in #4423. None remain.
-
-### B. non-integration gaps — raku PASS, mutsu FAIL/ERROR (7)
-
-Genuine mutsu gaps outside the `integration/` bucket. `mutsu` column is
-`ok/plan`. Rows closed since the 2026-07-11 capture: `S32-hash/perl.t` (#4452),
-`S12-attributes/class.t`, `6.c/S14-roles/attributes.t` (#4425),
-`6.c/S05-grammar/methods.t` (#4449), `6.c/S06-other/main-refactored.t`,
-`6.c/S03-operators/set_precedes.t` — all whitelisted.
-
-| file | mutsu | note |
-|---|---|---|
-| `S06-advanced/return-prioritization.t` | 9/11 | **new ★ (v2026.06 refresh)** — `return` inside LEAVE phaser: overwrite return value (T5), different lexical scope (T9). See BLOCKERS.md |
-| `S32-str/format.t` | 26/49 abort | new oracle (v2026.06) but awaiting infrastructure — RakuAST subsystem |
-| `S02-types/generics.t` | 0/1 | new oracle (v2026.06) but awaiting infrastructure — 6.e generics / `Array[T]` subclassing |
-| `6.c/S14-roles/mixin-6c.t` | 16/57 | deep role mixin (6.c) features |
-| `6.c/MISC/bug-coverage.t` | ERROR | error at startup |
-| `APPENDICES/A01-limits/overflow.t` | TIMEOUT 0/18 | numeric overflow limits (timeout, notok 9) |
-| `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 | error formatting when no multi candidate matches |
-
-### C. integration gaps — raku PASS, mutsu not-PASS (39)
-
-Broad end-to-end programs (Advent-of-Code-style, 99-problems). Each exercises
-many features at once, so they fail on the first unimplemented construct rather
-than pointing at one root cause. Useful as regression targets once B is closed.
-See `raku-baseline.tsv` (`raku_status=PASS && whitelisted=0 && path ~ integration/`)
-for the full list; representative:
-
-- `integration/99problems-31-to-40.t` (mutsu 44/67) — closest to passing
-- `integration/advent2013-day10.t` (39/44), `advent2013-day21.t` (19/24),
-  `advent2009-day20.t` (17/21) — near-misses
-- several `ERROR 0/0` (fail to even start): `advent2012-day15/19`,
-  `advent2013-day04`, `advent2011-day07`, `precompiled.t` (module precompilation)
+| file | raku | mutsu | note |
+|---|---:|---:|---|
+| `S02-types/quanthash.t` | 129/129 | 4/129 abort | New roast test. mutsu raises `X::Method::NotFound` for `.new` on `Set[Str][Int(Any)]` at line 26. |
 
 ## Regenerating
 
