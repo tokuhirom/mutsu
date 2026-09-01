@@ -190,6 +190,26 @@ impl Interpreter {
                 },
             ) => ta == tb && ka == kb && ia == ib,
             (ValueView::Nil, ValueView::Nil) => true,
+            // A `Pair` is a by-value variant, so the item vector holds a clone
+            // of the source element and there is no pointer identity to test —
+            // but equal key AND equal value means writing it back would store
+            // the same thing, exactly like the `Str`/`Int`/`Rat` arms above.
+            //
+            // Without this arm every read-only `for` over an array of `Pair`s
+            // rebuilt the whole backing `ArrayData` once per iteration (O(n²);
+            // measured at 1.87s for 8 000 elements against raku's flat 0.02s),
+            // AND — because `items_are_source_elements` consults this same
+            // predicate — the topic was never promoted to the element container
+            // in the first place, so ADR-0045's alias did not apply to a `Pair`
+            // element at all. This was the single largest surviving consumer of
+            // the writeback family: 137 808 of the 140 251 stores a slice-6
+            // sweep of the whole roast whitelist recorded.
+            //
+            // A body that rebinds the topic (`$_ = other-pair`) or mutates
+            // `.value` on the clone leaves the two unequal, so it still falls
+            // through to the full writeback.
+            (ValueView::Pair(ak, av), ValueView::Pair(bk, bv)) => ak == bk && av == bv,
+            (ValueView::ValuePair(ak, av), ValueView::ValuePair(bk, bv)) => ak == bk && av == bv,
             // A shared `ContainerRef` element (the rw-alias cell `.grep` leaves
             // in its source array, or a `:=`-bound element): mutations through
             // the alias write through the cell itself, so the source element

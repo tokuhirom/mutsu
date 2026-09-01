@@ -34,7 +34,6 @@ Surveyed 2026-09-01: **67 files** after this regen's own closures — 45
   → `news/2026-08/`; `eval-declared-my-role-...`, `proxy-at-pos-...`,
   `range-assigned-to-named-scalar-...` → `news/2026-09/`. The one residual
   finding inside `take-rw` was re-filed as
-  `tickets/array-seq-view-does-not-carry-element-containers.md`.
 - The one fixed `deep/` file (`bare-name-type-constraint-store-is-scope-blind`)
   is *not* closed: it has no failing repro left but still tracks ADR-0042
   slices 2-3 (delete the name-keyed map). It moves to the Icebox as a cleanup
@@ -80,8 +79,6 @@ means *the order is wrong*.
 | Ticket | Tier | Note |
 |---|---|---|
 | [gather-block-state-is-shared-across-instances](tickets/gather-block-state-is-shared-across-instances.md) | N, **S effort** | `state` inside a `gather` body is one cell for every instance (`a=1 b=2`, raku `a=1 b=1`). map/grep already scope `state` per closure instance (`state_scope_id`); the gather forcing path has no equivalent. Cheapest real fix in the queue; check the lazily-resumed coroutine path too. |
-| [for-kv-multi-param-bind-decontainerizes](tickets/for-kv-multi-param-bind-decontainerizes.md) | B1 | ADR-0045 row 16. Needs a raw (non-decontainerizing) bind for an rw scalar multi-parameter in `build_for_bind_stmts`; the shape exists for `@`/`%` params. Then re-add `"kv"` to `ELEMENT_PRODUCERS`. |
-| [array-seq-view-does-not-carry-element-containers](tickets/array-seq-view-does-not-carry-element-containers.md) | B1 | `for @a.Seq { $_++ }` writes nothing back. ADR-0045 seen from the `.Seq` producer; probably one more `ELEMENT_PRODUCERS` arm. Filed 2026-09-01. |
 | [rakuast-nodes-have-no-stable-identity](tickets/rakuast-nodes-have-no-stable-identity.md) | N | `$p === $p` is `False` for a RakuAST node. The `===` half (identity-backed `WHICH` for `ValueView::RakuAst`) is small and self-contained; `eqv` is a separate structural question. The crash path it guards is dead today but ADR-0059 slice 3 would re-open it. |
 | [io-listops-bind-colonpair-args-as-positional](tickets/io-listops-bind-colonpair-args-as-positional.md) | N | `say :d, "x"` prints `d => Truex`; raku prints `x`. `Stmt::Say(Vec<Expr>)` has no named/positional slot. ADR-0021 territory (P5 remains) but no design decision is needed — give the four io statements the `CallArg::Named` representation and have the print ops skip named args. `(a => 1)` must stay positional. |
 | [lazy-list-in-scalar-loses-itemization](tickets/lazy-list-in-scalar-loses-itemization.md) | N | Only the inline `(gather ...).List` spelling renders `(1, 2)` instead of `$(1, 2)`; the type half is already fixed. Look at ADR-0038 phase 4's context-flag family before adding a third flag. |
@@ -94,7 +91,6 @@ means *the order is wrong*.
 |---|---|---|
 | [immutable-lvalues-that-mutsu-still-lets-you-assign-to](tickets/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md) | [ADR-0036](../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md) slices 3-4, plus a readonly marking on the closure-call topic binding that no ADR owns yet | 6 of 7 rows still silently succeed (re-verified). `(1..3)[0] = 9` now throws the right class with the wrong rendering. *Itemization is not container-ness* — ADR-0040 landing moved none of the rows, so do not re-attribute it. |
 | [free-var-read-in-callee-resolves-through-dynamic-caller-chain](tickets/free-var-read-in-callee-resolves-through-dynamic-caller-chain.md) | Its own ADR: "a routine's env parent is its lexical scope, not its caller" | `f sees 1` where raku says `5`, unchanged by ADR-0055 slice 1 and by a slice-2 prototype; ADR-0055 §7.5 records it as out of scope. Silent wrong *read* in ordinary code — the highest-leverage un-owned finding in `tickets/`. Its cheaper half ("why is `f`'s own `my $var` not visible in `f`'s env tier when a callee reads the name") is worth isolating first. |
-| [for-deref-container-source-promotion-breaks-nqp-type-tests](tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md) | An audit of every `nqp::` op that type-tests a value (`src/runtime/nqp_ops.rs`) | ADR-0045 row 39, implemented and **deliberately backed out** — routing it breaks `CBOR::Simple`'s Capture round-trips in the bundled-library gate. Also: the named `<-> $x` form loses even the *direct* write, which the ticket's "direct case stays correct" claim does not cover. |
 
 ### B — Deliberate non-divergence record (1)
 
@@ -125,7 +121,7 @@ one landed slice closes several rows at once. Every ADR below had its
 
 | ADR | Status (verified 2026-09-01) | Deep/ticket rows it would close |
 |---|---|---|
-| [ADR-0045](../docs/adr/0045-for-loop-parameters-bind-the-element-container.md) for-param binds the element container | **Slices 0-4 landed 2026-08-27; 5-6 open** | `for-loop-rw-element-alias-...` rows 16/19/28/30/39, tickets `for-kv-multi-param-bind`, `array-seq-view-...`, `for-deref-...` (row 39, needs the nqp audit) |
+| [ADR-0045](../docs/adr/0045-for-loop-parameters-bind-the-element-container.md) for-param binds the element container | **CLOSED 2026-09-01 — every slice landed**, §1.3 re-measured 45/45 green | Nothing. The originating deep finding retired to `news/2026-09/for-loop-parameters-bind-the-element-container.md`; slice 6's sweep also filed `pair-value-assign-does-not-enforce-immutable-value`. |
 | [ADR-0036](../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md) element container cells | Slices 1-2 landed; slice 3's producer layer landed but **`.pairs` backed out**; slice 4 open | `pairs-element-containers-leak-...`, `immutable-lvalues-...` (6 rows), row 28 of the for-loop matrix (element type constraint — ADR-0036 slice 4 is the natural owner, shared with ADR-0045 slice 5 and ADR-0042) |
 | [ADR-0059](../docs/adr/0059-is-rw-routines-return-a-container.md) `is rw` routines return a container | Slices 1-2 landed **except the bare-`is rw`-tail half**; slice 3 open | `is-rw-sub-implicit-return-element-not-mutable` (Tier S — it *is* the bare-tail half), `rakuast-nodes-...`'s latent crash path (slice 3) |
 | [ADR-0055](../docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md) closure free vars bind their own | **Slice 1 landed 2026-08-28; slices 2-5 not started**; slice 2's prerequisite is the `unvouched-capture-cells` ticket | `call-compiled-closure-lacks-merge-all-...` (Gap 1: `OUTER` vs `CALLER`), `unvouched-capture-cells-leak-state-across-cro-client-requests` |
@@ -139,14 +135,20 @@ one landed slice closes several rows at once. Every ADR below had its
 | [ADR-0039](../docs/adr/0039-container-lexicals-resolve-lexically.md) container lexicals resolve lexically | Slice 1 landed; slice 2 open | `module-file-scope-array-and-hash-...` (two concrete slice-2 acceptance rows added 2026-09-01) |
 | [ADR-0047](../docs/adr/0047-type-identity-is-a-declaration-site-not-a-registry-name.md) type identity | P1-P2 landed; P3-P4 open | `subtest-compiled-dispatch-async-middleware-regression` (P4 re-lands #6499; the regression itself is independent) |
 
-**Recommended next campaign.** The element-container model is still the
-cluster with the most rows: **ADR-0045 slices 5-6 together with ADR-0036
-slice 4** (the element type constraint on the promoted cell is shared three
-ways and ADR-0036 slice 4 is its natural owner) closes rows 19/28/30 of the
-for-loop matrix, the `is rw`-over-List bind rejection, and one `immutable-
-lvalues` row, and unblocks the two `ELEMENT_PRODUCERS` tickets. Then
-**ADR-0059's bare-tail half** (Tier S below), then **ADR-0055 slice 2's
-prerequisite** (the Cro-blocking cell-freshness fix).
+**Recommended next campaign.** ADR-0045 closed on 2026-09-01 (all six slices,
+§1.3 re-measured 45/45 against raku), which retires the largest row in this
+cluster. Its sweep is worth copying as a *method*: instrumenting the single
+function a mechanism stores through, and running all of `t/` plus the whole
+roast whitelist under it, found two live defects that the ADR's own
+27-row divergence matrix could not see — both produced raku's answer for the
+simple case and diverged only on a read through the alias, on a wholesale
+rebind, and on the clock. Consider the same treatment for ADR-0036 and
+ADR-0040 before declaring either done.
+
+What remains in the element-container cluster: **ADR-0036 slice 4** (`.pairs`
+routing, still backed out) and **ADR-0040 row 24** (`.VAR` on a `:=`-bound
+list). Then **ADR-0059's bare-tail half** (Tier S below), then **ADR-0055
+slice 2's prerequisite** (the Cro-blocking cell-freshness fix).
 
 **One measured process exception, kept from the previous regen:** when a
 change alters a *universal property of values* ("what is in every
@@ -175,7 +177,6 @@ parser/operator/dispatch fixes still delegate to CI.
 | [call-compiled-closure-lacks-merge-all-and-dual-persistence-store](deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md) | XL | Closure free var resolves to `CALLER` where raku says `OUTER` (re-verified). ADR-0055 slices 2-5; the `merge_all` knob the file proposed is rejected by the ADR. |
 | [unvouched-capture-cells-leak-state-across-cro-client-requests](deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md) | M-L | The mechanism that closes ADR-0055 §1.2(b) was built, validated (full roast green) and **removed** because a stale cell leaks request state across `Cro::HTTP::Client.request`'s recursive redirect. Two candidate fixes, both need a cell-freshness design. Gate: the batteries suite, which `make test` does not run. |
 | [residual-try-cell-eager-seq-reification-divergences](deep/residual-try-cell-eager-seq-reification-divergences.md) | L | `.map`/`.grep` run their callback eagerly (side effects before `say "before"`). ADR-0058's target; implementing it makes mutsu stricter, so full local `make roast` is mandatory. |
-| [for-loop-rw-element-alias-lost-through-deferred-closure](deep/for-loop-rw-element-alias-lost-through-deferred-closure.md) | M | Headline fixed; rows 17/24 now pass too (file updated). Residue: rows 16/19/28/30/39 — ADR-0045 slices 5-6. |
 | [element-itemization-lost-in-scalar-binding](deep/element-itemization-lost-in-scalar-binding.md) | M | Nearly closed: only ADR-0040 row 24 (`.VAR` on a `:=`-bound list) diverges. Retire when slice 5 lands. |
 | [pairs-element-containers-leak-through-pair-value-consumers](deep/pairs-element-containers-leak-through-pair-value-consumers.md) | L | Latent: `.pairs` is deliberately unrouted because a cell-valued Pair aliases hashes and collapses BagHash weights through 15+ structural consumers. Needs the Pair-value read-boundary decision (ADR-0036 slice 3). Note hash `.pairs[0].value.VAR` is `Int` while array `.pairs` already answers `Scalar`. |
 | [dollar-dot-attr-compound-assign-spurious-ro-error](deep/dollar-dot-attr-compound-assign-spurious-ro-error.md) | L | **Symptom moved**: `$.x *= 2` no longer throws — it now *mutates* a non-`rw` attribute (raku: silent no-op), and `$.x = 9` still mutates (raku: throws). Both halves are silent over-mutation now. Needs the "accessor read is an itemized copy" ADR; explicitly not ADR-0040. |

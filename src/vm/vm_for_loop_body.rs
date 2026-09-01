@@ -178,14 +178,6 @@ impl Interpreter {
         // alias handles propagation (and immutability for Mix), so suppress the
         // plain writeback here while keeping the source tag.
         let writes_back_loop_var = writes_back_topic && !spec.loop_var_wraps_element;
-        let chunked_items: Vec<Value> = if spec.chunks_items() {
-            items
-                .chunks(arity)
-                .map(|chunk| Value::array(chunk.to_vec()))
-                .collect()
-        } else {
-            items.to_vec()
-        };
         // ADR-0052 Slice 1: a construct that runs a body owns a stack base and
         // truncates to it at the end of EVERY iteration, not only when it is
         // collecting. A sink-position loop used to establish no base at all, so
@@ -246,6 +238,28 @@ impl Interpreter {
         });
         let container_reversed = self.container_ref_reversed;
         self.container_ref_reversed = false;
+        // ADR-0045 slice 6: a multi-parameter rw loop binds through the
+        // bind-prefix `MarkBind` declarations, which read out of the CHUNK. So
+        // the source's elements must be promoted before the chunk is built —
+        // promoting the chunk itself would alias the temporary. Doing it here
+        // is what retires the last surviving arm of the writeback family; see
+        // `promote_multi_param_elements` for what the old arm got wrong.
+        let promoted_items = self.promote_multi_param_elements(
+            code,
+            spec,
+            container_binding.as_deref(),
+            container_reversed,
+            items,
+        );
+        let items: &[Value] = promoted_items.as_deref().unwrap_or(items);
+        let chunked_items: Vec<Value> = if spec.chunks_items() {
+            items
+                .chunks(arity)
+                .map(|chunk| Value::array(chunk.to_vec()))
+                .collect()
+        } else {
+            items.to_vec()
+        };
         // Capture hash key order before the loop so writeback uses the
         // original key order even after the hash is mutated during iteration.
         // Needed for the rw-param `%h.values -> $v is rw` writeback and for the
