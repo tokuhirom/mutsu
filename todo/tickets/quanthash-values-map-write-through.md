@@ -1,12 +1,23 @@
-# Make mutable QuantHash `.values.map` assignments write through
+# Implement QuantHash metamodel parameterization and writable `.values`
 
 `roast/S02-types/quanthash.t` is the only current unfudged-raku PASS that is
-not in `roast-whitelist.txt`. Rakudo v2026.07 passes all 129 tests. mutsu has
-the parameterized QuantHash implementation, but the three mutable variants
-still fail the same final assertion: assigning zero through `.values.map` does
-not remove their keys.
+not in `roast-whitelist.txt`. Rakudo v2026.07 passes all 129 tests. On current
+main, mutsu stops after test 4: after `Set.^parameterize(Str)`, its next
+`Set.^parameterize(Int())` attempt tries to dispatch `.new` on the invalid
+type name `Set[Str][Int(Any)]`.
 
 ## Reproduction
+
+```raku
+my $type := Set;
+$type := Set.^parameterize(Str);
+$type := Set.^parameterize(Int());
+say $type.new(<1 2>).keys.sort; # raku: (1 2)
+```
+
+The test repeats that contract for `Set`, `Bag`, `Mix`, `SetHash`, `BagHash`,
+and `MixHash`, using nominal `Str` plus coercive `Int()` and `Date()` key
+types. Once parameterization works, the last mutable section also requires:
 
 ```raku
 my %qh is SetHash[Int()];
@@ -15,19 +26,20 @@ my %qh is SetHash[Int()];
 say %qh.elems; # raku: 0; mutsu must also produce 0
 ```
 
-The equivalent section of `roast/S02-types/quanthash.t` runs once for each of
-`SetHash`, `BagHash`, and `MixHash`; its three `did all keys get removed`
-assertions are tests 97, 112, and 127.
-
 ## Root cause and boundary
 
-`.values` must preserve an assignable path to each mutable QuantHash weight
-when its result is consumed by `map`. The current path hands the callback a
-value that assignment does not write back to the originating QuantHash. This
-is not ordinary Hash-element storage: setting a mutable QuantHash weight to
-zero removes the key, so the implementation must retain the dedicated
-QuantHash weight update/removal semantics rather than treating weights as
-generic `ContainerRef` elements.
+The implementation already has trait-level handling for spellings such as
+`SetHash[Int]`, but it does not implement the metamodel `.^parameterize`
+contract used by roast. It must return a usable parameterized type object,
+preserve the exact parameter for `.keyof`, and avoid accumulating a previous
+parameter into a nested type name when parameterization is applied again.
+
+After that entry point is working, `.values` must preserve an assignable path
+to each mutable QuantHash weight when its result is consumed by `map`. This is
+not ordinary Hash-element storage: setting a mutable QuantHash weight to zero
+removes the key, so the implementation must retain the dedicated QuantHash
+weight update/removal semantics rather than treating weights as generic
+`ContainerRef` elements.
 
 The relevant existing write-through behavior is the mutable QuantHash
 `.pairs`/`.value` path and its regression pin
@@ -36,13 +48,20 @@ possible; do not add a VM fallback evaluator.
 
 ## Acceptance criteria
 
+- `.^parameterize(Str)`, `.^parameterize(Int())`, and
+  `.^parameterize(Date())` work for all six immutable and mutable QuantHash
+  types; `.keyof` reports the requested type and `.new` applies coercion or
+  raises the matching exception.
+- Re-parameterizing a base QuantHash type does not manufacture a nested name
+  such as `Set[Str][Int(Any)]`.
 - `%qh.values.map({ $_ = 0 })` removes all keys for parameterized `SetHash`,
   `BagHash`, and `MixHash`, matching `raku`.
 - The same write-through behavior is covered for a plain mutable `Hash`, so
   the producer/callback mechanism is tested independently of QuantHash
   zero-removal semantics.
-- Add a focused regression test under `t/` that covers the three QuantHash
-  variants, a nonzero write, and zero-removal.
+- Add focused regression coverage under `t/` for metamodel parameterization,
+  repeated parameterization, the three mutable QuantHash variants, a nonzero
+  write, and zero-removal.
 - `MUTSU_FUDGE=1 prove -e target/debug/mutsu roast/S02-types/quanthash.t`
   passes all 129 tests, then add it to `roast-whitelist.txt` in sorted order.
 - Existing `.pairs`/`.value` QuantHash write-through tests remain green.
