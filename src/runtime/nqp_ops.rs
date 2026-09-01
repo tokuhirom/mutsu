@@ -98,6 +98,27 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // The `nqp::` layer has no notion of a Raku container: every op here
+        // reads its operands as raw values, and the ones that inspect a value
+        // *structurally* (`istype`, `elems`, `atpos_*`, `chars`, ...) answer
+        // about the container itself rather than what it holds when handed one.
+        // ADR-0036/ADR-0045 hand out element containers from `for` loop
+        // bindings and the element producers, so `nqp::istype($_, Associative)`
+        // inside `encode($_) for @$_` saw a `ContainerRef` and answered False —
+        // CBOR::Simple then encoded a Map as its element count. Decontainerize
+        // once at the boundary rather than op by op; the in-place mutators
+        // (`bindpos_*`, `write*`, `splice`) reach their Buf/array through the
+        // shared `Gc` behind the value, which survives the deref.
+        let derefed;
+        let args = if args
+            .iter()
+            .any(|v| v.is_container_ref() || v.is_hash_entry_ref_value())
+        {
+            derefed = args.iter().map(Value::deref_container).collect::<Vec<_>>();
+            derefed.as_slice()
+        } else {
+            args
+        };
         Some(match op {
             // -- native int arithmetic / bit ops --
             "add_i" => Ok(Value::int(iarg(args, 0).wrapping_add(iarg(args, 1)))),
@@ -157,18 +178,10 @@ impl Interpreter {
 
             // -- type test --
             "istype" => {
-                // Decontainerize: a value can BE its element's `Scalar`
-                // container (ADR-0036/ADR-0045 hand these out from `for` loop
-                // bindings and the element producers), and a type test asks
-                // about what the container holds. Without this,
-                // `nqp::istype($_, Associative)` inside `encode($_) for @$_`
-                // answered False for a promoted element and CBOR::Simple
-                // encoded a Map as its element count (its `04-tags` Capture
-                // round-trips).
-                let v = args
-                    .first()
-                    .map(Value::deref_container)
-                    .unwrap_or(Value::NIL);
+                // Operands are already decontainerized at the `call_nqp_op`
+                // boundary, so a promoted element container answers about what
+                // it holds.
+                let v = args.first().cloned().unwrap_or(Value::NIL);
                 let type_name = match args.get(1).map(|t| t.view()) {
                     Some(ValueView::Package(p)) => p.resolve().to_string(),
                     Some(ValueView::Instance { class_name, .. }) => {

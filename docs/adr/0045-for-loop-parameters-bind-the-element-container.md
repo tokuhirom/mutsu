@@ -240,7 +240,7 @@ second one (`value_methods_b.rs:115-117`) — so re-looping the same array is fr
 `container_source_slot` and `spec.rw_param_names` exist in `vm_for_loop_body.rs` for exactly one
 purpose: to **reconstruct, at iteration end, which slot of the source the item came from**. That
 reconstruction is guesswork over a snapshot `Vec` (`chunked_items`, `:134-141`) that has already lost
-the provenance — which is why it is wrong for `.reverse` (row 17), absent for `.sort` (row 24), and
+the provenance — which is why it was wrong for `.reverse` (row 17), absent for `.sort` (row 24), and
 silently skipped for `for @$s` (row 39).
 
 An item that *is* its element's container needs no reconstruction: it carries its identity. So the
@@ -639,15 +639,25 @@ value afterwards (which is ambiguous the moment two elements compare equal).
 
 **Rows 17 and 24 turn green**, plus the deferred-closure form of each and of `@a.values`.
 
-**Row 39 (`for @$s`) was implemented and backed out.** It did not need the producer layer at all —
-its `$`-tagged source is an ordinary in-order array read, so it joined slices 1-3's bind-site routing
-via a shared `resolve_for_source_array`, which is retained. But `encode($_) for @$_` is the ordinary
-idiom for walking a nested structure recursively, and that is exactly the code which **type-tests**
-what it is holding before recursing: CBOR::Simple's `nqp::istype($_, Associative)` answered False for
-a promoted topic and encoded a `Map` as its element count, failing the bundled-library gate.
-Decontainerizing `nqp::istype` (done, and kept) was not sufficient — the `nqp::` surface that
-inspects a value structurally is wide. Tracked in
-`todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
+**Row 39 (`for @$s`) is green.** It did not need the producer layer at all — its `$`-tagged source is
+an ordinary in-order array read, so it joins slices 1-3's bind-site routing via a shared
+`resolve_for_source_array`.
+
+It was implemented, backed out once, and re-landed, and the back-out's diagnosis was wrong in a way
+worth recording. The symptom was CBOR::Simple encoding a `Map` as an integer under
+`encode($_) for @$_`, which read as the type-test hazard this section warns about — a promoted cell
+reaching `nqp::istype($_, Associative)`. It was not. **The `$`-tagged source was being re-resolved by
+name on every iteration**, and the name in the recursive-walk idiom is `$_`: any nested loop in the
+body rebinds the topic, so iteration `n+1` aliased into whatever container the *inner* loop had been
+walking. The `Map` was never type-tested as a cell; the loop simply bound the wrong element (the
+inner list's `[1]`, an `Int`). Re-resolution is correct for the `@a` shape — a body may assign the
+array wholesale — but wrong for this one, because `for @$s` derefs `$s` exactly once to choose the
+array it walks. `ForElementAlias::ArrayValue` captures the resolved array at loop entry instead.
+
+The `nqp::` decontainerization the back-out started is kept and generalized: `call_nqp_op`
+decontainerizes its operands once at the boundary rather than op by op, since no `nqp::` op wants a
+Raku container. That is a real hardening for promoted values reaching the NQP layer — it just was not
+what row 39 was failing on.
 
 **Row 16 (`.kv`) is deferred, and the reason is the consumer.** A `.kv` loop is a *multi-parameter*
 loop, and those do not bind at the native bind site — they bind through the bind-prefix
@@ -675,7 +685,7 @@ can reach will be found this way — by a full roast sweep, not by reading — a
 
 ### What slices 5-6 still own
 
-Rows 16 (`.kv`) and 39 (`for @$s`), both carried over from slice 4 — see above — and rows 19, 28
+Row 16 (`.kv`), carried over from slice 4 — see above — and rows 19, 28
 and 30 (slice 5 — bind-time enforcement). They are `todo`-marked in `t/for-loop-element-alias.t` with the owning reason named in
 the reason string. The writeback family survives only as the fallback for shapes not yet converted:
 `write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and

@@ -36,8 +36,23 @@ pub(super) enum ForElementAlias {
     /// No promotion: the loop keeps the plain value bind and whatever
     /// writeback it had.
     None,
-    /// A direct `@`-array source, keyed by iteration index.
+    /// A direct `@`-array source, keyed by iteration index. The source is named
+    /// rather than captured so that each iteration re-resolves it: a body that
+    /// assigns the array wholesale (`@a = 7, 8`) must have the remaining
+    /// iterations alias the container it left behind.
     ArrayIndex(String),
+    /// A `$`-tagged deref'd-container source (`for @$s` / `for $s.list`), keyed
+    /// by iteration index into the array **resolved once, at loop entry**.
+    ///
+    /// Re-resolving this shape by name per iteration is wrong, not merely
+    /// slower: `for @$s` derefs `$s` once to pick the array it iterates, so a
+    /// later write to `$s` cannot redirect the loop. The name is very often
+    /// `$_` (`encode($_) for @$_` is the idiomatic recursive structure walk),
+    /// and any nested loop in the body rebinds the topic -- so a by-name
+    /// re-resolution aliased into whatever container the *inner* loop was
+    /// walking. CBOR::Simple's Capture encoding hit exactly that: the second
+    /// element of `[$list, $hash]` came back as the inner list's `[1]`.
+    ArrayValue(Value),
     /// A `%h.values` source, keyed by the key order captured before the loop —
     /// the same order the materialized `.values` list was built from, so
     /// position `idx` names the key whose value the loop is binding.
@@ -113,18 +128,12 @@ impl Interpreter {
         };
         // `@a`, and `@a.list`, which re-tags the array itself: both iterate a
         // real array's elements in order, so iteration position names element
-        // position.
-        //
-        // The `$`-tagged deref'd-container shape (`for @$s` / `for $s.list`,
-        // ADR-0045 row 39) is deliberately NOT here. It was implemented and
-        // backed out: `encode($_) for @$_` is an ordinary way to walk a nested
-        // structure, and promoting there hands the body's topic a cell that the
-        // `nqp::` layer type-tests — CBOR::Simple encoded a Map as its element
-        // count. Decontainerizing `nqp::istype` was not enough on its own; the
-        // `nqp::` surface that inspects a value structurally is wide, and each
-        // op would need the same treatment before this shape is safe. Tracked in
-        // `todo/tickets/for-deref-container-source-promotion-breaks-nqp-type-tests.md`.
-        if source.starts_with('@') {
+        // position. The `$`-tagged deref'd-container shape (`for @$s` /
+        // `for $s.list`, ADR-0045 row 39) iterates the scalar's inner array,
+        // which is the same one-for-one relationship -- it differs only in that
+        // the array is captured here rather than re-resolved per iteration (see
+        // `ForElementAlias::ArrayValue`).
+        if source.starts_with('@') || source.starts_with('$') {
             // `@a.values` is an identity-ordered derived producer, but its
             // routing belongs with `.reverse`/`.sort`; keep it on the writeback
             // so the array producers convert together.
@@ -147,7 +156,10 @@ impl Interpreter {
             if items.len() != len || !Self::items_are_source_elements(items, first) {
                 return ForElementAlias::None;
             }
-            return ForElementAlias::ArrayIndex(source.to_string());
+            return match arr {
+                Some(arr) if source.starts_with('$') => ForElementAlias::ArrayValue(arr),
+                _ => ForElementAlias::ArrayIndex(source.to_string()),
+            };
         }
         // A mutable QuantHash (`for $b.values`) binds to a scalar, so it never
         // reaches here: its `container_binding` carries no `%` sigil. That is
@@ -199,6 +211,12 @@ impl Interpreter {
             ForElementAlias::ArrayIndex(source) => {
                 let arr = self.resolve_for_source_array(code, source)?;
                 if !Self::array_is_aliasable(&arr, Some(idx)) {
+                    return None;
+                }
+                arr.array_slot_ref(idx, true)
+            }
+            ForElementAlias::ArrayValue(arr) => {
+                if !Self::array_is_aliasable(arr, Some(idx)) {
                     return None;
                 }
                 arr.array_slot_ref(idx, true)
