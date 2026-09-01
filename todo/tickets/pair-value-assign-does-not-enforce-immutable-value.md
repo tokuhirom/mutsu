@@ -44,6 +44,36 @@ divergence reproduces with no loop at all (the first snippet above), so it is a
 `Pair.value` lvalue gap, not a for-loop one. It is recorded here rather than in
 the ADR so the ADR's closeout is not held up by it.
 
+## This is ADR-0036 §1.3 row 11, and the same guard closes both
+
+Confirmed 2026-09-01 by instrumenting every branch of
+`assign_method_lvalue_with_values`. Row 11 (`my $l = (1, 2);
+$l.pairs[0].value = 3` must die) and this ticket are **one bug**: both write
+through the *standalone-pair env rebind* at the bottom of the Pair `.value`
+arm, which scans `env` for a binding holding a `Pair` with the same key and old
+value and rebinds it to a fresh `Pair` — faking an alias that raku does not
+have for a bare pair value. The `X::Assignment::RO` guard sitting immediately
+above it is already the right shape; it just only fires for a `Bool`
+(`Set.pairs[0].value = 0`, which passes today). Generalising it to "the pair
+value has no container behind it" closes both rows.
+
+ADR-0036 slice 4's note carries the corrected root cause (its original text
+blamed the env-scan compensator, which measurement showed never fires here) and
+the measured blast radius: 4 hits in 3 whitelisted roast files, ~40 in 10 `t/`
+files.
+
+**One prerequisite is left.** `Pair.new("k", $x)` still does not capture its
+scalar's container, so deleting the rebind would turn its currently-faked write
+into a hard failure —
+`todo/tickets/pair-new-argument-does-not-capture-its-scalar-container.md`. The
+fat-arrow form's half of that prerequisite landed 2026-09-01.
+
+**`t/` tests to correct when the guard lands** (each verified against raku,
+which dies on all of them, so they encode the compensator rather than the
+spec): `t/pair-value-container.t`'s literal-Pair row (already marked DIVERGES),
+and `t/lvalue-method-writeback-coherence.t`'s `my $p = a => 5; $p.value--` and
+`my $q = x => 0; $q.value = 1` blocks.
+
 ## Where to look
 
 The `.value` lvalue path — `runtime/methods_mut_method_lvalue.rs` and the

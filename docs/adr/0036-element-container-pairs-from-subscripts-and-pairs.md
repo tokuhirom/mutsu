@@ -400,8 +400,43 @@ rather than part of it.
 **Row 11 moves from slice 3 to slice 4.** Slice 3 does the half it owns: a `List` receiver keeps the
 snapshot producer, so its pair value is a bare item with nothing to alias, which §2.2 says is the
 whole of the immutability story. What still swallows `$l.pairs[0].value = 3` is the *other* half —
-the env-scan compensator finds `$l`'s own list as a candidate container, rebuilds it, and reports
-success. The read-only guard is only reachable once that scan is deleted, which is slice 4's job.
+a compensator that fakes container semantics for a Pair that has none.
+
+> **Correction (2026-09-01, measured).** This paragraph originally said the *env-scan* compensator
+> "finds `$l`'s own list as a candidate container, rebuilds it, and reports success". **It does not.**
+> Instrumenting every branch of `assign_method_lvalue_with_values` and running the repro shows the
+> env-scan never fires for a `List` receiver, and `$l` is never touched. The write is swallowed one
+> block further down, by the **standalone-pair env rebind**: with no backing container selected, the
+> code scans `env` for any binding holding a `Pair` with the same key and old value and rebinds those
+> to a fresh `Pair` (for the row-11 repro it finds two — both temporaries — and rebinds them
+> invisibly), then returns `Ok`. Its sibling branch does the same for a named `target_var`. So the
+> read-only guard slice 4 needs is not blocked on deleting the env-scan; it is blocked on deleting
+> **those two rebinds**, and the existing guard next to them is the shape to generalize — it already
+> raises `X::Assignment::RO` correctly, but only for a `Bool` value (`Set.pairs[0].value = 0`).
+>
+> The same two rebinds are why `my $p = (k => 5); $p.value = 9` succeeds where raku raises
+> `Cannot modify an immutable Int (5)`
+> (`todo/tickets/pair-value-assign-does-not-enforce-immutable-value.md`). **Row 11 and that ticket
+> are one bug**, and one guard closes both.
+>
+> Deleting the rebinds needs two prerequisites, both measured at the same time:
+>
+> 1. **An uninitialized declared scalar must be captured as a container.** `my Int $x;
+>    my $p = (k => $x); $p.value = 5` leaves `$x` at `5` in raku; mutsu captured the bare type object
+>    `Int`, so the Pair had nothing to write through to and the rebind faked it — printing `k => 5`
+>    while `$x` stayed `Int`. **Fixed 2026-09-01**: `MakePair`/`MakeNamedArg` capture with
+>    `box_type_objects` set, the same way List aliasing already did. Pinned in
+>    `t/pair-value-container.t`, including that two undefined scalars stay two distinct containers.
+> 2. **`Pair.new("k", $x)` must capture too.** The method-argument form does not go through the
+>    fat-arrow compile-time capture, so it still binds the bare value and still relies on the rebind.
+>    Not fixed — `todo/tickets/pair-new-argument-does-not-capture-its-scalar-container.md`.
+>
+> The blast radius is small and was measured, not guessed: across the **whole roast whitelist** the
+> compensator fires **4 times in 3 files** (`S02-types/pair.t`, `S02-types/array-shapes.t`,
+> `S06-traits/is-rw.t`), and in `t/` about 40 times in 10 files — several of which pin expectations
+> that **raku rejects outright** (`my $p = a => 5; $p.value--` and `my $q = x => 0; $q.value = 1`
+> both die in raku). Those local tests were written around the compensator, so deleting it means
+> correcting them, which the "roast is authoritative" rule allows.
 
 **§5's open questions, as measured by slice 3:**
 

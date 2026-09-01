@@ -524,7 +524,14 @@ impl Interpreter {
             let source_name = source_name.resolve();
             let inner = inner.clone();
             let slot_hint = right.varref_slot();
-            right = self.capture_var_cell(code, &source_name, inner, slot_hint);
+            // `box_type_objects` is set: an UNINITIALIZED declared scalar
+            // (`my Int $x`, which holds the bare type object `Int`) is still a
+            // container, and raku aliases it — `my Int $x; my $p = ("k" => $x);
+            // $p.value = 5` leaves `$x` at 5. Without boxing, the Pair captured
+            // the bare type object, `$p.value = 5` had nothing to write
+            // through to, and the write was faked by rebinding `$p`'s own env
+            // entry: the Pair printed `k => 5` while `$x` stayed `Int`.
+            right = self.capture_var_cell_boxing_type_objects(code, &source_name, inner, slot_hint);
         }
         (left, right)
     }
