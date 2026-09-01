@@ -477,7 +477,7 @@ approximates each separately. Recorded here so a future reader can see the whole
 
 ---
 
-## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slices 3-4 added 2026-09-01)
+## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slices 3-4 added 2026-09-01; slice 4b 2026-09-02)
 
 Slices 0-4 landed. Slice 4 landed its *store* half in full and left the compensator deletion
 blocked on a newly measured class — see its section for the numbers. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
@@ -948,6 +948,95 @@ array, and both mixed orders), the autovivified intermediates, the deferred walk
 two-level bind's itemization *and* write-through, the 3+-level bind's write-through, and the
 invariants (`%h.raku` / `@a.raku` unchanged, chain arity unchanged, the assignment expression's own
 value itemized). The full roast whitelist (1425 files) passes on a release build.
+
+### Slice 4b (2026-09-02) — the constructor is the store, and both compensators are deleted
+
+Slice 4 ended with the deletion blocked on one nameable class: a `Hash` a native Rust builtin builds
+directly bypassed every store hook. Slice 4b closes it, and the compensators are gone.
+
+#### The store is `Value::hash`, not 160 call sites
+
+The ticket proposed enumerating the native construction sites. There are ~160 `Value::hash(...)`
+call sites, so the enumeration went one level down instead: **`Value::hash` itself** is the single
+funnel all of them pass through, and it is precisely what ADR-0040 calls the store. The hook is the
+scan-then-rebuild-only-if-needed shape `itemize_real_array_elements` already uses for the array half
+(§5.2), so a hash of plain scalars is never touched and the assignment paths — which itemize on
+their own way in — pay only the scan.
+
+#### The scan had to stop going through `view()`
+
+The first build broke `value::match_lazy::tests::lazy_match_children_stay_lazy_one_level`.
+`Value::needs_element_itemization` decided through `Value::view()`, and a `view()` of a lazy `Match`
+**forces** it (ADR-0016 P5) — so scanning a hash of capture nodes materialized every one of them
+just to conclude that a `Match` never needs itemizing. It is a pure representation-tag probe now
+(`NanBox::needs_element_itemization`): non-forcing, cheaper, and it removes the same latent forcing
+from the array-half scan.
+
+#### Four kinds of "hash" are not a `Hash`
+
+The full `t/` suite against the central hook failed exactly four files, and every one named a real
+distinction. mutsu represents several associative things with the `Value::Hash` repr whose values
+raku says are **not** element containers:
+
+| what | raku | mutsu before |
+| --- | --- | --- |
+| a `Map` (`Map.new(…)`, `.Map`) | `Map.new((a => (1,2)))<a>.raku` is `(1, 2)`, arity 2 | `$(1, 2)`, arity 1 |
+| a `Match`'s capture map | `$/.hash<x>.VAR.^name` is `Array` | itemized, so `for $<hunk>` saw one item |
+| a slurpy `*%h` parameter | `sub f(*%h){…}; f(a => ("x","y"))` sees `("x", "y")`, arity 2 | `$("x", "y")`, arity 1 |
+| `%_` / leftover-named | the same hash under another name | idem |
+
+They build through a second constructor, `Value::hash_bare_values` — the old `Value::hash` body.
+The split is by *what kind of associative thing this is*, not by call site: a plain `%`-param that
+receives a real `Hash` still sees that hash's own itemization
+(`sub f(%h){…}; f({a => ("x","y")})` is `$("x", "y")`).
+
+#### The measurement that justified the deletion
+
+Both compensator sites instrumented behind `MUTSU_COMP_PROBE` (the render side probing ONLY the
+three Hash/Map callers — see slice 4's trap), whole corpus, `t/` (3601 files) + full roast whitelist
+(1435 files), with the store fix in place:
+
+| compensator | slice 4 | slice 4b | what still reaches it |
+| --- | --- | --- | --- |
+| read-side (`itemize_hash_value`) | 3 in `t/`, 17 in roast | 7 in `t/`, **0 in roast** | only bare-valued hashes — 6 of the 7 are slice 4b's own new counter-current pins (`Map`, `.Map`, slurpy), the 7th is a `Capture`'s `.hash` |
+| render-side (`raku_hash_value`, 3 Hash/Map sites) | 0 in `t/`, 1 in roast | 0 in `t/`, 1 in roast | the same self-referential hash, where the rendered value is the cycle sentinel and the test only asserts `ok $foo.raku` |
+
+The 17 roast firings — the whole native-hash class — are gone. What is left is not a gap the
+compensator covers but the compensator **producing the wrong answer**: every one of the seven is a
+bare-valued hash the compensator re-itemizes. So deleting is a fix, not merely safe.
+
+Both are deleted. `raku_hash_value` disappears entirely; the `ValueView::Scalar` arm — its other,
+non-compensator caller — inlines `itemize_scalar_repr(inner, raku_value(inner))`, which is what it
+always meant.
+
+#### `.Map` had to grow the decont it only half had
+
+`to_map` deconted its values only when the receiver was already a `Hash`. A
+list-of-`Pair`s receiver folded through `to_hash` — which now itemizes, because that is what a
+`Hash` store does — and kept the itemization, so `C.new(|(a => (1,2,3), b => (4,5,6)).Map)` bound
+`Int @.a` to one `List` instead of three `Int`s (`roast/S32-hash/map.t`, "Map does not introduce
+bogus Scalar containers"). Before this slice that path stored bare *by accident* and the render
+compensator made `.raku` look itemized anyway — the same "one value, three answers" shape, in the
+other direction. Both `.Map` arms decont now, in place, so the coercion keeps whatever metadata it
+attached (a Set/Bag origin's `original_keys`).
+
+#### The one surface that did not follow
+
+`.VAR` on a bare-valued hash still answers `Scalar` rather than raku's `List`.
+`Value::elements_are_containers` (slice 3's one-place discriminator) answers `ValueView::Hash(_) =>
+true` unconditionally, and unlike an array — where `ArrayKind` carries the distinction — a `Hash`
+has nowhere to read the bit from. This is pre-existing (before slice 4b the read compensator made
+`.raku` and arity wrong in the same place), and it is filed as
+`todo/tickets/var-on-a-bare-valued-hash-answers-scalar.md`: give `HashData` the missing bit.
+
+**Verification**: `cargo fmt --check` and `cargo clippy -- -D warnings` clean; unit tests pass; the
+full local `t/` suite passes. `t/element-store-itemization.t` grew a slice-4b section dual-oracled
+against `raku` — a natively built `Hash` (`.classify`, *bound*, so no Raku assignment store can
+paper over the construction) agreeing across the subscript read and `.values`, plus the four
+counter-current shapes. The full roast whitelist (1435 files, 218833 tests) and the bundled-battery
+gate both pass on a release build.
+
+---
 
 ---
 

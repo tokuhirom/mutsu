@@ -353,6 +353,34 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::LazyList))
     }
 
+    /// Whether this word is one of the kinds ADR-0040's element store itemizes
+    /// (`Value::needs_element_itemization`) — a pure tag probe.
+    ///
+    /// It must stay a tag probe: the store-side scans call it on every element
+    /// of a freshly built aggregate, and `view()` on a lazy `Match` *forces*
+    /// the match (ADR-0016 P5), so deciding this through a view would
+    /// materialize every capture a regex ever produced.
+    #[inline]
+    pub(in crate::value) fn needs_element_itemization(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                // `List`/`Array` only: the itemized kinds are already there,
+                // and `ArrayKind::itemize()` is a no-op on `Shaped`/`Lazy`.
+                Kind::ArrayList
+                    | Kind::ArrayArray
+                    // `HashItemized` is already itemized.
+                    | Kind::HashPlain
+                    | Kind::Seq
+                    | Kind::Range
+                    | Kind::RangeExcl
+                    | Kind::RangeExclStart
+                    | Kind::RangeExclBoth
+                    | Kind::GenericRange
+            )
+        )
+    }
+
     /// The `MatchNode` pointee if this is a lazy `Match`. The non-forcing
     /// probe behind the seam accessors' fast paths.
     #[inline]

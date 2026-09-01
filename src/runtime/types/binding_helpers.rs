@@ -134,7 +134,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::hash(implicit_named)
+        Value::hash_bare_values(implicit_named)
     }
 
     /// Check shape constraint for array parameters in signatures.

@@ -65,7 +65,7 @@ impl Interpreter {
             attrs.insert("from".to_string(), Value::int(from as i64));
             attrs.insert("to".to_string(), Value::int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
-            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
             Value::make_instance(Symbol::intern("Match"), attrs)
         };
 
@@ -118,9 +118,9 @@ impl Interpreter {
                 };
                 hash_map.insert(key.clone(), val);
             }
-            named.insert(hash_name.clone(), Value::hash(hash_map));
+            named.insert(hash_name.clone(), Value::hash_bare_values(hash_map));
         }
-        attrs.insert("named".to_string(), Value::hash(named));
+        attrs.insert("named".to_string(), Value::hash_bare_values(named));
         let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);
         self.env.insert("/".to_string(), match_obj.clone());
 

@@ -422,10 +422,18 @@ impl Interpreter {
                 }
             }
         }
-        let result = Value::hash(map);
         // Register type metadata for typed hashes (e.g. Hash[Int].new)
         // or Map.new (always register Map declared_type)
         let is_map = class_name.resolve() == "Map";
+        // A `Map`'s values are not element containers, so `Map.new` must not
+        // itemize them the way `Hash.new` does: raku's
+        // `Map.new((a => (1,2)))<a>.raku` is `(1, 2)`, against `{...}`'s
+        // `$(1, 2)`. Same rule `.Map` coercion already follows.
+        let result = if is_map {
+            Value::hash_bare_values(map)
+        } else {
+            Value::hash(map)
+        };
         if type_args.is_some() || is_map {
             let (value_type, key_type) = if let Some(ta) = type_args {
                 (ta.first().cloned().unwrap_or_default(), ta.get(1).cloned())

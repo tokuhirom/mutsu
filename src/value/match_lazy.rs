@@ -179,7 +179,7 @@ impl MatchNode {
         attrs.insert("from", Value::Int(cap.from as i64));
         attrs.insert("to", Value::Int(cap.to as i64));
         attrs.insert("list", Value::array(pos_vals));
-        attrs.insert("named", Value::hash(sub_named));
+        attrs.insert("named", Value::hash_bare_values(sub_named));
         if !silent_caps_vals.is_empty() {
             attrs.insert("silent_caps", Value::real_array(silent_caps_vals));
         }
@@ -202,7 +202,7 @@ impl MatchNode {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
-            attrs.insert("reduce_time_vars", Value::hash(vars));
+            attrs.insert("reduce_time_vars", Value::hash_bare_values(vars));
         }
         if !kids.capture_alias_map.is_empty() {
             let alias_hash: HashMap<String, Value> = kids
@@ -210,7 +210,7 @@ impl MatchNode {
                 .iter()
                 .map(|(k, v)| (k.clone(), Value::str(v.clone())))
                 .collect();
-            attrs.insert("capture_alias_map", Value::hash(alias_hash));
+            attrs.insert("capture_alias_map", Value::hash_bare_values(alias_hash));
         }
         attrs
     }
@@ -236,7 +236,7 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
     attrs.insert("from", Value::Int(from as i64));
     attrs.insert("to", Value::Int(to as i64));
     attrs.insert("list", Value::array(Vec::new()));
-    attrs.insert("named", Value::hash(HashMap::new()));
+    attrs.insert("named", Value::hash_bare_values(HashMap::new()));
     attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
     Value::make_instance(match_class_symbol(), attrs)
 }
@@ -308,7 +308,7 @@ impl Value {
         attrs.insert("from", Value::Int(0));
         attrs.insert("to", Value::Int(s.chars().count() as i64));
         attrs.insert("list", Value::array(Vec::new()));
-        attrs.insert("named", Value::hash(HashMap::new()));
+        attrs.insert("named", Value::hash_bare_values(HashMap::new()));
         attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
         Value::make_instance(match_class_symbol(), attrs)
     }

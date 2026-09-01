@@ -390,25 +390,16 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
     raku_array_wrap_counted(inner, kind, 2, false) // count=2 to avoid trailing comma
 }
 
-/// Render a value for `.raku` but strip itemization (Scalar container).
-/// In Raku, `@a.raku` renders itemized elements without the `$` prefix:
-///   my @a = $[1,2,3]; @a.raku  # [[1, 2, 3],]  (not $[1, 2, 3])
-/// Render a value that is stored as a *hash value* for `.raku`/`.perl`.
-///
-/// In Raku, every hash value lives in a `Scalar` container, so an aggregate
-/// (Array/List/Hash/Seq) value is itemized: `{:a($[1, 2])}`, `{:a(${:b(1)})}`,
-/// `{:a($(1, 2, 3))}`, `{:a($((1, 2).Seq))}`. Scalars (Int/Str/Range/Pair/Set…)
-/// are rendered as-is. Values whose own repr already carries the `$` sigil
-/// (e.g. an explicitly itemized `$[1, 2]`) are not double-itemized.
-fn raku_hash_value(v: &Value) -> String {
-    itemize_scalar_repr(v, raku_value(v))
-}
-
 /// Apply the `Scalar`-container itemization rule to an already-rendered repr.
 ///
-/// Every value held in a `$`-container — a hash value, a `$`-sigil attribute —
-/// renders itemized when it is an aggregate: `{:a($[1, 2])}`,
-/// `Foo.new(x => $[1, 2])`, `Foo.new(x => $(1, 2))`. Scalars are unchanged.
+/// Every value held in a `$`-container — a `$(...)` item, a `$`-sigil
+/// attribute, a `:=`-bound element's cell — renders itemized when it is an
+/// aggregate: `$[1, 2]`, `Foo.new(x => $[1, 2])`, `Foo.new(x => $(1, 2))`.
+/// Scalars are unchanged.
+///
+/// Hash values are NOT rendered through this any more: ADR-0040 slice 4 makes
+/// the *store* itemize them, so a hash value that must render `$[1, 2]` is
+/// already an itemized value by the time the renderer sees it.
 pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
     // Don't double-itemize a value whose repr already carries a sigil: an
     // explicitly itemized `$[...]`, or a cycle-reference placeholder for a
@@ -830,7 +821,7 @@ pub fn raku_value(v: &Value) -> String {
                         let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
-                            raku_hash_value(v)
+                            raku_value(v)
                         };
                         let typed = map.typed_key(k);
                         match typed.view() {
@@ -891,7 +882,7 @@ pub fn raku_value(v: &Value) -> String {
                         let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
-                            raku_hash_value(v)
+                            raku_value(v)
                         };
                         format!(":{}({})", k, repr)
                     } else {
@@ -899,7 +890,7 @@ pub fn raku_value(v: &Value) -> String {
                         let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
-                            raku_hash_value(v)
+                            raku_value(v)
                         };
                         format!("{} => {}", object_hash_key_repr(&typed), repr)
                     }
@@ -1024,7 +1015,7 @@ pub fn raku_value(v: &Value) -> String {
             // a List/Seq → `$(...)`, and a plain scalar (Int/Str/Range/…) renders
             // unwrapped (itemizing an already-scalar value is a no-op:
             // `$(1).raku` → `1`). This is exactly the hash-value itemization rule.
-            raku_hash_value(inner)
+            itemize_scalar_repr(inner, raku_value(inner))
         }
         ValueView::Capture { positional, named } => {
             let mut parts = Vec::new();

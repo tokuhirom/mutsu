@@ -809,7 +809,7 @@ impl Interpreter {
                     }
                 }
                 self.env
-                    .insert("%_".to_string(), Value::hash(leftover_named));
+                    .insert("%_".to_string(), Value::hash_bare_values(leftover_named));
             }
             self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
             return Ok(rw_bindings);
@@ -1105,7 +1105,7 @@ impl Interpreter {
                         }
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, Value::hash(hash_items));
+                        self.bind_param_value(&pd.name, Value::hash_bare_values(hash_items));
                         self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                 } else if pd.double_slurpy {

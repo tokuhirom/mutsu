@@ -729,4 +729,62 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is takes($r), 1, 'slice 4: the chained-assign expression value is one item';
 }
 
+# --- Slice 4b: the constructor IS the store -------------------------------
+# A Hash a native Rust builtin builds is stored the same way an assignment
+# stores one, so every reader agrees about its values; and the associative
+# things mutsu represents with the same repr but whose values are NOT element
+# containers (a Map, a Match's capture map, a slurpy `*%h`) stay bare.
+{
+    # `.classify` builds its Hash in Rust. BOUND, not assigned, so no Raku
+    # assignment store can paper over the construction.
+    my %c := (1, 2, 3, 4).classify({ $_ % 2 });
+    is %c{0}.raku, '$[2, 4]', 'slice 4b: a natively built Hash itemizes its values';
+    is %c{0}.VAR.^name, 'Scalar', 'slice 4b: ...so the element is a container';
+    is takes(%c{0}), 1, 'slice 4b: ...and it is one item in list context';
+    is %c.values.sort.raku, '($[1, 3], $[2, 4]).Seq',
+        'slice 4b: .values agrees with the subscript read';
+}
+{
+    # counter-current: a Map's values are not containers, so neither `Map.new`
+    # nor `.Map` may itemize them -- and the read must not re-itemize either.
+    my %m := Map.new((a => (1, 2)));
+    is %m<a>.raku, '(1, 2)', 'slice 4b: Map.new does not itemize its values';
+    is takes(%m<a>), 2, 'slice 4b: ...so a Map value spreads in list context';
+    is %m.raku, 'Map.new((:a((1, 2))))',
+        'slice 4b: ...and the Map renders its values bare too';
+    my %src = a => (1, 2);
+    is %src.Map<a>.raku, '(1, 2)', 'slice 4b: .Map deconts a List value too';
+    # A non-Hash receiver folds to a Hash first (which itemizes, because that
+    # is what a Hash store does) and must be deconted just the same --
+    # roast/S32-hash/map.t's "Map does not introduce bogus Scalar containers".
+    is ((a => (1, 2, 3)), (b => 4)).Map<a>.raku, '(1, 2, 3)',
+        'slice 4b: .Map on a list of Pairs deconts too';
+    my class MapBind { has Int @.a }
+    lives-ok { MapBind.new(|((a => (1, 2, 3)), (b => 4)).Map) },
+        'slice 4b: ...so |%.Map binds an Int @ attribute element-wise';
+}
+{
+    # counter-current: a slurpy `*%h` is bound from the call's capture, so its
+    # values are not containers (raku: `%h<a>.VAR.^name` is `List`). Read
+    # inside the sub -- returning through `my $v =` would itemize on the way.
+    # (`.VAR` still answers `Scalar` here rather than raku's `List` -- the
+    # per-hash "are my values containers" bit does not exist yet; recorded in
+    # todo/tickets/var-on-a-bare-valued-hash-answers-scalar.md.)
+    sub slurped(*%h) { (%h<a>.raku, takes(%h<a>)).join('|') }
+    is slurped(a => ('x', 'y')), '("x", "y")|2',
+        'slice 4b: a slurpy %-param does not itemize its values';
+    # ...while a plain `%`-param receiving a real Hash keeps that Hash's own
+    # element itemization.
+    sub plain(%h) { (%h<a>.raku, %h<a>.VAR.^name, takes(%h<a>)).join('|') }
+    is plain({a => ('x', 'y')}), '$("x", "y")|Scalar|1',
+        'slice 4b: a plain %-param still sees an itemized Hash value';
+}
+{
+    # counter-current: a Match's capture map is not a Hash of containers --
+    # a quantified capture reads back as the Array itself.
+    'abab' ~~ / [$<x>=[a] b]+ /;
+    is $/.hash<x>.VAR.^name, 'Array', 'slice 4b: a Match capture map stays bare';
+    is takes($/.hash<x>), 2, 'slice 4b: ...so a quantified capture spreads';
+}
+
 done-testing;

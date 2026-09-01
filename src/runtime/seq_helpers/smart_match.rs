@@ -1009,7 +1009,10 @@ impl Interpreter {
                                         };
                                         hash_map.insert(key.clone(), val);
                                     }
-                                    named_hash.insert(hash_name.clone(), Value::hash(hash_map));
+                                    named_hash.insert(
+                                        hash_name.clone(),
+                                        Value::hash_bare_values(hash_map),
+                                    );
                                 }
                             });
                         });
