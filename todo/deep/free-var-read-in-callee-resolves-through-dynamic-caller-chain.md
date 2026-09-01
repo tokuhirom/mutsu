@@ -74,3 +74,19 @@ cheaper thing to investigate first.
 ## Repro
 
 The snippet above; `raku` is the oracle.
+
+## Deep triage (2026-09-01)
+
+Reproduced unchanged on `main`: mutsu prints `f sees 1` followed by
+`alias 200`, while Raku preserves `f`'s own lexical and prints `f sees 5`.
+ADR-0055 remains **Accepted**, but its current status explicitly leaves this
+read-side named-sub problem out of scope in §7.5: a named routine must inherit
+its lexical declaration scope rather than its dynamic caller environment.
+
+The current call setup still creates the callee environment with
+`Env::scoped_child(caller_env)` (`src/vm/vm_call_named_inner.rs`). Repairing
+that relationship changes the environment model and interaction with dynamic
+variables, captured bindings, local-slot synchronization, and bind writeback.
+It therefore needs a dedicated ADR and a staged campaign, rather than an
+XML- or call-site-specific exception. This record was moved from
+`todo/tickets/` to `todo/deep/` accordingly.
