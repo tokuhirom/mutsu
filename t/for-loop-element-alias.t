@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 93;
+plan 97;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -270,6 +270,34 @@ plan 93;
     my @a = 20, 10;
     for @a.sort -> $v is rw { $v = $v + 1 }
     is-deeply @a, [21, 11], 'row 24: `.sort` aliases the elements in sorted order';
+}
+
+# `Array.Seq` is another derived source. Like `.reverse` and `.sort`, it must
+# yield the source element containers, while `.List` intentionally yields bare
+# immutable values.
+{
+    my @a = 1, 2, 3;
+    for @a.Seq { $_++ }
+    is-deeply @a, [2, 3, 4], 'Array.Seq topic aliases the array element containers';
+}
+{
+    my @a = 1, 2, 3;
+    my @c;
+    for @a.Seq -> $v is rw { @c.push(-> { $v++ }) }
+    @c[0]();
+    @c[1]();
+    @c[2]();
+    is-deeply @a, [2, 3, 4], 'an escaping Array.Seq rw alias writes through';
+}
+{
+    my @a = 1, 2, 3;
+    is @a.Seq.raku, '(1, 2, 3).Seq', 'Array.Seq still renders its element values';
+}
+{
+    my @a = 1, [2, [3, [4, 5]]];
+    @a.Seq.elems;
+    is-deeply @a.flat(:hammer), (1, 2, 3, 4, 5),
+        'flat decontainerizes elements after Array.Seq promotes them';
 }
 
 # row 39

@@ -70,7 +70,7 @@ use super::*;
 /// the snapshot producer and its writeback, which is correct for the direct
 /// write (`for @a.kv -> $i, $v is rw { $v += $i }`) and only loses the deferred
 /// closure. Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`.
-const ELEMENT_PRODUCERS: [&str; 3] = ["values", "reverse", "sort"];
+const ELEMENT_PRODUCERS: [&str; 4] = ["Seq", "values", "reverse", "sort"];
 
 impl Interpreter {
     /// Produce `method`'s result from `target`'s **element containers** instead
@@ -135,6 +135,12 @@ impl Interpreter {
             .map(|i| target.array_slot_ref(i, true))
             .collect::<Option<_>>()?;
         Some(match method {
+            // `.Seq` has the same element-producing contract as the derived
+            // sequence methods below: it preserves an Array element's Scalar
+            // container rather than snapshotting its current value. `.List`
+            // deliberately remains outside this routing because it
+            // decontainerizes Array elements.
+            "Seq" => Value::seq(cells),
             "values" => Value::seq(cells),
             "reverse" => {
                 let mut cells = cells;

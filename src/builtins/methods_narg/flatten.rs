@@ -6,6 +6,12 @@ fn flatten_with_depth(
     out: &mut Vec<Value>,
     flatten_arrays: bool,
 ) {
+    // Array.Seq may carry an element's Scalar container (ADR-0045). `flat`
+    // observes list values, including for `:hammer`, so do not let the cell
+    // make an Array look itemized to the depth walker.
+    if matches!(value.view(), ValueView::ContainerRef(_)) {
+        return flatten_with_depth(&value.deref_container(), depth, out, flatten_arrays);
+    }
     if let Some(0) = depth {
         out.push(value.clone());
         return;

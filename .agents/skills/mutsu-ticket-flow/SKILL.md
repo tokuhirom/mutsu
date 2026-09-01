@@ -41,8 +41,8 @@ Follow the Parser -> Compiler -> VM architecture, add focused regressions, and r
 while iterating.
 
 Before publishing, run `cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and
-`make roast` once each. Inspect `tmp/make-test.log` and `tmp/make-roast.log` instead of rerunning a
-full suite. Do not publish until both full suites succeed.
+`make roast` once each. Inspect `tmp/make-test.log` and `tmp/make-roast.log`.
+Do not publish until both full suites succeed.
 
 ## Publish, monitor, and verify merge
 
