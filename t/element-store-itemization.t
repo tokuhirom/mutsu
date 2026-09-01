@@ -636,4 +636,97 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is @real.VAR.name, '@real', 'slice 3: the array own .VAR.name is unchanged';
 }
 
+# === Slice 4: chained-subscript and deferred-vivification stores
+# (ADR-0040 SS4 slice 4) ===
+#
+# Slice 1 hooked the single-level element assign and recorded that "deeper
+# (3+-level) chained assignment was not separately audited". It was not
+# covered -- and neither was the LEAF of a TWO-level chain, nor the
+# intermediate a deferred vivification token walk-creates. All three stored
+# bare, and the render-side compensator (`raku_hash_value`) hid it for
+# `%h.raku` while every other reader disagreed: exactly SS1.5's "one value,
+# three answers" shape, still alive one level down. Every expectation below is
+# dual-oracled against `raku`.
+
+# The value assigned through a chained subscript is an element store.
+{
+    my %h1; %h1<a><b> = [1, 2];
+    is %h1<a><b>.raku, '$[1, 2]', 'slice 4: two-level hash chain leaf is itemized';
+    is takes(%h1<a><b>), 1, 'slice 4: two-level hash chain leaf is one item';
+    my @a1; @a1[0][1] = [1, 2];
+    is @a1[0][1].raku, '$[1, 2]', 'slice 4: two-level array chain leaf is itemized';
+    my %h2; %h2<a><b><c> = [1, 2];
+    is %h2<a><b><c>.raku, '$[1, 2]', 'slice 4: three-level hash chain leaf is itemized';
+    my @a2; @a2[0][1][2] = [1, 2];
+    is @a2[0][1][2].raku, '$[1, 2]', 'slice 4: three-level array chain leaf is itemized';
+    my %h3; %h3<a>[0] = (1, 2);
+    is %h3<a>[0].raku, '$(1, 2)', 'slice 4: a List leaf through a mixed chain is itemized';
+    my @a3; @a3[0]<k> = [1, 2];
+    is @a3[0]<k>.raku, '$[1, 2]', 'slice 4: an array-then-hash chain leaf is itemized';
+}
+
+# The container mutsu autovivifies on the way down the chain is itself a
+# stored element, so it itemizes too.
+{
+    my %h4; %h4<a><b><c> = 1;
+    is %h4<a><b>.raku, '${:c(1)}', 'slice 4: a 3-level autovivified hash is itemized';
+    my @a4; @a4[0][1][2] = 7;
+    is @a4[0][1].raku, '$[Any, Any, 7]', 'slice 4: a 3-level autovivified array is itemized';
+    is takes(@a4[0][1]), 1, 'slice 4: a 3-level autovivified array is one item';
+    my %h5; %h5<a><b>[2] = 'z';
+    is %h5<a><b>.raku, '$[Any, Any, "z"]', 'slice 4: hash-hash-array autovivification';
+    my %h6; %h6<a>[0]<k> = 5;
+    is %h6<a>.raku, '$[{:k(5)},]', 'slice 4: hash-array-hash autovivification';
+    is %h6<a>[0].VAR.^name, 'Scalar', 'slice 4: a chained element reflects as a Scalar';
+}
+
+# A deferred vivification token (`my $r := %h<a><b>`) walk-creates the same
+# intermediates at the first write, through a different mechanism.
+{
+    my %d1; my $r1 := %d1<a><b>; $r1 = 'x';
+    is %d1<a>.raku, '${:b("x")}', 'slice 4: deferred 2-level walk-create is itemized';
+    my %d2; my $r2 := %d2<a><b><c>; $r2 = 'x';
+    is %d2<a><b>.raku, '${:c("x")}', 'slice 4: deferred 3-level walk-create is itemized';
+    my %d3; my $r3 := %d3<a>[1]; $r3 = 'x';
+    is %d3<a>.raku, '$[Any, "x"]', 'slice 4: deferred hash-array walk-create is itemized';
+    my @d4; my $r4 := @d4[0][1]; $r4 = 'x';
+    is @d4[0].raku, '$[Any, "x"]', 'slice 4: deferred array-array walk-create is itemized';
+    my %d5; my $r5 := %d5<a><b>; $r5 = 'x';
+    is %d5.raku, '{:a(${:b("x")})}', 'slice 4: the deferred whole-hash render is unchanged';
+}
+
+# A `:=` through a chain binds the source container: the element renders
+# itemized while the source read directly stays bare, and writes still go
+# through -- the same representation slice 1 chose for `@a.push(@b)`.
+{
+    my @s1 = 1, 2;
+    my %b1; %b1<a><b> := @s1;
+    is %b1<a><b>.raku, '$[1, 2]', 'slice 4: a two-level bound chain element is itemized';
+    @s1.push(3);
+    is %b1<a><b>.raku, '$[1, 2, 3]', 'slice 4: the two-level bind still writes through';
+    is @s1.raku, '[1, 2, 3]', 'slice 4: the bind source read directly stays bare';
+    # A 3+-level bind installs a shared `ContainerRef` cell instead of a value,
+    # and wrapping THAT in a `Scalar` (slice 1's `@a.push(@b)` shape) breaks the
+    # write path, which does not yet see through a `Scalar`-wrapped cell. Left
+    # bare and recorded in ADR-0040 SS8; the write-through is what must not move.
+    my @s2 = 4, 5;
+    my %b2; %b2<a><b><c> := @s2;
+    @s2.push(6);
+    is %b2<a><b><c>.elems, 3, 'slice 4: a three-level bind still writes through';
+}
+
+# The invariants: a container's OWN .raku still de-itemizes its elements
+# (row 25), the chain's arity is unchanged, and the assignment expression
+# yields the (itemized) container.
+{
+    my %h7; %h7<a><b><c> = 1;
+    is %h7.raku, '{:a(${:b(${:c(1)})})}', 'slice 4: %h.raku is unchanged (invariant)';
+    my @a7; @a7[0][1][2] = 7;
+    is @a7.raku, '[[Any, [Any, Any, 7]],]', 'slice 4: @a.raku is unchanged (invariant)';
+    my %h8;
+    my $r = (%h8<a><b> = [1, 2]);
+    is $r.raku, '$[1, 2]', 'slice 4: the chained-assign expression value is itemized';
+    is takes($r), 1, 'slice 4: the chained-assign expression value is one item';
+}
+
 done-testing;

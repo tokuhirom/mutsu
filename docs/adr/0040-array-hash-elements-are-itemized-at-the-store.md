@@ -1,6 +1,6 @@
 # ADR-0040: Array and Hash elements are itemized at the *store*, not compensated at the read
 
-- **Status**: Accepted (Slices 0-3 implemented; see "Implementation status" below)
+- **Status**: Accepted (Slices 0-4 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 / §7 (the
@@ -477,9 +477,10 @@ approximates each separately. Recorded here so a future reader can see the whole
 
 ---
 
-## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slice 3 added 2026-09-01)
+## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slices 3-4 added 2026-09-01)
 
-Slices 0-3 landed in full. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
+Slices 0-4 landed. Slice 4 landed its *store* half in full and left the compensator deletion
+blocked on a newly measured class — see its section for the numbers. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
 description (element assign, autovivification — both single- and nested-level — and
 `push`/`unshift`/`append`/`prepend`/`splice` for a real `Array` or `Hash`). Slice 2 covered the
 construction sites, turning §1.3's rows 01-18 and 23 green. Slice 3 covered the reflection side,
@@ -865,6 +866,88 @@ sigilless alias, a cached `Seq`, a raw `Seq` in a `$`, a bound `Range`, a `Range
 one of those (`^Inf`, an `@`-assigned lazy `gather`/`Seq`/`Range`, an unfilled element), `Hash` vs
 `Map`, the two unnamed-subscript invariants, and the `.VAR.name` correction. Full local `t/` suite
 passes; `make roast` delegated to CI.
+
+### Slice 4 (2026-09-01) — the chained-subscript store, and what the compensators actually cover
+
+Slice 4 was scoped as "delete the compensators, once slices 1-2 make them redundant". **They were
+not redundant, and the reason was a bug, not a leftover.** Instrumenting both compensator sites
+behind an env var and running the whole corpus is what found it — §1.3's divergence matrix could
+not, because the matrix only exercises one subscript level.
+
+**The instrumentation had to be split before it said anything true.** A first pass counted 57
+firings of `raku_hash_value` across `t/` and looked like proof the render compensator was load
+bearing. It was not: `raku_hash_value` has two callers with opposite roles — the three Hash/Map
+rendering sites (the actual compensator) and the `ValueView::Scalar` arm
+(`raku_repr.rs`), which is the **primary** `$(…)` renderer for every itemized value and not a
+compensator at all. Probing only the three Hash/Map sites dropped the count to 22, and every one of
+those was a real defect.
+
+#### The defect: a chained subscript stores bare
+
+Slice 1's own implementation note said "deeper (3+-level) chained assignment
+(`exec_index_assign_deep_nested_op`/`exec_index_assign_generic_op`) was not separately audited". It
+was not covered — and neither was the **leaf of a two-level chain**, nor the intermediate a
+**deferred vivification token** walk-creates. Measured against raku:
+
+| program | raku | mutsu (before) |
+| --- | --- | --- |
+| `my %h; %h<a><b> = [1,2]; %h<a><b>.raku` | `$[1, 2]` | `[1, 2]` |
+| `takes(%h<a><b>)` | `1` | `2` |
+| `my %d; %d<a><b>[2] = "z"; %d<a><b>.raku` | `$[Any, Any, "z"]` | `[Any, Any, "z"]` |
+| `my @g; @g[0][1][2] = 7; takes(@g[0][1])` | `1` | `3` |
+| `my %h; %h<a>[0]<k> = 5; %h<a>.raku` | `$[{:k(5)},]` | `[{:k(5)},]` |
+| `my %h; my $r := %h<a>[1]; $r = "x"; %h<a>.raku` | `$[Any, "x"]` | `[Any, "x"]` |
+
+The render-side compensator made `%h.raku` right while `%h<a><b>.raku`, `.VAR` and list-context
+arity were all wrong — §1.5's "one value, three answers" shape, alive one level down and invisible
+to the ADR's own oracle.
+
+#### The fix — four sites, all "a value entering a parent's element slot"
+
+- **`exec_index_assign_expr_nested_op`** (two-level): the leaf value, hooked once after the
+  junction/slice arm, mirroring slice 1's hook at the single-level op's entry.
+- **`exec_index_assign_deep_nested_op`** (3+): the same hook for the leaf, plus
+  `Interpreter::fresh_autoviv_container` for the four intermediate-vivification sites (two array
+  arms, two hash arms, first attempt and retry). Itemizing an `Array` only flips its `ArrayKind`
+  tag, so the `&mut` the walk takes into the slot to keep descending is unaffected.
+- **`fresh_level_for`** (`src/value/entry_path.rs`): the same for the container a deferred
+  vivification token walk-creates — a different mechanism reaching the same slot.
+- **An itemized-`Hash` arm for `.VAR`** (`methods_call_dispatch.rs`). An itemized `Hash` carries
+  its itemization as a bool on the repr rather than as an `ArrayKind`, so the existing
+  itemized-`Array` arm did not cover it and `%g<a>[0].VAR.^name` answered `Hash`. Only `.VAR` is
+  redirected — unlike the `Array` case there is nothing to decontainerize for other methods.
+
+`:=` through a **two-level** chain now matches raku too (`%h<a><b> := @s` renders `$[1, 2]`, `@s`
+read directly stays bare, and a later `@s.push` still shows through). A **3+-level** bind installs a
+shared `ContainerRef` cell rather than a value, and wrapping *that* in a `Scalar` — slice 1's
+`@a.push(@b)` shape — **breaks the write path**, which does not yet see through a `Scalar`-wrapped
+cell (`t/deep-element-bind-writeback-coherence.t` and `t/element-bind-cell.t` caught it). Left bare
+deliberately; the write-through is pinned instead.
+
+#### The compensators: measured, not deleted
+
+Both sites were instrumented and the **entire** corpus run — `t/` (3601 files) and the full roast
+whitelist (1425 files):
+
+| compensator | before slice 4 | after slice 4 | what still reaches it |
+| --- | --- | --- | --- |
+| render-side (`raku_hash_value` at the 3 Hash/Map sites) | 22 in `t/` | **0 in `t/`**, 1 in roast | a self-referential hash (`:__mutsu_self_hash_ref`), where the value rendered is the cycle sentinel rather than the stored container |
+| read-side (`itemize_hash_value`) | 3 in `t/` | 3 in `t/`, 17 in roast | **natively constructed hashes only** — Pod block `.config` (12 of the 17, `roast/S26-documentation/09-configuration.t`), `gethost(…)<addrs>`, and two exception/`Proc` hashes |
+
+So slice 4's deletion is blocked on one nameable class, and it is the same class slice 2 already hit
+once: **a `Hash` a native Rust builtin constructs directly bypasses every store hook**. Slice 2
+fixed the JSON decoder by hand for exactly this reason; Pod `.config`, `gethost` and their siblings
+are the rest of it. Deleting either compensator before those are routed through the itemizing store
+would turn 20 measured firings into 20 wrong answers. That is the remaining slice-4 work, and it is
+a store-site enumeration, not a mechanism question.
+
+**Verification**: `cargo fmt --check` and `cargo clippy -- -D warnings` clean. Full local `t/`
+suite (3601 files, 36214 tests) passes. `t/element-store-itemization.t` grew from 149 to 175
+assertions and matches `raku` line for line: the chained-leaf shapes (two- and three-level, hash,
+array, and both mixed orders), the autovivified intermediates, the deferred walk-create shapes, the
+two-level bind's itemization *and* write-through, the 3+-level bind's write-through, and the
+invariants (`%h.raku` / `@a.raku` unchanged, chain arity unchanged, the assignment expression's own
+value itemized). The full roast whitelist (1425 files) passes on a release build.
 
 ---
 
