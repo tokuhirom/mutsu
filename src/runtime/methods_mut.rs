@@ -255,7 +255,14 @@ impl Interpreter {
     /// this now itemizes instead of stripping — the one counter-current the
     /// ADR names (§2 part 3).
     fn normalize_push_unshift_arg(arg: Value) -> Value {
-        arg.itemize_for_element_store()
+        // `push`/`unshift` COPY: raku stores the pushed value, never the
+        // container it was read out of. Only a *bind* aliases. The argument can
+        // be a first-class element cell whenever it came from a read that does
+        // not decontainerize — a method return, most visibly `.value` on a Pair
+        // that carries an element container (ADR-0036) — and storing that cell
+        // would make every later write to the source rewrite the pushed
+        // element. Pinned by `t/pairs-element-container.t`.
+        arg.into_deref().itemize_for_element_store()
     }
 
     pub(crate) fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {

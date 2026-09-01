@@ -17,13 +17,11 @@ use Test;
 #                               `:kv` parser rewrite that used to make
 #                               `(@a[0]:kv)[1] = x` work "by accident" for one
 #                               syntactic shape only is deleted.
-#   Slice 3 (partial)       -- the container-aware producer layer landed
-#                               (src/vm/vm_element_producers.rs), and ADR-0045
-#                               slice 4's `.values`/`.reverse`/`.sort` go
-#                               through it. `.pairs` itself is DEFERRED: a Pair
-#                               holding a cell leaks through the many consumers
-#                               that destructure a pair's value as data --
-#                               todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md.
+#   Slice 3 (landed)        -- the container-aware producer layer
+#                               (src/vm/vm_element_producers.rs) carries
+#                               ADR-0045 slice 4's `.values`/`.reverse`/`.sort`
+#                               and, since 2026-09-01, `.pairs` itself -- see
+#                               news/2026-09/pairs-hands-out-element-containers.md.
 #                               `.antipairs` is deliberately NOT routed: it puts
 #                               the element in the pair's KEY, and a pair key is
 #                               never a container in raku (measured below).
@@ -77,7 +75,6 @@ plan 35;
     my @a = <A B>;
     my $p = @a.pairs[0];
     @a[0] = "Q";
-    todo 'row 3 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is $p.value, "Q", '.pairs pair value tracks a later array write (row 3)';
 }
 
@@ -86,7 +83,6 @@ plan 35;
     my %h = a => 1;
     my $p = %h.pairs[0];
     %h<a> = 7;
-    todo 'row 4 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is $p.value, 7, '.pairs pair value tracks a later hash write (row 4)';
 }
 
@@ -118,7 +114,6 @@ plan 35;
 }
 {
     my @a = <A B>;
-    todo '.pairs routing deferred -- see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is @a.pairs[0].value.VAR.^name, 'Scalar', '.pairs pair.value is a Scalar container';
 }
 
@@ -157,12 +152,7 @@ plan 35;
 {
     my @a = <A B>;
     my @c = <A B>;
-    # Until `.pairs` is routed through the container-aware producer, `$p.value`
-    # is a bare item, so slice 4's read-only guard now raises X::Assignment::RO
-    # here rather than swallowing the write. Still a divergence from raku (which
-    # writes through), still `todo`; the `try` keeps the file running.
-    try { for @a.pairs -> $p { $p.value = "y" } }
-    todo 'row 9 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
+    for @a.pairs -> $p { $p.value = "y" }
     is-deeply @a, ["y", "y"], 'for @a.pairs writes through even with an equal sibling array (row 9)';
 }
 

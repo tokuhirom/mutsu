@@ -600,7 +600,14 @@ impl Interpreter {
             {
                 let slot = &mut self.stack[stack_len - 2];
                 let old = std::mem::replace(slot, Value::NIL);
-                *slot = old.itemize_for_element_store();
+                // An element ASSIGNMENT stores a COPY; only a `:=` bind (which
+                // arrives wrapped in a `__mutsu_bind_index_value` Pair, so it is
+                // untouched here) aliases. The RHS can BE a first-class element
+                // cell when it came from a read that does not decontainerize --
+                // a method return, most visibly `.value` on a Pair carrying an
+                // element container (ADR-0036). Storing that cell would make
+                // every later write to the source rewrite this element.
+                *slot = old.into_deref().itemize_for_element_store();
             }
         }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind

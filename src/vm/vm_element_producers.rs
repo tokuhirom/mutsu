@@ -39,22 +39,30 @@ use super::*;
 /// lists it with `.pairs`/`.kv`; that grouping is corrected here by
 /// measurement.)
 ///
-/// **`.pairs` is absent, and this one was implemented, measured, and backed
-/// out.** Routing it makes every consumer that reads a Pair's value *as data*
-/// see a `ContainerRef` — and because `.pairs` promotes the source's elements in
-/// place, the exposure is not "consumers of the `.pairs` result" but "consumers
-/// of any container a producer has run over". Five distinct leaks were measured
-/// (`trans` type-testing the value, Hash-from-pairs aliasing two hashes,
-/// BagHash-from-pairs collapsing every weight to 1, `.map({.key => .value})`
-/// carrying the cell forward, `.antipairs` losing its key de-itemization), and
-/// the pattern did not stop: `set_coerce.rs` and `coerce_containers.rs` alone
-/// destructure a pair's value structurally in 15 places, with no accessor to
-/// route. It needs a read chokepoint for a Pair's value, which conflicts with
-/// ADR-0036 row 6 (`(@a[0]:p).value.VAR.^name` must be `Scalar`) and so wants
-/// its own decision. Tracked in
-/// `todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md`.
-/// `.values`/`.reverse`/`.sort` do not have the problem: they hand out a flat
-/// list of cells, and list consumers decontainerize.
+/// **`.pairs` is here, and what unblocked it was work done elsewhere.**
+/// It was implemented and backed out on 2026-08-27: routing it makes every
+/// consumer that reads a Pair's value *as data* see a `ContainerRef`, and
+/// because `.pairs` promotes the source's elements in place, the exposure is
+/// not "consumers of the `.pairs` result" but "consumers of any container a
+/// producer has run over". Five leaks were measured then. Re-measured on
+/// 2026-09-01 against a full local `make roast` + the whole `t/` suite, **four
+/// of the five were already gone** — closed by the intervening pair work (rows
+/// 10/11/12, `.WHAT` on a cell, the immutable-value guard) rather than by
+/// anything `.pairs` did. The one that remained was not a `.pairs` bug at all:
+/// `pair_weight`/`mix_pair_weight` (`builtins/quanthash_coerce.rs`) read a
+/// weight without decontainerizing, so a cell fell through every numeric arm to
+/// the truthy `_` fallback and became `1`. That was already wrong on `main` for
+/// a plain `key => $x` pair (`my $x = 3; my %z is BagHash; %z = ((a => $x),)`
+/// gave `BagHash(a)`), so the fix is a general one, pinned in
+/// `t/pairs-element-container.t`.
+///
+/// The rule that came out of it, and the one to apply when routing anything
+/// else through here: **a Pair's value is read as DATA everywhere except an
+/// lvalue `.value =` and `.VAR`** — so any site that type-tests or numifies one
+/// must `deref_container()` first. `.values`/`.reverse`/`.sort` never needed the
+/// rule because they hand out a *flat list* of cells and list consumers
+/// decontainerize; it is specifically the Pair wrapper that carries a cell into
+/// code reading it structurally.
 ///
 /// **`.kv` is here, and it took a change to the CONSUMER to get it here.** A
 /// `.kv` loop is a *multi-parameter* loop, and a multi-parameter loop does not
@@ -72,7 +80,7 @@ use super::*;
 /// The `.kv` output is a **flat** `key, cell, key, cell, …` list, because the
 /// loop chunks it by two. Only the value slot is a container: a key is never one
 /// in raku, the same asymmetry that keeps `.antipairs` off this path.
-const ELEMENT_PRODUCERS: [&str; 5] = ["Seq", "values", "reverse", "sort", "kv"];
+const ELEMENT_PRODUCERS: [&str; 6] = ["Seq", "values", "reverse", "sort", "kv", "pairs"];
 
 impl Interpreter {
     /// Produce `method`'s result from `target`'s **element containers** instead
@@ -144,6 +152,13 @@ impl Interpreter {
             // decontainerizes Array elements.
             "Seq" => Value::seq(cells),
             "values" => Value::seq(cells),
+            "pairs" => Value::seq(
+                cells
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, c)| Value::value_pair(Value::int(i as i64), c))
+                    .collect(),
+            ),
             // A flat `index, cell, index, cell, ...` list -- the loop chunks it
             // by two, so the value slot of each chunk is the element's own
             // container and `-> $i, $v is rw` aliases it (ADR-0045 row 16).
@@ -193,13 +208,13 @@ impl Interpreter {
             }
             _ => return None,
         };
-        // `.values` and `.kv` reach here; `.pairs` is deferred (see the
-        // `ELEMENT_PRODUCERS` doc) and `.reverse`/`.sort` are array-only. When
-        // `.pairs` returns it joins `.kv` on the `hash_typed_key` path below.
-        if !matches!(method, "values" | "kv") {
+        // `.values`, `.kv` and `.pairs` reach here; `.reverse`/`.sort` are
+        // array-only. `.kv` and `.pairs` share the `hash_typed_key` path below,
+        // because both hand the key back to the program; `.values` does not.
+        if !matches!(method, "values" | "kv" | "pairs") {
             return None;
         }
-        let typed_keys = method == "kv" && crate::runtime::utils::hash_uses_typed_keys(target);
+        let typed_keys = method != "values" && crate::runtime::utils::hash_uses_typed_keys(target);
         let mut out: Vec<Value> = Vec::with_capacity(keys.len() * 2);
         for k in &keys {
             let cell = target.hash_slot_ref(k, true)?;
@@ -208,6 +223,15 @@ impl Interpreter {
             // happen — but decline rather than hand out a path if it ever does.
             if !matches!(cell.view(), ValueView::ContainerRef(_)) {
                 return None;
+            }
+            if method == "pairs" {
+                let key = if typed_keys {
+                    crate::runtime::utils::hash_typed_key(target, k)
+                } else {
+                    Value::hash_key_decode(k)
+                };
+                out.push(Value::value_pair(key, cell));
+                continue;
             }
             if method == "kv" {
                 // The key is NOT a container -- only the value is (the same

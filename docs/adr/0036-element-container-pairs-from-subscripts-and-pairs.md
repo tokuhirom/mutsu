@@ -1,9 +1,9 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
-- **Status**: Partially implemented — slices 1-2 landed (2026-08-20); slice 3's producer layer landed
-  2026-08-27 but `.pairs` itself is deferred (see "Implementation status — slice 3"); slice 4's
-  enforcement half landed with #7190 and its reporting half 2026-09-01, its compensator deletion is
-  still open
+- **Status**: Partially implemented — slices 1-2 landed (2026-08-20); slice 3 completed 2026-09-01
+  when `.pairs` finally routed (see "Implementation status — slice 3, `.pairs` (2026-09-01)");
+  slice 4's enforcement half landed with #7190 and its reporting half 2026-09-01, its compensator
+  deletion is still open
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -343,6 +343,11 @@ syntax-specific rewrite.
 
 ## Implementation status — slice 3 (2026-08-27)
 
+> **Superseded for `.pairs` by "Implementation status — slice 3, `.pairs` (2026-09-01)" below.**
+> The measurement in this section was correct on the day it was taken; four of its five leaks were
+> closed by later, unrelated pair work, and the fifth was a general bug in one function. The section
+> is kept intact because its *reasoning* about the Pair wrapper is what survived and became the rule.
+
 **The producer layer landed; `.pairs` itself did not.** §4 required this slice to land with ADR-0045
 slice 4, and the mechanism they share does exist now: `src/vm/vm_element_producers.rs`, hooked into
 `exec_call_method_mut_op_impl` (`src/vm/vm_call_method_mut_ops.rs`) just before the native dispatch
@@ -459,7 +464,8 @@ a compensator that fakes container semantics for a Pair that has none.
   `bench-ctor` 0.28 → 0.26), so this is a per-call cost on large containers rather than a corpus-wide
   one. Lazy promotion at reification stays the option if a bench CI series shows it.
 - **Q4 (is `resolve_array_entry` the only read chokepoint?)** — **no, and this is the ADR's most
-  important correction.** It is the only chokepoint for *element* reads, but bulk iteration
+  important correction.** (Followed up 2026-09-01: the answer stands, but its consequence for
+  `.pairs` did not — see the `.pairs` section above.) It is the only chokepoint for *element* reads, but bulk iteration
   (`h.iter()`, `items.iter()`) and `ValueView::Pair(k, v)` destructuring walk the storage directly.
   For a flat list of cells that does not matter — list consumers decontainerize — which is why
   `.values`/`.reverse`/`.sort` ship. For a Pair carrying a cell it matters a great deal, which is why
@@ -477,6 +483,65 @@ a compensator that fakes container semantics for a Pair that has none.
   today. `^name` still answers `Scalar`, because that is what `.VAR.^name` needs and mutsu cannot yet
   tell a cell reached *through* `.VAR` from a bare aliased value —
   `todo/tickets/var-on-a-containerref-is-not-distinguishable.md`.
+
+## Implementation status — slice 3, `.pairs` (2026-09-01)
+
+**`.pairs` is routed; slice 3 is complete.** Rows 3, 4 and 9 of §1.3 are green, and
+`t/subscript-pair-element-container.t` drops their `todo` markers along with the `.pairs`
+`.VAR.^name` probe. `"pairs"` is back in `ELEMENT_PRODUCERS` on both the array and hash arms of
+`src/vm/vm_element_producers.rs`; a `List`/`Seq`/`Range`, an immutable `Map`, a shaped or
+native-backed array and a mutable QuantHash all still decline to the snapshot producer, exactly as
+the 2026-08-27 section describes for the other producers.
+
+**What changed was not `.pairs`, it was everything around it.** The back-out above rested on five
+measured leaks and on the inference that they were a class: ~460 sites across `src/` bind a
+`ValueView::Pair`/`ValuePair` value, 15 of them in `set_coerce.rs` / `coerce_containers.rs` alone,
+and no accessor existed to route them. Re-measured on 2026-09-01 with `.pairs` routed and nothing
+else changed:
+
+- the **whole** `t/` suite (3597 files, 36118 tests) passed, with no new failures;
+- a **full local `make roast`** reduced to **one** failing file.
+
+Four of the five leaks — `trans` type-testing the value, Hash-from-pairs aliasing two hashes,
+`.map({.key => .value})` carrying the cell forward, `.antipairs` losing its key de-itemization —
+were gone, closed by the pair work that landed in between: row 10's FatArrow `Index` capture, row
+11's read-only guard, row 12's element constraint, `.WHAT` on a `ContainerRef`, and ADR-0045 slice
+5's `.kv` raw bind. The inference "the pattern did not stop" was drawn from a snapshot in which four
+independent defects happened to share a symptom.
+
+**The fifth leak was a general bug, and not in `.pairs`.** `roast/S03-metaops/infix.t` (396/5076)
+failed on `%a = %reset.pairs` into a `BagHash`/`MixHash`, every weight collapsing to `1`.
+`pair_weight` and `mix_pair_weight`/`mix_pair_weight_value` (`src/builtins/quanthash_coerce.rs`)
+matched on the pair value's view without decontainerizing, so a cell missed every numeric arm and
+hit the truthy `_` fallback. **This was already wrong on `main`** — `my $x = 3; my %z is BagHash;
+%z = ((a => $x),)` gave `BagHash(a)` instead of `BagHash(a(3))`, because a `key => $x` pair has
+carried a container since row 10. Reading through the container in those three functions is the
+whole fix, and it is pinned *without* `.pairs` in `t/pairs-element-container.t`.
+
+**A second pre-existing gap, at the other end: storing a pair value.** `.value` must return the
+container (row 6), and mutsu decontainerizes at variable reads and element reads but not at method
+returns — so a `.value` result reaching a **store** arrived as a live cell and was stored as one.
+`my %h = a => 1; my @l; @l.push(%h.pairs[0].value); %h<a> = 9` left `@l` as `[9]`; raku says `[1]`,
+because only a bind aliases and `push` copies. Four store sites needed the read-through, each at a
+hook it already had: `normalize_push_unshift_arg` (`runtime/methods_mut.rs`), `flatten_append_args`
+(`runtime/mod.rs`), the element-assign itemization hook (`vm/vm_var_assign_element.rs`) and the
+slow-path element assign (`vm/vm_var_assign_index_named.rs`). The `:=` bind is untouched — it arrives
+wrapped in a `__mutsu_bind_index_value` marker — and the reference-push shape (`@a.push(@b)`) keeps
+its deliberate cell sharing behind the existing `value_source_idx` guard. As with the weight bug,
+all four reproduce on `main` with a plain `key => $x` pair.
+
+**The read-boundary decision §5 Q4 asked for, stated as a rule rather than a mechanism.** A Pair's
+value is read as **data** everywhere except an lvalue `.value =` and `.VAR`. A site that
+*type-tests* or *numifies* a pair value must `deref_container()` first; a site that merely passes it
+along need not, because the element and list chokepoints already decontainerize. No new view, no
+audited conversion of 460 sites: the deferred ticket's premise that both were required is retired by
+measurement. What remains true from it is the diagnosis of *why* the Pair is special — a flat list
+of cells is safe because list consumers decontainerize, and it is the Pair **wrapper** that carries a
+cell into code that reads it structurally.
+
+`todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md` is resolved and moved to
+`news/2026-09/pairs-hands-out-element-containers.md`. Verified with `make test`, a full local
+`make roast` (PASS), and the bundled-battery gate (274/297, unchanged).
 
 ## Implementation status — §1.3 row 10 (2026-08-28)
 
@@ -500,8 +565,8 @@ The Pair-value leak that backed `.pairs` out (above) does not bite here: the Fat
 **one** named element on demand, exactly like the `:p`/`:kv` adverbs of slice 2, rather than handing
 a coercion a whole container's worth of cells.
 
-**Still open in slice 3/4**: rows 3, 4, 9 (`.pairs` routing). Row 11 landed 2026-09-01 and row 12
-is done. One divergence is knowingly left behind by the array-token work: a
+**Still open in slice 4**: the `methods_mut_method_lvalue.rs` env-scan compensator deletion. Rows 3,
+4 and 9 (`.pairs` routing) landed 2026-09-01; row 11 landed 2026-09-01 and row 12 is done. One divergence is knowingly left behind by the array-token work: a
 bound *slice* (`my @s := @a[1,5]`) and the two multi-dim descents still grow the array eagerly,
 because their promoted cells are stored as elements of *another* array and an out-of-range index
 would put a deferred token where neither `resolve_array_entry` nor the bound-slice write-through
@@ -647,5 +712,5 @@ are recorded here so a future reader can see the shape of the whole and not re-d
 
 ---
 
-*Slices 1-3 of this ADR are implemented; the decision stands. If the mechanism judgment changes
+*Slices 1-3 of this ADR are implemented (slice 3 completed 2026-09-01); the decision stands. If the mechanism judgment changes
 later, supersede it rather than rewriting it.*

@@ -51,8 +51,9 @@ container.
 Fixing it properly means the `Pair` a mutable QuantHash's `.pairs` produces has
 to know its source, the way ADR-0036's element containers know theirs — which
 is exactly the "route `.pairs` at the producer" work that ADR-0036 slice 3
-implemented, measured, and **deliberately backed out**
-(`todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md`).
+landed on 2026-09-01
+(`news/2026-09/pairs-hands-out-element-containers.md`) -- for a plain mutable
+Array/Hash only.
 A QuantHash weight is not a stored element container, though, and
 `.value = 0` *removes* the key, so it cannot simply become a `ContainerRef`
 either — ADR-0036 §5 Q2 records the decision to keep the weight on its own arm.
