@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 72;
+plan 86;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -345,14 +345,54 @@ plan 72;
 
 # row 19
 {
-    todo 'ADR-0045 slice 5: an immutable source must reject an `is rw` bind';
     dies-ok { for (1, 2) -> $v is rw { $v = 5 } }, 'row 19: `is rw` over a List dies at bind time';
 }
 
 # row 30
 {
-    todo 'ADR-0045 slice 5: an immutable source must reject an `is rw` bind';
     dies-ok { for 1 .. 2 -> $v is rw { $v = 5 } }, 'row 30: `is rw` over a Range dies at bind time';
+}
+
+# rows 19/30, the rest of the bind-time rejection (ADR-0045 slice 5). The bind
+# fails BEFORE the body runs, so an empty body dies just as an assigning one
+# does, and the exception is raku's own `X::Parameter::RW` with its wording.
+{
+    dies-ok { for <a b> -> $v is rw { } },
+        'row 19b: `is rw` over a word list dies even with an empty body';
+    dies-ok { for (1, 2) <-> $v { } }, 'row 19c: `<->` over a List dies too';
+    dies-ok { my %h = a => 1; for %h.keys -> $v is rw { } },
+        'row 19d: `%h.keys` yields bare keys, so an `is rw` bind dies';
+    dies-ok { my $a = 1; my $b = 3; for $a .. $b -> $v is rw { } },
+        'row 30b: a Range built from variables is still immutable';
+
+    my $err;
+    try { for (1, 2) -> $v is rw { }; CATCH { default { $err = $_ } } };
+    isa-ok $err, X::Parameter::RW, 'row 19: the bind failure is X::Parameter::RW';
+    is $err.message,
+        "Parameter '\$v' expects a writable container (variable) as an argument,\n"
+        ~ "but got '1' (Int) as a value without a container.",
+        'row 19: ... with raku\'s wording';
+    is $err.symbol, '$v', 'row 19: .symbol names the parameter';
+    is $err.got, 1, 'row 19: .got carries the offending item';
+}
+
+# The rejection is keyed on the SOURCE being provably bare, not on "mutsu did
+# not promote this element": a producer ADR-0045 has not routed yet must keep
+# its (currently lost) write rather than acquire a spurious death, and the
+# forms that raku itself accepts must keep working.
+{
+    lives-ok { for (1, 2) -> $v is copy { $v = 5 } },
+        'invariant: `is copy` over a List is fine -- it binds a fresh container';
+    lives-ok { for () -> $v is rw { } },
+        'invariant: an empty source binds nothing, so there is nothing to reject';
+    lives-ok { for (1, 2) -> \v { my $x = v } },
+        'invariant: a sigilless param binds a bare item and only dies on assignment';
+    lives-ok { my @a = 1, 2; for flat(@a) -> $v is rw { $v = 9 } },
+        'invariant: an unrouted producer over a real Array must not die';
+    lives-ok { my @a = 1, 2; for @a[0, 1] -> $v is rw { $v = 9 } },
+        'invariant: an array slice source must not die';
+    lives-ok { my $x = 1; for $x -> $v is rw { $v = 5 } },
+        'invariant: a scalar source is a container';
 }
 
 # row 28

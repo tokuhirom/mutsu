@@ -452,6 +452,7 @@ impl Compiler {
                     .for_single_array_source_local(&Self::for_single_array_source(iterable)),
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
                 source_items_are_bare: Self::for_iterable_yields_bare_items(iterable),
+                param_sigilless: param_def.as_ref().is_some_and(|d| d.sigilless),
             })));
         // Register sigilless for-params while compiling the (merged) body so
         // their bind statements skip scalar-store itemization — mirrors the

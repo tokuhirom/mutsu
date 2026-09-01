@@ -3159,6 +3159,16 @@ impl Compiler {
             Expr::ArrayLiteral(items) => {
                 !items.is_empty() && items.iter().all(|i| matches!(i, Expr::Literal(_)))
             }
+            // A `Range` yields immutable endpoints-derived values and never
+            // element containers, whatever its endpoints are -- `for $a..$b
+            // -> $v is rw` fails to bind in raku exactly as `for 1..2` does.
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+            ),
             // `.keys` on a container yields freshly built keys, never the
             // container's element cells. Restricted to `@`/`%` variables so a
             // user-defined `keys` method returning containers is not affected.

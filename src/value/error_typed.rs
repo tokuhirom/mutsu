@@ -694,6 +694,31 @@ impl RuntimeError {
         self
     }
 
+    /// `X::Parameter::RW` — an `is rw` / `<->` parameter was handed a value
+    /// that has no container behind it, so there is nothing for the binding to
+    /// alias. Raku raises this at BIND time, before the body runs, both for an
+    /// ordinary routine call (`sub f($x is rw) {}; f(1)`) and for a `for` loop
+    /// over an immutable source (`for (1,2) -> $v is rw { }`, ADR-0045 rows
+    /// 19/30), with one wording; this constructor is that wording.
+    ///
+    /// `symbol` is the parameter as written, sigil included (`$x`), and `.got`
+    /// is the offending value itself — raku renders it with `.gist`, not
+    /// `.raku`, so a `Str` shows unquoted (`but got 'a' (Str)`).
+    pub(crate) fn parameter_rw_not_container(symbol: &str, got: &Value) -> Self {
+        let msg = format!(
+            "Parameter '{}' expects a writable container (variable) as an argument,\n\
+but got '{}' ({}) as a value without a container.",
+            symbol,
+            crate::runtime::utils::gist_value(got),
+            crate::runtime::utils::got_type_name(got),
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("symbol".to_string(), Value::str(symbol.to_string()));
+        attrs.insert("got".to_string(), got.clone());
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::Parameter::RW", attrs)
+    }
+
     /// Like `typecheck_binding_parameter`, but with raku's exact wording
     /// ("expected T but got U (repr)", not "expected T, got U") and `.got`
     /// carrying the actual offending value. Matches the hand-rolled format

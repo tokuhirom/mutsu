@@ -21,6 +21,17 @@ fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
         if !items.is_empty() && items.iter().all(crate::value::Value::is_container_ref))
 }
 
+/// A parameter as raku spells it in an error message. `ParamDef::name` carries
+/// no sigil for a scalar (`x` for `$x`), so restore it; a name that already has
+/// one (`@a`, `%h`, `&c`) is left alone.
+fn param_display_name(pd: &crate::ast::ParamDef) -> String {
+    if pd.name.starts_with(['$', '@', '%', '&']) {
+        pd.name.clone()
+    } else {
+        format!("${}", pd.name)
+    }
+}
+
 fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     params.iter().any(|p| {
         !p.starts_with(':')
@@ -380,11 +391,7 @@ impl Interpreter {
                     .next()
                     .unwrap_or(&resolved_constraint);
                 if self.registry().subsets.contains_key(base) {
-                    let param_display = if pd.name.starts_with(['$', '@', '%', '&']) {
-                        pd.name.clone()
-                    } else {
-                        format!("${}", pd.name)
-                    };
+                    let param_display = param_display_name(pd);
                     return Err(RuntimeError::typecheck_binding_parameter(
                         &display_name,
                         &resolved_constraint,
@@ -408,10 +415,8 @@ impl Interpreter {
                 // anonymous-parameter twin.
                 let param_display = if pd.name == "__type_only__" {
                     "<anon>".to_string()
-                } else if pd.name.starts_with(['$', '@', '%', '&']) {
-                    pd.name.clone()
                 } else {
-                    format!("${}", pd.name)
+                    param_display_name(pd)
                 };
                 return Err(RuntimeError::typecheck_binding_parameter_with_repr(
                     &param_display,
@@ -1553,10 +1558,10 @@ impl Interpreter {
                                 // A bare cell IS a writable lvalue (mirrors the
                                 // positional arm's deepmap/hyper case).
                             } else if named_is_rw {
-                                return Err(RuntimeError::new(format!(
-                                    "X::Parameter::RW: '{}' expects a writable variable argument",
-                                    pd.name
-                                )));
+                                return Err(RuntimeError::parameter_rw_not_container(
+                                    &param_display_name(pd),
+                                    &bound_value,
+                                ));
                             }
                             // is raw with a non-lvalue: binds readonly (the
                             // trait pass below keeps raw params writable, which
@@ -1851,10 +1856,10 @@ impl Interpreter {
                             // (`*++`, `*--`) write to the source slot. Keep it
                             // mutable (do NOT mark readonly).
                         } else if is_rw {
-                            return Err(RuntimeError::new(format!(
-                                "X::Parameter::RW: '{}' expects a writable variable argument",
-                                pd.name
-                            )));
+                            return Err(RuntimeError::parameter_rw_not_container(
+                                &param_display_name(pd),
+                                &args[positional_idx],
+                            ));
                         } else {
                             // is raw with non-lvalue: param stays readonly
                             // (not added to rw_bindings, will be marked readonly below)

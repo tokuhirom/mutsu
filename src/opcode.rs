@@ -333,6 +333,17 @@ pub(crate) struct ForLoopSpec {
     /// topics (`for @a[0..1]`, `for @a.map(...)`) read-only. A mixed list
     /// (`for 1, $a`) stays writable, which is lax but never wrong.
     pub(crate) source_items_are_bare: bool,
+    /// Whether the single named loop parameter is *sigilless* (`-> \v`).
+    ///
+    /// ADR-0045 slice 5 rejects an `is rw` / `<->` bind against a source whose
+    /// items are provably bare values, at bind time, with raku's
+    /// `X::Parameter::RW`. A sigilless parameter sets the same
+    /// [`Self::do_writeback`] but must NOT take that rejection: raku binds
+    /// `-> \v` to a bare item happily and only dies if the body *assigns*
+    /// through it ("Cannot modify an immutable Int"). The parameter name alone
+    /// cannot tell the two apart -- the AST stores `\v` as plain `"v"` -- so
+    /// the compiler records the distinction here.
+    pub(crate) param_sigilless: bool,
 }
 
 impl ForLoopSpec {
