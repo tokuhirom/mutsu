@@ -1,6 +1,6 @@
 use Test;
 
-plan 15;
+plan 21;
 
 # `key => $var` captures $var's container, so the Pair's value aliases the
 # variable: assigning `.value` writes through to the source variable, and the
@@ -71,6 +71,36 @@ plan 15;
     $p.value = "set";
     is $y, "set", 'an uninitialized UNTYPED scalar is captured too';
 }
+# The `Pair.new` constructor form captures the same way the fat arrow does.
+# Its value argument is already tagged with `WrapVarRef` at compile time
+# (`compile_expr_method_on_var`); what it lacked was the type-object boxing,
+# so an uninitialized scalar arrived as a bare `Int`/`Any` with nothing to
+# write through to.
+{
+    my Int $x;
+    my $p = Pair.new("k", $x);
+    $p.value = 5;
+    is $x, 5, 'Pair.new captures an uninitialized typed scalar as a container';
+    is $p.value.VAR.^name, 'Scalar', 'the captured value is a container';
+}
+{
+    my $z;
+    my $p = Pair.new("k", $z);
+    $p.value = 5;
+    is $z, 5, 'Pair.new captures an uninitialized untyped scalar too';
+}
+{
+    my $a;
+    my $b;
+    my $pa = Pair.new("k", $a);
+    my $pb = Pair.new("k", $b);
+    $pa.value = 1;
+    is $b, Any, 'Pair.new: a sibling undefined scalar is untouched';
+    $pb.value = 2;
+    is $a, 1, 'Pair.new: the first pair owns its own container';
+    is $b, 2, 'Pair.new: and the second owns its own';
+}
+
 {
     # Boxing each uninitialized scalar into its OWN cell is what keeps distinct
     # variables distinct -- two pairs over two undefined scalars must not share.

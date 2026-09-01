@@ -427,9 +427,19 @@ a compensator that fakes container semantics for a Pair that has none.
 >    while `$x` stayed `Int`. **Fixed 2026-09-01**: `MakePair`/`MakeNamedArg` capture with
 >    `box_type_objects` set, the same way List aliasing already did. Pinned in
 >    `t/pair-value-container.t`, including that two undefined scalars stay two distinct containers.
-> 2. **`Pair.new("k", $x)` must capture too.** The method-argument form does not go through the
->    fat-arrow compile-time capture, so it still binds the bare value and still relies on the rebind.
->    Not fixed — `todo/tickets/pair-new-argument-does-not-capture-its-scalar-container.md`.
+> 2. **`Pair.new("k", $x)` must capture too.** **Fixed 2026-09-01, and the ticket filed for it was
+>    itself wrong.** That ticket reasoned that the method-argument form "does not go through the
+>    fat-arrow compile-time capture, so nothing tags `$x`" and would need a new compile-time special
+>    case. It already had one: `compile_expr_method_on_var` tags `Pair.new`'s value argument with
+>    `WrapVarRef`, and `exec_call_method_mut` unboxes it when the receiver is the native `Pair` type.
+>    The *only* difference from the fat arrow was the same `box_type_objects` flag as prerequisite 1,
+>    which is why an *initialized* scalar already aliased correctly on this path
+>    (`$p.value.VAR.^name` was already `Scalar`) while an uninitialized one did not. One flag, not a
+>    new mechanism. The ticket was deleted rather than kept, since it described work that did not
+>    exist.
+>
+> With both prerequisites landed, the guard itself is unblocked:
+> `todo/tickets/pair-value-assign-does-not-enforce-immutable-value.md`.
 >
 > The blast radius is small and was measured, not guessed: across the **whole roast whitelist** the
 > compensator fires **4 times in 3 files** (`S02-types/pair.t`, `S02-types/array-shapes.t`,
