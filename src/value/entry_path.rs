@@ -170,11 +170,21 @@ pub(crate) fn is_container_hole(value: &Value) -> bool {
 }
 
 /// A fresh, empty container of the kind `step` descends into.
+///
+/// ADR-0040: the walk-create stores this container into an element slot of the
+/// level above it, and an element of a real `Array`/`Hash` is a `Scalar`
+/// container -- so a level vivified on the way down a deferred path itemizes
+/// exactly like one a direct `%h<a><b> = ...` vivifies (raku renders
+/// `my %h; my $r := %h<a>[1]; $r = "x"; %h<a>.raku` as `$[Any, "x"]`).
+/// Itemizing an `Array` only flips its `ArrayKind` tag (a `Hash`, a bool on the
+/// repr), so the shared backing `Gc` the walk keeps descending through is
+/// untouched.
 fn fresh_level_for(step: &EntryStep) -> Value {
-    match step {
+    let fresh = match step {
         EntryStep::Key(_) => Value::hash(std::collections::HashMap::new()),
         EntryStep::Index(_) => Value::real_array(Vec::new()),
-    }
+    };
+    fresh.itemize_for_element_store()
 }
 
 /// The container slot a deferred path terminates at, once located.

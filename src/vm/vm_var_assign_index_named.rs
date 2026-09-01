@@ -2946,6 +2946,24 @@ impl Interpreter {
             return Ok(());
         }
 
+        // ADR-0040 slice 4: a value assigned through a chained subscript lands
+        // in an element slot, so it itemizes exactly like a single-level
+        // `%h<a> = [1,2]` does (raku: `%h<a><b> = [1,2]` then `%h<a><b>.raku`
+        // is `$[1, 2]`, and ONE item in list context). Slice 1 hooked the
+        // single-level op's entry; this is the same hook for the two-level one.
+        // A `:=` bind is excluded — a bound element keeps the source's bare
+        // value — and so is a slice/junction inner subscript, whose RHS the
+        // sites below split per element (itemizing it whole would change the
+        // arity).
+        let val = if matches!(
+            inner_idx.view(),
+            ValueView::Junction { .. } | ValueView::Array(..)
+        ) {
+            val
+        } else {
+            val.itemize_for_element_store()
+        };
+
         // A user-defined Associative/Positional object as the chained-subscript
         // base (`$q<foo>[0] = v` where `$q` is a URI::Query instance): read the
         // inner collection via AT-KEY/AT-POS; a Proxy element routes the write
@@ -3288,6 +3306,26 @@ impl Interpreter {
     /// assign so that a write to a container-valued bound element
     /// (`%h<key><inner> = ...` where `%h<key>` is a cell) mutates the shared,
     /// held container in place instead of being silently dropped.
+    /// A freshly autovivified intermediate container, ready to be stored INTO
+    /// an element slot of its parent.
+    ///
+    /// ADR-0040: an element of a real `Array`/`Hash` is a `Scalar` container,
+    /// and that holds for a container mutsu vivified on the way down a chained
+    /// subscript just as much as for one the program assigned — raku renders
+    /// `my %h; %h<a><b>[2] = "z"; %h<a><b>.raku` as `$[Any, Any, "z"]`, and
+    /// counts it as ONE item in list context. Itemizing an `Array` only flips
+    /// its `ArrayKind` tag (a `Hash`, a bool on the repr), so the shared
+    /// backing `Gc` — and therefore the `&mut` the caller takes into the slot
+    /// to keep descending — is untouched.
+    fn fresh_autoviv_container(positional: bool) -> Value {
+        let fresh = if positional {
+            Value::real_array(Vec::new())
+        } else {
+            Value::hash(std::collections::HashMap::new())
+        };
+        fresh.itemize_for_element_store()
+    }
+
     pub(super) fn assign_into_nested_container(
         target: &mut Value,
         outer_key: &str,
@@ -3501,6 +3539,19 @@ impl Interpreter {
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
             .as_ref()
             .map(|_| crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())));
+        // ADR-0040 slice 4: the leaf of a 3+-level chain is an element store
+        // like any other (see the two-level op's hook above). A `:=` bind keeps
+        // its bare source value, and a slice/junction innermost subscript is
+        // split per element by the store sites below.
+        let val = if bind_cell.is_some()
+            || matches!(
+                indices_val[0].view(),
+                ValueView::Junction { .. } | ValueView::Array(..)
+            ) {
+            val
+        } else {
+            val.itemize_for_element_store()
+        };
 
         // Extract positional flags from constant
         let flags_val = code.constants[positional_flags_idx as usize].clone();
@@ -3573,11 +3624,7 @@ impl Interpreter {
                                         | ValueView::ContainerRef(..)
                                 );
                                 if needs_viv {
-                                    arr[i] = if next_positional {
-                                        Value::real_array(Vec::new())
-                                    } else {
-                                        Value::hash(std::collections::HashMap::new())
-                                    };
+                                    arr[i] = Self::fresh_autoviv_container(next_positional);
                                 }
                                 Ok(&mut arr[i] as *mut Value)
                             } else {
@@ -3589,12 +3636,10 @@ impl Interpreter {
                     } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
                         let hash = crate::value::gc_data_mut(hash_arc);
                         if !hash.contains_key(key.as_str()) {
-                            let new_val = if next_positional {
-                                Value::real_array(Vec::new())
-                            } else {
-                                Value::hash(std::collections::HashMap::new())
-                            };
-                            hash.insert(key.clone(), new_val);
+                            hash.insert(
+                                key.clone(),
+                                Self::fresh_autoviv_container(next_positional),
+                            );
                         }
                         hash.get_mut(key.as_str()).unwrap() as *mut Value
                     }) {
@@ -3616,11 +3661,7 @@ impl Interpreter {
                                         i + 1,
                                         Value::package(Symbol::intern("Any")),
                                     )?;
-                                    arr[i] = if next_positional {
-                                        Value::real_array(Vec::new())
-                                    } else {
-                                        Value::hash(std::collections::HashMap::new())
-                                    };
+                                    arr[i] = Self::fresh_autoviv_container(next_positional);
                                     Ok(&mut arr[i] as *mut Value)
                                 } else {
                                     Ok(current)
@@ -3630,12 +3671,10 @@ impl Interpreter {
                             current = next?;
                         } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
                             let hash = crate::value::gc_data_mut(hash_arc);
-                            let new_val = if next_positional {
-                                Value::real_array(Vec::new())
-                            } else {
-                                Value::hash(std::collections::HashMap::new())
-                            };
-                            hash.insert(key.clone(), new_val);
+                            hash.insert(
+                                key.clone(),
+                                Self::fresh_autoviv_container(next_positional),
+                            );
                             hash.get_mut(key.as_str()).unwrap() as *mut Value
                         }) {
                             current = next;

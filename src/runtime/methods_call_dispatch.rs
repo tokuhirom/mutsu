@@ -513,6 +513,22 @@ impl Interpreter {
                 return self.call_method_with_values(deconted, method, args);
             }
         }
+        // The Hash half of the same rule. An itemized Hash carries its
+        // itemization as a bool on the repr rather than as an `ArrayKind`, so
+        // it needs its own arm: `.VAR` on `$(%h)` is `Scalar` either way, but
+        // only the `ValueView::Scalar` spelling was covered. Reachable since
+        // ADR-0040 slice 4 started itemizing chained-subscript stores, which
+        // produce the flag form (`my %g; %g<a>[0]<k> = 5; %g<a>[0].VAR.^name`).
+        // Only `.VAR` is redirected: unlike the Array case there is nothing to
+        // decontainerize for other methods -- an itemized Hash is still a Hash,
+        // and `hash_is_itemized` is already consulted by the renderers and the
+        // flattening chokepoints.
+        if method == "VAR"
+            && matches!(target.view(), ValueView::Hash(_))
+            && target.hash_is_itemized()
+        {
+            return Ok(Value::package(Symbol::intern("Scalar")));
+        }
         // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
         // `.raku`/`.gist`. A user `.raku` wraps its body in
         // `self.rakuseen(self.^name, { ... })`; on the first sight of an id we run
