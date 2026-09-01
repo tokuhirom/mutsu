@@ -2129,6 +2129,11 @@ impl Interpreter {
                 self.stack.push(demoted);
                 *ip += 1;
             }
+            OpCode::DerefContainer => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                self.stack.push(val.into_deref());
+                *ip += 1;
+            }
             OpCode::Decont => {
                 self.exec_decont_op();
                 *ip += 1;
