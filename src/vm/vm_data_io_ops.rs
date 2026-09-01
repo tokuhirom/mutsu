@@ -131,7 +131,10 @@ impl Interpreter {
             .iter()
             .any(|v| matches!(v.view(), ValueView::Slip(_)))
         {
-            return values;
+            return values
+                .into_iter()
+                .filter(|value| !value.is_string_pair_value())
+                .collect();
         }
         let mut out = Vec::with_capacity(values.len());
         for v in values {
@@ -140,7 +143,9 @@ impl Interpreter {
                 _ => out.push(v),
             }
         }
-        out
+        out.into_iter()
+            .filter(|value| !value.is_string_pair_value())
+            .collect()
     }
 
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {

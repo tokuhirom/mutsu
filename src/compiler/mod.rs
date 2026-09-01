@@ -2471,6 +2471,15 @@ impl Compiler {
     /// Slip-flatten pass; `|EXPR` args (already a `MakeSlip`) are left to flatten.
     fn compile_slurpy_out_args(&mut self, exprs: &[Expr]) {
         for expr in exprs {
+            // These statement-form listops have the same `**@` / `**%`
+            // split as their routine forms.  Preserve the in-band named
+            // marker for a colonpair (or bareword fat-arrow) written directly
+            // in their argument list, so the I/O op can leave it out of the
+            // positional output.  A grouped Pair is deliberately not this
+            // shape and remains printable data (ADR-0021).
+            if matches!(expr, Expr::Binary { op, .. } if *op == TokenKind::FatArrow) {
+                self.mint_named_pair = true;
+            }
             self.compile_expr(expr);
             if !Self::is_slip_interpolation_arg(expr) {
                 self.code.emit(OpCode::DeSlip);
