@@ -1,10 +1,10 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
-- **Status**: Slices 1-4 implemented — slices 1-2 landed (2026-08-20); slice 3 completed 2026-09-01
-  when `.pairs` finally routed (see "Implementation status — slice 3, `.pairs` (2026-09-01)");
-  slice 4 completed 2026-09-01 (enforcement with #7190, reporting and then the compensator
-  deletion — see "Implementation status — slice 4, the deletion"). Slice 5 (the sweep) is what
-  is left
+- **Status**: **Implemented — every slice landed.** Slices 1-2 landed 2026-08-20; slice 3 completed
+  2026-09-01 when `.pairs` finally routed; slice 4 completed 2026-09-01 (enforcement with #7190,
+  then reporting, then the compensator deletion); slice 5's sweep re-measured §1.3 at 12/12 and
+  swept 69 rows across the whole surface. The three residual divergences it found are tracked as
+  tickets, not as further slices — see "Implementation status — slice 5, the sweep"
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -690,6 +690,67 @@ container's name (`Type check failed for an element of @` where raku says `@a`) 
 site retagged it — `todo/tickets/promoted-element-cell-does-not-know-its-container-name.md`. The
 bound-slice eager vivification noted above is likewise unchanged
 (`todo/tickets/bound-array-slice-still-vivifies-eagerly.md`).
+
+---
+
+## Implementation status — slice 5, the sweep (2026-09-01)
+
+**§1.3 re-measured: 12/12 rows reach raku's answer**, plus the two `.VAR.^name`
+probes from §1.1. Each row was run as its own one-line program and raku's and
+mutsu's `stdout`+`stderr` compared verbatim (`tmp/comp/s13.sh` at the time of
+writing), so the `dies` rows are checked on their message, not just on dying.
+
+The sweep then went past the table, because TRIAGE's standing advice after
+ADR-0045 slice 6 is that a divergence matrix cannot see what an ADR's own
+mechanism does off the rows it was written from. **69 rows over the whole
+surface this ADR owns** — subscript adverbs on arrays and hashes (single,
+slice, out-of-range, `:exists`/`:delete`), every producer and its `for`-loop
+consumption, immutable sources, element type constraints, 1-D and multi-dim
+shaped arrays, QuantHash weights, the "a Pair value is read as DATA" rule from
+slice 3, and subscripting a producer's result. Twelve rows differ, in three
+groups, **none of them a regression** — every one was re-run against `main` at
+`f03b85978` and behaves identically there:
+
+1. **Five rows are the blame *name* only** (§1.3 row 12, and the `:p`/`.pairs`/
+   `:=` forms of the same check on a typed array or hash). The class is right,
+   the type is right, the container is not: mutsu says `an element of @` where
+   raku says `an element of @a`. Already tracked as
+   `todo/tickets/promoted-element-cell-does-not-know-its-container-name.md`.
+   One of the five (`my Int @a[2]`) additionally shows raku itself wording a
+   shaped typed array's failure as `Type check failed in assignment to ;` —
+   with an empty name — so that row is not a straightforward target.
+
+2. **One row is the QuantHash weight arm's known keying.**
+   `for $b.pairs -> $p { $p.value = 5 }` dies where the *implicit-topic* form
+   `for $b.pairs { .value = 5 }` works, because `topic_source_var` is set when
+   the loop binds the topic and `-> $p` binds a named parameter instead. This is
+   the sharpest repro yet of
+   `todo/tickets/quanthash-pairs-value-write-needs-a-for-loop-to-reach-the-source.md`
+   (two programs differing only in the loop's parameter form), and it has been
+   added there. §5 Q2's decision to keep the weight arm stands; what is wrong is
+   how the arm finds its source.
+
+3. **Five rows are one genuinely new finding: subscripting a producer's `Seq`
+   drops the element container.** `(@a.values)[0].VAR.^name` is `Str` where raku
+   says `Scalar`, and `(@a.values)[0] = "x"`, `(@a.kv)[1] = "x"` and
+   `my $c := (@a.values)[0]; $c = "x"` are all **silent no-ops**. The producer is
+   fine (`for @a.values -> $v is rw` works, `.head` keeps the cell) and the
+   consumer is fine (`@a.pairs[0].value` keeps it); it is the positional
+   subscript in between. `exec_index_op_with_positional` normalizes a `Seq`
+   receiver to an `ArrayKind::List` array and the read then goes through
+   `resolve_array_entry` — the decontainerization chokepoint — which is correct
+   for every other array read and wrong for this one. Filed as
+   `todo/tickets/producer-seq-index-read-decontainerizes-the-element-cell.md`.
+
+That third group is this ADR's §6 blast-radius consequence seen from the other
+side: the chokepoint that stops a cell leaking into `.raku`/`.WHAT` also stops
+it reaching a place that wants it. Fixing it needs the `Seq` to record that its
+items *are* element containers, which no slice of this ADR gives it — hence a
+ticket rather than a slice 6.
+
+Whitelisted roast families: the whole suite was run, not just S02/S09/S32 —
+`make roast` PASS, 1435 files / 218,833 tests, together with `make test` and the
+bundled-battery gate (274/297).
 
 ## 5. Open questions (the forks for the deciders)
 
