@@ -94,12 +94,20 @@ impl Interpreter {
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) -> Result<(), RuntimeError> {
-        if let Some(constraint) = crate::value::lookup_container_constraint(cell)
-            && !matches!(constraint.as_str(), "Any" | "Mu")
+        if let Some(c) = crate::value::lookup_cell_constraint(cell)
+            && !matches!(c.ty.as_str(), "Any" | "Mu")
             && !val.is_nil()
-            && !self.type_matches_value(&constraint, val)
+            && !self.type_matches_value(&c.ty, val)
         {
-            return Err(RuntimeError::typecheck_assignment(&constraint, val, None));
+            // An ELEMENT's cell blames the container, exactly as a direct
+            // `@a[0] = v` store does ("Type check failed for an element of
+            // @a"); a plain typed scalar's cell keeps the assignment wording.
+            return Err(match c.element_of {
+                Some(owner) => {
+                    crate::runtime::utils::type_check_element_typed_error(&owner, &c.ty, val)
+                }
+                None => RuntimeError::typecheck_assignment(&c.ty, val, None),
+            });
         }
         Ok(())
     }

@@ -427,7 +427,27 @@ pub(crate) struct InstanceAttrs {
 #[derive(Debug)]
 pub struct ContainerCell {
     value: Mutex<Value>,
-    constraint: Mutex<Option<String>>,
+    constraint: Mutex<Option<Box<CellConstraint>>>,
+}
+
+/// A cell's `of`-type, plus where it came from.
+///
+/// Rakudo keeps both on one `$!descriptor`, and both are observable: the type
+/// decides whether an assignment is legal, and the origin decides which message
+/// the failure gets. A typed scalar's cell (`my Int $x`) reports "in assignment
+/// to $x"; an ELEMENT's cell reports "for an element of @a" and names the
+/// container, not the alias the write came through.
+#[derive(Debug, Clone)]
+pub struct CellConstraint {
+    /// The `of`-type the cell enforces on assignment.
+    pub ty: String,
+    /// Set when this cell is an *element* of a container: the container's
+    /// display name, as raku's "for an element of ..." wording spells it.
+    /// `array_slot_ref`/`hash_slot_ref` seed it with the bare sigil (`@`/`%`),
+    /// which is exactly what raku prints for an anonymous container; a
+    /// promotion site that knows the source variable overwrites it with the
+    /// real name.
+    pub element_of: Option<String>,
 }
 
 impl ContainerCell {
@@ -452,14 +472,53 @@ pub fn register_container_constraint(
     cell: &crate::gc::Gc<crate::value::ContainerCell>,
     type_name: &str,
 ) {
-    *cell.constraint.lock().unwrap() = Some(type_name.to_string());
+    *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
+        ty: type_name.to_string(),
+        element_of: None,
+    }));
+}
+
+/// Record that `cell` is an ELEMENT of a container whose `of`-type is
+/// `type_name` and whose display name is `owner` — ADR-0036 slice 4. The owner
+/// only shapes the error message; the check itself is `type_name`'s.
+pub fn register_element_constraint(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    type_name: &str,
+    owner: &str,
+) {
+    *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
+        ty: type_name.to_string(),
+        element_of: Some(owner.to_string()),
+    }));
+}
+
+/// Name the container `cell` is an element of, when it is one and the promotion
+/// site recorded a better name than the bare sigil.
+pub fn retag_element_owner(cell: &crate::gc::Gc<crate::value::ContainerCell>, owner: &str) {
+    if let Some(c) = cell.constraint.lock().unwrap().as_mut()
+        && c.element_of.is_some()
+    {
+        c.element_of = Some(owner.to_string());
+    }
 }
 
 /// Look up the `of`-type constraint of a `ContainerRef` cell, if any.
 pub fn lookup_container_constraint(
     cell: &crate::gc::Gc<crate::value::ContainerCell>,
 ) -> Option<String> {
-    cell.constraint.lock().unwrap().clone()
+    cell.constraint
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|c| c.ty.clone())
+}
+
+/// Look up the full constraint record — the `of`-type together with the
+/// container name to blame in an element type-check failure.
+pub fn lookup_cell_constraint(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+) -> Option<CellConstraint> {
+    cell.constraint.lock().unwrap().as_deref().cloned()
 }
 
 /// Cells that have been made read-only via `Pair.freeze`. A frozen `ContainerRef`

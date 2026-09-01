@@ -276,8 +276,12 @@ impl Value {
                 elem,
                 Value::Nil,
             )));
+            // The owner name defaults to the bare sigil, which is what raku
+            // prints for an anonymous container; a promotion site that knows
+            // the source variable retags it (`retag_element_owner`), so the
+            // failure blames `@a` the way a direct store does.
             if let Some(tc) = value_type.as_deref() {
-                crate::value::register_container_constraint(&cell, tc);
+                crate::value::register_element_constraint(&cell, tc, "@");
             }
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))

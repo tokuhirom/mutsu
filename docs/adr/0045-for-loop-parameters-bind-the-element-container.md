@@ -1,8 +1,7 @@
 # ADR-0045: A `for` loop parameter binds the element *container*; the per-iteration writeback is retired
 
-- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27, slice 5's bind-time
-  rejection 2026-09-01; slice 5's element constraint and slice 6 open, see §8 "Implementation
-  status")
+- **Status**: Accepted — partially implemented (slices 0-4 landed 2026-08-27, slice 5 landed
+  2026-09-01; only row 16 (`.kv`) and slice 6's sweep remain, see §8 "Implementation status")
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (which names
@@ -711,14 +710,16 @@ been raising an invented `X::Parameter::RW: 'x' expects a writable variable argu
 `.symbol`/`.got`, not an exception instance at all). `sub f($x is rw) {}; f(1)` matches raku's message
 now too.
 
-**Row 28 is NOT part of this** — the element type constraint stays ADR-0036 slice 4's, as the note
-below says.
+**Row 28 landed separately** — the element type constraint belongs to the promoted cell, so ADR-0036
+slice 4 owns it, and it arrived in two pieces: the check with #7190, the raku wording (`for an
+element of @a`, naming the container rather than the alias) on 2026-09-01. The loop's contribution to
+the second piece is a retag — it has already resolved its source name, so it tells the cell which
+container to blame. See ADR-0036's slice-4 status.
 
 ### What slices 5-6 still own
 
-Row 16 (`.kv`), carried over from slice 4 — see above — and row 28 (the element type constraint;
-rows 19/30 landed 2026-09-01, see just above). It is `todo`-marked in `t/for-loop-element-alias.t`
-with the owning reason named in the reason string. The writeback family survives only as the fallback for shapes not yet converted:
+Row 16 (`.kv`), carried over from slice 4 — see above. It is the only `todo`-marked row left in
+`t/for-loop-element-alias.t`; rows 19/30 and 28 all landed 2026-09-01. The writeback family survives only as the fallback for shapes not yet converted:
 `write_back_for_rw_param`'s `kv_mode`, multi-parameter and scalar arms, and
 `write_back_hash_value_item` for a hash iteration that could not be promoted.
 

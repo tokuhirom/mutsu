@@ -213,7 +213,10 @@ impl Interpreter {
                 if !Self::array_is_aliasable(&arr, Some(idx)) {
                     return None;
                 }
-                arr.array_slot_ref(idx, true)
+                Some(Self::name_element_owner(
+                    arr.array_slot_ref(idx, true)?,
+                    source,
+                ))
             }
             ForElementAlias::ArrayValue(arr) => {
                 if !Self::array_is_aliasable(arr, Some(idx)) {
@@ -232,9 +235,23 @@ impl Interpreter {
                 // which is a path, not an alias — and this loop's key came from
                 // the map, so a miss means the body deleted it.
                 hash.hash_get_str(key)?;
-                hash.hash_slot_ref(key, true)
+                Some(Self::name_element_owner(
+                    hash.hash_slot_ref(key, true)?,
+                    source,
+                ))
             }
         }
+    }
+
+    /// Tell a promoted element cell which container it belongs to, so an
+    /// element type-check failure blames `@a` rather than the bare `@` the
+    /// promotion primitive seeds (ADR-0036 slice 4). A no-op for an untyped
+    /// container, whose cell carries no constraint to name.
+    fn name_element_owner(item: Value, source: &str) -> Value {
+        if let ValueView::ContainerRef(cell) = item.view() {
+            crate::value::retag_element_owner(&cell, source);
+        }
+        item
     }
 
     /// Loop-entry guard: does this loop iterate the tagged source's elements

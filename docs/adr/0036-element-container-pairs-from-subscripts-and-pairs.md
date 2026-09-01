@@ -1,7 +1,9 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
 - **Status**: Partially implemented — slices 1-2 landed (2026-08-20); slice 3's producer layer landed
-  2026-08-27 but `.pairs` itself is deferred (see "Implementation status — slice 3"); slice 4 open
+  2026-08-27 but `.pairs` itself is deferred (see "Implementation status — slice 3"); slice 4's
+  enforcement half landed with #7190 and its reporting half 2026-09-01, its compensator deletion is
+  still open
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -461,6 +463,44 @@ recognizes one (measured: `roast/S32-array/multislice-6e.t`). Tracked in
 `todo/tickets/bound-array-slice-still-vivifies-eagerly.md`.
 
 ---
+
+## Implementation status — slice 4, the reporting half (2026-09-01)
+
+The **enforcement** half of this slice landed with ADR-0059's `is rw` bare-tail work (#7190):
+`array_slot_ref`/`hash_slot_ref` seed the promoted cell with the container's `value_type`, so a write
+through any alias -- the `:=` bind, `%h<k>`, the `:p` pair value, ADR-0045's `for`-loop element alias,
+the implicit topic -- is refused instead of silently landing. Row 12 of §1.3 is green.
+
+What that left wrong was the **report**, and this slice finishes it. A cell knew its type but not its
+origin, so every element failure fell through to `RuntimeError::typecheck_assignment(.., None)` and
+came out as `Type check failed in assignment; expected Int but got Str ("s")` -- no symbol at all,
+where raku says `Type check failed for an element of @a` and names the container rather than the
+alias the write came through. `$!.expected` was also a `Str`, not the expected type object, so
+`$!.expected === Int` failed.
+
+`ContainerCell::constraint` went from `Option<String>` to `Option<Box<CellConstraint>>` over
+`{ ty, element_of }` -- rakudo's single `$!descriptor` split into the half that decides legality and
+the half that decides blame, because both are observable and they word their failures differently (a
+typed *scalar*'s cell keeps "in assignment to `$x`"). Boxing makes the field 8 bytes instead of 24,
+so the cell shrank, which matters because ADR-0045 slice 4 promotes eagerly.
+
+The promotion primitives are `Value` methods and cannot see a variable name, so they seed
+`element_of` with the bare sigil -- exactly what raku prints for an anonymous container. Two sites
+that had already resolved the real name for their own routing retag the cell
+(`crate::value::retag_element_owner`): the `for`-loop element alias, and the loop's
+producer-carried-cell arm, which is what makes `for @a.values` / `for @a.reverse` blame `@a` even
+though `vm_element_producers.rs` only ever saw a receiver value. `for @a.sort` (no source tag at
+all), the `:=` bind and the subscript adverbs still report `@`/`%`; closing that needs the name to
+travel *with the container*, which is
+`todo/tickets/promoted-element-cell-does-not-know-its-container-name.md`.
+
+**The compensator deletion (the rest of slice 4) is NOT done** -- `methods_mut_method_lvalue.rs`'s
+env-scan and the `__mutsu_hash_ref` branch are untouched, and §1.3 row 11 is still `todo`-marked in
+`t/subscript-pair-element-container.t`.
+
+Verified with `make test`, a **full local `make roast`** (required by the "universal property of
+values" rule, since this changes what is inside every promoted container), and the bundled-battery
+gate.
 
 ## 5. Open questions (the forks for the deciders)
 

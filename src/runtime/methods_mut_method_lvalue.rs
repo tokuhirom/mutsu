@@ -538,16 +538,17 @@ impl Interpreter {
                     // Enforce a typed container's `of`-type constraint, so
                     // `Pair.new("foo", my Int $).value = "bar"` raises
                     // X::TypeCheck::Assignment (S02-types/pair.t).
-                    if let Some(constraint) = crate::value::lookup_container_constraint(&cell)
-                        && !matches!(constraint.as_str(), "Any" | "Mu")
+                    if let Some(c) = crate::value::lookup_cell_constraint(&cell)
+                        && !matches!(c.ty.as_str(), "Any" | "Mu")
                         && !value.is_nil()
-                        && !self.type_matches_value(&constraint, &value)
+                        && !self.type_matches_value(&c.ty, &value)
                     {
-                        return Err(RuntimeError::typecheck_assignment(
-                            &constraint,
-                            &value,
-                            None,
-                        ));
+                        return Err(match c.element_of {
+                            Some(owner) => crate::runtime::utils::type_check_element_typed_error(
+                                &owner, &c.ty, &value,
+                            ),
+                            None => RuntimeError::typecheck_assignment(&c.ty, &value, None),
+                        });
                     }
                     *cell.lock().unwrap() = value.clone();
                     return Ok(value);
