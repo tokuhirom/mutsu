@@ -767,6 +767,23 @@ impl Interpreter {
             }
             'body_redo: loop {
                 let run_start = nested_entry.take().unwrap_or(body_start);
+                // An immutable Mix/Set/Bag yields immutable weights, and the
+                // multi-parameter bind is a RAW bind now (ADR-0045 row 16), so
+                // the parameter may be a `ContainerRef` promoted out of the
+                // chunk rather than a plain value in `env`. Snapshot what the
+                // chunk holds before the body runs; comparing against it after
+                // is the only way left to see that the body assigned through
+                // such an alias.
+                let quant_chunk_before: Option<Vec<Value>> = (source_immutable_quant
+                    && !spec.multi_param_names.is_empty())
+                .then(|| match item.view() {
+                    ValueView::Array(chunk, ..) => chunk
+                        .items()
+                        .iter()
+                        .map(Value::deref_container)
+                        .collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                });
                 if let Some(slot) = spec.block_callable_local {
                     self.push_block(self.locals[slot as usize].clone());
                 }
@@ -785,6 +802,7 @@ impl Interpreter {
                         &param_name,
                         &spec.multi_param_names,
                         &item,
+                        quant_chunk_before.as_deref(),
                     )
                 {
                     body_result = Err(err);

@@ -56,21 +56,23 @@ use super::*;
 /// `.values`/`.reverse`/`.sort` do not have the problem: they hand out a flat
 /// list of cells, and list consumers decontainerize.
 ///
-/// **`.kv` is absent for a different reason: the consumer, not the producer.**
-/// `.kv` is bound as a *multi-parameter* loop (`-> $i, $v is rw`), and a
-/// multi-parameter loop does not bind at the native bind site — it binds through
-/// bind-prefix `Stmt::Assign`s that read the chunk element (`build_for_bind_stmts`,
-/// `compiler/mod.rs`). That read goes through the ordinary element chokepoint,
-/// which **decontainerizes**, so a cell handed out here arrives at `$v` as a
-/// plain value and the write is lost — while the writeback that used to carry
-/// it has been retired for the iteration precisely because the chunk carried a
-/// cell. Routing `.kv` therefore needs a raw (non-decontainerizing) bind for an
-/// rw scalar multi-parameter first; `@`/`%`-sigil multi-params already have one
-/// (`Stmt::MarkBind`), so that is the shape to extend. Until then `.kv` keeps
-/// the snapshot producer and its writeback, which is correct for the direct
-/// write (`for @a.kv -> $i, $v is rw { $v += $i }`) and only loses the deferred
-/// closure. Tracked in `todo/tickets/for-kv-multi-param-bind-decontainerizes.md`.
-const ELEMENT_PRODUCERS: [&str; 4] = ["Seq", "values", "reverse", "sort"];
+/// **`.kv` is here, and it took a change to the CONSUMER to get it here.** A
+/// `.kv` loop is a *multi-parameter* loop, and a multi-parameter loop does not
+/// bind at the native bind site — it binds through bind-prefix statements
+/// (`build_for_bind_stmts`, `compiler/mod.rs`). Those used to be plain
+/// `Stmt::Assign`s reading the chunk slot through the ordinary element
+/// chokepoint, which **decontainerizes**, so a cell handed out here arrived at
+/// `$v` as a plain value and the write was lost — while the writeback that used
+/// to carry it had been retired for the iteration precisely because the chunk
+/// carried a cell. A *writable* scalar multi-parameter now binds raw
+/// (`Stmt::MarkBind` + a declaration, the shape `@`/`%`-sigil multi-params
+/// already had), and `array_slot_ref`'s idempotence makes that bind alias the
+/// SOURCE element rather than the temporary chunk. ADR-0045 row 16.
+///
+/// The `.kv` output is a **flat** `key, cell, key, cell, …` list, because the
+/// loop chunks it by two. Only the value slot is a container: a key is never one
+/// in raku, the same asymmetry that keeps `.antipairs` off this path.
+const ELEMENT_PRODUCERS: [&str; 5] = ["Seq", "values", "reverse", "sort", "kv"];
 
 impl Interpreter {
     /// Produce `method`'s result from `target`'s **element containers** instead
@@ -142,6 +144,16 @@ impl Interpreter {
             // decontainerizes Array elements.
             "Seq" => Value::seq(cells),
             "values" => Value::seq(cells),
+            // A flat `index, cell, index, cell, ...` list -- the loop chunks it
+            // by two, so the value slot of each chunk is the element's own
+            // container and `-> $i, $v is rw` aliases it (ADR-0045 row 16).
+            "kv" => Value::seq(
+                cells
+                    .into_iter()
+                    .enumerate()
+                    .flat_map(|(i, c)| [Value::int(i as i64), c])
+                    .collect(),
+            ),
             "reverse" => {
                 let mut cells = cells;
                 cells.reverse();
@@ -181,14 +193,14 @@ impl Interpreter {
             }
             _ => return None,
         };
-        // Only `.values` reaches here today — `.pairs` is deferred (see the
-        // `ELEMENT_PRODUCERS` doc) and `.reverse`/`.sort` are array-only — so
-        // the key never has to be rebuilt. When `.pairs` returns, this is where
-        // `hash_typed_key` / `hash_uses_typed_keys` come back with it.
-        if method != "values" {
+        // `.values` and `.kv` reach here; `.pairs` is deferred (see the
+        // `ELEMENT_PRODUCERS` doc) and `.reverse`/`.sort` are array-only. When
+        // `.pairs` returns it joins `.kv` on the `hash_typed_key` path below.
+        if !matches!(method, "values" | "kv") {
             return None;
         }
-        let mut out: Vec<Value> = Vec::with_capacity(keys.len());
+        let typed_keys = method == "kv" && crate::runtime::utils::hash_uses_typed_keys(target);
+        let mut out: Vec<Value> = Vec::with_capacity(keys.len() * 2);
         for k in &keys {
             let cell = target.hash_slot_ref(k, true)?;
             // A missing key hands back a lazy `HashEntryRef` path token rather
@@ -196,6 +208,15 @@ impl Interpreter {
             // happen — but decline rather than hand out a path if it ever does.
             if !matches!(cell.view(), ValueView::ContainerRef(_)) {
                 return None;
+            }
+            if method == "kv" {
+                // The key is NOT a container -- only the value is (the same
+                // asymmetry that keeps `.antipairs` off this path).
+                out.push(if typed_keys {
+                    crate::runtime::utils::hash_typed_key(target, k)
+                } else {
+                    Value::hash_key_decode(k)
+                });
             }
             out.push(cell);
         }

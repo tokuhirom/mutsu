@@ -1,7 +1,7 @@
 # A closure over a `for` parameter was hijacked by a later same-named `my`
 
 Found while working
-`todo/tickets/for-kv-multi-param-bind-decontainerizes.md`: the `.kv` fix it
+`kv-hands-out-element-containers-to-a-multi-param-loop.md`: the `.kv` fix it
 prescribes emits a `my $v := ...` binding, which turned out to break unrelated,
 already-passing ADR-0045 rows. The trigger was not the new binding — it was a
 pre-existing bug that any same-named `my` exposes.

@@ -27,13 +27,13 @@ use Test;
 #                               `.antipairs` is deliberately NOT routed: it puts
 #                               the element in the pair's KEY, and a pair key is
 #                               never a container in raku (measured below).
-#                               `.kv` is deferred because its multi-parameter
-#                               bind decontainerizes -- see
-#                               todo/tickets/for-kv-multi-param-bind-decontainerizes.md.
-#   Slice 4 (not landed)    -- the promoted cell carries the container's
-#                               element type constraint, and the
+#                               `.kv` joined them once a writable multi-parameter
+#                               started binding raw (ADR-0045 slice 5) -- see
+#                               news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md.
+#   Slice 4 (half landed)   -- the promoted cell carries the container's element
+#                               type constraint (row 12, landed); the
 #                               `methods_mut_method_lvalue.rs` env-scan
-#                               compensator is deleted (rows 11 and 12).
+#                               compensator is still there (row 11).
 #
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
