@@ -138,3 +138,12 @@ my &blk = sub { x = "not an int" };
 blk();
 say "a=$a";   # raku: dies at the assignment inside blk(); mutsu: prints "a=5", no error
 ```
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+Still reproduces (D6 prints `a=5`, no error; D2/D5 print `a`). **One
+"agreeing" row has since regressed:** D4 at mainline top level (`my $s = "a";
+my \x := $s; { x = 42 }(); say $s`) now prints `a` in mutsu, where the table
+above records `42`. The immediately-invoked block loses the alias everywhere
+now, not only inside a bare block. The retitle advice stands, without the
+mainline exception.

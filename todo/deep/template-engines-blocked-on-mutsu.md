@@ -92,3 +92,16 @@ needs its own reduction before it can be scheduled. What *is* known:
 Re-run `tmp/tmpl-survey.sh` and update
 [docs/batteries/templates.md](../../docs/batteries/templates.md) after each fix;
 the table is the decision input and goes stale the moment one lands.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+Both `Template::Jinja2` blockers named in "Order of work" item 2 are **fixed
+and closed**: the char-class one is
+`news/2026-08/regex-char-class-literal-brace-paren.md` and the private-method
+one is `news/2026-08/private-method-qualified-short-owner-in-module.md`
+(`'ab{cd' ~~ / <-[{]>+ /` gives `｢ab｣` and `self!Renderer::p` inside `module
+Foo::Renderer` resolves, in both implementations). The Jinja2 row's
+"0/23 files" is therefore unmeasured since then — **re-run the survey before
+picking the next engine**; Jinja2 may already be past its known blockers, and
+`Template6` (item 3) is still unreduced. The dist tarballs were not fetched
+for this re-verification (network), so none of the other rows moved.

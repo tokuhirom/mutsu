@@ -66,3 +66,16 @@ repros remain the acceptance cases; do not special-case either method.
 - `src/vm/vm_call_method_compiled.rs` — the compiled twin of that check
 - `src/runtime/methods_io_dispatch.rs` — `dispatch_snitch`, which would return
   the container once one is reachable
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+**The `.VAR` row's raku expectation above is wrong.** `raku -e 'my $a = 42;
+$a.VAR = 5; say $a'` does NOT print `5` — it dies with `Cannot assign to a
+readonly variable or a value`. Both implementations refuse; only the wording
+differs (`X::Assignment::RO: cannot assign through .VAR on non-instance` in
+mutsu). So `$a.VAR = 5` is not a divergence and must not be used as an
+acceptance case.
+
+The `.snitch` row is the real one and still reproduces: `use v6.e.PREVIEW;
+(my $a = 42).snitch = 666; say $a` prints `42` / `666` in raku and dies with
+the same RO error in mutsu. Keep `.snitch` as the acceptance case.

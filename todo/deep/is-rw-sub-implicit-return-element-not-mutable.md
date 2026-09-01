@@ -95,3 +95,16 @@ path to the caller's assignment target, not a narrow patch for one shape.
 - Whatever marks a returned `Value` as "safe to assign through" (a `ContainerRef`/Proxy-like
   wrapper) for `is rw` subs — compare how it's produced for a bare returned variable (works, per
   `sub walk(\thing) is rw { thing }`) vs. an indexed element read (broken).
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+All three shapes (hash element, array element, the doc's `walk`) still silently discard the
+assignment (`1` / `[1 2 3]` / `(Any)`, exit 0). Since this file was written,
+[ADR-0059](../../docs/adr/0059-is-rw-routines-return-a-container.md) ("an `is rw` routine
+returns a container") landed slices 1-2 **except "Slice 2's bare-`is rw`-tail half"**: a tail with
+no `return-rw` still goes through the caller-side tail re-interpretation
+(`rw_sub_target_expr` / `assign_rw_target_expr`), which re-evaluates `%h<some>` in the *caller's*
+frame — where `%h` is the callee's parameter and resolves to nothing, hence the silent discard
+(ADR-0059 §Context, first bullet). Read ADR-0059 before starting; this ticket is that open half,
+not a separate mechanism, and closes when the bare tail compiles to its container and the
+re-interpretation code is deleted.

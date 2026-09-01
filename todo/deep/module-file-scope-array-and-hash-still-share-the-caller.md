@@ -146,3 +146,22 @@ its trailing `our $s` scalar line still diverges, tracked separately),
    scoping lexical everywhere, the way scalar scoping already is, and lets
    the container special cases slice 1 introduced be deleted rather than
    extended further.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): two slice-2 acceptance rows
+
+The module shape and the mainline named-sub shadow shape agree with raku
+(slice 1 holds). Two non-file-scope shapes still resolve the container by
+name, and are usable as slice 2's acceptance rows (raku answers first):
+
+```raku
+# (a) a sub-local @a captured by an inner anonymous sub, shadowed by an inner block's @a
+sub f { my @a = 1, 2; my $push = sub { @a.push(9) }; { my @a = 3; $push(); say "inner=", @a }; @a }
+say f();      # raku: inner=[3] / [1 2 9]    mutsu: inner=[3 9] / [1 2]  -- the push lands on the shadow
+
+# (b) a closure declaring @c that shadows a mainline @c and calls a named sub
+my @c = 1; sub g { @c.push(7) }
+my $h = { my @c; g(); @c }; $h();
+say @c;       # raku [1 7]     mutsu []     -- the mainline @c is emptied
+```
+
+(Both measured 2026-09-01 on `target/debug/mutsu` vs raku v2026.06.)

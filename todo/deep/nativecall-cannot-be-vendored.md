@@ -121,3 +121,16 @@ code:
 Short of that, `NativeCall` stays on BATTERIES.md rung 3 — and unlike the old
 `Pod::To::Text` situation, that is a *justified* use of the rung, which
 BATTERIES.md §1 asks to be recorded.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+Blocker 3 (the parser rejecting `is repr<...>` and the `native` declarator) is
+**gone**: `our class void is repr<Uninstantiable> { }` and `our native long is
+Int is ctype<long> is repr<P6int> { }` both parse and run. The "salvageable
+independent work" items are therefore done. Blockers 1/2/4 (QAST, dispatch
+programs, the 61 `nqp::` ops) were not re-measured and the decision stands.
+
+Quirk found while checking: a *user* class named `void` or `long` reports
+`.^name` as `NativeCall::Types::void` / `NativeCall::Types::long` — the native
+provider's type table shadows a same-named user declaration. Not filed
+separately; note it if the NativeCall type table is ever reworked.

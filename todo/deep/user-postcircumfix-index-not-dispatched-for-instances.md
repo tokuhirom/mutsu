@@ -172,3 +172,16 @@ modules follow this pattern), so likely affects other dists too.
 Do not close `Array::Rounded`'s row in `dist-test-suite-failures-batch.md` until BOTH this ticket
 (postcircumfix dispatch) and the constant-alias `is` trait gap above are resolved — the dist's own
 test suite still fails 16/35 with both outstanding.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+- Item 2 reproduces as a hard crash: `my constant &old-same = &postcircumfix:<[ ]>;` followed by
+  two `Baz:D` multi candidates and `@a[1]` / `@a[1.6]` ends in `thread 'mutsu-main' has
+  overflowed its stack` (core dumped) — raku prints `20` / `30`. Crash class, so it ranks in
+  TRIAGE's Tier S even though ADR-0041 is still `Proposed`.
+- Item 3 is **wider than recorded**: with `my constant Rounded is export = Array::Rounded` in a
+  separate module, not only `my @a is Rounded` but the direct bareword `Rounded.new(1).^name`
+  answers `Array` in mutsu (raku: `RoundedMod::Array::Rounded` for both). So the gap is in
+  resolving an imported constant alias to a type object at all, not only in the `is` trait path.
+  Repro fixture: `tmp/triage-verify/deep/lib/RoundedMod.rakumod` (regenerable: one `unit module`
+  with the constant above).

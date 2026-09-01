@@ -270,3 +270,13 @@ These already throw the right class; only the rendered value differs:
   use, since `splice` shares their dispatch check). Pre-existing, not
   introduced by the 2026-08-27 push/append/unshift/prepend/pop/shift fix above
   (which only extended that same check from `$`-bound to `@`-bound targets).
+
+## Re-verified 2026-09-01 (TRIAGE regeneration)
+
+Six of the seven remaining harness rows still answer `OK` (list elem, Seq
+elem, map literal topic, grep topic, block arg topic, bind list assign; plus
+`for %h { $_ = 5 }`). One row moved: `(1..3)[0] = 9` now throws
+`X::Assignment::RO` in mutsu — the right class, but rendered as `Cannot modify
+an immutable value (1 2 3)` where raku says `... immutable Range (1..3)`, so it
+belongs in the "close but not exact" section rather than the live harness.
+Blocker attribution (ADR-0036, not ADR-0040) unchanged.

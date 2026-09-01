@@ -85,3 +85,22 @@ $ mutsu -e 'my %h = a => [1,2]; say %h<a>.raku'                    # $[1, 2]
 $ mutsu -e 'my @c = [<a b>],; sub t(*@a){@a.elems}; say t(@c[0])'  # 1
 $ mutsu -e 'my @c = [<a b>],[<c d>]; say @c.raku'                  # [["a", "b"], ["c", "d"]] (unchanged)
 ```
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): nearly closed
+
+Every line of the "Verification once fixed" block above now prints raku's
+answer, and ADR-0040 §1.3 rows 03/09/12/19 agree with raku. The only row left
+`todo`-marked in `t/element-store-itemization.t` is **row 24** (`.VAR`
+reflection on a `:=`-bound list: raku `List Array`, mutsu `Scalar Scalar`),
+which is ADR-0040 slice 3. The "downstream tickets blocked on this" list is
+stale: `array-literal-nested-element-itemization-lost-in-raku` closed with
+slice 2, and `range-assigned-to-named-scalar-not-itemized-as-subscript` was
+verified fixed on 2026-09-01
+(`news/2026-09/range-in-named-scalar-is-itemized-as-subscript.md`). Of
+`immutable-lvalues-that-mutsu-still-lets-you-assign-to`'s rows, none depends
+on this file any more (its blocker is ADR-0036, see that ticket's 2026-08-27
+correction).
+
+Remaining work here is slice 3 (row 24) plus slices 4-5 (constraint on the
+promoted cell, compensator deletion) — retire this file when slice 5 lands, as
+the Status section says.

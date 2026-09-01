@@ -156,3 +156,14 @@ existing precedent for the `while` per-value-bind shape),
 `src/compiler/helpers_do_expr.rs` (`compile_do_block_expr` is the existing
 precedent for the `loop {}` rejection shape), `src/compiler/stmt.rs:2120`
 (`Stmt::While` codegen) / `src/compiler/expr_block.rs:642`.
+
+## Re-verified 2026-09-01 (TRIAGE regeneration): only `while`/`until` remain
+
+ADR-0048 P1-P3 landed. Of the eight probes: `loop { $^c }` is rejected at
+compile time, `{ say $^c }` raises "Too few positionals", `if 42 { "$^a $^b" }`
+and `given 5 { ... }` raise the 2-vs-1 arity error, and `when 5 { $^c }` gets
+zero arguments — all matching raku. Still diverging: `while 42 { say $^c;
+last }` prints `True` (raku `42`), `until False { ... }` prints `True` (raku
+`False`), and `{ while 42 { $^c } }.arity` is `1` (raku `0`) — the
+condition-bind and arity-leak halves, which are ADR-0048 P4-P5 ("not started"
+per the ADR header).
