@@ -129,6 +129,20 @@ impl Interpreter {
         }
     }
 
+    /// Whether an `ArrayKind` names a container whose elements can be assigned
+    /// to. `List`/`ItemList` are raku's immutable list types: `my $l = (1, 2);
+    /// $l.pairs[0].value = 3` raises "Cannot modify an immutable Int (1)",
+    /// while the `Array` kinds write through (`my $l = [1, 2]` gives `[3 2]`).
+    /// The Pair `.value` lvalue path uses this to decide whether an array found
+    /// in `env` may back a pair write; a `List` may not, and the write falls
+    /// through to the read-only guard instead.
+    fn array_kind_is_mutable(kind: crate::value::ArrayKind) -> bool {
+        !matches!(
+            kind,
+            crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+        )
+    }
+
     pub(crate) fn assign_method_lvalue_with_values(
         &mut self,
         target_var: Option<&str>,
@@ -599,6 +613,7 @@ impl Interpreter {
                     && let Some(var_name) = target_var
                     && let Some(ValueView::Array(candidate, kind)) =
                         self.env.get(var_name).map(Value::view)
+                    && Self::array_kind_is_mutable(kind)
                     && candidate.get(i) == Some(current_value.as_ref())
                 {
                     selected_array = Some((candidate.clone(), kind));
@@ -626,7 +641,8 @@ impl Interpreter {
                 {
                     let mut candidates = self.env.values().filter_map(|bound| match bound.view() {
                         ValueView::Array(arr, kind)
-                            if arr.get(i) == Some(current_value.as_ref()) =>
+                            if Self::array_kind_is_mutable(kind)
+                                && arr.get(i) == Some(current_value.as_ref()) =>
                         {
                             Some((arr.clone(), kind))
                         }
@@ -701,10 +717,37 @@ impl Interpreter {
                     }
                 }
 
-                // If the pair value is Bool and the pair is NOT directly backed
-                // by a user-visible hash variable, the Bool is immutable.
-                // This handles Set.pairs[0].value = 0 which should die.
-                if matches!(current_value.as_ref().view(), ValueView::Bool(_)) {
+                // Everything that could put a container behind the pair value
+                // has now been tried: a `ContainerRef` wrote through its cell
+                // far above, a mutable QuantHash weight went through
+                // `topic_source_var`, and a backing hash/array was searched for
+                // just now. What is left is a pair holding a *bare* value, and
+                // raku's `rw` `Pair.value` accessor has nothing to assign into:
+                // `my $p = (1 => "a"); $p.value = "z"` dies with
+                // "Cannot modify an immutable Str (a)".
+                //
+                // Fire only for the immutable scalar leaves. A reference value
+                // (Array/Hash/Instance/Proxy/...) is mutable in place and must
+                // still reach the env rebinds below — the one whitelisted roast
+                // consumer of them, `S02-types/pair.t`'s
+                // `(%(<a b c d>) => %(<e f g h>)).invert`, has a Hash value.
+                // The old `Bool`-only guard (`Set.pairs[0].value = 0`) is the
+                // narrowest case of this rule.
+                if matches!(
+                    current_value.as_ref().view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Str(_)
+                        | ValueView::Bool(_)
+                        | ValueView::Rat(..)
+                        | ValueView::FatRat(..)
+                        | ValueView::BigRat(..)
+                        | ValueView::Complex(..)
+                        | ValueView::Enum { .. }
+                        | ValueView::Nil
+                        | ValueView::Package(_)
+                ) {
                     let has_backing_hash = target_var.is_some_and(|vn| {
                         matches!(self.env.get(vn).map(Value::view), Some(ValueView::Hash(_)))
                     });

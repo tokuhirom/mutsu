@@ -30,10 +30,12 @@ use Test;
 #                               `.kv` joined them once a writable multi-parameter
 #                               started binding raw (ADR-0045 slice 5) -- see
 #                               news/2026-09/kv-hands-out-element-containers-to-a-multi-param-loop.md.
-#   Slice 4 (half landed)   -- the promoted cell carries the container's element
-#                               type constraint (row 12, landed); the
-#                               `methods_mut_method_lvalue.rs` env-scan
-#                               compensator is still there (row 11).
+#   Slice 4 (landed)        -- the promoted cell carries the container's element
+#                               type constraint (row 12), and the standalone-pair
+#                               env rebind in `methods_mut_method_lvalue.rs` no
+#                               longer fakes a write through an immutable pair
+#                               value (row 11) -- see
+#                               news/2026-09/pair-value-assign-enforces-immutability.md.
 #
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
@@ -155,7 +157,11 @@ plan 35;
 {
     my @a = <A B>;
     my @c = <A B>;
-    for @a.pairs -> $p { $p.value = "y" }
+    # Until `.pairs` is routed through the container-aware producer, `$p.value`
+    # is a bare item, so slice 4's read-only guard now raises X::Assignment::RO
+    # here rather than swallowing the write. Still a divergence from raku (which
+    # writes through), still `todo`; the `try` keeps the file running.
+    try { for @a.pairs -> $p { $p.value = "y" } }
     todo 'row 9 needs .pairs routed -- deferred, see todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md';
     is-deeply @a, ["y", "y"], 'for @a.pairs writes through even with an equal sibling array (row 9)';
 }
@@ -185,14 +191,15 @@ plan 35;
 # --- §1.3 row 11: .pairs on an immutable List must die (Slice 4) ----------
 # Slice 3 does the half it owns: a `List` receiver keeps the SNAPSHOT producer,
 # so the pair value is a bare item with no container behind it — which is the
-# whole of ADR-0036 §2.2's immutability story. What still swallows the write is
-# the OTHER half, the env-scan compensator in `methods_mut_method_lvalue.rs`:
-# it finds `$l`'s own list as a candidate container, rebuilds it, and reports
-# success. The read-only guard is only reachable once that scan is deleted,
-# which is slice 4's job — so this row moves to slice 4 rather than slice 3.
+# whole of ADR-0036 §2.2's immutability story. The other half was the
+# STANDALONE-PAIR ENV REBIND in `methods_mut_method_lvalue.rs` (not the
+# env-scan, as this comment and the ADR originally said — instrumenting the
+# path showed the scan never fires for a `List` receiver): with no backing
+# container found it rebound any env binding holding an equal Pair and reported
+# success. The read-only guard that sat next to it now covers every immutable
+# scalar leaf rather than just `Bool`, so the write raises X::Assignment::RO.
 {
     my $l = (1, 2);
-    todo 'row 11 needs the env-scan compensator deleted (ADR-0036 slice 4)';
     dies-ok { $l.pairs[0].value = 3 }, 'List.pairs[0].value = X dies, not a silent no-op (row 11)';
 }
 

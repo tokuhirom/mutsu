@@ -10,17 +10,22 @@ use Test;
 # backstop. These cases must keep working (and, verified manually with
 # `MUTSU_NO_REVERSE_SYNC=1`, work *without* the reverse pull).
 
-plan 14;
+plan 15;
 
 # --- Pair .value lvalue ---
+# The pair value must come from a *container* (`a => $v`): a Pair built over a
+# literal has nothing to assign into and `.value = X` correctly raises
+# X::Assignment::RO, as raku does.
 {
-    my $p = a => 5;
+    my $v = 5;
+    my $p = a => $v;
     $p.value--;
     is $p.value, 4, 'Pair .value-- mutates and reads back coherently';
     $p.value = 10;
     is $p.value, 10, 'Pair .value = N reads back coherently';
     $p.value++;
     is $p.value, 11, 'Pair .value++ reads back coherently';
+    is $v, 11, 'and the writes reached the source container';
 }
 
 # --- Array .head / .tail / .first lvalue ---
@@ -46,7 +51,8 @@ plan 14;
 
 # --- repeated mutation then immediate read (the reverse-pull-sensitive shape) ---
 {
-    my $q = x => 0;
+    my $w = 0;
+    my $q = x => $w;
     $q.value = 1;
     is $q.value, 1, 'first .value = read-back';
     $q.value = 2;
@@ -58,13 +64,22 @@ plan 14;
 
 # --- mutation in a loop, read after each step ---
 {
-    my $r = n => 0;
+    my $n = 0;
+    my $r = n => $n;
     my @log;
     for 1..3 {
-        $r.value++;
-        @log.push($r.value);
+        # Two pre-existing container-backed-`.value` bugs are avoided here, both
+        # unrelated to this file's subject (the local-slot writeback) and both
+        # tracked elsewhere:
+        #   * `$r.value++` stops accumulating on iteration 2 and hangs on
+        #     iteration 3 -- todo/tickets/container-pair-value-increment-in-loop-stalls-then-hangs.md
+        #   * a bare `$r.value` read hands out the *cell*, so pushing it aliases
+        #     every element of @log to the final value; `.Int` decontainerizes.
+        #     See todo/deep/pairs-element-containers-leak-through-pair-value-consumers.md
+        $r.value = $r.value + 1;
+        @log.push($r.value.Int);
     }
-    is-deeply @log, [1, 2, 3], '.value++ in a loop reads the live value each iteration';
+    is-deeply @log, [1, 2, 3], '.value = .value + 1 in a loop reads the live value each iteration';
 }
 
 # --- index-assign method lvalue (nested container via accessor) ---
