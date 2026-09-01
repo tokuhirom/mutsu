@@ -228,6 +228,29 @@ impl Interpreter {
         {
             return Some(baked as usize);
         }
+        // A name the running frame binds as a `for` loop PARAMETER is the
+        // loop's own per-iteration binding, never a slot to capture from this
+        // frame (`CompiledCode::for_loop_param_syms`). The name search below
+        // does not know where in the frame a slot was declared, so a
+        // same-named `my` appearing LATER in the same compilation unit -- a
+        // sibling block's `my $v`, which is a different lexical entirely --
+        // was found and captured instead of the loop's binding, and the
+        // closure read `Nil`:
+        //
+        //     { my @a = 10, 20; my @c;
+        //       for @a -> $v is rw { @c.push(-> { $v = $v + 1 }) }
+        //       @c[0](); @c[1](); say @a }    # [10 20], raku says [11 21]
+        //     { my $v = 1; say $v }           # <- adding this broke the above
+        //
+        // The emit-time bake is what supplies the missing position: it is the
+        // creating frame's `local_map` AT THE CLOSURE'S CREATION POINT, so a
+        // baked `None` means the frame had no such local *then*. Combined with
+        // the loop-parameter test that is precise -- a genuine capture of a
+        // `my` declared before the closure bakes `Some(slot)` and is
+        // unaffected.
+        if matches!(parent_slots.get(i), Some(None)) && code.for_loop_param_syms.contains(&sym) {
+            return None;
+        }
         sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
     }
 
