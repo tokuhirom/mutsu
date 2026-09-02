@@ -349,6 +349,7 @@ impl Compiler {
             Expr::ArrayVar(_) => true,
             // Assignment to @-variable returns an array
             Expr::AssignExpr { name, .. } => name.starts_with('@'),
+            Expr::CompoundAssign { expanded, .. } => Self::needs_decont(expanded),
             // VarDecl/Assign in expression position (my @a = ...)
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => name.starts_with('@'),
@@ -445,6 +446,10 @@ impl Compiler {
             // Anonymous scalar assignment (`$ = value`) produces a writable
             // container, so wrap it with VarRef so `is rw` dispatch can match.
             Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::CompoundAssign { expanded, .. } => match expanded.as_ref() {
+                Expr::AssignExpr { name, .. } => Some(name.clone()),
+                _ => None,
+            },
             // An inline declaration used as an argument (`$y := my $x`,
             // `f(my $z)`) parses to `DoStmt(VarDecl { .. })`. Compiling it
             // declares the variable in the enclosing scope and leaves its value

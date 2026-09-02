@@ -2162,6 +2162,27 @@ impl Compiler {
                 if matches!(op, AssignOp::Assign) {
                     self.maybe_emit_dynamic_var_check(effective_name);
                 }
+                // A source-preserving compound assignment still uses the
+                // ordinary Stmt::Assign execution path. Feed its expanded
+                // expression to the fused RMW and assignment helpers; the
+                // marker is for RakuAST conversion and must not disable the
+                // atomic scalar fast path.
+                let execution_expr = match expr {
+                    Expr::CompoundAssign { expanded, .. } => match expanded.as_ref() {
+                        Expr::AssignExpr {
+                            name: expanded_name,
+                            expr,
+                            ..
+                        } if expanded_name == effective_name => expr.as_ref(),
+                        // A marker can also be the RHS of an outer assignment,
+                        // e.g. `@p = $a or= 3, 4`. In that case the inner
+                        // assignment must execute as part of the RHS; only
+                        // unwrap the assignment when it is this statement's
+                        // own compound target.
+                        expanded => expanded,
+                    },
+                    _ => expr,
+                };
                 // Emit readonly check for assignment to potentially readonly params.
                 // Skip the check for `:=` (rebinding replaces the container).
                 let name_idx = self
@@ -2216,11 +2237,11 @@ impl Compiler {
                     // atomic RMW for plain env-named scalars (Track C). The fused
                     // op leaves the result on the stack; statement context wants
                     // nothing, so discard it.
-                    if self.try_compile_fused_compound_assign(effective_name, expr) {
+                    if self.try_compile_fused_compound_assign(effective_name, execution_expr) {
                         self.code.emit(OpCode::Pop);
                         return;
                     }
-                    self.compile_assignment_rhs_for_target(effective_name, expr);
+                    self.compile_assignment_rhs_for_target(effective_name, execution_expr);
                 }
                 // An assignment whose target is a sigilless binding (`-> \v`
                 // loop-param bind stmts — `build_for_bind_stmts` strips the

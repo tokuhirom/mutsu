@@ -36,12 +36,14 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 Still open:
 
-- `.=` and compound assignment. `$x += 3` desugars to
-  `$x = MetaAssignIdentity(Zero)($x) + 3` (raku: `MetaInfix::Assign(Infix("+"))`)
-  and `$x .= Str` desugars to a plain `=` over a method call (raku:
-  `ApplyDottyInfix` + `DottyInfix::CallAssign`). Both need the parser to keep
-  the meta-operator instead of expanding it. ADR-0033 §2.5 already blocks the
-  `* += 1` Whatever autoprime path on the same missing `MetaInfix::Assign`.
+- `.=` and Whatever compound autoprime. `$x .= Str` desugars to a plain `=` over
+  a method call (raku: `ApplyDottyInfix` + `DottyInfix::CallAssign`) and still
+  needs the parser to retain its dotty-infix form. Core compound assignment is
+  now closed: `+=`, `-=`, `*=`, `~=`, `//=`, `||=`, `&&=`, indexed lvalues, and
+  `AT-POS` lvalues preserve `MetaInfix::Assign(Infix(...))` for `.AST`, while
+  `EVAL` reuses the existing execution expansion. The `* += 1` Whatever
+  autoprime path remains a separate boundary because it still builds its
+  closure before conversion; ADR-0033 §2.5 tracks that case.
 - Signature return types **on methods**. `method m(--> Int)` is still deferred:
   `src/parser/stmt/sub_param/method_decl.rs` filters every `__`-prefixed marker
   out of `MethodDecl.custom_traits`, so `-->` and `returns` are indistinguishable

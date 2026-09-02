@@ -218,6 +218,21 @@ impl Interpreter {
                 expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),
                 is_bind: *is_bind,
             },
+            // Source-preserving compound assignments keep the executable
+            // expansion under a marker. Proto bodies still need `{*}` in that
+            // expansion rewritten to `__PROTO_DISPATCH__`, just as the
+            // pre-marker assignment tree was.
+            Expr::CompoundAssign {
+                target,
+                op,
+                rhs,
+                expanded,
+            } => Expr::CompoundAssign {
+                target: Box::new(Self::rewrite_proto_dispatch_expr(target)),
+                op: op.clone(),
+                rhs: Box::new(Self::rewrite_proto_dispatch_expr(rhs)),
+                expanded: Box::new(Self::rewrite_proto_dispatch_expr(expanded)),
+            },
             Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
             Expr::DoBlock { body, label } => Expr::DoBlock {
                 body: Self::rewrite_proto_dispatch_stmts(body),

@@ -90,6 +90,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementDefault => {
             Ok(Stmt::Default(lower_block(named_child(node, "body")?)?))
         }
+        // `$x OP= EXPR` is represented by a `MetaInfix::Assign` child. Keep the
+        // source-level marker while reusing the parser's existing execution
+        // expansion.
+        RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
+            Ok(Stmt::Expr(lower_compound_assign_expr(node)?))
+        }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
@@ -506,6 +512,33 @@ fn infix_is_assignment(node: &RakuAstNode) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
+fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
+    named_child(node, "infix")
+        .map(|child| child.class == RakuAstClass::MetaInfixAssign)
+        .unwrap_or(false)
+}
+
+/// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
+/// compound-assignment execution shape while retaining the source marker.
+fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let target = lower_expr(named_child(node, "left")?)?;
+    let meta = named_child(node, "infix")?;
+    let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
+        ValueView::Str(value) => value.to_string(),
+        _ => return Err(unsupported(node)),
+    };
+    let rhs = lower_expr(named_child(node, "right")?)?;
+    let expanded = crate::parser::expand_compound_assign_expr(target.clone(), &op, rhs.clone())
+        .map_err(RuntimeError::new)?;
+    Ok(Expr::CompoundAssign {
+        target: Box::new(target),
+        op: format!("{op}="),
+        rhs: Box::new(rhs),
+        expanded: Box::new(expanded),
+    })
+}
+
 /// The `(name, right)` of an `ApplyInfix(Assignment)`: the target variable name
 /// (`$` sigil stripped to match the parser's naming; `@`/`%`/`&` kept) and the
 /// lowered right-hand side.
@@ -775,6 +808,10 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 "&" => Expr::CodeVar(bare.to_string()),
                 _ => Expr::Var(bare.to_string()),
             })
+        }
+        // `($x OP= EXPR)` in expression position -> a compound assignment.
+        RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
+            lower_compound_assign_expr(node)
         }
         // `($x = EXPR)` in expression position -> an assignment expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => {

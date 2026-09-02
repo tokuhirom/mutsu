@@ -71,6 +71,7 @@ pub enum RakuAstClass {
     ApplyPostfix,
     Postfix,
     Assignment,
+    MetaInfixAssign,
     CallMethod,
     // Phase 2 slice 23: quoted method names.
     CallQuotedMethod,
@@ -193,6 +194,7 @@ impl RakuAstClass {
             ApplyPostfix => "RakuAST::ApplyPostfix",
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
+            MetaInfixAssign => "RakuAST::MetaInfix::Assign",
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
@@ -470,6 +472,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ApplyPostfix,
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
+    RakuAstClass::MetaInfixAssign,
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
@@ -930,6 +933,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
+        ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
@@ -1010,6 +1014,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::VarLexical => Some("name"),
         RakuAstClass::Blockoid => Some("statement-list"),
         RakuAstClass::InitializerAssign => Some("expression"),
+        RakuAstClass::MetaInfixAssign => Some("infix"),
         RakuAstClass::TypeSimple | RakuAstClass::TypeSetting => Some("name"),
         RakuAstClass::TraitReturns | RakuAstClass::TraitOf => Some("type"),
         _ => None,
@@ -1082,6 +1087,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
             | RakuAstClass::Postfix
+            | RakuAstClass::MetaInfixAssign
             | RakuAstClass::Block
             | RakuAstClass::Blockoid
             | RakuAstClass::Sub
@@ -1112,6 +1118,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Blockoid => &["statement-list"],
         Sub => &["name", "signature", "traits", "body"],
         Signature => &["parameters", "returns"],
+        MetaInfixAssign => &["infix"],
         MetaInfixHyper => &["dwim-left", "infix", "dwim-right"],
         TraitReturns | TraitOf => &["type"],
         Parameter => &[

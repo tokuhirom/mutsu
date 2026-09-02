@@ -743,6 +743,13 @@ impl Compiler {
                 let name = self.resolve_self_lexical(name);
                 self.compile_expr_assign(name, expr, *is_bind);
             }
+            // Source-preserving annotation for `x += y` and friends. The
+            // parser has already built the ordinary assignment expansion;
+            // compile that proven execution shape and keep the annotation
+            // available to the RakuAST converter.
+            Expr::CompoundAssign { expanded, .. } => {
+                self.compile_expr(expanded);
+            }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
                 self.compile_expr_capture_var(name);

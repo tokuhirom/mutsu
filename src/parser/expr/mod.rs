@@ -342,6 +342,29 @@ fn wrap_finished_expr(expr: Expr) -> Expr {
 pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = precedence::ternary_mode(input, operators::ExprMode::ListopArg)?;
     let (r, _) = ws(rest)?;
+
+    // `assign_not_expr_mode` deliberately leaves compound assignment for the
+    // call-argument modes so their RHS cannot absorb the comma separating
+    // listop arguments. Rebuild that operator here, preserving the same
+    // source marker as the parenthesized call-argument path.
+    if let Some((after_op, op)) = crate::parser::stmt::assign::parse_compound_assign_op(r) {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r2, rhs)) = precedence::ternary_mode(after_ws, operators::ExprMode::ListopArg)
+            && let Ok(result) = crate::parser::stmt::assign::build_compound_assign_expr(
+                expr.clone(),
+                op,
+                rhs.clone(),
+            )
+        {
+            return Ok((
+                r2,
+                wrap_finished_expr(crate::parser::stmt::assign::compound_assign_marker(
+                    expr, op, rhs, result,
+                )),
+            ));
+        }
+    }
+
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];
         let (r, _) = ws(r)?;

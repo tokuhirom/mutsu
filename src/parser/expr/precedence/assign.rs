@@ -145,6 +145,12 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],
         },
+        // A compound assignment is transparent to the execution AST marker.
+        // When its result is itself used as an lvalue (for example the RHS of
+        // a reverse meta compound assignment), apply the writeback to the
+        // established expansion so short-circuiting still preserves the
+        // original assignment semantics.
+        Expr::CompoundAssign { expanded, .. } => assign_to_target_expr(*expanded, value),
         // `(cond ?? $a !! $b) = rhs`: the ternary selects an lvalue branch; the
         // assignment writes through to whichever branch is taken. Desugar to
         // `cond ?? ($a = rhs) !! ($b = rhs)`. A non-lvalue branch recurses to the
@@ -219,6 +225,12 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             is_whatever_code: true,
             param_sigilless: false,
         };
+    }
+    if let Expr::CompoundAssign { expanded, .. } = target {
+        // The marker is transparent to the execution AST. A compound result
+        // can still be the lvalue of a reverse meta compound assignment, so
+        // continue through its established writeback expansion.
+        return build_compound_assign_target_expr(*expanded, op_name, value);
     }
     match target {
         Expr::Var(name) => {

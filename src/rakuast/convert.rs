@@ -576,11 +576,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )?)))
         }
         Stmt::Assign { name, expr, op } => match op {
-            // `$x = EXPR` — the special `Assignment` infix (slice 2). Note mutsu
-            // desugars `$x += 3` to `$x = $x + 3` (op stays `Assign`), so a
-            // compound assignment renders as a plain `=` over a binop rather than
-            // raku's `MetaInfix::Assign` — a documented divergence.
-            AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
+            // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
+            // assignment keeps its source-level metaop marker inside the ordinary
+            // assignment expansion used by the compiler.
+            AssignOp::Assign => match expr {
+                Expr::CompoundAssign {
+                    target, op, rhs, ..
+                } if compound_target_matches_name(target, name) => Ok(Some(statement_expression(
+                    compound_assignment_infix(target, op, rhs)?,
+                ))),
+                _ => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
+            },
             // `$x := EXPR` — a plain `:=` infix (slice 9).
             AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
             AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
@@ -646,6 +652,40 @@ fn plain_infix(op: &str) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
+    }
+}
+
+/// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
+fn compound_assignment_infix(
+    target: &Expr,
+    op: &str,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let base_op = op.strip_suffix('=').unwrap_or(op);
+    let meta_assign = RakuAstNode {
+        class: RakuAstClass::MetaInfixAssign,
+        fields: vec![node_field(None, plain_infix(base_op))],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("infix"), meta_assign),
+            node_field(Some("right"), convert_expr(rhs)?),
+        ],
+    })
+}
+
+/// A compound marker may be nested in the RHS of a separate assignment. Only
+/// the marker that names the statement's own target replaces `Assignment` with
+/// `MetaInfix::Assign`; nested markers stay under the outer assignment node.
+fn compound_target_matches_name(target: &Expr, name: &str) -> bool {
+    match target {
+        Expr::Var(target_name) => target_name == name,
+        Expr::ArrayVar(target_name) => name == format!("@{target_name}"),
+        Expr::HashVar(target_name) => name == format!("%{target_name}"),
+        Expr::CodeVar(target_name) => name == format!("&{target_name}"),
+        _ => false,
     }
 }
 
@@ -931,6 +971,9 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             assignment_infix(name, expr)
         }
+        Expr::CompoundAssign {
+            target, op, rhs, ..
+        } => compound_assignment_infix(target, op, rhs),
         Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
         Expr::HashVar(name) => Ok(var_lexical("%", name)),
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),

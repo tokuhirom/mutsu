@@ -93,26 +93,32 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         if let Some((after_op, op)) = parse_compound_assign_op(after_name) {
             let (after_op, _) = ws(after_op)?;
             let (rest, rhs) = parse_assign_expr_or_comma(after_op)?;
-            let current_value = Expr::MethodCall {
+            let source_target = Expr::MethodCall {
                 target: Box::new(var_expr.clone()),
                 name: Symbol::intern(&method_name),
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
             };
-            let updated_value = compound_assigned_value_expr(current_value, op, rhs);
+            let marker_rhs = rhs.clone();
+            let updated_value = compound_assigned_value_expr(source_target.clone(), op, rhs);
             let assign_call = Expr::Call {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     var_expr,
-                    Expr::Literal(Value::str(method_name)),
+                    Expr::Literal(Value::str(method_name.clone())),
                     Expr::ArrayLiteral(Vec::new()),
                     updated_value,
                     Expr::Literal(Value::str(name.clone())),
                     Expr::Literal(Value::truth(true)),
                 ],
             };
-            let stmt = Stmt::Expr(assign_call);
+            let stmt = Stmt::Expr(compound_assign_marker(
+                source_target,
+                op,
+                marker_rhs,
+                assign_call,
+            ));
             return parse_statement_modifier(rest, stmt);
         }
     }
@@ -265,11 +271,16 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             && let Some(short) =
                 short_circuit_compound_assign_expr(&name, var_expr.clone(), op, rhs.clone())
         {
-            Stmt::Expr(short)
+            Stmt::Expr(compound_assign_marker(
+                var_expr.clone(),
+                op,
+                rhs.clone(),
+                short,
+            ))
         } else {
             Stmt::Assign {
                 name: name.clone(),
-                expr: compound_assigned_value_expr(var_expr, op, rhs),
+                expr: preserve_compound_assign(var_expr, op, rhs)?,
                 op: AssignOp::Assign,
             }
         };

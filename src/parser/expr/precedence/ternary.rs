@@ -4,7 +4,10 @@ use crate::parser::primary::misc::colonpair_expr;
 pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
     matches!(
         expr,
-        Expr::AssignExpr { .. } | Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. }
+        Expr::AssignExpr { .. }
+            | Expr::CompoundAssign { .. }
+            | Expr::IndexAssign { .. }
+            | Expr::MultiDimIndexAssign { .. }
     )
 }
 
@@ -239,9 +242,12 @@ pub(crate) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
     if let Some((after_op, op)) = parse_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
         if let Ok((r2, rhs)) = call_arg_ternary_expr(after_ws)
-            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs)
+            && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
         {
-            return Ok((r2, result));
+            return Ok((
+                r2,
+                crate::parser::stmt::assign::compound_assign_marker(expr, op, rhs, result),
+            ));
         }
     }
 

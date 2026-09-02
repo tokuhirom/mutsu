@@ -16,6 +16,25 @@ mod primary;
 mod quote_shadow;
 mod sink_warn;
 mod stmt;
+pub(crate) use stmt::assign::compound_assign_op_from_name;
+
+/// Reuse the parser's proven compound-assignment expansion from consumers that
+/// cannot name the parser's private parse-error type (such as RakuAST lowering).
+pub(crate) fn expand_compound_assign_expr(
+    lhs: crate::ast::Expr,
+    op: &str,
+    rhs: crate::ast::Expr,
+) -> Result<crate::ast::Expr, String> {
+    let op = compound_assign_op_from_name(op)
+        .ok_or_else(|| format!("unknown compound operator: {op}"))?;
+    if let crate::ast::Expr::Var(name) = &lhs
+        && let Some(short) =
+            stmt::assign::short_circuit_compound_assign_expr(name, lhs.clone(), op, rhs.clone())
+    {
+        return Ok(short);
+    }
+    stmt::assign::build_compound_assign_expr(lhs, op, rhs).map_err(|error| error.to_string())
+}
 pub(crate) mod stmt_ending_brace;
 pub(crate) mod term_boundary;
 mod whenever_scope;
