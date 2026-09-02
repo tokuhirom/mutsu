@@ -832,16 +832,37 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 .is_ok_and(|i| i.class == RakuAstClass::MetaInfixHyper) =>
         {
             let hyper = named_child(node, "infix")?;
-            let op_value = positional_leaf(named_child(hyper, "infix")?)?;
+            let infix = named_child(hyper, "infix")?;
+            let left = Box::new(lower_expr(named_child(node, "left")?)?);
+            let right = Box::new(lower_expr(named_child(node, "right")?)?);
+            let dwim_left = bool_field(hyper, "dwim-left")?;
+            let dwim_right = bool_field(hyper, "dwim-right")?;
+            if infix.class == RakuAstClass::FunctionInfix {
+                let function = positional_leaf(infix)?;
+                let ValueView::RakuAst(function) = function.view() else {
+                    return Err(unsupported(node));
+                };
+                let Expr::CodeVar(func_name) = lower_expr(function)? else {
+                    return Err(unsupported(node));
+                };
+                return Ok(Expr::HyperFuncOp {
+                    func_name,
+                    left,
+                    right,
+                    dwim_left,
+                    dwim_right,
+                });
+            }
+            let op_value = positional_leaf(infix)?;
             let ValueView::Str(op) = op_value.view() else {
                 return Err(unsupported(node));
             };
             Ok(Expr::HyperOp {
                 op: op.to_string(),
-                left: Box::new(lower_expr(named_child(node, "left")?)?),
-                right: Box::new(lower_expr(named_child(node, "right")?)?),
-                dwim_left: bool_field(hyper, "dwim-left")?,
-                dwim_right: bool_field(hyper, "dwim-right")?,
+                left,
+                right,
+                dwim_left,
+                dwim_right,
             })
         }
         RakuAstClass::ApplyInfix => {
