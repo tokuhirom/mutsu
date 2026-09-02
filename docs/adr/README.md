@@ -89,3 +89,5 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0061](0061-lexical-self-has-its-own-env-key.md) | A user lexical `$self` has its own env key — `self` names only the invocant | Accepted (implemented) |
 | [0062](0062-atomic-lane-anchors-to-the-published-value.md) | A generation of the legacy atomic lane anchors to the published value, and the root store is the lane's only authority | Accepted (implemented) |
 | [0063](0063-nativecall-outbound-callback-ownership-and-reentrancy.md) | A NativeCall callback is a process-lifetime closure that re-enters the calling VM | Accepted (implemented) |
+| [0064](0064-var-descriptor-carries-the-contained-value.md) | A `.VAR` container descriptor carries the value its container holds | Accepted (implemented) |
+| [0065](0065-language-server-targets-ai-agents.md) | The language server targets AI agents, and is scoped to the protocol surface an agent actually consumes | Proposed (design only; no implementation) |
