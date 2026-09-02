@@ -252,8 +252,18 @@ impl Interpreter {
         };
 
         match resolved.view() {
-            ValueView::Hash(_) => {
-                let key = Value::hash_key_encode(&index);
+            ValueView::Hash(ref map) => {
+                // An object hash (`my %h{Any}`) stores `.WHICH`-encoded keys, so
+                // the subscript has to be encoded the same way to find the entry
+                // — exactly as the read and `:p`/`:kv` paths already do. Encoding
+                // it as a plain string instead made every `:=` bind to an
+                // object-hash element miss and hand back `Any`
+                // (`my %h{Any}; %h{Int} = IntStr; my $t := %h{Int}`).
+                let key = if map.key_type.is_some() {
+                    crate::runtime::utils::value_which_key(&index)
+                } else {
+                    Value::hash_key_encode(&index)
+                };
                 // Phase 2 Stage 1: promote an existing scalar leaf to a shared
                 // `ContainerRef` cell so deep `%h<a><b>` binds survive COW; an
                 // intermediate container keeps a lazy HashEntryRef, and a missing

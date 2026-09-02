@@ -1260,6 +1260,10 @@ impl Compiler {
                 // MarkSigillessReadonly this does NOT set the readonly flag: a typed
                 // sigilless bind (`my Int \d := 7`) keeps container mutability.
                 self.sigilless_locals.insert(name.clone());
+                // Whether this term is writable depends on what the declaration
+                // bound it to, which only the runtime knows.
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                self.code.emit(OpCode::MarkSigillessBind(name_idx));
             }
             Stmt::MarkSigillessReadonly(name) => {
                 // Track sigilless locals so BareWord compilation can

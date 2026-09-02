@@ -5321,6 +5321,36 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::MarkSigillessBind(name_idx) => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                // Read the RAW binding (not a dereferenced value): the local
+                // slot first, since a sigilless term normally owns one, and the
+                // env otherwise (a captured or by-name binding).
+                let bound = code
+                    .locals
+                    .iter()
+                    .rposition(|n| n == &name)
+                    .and_then(|idx| self.locals.get(idx).cloned())
+                    .or_else(|| self.env().get(&name).cloned())
+                    .unwrap_or(Value::NIL);
+                // Only a real container can be written through. A `ContainerRef`
+                // cell (a `:=` alias, an array/hash element), a whole
+                // `Array`/`Hash` and a `Proxy` all are; everything else — an
+                // `Int`, a `Str`, an instance, a type object — IS the value, and
+                // rakudo refuses an assignment through the name.
+                let writable = matches!(
+                    bound.view(),
+                    ValueView::ContainerRef(_)
+                        | ValueView::Array(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Proxy { .. }
+                );
+                if !writable {
+                    self.env_mut()
+                        .insert(crate::runtime::sigilless_readonly_key(&name), Value::TRUE);
+                }
+                *ip += 1;
+            }
             OpCode::MarkVarReadonly(name_idx, kind) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.mark_readonly_with(&name, *kind);

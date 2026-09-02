@@ -80,6 +80,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::WrapVarRef { .. }
             | OpCode::LetSave { .. }
             | OpCode::CheckReadOnly(_)
+            | OpCode::MarkSigillessBind(_)
             | OpCode::MarkVarReadonly(..)
             | OpCode::CheckDynamicVarDeclared(_)
             // Increment / decrement

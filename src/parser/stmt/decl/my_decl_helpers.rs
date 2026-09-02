@@ -18,16 +18,26 @@ use super::parse_assign_expr_or_comma;
 /// term has none).
 ///
 /// Mirrors the sigilled `:=` logic in `my_decl_assign::handle_binding`: when
-/// `expr` is itself a plain variable reference (`Expr::Var`), the sigilless
-/// name becomes a writable ALIAS of that variable's container (raku:
-/// `my $a = 5; my \x := $a; x = 10; say $a` prints `10`) via the same
-/// `MarkBind`/`WrapVarRef`/`bind_source` machinery the sigilled case uses.
-/// Otherwise (binding to a literal or any other computed rvalue) the name
-/// stays genuinely readonly (raku: `my \x := 5; x = 10` dies).
+/// the RHS can denote a CONTAINER, the sigilless name becomes an alias of it
+/// through the same `MarkBind`/`WrapVarRef`/`bind_source` machinery the sigilled
+/// case uses (raku: `my $a = 5; my \x := $a; x = 10; say $a` prints `10`).
+///
+/// The set of such shapes is a variable, an element (`@a[0]`, `%h<k>`, a
+/// computed index) and a method call — the last because an `is rw` accessor
+/// returns a container and the parser cannot tell it from an ordinary method.
+/// Whether the binding is actually writable is therefore settled at RUN time by
+/// `OpCode::MarkSigillessBind`: `my \x := $c.v` aliases the attribute, while
+/// `my \x := $s.uc` binds a plain `Str` and stays immutable.
+///
+/// This used to be `matches!(expr, Expr::Var(_))` alone, so every element and
+/// accessor bind was marked readonly outright and `x = 9` died with "Cannot
+/// modify an immutable Int". A literal or any other computed rvalue keeps the
+/// readonly path: it can never denote a container, and routing it through the
+/// bind machinery would give it a container cell that a later same-named
+/// declaration in a callee can collide with.
 ///
 /// This does NOT depend on whether a type constraint was written — `my Mu
-/// \a := $a` and `my \a := $a` behave the same way in raku; only the shape
-/// of the RHS decides mutability.
+/// \a := $a` and `my \a := $a` behave the same way in raku.
 fn build_sigilless_bind_stmt(
     name: String,
     expr: Expr,
@@ -35,7 +45,10 @@ fn build_sigilless_bind_stmt(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
-    let bind_to_var = matches!(expr, Expr::Var(_));
+    let binds_a_container = matches!(
+        expr,
+        Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
+    );
     let decl = Stmt::VarDecl {
         name: name.clone(),
         expr,
@@ -48,7 +61,7 @@ fn build_sigilless_bind_stmt(
         custom_traits: Vec::new(),
         where_constraint: None,
     };
-    if bind_to_var {
+    if binds_a_container {
         Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl, Stmt::MarkSigilless(name)])
     } else {
         Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])

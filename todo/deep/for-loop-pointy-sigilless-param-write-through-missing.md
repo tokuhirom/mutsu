@@ -97,3 +97,29 @@ for $a, 1_000, $b, 1_000_000 -> \x, $value {
     x = $value;   # should throw X::TypeCheck::Assignment for both iterations
 }
 ```
+
+## Re-verified 2026-09-02: unchanged, and now the last shape of its family
+
+Still byte-identical to the filing: two "Use of uninitialized value" warnings and
+`a= b=`.
+
+`news/2026-09/bind-alias-is-a-container-not-a-name.md` closed the two sibling
+findings this file was grouped with — a `:=` declaration bind of a plain scalar
+now promotes to a shared container cell (so the alias survives into a stored
+closure, in both directions), and a sigilless bind now aliases any lvalue RHS,
+not just a plain `Expr::Var`. Neither moved this row, which confirms the
+diagnosis in the section above: the `for LIST -> \x, ... { }` loop-parameter
+bind is a genuinely different compilation path that never registers an alias of
+any kind, so there is nothing for either fix to reach.
+
+Two things that are now known and were not when this was filed:
+
+- The machinery the fix should hook into is settled. A sigilless declaration
+  emits `SyntheticBlock([MarkBind, VarDecl{..}, MarkSigilless(name)])` and the
+  new `OpCode::MarkSigillessBind` settles the term's mutability from what it is
+  actually bound to. A loop parameter that bound the source element's container
+  would therefore get correct mutability for free.
+- The type-check half named in "Why this matters" is also already solved for the
+  declaration form: a promoted cell carries the source's `of`-type, so
+  `X::TypeCheck::Assignment` fires with the right wording once the write-through
+  exists. The `Native::Overflow` shape needs only the write-through.

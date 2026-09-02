@@ -669,7 +669,22 @@ impl Interpreter {
             // *fresh binding* — clear the stale cell so the assignment below
             // writes a new plain value instead of writing *through* the old Arc
             // (which would corrupt the prior iteration's captured closure).
-            if !self_captured_decl && matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
+            // ... unless another lexical OF THIS FRAME was `:=`-bound to this
+            // slot (`my $x = 2; my $y := $x; my $x = 3`). Raku treats a
+            // same-scope redeclaration as the SAME variable — it only warns
+            // "Redeclaration of symbol" — so `$y` must read 3, and clearing the
+            // cell here would strand it on the old value. `local_bind_pairs` is
+            // per-call-frame (saved and restored around every call) and records
+            // exactly the `:=` source→target slot pairs of this frame, so it
+            // does not match the capture-boxed loop local this clear exists for
+            // (whose cell is shared with a CLOSURE, not with a sibling slot).
+            let bound_by_sibling_lexical = self
+                .local_bind_pairs
+                .iter()
+                .any(|&(source, _)| source == idx);
+            if !self_captured_decl
+                && !bound_by_sibling_lexical
+                && matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
             {
                 self.locals[idx] = Value::NIL;
             }
@@ -1671,8 +1686,26 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
             );
+            // A same-scope DECLARATION bind (`my $t := $s`, `my \x := $s`) of a
+            // plain scalar used to fall through to the `local_bind_pairs` slot
+            // pair above, which is frame-local: it reconciles the two slots
+            // inside the declaring frame only. So `$t = 42` written from a
+            // stored closure landed on the closure's own by-name copy (the
+            // alias read back as 42 while the source stayed unchanged), and a
+            // read of `$t` inside a closure saw the value frozen at capture
+            // time. The `is_rebind` twin one line up already promotes the pair
+            // to a shared `ContainerRef` cell and gets every one of those
+            // shapes right, so the declaration form takes the same route.
+            // `is_percall_pseudo_var` is excluded for the reason spelled out at
+            // its definition: `my $ex := $_` must capture the topic's current
+            // referent, never promote `_` itself into a shared cell.
+            let decl_bind_same_scope_scalar = is_vardecl
+                && source_in_same_scope
+                && val_is_simple_scalar
+                && !is_percall_pseudo_var;
             if (source_in_outer_frame
-                || (is_rebind && source_in_same_scope && val_is_simple_scalar))
+                || (is_rebind && source_in_same_scope && val_is_simple_scalar)
+                || decl_bind_same_scope_scalar)
                 && !name.starts_with('@')
                 && !name.starts_with('%')
                 && !name.starts_with('&')
@@ -1707,7 +1740,31 @@ impl Interpreter {
                 let container = match (val.view(), source_cell) {
                     (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),
-                    _ => val.clone().into_container_ref(),
+                    _ => {
+                        // A freshly minted cell must inherit the SOURCE
+                        // variable's declared `of`-type: from here on the cell,
+                        // not the name, is what every write to either alias
+                        // reaches, so a name-keyed check would never run again
+                        // for a write arriving from another frame (`my Int $a;
+                        // my \x := $a; my &blk = sub { x = "s" }` used to
+                        // assign through unchecked). This is the same
+                        // constraint-belongs-to-the-container rule as ADR-0042,
+                        // applied at the promotion site.
+                        let fresh = val.clone().into_container_ref();
+                        if let ValueView::ContainerRef(arc) = fresh.view()
+                            && let Some(ty) = self.var_type_constraint(&resolved_source)
+                        {
+                            // Env keys drop the `$` for a scalar; the error text
+                            // spells the variable the way the source does.
+                            let display = if resolved_source.starts_with(['$', '@', '%', '&']) {
+                                resolved_source.clone()
+                            } else {
+                                format!("${}", resolved_source)
+                            };
+                            crate::value::register_container_constraint_named(&arc, &ty, &display);
+                        }
+                        fresh
+                    }
                 };
                 self.locals[idx] = container.clone();
                 // Update source in locals if present
