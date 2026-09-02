@@ -9,6 +9,13 @@ impl ArrayKind {
         )
     }
 
+    /// True for `List` and `ItemList` — the IMMUTABLE list kinds, whose
+    /// elements are plain values rather than `Scalar` containers. The
+    /// complement of [`Self::is_real_array`].
+    pub fn is_immutable_list(self) -> bool {
+        matches!(self, ArrayKind::List | ArrayKind::ItemList)
+    }
+
     /// True for lazy arrays backed by an infinite source.
     pub fn is_lazy(self) -> bool {
         matches!(self, ArrayKind::Lazy)

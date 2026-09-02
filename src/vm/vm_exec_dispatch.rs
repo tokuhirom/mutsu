@@ -3784,8 +3784,11 @@ impl Interpreter {
                 self.exec_index_autovivify_lazy_op(false, *is_positional)?;
                 *ip += 1;
             }
-            OpCode::IndexAutovivifyLazyTerminal { is_positional } => {
-                self.exec_index_autovivify_lazy_op(true, *is_positional)?;
+            OpCode::IndexAutovivifyLazyTerminal {
+                is_positional,
+                sigilless,
+            } => {
+                self.exec_index_autovivify_lazy_op_sigilless(true, *is_positional, *sigilless)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx, slot) => {

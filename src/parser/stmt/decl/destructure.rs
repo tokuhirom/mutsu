@@ -4,7 +4,6 @@ use super::super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use super::super::parse_statement_modifier;
 use super::super::{ident, keyword};
 use super::helpers::register_term_symbol_from_decl_name;
-use super::my_decl_helpers::build_sigilless_bind_stmt;
 use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
@@ -460,30 +459,6 @@ fn parse_destructuring_with_rhs(
 
     let has_named = vars.iter().any(|v| v.is_named);
 
-    // A positional sigilless binding must preserve the containers carried by
-    // its RHS elements. Staging `($x, $y)` in an Array and then reading its
-    // elements binds `\a`/`\b` to copies, so assignments through those terms
-    // cannot reach `$x`/`$y`. Desugar directly representable variable
-    // references to the same individual bind declarations that
-    // `my \a := $x` already uses.
-    // Mixed/computed destructuring stays on the general staging path, which
-    // retains its existing readonly, default, slurpy, and constraint handling.
-    if is_binding
-        && !has_named
-        && vars.iter().all(is_direct_sigilless_destructure_var)
-        && let Some(sources) = direct_sigilless_bind_sources(&raw_rhs, vars.len())
-    {
-        return parse_direct_sigilless_binding(
-            rest,
-            vars,
-            sources,
-            is_state,
-            is_our,
-            type_constraint,
-            has_following_block || block_rhs_ends_at_newline,
-        );
-    }
-
     // List-assignment iterates the RHS with one level of decont (Rakudo
     // List.STORE): `my ($a, $b) = $row` where `$row` holds an itemized Array
     // flattens into its elements, while `= $row,` (a comma list) keeps the
@@ -521,7 +496,7 @@ fn parse_destructuring_with_rhs(
     // every target below reads a VALUE out of it. ADR-0040 slice 2's
     // element-itemization is therefore deliberately suppressed for it; see
     // `Interpreter::is_destructure_staging_temp`.
-    let mut stmts = vec![Stmt::VarDecl {
+    let tmp_decl = Stmt::VarDecl {
         name: tmp_name,
         expr: rhs,
         type_constraint: None,
@@ -532,7 +507,20 @@ fn parse_destructuring_with_rhs(
         export_tags: Vec::new(),
         custom_traits: Vec::new(),
         where_constraint: None,
-    }];
+    };
+    // In BINDING mode the staging temp must keep the RHS elements' CONTAINERS,
+    // not copies of their values: `my (\a, \b) := ($x, $y)` makes `a` an alias
+    // of `$x`, so `a = 10` has to reach `$x`. Declaring the temp with `MarkBind`
+    // (the same marker `my @t := (...)` uses) keeps the element cells the RHS
+    // list already carries; a plain assigning declaration deitemizes them away.
+    // Targets that read a VALUE out of the temp are unaffected -- a `$` target
+    // in binding mode is a read-only COPY in raku too (`my ($a,$b) := ($x,$y);
+    // $x = 7` leaves `$a` at its original value).
+    let mut stmts = if is_binding {
+        vec![Stmt::SyntheticBlock(vec![Stmt::MarkBind, tmp_decl])]
+    } else {
+        vec![tmp_decl]
+    };
     // List ASSIGNMENT (`=`) and signature BINDING (`:=`) differ here:
     //  - assignment: the FIRST `@`/`%` target is greedy — it slurps all
     //    remaining RHS values, and every target after it receives an empty
@@ -648,20 +636,38 @@ fn parse_destructuring_with_rhs(
         // `coerce_to_array` produces.
         // Pinned by `t/list-bind-trailing-array.t` and
         // `roast/S02-names-vars/signature.t`.
-        let decl = if is_binding
+        //
+        // A SIGILLESS target binds the same way for the same reason: `my (\a,
+        // \b) := ($x, $y)` aliases `$x`/`$y`, exactly as the single-variable
+        // `my \a := $x` does. That form emits `MarkBind` + the declaration +
+        // `MarkSigilless` (see `my_decl_helpers::build_sigilless_bind_stmt`),
+        // which leaves writability to the runtime `MarkSigillessBind` check --
+        // so a non-container element (`my (\a) := (5,)`) still stays immutable.
+        let binds_element = is_binding
             && !dvar.is_slurpy
             && !is_implicit_slurpy
-            && dvar.name.starts_with(['@', '%'])
-        {
+            && (dvar.sigilless || dvar.name.starts_with(['@', '%']));
+        let decl = if binds_element && dvar.sigilless {
+            // The same block shape `my \a := $x` uses
+            // (`my_decl_helpers::build_sigilless_bind_stmt`): the trailing
+            // `MarkSigilless` has to sit INSIDE the block, because that is how
+            // the compiler learns -- before compiling the declaration -- that
+            // this bind's target is sigilless.
+            Stmt::SyntheticBlock(vec![
+                Stmt::MarkBind,
+                decl,
+                Stmt::MarkSigilless(dvar.name.clone()),
+            ])
+        } else if binds_element {
             Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl])
         } else {
             decl
         };
         stmts.push(decl);
-        if dvar.sigilless {
+        if dvar.sigilless && !binds_element {
             stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
         }
-        if is_binding && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
+        if is_binding && !binds_element && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
             stmts.push(Stmt::MarkReadonly(
                 dvar.name.clone(),
                 crate::ast::ReadonlyKind::Immutable,
@@ -679,88 +685,6 @@ fn parse_destructuring_with_rhs(
     if has_following_block || block_rhs_ends_at_newline {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
         // surrounding conditional, not to this declaration's modifier parser.
-        Ok((rest, block))
-    } else {
-        parse_statement_modifier(rest, block)
-    }
-}
-
-/// Whether a destructure leaf can use the plain sigilless declaration path.
-/// Defaults, slurpy elements, and constraints need the staged destructuring
-/// machinery because they change positional binding semantics.
-fn is_direct_sigilless_destructure_var(var: &DestructureVar) -> bool {
-    var.sigilless
-        && !var.is_slurpy
-        && !var.is_optional
-        && !var.is_named
-        && var.default.is_none()
-        && var.where_constraint.is_none()
-        && var.literal_value.is_none()
-}
-
-/// Extract the individual lvalues represented by a positional RHS. An Array
-/// literal is the parser's representation of a parenthesized/comma list;
-/// Plain variable references retain their source containers so they can be
-/// bound rather than copied through a staging array.
-fn direct_sigilless_bind_sources(rhs: &Expr, count: usize) -> Option<Vec<Expr>> {
-    if count == 0 {
-        return Some(Vec::new());
-    }
-    match rhs {
-        Expr::ArrayLiteral(elements) if elements.len() >= count => {
-            let sources = elements[..count].to_vec();
-            sources
-                .iter()
-                .all(is_direct_sigilless_bind_source)
-                .then_some(sources)
-        }
-        Expr::Grouped(inner) => direct_sigilless_bind_sources(inner, count),
-        _ => None,
-    }
-}
-
-fn is_direct_sigilless_bind_source(expr: &Expr) -> bool {
-    matches!(expr, Expr::Var(_) | Expr::Literal(_))
-}
-
-/// Build a positional sigilless binding without copying its RHS through an
-/// intermediate Array. Each helper block is flattened so the compiler sees
-/// the same `MarkBind` immediately before each declaration as it does for a
-/// standalone `my \\name := $source`.
-fn parse_direct_sigilless_binding(
-    rest: &str,
-    vars: Vec<DestructureVar>,
-    sources: Vec<Expr>,
-    is_state: bool,
-    is_our: bool,
-    type_constraint: Option<String>,
-    preserve_rest: bool,
-) -> PResult<'_, Stmt> {
-    let mut stmts = Vec::new();
-    for (var, source) in vars.iter().zip(sources) {
-        let stmt = build_sigilless_bind_stmt(
-            var.name.clone(),
-            source,
-            var.per_var_type_constraint
-                .clone()
-                .or_else(|| type_constraint.clone()),
-            is_state,
-            is_our,
-        );
-        match stmt {
-            Stmt::SyntheticBlock(inner) => stmts.extend(inner),
-            other => stmts.push(other),
-        }
-    }
-    // A declaration in expression position yields the bound values as a list,
-    // matching the staged destructuring block's trailing ArrayVar expression.
-    stmts.push(Stmt::Expr(Expr::ArrayLiteral(
-        vars.iter()
-            .map(|var| Expr::BareWord(var.name.clone()))
-            .collect(),
-    )));
-    let block = Stmt::SyntheticBlock(stmts);
-    if preserve_rest {
         Ok((rest, block))
     } else {
         parse_statement_modifier(rest, block)

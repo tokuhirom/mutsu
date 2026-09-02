@@ -1179,6 +1179,12 @@ impl Compiler {
                 });
                 // Detect `:=` bind context for scalar variables via MarkBind.
                 let has_mark_bind = stmts.iter().any(|s| matches!(s, Stmt::MarkBind));
+                // A trailing `MarkSigilless` marks the bind target as a
+                // sigilless term, which changes how an immutable `List`
+                // element's mutability is settled (see
+                // `OpCode::IndexAutovivifyLazyTerminal`). It compiles AFTER the
+                // declaration, so the block has to tell the VarDecl itself.
+                let has_mark_sigilless = stmts.iter().any(|s| matches!(s, Stmt::MarkSigilless(_)));
                 // Collect sigilless readonly names so we can clear the flag
                 // before the VarDecl assignment (allows re-declaration in loops).
                 let sigilless_readonly_names: Vec<String> = stmts
@@ -1204,6 +1210,7 @@ impl Compiler {
                     }
                     if has_mark_bind && matches!(s, Stmt::VarDecl { .. }) {
                         self.bind_vardecl = true;
+                        self.sigilless_bind_vardecl = has_mark_sigilless;
                     }
                     // Before compiling a VarDecl that will be followed by
                     // MarkSigillessReadonly, clear the old readonly flag so
@@ -1320,6 +1327,8 @@ impl Compiler {
                 // ("Cannot modify an immutable Range").
                 let bind_vardecl = self.bind_vardecl;
                 self.bind_vardecl = false;
+                let sigilless_bind_vardecl = self.sigilless_bind_vardecl;
+                self.sigilless_bind_vardecl = false;
                 // `my &infix:<+> = ...` installs a user operator just like a
                 // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
                 self.note_operator_decl(name);
@@ -1623,10 +1632,12 @@ impl Compiler {
                     // only emit WrapVarRef when the RHS is a simple variable.
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
+                    self.sigilless_bind_terminal = sigilless_bind_vardecl;
                     self.bind_target_direct = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
+                    self.sigilless_bind_terminal = false;
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
                         || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))

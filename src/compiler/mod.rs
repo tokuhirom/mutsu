@@ -1313,6 +1313,16 @@ pub(crate) struct Compiler {
     pub(crate) self_is_signature_param: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
+    /// When true, the current VarDecl is a `:=` bind whose target is a
+    /// SIGILLESS term (`my \a := ...`, or a sigilless target of a
+    /// list-destructuring bind). Set by the enclosing `SyntheticBlock`, which is
+    /// the only place that knows -- the trailing `MarkSigilless` compiles after
+    /// the declaration. One-shot, like [`Self::bind_vardecl`].
+    sigilless_bind_vardecl: bool,
+    /// True while compiling the RHS of a sigilless `:=` bind, so the terminal
+    /// index emits `IndexAutovivifyLazyTerminal { sigilless: true }` and leaves
+    /// an immutable `List`'s scalar element unpromoted (and hence immutable).
+    sigilless_bind_terminal: bool,
     /// True only while compiling the statement operand of `do`. `WheneverScope`
     /// reads this to leave its Tap on the ordinary value stack.
     do_stmt_yields_value: bool,
@@ -1618,6 +1628,8 @@ impl Compiler {
             lexically_in_method: false,
             self_is_signature_param: false,
             bind_vardecl: false,
+            sigilless_bind_vardecl: false,
+            sigilless_bind_terminal: false,
             do_stmt_yields_value: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,
