@@ -157,8 +157,11 @@ is a real container whose elements would answer `Scalar` anyway.
   well as under mutsu.
 - ADR-0040's itemization becomes load-bearing for *reflection*, not just for
   rendering and flattening: the slice/element discriminator is derived from it.
-  Where itemization is still incomplete, the discriminator has to carve the
-  gap out — see the residuals below.
+  That promptly exposed a gap in it — a lazy source assigned to an `@`
+  variable reified bare elements — which the discriminator carved out for one
+  day before the gap itself was closed
+  (`news/2026-09/lazy-array-elements-are-itemized-at-the-force.md`); the
+  carve-out is gone.
 
 ### Accepted residual divergences
 
@@ -174,12 +177,6 @@ is a real container whose elements would answer `Scalar` anyway.
 - **`.name` on a native positional ref** returns `Nil` instead of throwing:
   mutsu answers `.name` generically for any `Instance` from its attribute map.
   `.of`/`.default`/`.dynamic` do throw.
-- **A slice of a lazy-backed real Array** (`my @l = lazy gather {...};
-  @l[0,1].VAR.^name`) reports `Scalar` instead of `List`. The lazy force path
-  is name-blind and hands out bare elements, so the discriminator has to
-  exclude `LazyList`-backed containers; closing
-  `todo/deep/lazy-array-elements-are-not-itemized-at-reification.md` removes
-  both the carve-out and this residual.
 
 ### Not decided here
 
