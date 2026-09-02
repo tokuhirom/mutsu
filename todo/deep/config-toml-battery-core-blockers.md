@@ -1,4 +1,22 @@
-# Vendor and bundle `Config::TOML` once its remaining core blockers are fixed
+# `Config::TOML` battery is blocked on core interpreter campaigns
+
+## Deep-triage note (2026-09-02)
+
+Moved from `todo/tickets/` after re-checking the current status of ADR-0059
+and the TOML/Crane measurements. The mechanical vendoring work is still
+blocked by three independent core investigations: Crane's array-path semantics
+(copy isolation, positional-invalid classification, and `WhateverCode` path
+steps), `\\UXXXXXXXX` grammar candidate selection, and the inline-table
+timeout. ADR-0059's container-return work and its typed deferred-vivification
+follow-up are already landed; they do not establish the remaining Crane
+semantics. These are cross-cutting Parser -> Compiler -> VM/runtime campaigns,
+not a bounded battery packaging PR. Re-open a focused ticket for vendoring
+only after fresh upstream suite measurements show a workable Config::TOML and
+Crane gate. A focused re-run of Crane v0.1.2's `t/copy.rakutest` on
+2026-09-02 still failed 5 of 6 top-level subtests, including copy isolation,
+positional-index classification, and positional out-of-range handling.
+
+## Former ticket scope
 
 ## What this is
 
