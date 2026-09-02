@@ -33,15 +33,16 @@ impl Interpreter {
 
     pub(super) fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item.view() {
-            ValueView::Capture { positional, named } => {
-                // I5: containerize on append rather than trusting the stored
-                // flavour — the positional lane must stay positional even if
-                // an element was minted with the named flavour upstream.
-                args.extend(positional.iter().cloned().map(Self::containerize_pair_item));
-                for (k, v) in named.iter() {
-                    args.push(Value::pair(k.clone(), v.clone()));
-                }
-            }
+            // A Capture that reached the argument list as an ELEMENT of a
+            // slipped container is one argument, not an argument list: `|` was
+            // applied to the container, not to the Capture. `f(|@a)` where
+            // `@a[0]` is `\("x", :k<v>)` passes that Capture whole (XML's
+            // `make-xml` relies on it: `craft($name, |@contents)` must hand
+            // `craft-new` the Capture so its `$what ~~ Capture` arm recurses).
+            // Only `|$capture` itself spreads, and `exec_make_slip_op` has
+            // already replayed those lanes into the Slip's items by the time
+            // this runs.
+            //
             // Hash values inside a Slip are kept as single positional args.
             // Top-level `|%hash` flattening is handled by MakeSlip, which converts
             // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
