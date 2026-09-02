@@ -202,7 +202,7 @@ module).
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
 | `html` / `html.parser` | — | Ecosystem (not bundled) | `HTML::Parser`-style modules exist on the ecosystem; not vendored. |
-| `xml.etree.ElementTree` / `xml.dom` / `xml.sax` | — | Ecosystem (not bundled) | The community `XML` module (raku-community-modules) is the usual choice; not vendored. A notable gap given how common XML parsing is. |
+| `xml.etree.ElementTree` / `xml.dom` / `xml.sax` | `XML` | **Bundled** | Vendored 2026-09-02 (`modules/XML/`), DOM-style tree building plus serialization back to a string. See [xml.md](xml.md). |
 
 ## Internet Protocols and Support
 
@@ -294,7 +294,8 @@ most worth a battery survey next (methodology:
    both strong candidates are healthy under raku; the shared compiler bug
    that blocked both is now fixed, and each has its own smaller remaining
    blocker (a parser gap for `CSV::Table`, slang support for `Text::CSV`).
-3. **XML parsing** (`XML`) — common for config/data interchange; no survey yet.
+3. **XML parsing** (`XML`) — ~~common for config/data interchange~~ **closed**:
+   surveyed 2026-08-22 and bundled 2026-09-02 at 15/15, see [xml.md](xml.md).
 4. **Compression/archiving** (`zlib`/`gzip`/`tarfile`/`zipfile` equivalents) — no
    bundled story at all today.
 5. **A logging framework** — `print`/`say`-based debugging works, but nothing

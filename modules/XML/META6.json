@@ -1,0 +1,37 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Timothy Totten"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "A full-featured, pure-Raku XML library (parsing, manipulation, emitting, queries, etc.)",
+  "license": "Artistic-2.0",
+  "meta-version": 0,
+  "name": "XML",
+  "perl": "6.*",
+  "provides": {
+    "XML": "lib/XML.rakumod",
+    "XML::CDATA": "lib/XML/CDATA.rakumod",
+    "XML::Comment": "lib/XML/Comment.rakumod",
+    "XML::Document": "lib/XML/Document.rakumod",
+    "XML::Element": "lib/XML/Element.rakumod",
+    "XML::Entity": "lib/XML/Entity.rakumod",
+    "XML::Grammar": "lib/XML/Grammar.rakumod",
+    "XML::Node": "lib/XML/Node.rakumod",
+    "XML::PI": "lib/XML/PI.rakumod",
+    "XML::Text": "lib/XML/Text.rakumod"
+  },
+  "raku": "6.*",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/XML.git",
+  "tags": [
+    "XML"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.3.6"
+}

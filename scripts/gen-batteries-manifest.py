@@ -32,6 +32,10 @@ OUT_PATH = os.path.join(REPO_ROOT, "site", "content", "batteries.json")
 # Facts that META6.json does not carry. Keyed by META6 "name". Optional — a
 # module missing from this map still lists, just without a slot/record link.
 SIDECAR = {
+    "XML": {
+        "slot": "XML parse + generate",
+        "record": "docs/batteries/xml.md",
+    },
     "OpenSSL": {
         "slot": "TLS / HTTPS socket (foundation)",
         "record": "docs/batteries/tls-openssl.md",
