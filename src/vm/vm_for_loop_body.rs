@@ -660,7 +660,18 @@ impl Interpreter {
             // that removed the index/key out from under the loop — keeps the
             // writeback that bind depends on. Retiring per LOOP instead of per
             // ITERATION silently drops such an iteration's write.
-            let aliased = promoted.is_some() || item_carries_cell;
+            // A mutable QuantHash `.values` cell is a *weight* carrier, not an
+            // ordinary element cell: its store has zero-removal semantics and
+            // the dedicated QuantHash writeback still owns the operation.
+            // Keep that writeback active while generic consumers can retain
+            // the cell as an lvalue.
+            let item_is_quanthash_weight = match item.view() {
+                ValueView::ContainerRef(cell) => {
+                    crate::value::quanthash_weight_ref(&cell).is_some()
+                }
+                _ => false,
+            };
+            let aliased = promoted.is_some() || (item_carries_cell && !item_is_quanthash_weight);
             // A cell handed out by a container-aware producer (`.values`,
             // `.reverse`, `.sort`) carries its container's element constraint
             // but not the container's NAME -- `vm_element_producers.rs` sees a

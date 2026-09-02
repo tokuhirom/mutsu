@@ -429,6 +429,17 @@ pub(crate) struct InstanceAttrs {
 pub struct ContainerCell {
     value: Mutex<Value>,
     constraint: Mutex<Option<Box<CellConstraint>>>,
+    /// A mutable QuantHash weight is lvalue-like but not an ordinary stored
+    /// element: zero removes its key.  Views such as `.values` use this marker
+    /// so generic consumers can retain the lvalue without flattening that
+    /// operation into a normal cell store.
+    quanthash_weight: Mutex<Option<QuantHashWeightRef>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuantHashWeightRef {
+    pub source: String,
+    pub key: Value,
 }
 
 /// A cell's `of`-type, plus where it came from.
@@ -456,6 +467,7 @@ impl ContainerCell {
         Self {
             value: Mutex::new(value),
             constraint: Mutex::new(None),
+            quanthash_weight: Mutex::new(None),
         }
     }
 
@@ -466,6 +478,22 @@ impl ContainerCell {
     pub fn get_mut(&mut self) -> std::sync::LockResult<&mut Value> {
         self.value.get_mut()
     }
+}
+
+/// Mark a transient cell yielded by a mutable QuantHash `.values` view.
+pub fn register_quanthash_weight_ref(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    source: String,
+    key: Value,
+) {
+    *cell.quanthash_weight.lock().unwrap() = Some(QuantHashWeightRef { source, key });
+}
+
+/// Return the dedicated QuantHash writeback information for `cell`, if any.
+pub fn quanthash_weight_ref(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+) -> Option<QuantHashWeightRef> {
+    cell.quanthash_weight.lock().unwrap().clone()
 }
 
 /// Record that the `ContainerRef` cell `cell` has the `of`-type `type_name`.

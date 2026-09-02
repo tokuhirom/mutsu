@@ -118,7 +118,7 @@ impl Interpreter {
         }
     }
 
-    /// Produce `.pairs` for a mutable QuantHash. A QuantHash weight is not an
+    /// Produce `.pairs`/`.values` for a mutable QuantHash. A QuantHash weight is not an
     /// element cell: assigning zero removes the key, so the pair carries the
     /// source binding as dedicated lvalue metadata instead.
     pub(super) fn try_quanthash_weight_pair_producer(
@@ -128,43 +128,47 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Value> {
-        if method != "pairs" || !args.is_empty() || target_name.is_empty() {
+        if !matches!(method, "pairs" | "values") || !args.is_empty() || target_name.is_empty() {
             return None;
         }
-        let pairs = match target.view() {
+        let weights: Vec<(Value, Value)> = match target.view() {
             ValueView::Set(set, true) => set
                 .iter()
-                .map(|key| {
-                    Value::quanthash_weight_pair(
-                        set.typed_key(key),
-                        Value::TRUE,
-                        target_name.to_string(),
-                    )
-                })
+                .map(|key| (set.typed_key(key), Value::TRUE))
                 .collect(),
             ValueView::Bag(bag, true) => bag
                 .iter()
-                .map(|(key, weight)| {
-                    Value::quanthash_weight_pair(
-                        bag.typed_key(key),
-                        Value::from_bigint(weight.clone()),
-                        target_name.to_string(),
-                    )
-                })
+                .map(|(key, weight)| (bag.typed_key(key), Value::from_bigint(weight.clone())))
                 .collect(),
             ValueView::Mix(mix, true) => mix
                 .iter()
                 .map(|(key, weight)| {
-                    Value::quanthash_weight_pair(
+                    (
                         mix.typed_key(key),
                         crate::value::mix_weight_to_value(*weight),
-                        target_name.to_string(),
                     )
                 })
                 .collect(),
             _ => return None,
         };
-        Some(Value::seq(pairs))
+        Some(Value::seq(
+            weights
+                .into_iter()
+                .map(|(key, weight)| {
+                    if method == "pairs" {
+                        Value::quanthash_weight_pair(key, weight, target_name.to_string())
+                    } else {
+                        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(weight));
+                        crate::value::register_quanthash_weight_ref(
+                            &cell,
+                            target_name.to_string(),
+                            key,
+                        );
+                        Value::container_ref(cell)
+                    }
+                })
+                .collect(),
+        ))
     }
 
     /// Produce `method`'s result from `target`'s **element containers** instead

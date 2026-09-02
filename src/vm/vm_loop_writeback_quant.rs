@@ -124,7 +124,7 @@ impl Interpreter {
         let Some(key) = keys.get(idx).cloned() else {
             return Ok(());
         };
-        self.quanthash_set_weight(code, source, key, &current)
+        self.quanthash_set_weight(code, source, key, &current.deref_container())
     }
 
     /// Write a mutable QuantHash weight back from an rw for-loop param: either
@@ -178,7 +178,7 @@ impl Interpreter {
             let Some(key) = keys.get(idx).cloned() else {
                 return Ok(());
             };
-            self.quanthash_set_weight(code, source, key, &value)
+            self.quanthash_set_weight(code, source, key, &value.deref_container())
         }
     }
 

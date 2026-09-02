@@ -828,7 +828,16 @@ impl Interpreter {
                 // `Base[Arg,...]` package name that `vm_var_index_ops.rs` produces
                 // for the `[ ]` syntax, so `Set.^parameterize(Str)` and `Set[Str]`
                 // yield an identical parameterized type object.
-                let base = self.mop_receiver_owner(&args[0]);
+                // Parameterizing is always relative to the *generic base*, not
+                // to a previously-curried spelling.  In particular, the MOP
+                // permits a caller to reuse one `$type` lexical for successive
+                // parameterizations (`Set[Str].^parameterize(Int())` means
+                // `Set[Int()]`, not the nonexistent `Set[Str][Int()]`).
+                let owner = self.mop_receiver_owner(&args[0]);
+                let base = owner
+                    .split_once('[')
+                    .map(|(base, _)| base)
+                    .unwrap_or(owner.as_str());
                 let param_args = args[1..]
                     .iter()
                     .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
