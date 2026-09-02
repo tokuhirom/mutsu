@@ -1,6 +1,7 @@
 # ADR-0065: mutsu's language server targets AI agents, and is scoped to the protocol surface an agent actually consumes
 
-- **Status**: Proposed (2026-09-02). Design only — no implementation has started.
+- **Status**: Accepted (2026-09-02); S0 and S1 shipped 2026-09-03. See the phasing table
+  and the S0/S1 findings sections below for what has actually been built.
 - **Context**: The user asked for a language server built on mutsu, *for mutsu* — a tool
   for people (and agents) writing Raku that is meant to run on mutsu. This is a deliberate
   **new capability** direction with zero roast payoff, in the same category as ADR-0011
@@ -287,6 +288,56 @@ snapshot/restore discipline in `parse_program_partial` holds under repetition. S
 `Stmt::SetLine` is the only positional information mutsu has (D6), this is the load-bearing
 property for every diagnostic the server will emit.
 
+## S1 findings (2026-09-03)
+
+Shipped: `crates/mutsu-lsp` (the server), `src/analysis.rs` (mutsu's non-executing
+frontend), `docs/language-server.md` (usage and layout). The repository is now a Cargo
+workspace. Four things are worth recording because they either settled a "not decided
+here" item or came out differently from the design.
+
+### 1. `lsp-server` + `lsp-types`, not `tower-lsp` — D3 removed the need for async
+
+D7 anticipated keeping `tower-lsp`/`tokio` out of mutsu's dependency tree by putting the
+server in its own crate. With D3 in hand that turns out to be unnecessary: dropping every
+latency-sensitive method leaves nothing to overlap, so the server is a synchronous
+thread-and-channels loop over rust-analyzer's `lsp-server`, and **no async runtime enters
+this repository at all**. Parsing runs on the loop thread, which also keeps the parser's
+thread-local caches warm — the exact configuration S0 validated.
+
+### 2. Warnings were free, and they carry their own line
+
+The design assumed S1 would ship the single parse error and that everything else waited for
+S3. In fact `PARSE_WARNINGS` already collects the parser's warnings with a
+`"\n    at FILE:LINE"` suffix baked into the message text (it has to survive the
+precompilation cache, which persists text only). Splitting that suffix back off recovers a
+line number, so sink-context warnings and VCS conflict markers ship in S1 at line
+granularity. S3 remains about *multiple errors* and recovery, which is the hard part.
+
+### 3. A parser panic is a diagnostic, not an abort
+
+Not in the design, and load-bearing for a resident process: mutsu's parser is not
+panic-free, and a server must outlive a document that trips it. `analysis::check` catches
+the unwind and reports it as "mutsu's parser crashed on this document ... this is a bug in
+mutsu", which is D4's signal in its bluntest form — an agent must not go looking for a
+mistake in its own code. Pinned by a protocol test that feeds a sequence of hostile
+documents and then asserts the session is still analysing.
+
+### 4. The workspace split cost less than expected
+
+`mutsu` stays the root package with `crates/mutsu-lsp` as a member and
+`default-members = ["."]`, so a bare `cargo build` / `cargo test` at the root means exactly
+what it meant before, and every existing CI, release, container and wasm invocation is
+untouched. The server needs one CI step of its own (`cargo clippy -p mutsu-lsp
+--all-targets` + `cargo test -p mutsu-lsp`), mirrored in `make test`.
+
+It takes mutsu with **default** features, JIT included. A leaner feature set is a different
+build of the whole interpreter, which would make CI compile mutsu a third time (it already
+builds debug and release) for a binary that is merely smaller.
+
+Two items from "Not decided here" are now decided in passing: `mutsu-lsp` is versioned
+independently of the interpreter (`tag-release.yml` bumps only the root `Cargo.toml`) and
+is **not** in the release tarball yet; transport is stdio only.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -312,7 +363,7 @@ property for every diagnostic the server will emit.
 | Slice | Content | Depends on |
 | --- | --- | --- |
 | **S0** | Long-lived-process viability probe (D8) — **done 2026-09-03**, `tests/long_lived_parse.rs` | — |
-| **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path | S0 |
+| **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path — **done 2026-09-03**, `crates/mutsu-lsp/`, `src/analysis.rs`, `docs/language-server.md` | S0 |
 | **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) | S1 |
 | **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) | S1 |
 | **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity | S1 |

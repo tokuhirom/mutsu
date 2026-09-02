@@ -1,3 +1,4 @@
+pub mod analysis;
 mod ast;
 mod builtins;
 pub(crate) mod chain_compare;

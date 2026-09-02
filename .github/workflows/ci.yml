@@ -144,6 +144,18 @@ jobs:
         env:
           RUST_MIN_STACK: 8388608
 
+      - name: Language server crate (ADR-0065)
+        # The server lives in this repository precisely so a parser change that
+        # breaks it fails here rather than silently in a separate repo
+        # (ADR-0065 D7). `cargo build`/`cargo test` at the root build only the
+        # `mutsu` package (see `default-members` in the root Cargo.toml), so the
+        # crate needs its own step. `--all-targets` lints its tests too: the
+        # positional assertions are the only thing standing between a wrong
+        # range and a consumer that will never report one (D5).
+        run: |
+          cargo clippy -p mutsu-lsp --all-targets -- -D warnings
+          cargo test -p mutsu-lsp
+
       - name: Build (debug, for TAP tests)
         run: cargo build
 

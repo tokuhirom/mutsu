@@ -1,3 +1,16 @@
+[workspace]
+# The language server (ADR-0065 D7) must track mutsu's parser in lock-step, so it
+# lives in this repository rather than its own — but in its own crate, so its
+# JSON-RPC dependencies stay out of the interpreter's dependency tree, in the
+# style of the existing native/wasm/jit feature split.
+#
+# `default-members` keeps a bare `cargo build` / `cargo test` at the repo root
+# meaning exactly what it meant before this became a workspace: the `mutsu`
+# package. The server is built and tested explicitly (`-p mutsu-lsp`), which is
+# what CI does.
+members = ["crates/mutsu-lsp"]
+default-members = ["."]
+
 [package]
 name = "mutsu"
 version = "0.23.0"
