@@ -176,6 +176,20 @@ pub(super) fn mark_expr(expr: &mut Expr) {
         }
         // `($x = *)` / `($x := *)` in expression position.
         Expr::AssignExpr { expr, .. } => mark_value_leaf(expr),
+        // A source-preserving compound assignment has three views of its
+        // children: the source target/RHS used by RakuAST and the expanded
+        // execution expression used by the compiler. Mark all of them so a
+        // Whatever leaf has the same role whichever view is later consumed.
+        Expr::CompoundAssign {
+            target,
+            rhs,
+            expanded,
+            ..
+        } => {
+            mark_expr(target);
+            mark_value_leaf(rhs);
+            mark_expr(expanded);
+        }
         Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
             for a in args {
                 mark_value_leaf(a);

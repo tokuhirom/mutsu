@@ -471,16 +471,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             && let Some(short) =
                 short_circuit_compound_assign_expr(&name, lhs_expr.clone(), op, rhs.clone())
         {
-            return Ok((rest, short));
+            return Ok((rest, compound_assign_marker(lhs_expr, op, rhs, short)));
         }
-        return Ok((
-            rest,
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(compound_assigned_value_expr(lhs_expr, op, rhs)),
-                is_bind: false,
-            },
-        ));
+        return Ok((rest, preserve_compound_assign(lhs_expr, op, rhs)?));
     }
     if let Some((stripped, meta, op)) = parse_meta_compound_assign_op(r2) {
         let (rest, _) = ws(stripped)?;

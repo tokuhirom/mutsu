@@ -296,6 +296,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             || matches!(
                 &result,
                 Expr::AssignExpr { .. }
+                    | Expr::CompoundAssign { .. }
                     | Expr::IndexAssign { .. }
                     | Expr::MultiDimIndexAssign { .. }
             )

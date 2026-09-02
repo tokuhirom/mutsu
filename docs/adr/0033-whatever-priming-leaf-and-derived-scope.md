@@ -811,11 +811,13 @@ closure. Keep the runtime behaviour pinned: `(* ~~ Int).WHAT`, `(Int ~~ *).WHAT`
 `SmartMatch`/`BangTilde` to look at the **left** operand only, so routing an `Int ~~ *`
 through `build_closure` needs that asymmetry re-checked rather than assumed.
 
-The **compound-assignment** family stays a boundary in Phase 2: raku models `* += 1` as
-`ApplyInfix(…, infix => RakuAST::MetaInfix::Assign.new(RakuAST::Infix.new("+")), …)`, and
-mutsu has no `MetaInfix::Assign` class. Adding one is an independent read-direction slice
-(it is not Whatever-specific — every `$x += 1` has the same gap), so it belongs with the
-operator cluster, not here.
+The **compound-assignment** family stayed a boundary in Phase 2. An independent
+operator-cluster slice subsequently added `RakuAST::MetaInfix::Assign` for core
+compound assignments (`$x += 1`, indexed lvalues, and `AT-POS` lvalues), while
+retaining the existing execution expansion. The `* += 1` Whatever autoprime path
+is still a boundary here: it builds a closure before conversion and needs the
+Whatever leaf/scope work described by this ADR rather than the ordinary compound
+assignment marker.
 
 ### 2.6 Divergences Phase 2 documents rather than closes
 

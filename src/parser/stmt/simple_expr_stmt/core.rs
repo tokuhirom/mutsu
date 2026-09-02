@@ -8,9 +8,9 @@ use crate::parser::parse_result::{
 };
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
-    CompoundAssignOp, build_compound_assign_expr, compound_assigned_value_expr,
-    parse_assign_expr_or_comma, parse_comma_or_expr, parse_compound_assign_op,
-    parse_set_compound_assign_op,
+    CompoundAssignOp, build_compound_assign_expr, compound_assign_marker,
+    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_comma_or_expr,
+    parse_compound_assign_op, parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -1396,6 +1396,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 index: Box::new(tmp_idx_expr.clone()),
                 is_positional: *is_positional,
             };
+            let marker_rhs = rhs.clone();
             let assigned_value = if matches!(op, CompoundAssignOp::DefinedOr) {
                 Expr::Ternary {
                     cond: Box::new(Expr::Call {
@@ -1412,7 +1413,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     right: Box::new(rhs),
                 }
             };
-            let stmt = Stmt::Expr(Expr::DoBlock {
+            let expanded = Expr::DoBlock {
                 body: vec![
                     Stmt::VarDecl {
                         name: tmp_idx.clone(),
@@ -1434,7 +1435,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     }),
                 ],
                 label: None,
-            });
+            };
+            let stmt = Stmt::Expr(compound_assign_marker(
+                expr.clone(),
+                op,
+                marker_rhs,
+                expanded,
+            ));
             return parse_statement_modifier(r, stmt);
         }
         // Handle method call compound assignment: .key //= val, .key += val, etc.
@@ -1446,6 +1453,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ..
         } = expr
         {
+            let marker_rhs = rhs.clone();
             let assigned_value = compound_assigned_value_expr(expr.clone(), op, rhs);
             // Determine the topic variable name for writeback
             let topic_name = if let Expr::Var(ref v) = **target {
@@ -1458,7 +1466,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 name.resolve()
             };
-            let stmt = Stmt::Expr(Expr::Call {
+            let expanded = Expr::Call {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     (**target).clone(),
@@ -1468,7 +1476,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(crate::value::Value::str(topic_name)),
                     Expr::Literal(crate::value::Value::truth(true)),
                 ],
-            });
+            };
+            let stmt = Stmt::Expr(compound_assign_marker(
+                expr.clone(),
+                op,
+                marker_rhs,
+                expanded,
+            ));
             return parse_statement_modifier(r, stmt);
         }
         // `(cond ?? $a !! $b) op= rhs` (unparenthesized): the ternary is an

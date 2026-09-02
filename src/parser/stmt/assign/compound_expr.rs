@@ -75,6 +75,13 @@ pub(crate) fn build_compound_assign_expr(
                 param_sigilless: false,
             }
         }
+        Expr::CompoundAssign { expanded, .. } => {
+            // The source marker is transparent to the execution AST. Reuse the
+            // established nested-assignment handling when another compound op
+            // applies to `($x OP= y)`; retaining the inner marker here would make
+            // the outer lvalue look immutable to the existing expansion logic.
+            return build_compound_assign_expr(*expanded, op, rhs);
+        }
         Expr::AssignExpr {
             name,
             expr,
@@ -409,6 +416,35 @@ pub(crate) fn build_compound_assign_expr(
             }
         }
     })
+}
+
+/// Preserve a compound assignment's source-level shape while retaining the
+/// already-proven execution expansion used by the compiler.
+pub(crate) fn preserve_compound_assign(
+    lhs: Expr,
+    op: CompoundAssignOp,
+    rhs: Expr,
+) -> Result<Expr, PError> {
+    let expanded = build_compound_assign_expr(lhs.clone(), op, rhs.clone())?;
+    Ok(compound_assign_marker(lhs, op, rhs, expanded))
+}
+
+/// Wrap an already-built execution expansion with the source-level compound
+/// assignment metadata. This variant is used for short-circuit compound
+/// assignments, whose expansion is intentionally different from the ordinary
+/// METAOP_ASSIGN path.
+pub(crate) fn compound_assign_marker(
+    lhs: Expr,
+    op: CompoundAssignOp,
+    rhs: Expr,
+    expanded: Expr,
+) -> Expr {
+    Expr::CompoundAssign {
+        target: Box::new(lhs),
+        op: op.symbol().to_string(),
+        rhs: Box::new(rhs),
+        expanded: Box::new(expanded),
+    }
 }
 
 pub(crate) fn build_custom_compound_assign_expr(

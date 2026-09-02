@@ -723,6 +723,21 @@ pub(crate) enum Expr {
         /// than write through any existing alias.
         is_bind: bool,
     },
+    /// A compound assignment with its source-level operator preserved.
+    ///
+    /// The parser normally expands `x += y` into an ordinary assignment whose
+    /// RHS is `x + y`, because that is the shape consumed by the existing
+    /// compiler. RakuAST needs the original `+=` distinction, however: raku
+    /// exposes it as `MetaInfix::Assign(Infix("+"))`. The expanded expression
+    /// remains the execution representation; this marker is transparent to
+    /// the compiler and exists so model-layer conversion can recover the
+    /// source construct without guessing from the expansion.
+    CompoundAssign {
+        target: Box<Expr>,
+        op: String,
+        rhs: Box<Expr>,
+        expanded: Box<Expr>,
+    },
     Unary {
         op: TokenKind,
         expr: Box<Expr>,
@@ -2339,6 +2354,16 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
             collect_ph_expr(expr, out)
         }
+        Expr::CompoundAssign {
+            target,
+            rhs,
+            expanded,
+            ..
+        } => {
+            collect_ph_expr(target, out);
+            collect_ph_expr(rhs, out);
+            collect_ph_expr(expanded, out);
+        }
         Expr::Exists { target, arg, .. } => {
             collect_ph_expr(target, out);
             if let Some(a) = arg {
@@ -2958,6 +2983,16 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         }
         Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
             collect_ph_expr_shallow(expr, out)
+        }
+        Expr::CompoundAssign {
+            target,
+            rhs,
+            expanded,
+            ..
+        } => {
+            collect_ph_expr_shallow(target, out);
+            collect_ph_expr_shallow(rhs, out);
+            collect_ph_expr_shallow(expanded, out);
         }
         Expr::Exists { target, arg, .. } => {
             collect_ph_expr_shallow(target, out);
