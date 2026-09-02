@@ -1,0 +1,3 @@
+interface:
+  display_name: "RakuAST Implementation"
+  short_description: "Implement bounded mutsu RakuAST slices"

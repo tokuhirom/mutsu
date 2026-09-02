@@ -16,6 +16,17 @@ implemented so far; they do not imply that an arbitrary source program has the
 same `.AST` shape or that every construct can be lowered through `EVAL`. As of
 2026-09-02, the suite covered 93 files and 646 assertions.
 
+## Campaign organization
+
+This file is the campaign overview, not a fourth `todo/rakuast/` category.
+Self-contained slices belong in `todo/tickets/rakuast-<slug>.md`; parser,
+internal-AST, or execution redesigns belong in `todo/deep/rakuast-<slug>.md`.
+Stable workflow guidance is in [`docs/rakuast/README.md`](../../docs/rakuast/README.md),
+and the reusable implementation procedure is in
+[`.agents/skills/rakuast-implementation/SKILL.md`](../../.agents/skills/rakuast-implementation/SKILL.md).
+Each slice should close both RakuAST directions and add focused dual-oracle
+coverage before it is marked complete.
+
 The 2026-09-02 direct probes against the system `raku` established the current
 boundary:
 
