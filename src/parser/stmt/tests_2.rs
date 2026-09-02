@@ -123,6 +123,26 @@ fn parse_topic_mutating_method_stmt() {
 }
 
 #[test]
+fn parse_topic_mutating_method_stmt_with_colon_args() {
+    let src = r#".=trans: { $_ => $_».rotate(13) }({[$_».uc, @$_]}("a".."z"));"#;
+    let (rest, stmts) = program(src).unwrap();
+    assert_eq!(rest, "");
+    assert_eq!(stmts.len(), 1);
+    match &stmts[0] {
+        Stmt::Expr(Expr::Call { name, args }) => {
+            assert_eq!(name.resolve(), "__mutsu_topic_dotassign");
+            assert_eq!(args.len(), 1);
+            assert!(
+                matches!(args[0], Expr::MethodCall { ref name, ref args, .. }
+                if name.resolve() == "trans" && args.len() == 1
+                    && matches!(args[0], Expr::CallOn { .. }))
+            );
+        }
+        other => panic!("expected topic dotassign call, got {other:?}"),
+    }
+}
+
+#[test]
 fn parse_paren_expr_mutating_method_stmt() {
     let (rest, stmts) = program("(class { method foo() { self } }.new).=foo;").unwrap();
     assert_eq!(rest, "");

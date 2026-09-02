@@ -110,37 +110,24 @@ fn expand_trans_spec(spec: &str) -> Vec<char> {
     result
 }
 
-/// Convert a Value to a list of strings (for array-based trans pairs).
-/// Arrays are flattened, Ranges are iterated, strings are expanded via `expand_trans_spec`.
+/// Convert a Value to a list of strings (for collection-based trans pairs).
+/// Nested list-like values are flattened, Ranges are iterated, and strings are
+/// expanded via `expand_trans_spec`. `Str.trans` accepts a Pair whose key and
+/// value can be nested collections, as in the Rosetta Code Rot-13 example.
 fn value_to_string_list(v: &Value) -> Vec<String> {
     match v.view() {
-        ValueView::Array(items, ..) => {
-            let mut result = Vec::new();
-            for item in items.iter() {
-                // ADR-0040 slices 1-2: a grouped `trans` operand
-                // (`'a'..'z' => ['n'..'z','a'..'m']`) is an array literal whose
-                // `Range` elements are itemized at the store; the grouping only
-                // means "expand each of these in turn", so the element's own
-                // itemization must be stripped before deciding how to expand it
-                // (otherwise the whole Range stringifies as one replacement).
-                let item = &item.clone().deitemize_element();
-                match item.view() {
-                    ValueView::Array(..)
-                    | ValueView::Range(..)
-                    | ValueView::RangeExcl(..)
-                    | ValueView::RangeExclStart(..)
-                    | ValueView::RangeExclBoth(..)
-                    | ValueView::GenericRange { .. } => {
-                        let expanded = crate::runtime::utils::value_to_list(item);
-                        for i in expanded.iter() {
-                            result.push(i.to_string_value());
-                        }
-                    }
-                    _ => result.push(item.to_string_value()),
-                }
-            }
-            result
-        }
+        ValueView::Array(items, ..) => items
+            .iter()
+            .flat_map(trans_collection_item_to_strings)
+            .collect(),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items
+            .iter()
+            .flat_map(trans_collection_item_to_strings)
+            .collect(),
+        ValueView::Slip(items) => items
+            .iter()
+            .flat_map(trans_collection_item_to_strings)
+            .collect(),
         ValueView::Str(s) => {
             let expanded = expand_trans_spec(&s);
             expanded.into_iter().map(|c| c.to_string()).collect()
@@ -159,6 +146,29 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
             let expanded = expand_trans_spec(&s);
             expanded.into_iter().map(|c| c.to_string()).collect()
         }
+    }
+}
+
+/// Expand one item from a collection-valued trans operand. Strings inside a
+/// collection are tokens (so `['el'] => ['ip']` remains a two-character token
+/// mapping); nested collections and ranges are expanded structurally.
+fn trans_collection_item_to_strings(item: &Value) -> Vec<String> {
+    let item = item.clone().deitemize_element();
+    match item.view() {
+        ValueView::Array(..)
+        | ValueView::Seq(..)
+        | ValueView::HyperSeq(..)
+        | ValueView::RaceSeq(..)
+        | ValueView::Slip(..) => value_to_string_list(&item),
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(&item)
+            .iter()
+            .map(|value| value.to_string_value())
+            .collect(),
+        _ => vec![item.to_string_value()],
     }
 }
 
