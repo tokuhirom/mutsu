@@ -460,6 +460,12 @@ pub struct CellConstraint {
     /// promotion site that knows the source variable overwrites it with the
     /// real name.
     pub element_of: Option<String>,
+    /// The variable name the cell was promoted from, when a promotion site knew
+    /// it. Rakudo's `$!descriptor` carries the name for exactly this reason: a
+    /// scalar's type-check failure reads "in assignment to $a" even when the
+    /// write arrived through an alias or another frame. `None` keeps the older,
+    /// nameless wording for a cell whose origin is genuinely anonymous.
+    pub assign_to: Option<String>,
 }
 
 impl ContainerCell {
@@ -504,6 +510,21 @@ pub fn register_container_constraint(
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
+        assign_to: None,
+    }));
+}
+
+/// Like [`register_container_constraint`], but records the variable name the
+/// cell was promoted from so a later failure can say "in assignment to $name".
+pub fn register_container_constraint_named(
+    cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    type_name: &str,
+    name: &str,
+) {
+    *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
+        ty: type_name.to_string(),
+        element_of: None,
+        assign_to: Some(name.to_string()),
     }));
 }
 
@@ -518,6 +539,7 @@ pub fn register_element_constraint(
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),
+        assign_to: None,
     }));
 }
 

@@ -1707,6 +1707,23 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// Settle a just-declared sigilless term's mutability from what it was
+    /// actually bound to, marking it readonly when that is a plain VALUE.
+    ///
+    /// Raku decides a sigilless name's mutability from the binding, not from the
+    /// syntax of the right-hand side: `my \x := @a[0]` aliases a real element
+    /// container and `x = 9` writes through, while `my \x := 5` and
+    /// `my \x := $s.uc` bind an immutable value and the same write dies with
+    /// "Cannot modify an immutable Int (5)". The compiler cannot tell an `is rw`
+    /// accessor call from an ordinary one, so the test is necessarily made here.
+    ///
+    /// Emitted right after the declaration, this writes the ordinary
+    /// `__mutsu_sigilless_readonly::<name>` marker the parser used to set
+    /// statically, so every existing consumer (`CheckReadOnly` in any frame, the
+    /// `++`/`--` mutability gate, the redeclaration clear) keeps working
+    /// unchanged. It only ever RAISES the marker: a bind whose source is itself
+    /// readonly has already set it, and that must not be lowered.
+    MarkSigillessBind(u32),
     /// Mark a variable as readonly (for `:=` binding / `constant`). The
     /// [`ReadonlyKind`] records *why*, which decides the exception an
     /// assignment through the name throws.

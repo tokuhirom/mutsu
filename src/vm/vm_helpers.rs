@@ -106,7 +106,10 @@ impl Interpreter {
                 Some(owner) => {
                     crate::runtime::utils::type_check_element_typed_error(&owner, &c.ty, val)
                 }
-                None => RuntimeError::typecheck_assignment(&c.ty, val, None),
+                // `assign_to` is the name the cell was promoted from, so a write
+                // arriving through an alias or from another frame still reads
+                // "in assignment to $a" like rakudo's descriptor-carried wording.
+                None => RuntimeError::typecheck_assignment(&c.ty, val, c.assign_to.as_deref()),
             });
         }
         Ok(())
