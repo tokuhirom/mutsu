@@ -334,6 +334,15 @@ pub(crate) fn native_method_0arg(
         }
     }
 
+    // ADR-0064: a `.VAR` container descriptor answers only its own properties
+    // natively. Every other method is a question about the value the container
+    // holds, and only the interpreter can resolve that (a variable descriptor
+    // reads the variable's live env entry) -- so defer to the slow path rather
+    // than answering out of the descriptor's attribute map.
+    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method) {
+        return None;
+    }
+
     // Unicode's query methods are class methods over the Unicode data shipped
     // with this runtime. `unicode-normalization` exports the authoritative
     // version tuple for the tables mutsu actually uses.

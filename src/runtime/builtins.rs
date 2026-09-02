@@ -162,45 +162,162 @@ impl Interpreter {
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let element = args.first().cloned().unwrap_or(Value::NIL);
         let source_name = args.get(1).map(Value::to_string_value).unwrap_or_default();
+        let container = self.env.get(&source_name).cloned();
+        self.element_var_meta(element, container, &source_name)
+    }
 
-        if let Some(container) = self.env.get(&source_name)
-            && !self.container_elements_are_containers(container, &source_name)
+    /// `.VAR` on a subscript whose source container has NO NAME: a chained
+    /// subscript (`%d<a><b>`, `@g[0][1]` -- the parent is the intermediate
+    /// value `%d<a>`, which lives under no variable) or a subscript of a
+    /// literal (`[1,2][0]`).
+    ///
+    /// Raku still answers from the parent -- `[1,2][0].VAR` is `Scalar` while
+    /// `(1,2)[0].VAR` is `Int` -- so the compiler
+    /// (`compile_expr_method_var_on_index`) puts the parent on the stack next
+    /// to the element instead of naming it. Everything the descriptor would
+    /// have read from the variable degrades to what raku reports for an
+    /// anonymous container: `.name` is `element`, `.dynamic` is `False`,
+    /// `.default` is `(Any)` and `.of` is `(Mu)`.
+    fn builtin_anon_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let container = args.first().cloned().unwrap_or(Value::NIL);
+        let element = args.get(1).cloned().unwrap_or(Value::NIL);
+        self.element_var_meta(element, Some(container), "")
+    }
+
+    /// Build the `.VAR` descriptor for one element of `container`.
+    ///
+    /// `source_name` is the container's variable name, or `""` when it has
+    /// none. It is used for the metadata the value cannot carry (dynamism, the
+    /// name-keyed default and type constraint) and, critically, to resolve the
+    /// one ambiguity ADR-0040 slice 3 left: a `LazyList` is the reified form of
+    /// BOTH a real `@`-assigned Array (elements ARE containers) and a lazy
+    /// `Seq` (elements are the values), and only the sigil tells them apart.
+    fn element_var_meta(
+        &mut self,
+        element: Value,
+        container: Option<Value>,
+        source_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(c) = container.as_ref()
+            && !self.container_elements_are_containers(c, source_name)
         {
             return Ok(element);
         }
 
+        // A SLICE subscript (`@a[*]`, and any spelling the compiler's
+        // `index_expr_is_slice` gate cannot see statically) hands back a `List`
+        // OF the element containers, and `.VAR` on a `List` is identity -- raku
+        // answers `List`, not `Scalar`. A real `Array`/`Hash` itemizes every
+        // element it stores (ADR-0040 slices 1-2), so a BARE, non-itemized
+        // `List` arriving here never came out of one element slot: an element
+        // holding a list reads back as `$(1, 2)`, a slice as `(1, 2)`.
+        //
+        // Restricted to containers that actually itemize their stores. A real
+        // Array whose backing is still an unreified `LazyList` does NOT (its
+        // elements are handed out bare by the lazy force in
+        // `vm_var_index_ops`, which is name-blind and so cannot tell a
+        // `@`-assigned lazy source from a `Seq`). There, a bare `List` element
+        // is an ELEMENT, not a slice; a slice of such an array is the residual
+        // this trades away. See
+        // `todo/deep/lazy-array-elements-are-not-itemized-at-reification.md`.
+        if matches!(
+            element.view(),
+            ValueView::Array(_, crate::value::ArrayKind::List)
+        ) && !matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::LazyList(_))
+        ) {
+            return Ok(element);
+        }
+
         let mut attributes = std::collections::HashMap::new();
-        // Rakudo names an element's container after the container it lives in:
-        // `@real[0].VAR.name` and `%h<a>.VAR.name` are `@real` / `%h`, not a
-        // synthesized `@real[]`. Nothing keys off the old suffix — a `.VAR`
+        // Rakudo names a FLAT array's/hash's element container after the
+        // container it lives in (`@real[0].VAR.name` is `@real`, not a
+        // synthesized `@real[]`), but an element container with no named
+        // owner is called `element`: a SHAPED array's storage is a separate
+        // dimensioned repr, and a chained/literal subscript's parent has no
+        // variable name at all. Nothing keys off the old suffix -- a `.VAR`
         // reflection object is identified by `__mutsu_var_target`.
-        attributes.insert("name".to_string(), Value::str(source_name.clone()));
+        let anonymous = source_name.is_empty()
+            || container
+                .as_ref()
+                .is_some_and(|c| crate::runtime::utils::shaped_array_shape(c).is_some());
+        let descriptor_name = if anonymous {
+            "element".to_string()
+        } else {
+            source_name.to_string()
+        };
+        attributes.insert("name".to_string(), Value::str(descriptor_name));
         attributes.insert(
             "__mutsu_var_target".to_string(),
-            Value::str(source_name.clone()),
+            Value::str(source_name.to_string()),
         );
+        // ADR-0064: the element's own container is transparent for method
+        // dispatch, so the descriptor has to carry the element it describes --
+        // `__mutsu_var_target` names the CONTAINER the element lives in, and
+        // nothing else can find the element again from that.
+        attributes.insert("__mutsu_var_value".to_string(), element.clone());
         attributes.insert(
             "dynamic".to_string(),
-            Value::truth(self.is_var_dynamic(&source_name)),
+            Value::truth(self.is_var_dynamic(source_name)),
         );
-        // An element's default is its *container's* `is default(...)` when the
-        // container has one — that is a property of the container, not of the
-        // variable's declared type, so the type-constraint fallback below never
-        // saw it (`my @a is default(0) = 1,2; @a[0].VAR.default` is `0` in raku,
-        // and the same for a hash).
-        let default_val = self
-            .env
-            .get(&source_name)
+        // An element's container inherits the DECLARED container's default and
+        // element type: `my @a is default(0)` makes `@a[0].VAR.default` `0`,
+        // and `my Int @a` makes both `.default` and `.of` `(Int)`. The
+        // container-carried default comes first -- it is a property of the
+        // container, not of the variable's declared type, and it travels with
+        // the value through the binds and rebuilds that leave the name-keyed
+        // `var_defaults` entry behind.
+        let default_val = container
+            .as_ref()
             .and_then(|c| self.container_default(c))
-            .unwrap_or_else(|| {
-                if let Some(tc) = self.var_type_constraint(&source_name) {
-                    Value::package(Symbol::intern(&tc))
-                } else {
-                    Value::package(Symbol::intern("Any"))
-                }
-            });
+            .or_else(|| self.var_default(source_name).cloned())
+            .or_else(|| {
+                self.var_type_constraint(source_name)
+                    .map(|tc| Value::package(Symbol::intern(&tc)))
+            })
+            .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
         attributes.insert("default".to_string(), default_val);
-        Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
+        let of_type = container
+            .as_ref()
+            .and_then(|c| self.container_type_metadata(c))
+            .map(|info| info.value_type)
+            .filter(|t| !t.is_empty())
+            .or_else(|| self.var_type_constraint(source_name))
+            .unwrap_or_else(|| "Mu".to_string());
+        attributes.insert("of".to_string(), Value::package(Symbol::intern(&of_type)));
+        // A NATIVE array (`my int @a`) stores unboxed values, so its elements
+        // have no `Scalar` of their own: raku hands back a per-element-type
+        // positional ref (`IntPosRef`/`UIntPosRef`/`NumPosRef`/`StrPosRef`),
+        // which is a plain `Any` subclass carrying none of `Scalar`'s
+        // container properties -- `.of`/`.default`/`.dynamic` all throw there.
+        // Dropping those attributes is what makes them throw: they are
+        // descriptor-owned (never delegated), so an absent attribute falls
+        // through to ordinary dispatch and reports no such method.
+        let Some(pos_ref_class) = Self::native_element_pos_ref_class(&of_type) else {
+            return Ok(Value::make_instance(Symbol::intern("Scalar"), attributes));
+        };
+        for key in ["name", "dynamic", "default", "of"] {
+            attributes.remove(key);
+        }
+        Ok(Value::make_instance(
+            Symbol::intern(pos_ref_class),
+            attributes,
+        ))
+    }
+
+    /// The positional-ref type raku uses for one element of a NATIVE array,
+    /// or `None` when `element_type` is not a native type. Every width maps to
+    /// the same class (`int8`/`int64` are both `IntPosRef`); `uint*` has its
+    /// own (`UIntPosRef`).
+    fn native_element_pos_ref_class(element_type: &str) -> Option<&'static str> {
+        match element_type {
+            "int" | "int8" | "int16" | "int32" | "int64" => Some("IntPosRef"),
+            "uint" | "uint8" | "uint16" | "uint32" | "uint64" => Some("UIntPosRef"),
+            "num" | "num32" | "num64" => Some("NumPosRef"),
+            "str" => Some("StrPosRef"),
+            _ => None,
+        }
     }
 
     /// [`Value::elements_are_containers`] plus the two distinctions a bare
@@ -490,6 +607,7 @@ impl Interpreter {
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
             "__mutsu_index_var_meta" => self.builtin_index_var_meta(&args),
+            "__mutsu_anon_index_var_meta" => self.builtin_anon_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
             "RUN-MAIN" => self.builtin_run_main(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),

@@ -562,7 +562,7 @@ impl Compiler {
     /// Without this, `c{@s[0]}` inside a bind / `return-rw` operand compiled
     /// `@s[0]` as a bind-ref too and passed a `ContainerRef` where the key was
     /// wanted.
-    fn compile_subscript_index(&mut self, index: &Expr) {
+    pub(super) fn compile_subscript_index(&mut self, index: &Expr) {
         let saved_av = self.scalar_bind_autovivify;
         let saved_terminal = self.bind_terminal;
         self.scalar_bind_autovivify = false;

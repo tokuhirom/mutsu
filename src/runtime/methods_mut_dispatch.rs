@@ -222,6 +222,19 @@ impl Interpreter {
                 if !(target_var.starts_with('@') || target_var.starts_with('%'))
                     || cached_name == expected
                 {
+                    // ADR-0064: the descriptor delegates every non-container
+                    // method to the value the container holds, so refresh that
+                    // snapshot before handing the cached instance back --
+                    // `my $x = 1; $x.VAR.raku; $x = 2; $x.VAR.raku` must read
+                    // 2. Written in place through the shared attribute cell so
+                    // the instance keeps its identity (ADR-0057) and any role
+                    // mixed into it by `trait_mod:<does>`.
+                    if let ValueView::Instance { attributes, .. } = existing.view() {
+                        attributes.insert(
+                            "__mutsu_var_value",
+                            self.var_meta_contained_snapshot(target_var, &target),
+                        );
+                    }
                     return Ok(existing);
                 }
             }
@@ -308,6 +321,17 @@ impl Interpreter {
                 Value::package(Symbol::intern("Any"))
             };
             attributes.insert("default".to_string(), default_val);
+            // ADR-0064: the value this container currently holds. The descriptor
+            // is transparent for ordinary method dispatch, and this is what those
+            // methods are asked about. Prefer the shared `ContainerRef` cell when
+            // the variable has one (then every read through the descriptor is
+            // live); otherwise snapshot the value the VM handed us, which is
+            // authoritative at this instant even when the env half of the dual
+            // store has not been synced from `locals` yet.
+            attributes.insert(
+                "__mutsu_var_value".to_string(),
+                self.var_meta_contained_snapshot(target_var, &target),
+            );
             // Add .of: type constraint of the variable (Mu for unconstrained)
             let of_val = if let Some(tc) = self.var_type_constraint(target_var) {
                 Value::package(Symbol::intern(&tc))

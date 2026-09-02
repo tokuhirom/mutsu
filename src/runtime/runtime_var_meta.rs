@@ -541,3 +541,196 @@ impl Interpreter {
         key_type.map(str::to_string)
     }
 }
+
+impl Interpreter {
+    /// The methods a `.VAR` container descriptor answers ITSELF (ADR-0064).
+    ///
+    /// Everything NOT listed here is a question about the value the container
+    /// holds, and Raku answers it from that value: `.VAR` hands back the real
+    /// `Scalar`/`Array`/`Hash` container, and a container is transparent for
+    /// ordinary method dispatch. Only the container's own properties -- its
+    /// name, its dynamism, its declared default and element type, and its
+    /// identity/type reflection -- stop at the descriptor.
+    ///
+    /// `defined` is deliberately owned: a container object is always concrete,
+    /// so `my @a; @a[0].VAR.defined` is `True` in Raku even though the element
+    /// is `Any`.
+    /// The value a `.VAR` reflection descriptor's container currently holds,
+    /// or `None` when `target` is not such a descriptor.
+    ///
+    /// An ELEMENT descriptor (`@a[0].VAR`, built by `builtin_index_var_meta`)
+    /// carries the element it was built from: nothing else can find it again,
+    /// because `__mutsu_var_target` names the *container* the element lives in,
+    /// not the element.
+    ///
+    /// A VARIABLE descriptor (`$x.VAR`) carries either the variable's shared
+    /// `ContainerRef` cell -- dereferenced here, so reads through the
+    /// descriptor stay live -- or, when the variable is not boxed, the value
+    /// the VM handed `.VAR`, refreshed on every `.VAR` call (see
+    /// `var_meta_contained_snapshot`).
+    pub(crate) fn var_meta_contained_value(&self, target: &Value) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
+        let map = attributes.as_map();
+        let name = match map.get("__mutsu_var_target").map(Value::view) {
+            Some(ValueView::Str(name)) => name.to_string(),
+            _ => return None,
+        };
+        if let Some(v) = map.get("__mutsu_var_value") {
+            return Some(v.with_deref(|inner| inner.clone()));
+        }
+        self.env
+            .get(&name)
+            .map(|v| v.with_deref(|inner| inner.clone()))
+    }
+
+    /// What a variable's `.VAR` descriptor should record as the value its
+    /// container holds (ADR-0064).
+    ///
+    /// A variable that is currently boxed in a shared `ContainerRef` cell
+    /// records the CELL: every read through the descriptor then dereferences
+    /// it, so the descriptor tracks later assignments exactly as Raku's real
+    /// container does. An unboxed variable has nothing shareable to point at,
+    /// so it records `target` -- the value the VM handed this `.VAR` call,
+    /// which is authoritative even when the env half of the dual store has not
+    /// been synced from `locals` yet (a plain `my $x` inside a mainline block
+    /// is frequently absent from `env` entirely).
+    pub(crate) fn var_meta_contained_snapshot(&self, name: &str, target: &Value) -> Value {
+        match self.env.get(name) {
+            Some(v) if matches!(v.view(), ValueView::ContainerRef(_)) => v.clone(),
+            _ => target.clone(),
+        }
+    }
+
+    /// ADR-0064: dispatch a method on a `.VAR` container descriptor to the
+    /// value the container holds.
+    ///
+    /// The stored/looked-up value is already in its ITEMIZED form -- that is
+    /// how a real `Array`/`Hash` element and a `$`-variable's value are both
+    /// represented (ADR-0040) -- which is what makes the two Raku spellings
+    /// fall straight out:
+    ///
+    /// - `.gist` shows the container, so it renders the itemized value's
+    ///   `.raku` (`@a[1].VAR.gist` is `$[3, 4]`, not `[3 4]`);
+    /// - `.raku` shows the contained value, so it decontainerizes first
+    ///   (`@a[1].VAR.raku` is `[3, 4]`).
+    ///
+    /// Both are `Scalar`-only: an `@`/`%` descriptor IS the container, so
+    /// `@a.VAR.gist`/`.raku` are just the Array's own (`[1 [3, 4]]` /
+    /// `[1, [3, 4]]`).
+    pub(crate) fn try_var_meta_delegate(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if var_meta_owns_method(method) {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        // A native array's element descriptor (`IntPosRef` & co.) is the same
+        // kind of thing as a `Scalar`: a per-element container whose content
+        // the descriptor stands in for.
+        let is_scalar_container =
+            class_name == "Scalar" || class_name.resolve().ends_with("PosRef");
+        let value = self.var_meta_contained_value(target)?;
+        // A `Scalar` container is NOT `Positional`, so subscripting it follows
+        // the one-item rule every non-positional value obeys (`42[0]` is `42`,
+        // `42[1]` is an X::OutOfRange over `0..0`) -- with the container itself
+        // as that one item. Delegating instead would subscript the CONTENT
+        // (`@a[1].VAR[0]` would be `3`), which is a level too deep: raku
+        // answers `$[3, 4]`.
+        if is_scalar_container
+            && method == "AT-POS"
+            && let [index] = args
+            && let Some(i) = index.as_int()
+        {
+            return Some(if i == 0 {
+                Ok(value)
+            } else {
+                Ok(RuntimeError::out_of_range_failure(
+                    "Index",
+                    Value::int(i),
+                    "0..0",
+                ))
+            });
+        }
+        if is_scalar_container && args.is_empty() {
+            match method {
+                "gist" => return Some(self.call_method_with_values(value, "raku", vec![])),
+                "raku" | "perl" => {
+                    return Some(self.call_method_with_values(
+                        value.deitemize_element(),
+                        "raku",
+                        vec![],
+                    ));
+                }
+                _ => {}
+            }
+        }
+        Some(self.call_method_with_values(value, method, args.to_vec()))
+    }
+}
+
+/// The methods a `.VAR` container descriptor answers ITSELF (ADR-0064).
+///
+/// Everything NOT listed here is a question about the value the container
+/// holds, and Raku answers it from that value: `.VAR` hands back the real
+/// `Scalar`/`Array`/`Hash` container, and a container is transparent for
+/// ordinary method dispatch. Only the container's own properties -- its name,
+/// its dynamism, its declared default and element type, and its identity/type
+/// reflection -- stop at the descriptor.
+///
+/// `defined` is deliberately owned: a container object is always concrete, so
+/// `my @a; @a[0].VAR.defined` is `True` in Raku even though the element is
+/// `Any`.
+pub(crate) fn var_meta_owns_method(method: &str) -> bool {
+    // Metamethods (`.^name`, `.^mro`, ...) and private calls describe the
+    // descriptor's own type; they never reach the contained value.
+    method.starts_with('^')
+        || method.starts_with('!')
+        || matches!(
+            method,
+            "VAR"
+                | "var"
+                | "name"
+                | "dynamic"
+                | "default"
+                | "of"
+                | "WHICH"
+                | "WHAT"
+                | "HOW"
+                | "WHO"
+                | "WHY"
+                | "WHERE"
+                | "REPR"
+                | "DEFINITE"
+                | "defined"
+                | "isa"
+                | "does"
+                | "self"
+        )
+}
+
+/// Is `target` a `.VAR` container descriptor that must NOT answer `method`
+/// natively? (ADR-0064.)
+///
+/// The native method tables see an attribute-only `Instance` and would answer
+/// `.elems`/`.gist`/`.raku`/... out of an empty attribute map. Only the
+/// interpreter can resolve the value the container holds -- for a variable
+/// descriptor that means reading the variable's live env entry -- so the
+/// native fast paths defer, and `Interpreter::try_var_meta_delegate` takes it.
+pub(crate) fn var_meta_descriptor_defers(target: &Value, method: &str) -> bool {
+    !var_meta_owns_method(method)
+        && matches!(
+            target.view(),
+            ValueView::Instance { attributes, .. }
+                if matches!(
+                    attributes.as_map().get("__mutsu_var_target").map(Value::view),
+                    Some(ValueView::Str(_))
+                )
+        )
+}

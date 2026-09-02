@@ -450,9 +450,7 @@ impl Compiler {
                 && args.is_empty()
                 && modifier.is_none()
                 && !quoted
-                && matches!(target.as_ref(), Expr::Index { target: it, index, .. }
-                    if Self::index_assign_target_name(it).is_some()
-                        && !Self::index_expr_is_slice(index)) =>
+                && self.var_on_index_takes_element_path(target.as_ref()) =>
             {
                 // `.VAR` on `@a[0]` / `%h<k>` (a *named* container's element) needs
                 // the element-variable metadata path. A `.VAR` on a subscript of a

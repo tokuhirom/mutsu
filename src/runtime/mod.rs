@@ -636,7 +636,7 @@ mod runtime_module_exports;
 mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
-mod runtime_var_meta;
+pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
 pub(crate) mod shared_store;
