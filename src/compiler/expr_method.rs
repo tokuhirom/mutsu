@@ -8,19 +8,20 @@ impl Compiler {
     /// raku answers `.VAR` from the subscript's result: `@a[0]` hands back the
     /// element's `Scalar` container, while `@a[0,1]` hands back a `List` of
     /// containers, and `.VAR` on a `List` is identity — so `@a[0,1].VAR.^name`
-    /// is `List`, not `Scalar`. mutsu's elements are not real containers, so
-    /// the runtime cannot tell a slice's `List` from an element that happens to
-    /// hold one; the compiler is the only place that knows, and this is that
-    /// gate. A slice compiles as an ordinary subscript and lets `.VAR`'s normal
-    /// dispatch (identity on a `List`) answer.
+    /// is `List`, not `Scalar`. A slice compiles as an ordinary subscript and
+    /// lets `.VAR`'s normal dispatch (identity on a `List`) answer.
     ///
     /// Only the statically-recognizable slice spellings are covered:
     /// `@a[0,1]` / `%h<a b>` (an `ArrayLiteral` index — a single `<a>`
     /// collapses to a `Literal`, so it is not caught here), a range
-    /// (`@a[0..1]`, `@a[^2]`), and an `@`-sigiled index (`@a[@idx]`). An index
-    /// whose *runtime* value happens to be a list (`my $i = (0,1); @a[$i]`)
-    /// still takes the element path — the compiler cannot see that, and it is
-    /// the same information the runtime lacks.
+    /// (`@a[0..1]`, `@a[^2]`), and an `@`-sigiled index (`@a[@idx]`). Every
+    /// other slice spelling — `@a[*]`, and an index whose *runtime* value
+    /// happens to be a list (`my $i = (0,1); @a[$i]`) — is caught instead by
+    /// the value-side discriminator in `builtin_index_var_meta` (ADR-0064): a
+    /// real container itemizes every element it stores, so a bare,
+    /// non-itemized `List` arriving there never came out of one element slot.
+    /// This gate stays because it is also the only one that works for a
+    /// `LazyList`-backed container, where itemization is still incomplete.
     pub(super) fn index_expr_is_slice(index: &Expr) -> bool {
         match index {
             Expr::ArrayLiteral(_) | Expr::ArrayVar(_) => true,
@@ -35,14 +36,72 @@ impl Compiler {
         }
     }
 
-    /// Compile method call on indexed target: .VAR on @a[0] / %h<k>
+    /// The named container a `.VAR`-carrying subscript reads from, for both the
+    /// one-dimensional (`@a[0]`, `%h<k>`) and multi-dimensional (`@sh[0;0]`)
+    /// spellings. A shaped array's elements are `Scalar` containers exactly
+    /// like a flat one's, so `@sh[0;0].VAR` takes the same element-descriptor
+    /// path -- it just reaches the compiler as a different `Expr` node.
+    ///
+    /// Returns `None` for a statically-recognizable slice, which must compile
+    /// as an ordinary subscript instead (see `index_expr_is_slice`).
+    pub(super) fn var_on_index_source_name(target: &Expr) -> Option<String> {
+        let index_target = match target {
+            Expr::Index {
+                target: index_target,
+                index,
+                ..
+            } => {
+                if Self::index_expr_is_slice(index) {
+                    return None;
+                }
+                index_target
+            }
+            Expr::MultiDimIndex {
+                target: index_target,
+                ..
+            } => index_target,
+            _ => return None,
+        };
+        Self::index_assign_target_name(index_target)
+    }
+
+    /// Does this `.VAR` target take the element-descriptor path at all?
+    ///
+    /// A NAMED container's subscript always does (`var_on_index_source_name`).
+    /// An un-named one does too -- a chained `%d<a><b>` / `@g[0][1]` (whose
+    /// parent is an intermediate value with no variable name), a literal
+    /// `[1,2][0]`, a `bump()[0]` -- because raku answers from the parent
+    /// regardless of whether it has a name: `[1,2][0].VAR` is `Scalar` while
+    /// `(1,2)[0].VAR` is `Int`.
+    ///
+    /// The two exclusions are the subscript shapes whose own compile path this
+    /// helper's manual `parent; Dup; index; Index` emission would bypass: a
+    /// `PseudoStash` subscript compiles to `GetCallerVar`/`GetOuterVar`, and
+    /// `%*ENV<k>` to `GetEnvIndex`. Neither is a real container whose elements
+    /// would answer `Scalar` anyway.
+    pub(super) fn var_on_index_takes_element_path(&self, target: &Expr) -> bool {
+        if Self::var_on_index_source_name(target).is_some() {
+            return true;
+        }
+        // A `:=` bind compiles subscripts through the autovivify opcodes; leave
+        // that path alone entirely.
+        if self.scalar_bind_autovivify {
+            return false;
+        }
+        matches!(
+            target,
+            Expr::Index { target: it, index, .. }
+                if !Self::index_expr_is_slice(index)
+                    && !matches!(
+                        it.as_ref(),
+                        Expr::PseudoStash(_) | Expr::HashVar(_)
+                    )
+        )
+    }
+
+    /// Compile method call on indexed target: .VAR on @a[0] / %h<k> / @sh[0;0]
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
-        if let Expr::Index {
-            target: index_target,
-            ..
-        } = target
-            && let Some(source_name) = Self::index_assign_target_name(index_target)
-        {
+        if let Some(source_name) = Self::var_on_index_source_name(target) {
             // Read the element with the ordinary subscript machinery and hand
             // the result to `__mutsu_index_var_meta` along with the name of the
             // container it came from. The builtin needs the value itself for
@@ -58,6 +117,37 @@ impl Compiler {
             let builtin_idx = self
                 .code
                 .add_constant(Value::str("__mutsu_index_var_meta".to_string()));
+            self.code.emit(OpCode::CallFunc {
+                name_idx: builtin_idx,
+                arity: 2,
+                arg_sources_idx: None,
+            });
+            return;
+        }
+        // The source container has no NAME: a chained subscript (`%d<a><b>`,
+        // `@g[0][1]` -- the parent is the intermediate value `%d<a>`, which
+        // lives under no variable) or a subscript of a literal (`[1,2][0]`).
+        // Raku still answers from the parent -- `[1,2][0].VAR` is `Scalar`
+        // while `(1,2)[0].VAR` is `Int` -- so put the parent on the stack next
+        // to the element instead of naming it. `Dup` after compiling the
+        // parent is what keeps this to ONE evaluation of the parent
+        // expression, which matters as soon as it has side effects
+        // (`@a[f()][0].VAR`).
+        if let Expr::Index {
+            target: index_target,
+            index,
+            is_positional,
+        } = target
+        {
+            self.compile_expr(index_target);
+            self.code.emit(OpCode::Dup);
+            self.compile_subscript_index(index);
+            self.code.emit(OpCode::Index {
+                is_positional: *is_positional,
+            });
+            let builtin_idx = self
+                .code
+                .add_constant(Value::str("__mutsu_anon_index_var_meta".to_string()));
             self.code.emit(OpCode::CallFunc {
                 name_idx: builtin_idx,
                 arity: 2,

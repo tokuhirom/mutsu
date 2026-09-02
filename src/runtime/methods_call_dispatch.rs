@@ -195,6 +195,16 @@ impl Interpreter {
         args: Vec<Value>,
         reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0064: a `.VAR` reflection descriptor is a CONTAINER, and a
+        // container is transparent for ordinary method dispatch -- everything
+        // that is not a property of the container itself is answered by the
+        // value it holds. Intercepted here, ahead of every native/instance
+        // handler, because the descriptor is an attribute-only `Instance` that
+        // would otherwise answer `.raku`/`.gist`/`.elems`/... out of an empty
+        // attribute map (`Scalar.new`, `1`, ...).
+        if let Some(result) = self.try_var_meta_delegate(&target, method, &args) {
+            return result;
+        }
         // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
         // Set/Bag/Mix/... receiver is not `Instance`/`Package`, so none of this
         // function's by-name native dispatch below (`dispatch_method_by_name_*`,

@@ -748,6 +748,21 @@ impl Value {
                 Some(data) => data.name.resolve(),
                 None => String::new(),
             },
+            // ADR-0064: a `.VAR` reflection object is a CONTAINER, and a
+            // container stringifies as the value it holds -- Raku's `is
+            // [1,2,3][1].VAR, 2` passes because binding the container to a
+            // parameter decontainerizes it. Method dispatch on the descriptor
+            // already delegates (`.Str`/`.gist`); this is the same rule for the
+            // Value-level renderer that `Test`'s `is` and `~` reach directly.
+            ValueView::Instance { attributes, .. }
+                if attributes.as_map().contains_key("__mutsu_var_target") =>
+            {
+                attributes
+                    .as_map()
+                    .get("__mutsu_var_value")
+                    .map(|v: &Value| v.with_deref(|inner| inner.to_string_value()))
+                    .unwrap_or_default()
+            }
             ValueView::Instance {
                 class_name,
                 attributes,
