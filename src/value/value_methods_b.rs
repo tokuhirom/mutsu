@@ -867,7 +867,7 @@ impl Value {
                     (k.clone(), v)
                 })
                 .collect();
-            updates.push(("named", Value::hash(named_vals)));
+            updates.push(("named", Value::hash_bare_values(named_vals)));
         }
         m.match_with_attrs(updates).unwrap_or(m)
     }

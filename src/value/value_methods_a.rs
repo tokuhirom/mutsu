@@ -336,7 +336,46 @@ impl Value {
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
     /// preserved) via `Into<HashData>`.
+    ///
+    /// ADR-0040 slice 4: this is the *store* every hash passes through, so it is
+    /// where a stored aggregate is itemized. The compiler/VM assignment paths
+    /// itemize on their own way in, so for them the scan below is a no-op; what
+    /// this catches is the ~160 native Rust construction sites (Pod `.config`,
+    /// `gethost(…)<addrs>`, `Proc`-shaped hashes, …) that build a `HashData`
+    /// directly and used to bypass every hook, leaving `%h<k>` disagreeing with
+    /// `.values`/`.pairs`/`.kv`/iteration about the same value.
+    ///
+    /// Scan-then-rebuild-only-if-needed, exactly as
+    /// `itemize_real_array_elements` does for the array half (ADR-0040 §5.2):
+    /// the scan is a cheap discriminant test per value, and a hash of plain
+    /// scalars — the overwhelmingly common case — is never touched.
     pub fn hash(map: impl Into<HashData>) -> Self {
+        let mut data: HashData = map.into();
+        if data.map.values().any(Value::needs_element_itemization) {
+            for v in data.map.values_mut() {
+                if v.needs_element_itemization() {
+                    *v = v.clone().itemize_for_element_store();
+                }
+            }
+        }
+        Value::from_repr(ValueRepr::Hash(Gc::new(data), false))
+    }
+
+    /// Construct a `Value::Hash` whose values are *not* element containers, so
+    /// [`Value::hash`]'s ADR-0040 itemization is skipped.
+    ///
+    /// mutsu represents several associative things that are not a Raku `Hash`
+    /// with the same `Value::Hash` repr, and raku says their values are bare:
+    ///
+    /// - a `Map` — `my %h = a => [1,2]; %h.Map<a>.raku` is `[1, 2]`, and that
+    ///   is what makes `Foo.new(|%args.Map)` bind `@.a` element-wise;
+    /// - a `Match`'s capture map — `$/.hash<x>.VAR.^name` is `Array`;
+    /// - a slurpy `*%h` parameter's hash — `sub f(*%h) {…}; f(a => ("x","y"))`
+    ///   sees `%h<a>.VAR.^name` as `List`, because the values are bound from
+    ///   the call's capture rather than assigned into fresh containers.
+    ///
+    /// Use [`Value::hash`] for everything a Raku program would call a `Hash`.
+    pub fn hash_bare_values(map: impl Into<HashData>) -> Self {
         Value::from_repr(ValueRepr::Hash(Gc::new(map.into()), false))
     }
 
@@ -443,18 +482,14 @@ impl Value {
     /// `Shaped`/`Lazy` arrays are excluded because `ArrayKind::itemize()` is
     /// a no-op on them, so `itemize_for_element_store` would return them
     /// unchanged anyway.
+    ///
+    /// Answered from the representation tag rather than through `view()`: the
+    /// scans run over every element of a freshly built aggregate, and a
+    /// `view()` of a lazy `Match` forces it (ADR-0016 P5), which would
+    /// materialize every capture a regex produced just to decide that a
+    /// `Match` never needs itemizing anyway.
     pub fn needs_element_itemization(&self) -> bool {
-        match self.view() {
-            ValueView::Array(_, kind) => matches!(kind, ArrayKind::List | ArrayKind::Array),
-            ValueView::Hash(_) => !self.hash_is_itemized(),
-            ValueView::Seq(_)
-            | ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => true,
-            _ => false,
-        }
+        self.0.needs_element_itemization()
     }
 
     /// The inverse of [`Value::itemize_for_element_store`], for the few

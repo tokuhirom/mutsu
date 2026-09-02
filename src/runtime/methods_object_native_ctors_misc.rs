@@ -89,9 +89,12 @@ impl Interpreter {
         }
         // Convert hash (Map) to named captures
         if let ValueView::Hash(map) = hash.view() {
-            attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
+            attrs.insert(
+                "named".to_string(),
+                Value::hash_bare_values(map.as_ref().clone()),
+            );
         } else {
-            attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+            attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
         }
         Value::make_instance(Symbol::intern("Match"), attrs)
     }

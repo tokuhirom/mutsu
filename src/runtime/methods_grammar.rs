@@ -745,7 +745,7 @@ impl Interpreter {
                         .iter()
                         .map(|(k, v)| (k.clone(), Value::str(v.clone())))
                         .collect();
-                    updates.push(("capture_alias_map", Value::hash(alias_hash)));
+                    updates.push(("capture_alias_map", Value::hash_bare_values(alias_hash)));
                 }
                 match_obj.match_with_attrs(updates).unwrap_or(match_obj)
             };
@@ -1376,7 +1376,7 @@ impl Interpreter {
                     updated_named.insert(child_name, updated_child);
                 }
             }
-            updated_attrs.insert("named".to_string(), Value::hash(updated_named));
+            updated_attrs.insert("named".to_string(), Value::hash_bare_values(updated_named));
         }
 
         // Recurse into positional `( )` group captures the same way. A group
@@ -1775,7 +1775,7 @@ impl Interpreter {
         attrs.insert("pos".to_string(), Value::int(-1));
         attrs.insert("orig".to_string(), Value::str(text.to_string()));
         attrs.insert("list".to_string(), Value::array(Vec::new()));
-        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("named".to_string(), Value::hash_bare_values(HashMap::new()));
         attrs.insert("__failed_match__".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Match"), attrs)
     }

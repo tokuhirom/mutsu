@@ -2,18 +2,6 @@ use super::*;
 use crate::value::value_buf::{buf_elems, buf_elems_in, buf_len_or_zero};
 
 impl Interpreter {
-    /// Wrap a value in item (scalar) context if it's a List/Array,
-    /// following Raku's rule that hash slot access returns values in item context.
-    /// A List stored in a hash slot becomes an ItemList when accessed.
-    fn itemize_hash_value(v: Value) -> Value {
-        if matches!(v.view(), ValueView::Array(_, crate::value::ArrayKind::List)) {
-            let (items, _) = v.into_array().unwrap();
-            Value::array_with_kind(items, crate::value::ArrayKind::ItemList)
-        } else {
-            v
-        }
-    }
-
     /// Create a Failure for "Type X does not support associative indexing."
     fn make_assoc_indexing_failure(type_name: &str) -> Value {
         RuntimeError::assoc_indexing_failure(type_name)
@@ -1177,7 +1165,7 @@ impl Interpreter {
                         self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }
                 } else {
-                    Self::itemize_hash_value(v)
+                    v
                 }
             }
             (ValueView::Hash(items), ValueView::Int(key)) => {
@@ -1192,7 +1180,7 @@ impl Interpreter {
                         self.typed_container_default(&Value::hash_with_data(items.clone()))
                     }
                 } else {
-                    Self::itemize_hash_value(v)
+                    v
                 }
             }
             // WhateverCode positional index on Hash: {}[*-1]

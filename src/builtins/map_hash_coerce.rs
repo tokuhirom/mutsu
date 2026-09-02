@@ -229,9 +229,26 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
                     (key, deconted)
                 })
                 .collect();
-            break 'hash Value::hash(deconted);
+            break 'hash Value::hash_bare_values(deconted);
         }
-        to_hash(target, true)?
+        // Any other receiver (a list of Pairs, a Set/Bag/Mix, a bare Pair)
+        // folds to a Hash first — which itemizes on the way in, since that is
+        // what a `Hash` store does — and then needs the SAME decont: raku's
+        // `(a => (1,2,3)).Map<a>` is `(1, 2, 3)`, which is what lets
+        // `C.new(|(a => (1,2,3)).Map)` bind `Int @.a` element-wise
+        // (roast/S32-hash/map.t "Map does not introduce bogus Scalar
+        // containers"). `to_hash` always returns a FRESH hash here — the
+        // by-identity arm is the `ValueView::Hash` branch above — so the
+        // values can be deconted in place, keeping whatever metadata the
+        // coercion attached (a Set/Bag origin's `original_keys`, say).
+        let mut hashed = to_hash(target, true)?;
+        hashed.with_hash_mut(|arc| {
+            let data = crate::gc::Gc::make_mut(arc);
+            for v in data.map.values_mut() {
+                *v = v.clone().deitemize_element();
+            }
+        });
+        hashed
     };
     // Embed the `Map` declared-type in the Hash Arc (pure; no side table).
     result.with_hash_mut(|arc| {

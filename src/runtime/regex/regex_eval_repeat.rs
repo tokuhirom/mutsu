@@ -405,7 +405,7 @@ impl Interpreter {
             MatchTarget::new(&ctx.matched_so_far),
         );
         let match_obj = {
-            let mut updates = vec![("named", Value::hash(named_map))];
+            let mut updates = vec![("named", Value::hash_bare_values(named_map))];
             if !pos_list.is_empty() {
                 updates.push(("list", Value::array(pos_list)));
             }
@@ -676,7 +676,7 @@ impl Interpreter {
             {
                 let named_hash: HashMap<String, Value> = ast_named.iter().cloned().collect();
                 if let Some(updated) =
-                    cur.match_with_attrs(vec![("named", Value::hash(named_hash))])
+                    cur.match_with_attrs(vec![("named", Value::hash_bare_values(named_hash))])
                 {
                     self.env.insert("/".to_string(), updated.clone());
                     self.env.insert("\u{00A2}".to_string(), updated);
