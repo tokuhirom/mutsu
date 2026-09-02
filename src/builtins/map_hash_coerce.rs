@@ -175,12 +175,27 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
                 .match_named()
                 .unwrap_or_else(|| Value::hash(HashMap::new())))
         }
+        // A bare `Pair` receiver is one key/value binding, not an odd-length
+        // item list. BOTH pair flavours have to be here: since ADR-0021 the
+        // *data* flavour a literal mints is `ValuePair`, and `Pair` is only the
+        // call-site named-argument marker — so matching `Pair` alone made
+        // `(a => 1).Hash` (and `.Map`, and `.hash`) die with "Odd number of
+        // elements". Keyed exactly as `items_to_hash` keys a pair item: a
+        // non-`Str` key stringifies (raku: `(1 => "a").Hash` is `{"1" => "a"}`).
         _ => {
             if check_odd {
-                if let ValueView::Pair(k, v) = target.view() {
-                    let mut map = HashMap::new();
-                    map.insert(k.to_string(), v.clone());
-                    return Ok(Value::hash(map));
+                match target.view() {
+                    ValueView::Pair(k, v) => {
+                        let mut map = HashMap::new();
+                        map.insert(k.to_string(), v.clone());
+                        return Ok(Value::hash(map));
+                    }
+                    ValueView::ValuePair(k, v) => {
+                        let mut map = HashMap::new();
+                        map.insert(k.to_string_value(), v.clone());
+                        return Ok(Value::hash(map));
+                    }
+                    _ => {}
                 }
                 return Err(make_odd_number_error(std::slice::from_ref(&target)));
             }
