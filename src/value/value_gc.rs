@@ -441,12 +441,20 @@ impl Trace for super::ContainerCell {
         if let Ok(inner) = self.lock() {
             inner.gc_trace(visit);
         }
+        if let Ok(weight) = self.quanthash_weight.lock()
+            && let Some(weight) = weight.as_ref()
+        {
+            weight.key.gc_trace(visit);
+        }
     }
 
     fn drop_gc_edges(&mut self) {
         // Break the cell's single edge (reclaim). `&mut self` => no lock needed.
         if let Ok(inner) = self.get_mut() {
             *inner = Value::Nil;
+        }
+        if let Ok(weight) = self.quanthash_weight.get_mut() {
+            *weight = None;
         }
     }
 }

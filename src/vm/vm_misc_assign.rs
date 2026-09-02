@@ -435,6 +435,16 @@ impl Interpreter {
                 let scalar = !name.starts_with('@') && !name.starts_with('%');
                 if scalar && !(self.array_share_active && self.is_array_share_scalar(&name)) {
                     let arc = arc.clone();
+                    // `.values` on a mutable QuantHash yields a dedicated
+                    // weight reference.  It deliberately cannot use an
+                    // ordinary element cell: setting a weight to zero removes
+                    // the key.  Keep generic callback producers (notably
+                    // `.values.map({ $_ = ... })`) on the normal cell path,
+                    // but route their store through the QuantHash operation.
+                    if let Some(weight) = crate::value::quanthash_weight_ref(&arc) {
+                        self.quanthash_set_weight_elem(code, &weight.source, &weight.key, &val)?;
+                        self.pending_rw_writeback_sources.push(weight.source);
+                    }
                     self.check_container_cell_constraint(&arc, &val)?;
                     Value::store_through_cell(&arc, &val);
                     self.stack.push(val);
