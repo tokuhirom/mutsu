@@ -892,13 +892,17 @@ impl Compiler {
                             self.compile_expr(target);
                             self.compile_expr(index);
                             self.compile_expr(value);
-                            self.code.emit(OpCode::IndexAssignGeneric);
+                            self.code.emit(OpCode::IndexAssignGeneric {
+                                is_positional: outer_positional,
+                            });
                         }
                     } else {
                         self.compile_expr(target);
                         self.compile_expr(index);
                         self.compile_expr(value);
-                        self.code.emit(OpCode::IndexAssignGeneric);
+                        self.code.emit(OpCode::IndexAssignGeneric {
+                            is_positional: outer_positional,
+                        });
                     }
                 } else {
                     // Multi-index slice: ($foo, 42, $bar, 19)[0, 2] = (23, 24)
@@ -910,7 +914,9 @@ impl Compiler {
                 self.compile_expr(target);
                 self.compile_expr(index);
                 self.compile_expr(value);
-                self.code.emit(OpCode::IndexAssignGeneric);
+                self.code.emit(OpCode::IndexAssignGeneric {
+                    is_positional: outer_positional,
+                });
             }
         } else {
             // Generic fallback: compile target, then index, then value
@@ -918,7 +924,9 @@ impl Compiler {
             self.compile_expr(target);
             self.compile_expr(index);
             self.compile_expr(value);
-            self.code.emit(OpCode::IndexAssignGeneric);
+            self.code.emit(OpCode::IndexAssignGeneric {
+                is_positional: outer_positional,
+            });
         }
     }
 

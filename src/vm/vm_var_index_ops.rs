@@ -615,7 +615,10 @@ impl Interpreter {
             };
             target = Value::array(forced);
         }
-        // Normalize Seq/Slip target to List for uniform handling
+        // Normalize ordinary Seq/Slip targets to List for uniform handling.
+        // A mutable collection producer's Seq is different: its elements are
+        // the source's live Scalar cells, and the Seq arms below must return
+        // those cells without passing through `resolve_array_entry`.
         if let ValueView::Seq(items) = target.view() {
             // Subscript on a consumed Seq throws X::Seq::Consumed.
             // Subscript on any Seq marks it as cached (can be used again).
@@ -623,10 +626,12 @@ impl Interpreter {
                 return Err(crate::value::seq_consumed_error());
             }
             items.mark_cache_requested();
-            target = Value::array_with_kind(
-                crate::value::Value::array_arc(items.to_vec()),
-                crate::value::ArrayKind::List,
-            );
+            if !items.has_element_containers() {
+                target = Value::array_with_kind(
+                    crate::value::Value::array_arc(items.to_vec()),
+                    crate::value::ArrayKind::List,
+                );
+            }
         } else if let ValueView::Slip(items) = target.view() {
             target = Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),

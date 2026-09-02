@@ -185,6 +185,13 @@ impl Value {
         Value::Seq(SeqBody::reified(items))
     }
 
+    /// Construct a `Seq` whose elements are live containers produced from a
+    /// mutable Array/Hash. Positional indexing must keep those cells intact.
+    #[inline]
+    pub(crate) fn seq_element_containers(items: Vec<Value>) -> Self {
+        Value::Seq(SeqBody::reified_with_element_containers(items, true))
+    }
+
     /// Construct a `Seq` value from a not-yet-reified source (`Seq.new($iter)`,
     /// `IO::Handle.lines`, or a pre-consumed `Seq.new()` when `source` is
     /// [`SeqSource::Taken`]).
