@@ -71,6 +71,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             body: lower_block(named_child(node, "body")?)?,
             repeat: true,
             label: None,
+            is_until: false,
         }),
         RakuAstClass::StatementFor => lower_for(node),
         RakuAstClass::Sub => lower_sub(node),
@@ -469,6 +470,8 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         cond,
         body,
         label: None,
+        is_statement_modifier: false,
+        is_until: false,
     })
 }
 
@@ -495,6 +498,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         body,
         repeat: false,
         label: None,
+        is_until: false,
     })
 }
 

@@ -1,9 +1,11 @@
 # ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
 
-- Status: Accepted (P1, P2, P3 landed; P4-P5 not started)
+- Status: Accepted (P1-P4 landed; P5's scope half landed, its value half deferred — see Phase 5)
 - Date: 2026-08-20
 - Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
-  (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`)
+  (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`).
+  Both are closed now; that finding's write-up moved to
+  `news/2026-09/loop-placeholder-scope-raw-condition-supply.md` when Phase 4 landed.
 
 ## Context
 
@@ -43,7 +45,8 @@ diagnostic for the bare-`{}` case.
 
 ### Correcting the deep finding this ADR replaces
 
-`todo/deep/placeholder-scope-loop-while-block-boundaries.md` (2026-08-18)
+`todo/deep/placeholder-scope-loop-while-block-boundaries.md` (2026-08-18, now
+`news/2026-09/loop-placeholder-scope-raw-condition-supply.md`)
 concluded that `while`, `loop {}` and bare `{}` have "three genuinely different
 rules, not a single shared boundary decision", and warned: "assume the same is
 true here until checked one by one. Do not batch-fix by pattern-matching the
@@ -84,7 +87,7 @@ Probe scripts were throwaway (`tmp/ph-probe*.sh`); the table is the result.
 | `given`/`with` block | 1 — the topic | `given 5 { $^c }` -> 5 | correct for one placeholder; `given 5 { "$^a $^b" }` prints `5 True` where raku raises the arity error |
 | `when` block | **0** | `given 5 { when 5 { $^c } }` -> `Too few positionals passed; expected 1 argument but got 0`; `{ when 5 { $^c } }.arity` is 0 | binds the topic (prints 5) and reports arity 1 |
 | bare `{ ... }` **statement** | **0** | `{ $^c }` -> `Too few positionals passed; expected 1 argument but got 0` | ad-hoc die `Implicit placeholder parameters are not available in bare nested blocks` at the mainline; inside a sub it instead leaks arity onto the sub |
-| `role` body | 1 — `Mu` at composition | `role R { $^c }; class D does R {}` -> `(Mu)`, runs fine | **over-rejects** with `X::Placeholder::Block` |
+| `role` body | 1 per placeholder — see the Phase 5 correction below | `role R { $^c }; class D does R {}` -> `(Mu)`, runs fine | scope half fixed (arity 0); still **over-rejects** the body with `X::Placeholder::Block` |
 
 ### Constructs whose body may **not** take a signature
 
@@ -240,6 +243,16 @@ this classification stays valid unchanged.
 both backwards for `role` (over-rejects) and `module` (accepts). Classify
 `RoleDecl` as `Signature(ArgSupply::None)`-with-`Mu` and `module` as
 `NoSignature`.
+
+**Correction (2026-09-02, Phase 5).** "with `Mu`" overstates what rakudo does,
+and "`ArgSupply::None`" understates it. Re-audited: rakudo leaves a role body's
+placeholder as an **uninitialized `VMNull` register**. It gists as `(Mu)` and
+`$^c === Mu` is `True`, but `$^c.^name` reports `VMNull` and `$^c.defined`
+*throws* inside the composition; a body declaring `$^a` and `$^b` gets that same
+null for **both**, with no arity failure. So the supply is not zero arguments
+(which would make D3's shared check raise "expected 1 argument but got 0") and
+not a real `Mu` either — it is one null per declared placeholder, which is what
+`ArgSupply::AllMu` now records.
 
 ## Rejected alternatives
 
@@ -538,19 +551,89 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
      raku never calls; and a genuinely nested `if 1 { { $^a } }` / `given 5 { {
      $^a } }` prints `True` where raku raises the zero-supply failure.
 4. **`while`/`until`/`repeat` raw-condition supply (D4) and the signature
-   clash (D5).** (`repeat`'s oracle *classification* already landed in Phase 3
-   above; what remains is the per-iteration bind for all three, and `while`'s
-   own classification — a placeholder in a `while` body still leaks to the
-   enclosing routine.)
-5. **Role classification (D7).** (`module`/`package`/`grammar` — the other
-   half of D7 — already landed in Phase 2 above.)
+   clash (D5). LANDED (2026-09-02).** `Stmt::While` is now
+   `Signature(ArgSupply::Condition)` and `Stmt::Loop { repeat: true }` keeps its
+   Phase-3 `ConditionAfterFirstPass`; both bind through the shared emitter,
+   which Phase 4 split into `emit_inlined_body_placeholder_bind_value` (the
+   bind) and `emit_inlined_body_placeholder_arity_die` (the arity check) so the
+   two halves can sit in different bytecode regions. Pinned by
+   `t/placeholder-scope-loop-condition.t` (21 cases), which passes **unmodified
+   under real `raku`** as well as under mutsu.
+   - **The bind goes in the CONDITION region, the die in the BODY region.**
+     A loop condition is re-evaluated on every pass, so `Dup`-ing it and
+     binding right there re-supplies the value per iteration for free and keeps
+     the stack contract identical to before (the `WhileLoop`/`RepeatLoop` op
+     still finds exactly one value at the end of its condition range). The
+     arity failure, by contrast, is raised on *invocation*: `while 0 { "$^a
+     $^b" }` must not raise at all, so it is emitted at the head of the body.
+   - **`Stmt::While` needed a new `is_statement_modifier` flag**, mirroring
+     `If`/`For`/`Given`. Without it `while COND { $^a }` (a boundary supplied
+     the condition) and `say "$^a" while COND` (no block at all — the
+     placeholder is the enclosing routine's, and `sub f { say "$^a" while $i++
+     < 2 }; f(7)` prints 7 twice in raku) are the same AST node. The flag also
+     retires Phase 3's deliberate false negative: a block genuinely nested in a
+     prefix loop's braces (`while 42 { { $^a } }`) is a second, zero-argument
+     Block and now raises raku's "expected 1 argument but got 0", while the
+     `{ ... } while COND` modifier form keeps its `note_construct_body_block`
+     suppression.
+   - **`until` needed a new `is_until` flag on `Stmt::While`/`Stmt::Loop`,
+     because raku supplies the value of the condition as WRITTEN.** The parser
+     lowers `until COND` to `while !COND`, so the boolified negation is the
+     only value on the stack — but `until False { $^c }` prints `False` in
+     raku, and `until 0 { $^c }` prints `0`. The compiler therefore compiles
+     the *inner* expression, `Dup`s and binds it, and re-applies `Not` to the
+     copy the loop tests. A flag is unavoidable here: a hand-written
+     `while !$x { $^c }` really does supply the negation, and is
+     AST-identical to the desugar.
+   - **D5 is enforced in the PARSER, not the compiler.** `while COND -> $x { }`
+     is desugared into a `VarDecl` plus a `While` over an `AssignExpr` before
+     codegen, so the pointy parameter is invisible by then. `while_until.rs`
+     and `loop_repeat.rs` call the existing
+     `placeholder_overrides_signature_error` while `param_binding` is still in
+     hand, producing raku's `X::Signature::Placeholder` ("Placeholder variable
+     '$^c' cannot override existing signature").
+   - **Corpus check.** A scan of `roast/`, `modules/`, `vendor/`, `lib/` and
+     `t/` for a placeholder used directly inside a `while`/`until`/`repeat`
+     body found zero pre-existing hits, so no code relied on the old leak. The
+     bundled-library gate (`scripts/battery-testsuite.sh`, 289/312) and a
+     136-file targeted roast sweep were run in addition to `make test`
+     (36628 tests) — the Phase-2 DBIish regression is the reason the battery
+     gate is now part of this ADR's acceptance, not just CI's.
+   - **Deliberately NOT chased:** `{ ... } while COND` — raku never calls the
+     block at all (`my $i=0; { say 1 } while $i++ < 2` prints nothing), mutsu
+     calls it. That is a `{ }`-as-statement-modifier-target divergence, not a
+     placeholder one, and Phase 3 already recorded it.
+5. **Role classification (D7): SCOPE half landed (2026-09-02), value half
+   deferred.** `Stmt::RoleDecl` is now `Signature(ArgSupply::AllMu)` rather
+   than `Transparent`, which fixes the real half of the defect: a role body no
+   longer leaks its placeholder onto the enclosing block, so
+   `{ role R { $^c } }.arity` is 0 as in raku instead of 1.
+   (`module`/`package`/`grammar` — the other half of D7 — landed in Phase 2.)
+   - **The value half is blocked on ADR-0019's deferred-body machinery and is
+     not worth forcing.** `add_role_decl_plan` turns a role body into a list of
+     `DeferredBodyOp`s that `run_role_body_for_composition` recompiles **one
+     statement at a time** through `run_block_raw`, so the obvious desugar
+     (`my $^c = Mu` at the head of the body, the shape
+     `rewrite_placeholder_block_modifier_stmt` uses) compiles as its own unit:
+     it neither scopes `^c` into the later statements nor stops
+     `compile_unit`'s `is_mainline` check firing on them (observed:
+     `Could not instantiate role 'R' because it died with
+     X::Placeholder::Mainline`). Combined with the D7 correction above — the
+     behaviour being copied is an uninitialized VM register, and a corpus scan
+     found zero real uses — the compiler keeps rejecting a placeholder-bearing
+     role body for now. Recorded in
+     `todo/deep/role-body-placeholder-mu-supply.md` and pinned (both the
+     divergence and the arity fix) in `t/placeholder-scope-rejecting.t`.
 
 ## Verification
 
 Each phase lands with `t/` pins built from the audit table above — one file
 per column of the table (`t/placeholder-scope-signature-capable.t`,
-`t/placeholder-scope-rejecting.t`), each case asserting against the raku
-observable recorded here rather than against mutsu's current output.
+`t/placeholder-scope-rejecting.t`, and Phase 4's
+`t/placeholder-scope-loop-condition.t`), each case asserting against the raku
+observable recorded here rather than against mutsu's current output. The two
+signature-capable files pass unmodified under real `raku` as well as under
+mutsu, which is what keeps them honest.
 
 ## Severity and priority
 

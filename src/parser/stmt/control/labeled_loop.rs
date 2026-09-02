@@ -82,6 +82,8 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond,
                 body,
                 label: Some(label),
+                is_statement_modifier: false,
+                is_until: false,
             },
         ));
     }
@@ -99,6 +101,8 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 },
                 body,
                 label: Some(label),
+                is_statement_modifier: false,
+                is_until: true,
             },
         ));
     }
@@ -113,6 +117,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             step,
             body,
             repeat,
+            is_until,
             ..
         } = stmt
         {
@@ -125,6 +130,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                     body,
                     repeat,
                     label: Some(label),
+                    is_until,
                 },
             ));
         }
@@ -141,6 +147,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             step,
             body,
             repeat,
+            is_until,
             ..
         } = stmt
         {
@@ -153,6 +160,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                     body,
                     repeat,
                     label: Some(label),
+                    is_until,
                 },
             ));
         }

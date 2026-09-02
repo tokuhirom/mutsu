@@ -2425,7 +2425,13 @@ impl Compiler {
                     self.code.emit(OpCode::ExitPointyTopic);
                 }
             }
-            Stmt::While { cond, body, label } => {
+            Stmt::While {
+                cond,
+                body,
+                label,
+                is_statement_modifier,
+                is_until,
+            } => {
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
                 for s in &pre_stmts {
@@ -2444,7 +2450,30 @@ impl Compiler {
                     collect: false,
                     isolate_topic: false,
                 });
-                self.compile_condition_expr(cond);
+                // ADR-0048 D4: a `while`/`until` BLOCK is invoked with the
+                // RAW condition value on every pass, so the bind lives in the
+                // condition region (re-executed each iteration) rather than in
+                // the body. `until COND` is parsed as `while !COND` but raku
+                // supplies the written condition's value, so the supply
+                // expression peels that synthetic `!` off
+                // (`loop_supplied_condition`) and the negation is re-applied
+                // to the copy the loop actually tests.
+                //
+                // A `while`/`until` STATEMENT MODIFIER introduces no block, so
+                // its placeholders belong to the enclosing routine and nothing
+                // is bound here (the oracle classifies it `Transparent`).
+                let binds_cond_placeholder =
+                    !*is_statement_modifier && Self::inlined_body_binds_supplied_value(&loop_body);
+                if binds_cond_placeholder {
+                    self.compile_condition_expr(Self::loop_supplied_condition(cond, *is_until));
+                    self.code.emit(OpCode::Dup);
+                    self.emit_inlined_body_placeholder_bind_value(&loop_body, ArgSupply::Condition);
+                    if *is_until {
+                        self.code.emit(OpCode::Not);
+                    }
+                } else {
+                    self.compile_condition_expr(cond);
+                }
                 self.code.patch_while_cond_end(loop_idx);
                 if body_rebinds_topic {
                     self.synthetic_block_body = true;
@@ -2453,20 +2482,30 @@ impl Compiler {
                     // A sole `{ ... }` in a prefix `while`/`until` body is a
                     // NESTED bare block that re-clones per iteration, so its
                     // `state` restarts (raku: 1 1 1) — no ResetStateLocals
-                    // suppression here. The `{...} while COND` modifier form
-                    // never calls the block in raku at all, so there is no
-                    // persisting-modifier case to preserve (unlike `for`,
-                    // which gates on `is_statement_modifier`).
+                    // suppression here.
                     //
-                    // For ADR-0048 D3/D6 that sole block is still treated as
-                    // this loop's own body rather than a nested zero-argument
-                    // one: `Stmt::While` carries no `is_statement_modifier`
-                    // flag, so `{ $a = $^x } while COND` and the far rarer
-                    // `while COND { { $^a } }` are indistinguishable here, and
-                    // the conservative choice is to not raise. Supplying the
-                    // raw condition to either is D4/Phase 4's job. Re-noted
-                    // because `expand_loop_phasers` rebuilt the body list.
-                    self.note_construct_body_block_stmts(&loop_body);
+                    // For ADR-0048 D3/D6 that sole block is the construct's
+                    // own body ONLY in the `{ ... } while COND` MODIFIER form;
+                    // a block genuinely nested in a prefix loop's braces
+                    // (`while 42 { { $^a } }`) is a second, separately-invoked
+                    // zero-argument Block, and raku raises "Too few
+                    // positionals passed; expected 1 argument but got 0" for
+                    // it. Phase 3 could not tell the two apart and
+                    // conservatively suppressed both; `is_statement_modifier`
+                    // (added for D4) now distinguishes them. Re-noted because
+                    // `expand_loop_phasers` rebuilt the body list.
+                    if *is_statement_modifier {
+                        self.note_construct_body_block_stmts(&loop_body);
+                    }
+                    // The arity failure is raised when the block is INVOKED,
+                    // so it belongs inside the body region: `while 0 { "$^a
+                    // $^b" }` must not raise at all.
+                    if !*is_statement_modifier {
+                        self.emit_inlined_body_placeholder_arity_die(
+                            &loop_body,
+                            ArgSupply::Condition,
+                        );
+                    }
                     self.compile_scope_restored_loop_body(&loop_body);
                 }
                 self.code.patch_loop_end(loop_idx);
@@ -2943,6 +2982,7 @@ impl Compiler {
                 body,
                 repeat,
                 label,
+                ..
             } if !*repeat => {
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
@@ -3575,6 +3615,7 @@ impl Compiler {
                 body,
                 repeat,
                 label,
+                is_until,
             } if *repeat => {
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
@@ -3584,12 +3625,29 @@ impl Compiler {
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
+                // ADR-0048 D4: a `repeat {} while/until` body is invoked with
+                // `Mu` on the first pass — the condition has not run yet — and
+                // with the raw condition value on every pass after that
+                // (`ArgSupply::ConditionAfterFirstPass`). Seed the `Mu` ahead
+                // of the loop; the per-iteration bind goes in the condition
+                // region below, which is evaluated between passes.
+                let binds_cond_placeholder =
+                    cond.is_some() && Self::inlined_body_binds_supplied_value(&loop_body);
+                if binds_cond_placeholder {
+                    self.emit_repeat_first_pass_mu_seed(&loop_body);
+                }
                 // Layout: [RepeatLoop] [body..] [cond..]
                 let loop_idx = self.code.emit(OpCode::RepeatLoop {
                     cond_end: 0,
                     body_end: 0,
                     label: label.clone(),
                 });
+                // The arity failure is raised when the block is INVOKED, so it
+                // belongs at the head of the body region.
+                self.emit_inlined_body_placeholder_arity_die(
+                    &loop_body,
+                    ArgSupply::ConditionAfterFirstPass,
+                );
                 // Compile body. The parser inlines the `repeat { ... }` block's
                 // statements directly into `body`, so a sole `{ ... }` here is
                 // a NESTED bare block that re-clones per iteration — its
@@ -3598,7 +3656,27 @@ impl Compiler {
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {
-                    self.compile_condition_expr(cond_expr);
+                    if binds_cond_placeholder {
+                        // `repeat {} until COND` is parsed as a negated `while`
+                        // condition; raku supplies the WRITTEN condition's
+                        // value (`repeat { $^c } until $i++ > 1` yields `Mu`,
+                        // `False`, `False`), so peel the synthetic `!` off the
+                        // copy that is bound and re-apply it to the copy the
+                        // loop tests.
+                        self.compile_condition_expr(Self::loop_supplied_condition(
+                            cond_expr, *is_until,
+                        ));
+                        self.code.emit(OpCode::Dup);
+                        self.emit_inlined_body_placeholder_bind_value(
+                            &loop_body,
+                            ArgSupply::ConditionAfterFirstPass,
+                        );
+                        if *is_until {
+                            self.code.emit(OpCode::Not);
+                        }
+                    } else {
+                        self.compile_condition_expr(cond_expr);
+                    }
                 } else {
                     self.code.emit(OpCode::LoadTrue);
                 }
@@ -4538,6 +4616,20 @@ impl Compiler {
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::AugmentClass(idx));
             }
+            // ADR-0048 D7/Phase 5, VALUE half: NOT implemented — a role body
+            // carrying a stray placeholder is still rejected here, where raku
+            // accepts it. The *scope* half did land (see the `RoleDecl` arm of
+            // `placeholder_body_kind`): a role body is a placeholder boundary
+            // now, so `{ role R { $^c } }.arity` is 0 as in raku instead of
+            // leaking `$^c` onto the enclosing block. Supplying the `Mu` raku
+            // supplies needs plumbing this arm cannot reach: a role body is
+            // registered as a plan whose `Plain` statements are each recompiled
+            // *individually* at composition (`DeferredBodyOp` →
+            // `run_role_body_for_composition` → `run_block_raw`), so a `my $^c
+            // = Mu` prepended to the body compiles as its own unit and neither
+            // binds the later statements' `$^c` nor stops `compile_unit`'s
+            // `is_mainline` placeholder check from firing on them. See
+            // `todo/deep/role-body-placeholder-mu-supply.md`.
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl { .. } => {
                 // Same as RegisterClass above: a role method has no creation op,

@@ -668,8 +668,14 @@ impl Compiler {
                     *mode,
                 );
             }
-            Stmt::While { cond, body, label } => {
-                self.compile_do_while_expr(cond, body, label);
+            Stmt::While {
+                cond,
+                body,
+                label,
+                is_until,
+                ..
+            } => {
+                self.compile_do_while_expr(cond, body, label, *is_until);
             }
             Stmt::Loop {
                 init,
@@ -678,8 +684,9 @@ impl Compiler {
                 body,
                 repeat,
                 label,
+                is_until,
             } if !*repeat => {
-                self.compile_do_loop_expr(init, cond, step, body, label);
+                self.compile_do_loop_expr(init, cond, step, body, label, *is_until);
             }
             Stmt::ClassDecl { name_expr, .. } => {
                 // Register the class and return the type object.

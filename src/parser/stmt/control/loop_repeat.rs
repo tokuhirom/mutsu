@@ -277,6 +277,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 repeat: false,
                 label: None,
+                is_until: false,
             },
         ));
     }
@@ -307,6 +308,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             body,
             repeat: false,
             label: None,
+            is_until: false,
         },
     ))
 }
@@ -328,6 +330,14 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         let repeat_param = param.or_else(|| params.into_iter().next());
+        // ADR-0048 D5: an explicit signature wins over a placeholder — see the
+        // matching guard in `while_until.rs`.
+        if repeat_param.is_some()
+            && let Some(err) =
+                crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
+        {
+            return Err(err);
+        }
         let init = repeat_param.as_ref().map(|name| {
             Box::new(Stmt::VarDecl {
                 name: name.clone(),
@@ -356,6 +366,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 repeat: true,
                 label: None,
+                is_until: false,
             },
         ));
     }
@@ -370,6 +381,14 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         let repeat_param = param.or_else(|| params.into_iter().next());
+        // ADR-0048 D5: an explicit signature wins over a placeholder — see the
+        // matching guard in `while_until.rs`.
+        if repeat_param.is_some()
+            && let Some(err) =
+                crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
+        {
+            return Err(err);
+        }
         let init = repeat_param.as_ref().map(|name| {
             Box::new(Stmt::VarDecl {
                 name: name.clone(),
@@ -401,6 +420,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 repeat: true,
                 label: None,
+                is_until: true,
             },
         ));
     }
@@ -422,6 +442,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 repeat: true,
                 label: None,
+                is_until: false,
             },
         ));
     }
@@ -442,6 +463,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 body,
                 repeat: true,
                 label: None,
+                is_until: true,
             },
         ));
     }

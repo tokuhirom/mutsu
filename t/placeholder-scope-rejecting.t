@@ -1,6 +1,6 @@
 use Test;
 
-plan 28;
+plan 30;
 
 # ADR-0048 Phase 2: constructs whose body may NOT take a signature.
 # `raku` gives the exact same `X::Placeholder::Block` for all of these
@@ -153,3 +153,19 @@ throws-like 'my $x = lazy { $^c; 1 }; $x[0]', X::Placeholder::Block,
 # `*%_`, never a plain `sub`.
 throws-like 'sub f { try { %_ } }; f(a => 1)', X::Placeholder::Block,
     '%_ inside try {} in a plain sub (not a method) still rejects';
+
+# --- ADR-0048 D7/Phase 5: `role` is the one PACKAGE-ish body raku accepts ---
+#
+# `class`/`module`/`package`/`grammar` bodies really are X::Placeholder::Block
+# in raku, but a ROLE body is signature-capable there: `role R { $^c }; class D
+# does R {}` compiles and runs at composition. mutsu implements only the SCOPE
+# half of that (the boundary below, which is what raku's arity 0 pins); it
+# cannot supply the value from the role-declaration compile site, so it still
+# over-rejects the body itself. Pinned so the divergence stays visible and so
+# the scope half cannot silently regress --
+# see todo/deep/role-body-placeholder-mu-supply.md.
+throws-like 'role R { $^c }; class D does R {}', X::Placeholder::Block,
+    'role {} still over-rejects a placeholder body (raku accepts it: D7 value half unimplemented)';
+
+is { role RoleArity { $^c } }.arity, 0,
+    'but a role body IS a placeholder boundary: it does not leak onto the enclosing block';

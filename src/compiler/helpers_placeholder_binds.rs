@@ -137,28 +137,98 @@ impl Compiler {
         body: &[Stmt],
         supplied: ArgSupply,
     ) -> bool {
+        self.emit_inlined_body_placeholder_bind_value(body, supplied);
+        self.emit_inlined_body_placeholder_arity_die(body, supplied)
+    }
+
+    /// The bind half of [`Compiler::emit_inlined_body_placeholder_binds`].
+    ///
+    /// Split out for the loop constructs (ADR-0048 D4), whose supplied value
+    /// is produced in the CONDITION region — re-evaluated on every pass — but
+    /// whose arity failure belongs in the BODY region, because it is raised
+    /// when the block is invoked and a `while 0 { "$^a $^b" }` never invokes
+    /// it. Everywhere else the two halves sit next to each other and the
+    /// combined helper above is what callers want.
+    pub(super) fn emit_inlined_body_placeholder_bind_value(
+        &mut self,
+        body: &[Stmt],
+        supplied: ArgSupply,
+    ) {
         let phs = Self::inlined_body_caret_placeholders(body);
-        if phs.is_empty() {
-            return false;
-        }
-        let supplied_n = match supplied {
-            ArgSupply::None => 0,
-            // Every inlined construct that supplies anything supplies exactly
-            // one value: the raw condition, the topic, or (`repeat`, D4/Phase
-            // 4) `Mu` on the first pass and the condition afterwards.
-            ArgSupply::Condition | ArgSupply::ConditionAfterFirstPass | ArgSupply::Topic => 1,
-            // A real invocation binds the body's own declared arity, so it can
-            // never under-supply here; these never reach an inlined body.
-            ArgSupply::CallerArgs | ArgSupply::Elements => phs.len(),
-        };
-        if supplied_n >= 1 && phs[0].starts_with('^') {
+        if Self::inlined_supplied_count(&phs, supplied) >= 1 && phs[0].starts_with('^') {
             self.emit_set_named_var(&phs[0]);
         }
+    }
+
+    /// The arity-check half of
+    /// [`Compiler::emit_inlined_body_placeholder_binds`]; see that method and
+    /// [`Compiler::emit_inlined_body_placeholder_bind_value`]. Returns true
+    /// when a fatal die was emitted.
+    pub(super) fn emit_inlined_body_placeholder_arity_die(
+        &mut self,
+        body: &[Stmt],
+        supplied: ArgSupply,
+    ) -> bool {
+        let phs = Self::inlined_body_caret_placeholders(body);
+        let supplied_n = Self::inlined_supplied_count(&phs, supplied);
         if phs.len() > supplied_n {
             self.emit_too_few_positionals_die(phs.len(), supplied_n);
             return true;
         }
         false
+    }
+
+    /// How many positionals `supplied` hands a body declaring `phs`.
+    fn inlined_supplied_count(phs: &[String], supplied: ArgSupply) -> usize {
+        if phs.is_empty() {
+            return 0;
+        }
+        match supplied {
+            ArgSupply::None => 0,
+            // Every inlined construct that supplies anything supplies exactly
+            // one value: the raw condition, the topic, or (`repeat`, D4) `Mu`
+            // on the first pass and the condition afterwards.
+            ArgSupply::Condition | ArgSupply::ConditionAfterFirstPass | ArgSupply::Topic => 1,
+            // A real invocation binds the body's own declared arity, so it can
+            // never under-supply here; these never reach an inlined body.
+            // `AllMu` (a role body) likewise supplies one value per declared
+            // placeholder, so it never under-supplies.
+            ArgSupply::CallerArgs | ArgSupply::Elements | ArgSupply::AllMu => phs.len(),
+        }
+    }
+
+    /// ADR-0048 D4: the condition value a `while`/`until`/`repeat` loop hands
+    /// its body.
+    ///
+    /// `until COND` and `repeat {} until COND` are parsed as a `while` over
+    /// the parser's synthetic `!COND`, but raku supplies the value of the
+    /// *written* condition (`until False { $^c }` prints `False`, not
+    /// `True`), so the wrapper is peeled off here — and only for a real
+    /// `until` (`is_until`), never for a hand-written `while !$x`, whose
+    /// supplied value really is the negation.
+    pub(super) fn loop_supplied_condition(cond: &Expr, is_until: bool) -> &Expr {
+        match cond {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr,
+            } if is_until => expr,
+            other => other,
+        }
+    }
+
+    /// ADR-0048 D4: seed a `repeat {} while/until` body's placeholder with
+    /// `Mu` before the loop, so the FIRST pass — which runs before the
+    /// condition has ever been evaluated — sees raku's `(Mu)` rather than a
+    /// stale or missing value.
+    pub(super) fn emit_repeat_first_pass_mu_seed(&mut self, body: &[Stmt]) {
+        let phs = Self::inlined_body_caret_placeholders(body);
+        let Some(first) = phs.first() else { return };
+        if !first.starts_with('^') {
+            return;
+        }
+        let idx = self.code.add_constant(Value::str("Mu".to_string()));
+        self.code.emit(OpCode::GetBareWord(idx));
+        self.emit_set_named_var(first);
     }
 
     /// Emit raku's runtime arity failure for an under-supplied inlined body.

@@ -191,10 +191,18 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             else_branch: rewrite_supply_body(else_branch, emitter_name),
             binding_var,
         },
-        Stmt::While { cond, body, label } => Stmt::While {
+        Stmt::While {
+            cond,
+            body,
+            label,
+            is_statement_modifier,
+            is_until,
+        } => Stmt::While {
             cond,
             body: rewrite_supply_body(body, emitter_name),
             label,
+            is_statement_modifier,
+            is_until,
         },
         Stmt::Loop {
             init,
@@ -203,6 +211,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             body,
             repeat,
             label,
+            is_until,
         } => Stmt::Loop {
             init: init.map(|boxed| Box::new(rewrite_supply_stmt(*boxed, emitter_name))),
             cond,
@@ -210,6 +219,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             body: rewrite_supply_body(body, emitter_name),
             repeat,
             label,
+            is_until,
         },
         Stmt::For {
             iterable,
