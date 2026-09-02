@@ -1075,9 +1075,13 @@ Measured directly instead: eight of the nine topic-writability rows now match `r
 (`for %h { $_ = 9 }`, which raku rejects) belongs to
 `todo/deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md`, whose blocker is ADR-0036.
 
-**Status: this ADR is complete.** Remaining `.VAR` gaps are tracked outside it —
-`todo/tickets/var-on-a-bare-valued-hash-answers-scalar.md` (a bare-valued hash's element reports
-`Scalar`) and `todo/deep/var-on-a-real-element-is-an-opaque-descriptor-not-the-container.md`.
+**Status: this ADR is complete.** Its one named residue closed the same day
+(`news/2026-09/var-on-a-bare-valued-hash.md`): `HashData` grew a `bare_values` bit — the hash-side
+twin of `ArrayKind`'s `List`/`Array` distinction — so `Value::elements_are_containers` can answer
+for a `Map`, a `Match`'s capture map, a slurpy `*%h` and a `Capture`'s `.hash` without the
+interpreter's `declared_type == "Map"` special case, and `Value::hash` keeps such a hash's values
+bare through every later rebuild. The remaining `.VAR` gap is tracked outside this ADR:
+`todo/deep/var-on-a-real-element-is-an-opaque-descriptor-not-the-container.md`.
 
 ---
 

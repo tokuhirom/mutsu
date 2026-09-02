@@ -247,6 +247,7 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
             for v in data.map.values_mut() {
                 *v = v.clone().deitemize_element();
             }
+            data.bare_values = true;
         });
         hashed
     };

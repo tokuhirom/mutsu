@@ -50,6 +50,7 @@ impl HashData {
             original_keys: None,
             default: None,
             descriptor_name: None,
+            bare_values: false,
         }
     }
 

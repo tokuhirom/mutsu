@@ -1082,6 +1082,19 @@ pub struct HashData {
     /// reflector's syntactic-name fallback. Mirrors
     /// `ArrayData::descriptor_name`.
     pub descriptor_name: Option<Box<str>>,
+    /// ADR-0040: `true` when this hash's values are NOT element containers.
+    ///
+    /// mutsu represents several associative things that are not a Raku `Hash`
+    /// with this same repr, and raku says their values are bare: a `Map`, a
+    /// `Match`'s capture map, a slurpy `*%h`/`%_`, a `Capture`'s `.hash`. An
+    /// `Array` carries the same distinction in its `ArrayKind` tag (`List` vs
+    /// `Array`); a hash has no such tag, so it lives here.
+    ///
+    /// Set by [`crate::value::Value::hash_bare_values`] and read by
+    /// `Value::elements_are_containers` (which is what `.VAR` answers from) and
+    /// by `Value::hash`, which must not itemize the values of a hash that has
+    /// declared they are not containers.
+    pub bare_values: bool,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded
