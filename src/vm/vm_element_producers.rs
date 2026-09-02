@@ -250,9 +250,9 @@ impl Interpreter {
             // container rather than snapshotting its current value. `.List`
             // deliberately remains outside this routing because it
             // decontainerizes Array elements.
-            "Seq" => Value::seq(cells),
-            "values" => Value::seq(cells),
-            "pairs" => Value::seq(
+            "Seq" => Value::seq_element_containers(cells),
+            "values" => Value::seq_element_containers(cells),
+            "pairs" => Value::seq_element_containers(
                 cells
                     .into_iter()
                     .enumerate()
@@ -262,7 +262,7 @@ impl Interpreter {
             // A flat `index, cell, index, cell, ...` list -- the loop chunks it
             // by two, so the value slot of each chunk is the element's own
             // container and `-> $i, $v is rw` aliases it (ADR-0045 row 16).
-            "kv" => Value::seq(
+            "kv" => Value::seq_element_containers(
                 cells
                     .into_iter()
                     .enumerate()
@@ -272,7 +272,7 @@ impl Interpreter {
             "reverse" => {
                 let mut cells = cells;
                 cells.reverse();
-                Value::seq(cells)
+                Value::seq_element_containers(cells)
             }
             "sort" => {
                 // Sort the CELLS, ordered by what they hold. Carrying the cell
@@ -288,7 +288,7 @@ impl Interpreter {
                     })
                     .collect();
                 keyed.sort_by(|a, b| crate::runtime::compare_values(&a.1, &b.1).cmp(&0));
-                Value::seq(keyed.into_iter().map(|(c, _)| c).collect())
+                Value::seq_element_containers(keyed.into_iter().map(|(c, _)| c).collect())
             }
             _ => return None,
         })
@@ -308,7 +308,7 @@ impl Interpreter {
         let mut pairs = Vec::new();
         let mut indices = Vec::new();
         Self::collect_leaf_cell_pairs(target, &mut indices, &mut pairs)?;
-        Some(Value::seq(pairs))
+        Some(Value::seq_element_containers(pairs))
     }
 
     fn collect_leaf_cell_pairs(
@@ -398,6 +398,6 @@ impl Interpreter {
             }
             out.push(cell);
         }
-        Some(Value::seq(out))
+        Some(Value::seq_element_containers(out))
     }
 }

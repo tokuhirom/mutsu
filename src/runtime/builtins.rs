@@ -198,10 +198,19 @@ impl Interpreter {
         container: Option<Value>,
         source_name: &str,
     ) -> Result<Value, RuntimeError> {
-        if let Some(c) = container.as_ref()
-            && !self.container_elements_are_containers(c, source_name)
-        {
-            return Ok(element);
+        if let Some(c) = container.as_ref() {
+            // A producer Seq can be a flat stream whose value cells occur at
+            // selected positions (`.kv`) or inside Pair values (`.pairs`).
+            // The provenance bit identifies the producer, but the indexed
+            // result still has to be a cell before it can describe a Scalar.
+            // Keys and Pair records remain ordinary values.
+            let producer_seq =
+                matches!(c.view(), ValueView::Seq(body) if body.has_element_containers());
+            if !self.container_elements_are_containers(c, source_name)
+                || (producer_seq && !matches!(element.view(), ValueView::ContainerRef(_)))
+            {
+                return Ok(element);
+            }
         }
 
         // A SLICE subscript (`@a[*]`, and any spelling the compiler's
@@ -330,6 +339,11 @@ impl Interpreter {
     /// is a real `Array`.
     fn container_elements_are_containers(&self, container: &Value, source_name: &str) -> bool {
         match container.view() {
+            // Element-producing Seq values retain the source array's shared
+            // element cells.  The marker is needed here because an ordinary
+            // Seq stores values, while a producer Seq is the anonymous
+            // subscript path's source for a real Scalar element descriptor.
+            ValueView::Seq(body) => body.has_element_containers(),
             ValueView::Hash(data) => {
                 !data.bare_values
                     && !matches!(

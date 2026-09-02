@@ -1722,7 +1722,12 @@ pub(crate) enum OpCode {
     /// Generic index assignment on a stack-computed target.
     /// Stack: [target, index, value] → assigns value to target[index].
     /// Supports callframe .my hash writeback for dynamic variables.
-    IndexAssignGeneric,
+    IndexAssignGeneric {
+        /// Whether the computed target was reached through `[...]` rather
+        /// than associative indexing. A producer Seq can only write through
+        /// its positional element cells.
+        is_positional: bool,
+    },
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
@@ -6881,7 +6886,7 @@ impl CompiledCode {
                     | OpCode::IndexAssignExprNamed { .. }
                     | OpCode::IndexAssignExprNested { .. }
                     | OpCode::IndexAssignDeepNested { .. }
-                    | OpCode::IndexAssignGeneric
+                    | OpCode::IndexAssignGeneric { .. }
                     | OpCode::IndexAssignPseudoStashNamed { .. }
                     | OpCode::IndexAssignPseudoStashKeyed { .. }
                     | OpCode::IndexElemAutoviv { .. }

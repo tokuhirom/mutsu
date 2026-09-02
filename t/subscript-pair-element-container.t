@@ -38,7 +38,7 @@ use Test;
 # Every expected value below was cross-checked against `raku` (see the ADR's
 # §1.3 table and this file's commit for the exact `raku -e` invocations).
 
-plan 35;
+plan 39;
 
 # --- §1.3 row 1: :p stale read (Slice 2) -----------------------------------
 {
@@ -205,13 +205,27 @@ plan 35;
 # --- Slice 3: the producers that now hand out element containers ------------
 {
     my @a = <A B>;
-    # Same pre-existing `.VAR`-dispatch gap as line 88's `:kv` row: `.VAR` on an
-    # ANONYMOUS computed index target (`@a.values[0]`) goes through the general
-    # index-read chokepoint, which decontainerizes before `.VAR` ever sees the
-    # cell. Not an ADR-0036 row -- see
-    # todo/tickets/var-on-a-containerref-is-not-distinguishable.md.
-    todo '.VAR on an anonymous computed index target does not see a ContainerRef (pre-existing)';
     is @a.values[0].VAR.^name, 'Scalar', '.values hands out the element container';
+}
+{
+    my @a = <A B>;
+    is (@a.values)[0].WHAT.^name, 'Str', '.values index decontainerizes for .WHAT';
+}
+{
+    my @a = <A B>;
+    (@a.values)[0] = 'x';
+    is-deeply @a, ['x', 'B'], 'a positional write through .values updates the source array';
+}
+{
+    my @a = <A B>;
+    (@a.kv)[1] = 'x';
+    is-deeply @a, ['x', 'B'], 'a positional write through .kv updates the source array';
+}
+{
+    my @a = <A B>;
+    my $cell := (@a.values)[0];
+    $cell = 'x';
+    is-deeply @a, ['x', 'B'], 'a binding to a .values element updates the source array';
 }
 # The stale-READ direction, which the `.VAR` gap does not mask: a binding taken
 # from `.values` must see a later write to the element.

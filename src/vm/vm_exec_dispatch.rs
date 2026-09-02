@@ -5039,8 +5039,8 @@ impl Interpreter {
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            OpCode::IndexAssignGeneric => {
-                self.exec_index_assign_generic_op(code)?;
+            OpCode::IndexAssignGeneric { is_positional } => {
+                self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
             }
             OpCode::MakeBlockClosure(idx, cc_idx) => {

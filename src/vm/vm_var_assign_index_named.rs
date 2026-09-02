@@ -3766,6 +3766,7 @@ impl Interpreter {
     pub(super) fn exec_index_assign_generic_op(
         &mut self,
         code: &CompiledCode,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         let idx = self.stack.pop().unwrap_or(Value::NIL);
@@ -3819,6 +3820,52 @@ impl Interpreter {
             }
             _ => (raw_val, None, false),
         };
+
+        // A positional subscript of a mutable collection producer keeps the
+        // producer's element cells alive. The normal generic path only knows
+        // how to assign into an Array/Hash target; a Seq target would otherwise
+        // fall through and silently discard the write. Assign through the cell
+        // directly, preserving the producer's source and its element type
+        // constraint.
+        if is_positional
+            && let ValueView::Seq(body) = target.view()
+            && body.has_element_containers()
+        {
+            let indices: Vec<usize> = match idx.view() {
+                ValueView::Array(items, kind) if !kind.is_itemized() => {
+                    items.iter().filter_map(Self::index_to_usize).collect()
+                }
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => self
+                    .assignment_rhs_values(&idx)?
+                    .iter()
+                    .filter_map(Self::index_to_usize)
+                    .collect(),
+                _ => Self::index_to_usize(&idx).into_iter().collect(),
+            };
+            let values = self.assignment_rhs_values(&val)?;
+            for (value_index, element_index) in indices.iter().copied().enumerate() {
+                let Some(slot) = body.get(element_index).cloned() else {
+                    continue;
+                };
+                let ValueView::ContainerRef(cell) = slot.view() else {
+                    return Err(RuntimeError::assignment_ro_value(slot.deref_container()));
+                };
+                let assigned = values.get(value_index).cloned().unwrap_or(Value::NIL);
+                self.check_container_cell_constraint(&cell, &assigned)?;
+                *cell.lock().unwrap() = assigned;
+            }
+            let result = if idx_is_single_element {
+                Self::itemize_value(val)
+            } else {
+                val
+            };
+            self.stack.push(result);
+            return Ok(());
+        }
 
         // Phase 2 Stage 2: a `:=` bind to a stack-computed element target
         // (`f()<k> := $s`, `($ref)[i] := $s`) stores a shared `ContainerRef`
@@ -3988,7 +4035,7 @@ impl Interpreter {
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);
-                return self.exec_index_assign_generic_op(code);
+                return self.exec_index_assign_generic_op(code, is_positional);
             }
             ValueView::Instance {
                 class_name,

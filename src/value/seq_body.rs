@@ -142,6 +142,11 @@ struct SeqCore {
     #[allow(clippy::vec_box)]
     gens: SyncUnsafeCell<Vec<Box<Vec<Value>>>>,
     state: Mutex<SeqState>,
+    /// The elements are live containers handed out by a mutable Array/Hash
+    /// producer, rather than ordinary Seq values. Positional indexing must
+    /// preserve those cells instead of passing them through the normal array
+    /// read chokepoint, which decontainerizes them.
+    element_containers: bool,
 }
 
 /// The reification/consumption state of a `Seq`, `HyperSeq`, or `RaceSeq`.
@@ -178,6 +183,15 @@ impl SeqBody {
     /// Build an already-reified body (the common case: `Value::seq(vec)` and
     /// every eager Seq/HyperSeq/RaceSeq constructor).
     pub(crate) fn reified(items: Vec<Value>) -> Arc<Self> {
+        Self::reified_with_element_containers(items, false)
+    }
+
+    /// Build an already-reified Seq whose elements are live element containers
+    /// from a mutable collection producer (ADR-0036 follow-up).
+    pub(crate) fn reified_with_element_containers(
+        items: Vec<Value>,
+        element_containers: bool,
+    ) -> Arc<Self> {
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
                 gens: SyncUnsafeCell::new(vec![Box::new(items)]),
@@ -191,6 +205,7 @@ impl SeqBody {
                     retained: false,
                     itemized: false,
                 }),
+                element_containers,
             }),
             view: SeqView::Seq,
         })
@@ -212,6 +227,7 @@ impl SeqBody {
                     retained: false,
                     itemized: false,
                 }),
+                element_containers: false,
             }),
             view: SeqView::Seq,
         })
@@ -243,6 +259,13 @@ impl SeqBody {
     /// (docs/adr/0038 S2), the single oracle for "what type is this value".
     pub(crate) fn view(&self) -> SeqView {
         self.view
+    }
+
+    /// Whether this Seq's elements are live containers belonging to a mutable
+    /// collection. The bit belongs to the shared core so `.cache` and its List
+    /// view retain the same element provenance.
+    pub(crate) fn has_element_containers(&self) -> bool {
+        self.core.element_containers
     }
 
     /// The current generation's elements — `pub(crate)` (rather than
