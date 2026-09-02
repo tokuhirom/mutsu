@@ -26,28 +26,33 @@ pub(super) fn multidim_empty_list() -> Value {
 }
 
 /// What a plain (non-negated) `:v`/`:k`/`:p` adverb reports for a missing
-/// leaf, which differs by WHICH kind of "missing" it is:
+/// leaf. Two things decide it: WHICH kind of "missing" it is, and the
+/// language version in effect.
 ///
-/// - An in-bounds Array hole (`ArrayData::hole_at`) reports `raw_value`
-///   itself as the non-`Nil` hole marker (e.g. `Package("Any")`), never
-///   `Value::NIL` -- this is the ticket's own repro (`my @a[2;2]; @a[0;1]`)
-///   and reports the empty list `()`, matching plain `raku`.
-/// - Everything else that fails to resolve -- a missing Hash key, OR an
-///   out-of-range/non-numeric Array coordinate -- reports the literal
-///   `Value::NIL` (no hole marker of its own to carry), and answers `Nil`,
-///   not `()`. This is NOT what plain (non-PREVIEW) `raku` does for an
-///   out-of-range Array coordinate, but it IS what the vendored roast tests
-///   pin for both cases under `v6.e.PREVIEW`
-///   (`roast/S32-hash/multislice-6e.t`'s "gives Nil" assertions on a missing
-///   key, and `roast/S32-array/multislice-6e.t`'s identical assertions on an
-///   out-of-range index into a plain nested/autoviv array) -- roast is the
-///   authoritative spec (see CLAUDE.md), so mutsu (which does not currently
-///   branch multidim-adverb behavior on the language-version pragma) matches
-///   the roast-pinned answer.
+/// It is decided by the language version alone -- the KIND of miss (an
+/// in-bounds Array hole, an out-of-range coordinate, a missing Hash key) does
+/// not matter, verified against `raku` for all three:
 ///
-/// `:kv` does not use this -- it is always `()` for every kind of miss.
-pub(super) fn multidim_missing_result(raw_value: &Value) -> Value {
-    if raw_value.is_nil() {
+/// - **6.e** answers `Nil`. `roast/S32-hash/multislice-6e.t` and
+///   `roast/S32-array/multislice-6e.t` (both `use v6.e.PREVIEW`, both
+///   whitelisted) assert exactly that, for a missing Hash key and for an
+///   out-of-range index into a plain nested/autoviv array respectively.
+/// - **6.d and earlier** answer the empty list `()`:
+///   `raku -e 'my @a[2;2]; @a[0;0]=1; say (@a[5;5]:v).raku'` prints `()`, and
+///   so does the in-bounds-hole spelling `my @c; @c[0;1]=5; (@c[0;0]:v)`.
+///   (6.d has no `postcircumfix:<{; }>` `:v`/`:k`/`:p` candidate at all, so
+///   the Hash spelling is unconstrained there and follows the same rule.)
+///
+/// mutsu used to answer `Nil` under both versions for anything that resolved
+/// to a bare `Value::NIL`, and `()` for a hole marker -- one rule could not
+/// satisfy both versions, and roast (authoritative, CI-gating) won. See
+/// `news/2026-09/associative-multidim-subscript.md` for the version branch
+/// that made the split cheap.
+///
+/// `:kv` does not use this -- it is always `()` for every kind of miss, under
+/// every version.
+pub(super) fn multidim_missing_result() -> Value {
+    if crate::parser::current_language_version().starts_with("6.e") {
         Value::NIL
     } else {
         multidim_empty_list()
