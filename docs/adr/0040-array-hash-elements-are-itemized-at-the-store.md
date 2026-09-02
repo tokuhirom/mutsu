@@ -9,7 +9,7 @@
   history), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) §7 (the *aliasing*
   surface of the same Raku model — explicitly disjoint from this one),
   [ADR-0015](0015-native-backed-container-storage-and-repr-bodies.md) (native-backed storage, which
-  bounds the perf question in §5.2), `todo/deep/element-itemization-lost-in-scalar-binding.md` (the
+  bounds the perf question in §5.2), `news/2026-09/element-itemization-lost-in-scalar-binding.md` (the
   originating finding), `news/2026-08/param-bind-itemization.md` (the bind-side half, shipped)
 
 > Raku's model is that every `Array`/`Hash` element **is** a `Scalar` container, so an element handed
@@ -471,13 +471,13 @@ approximates each separately. Recorded here so a future reader can see the whole
   surface.** `for @a -> $v is rw` snapshots instead of aliasing, so an escaping closure writes a
   disconnected cell. Same primitive as ADR-0036, different consumer. That ticket's own note ("do not
   conflate the two") is correct and this ADR does not change it.
-- **`todo/deep/element-itemization-lost-in-scalar-binding.md`'s third bullet** (list-destructuring
+- **`news/2026-09/element-itemization-lost-in-scalar-binding.md`'s third bullet** (list-destructuring
   bind write-through) belongs to none of the three — it is a desugar bug (§1.7) and should be
   re-filed as a ticket when this ADR's slice 5 retires the finding.
 
 ---
 
-## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slices 3-4 added 2026-09-01; slice 4b 2026-09-02)
+## 8. Implementation status (2026-08-21; slice 2 added 2026-08-27; slices 3-4 added 2026-09-01; slices 4b-5 added 2026-09-02 — COMPLETE)
 
 Slices 0-4 landed. Slice 4 landed its *store* half in full and left the compensator deletion
 blocked on a newly measured class — see its section for the numbers. Slice 1 covered every mutation-site shape named in §2/§4's Slice 1
@@ -1035,6 +1035,49 @@ against `raku` — a natively built `Hash` (`.classify`, *bound*, so no Raku ass
 paper over the construction) agreeing across the subscript read and `.values`, plus the four
 counter-current shapes. The full roast whitelist (1435 files, 218833 tests) and the bundled-battery
 gate both pass on a release build.
+
+---
+
+### Slice 5 (2026-09-02) — the sweep, and the ADR is closed
+
+**§1.3 and §1.6 re-run, whole-block, against `raku` v2026.07.** Each of §1.3's 25 rows was written
+as its own block (so no earlier statement can contaminate it) into one script and diffed against
+`raku`: **all 25 rows byte-identical**, including row 25, the invariant that an `Array`'s own
+`.raku` must NOT gain a `$`. §1.6's discriminator experiment (four sources × implicit topic and
+pointy param) is likewise identical. The finding's own "Verification once fixed" block — five
+one-liners — matches `raku` line for line.
+
+**§5.2's perf question, answered by counting rather than by timing.** The bench CI series shows no
+step at any slice: `array-ops+jit` and `bench-hash+jit` ratios sit in the same band across slices
+3, 4 and 4b. Two `rust-gdb` breakpoints on a 200-insert/100-delete hash script say why the hook
+cannot be the hot path in the first place:
+
+| hook | calls for 300 hash operations |
+| --- | --- |
+| `Value::hash` (slice 4b's construction funnel) | **3** — insert and delete mutate in place |
+| `Value::itemize_for_element_store` (slice 1's element store) | **200** — one per `%h{k} = v`, each a single discriminant test that returns the value unchanged |
+
+The sweep did surface an unrelated ~18% slowdown in `bench-hash` between 2026-08-19 and 2026-08-31
+that the two counts above rule ADR-0040 out of; it is filed as
+`todo/perf/bench-hash-ratio-drifted-19-percent-over-late-august.md` rather than left in this ADR.
+
+**The originating finding is retired** to `news/2026-09/element-itemization-lost-in-scalar-binding.md`,
+and §1.7's desugar bug is filed as
+`todo/tickets/list-destructuring-sigilless-bind-copies-instead-of-binding.md` (re-verified: it now
+dies with `Cannot assign to an immutable value`).
+
+**One follow-up the finding proposed does not survive contact.** It expected slice 5 to replace
+`ForLoopSpec::source_items_are_bare` — the compile-time eager-`for` topic-writability flag — with
+the per-item `is_container_ref()` test the lazy path uses. That premise is wrong: this ADR itemizes
+elements (a `Scalar` wrapper or a kind tag); it does **not** promote them to `ContainerRef` cells,
+which is ADR-0036/ADR-0013 territory, so that runtime test still would not fire on an eager element.
+Measured directly instead: eight of the nine topic-writability rows now match `raku`, and the ninth
+(`for %h { $_ = 9 }`, which raku rejects) belongs to
+`todo/deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md`, whose blocker is ADR-0036.
+
+**Status: this ADR is complete.** Remaining `.VAR` gaps are tracked outside it —
+`todo/tickets/var-on-a-bare-valued-hash-answers-scalar.md` (a bare-valued hash's element reports
+`Scalar`) and `todo/deep/var-on-a-real-element-is-an-opaque-descriptor-not-the-container.md`.
 
 ---
 
