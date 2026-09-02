@@ -450,15 +450,20 @@ impl Compiler {
                 && args.is_empty()
                 && modifier.is_none()
                 && !quoted
-                && matches!(target.as_ref(), Expr::Index { target: it, .. }
-                    if Self::index_assign_target_name(it).is_some()) =>
+                && matches!(target.as_ref(), Expr::Index { target: it, index, .. }
+                    if Self::index_assign_target_name(it).is_some()
+                        && !Self::index_expr_is_slice(index)) =>
             {
                 // `.VAR` on `@a[0]` / `%h<k>` (a *named* container's element) needs
                 // the element-variable metadata path. A `.VAR` on a subscript of a
                 // literal (`[1,2,3][1].VAR`) has no named source, so it falls
                 // through to the general method dispatch below — otherwise the
                 // special path emitted no value and the next chained method
-                // (`.VAR.^name`) underflowed the stack.
+                // (`.VAR.^name`) underflowed the stack. A *slice* subscript
+                // (`@a[0,1]`, `%h<a b>`, `@a[0..1]`) falls through too: raku
+                // hands back a `List` of containers there and `.VAR` on a `List`
+                // is identity, so the element-descriptor path would answer
+                // `Scalar` where raku says `List`.
                 self.compile_expr_method_var_on_index(target);
             }
             // `$m.return-rw` is the method spelling of `return-rw $m`: the

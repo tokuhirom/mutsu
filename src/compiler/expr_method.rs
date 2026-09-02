@@ -3,6 +3,38 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Compiler {
+    /// Is this subscript's index a *slice* rather than a single element?
+    ///
+    /// raku answers `.VAR` from the subscript's result: `@a[0]` hands back the
+    /// element's `Scalar` container, while `@a[0,1]` hands back a `List` of
+    /// containers, and `.VAR` on a `List` is identity — so `@a[0,1].VAR.^name`
+    /// is `List`, not `Scalar`. mutsu's elements are not real containers, so
+    /// the runtime cannot tell a slice's `List` from an element that happens to
+    /// hold one; the compiler is the only place that knows, and this is that
+    /// gate. A slice compiles as an ordinary subscript and lets `.VAR`'s normal
+    /// dispatch (identity on a `List`) answer.
+    ///
+    /// Only the statically-recognizable slice spellings are covered:
+    /// `@a[0,1]` / `%h<a b>` (an `ArrayLiteral` index — a single `<a>`
+    /// collapses to a `Literal`, so it is not caught here), a range
+    /// (`@a[0..1]`, `@a[^2]`), and an `@`-sigiled index (`@a[@idx]`). An index
+    /// whose *runtime* value happens to be a list (`my $i = (0,1); @a[$i]`)
+    /// still takes the element path — the compiler cannot see that, and it is
+    /// the same information the runtime lacks.
+    pub(super) fn index_expr_is_slice(index: &Expr) -> bool {
+        match index {
+            Expr::ArrayLiteral(_) | Expr::ArrayVar(_) => true,
+            Expr::Binary { op, .. } => matches!(
+                op,
+                TokenKind::DotDot
+                    | TokenKind::DotDotCaret
+                    | TokenKind::CaretDotDot
+                    | TokenKind::CaretDotDotCaret
+            ),
+            _ => false,
+        }
+    }
+
     /// Compile method call on indexed target: .VAR on @a[0] / %h<k>
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
         if let Expr::Index {

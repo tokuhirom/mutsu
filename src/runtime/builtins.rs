@@ -183,11 +183,22 @@ impl Interpreter {
             "dynamic".to_string(),
             Value::truth(self.is_var_dynamic(&source_name)),
         );
-        let default_val = if let Some(tc) = self.var_type_constraint(&source_name) {
-            Value::package(Symbol::intern(&tc))
-        } else {
-            Value::package(Symbol::intern("Any"))
-        };
+        // An element's default is its *container's* `is default(...)` when the
+        // container has one — that is a property of the container, not of the
+        // variable's declared type, so the type-constraint fallback below never
+        // saw it (`my @a is default(0) = 1,2; @a[0].VAR.default` is `0` in raku,
+        // and the same for a hash).
+        let default_val = self
+            .env
+            .get(&source_name)
+            .and_then(|c| self.container_default(c))
+            .unwrap_or_else(|| {
+                if let Some(tc) = self.var_type_constraint(&source_name) {
+                    Value::package(Symbol::intern(&tc))
+                } else {
+                    Value::package(Symbol::intern("Any"))
+                }
+            });
         attributes.insert("default".to_string(), default_val);
         Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
     }

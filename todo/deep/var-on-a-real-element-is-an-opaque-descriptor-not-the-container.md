@@ -41,29 +41,54 @@ returned by `array_slot_ref` cannot answer them on its own. Whatever replaces
 `builtin_index_var_meta` (`src/runtime/builtins.rs`) has to carry both — which
 is a representation decision, i.e. an ADR-shaped question, not a patch.
 
-## Three smaller siblings found in the same measurement
+## The smaller siblings found in the same measurement
 
-These are independent and could each be a ticket:
+Two of the four are **fixed** (2026-09-02,
+`news/2026-09/var-on-a-subscript-slice-and-is-default.md`, pinned by
+`t/var-on-subscript.t`):
 
-- **Multi-dim subscript.** `my @sh[2;2]; @sh[0;0].VAR.^name` is `Scalar` in
-  raku, `Array` in mutsu — the `@a[i;j]` subscript never reaches
-  `compile_expr_method_var_on_index` (`src/compiler/expr_method.rs`), so the
-  element-`.VAR` path is not entered at all.
-- **`is default`.** `my @nat is default(0) = 1,2; @nat[0].VAR.default` is `0`
-  in raku, `(Any)` in mutsu — `builtin_index_var_meta` reads
-  `var_type_constraint` for the default but never the variable's `is default`
-  trait.
+- ~~**`is default`.**~~ `builtin_index_var_meta` consults the container's
+  `is default(...)` before falling back to the declared element type.
+- ~~**Slice subscripts.**~~ The compiler gates the element-descriptor path on
+  `Compiler::index_expr_is_slice`, so `@a[0,1]` / `%h<a b>` / `@a[0..1]` /
+  `@a[^2]` / `@a[@i]` compile as ordinary subscripts and `.VAR`'s normal
+  identity-on-a-`List` dispatch answers. An index whose *runtime* value happens
+  to be a list (`my $i = (0,1); @a[$i]`) still takes the element path — the
+  compiler cannot see that, and neither can the runtime.
+
+Two remain:
+
 - **Native arrays.** `my int @ints = 1,2; @ints[0].VAR.^name` is `IntPosRef`
   in raku, `Scalar` in mutsu. A native array's element "container" is a
   positional ref type per element type (`IntPosRef`/`NumPosRef`/…), which mutsu
-  has no representation for.
-- **Slice subscripts.** `my @a = 1,2; @a[0,1].VAR.^name` is `List` in raku
-  (a slice hands back a `List` of containers, and `.VAR` on a `List` is
-  identity), `Scalar` in mutsu -- `compile_expr_method_var_on_index` routes
-  every subscript to the element-descriptor path, slices included, and a
-  slice's `List` result is indistinguishable at runtime from an element that
-  happens to hold a `List`. The compiler is the only place that knows, so this
-  one is a compile-side gate rather than part of the descriptor rework.
+  has no representation for. (`@ints[0].VAR.default` is `Nil` in raku, `(int)`
+  in mutsu — the same gap.)
+- **Multi-dim and chained subscripts** — bigger than the original note said.
+  Re-measured 2026-09-02:
+
+  | program | raku | mutsu |
+  | --- | --- | --- |
+  | `my @sh[2;2]; @sh[0;0].VAR.^name` | `Scalar` | `Any` |
+  | `@sh[0;0].VAR.name` | `element` | `Nil` |
+  | `my %d; %d<a><b>=1; %d<a><b>.VAR.^name` | `Scalar` | `Int` |
+  | `%d<a><b>.VAR.name` | `element` | `Nil` |
+  | `my @g; @g[0][1]=2; @g[0][1].VAR.name` | `element` | `Nil` |
+
+  raku's answer is **uniform** for every nested element: `Scalar` / name
+  `element` / default `(Any)` / dynamic `False` — the inner container is
+  anonymous, so `.VAR.name` is NOT the outer variable's name even when the
+  outer variable is named (`@sh[0;0]` is `element`, not `@sh`).
+
+  It is not a compiler-routing patch, which is why it did not ship with the two
+  above. `MultiDimIndex` and a chained `Index` have no `index_assign_target_name`
+  to hand `__mutsu_index_var_meta`, and the builtin's whole job is to decide
+  from the *source container* whether the element is a container — for a nested
+  subscript that source is the intermediate value (`%d<a>`), which is not in
+  the environment under any name. Handing it over would mean compiling the
+  parent subscript a second time, which is exactly the double evaluation slice
+  3 restructured the hook to avoid. So it belongs with the descriptor rework
+  below: whatever replaces `builtin_index_var_meta` has to be able to name the
+  parent container it came from.
 
 ## Repro
 
