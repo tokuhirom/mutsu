@@ -732,13 +732,45 @@ impl Interpreter {
         // `decay_nil_vec_elements`, sharing the same store-time decay
         // authority as every other construction/assignment site instead of
         // hardcoding `Any` here independently).
+        // ...and, by the same token, it itemizes each element it hands out
+        // (ADR-0040 slices 1-2): the lazy source is the only construction path
+        // whose elements never pass a store-side hook, because the assignment
+        // stored ONE lazy value and the elements first exist here.
         if list.in_array_context() {
             return match r {
-                Ok(items) => Ok(self.decay_nil_vec_elements(items)),
+                Ok(items) => Ok(Self::itemize_lazy_array_elements(
+                    self.decay_nil_vec_elements(items),
+                )),
                 err => err,
             };
         }
         r
+    }
+
+    /// The element-store itemization (ADR-0040) for the elements an
+    /// ARRAY-CONTEXT lazy list hands out.
+    ///
+    /// A real `Array` stores every element in a container, which is why
+    /// `my @a = 1, (2, 3); @a[1].raku` is `$(2, 3)`. A lazy source assigned to
+    /// an `@` variable (`my @a = lazy gather {...}`) reaches none of the
+    /// store-side hooks -- the assignment stored a single `LazyList`, and the
+    /// elements are first materialized by the force -- so the itemization has
+    /// to happen here instead. `array_context` is what makes this sound: the
+    /// SAME `LazyList` shape backs a bare lazy `Seq`, whose elements are
+    /// values and must stay bare (`my $s = lazy gather {...}; $s[1].raku` is
+    /// `(2, 3)`).
+    ///
+    /// Pre-scanned with `needs_element_itemization` so the overwhelmingly
+    /// common case -- a flat sequence of scalars -- keeps the vector it was
+    /// handed, with no rebuild (ADR-0040 §5.2).
+    fn itemize_lazy_array_elements(items: Vec<Value>) -> Vec<Value> {
+        if !items.iter().any(Value::needs_element_itemization) {
+            return items;
+        }
+        items
+            .into_iter()
+            .map(Value::itemize_for_element_store)
+            .collect()
     }
 
     /// If `val` is a lazy `.map`/`.grep` pipe whose source chain bottoms out in
@@ -1041,10 +1073,13 @@ impl Interpreter {
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
-        // See force_lazy_list_vm: array-context elements store Any, not Nil.
+        // See force_lazy_list_vm: array-context elements store Any, not Nil,
+        // and are itemized like any other element store.
         if list.in_array_context() {
             return match r {
-                Ok(items) => Ok(self.decay_nil_vec_elements(items)),
+                Ok(items) => Ok(Self::itemize_lazy_array_elements(
+                    self.decay_nil_vec_elements(items),
+                )),
                 err => err,
             };
         }

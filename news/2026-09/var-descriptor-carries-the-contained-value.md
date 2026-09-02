@@ -78,13 +78,10 @@ for an anonymous container: `.name` is `element`, `.dynamic` is `False`,
 
 That last point makes ADR-0040's itemization load-bearing for *reflection*,
 not just for rendering and flattening — which promptly exposed a hole in it.
-A lazy source assigned to an `@` variable reifies bare elements
-(`my @l = lazy gather { take $_ for 1, (2,3) }; @l[1].raku` is `(2, 3)`, not
-`$(2, 3)`), because the force path is name-blind and cannot tell a real
-Array's backing from a `Seq`'s. The discriminator carves those containers out
-for now; the hole is recorded in
-`todo/deep/lazy-array-elements-are-not-itemized-at-reification.md`, and
-closing it removes the carve-out too. Extending `.VAR` to multi-dimensional
+A lazy source assigned to an `@` variable reified bare elements
+(`my @l = lazy gather { take $_ for 1, (2,3) }; @l[1].raku` was `(2, 3)`, not
+`$(2, 3)`) — closed the same day, see
+`news/2026-09/lazy-array-elements-are-itemized-at-the-force.md`. Extending `.VAR` to multi-dimensional
 subscripts also turned up
 `todo/tickets/hash-multidim-subscript-assignment-rejected.md`: `%h{1;2} = 5`
 is still rejected as an invalid multi-dim assignment, while the array spelling

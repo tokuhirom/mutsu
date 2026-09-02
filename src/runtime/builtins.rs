@@ -211,21 +211,12 @@ impl Interpreter {
         // element it stores (ADR-0040 slices 1-2), so a BARE, non-itemized
         // `List` arriving here never came out of one element slot: an element
         // holding a list reads back as `$(1, 2)`, a slice as `(1, 2)`.
-        //
-        // Restricted to containers that actually itemize their stores. A real
-        // Array whose backing is still an unreified `LazyList` does NOT (its
-        // elements are handed out bare by the lazy force in
-        // `vm_var_index_ops`, which is name-blind and so cannot tell a
-        // `@`-assigned lazy source from a `Seq`). There, a bare `List` element
-        // is an ELEMENT, not a slice; a slice of such an array is the residual
-        // this trades away. See
-        // `todo/deep/lazy-array-elements-are-not-itemized-at-reification.md`.
+        // That holds for an array-context `LazyList` too: its elements reach no
+        // store-side hook (the assignment stored ONE lazy value), so the force
+        // itself itemizes them -- `Interpreter::itemize_lazy_array_elements`.
         if matches!(
             element.view(),
             ValueView::Array(_, crate::value::ArrayKind::List)
-        ) && !matches!(
-            container.as_ref().map(Value::view),
-            Some(ValueView::LazyList(_))
         ) {
             return Ok(element);
         }
