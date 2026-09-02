@@ -243,7 +243,13 @@ impl Compiler {
                     in_nested_loop,
                 )),
             },
-            Stmt::While { cond, body, label } => Stmt::While {
+            Stmt::While {
+                cond,
+                body,
+                label,
+                is_statement_modifier,
+                is_until,
+            } => Stmt::While {
                 cond: cond.clone(),
                 body: Self::rewrite_next_targets_in_stmts(
                     body,
@@ -254,6 +260,8 @@ impl Compiler {
                     true,
                 ),
                 label: label.clone(),
+                is_statement_modifier: *is_statement_modifier,
+                is_until: *is_until,
             },
             Stmt::For {
                 iterable,
@@ -296,6 +304,7 @@ impl Compiler {
                 body,
                 repeat,
                 label,
+                is_until,
             } => Stmt::Loop {
                 init: init.clone(),
                 cond: cond.clone(),
@@ -310,6 +319,7 @@ impl Compiler {
                 ),
                 repeat: *repeat,
                 label: label.clone(),
+                is_until: *is_until,
             },
             other => other.clone(),
         }

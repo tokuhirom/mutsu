@@ -716,6 +716,8 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 cond,
                 body: vec![stmt],
                 label: None,
+                is_statement_modifier: true,
+                is_until: false,
             },
         )));
     }
@@ -741,6 +743,8 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 },
                 body: vec![stmt],
                 label: None,
+                is_statement_modifier: true,
+                is_until: true,
             },
         )));
     }

@@ -181,7 +181,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 fields,
             }))
         }
-        Stmt::While { cond, body, label } => {
+        Stmt::While {
+            cond, body, label, ..
+        } => {
             // mutsu desugars `until X` to `while !X` (same as unless/if above).
             let mut fields = label_fields(label);
             fields.push(node_field(Some("condition"), convert_expr(cond)?));
@@ -198,6 +200,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             repeat,
             label,
+            ..
         } => {
             if *repeat {
                 // `repeat { } while X`. mutsu desugars `repeat { } until X` to a

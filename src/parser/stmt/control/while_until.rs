@@ -18,6 +18,18 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // ADR-0048 D5: an explicit signature wins over a placeholder — a
+    // `$^name` in the body of a loop that already declares a pointy
+    // parameter is raku's `X::Signature::Placeholder`, "Placeholder
+    // variable '$^c' cannot override existing signature". Reported here
+    // rather than in the compiler because the pointy form is desugared away
+    // (into a `VarDecl` plus a `While` over an `AssignExpr`) before codegen.
+    if param_binding.is_some()
+        && let Some(err) =
+            crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
+    {
+        return Err(err);
+    }
     let (hoisted_decl, cond) = if param_binding.is_none() {
         split_loop_cond_decl(cond)
     } else {
@@ -35,6 +47,8 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
         },
         body,
         label: None,
+        is_statement_modifier: false,
+        is_until: false,
     };
     if let Some(decl) = hoisted_decl {
         return Ok((rest, Stmt::Block(vec![decl, while_stmt])));
@@ -81,6 +95,18 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
+    // ADR-0048 D5: an explicit signature wins over a placeholder — a
+    // `$^name` in the body of a loop that already declares a pointy
+    // parameter is raku's `X::Signature::Placeholder`, "Placeholder
+    // variable '$^c' cannot override existing signature". Reported here
+    // rather than in the compiler because the pointy form is desugared away
+    // (into a `VarDecl` plus a `While` over an `AssignExpr`) before codegen.
+    if param_binding.is_some()
+        && let Some(err) =
+            crate::parser::stmt::sub::placeholder_overrides_signature_error(&body, &[])
+    {
+        return Err(err);
+    }
     let (hoisted_decl, cond) = if param_binding.is_none() {
         split_loop_cond_decl(cond)
     } else {
@@ -102,6 +128,8 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         },
         body,
         label: None,
+        is_statement_modifier: false,
+        is_until: true,
     };
     if let Some(decl) = hoisted_decl {
         return Ok((rest, Stmt::Block(vec![decl, while_stmt])));

@@ -67,10 +67,18 @@ impl Interpreter {
                 else_branch: Self::rewrite_proto_dispatch_stmts(else_branch),
                 binding_var: binding_var.clone(),
             },
-            Stmt::While { cond, body, label } => Stmt::While {
+            Stmt::While {
+                cond,
+                body,
+                label,
+                is_statement_modifier,
+                is_until,
+            } => Stmt::While {
                 cond: Self::rewrite_proto_dispatch_expr(cond),
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 label: label.clone(),
+                is_statement_modifier: *is_statement_modifier,
+                is_until: *is_until,
             },
             Stmt::For {
                 iterable,
@@ -106,6 +114,7 @@ impl Interpreter {
                 body,
                 label,
                 repeat,
+                is_until,
             } => Stmt::Loop {
                 init: init
                     .as_ref()
@@ -115,6 +124,7 @@ impl Interpreter {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 label: label.clone(),
                 repeat: *repeat,
+                is_until: *is_until,
             },
             Stmt::Block(stmts) => Stmt::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
             Stmt::SyntheticBlock(stmts) => {

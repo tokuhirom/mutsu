@@ -1158,6 +1158,22 @@ pub(crate) enum Stmt {
         cond: Expr,
         body: Vec<Stmt>,
         label: Option<String>,
+        /// True when this `While` is the lowering of a postfix `while`/`until`
+        /// statement modifier rather than a source `while COND BLOCK`. A
+        /// modifier introduces no block of its own, so (ADR-0048 D4) its
+        /// "body" placeholders are the enclosing block's own parameters:
+        /// `sub f { say "$^a" while $i++ < 2 }; f(7)` prints 7 twice, not the
+        /// condition. Mirrors `Stmt::If` / `Stmt::For` / `Stmt::Given`'s flag
+        /// of the same name.
+        is_statement_modifier: bool,
+        /// True when the source keyword was `until`, i.e. `cond` is the
+        /// parser's synthetic `!` wrapper around the written condition.
+        /// ADR-0048 D4 supplies the *written* condition's value to the body
+        /// (`until False { $^c }` binds `False`, raku prints `False`), so the
+        /// placeholder bind has to see through that wrapper — and only for a
+        /// real `until`, never for a hand-written `while !$x`, whose supplied
+        /// value really is the negation.
+        is_until: bool,
     },
     Loop {
         init: Option<Box<Stmt>>,
@@ -1166,6 +1182,10 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         repeat: bool,
         label: Option<String>,
+        /// `repeat { ... } until COND`: as for [`Stmt::While::is_until`],
+        /// `cond` holds the parser's synthetic `!` wrapper and ADR-0048 D4
+        /// binds the written condition's value.
+        is_until: bool,
     },
     React {
         body: Vec<Stmt>,
@@ -2462,7 +2482,6 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
 /// (D3/D6) put `None` to work for the zero-argument bodies (`when`, the bare
 /// `{}` statement). `ConditionAfterFirstPass` (`repeat {} while/until`'s `Mu`
 /// first pass) is still reserved for D4/Phase 4.
-#[allow(dead_code)] // ConditionAfterFirstPass: reserved for Phase 4 (D4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArgSupply {
     /// The enclosing block's own arguments (routine bodies, closure values).
@@ -2475,6 +2494,15 @@ pub(crate) enum ArgSupply {
     Topic,
     /// N arguments per iteration, N = the body's own placeholder count.
     Elements,
+    /// One `Mu` per declared placeholder: a `role` body, which raku runs once
+    /// at composition (ADR-0048 D7). Never under-supplied, so it never raises
+    /// an arity failure. (Rakudo actually leaves each parameter as an
+    /// uninitialized `VMNull` register: it gists as `(Mu)` and `$^c === Mu` is
+    /// `True`, but `$^c.^name` says `VMNull` and `$^c.defined` throws. mutsu
+    /// does not supply the value at all yet — see
+    /// `todo/deep/role-body-placeholder-mu-supply.md` — so this variant
+    /// currently only records that a role body never under-supplies.)
+    AllMu,
     /// Zero arguments.
     None,
 }
@@ -2572,7 +2600,20 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             ..
         } => PlaceholderBodyKind::Transparent,
         Stmt::If { .. } => PlaceholderBodyKind::Signature(ArgSupply::Condition),
-        Stmt::While { .. } => PlaceholderBodyKind::Transparent,
+        // ADR-0048 D4/Phase 4: a `while`/`until` BLOCK is a real Block that
+        // the loop invokes with the *raw* (un-boolified) condition value on
+        // every pass — `while 42 { $^c }` prints 42, `until False { $^c }`
+        // prints `False`, and `{ while 42 { $^c } }.arity` is 0 because the
+        // name never reaches the enclosing block. A `while`/`until`
+        // STATEMENT MODIFIER introduces no block at all, so its placeholders
+        // are the enclosing block's own parameters
+        // (`sub f { say "$^a" while $i++ < 2 }; f(7)` prints 7 twice) —
+        // exactly the `if`/`for`/`given` modifier rule above.
+        Stmt::While {
+            is_statement_modifier: true,
+            ..
+        } => PlaceholderBodyKind::Transparent,
+        Stmt::While { .. } => PlaceholderBodyKind::Signature(ArgSupply::Condition),
         Stmt::For {
             is_statement_modifier: true,
             ..
@@ -2635,7 +2676,21 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
         // over-reject via its own `emit_block_placeholder_die` call site —
         // correcting it is Phase 5/D7, not here).
         Stmt::Block(_) | Stmt::When { .. } => PlaceholderBodyKind::Signature(ArgSupply::None),
-        Stmt::SyntheticBlock(_) | Stmt::RoleDecl { .. } => PlaceholderBodyKind::Transparent,
+        // ADR-0048 D7/Phase 5: a `role` body IS signature-capable in raku
+        // (`role R { $^c }; class D does R {}` compiles and runs at
+        // composition), unlike the `class`/`module`/`package`/`grammar`
+        // bodies that fall to `NoSignature` below. Every placeholder it
+        // declares is supplied the same value, so it never raises an arity
+        // failure — see `ArgSupply::AllMu`. Only this SCOPE half is
+        // implemented: the boundary stops `$^c` leaking onto the enclosing
+        // block (`{ role R { $^c } }.arity` is 0, as in raku), but the
+        // compiler still rejects a role body that actually uses a
+        // placeholder, because the value cannot be supplied from the
+        // `Stmt::RoleDecl` compile site — see the comment on that arm in
+        // `src/compiler/stmt.rs` and
+        // `todo/deep/role-body-placeholder-mu-supply.md`.
+        Stmt::RoleDecl { .. } => PlaceholderBodyKind::Signature(ArgSupply::AllMu),
+        Stmt::SyntheticBlock(_) => PlaceholderBodyKind::Transparent,
         Stmt::Given {
             is_statement_modifier: true,
             ..
@@ -3249,6 +3304,8 @@ mod env_only_decl_tests {
             cond: Expr::Literal(crate::value::Value::NIL),
             body: vec![inner_if],
             label: None,
+            is_statement_modifier: false,
+            is_until: false,
         }])];
         let mut out = std::collections::HashSet::new();
         collect_all_my_decl_names(&body, &mut out);

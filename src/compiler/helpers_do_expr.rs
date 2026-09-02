@@ -596,12 +596,15 @@ impl Compiler {
         cond: &Expr,
         body: &[Stmt],
         label: &Option<String>,
+        is_until: bool,
     ) {
         use crate::ast::{Expr as AExpr, Stmt as AStmt};
         let inner = AStmt::While {
             cond: cond.clone(),
             body: Self::wrap_loop_body_last_in_take(body),
             label: label.clone(),
+            is_statement_modifier: false,
+            is_until,
         };
         let gather_expr = AExpr::Gather(vec![inner]);
         self.compile_expr(&gather_expr);
@@ -618,6 +621,7 @@ impl Compiler {
         step: &Option<Expr>,
         body: &[Stmt],
         label: &Option<String>,
+        is_until: bool,
     ) {
         use crate::ast::{Expr as AExpr, Stmt as AStmt};
         let inner = AStmt::Loop {
@@ -627,6 +631,7 @@ impl Compiler {
             body: Self::wrap_loop_body_last_in_take(body),
             repeat: false,
             label: label.clone(),
+            is_until,
         };
         let gather_expr = AExpr::Gather(vec![inner]);
         self.compile_expr(&gather_expr);
