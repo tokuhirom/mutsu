@@ -492,14 +492,15 @@ impl Interpreter {
                         named.insert(k.clone(), v.clone());
                     }
                 }
-                ValueView::Capture {
-                    positional: p,
-                    named: n,
-                } => {
-                    // Flatten inner capture (from |capture slip)
-                    positional.extend(p.iter().cloned());
-                    named.extend(n.iter().map(|(k, v)| (k.clone(), v.clone())));
-                }
+                // NOTE: a bare `Capture` element is NOT flattened -- `\(1, \(2,3))`
+                // is a two-element Capture whose second element is a Capture,
+                // exactly like any other nested value. Interpolating one is
+                // spelled `\(1, |$c)`, and `|` compiles to `MakeSlip`, so it
+                // arrives in the arm below. (This arm used to flatten every
+                // Capture element on the theory that it came from a slip, which
+                // silently dissolved every nested capture literal -- XML's
+                // `make-xml('rss', \('channel', \('title', 'x')))` built one
+                // flat element instead of a tree.)
                 ValueView::Slip(items) => {
                     for item in items.iter() {
                         match item.view() {
