@@ -28,6 +28,13 @@ impl crate::Interpreter {
         match value.view() {
             ValueView::Array(items, ..) => items.iter().any(Self::element_needs_interpreter),
             ValueView::Slip(items) => items.iter().any(Self::element_needs_interpreter),
+            // An already-reified Seq stringifies its elements like an Array;
+            // one still holding a deferred source is left to the caller's own
+            // reify guard (`reify_or_consume_seq_target`), which hands the
+            // reified value back here.
+            ValueView::Seq(..) | ValueView::HyperSeq(..) | ValueView::RaceSeq(..) => value
+                .as_list_items_with_hyper()
+                .is_some_and(|items| items.iter().any(Self::element_needs_interpreter)),
             _ => false,
         }
     }
@@ -58,6 +65,13 @@ impl crate::Interpreter {
                 ))
             }
             ValueView::Slip(items) => Ok(Value::slip(self.resolve_elements(items.iter())?)),
+            ValueView::Seq(..) | ValueView::HyperSeq(..) | ValueView::RaceSeq(..) => {
+                let items: Vec<Value> = value
+                    .as_list_items_with_hyper()
+                    .map(<[Value]>::to_vec)
+                    .unwrap_or_default();
+                Ok(Value::seq(self.resolve_elements(items.iter())?))
+            }
             _ => Ok(value.clone()),
         }
     }

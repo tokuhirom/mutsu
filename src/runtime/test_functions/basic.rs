@@ -111,23 +111,22 @@ impl Interpreter {
 
     pub(crate) fn stringify_test_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
         match value.view() {
-            ValueView::LazyList(list) => Ok(self
-                .force_lazy_list(&list)?
-                .iter()
-                .map(|v| v.to_string_value())
-                .collect::<Vec<_>>()
-                .join(" ")),
+            // Re-enter through the list arm below so each element is
+            // stringified the same way a plain Array's is -- an `Instance`
+            // element gets its own `Str` (`is @a, @seq` compared one side
+            // through the element's `Str` and the other through the pure
+            // renderer otherwise).
+            ValueView::LazyList(list) => {
+                let items = self.force_lazy_list(&list)?;
+                self.stringify_test_value(&Value::array(items))
+            }
             // A deferred Seq (e.g. `$fh.lines`, `Seq.new($iter)`) must be
             // reified before comparison so it stringifies as its contents
             // rather than the empty seed (ADR-0034).
             ValueView::Seq(body) if body.needs_touch() => {
                 let body = std::sync::Arc::clone(&body);
                 let items = self.reify_seq_body(&body)?;
-                Ok(items
-                    .iter()
-                    .map(|v| v.to_string_value())
-                    .collect::<Vec<_>>()
-                    .join(" "))
+                self.stringify_test_value(&Value::array(items))
             }
             // `is $got, $expected` compares via Raku's `eq` (Str coercion), so an
             // object whose class defines a user `Stringy`/`Str` must be compared

@@ -7,7 +7,7 @@ use Test;
 # the elements first and hands the result to the same renderer, so the
 # list-shape rules (space separation, nested flattening) stay in one place.
 
-plan 12;
+plan 15;
 
 class C { has $.t; method Str { $!t } }
 class D { has $.t; method Stringy { "S:" ~ $!t } }
@@ -48,6 +48,16 @@ class D { has $.t; method Stringy { "S:" ~ $!t } }
     my @a = (C.new(t => "hi"),);
     is @a.gist, '[C.new(t => "hi")]', '.gist still shows the object';
     is @a.raku, '[C.new(t => "hi")]', '.raku still shows the object';
+}
+
+# A Seq / lazy list must stringify its elements the SAME way, or `is` compares
+# one side through the element's `Str` and the other through the pure renderer
+# (roast/integration/advent2009-day20.t's `is @b, (@people.sort: {...})`).
+{
+    my @a = (C.new(t => "a"), C.new(t => "b"));
+    is @a, @a.Seq, 'a Seq stringifies its elements like an Array';
+    is ~@a.Seq, 'a b', 'and prefix ~ on that Seq agrees';
+    is @a, @a.map({ $_ }), 'a mapped Seq agrees too';
 }
 
 # A list with no such element takes the untouched fast path.

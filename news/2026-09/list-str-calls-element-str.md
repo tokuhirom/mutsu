@@ -27,6 +27,15 @@ string operands (`coerce_stringy_operand`, which is how `eq` sees it), and the
 native TAP `is` (`stringify_test_value` plus its `value_for_diag`, so the
 diagnostic shows what the comparison actually compared).
 
+Missing one of them is not a partial fix but a *new* inconsistency, which is
+how `roast/integration/advent2009-day20.t` caught the first attempt: its
+`is @b, (@people.sort: {...})` compared an Array on one side and a Seq on the
+other, and only the Array side had been converted. `stringify_test_value`'s
+Seq/LazyList arms now re-enter through the list arm rather than mapping
+`to_string_value` themselves, and the resolver handles an already-reified
+Seq/HyperSeq/RaceSeq (a still-deferred one is left to the caller's own reify
+guard, which hands the reified value back).
+
 Found while re-measuring the `XML` battery candidate
 (`todo/tickets/bundle-xml-battery.md`): `t/namespaces.rakutest` asserts
 `is @items[3].contents, 'A nested item, oh boy.'`, and `.contents` is a list of
