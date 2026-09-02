@@ -19,6 +19,11 @@ PROVE_JOBS ?= 4
 # do the same everywhere instead of leaving the default-config runs to chance.
 # Costs ~1s.
 #
+# `cargo test -p mutsu-lsp`: the language server is a separate workspace member
+# (ADR-0065 D7), so the root `cargo test` -- which builds `default-members`, the
+# `mutsu` package alone -- does not reach it. CI runs it as its own step; run it
+# here too so `make test` still means the same thing locally.
+#
 # `prove -e scripts/run-t-test.sh`: routes t/ through the same per-file timeout
 # + flaky-quarantine wrapper the roast suite uses (docs/flaky-test-policy.md).
 #
@@ -30,7 +35,7 @@ PROVE_JOBS ?= 4
 # docs/adr/0014-make-test-runs-tap-on-debug-binary.md.
 test: check-value-wall check-flaky-list
 	@mkdir -p tmp
-	(cargo build && cargo test -- --test-threads=1 && MUTSU_BIN='$(CARGO_TARGET_DIR)/debug/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/debug/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 check-value-wall:
 	scripts/check-value-wall.sh

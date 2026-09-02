@@ -1,0 +1,34 @@
+[package]
+name = "mutsu-lsp"
+# Versioned independently of the interpreter. `tag-release.yml` bumps only the
+# root `Cargo.toml`, and the server is not part of the release tarball yet;
+# tying the two together is a decision for whenever it ships.
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94.0"
+license = "Artistic-2.0"
+description = "Language server for mutsu, targeting AI agents (ADR-0065)"
+
+[[bin]]
+name = "mutsu-lsp"
+path = "src/main.rs"
+
+[dependencies]
+# `lsp-server` + `lsp-types` rather than `tower-lsp`: ADR-0065 D3 drops
+# incremental document sync and every latency-sensitive method, so there is
+# nothing here that needs async. These are rust-analyzer's crates — a
+# synchronous thread-and-channels loop with no runtime — which keeps `tokio` out
+# of this repository entirely.
+lsp-server = "0.10"
+lsp-types = "0.97"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The interpreter is a dependency purely for its parser, so linking the JIT and
+# the native FFI stack is pure weight — but it is deliberately taken with
+# mutsu's DEFAULT features anyway. A different feature set is a different build
+# of the whole interpreter, which would make CI compile mutsu a third time
+# (it already builds debug and release) for a binary that is merely smaller.
+# Sharing the artifact is worth more than dropping a code generator the server
+# never reaches.
+mutsu = { path = "../.." }
