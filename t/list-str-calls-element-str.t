@@ -7,7 +7,7 @@ use Test;
 # the elements first and hands the result to the same renderer, so the
 # list-shape rules (space separation, nested flattening) stay in one place.
 
-plan 15;
+plan 16;
 
 class C { has $.t; method Str { $!t } }
 class D { has $.t; method Stringy { "S:" ~ $!t } }
@@ -34,13 +34,10 @@ class D { has $.t; method Stringy { "S:" ~ $!t } }
 
 {
     my $d = D.new(t => "q");
-    # A class defining only `Stringy` exposes a pre-existing dispatch
-    # difference (mutsu's `.Str` falls back to `Stringy`, raku's does not), and
-    # `.join` has always had it too -- see
-    # todo/tickets/str-method-falls-back-to-stringy.md. What matters here is
-    # that the list path and `.join` give the SAME answer, which holds under
-    # both implementations.
+    # `.Str` and the list stringification path must not fall back to a
+    # user-defined `Stringy`; only string context (`~`) does that.
     is ~($d,), ($d,).join(""), 'the list path agrees with .join';
+    nok ~($d,) eq $d.Stringy, 'the list path uses .Str, not .Stringy';
 }
 
 # gist/raku are unchanged -- they are the object-inspection renderers.

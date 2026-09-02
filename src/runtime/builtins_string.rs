@@ -72,8 +72,11 @@ impl Interpreter {
             // rendered its base value (`sprintf("%s", @a but R)` printed the
             // list, not the role's `Str`).
             if arg.is_mixin_value() {
+                // `%s` is an explicit `.Str` operation. Do not use the
+                // Stringy-first helper here: a mixin whose wrapped class only
+                // defines Stringy must retain its default `.Str` result.
                 let coerced = if method == "Str" {
-                    self.mixin_user_stringifier(arg)
+                    self.mixin_user_str(arg)
                 } else {
                     let arg = arg.clone();
                     self.dispatch_mixin_method_call(&arg, method, vec![])

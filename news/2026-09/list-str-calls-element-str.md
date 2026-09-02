@@ -44,11 +44,11 @@ With this and the Capture-slip fix
 (`news/2026-09/slip-array-element-capture-not-respread.md`) the upstream suite
 reaches **15/15**, matching `raku`.
 
-A neighbouring difference this surfaced but did not change: mutsu's `.Str`
-dispatch falls back to `Stringy`, so a class defining only `Stringy` answers
-that where raku answers the `Mu.Str` default. `.join` has always had it too, so
-the new path deliberately reuses `.join`'s exact call and the two agree; filed
-as `todo/tickets/str-method-falls-back-to-stringy.md`.
+A neighbouring difference this surfaced is now fixed: mutsu's `.Str` dispatch
+had fallen back to `Stringy`, so a class defining only `Stringy` answered that
+where raku answers the `Mu.Str` default. Explicit `.Str` consumers now call
+`.Str` directly; string context remains intentionally `Stringy`-first. See
+`news/2026-09/str-method-does-not-fallback-to-stringy.md`.
 
 Pin: `t/list-str-calls-element-str.t` (12 subtests, passes under `raku` too),
 covering all five entry points, nested lists, mixed elements, `.gist`/`.raku`

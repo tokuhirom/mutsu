@@ -2319,16 +2319,13 @@ impl Interpreter {
                     }
                 }
                 ValueView::Instance { class_name, .. } => {
-                    // When Stringy is requested but only Str is user-defined (or
-                    // vice versa), delegate to the available user method so that
-                    // custom stringification works through `~$obj`.
-                    let alt = if method == "Stringy" {
-                        "Str"
-                    } else {
-                        "Stringy"
-                    };
-                    if self.has_user_method(&class_name.resolve(), alt) {
-                        self.call_method_with_values(target, alt, vec![])
+                    // Stringy defaults to Str, but Str does not default back to
+                    // Stringy. A class that defines only Stringy therefore keeps
+                    // Mu.Str's object representation for an explicit `.Str` call;
+                    // only the Stringy direction may delegate to the alternate
+                    // method.
+                    if method == "Stringy" && self.has_user_method(&class_name.resolve(), "Str") {
+                        self.call_method_with_values(target, "Str", vec![])
                     } else {
                         Ok(Value::str(target.to_string_value()))
                     }

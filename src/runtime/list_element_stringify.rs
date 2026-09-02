@@ -41,7 +41,10 @@ impl crate::Interpreter {
 
     fn element_needs_interpreter(item: &Value) -> bool {
         let item = item.deref_container();
-        matches!(item.view(), ValueView::Instance { .. }) || Self::list_str_needs_interpreter(&item)
+        matches!(
+            item.view(),
+            ValueView::Instance { .. } | ValueView::Mixin(..)
+        ) || Self::list_str_needs_interpreter(&item)
     }
 
     /// Replace every `Instance` element with the string its class's `Str`
@@ -86,7 +89,10 @@ impl crate::Interpreter {
             // grep rw alias) so a cell-wrapped Instance still gets its
             // user-defined `.Str` -- the same decont `.join` does.
             let item = item.deref_container();
-            if matches!(item.view(), ValueView::Instance { .. }) {
+            if matches!(
+                item.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            ) {
                 let s = self.call_method_with_values(item.clone(), "Str", vec![])?;
                 out.push(Value::str(s.to_string_value()));
             } else if Self::list_str_needs_interpreter(&item) {

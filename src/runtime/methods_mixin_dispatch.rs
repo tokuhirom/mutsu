@@ -47,6 +47,29 @@ impl Interpreter {
         None
     }
 
+    /// The user-defined `.Str` of a role-mixed value, without the
+    /// Stringy-first ordering used by [`Self::mixin_user_stringifier`]. This
+    /// is for operations whose contract explicitly calls `.Str`, such as
+    /// `join` and `sprintf("%s", ...)`.
+    pub(crate) fn mixin_user_str(&mut self, value: &Value) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Mixin(inner, _) = value.view() else {
+            return None;
+        };
+        if let Some(r) = self.dispatch_mixin_method_call(value, "Str", vec![]) {
+            return Some(r);
+        }
+        let class_name = match inner.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve().to_string(),
+            _ => return None,
+        };
+        if self.has_user_method(&class_name, "Str") {
+            Some(self.call_method_with_values(value.clone(), "Str", vec![]))
+        } else {
+            None
+        }
+    }
+
     /// Does one of the roles composed onto this `Mixin` declare `method_name`?
     /// A cheap registry lookup with no dispatch, for sites that must *decide*
     /// whether to run a composed method (sink context) rather than just try it.
