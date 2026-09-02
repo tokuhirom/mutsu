@@ -471,7 +471,7 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 **Excluded from this batch-4 sub-run (already deferred/resolved/drift/false-positive/environment):**
 - `Type/Scalar.rakudoc` [2] (line 53, `[1, 2, 3][0].VAR.^name` should be `Scalar`, mutsu gives
   `Int`) — the already-**Deferred**/deep "Array/Hash elements are stored bare — element reads lack
-  itemization" cluster (`todo/deep/element-itemization-lost-in-scalar-binding.md`, ADR-0040); the
+  itemization" cluster (`news/2026-09/element-itemization-lost-in-scalar-binding.md`, ADR-0040); the
   `(1, 2, 3)[0]` (plain List, not Array) case in the same example already matches raku.
 - `Language/perl-var.rakudoc` [1] (line 198, `$*KERNEL`/`$*DISTRO`/`$*VM` release/name/auth fields) —
   inherently environment/build-dependent (kernel version, OS distro, VM identity), same exclusion
@@ -791,7 +791,7 @@ Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`f
   second repro; not re-filed.
 - `Language/functions.rakudoc` [3] (line 720, `&infix:<XX>([1,(2,3)], [(4,5),6])`) — matches the
   already-**Deferred**/deep "Array/Hash elements are stored bare — element reads lack
-  itemization" cluster (`todo/deep/element-itemization-lost-in-scalar-binding.md`, ADR-0040): the
+  itemization" cluster (`news/2026-09/element-itemization-lost-in-scalar-binding.md`, ADR-0040): the
   nested `List` literal `(2,3)` inside the outer `Array` literal `[1,(2,3)]` loses its
   itemization boundary, so the `X`-cross meta-op treats it as two separate elements instead of
   one itemized `List` element.
