@@ -217,6 +217,24 @@ impl Interpreter {
         terminal: bool,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        self.exec_index_autovivify_lazy_op_sigilless(terminal, is_positional, false)
+    }
+
+    /// [`Self::exec_index_autovivify_lazy_op`] with the bind target's sigil-ness.
+    ///
+    /// `sigilless` is set only by `OpCode::IndexAutovivifyLazyTerminal` for a
+    /// `my \a := ...` bind (see that opcode's docs). It suppresses the
+    /// scalar-leaf promotion when the container is an immutable `List`, so
+    /// `my (\a, \b) := (5, 6); a = 10` dies the way rakudo does instead of
+    /// writing into a cell nothing else can see. An element that already IS a
+    /// container is handed back untouched and stays writable, which is how
+    /// `my (\a, \b) := ($x, $y)` aliases `$x`/`$y`.
+    pub(super) fn exec_index_autovivify_lazy_op_sigilless(
+        &mut self,
+        terminal: bool,
+        is_positional: bool,
+        sigilless: bool,
+    ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
@@ -277,6 +295,18 @@ impl Interpreter {
             }
             // Terminal bind index into an Array leaf: promote the element to a
             // shared `ContainerRef` cell (container-valued leaves included).
+            // A sigilless bind of a single `List` element: hand back the raw
+            // element rather than promoting it (see the doc comment above).
+            ValueView::Array(ref items, kind)
+                if terminal
+                    && sigilless
+                    && kind.is_immutable_list()
+                    && Self::index_to_usize(&index).is_some() =>
+            {
+                let idx = Self::index_to_usize(&index).unwrap();
+                self.stack
+                    .push(items.get(idx).cloned().unwrap_or(Value::NIL));
+            }
             ValueView::Array(..) if terminal => {
                 if let Some(idx) = Self::index_to_usize(&index) {
                     if let Some(slot_ref) = resolved.array_slot_ref(idx, true) {
