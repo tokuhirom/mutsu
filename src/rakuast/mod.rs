@@ -66,6 +66,7 @@ pub enum RakuAstClass {
     InitializerAssign,
     ApplyInfix,
     Infix,
+    FunctionInfix,
     ApplyPrefix,
     Prefix,
     ApplyPostfix,
@@ -189,6 +190,7 @@ impl RakuAstClass {
             InitializerAssign => "RakuAST::Initializer::Assign",
             ApplyInfix => "RakuAST::ApplyInfix",
             Infix => "RakuAST::Infix",
+            FunctionInfix => "RakuAST::FunctionInfix",
             ApplyPrefix => "RakuAST::ApplyPrefix",
             Prefix => "RakuAST::Prefix",
             ApplyPostfix => "RakuAST::ApplyPostfix",
@@ -467,6 +469,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::InitializerAssign,
     RakuAstClass::ApplyInfix,
     RakuAstClass::Infix,
+    RakuAstClass::FunctionInfix,
     RakuAstClass::ApplyPrefix,
     RakuAstClass::Prefix,
     RakuAstClass::ApplyPostfix,
@@ -933,6 +936,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
+        ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
@@ -1011,6 +1015,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
             Some("value")
         }
+        RakuAstClass::FunctionInfix => Some("function"),
         RakuAstClass::VarLexical => Some("name"),
         RakuAstClass::Blockoid => Some("statement-list"),
         RakuAstClass::InitializerAssign => Some("expression"),
@@ -1086,6 +1091,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ApplyInfix
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
+            | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
             | RakuAstClass::Block
@@ -1111,6 +1117,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         IntLiteral | RatLiteral | StrLiteral => &["value"],
         VarLexical => &["name"],
         ApplyInfix => &["left", "infix", "right"],
+        FunctionInfix => &["function"],
         ApplyPrefix => &["prefix", "operand"],
         ApplyPostfix => &["operand", "postfix"],
         Postfix => &["operator"],

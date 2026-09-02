@@ -1064,6 +1064,54 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
+        // A hyper infix function `@a >>[&infix:<+>]<< @b` uses the same
+        // MetaInfix::Hyper wrapper as an ordinary hyper operator, but its base
+        // infix is a FunctionInfix containing the referenced code variable.
+        Expr::HyperFuncOp {
+            func_name,
+            left,
+            right,
+            dwim_left,
+            dwim_right,
+        } => {
+            let mut hyper_fields = Vec::with_capacity(3);
+            if *dwim_left {
+                hyper_fields.push(RakuAstField {
+                    name: Some("dwim-left"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                });
+            }
+            hyper_fields.push(node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::FunctionInfix,
+                    fields: vec![node_field(
+                        None,
+                        var_lexical("&", func_name.strip_prefix('&').unwrap_or(func_name)),
+                    )],
+                },
+            ));
+            if *dwim_right {
+                hyper_fields.push(RakuAstField {
+                    name: Some("dwim-right"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                });
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyInfix,
+                fields: vec![
+                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(
+                        Some("infix"),
+                        RakuAstNode {
+                            class: RakuAstClass::MetaInfixHyper,
+                            fields: hyper_fields,
+                        },
+                    ),
+                    node_field(Some("right"), convert_expr(right)?),
+                ],
+            })
+        }
         Expr::Unary { op, expr } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPrefix,
             fields: vec![

@@ -666,11 +666,13 @@ earlier ones.
   [dwim-right => True]), right)`, and `EVAL` lowers it back. mutsu's `HyperOp` already stores the
   operator text plus both dwim flags, so the mapping is 1:1; raku omits a dwim field whose value is
   False, which the converter reproduces by simply not emitting it (and the lowerer reads a missing
-  field as False). Tests: `t/rakuast-hyper-infix.t`. Remaining hyper boundary: hyper *prefix*
+  field as False). Tests: `t/rakuast-hyper-infix.t`. Hyper function infix (`>>[&f]<<`,
+  `Expr::HyperFuncOp`) now uses the same wrapper with a `FunctionInfix(Var::Lexical)` child and
+  lowers back through the existing execution path; tests are in
+  `t/rakuast-hyper-function-infix.t`. Remaining hyper boundary: hyper *prefix*
   (`-<<@a`, desugared to a `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`,
-  desugared to a hyper `AT-POS` method call), hyper *function* infix (`>>[&f]<<`, raku's
-  `MetaInfix::Hyper(FunctionInfix)`; mutsu has `Expr::HyperFuncOp`), and `@a<<.abs` (which mutsu's
-  parser currently reads as a quote-words subscript).
+  desugared to a hyper `AT-POS` method call), and `@a<<.abs` (which mutsu's parser currently
+  reads as a quote-words subscript).
 - **Reduction metaoperator (Phase 2 slice 25).** `[+] @a` (`Expr::Reduction`) → `Term::Reduce(
   triangle => False, infix => Infix("+"), args => ArgList(@a))`. The triangle form `[\+] @a`
   (mutsu stores its op as `"\+"`) sets `triangle => True` with the backslash stripped from the infix.

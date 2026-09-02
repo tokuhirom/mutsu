@@ -57,6 +57,13 @@ the parser/internal AST, not guessing during RakuAST conversion.
   and lowers back. mutsu's `Expr::HyperOp` already kept the operator text and
   both dwim flags, so this is a 1:1 mapping.
 
+**Closed 2026-09-03** (both directions, pinned by
+`t/rakuast-hyper-function-infix.t`):
+
+- *Hyper function infix operators.* `@a >>[&infix:<+>]<< @b` now renders
+  `MetaInfix::Hyper(FunctionInfix(Var::Lexical))` with the measured DWIM fields,
+  and lowers back through the existing `Expr::HyperFuncOp` execution path.
+
 Still open:
 
 - `.=` and Whatever compound autoprime. `$x .= Str` desugars to a plain `=` over
@@ -75,10 +82,8 @@ Still open:
   loop (`registration_class_body_method.rs`) to skip `__`-prefixed names.
 - The remaining hyper forms: hyper *prefix* (`-<<@a`, desugared to a
   `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`, desugared to a
-  hyper `AT-POS` method call), hyper *function* infix (`>>[&f]<<`, raku's
-  `MetaInfix::Hyper(FunctionInfix)` — mutsu has `Expr::HyperFuncOp` and could map
-  it), and `@a<<.abs` (which mutsu's parser currently reads as a quote-words
-  subscript).
+  hyper `AT-POS` method call), and `@a<<.abs` (which mutsu's parser currently
+  reads as a quote-words subscript).
 - Anonymous subs with explicit signatures. `sub ($x) { }` and `-> $a, $b { }` are
   both `Expr::AnonSubParams`, so the former renders as a `PointyBlock`. Needs a
   distinguishing flag on that node (~73 construction sites).
