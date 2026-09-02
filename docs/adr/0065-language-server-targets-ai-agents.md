@@ -187,6 +187,106 @@ documents almost certainly will not, and the server must stay single-threaded fo
 until that is addressed. If this gate fails, the rest of the plan is invalid, so it runs
 first.
 
+**Executed 2026-09-03 — the gate passes.** See "S0 findings" below. Two of this
+paragraph's expectations were wrong, and the findings section carries the corrections:
+concurrent parsing of different documents *does* hold, and byte-identical re-parse is not
+an achievable (or desirable) property.
+
+## S0 findings (2026-09-03)
+
+The probe is `tests/long_lived_parse.rs`, five tests that run as part of `cargo test` and
+stay in the suite as regression gates. Iteration count is `MUTSU_S0_ITERATIONS` (200 by
+default, so the committed gate is cheap); the numbers below are from a debug build at 8000
+iterations, which is what a resident server reaches in a working session. **These are
+feasibility measurements, not bench-CI numbers** — memory and determinism results are
+independent of optimization level, and the wall-clock figures are not the ones to quote.
+
+**The gate passes.** Nothing here invalidates the plan. Five results, two of which correct
+D8 as written above.
+
+### 1. Re-parsing is deterministic, but not byte-identical — and must not be
+
+An unchanged document re-parses to an identical AST **except** for ids the parser is
+*required* to mint uniquely per declaration site:
+
+- `decl_id` — a `my class`'s key in the global type registry. ADR-0047 D1 mangles every
+  lexical declaration to `Foo\u{0}<decl-id>` precisely so that two declaration sites can
+  never share a registry key.
+- `__ANON_CLASS_N__`, `__ANON_ROLE_N__`, `__ANON_SUBSET_N__` — registry *names* for
+  anonymous declarations, drawn from the same process-global counters that the runtime's
+  `but`-mixin path also draws from (`next_anon_role_name`).
+- Desugaring temporaries: `__with_tmp_N`, `__if_bind_tmp_N`, `__take_value_N`, ... These
+  name lexicals inside a desugared block rather than registry entries, so unlike the two
+  above they are *not* known to require process-global uniqueness — but nothing has
+  established that they don't, and they drift the same way.
+
+For the registry ids, resetting per parse would make two declaration sites in two different
+compilation units collide in a process-global table — a correctness bug, not a cleanup. So
+the right gate is *determinism modulo those ids*, and the probe normalizes them before
+comparing. With that normalization, 8000 consecutive re-parses of an 1140-byte document
+are identical. Any other difference is residual parser state and fails the test.
+
+### 2. The only unbounded growth is one interned name per anonymous declaration per parse
+
+`src/symbol.rs` leaks interned strings for the process lifetime by design. Measured over
+8000 re-parses:
+
+| Document | Interned names | Resident memory |
+| --- | --- | --- |
+| No anonymous declarations | **+0** (exactly zero) | +124 KiB at 8000 parses, +136 KiB at 2000 — noise, not growth |
+| One anonymous class | +8000 (exactly 1.00/parse) | +3988 KiB (~0.5 KiB/parse, linear) |
+
+So there is no general per-parse leak: the parse memo tables reset and genuinely release,
+and `Vec`/`String` churn returns to the allocator. The *entire* linear component is the
+freshly minted, interned, permanently leaked registry name for each anonymous declaration.
+At ~0.5 KiB per re-parse of a file containing one `class { }` this is a slow leak — a few
+megabytes over a long editing session — not a blocker.
+
+The structural fix is available and belongs with the server's real entry point, not here:
+**an analysis-only parse never registers a type**, so in that mode these counters can be
+compilation-unit-local instead of process-global. That is a property of the API S1
+introduces, so it is recorded as a follow-up
+(`todo/tickets/analysis-parse-mints-process-unique-registry-names.md`) rather than
+retrofitted onto `dump_ast`.
+
+### 3. Concurrent parsing of different documents holds — D8's expectation was wrong
+
+The parser's entire working set is thread-local (`SCOPES`, the three memo tables,
+`ORIGINAL_SOURCE`, `LEAKED_REGIONS`, the slang modes); the symbol table is behind an
+`RwLock` and the unique-id counters are atomics. Four threads parsing four different
+documents, five rounds, produce ASTs identical to the same documents parsed on the main
+thread. **The server is therefore not forced to serialize parsing.** This is scoped to
+parsing only — it says nothing about concurrently *loading modules* or executing, which
+touch the type registry and the interpreter's globals.
+
+### 4. No residue between documents, and `ORIGINAL_SOURCE` survives re-entry
+
+Parsing a document that declares custom infix/prefix operators, a `use v6.e.PREVIEW`
+pragma, lexicals, a `constant` and a `my class` does not change how the *next* document
+parses (checked in both orders — a B/A/B and an A/B/A sandwich). This is the failure mode
+that a one-shot process can never expose and that would make a resident server's
+diagnostics depend on which file was opened first.
+
+### 5. In-process re-parse costs ~1.3 ms, which re-confirms D3's rejection of incremental sync
+
+The ADR's feasibility table records ~9 ms as the average parse of one ecosystem module,
+measured through the CLI — one process per file, so it includes startup and I/O. Measured
+*in process*, which is what a server actually does, a release build re-parses the 1140-byte
+probe document in **1.29 ms** (8000 iterations, 10.3 s total). Debug is ~10.7 ms.
+
+D3 dropped incremental document sync on the argument that a full reparse is fast enough.
+The in-process figure is roughly seven times better than the number that argument was made
+on, so the decision holds with a wide margin. Memory and determinism results are identical
+between debug and release, as expected.
+
+`ORIGINAL_SOURCE`'s raw `(pointer, len)` pair also survives interleaving parses of
+differently sized buffers, including buffers that trigger nested sub-parses on separate
+allocations (a heredoc and an `EVAL`). Line numbers in the small document stay correct
+after 25 rounds of being interleaved with a 200-line buffer, so the existing
+snapshot/restore discipline in `parse_program_partial` holds under repetition. Since
+`Stmt::SetLine` is the only positional information mutsu has (D6), this is the load-bearing
+property for every diagnostic the server will emit.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -211,7 +311,7 @@ first.
 
 | Slice | Content | Depends on |
 | --- | --- | --- |
-| **S0** | Long-lived-process viability probe (D8) | — |
+| **S0** | Long-lived-process viability probe (D8) — **done 2026-09-03**, `tests/long_lived_parse.rs` | — |
 | **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path | S0 |
 | **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) | S1 |
 | **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) | S1 |

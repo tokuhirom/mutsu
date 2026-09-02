@@ -79,6 +79,13 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 `src/repl.rs`, plus the in-browser one at `site/repl.html`) and the **public WASM playground**
 (`site/playground.html`, deployed to GitHub Pages by `.github/workflows/pages.yml`) both ship.
 
+- [ ] **Language server** — designed in [docs/adr/0065-language-server-targets-ai-agents.md](docs/adr/0065-language-server-targets-ai-agents.md)
+      (an AI agent is the primary consumer, so only the methods an agent consumes are implemented,
+      and "does mutsu support this?" is a first-class diagnostic). **S0 (the long-lived-process
+      viability gate) is done and passes** — `tests/long_lived_parse.rs`,
+      `news/2026-09/adr0065-s0-long-lived-parse-probe.md`. Next is **S1: the workspace crate, the
+      server skeleton, and diagnostics from the existing single-error path**; the ADR's phasing table
+      carries S2-S5.
 - [ ] Debugger.
 - [ ] Native binary output.
 

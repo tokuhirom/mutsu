@@ -236,6 +236,17 @@ impl Symbol {
     }
 }
 
+/// How many distinct strings the process has interned so far.
+///
+/// The table is append-only and its entries are leaked for the process
+/// lifetime, so this doubles as a leak gauge: in a long-lived process (the
+/// language server of ADR-0065) a workload that keeps growing this number while
+/// re-analysing the *same* document is manufacturing fresh names, and every one
+/// of them costs permanent memory. Pinned by `tests/long_lived_parse.rs`.
+pub fn interned_count() -> usize {
+    global_table().read().unwrap().id_to_str.len()
+}
+
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Symbol({}: {:?})", self.0, self.as_str())
