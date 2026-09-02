@@ -2,7 +2,7 @@
 
 **Slot:** XML parse + generate (DOM-style tree building, serialization back to an XML
 string) · **Selected:** `XML` v0.3.6 (`auth<zef:raku-community-modules>`,
-Artistic-2.0) · **Kind:** Selected, not yet bundled (blocked on mutsu core work) ·
+Artistic-2.0) · **Kind:** Adopted (vendored verbatim, `modules/XML/`) ·
 **Yardstick:** [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) — license
 (hard gate) → dependency weight → proven behaviour on mutsu → API fit ·
 **Procedure:** [selection-method.md](selection-method.md)
@@ -15,57 +15,76 @@ candidate must support both parsing and generating XML** (build a tree in memory
 serialize it back to an XML string), not reading alone — the same rule that
 disqualified `CSV::Parser` in [csv.md](csv.md).
 
-## Status: selected, not yet bundled — 9/15 as of 2026-08-27
+## Status: bundled — the upstream suite is fully green
 
-`XML` wins the field over `LibXML` per the [Recommendation](#recommendation) below: 45
-dependents (the highest ecosystem-standing signal of any battery survey to date) versus
-`LibXML`'s 7, zero runtime dependencies versus a hard `libxml2` system-library
-dependency, and no exposure to the kind of native-library maintenance risk discussed in
-["A note on the no-native-dependency rule"](#a-note-on-the-no-native-dependency-rule)
-below. The mechanical vendoring follow-up is tracked in
-[todo/tickets/bundle-xml-battery.md](../../todo/tickets/bundle-xml-battery.md).
+```raku
+use XML;
+my $doc = from-xml('<catalog id="c1"><book lang="en">Raku</book></catalog>');
+say $doc.root.elements(:TAG<book>)[0]<lang>;                      # en
+say ~make-xml('rss', :version<2.0>, \('channel', \('title', 'mutsu')));
+# <rss version="2.0"><channel><title>mutsu</title></channel></rss>
+```
 
-**Re-measured 2026-08-27**, running the upstream suite from the dist's own directory
-(`raku`: 15/15, unchanged):
+runs against the shipped binary with no `-I` and no `mzef install`.
+
+**Measured 2026-09-02** from the v0.3.6 tag, running the upstream suite from the
+dist's own directory: mutsu **15/15** files, the same as `raku` (15/15). Every
+file is on `batteries-whitelist.txt`, so a regression fails the release gate.
 
 | Point in time | mutsu |
 | --- | --- |
 | Original survey (2026-08-22) | **1/15** |
-| After the two filed blockers were fixed | **2/15** |
+| After the two originally-filed blockers were fixed | **2/15** |
 | After the group-backreference fix (2026-08-26) | **5/15** |
 | After the `$self`/invocant fix, [ADR-0061](../adr/0061-lexical-self-has-its-own-env-key.md) (2026-08-27) | **9/15** |
+| After the junction-slurpy / `IO::Path(Str)` coercion fixes (2026-08-31) | **13/15** |
+| After the Capture-slip and list-stringification fixes (2026-09-02) | **15/15** |
 
-Both blockers this record originally filed are fixed (the grammar dynamic-variable
-parameter, and the indirect type-name parameter constraint). Re-measuring found a
-**third**, which had been hidden behind the first: a backreference written inside a
-`[...]` group did not resolve against the enclosing pattern's captures, so
-`XML::Grammar`'s `element` token — which closes with
-`[ '/>' | '>' <child>* '</' $<name> '>' ]` — could not match *any* element with a
-closing tag. That is fixed too (`news/2026-08/regex-backref-inside-a-group.md`,
-pinned by `t/regex-backref-in-group.t`), which is what took the count to 5/15.
+Every step was a **general interpreter fix**, never an XML-specific
+accommodation — which is the whole point of the rung-2 policy in
+[BATTERIES.md §1](../../BATTERIES.md#1-why-vendor-rather-than-reimplement). The
+last two, both found by re-measuring this suite:
 
-The blocker that dominated the 2026-08-26 measurement is **fixed**: `XML::Element.AT-POS`
-returns a `Proxy` whose `FETCH` closes over `my $self = self`, and mutsu used to store a
-`$self` *scalar* under the same env key as a method's invocant, so inside `FETCH` `$self`
-resolved to the Proxy and the fetch recursed until the stack overflowed. It aborted every
-file that touched the very common `$doc.root[0]` shape. See
-[ADR-0061](../adr/0061-lexical-self-has-its-own-env-key.md) /
-[news/2026-08/lexical-self-has-its-own-env-key.md](../../news/2026-08/lexical-self-has-its-own-env-key.md);
-that fix alone took the suite from 5/15 to 9/15.
+- **A Capture inside a slipped container was re-spread.**
+  `make-xml`'s relay is `craft($name, |@contents, |%attribs)`, and `craft-new`
+  branches on `$what ~~ Capture` to recurse into a child element. mutsu spread
+  `|@contents` twice — once for the array, again for any `Capture` element —
+  so the nesting was gone before `craft-new` saw it.
+  ([news](../../news/2026-09/slip-array-element-capture-not-respread.md))
+- **Stringifying a list did not call each element's own `Str`.**
+  `t/namespaces.rakutest` asserts `is @items[3].contents, 'A nested item…'` over
+  a list of `XML::Text` nodes; mutsu compared `XML::Text()`. Five string-context
+  entry points needed the fix.
+  ([news](../../news/2026-09/list-str-calls-element-str.md))
 
-The six remaining failures are:
+A third, found while smoke-testing the bundled copy rather than by the suite:
+**a nested Capture literal was flattened while being built**
+(`\(1, \(2,3))` became `\(1, 2, 3)`), so a one-expression
+`make-xml('rss', \('channel', \('title', 'x')))` tree collapsed into text on
+the parent. ([news](../../news/2026-09/nested-capture-literal-flattened.md))
 
-- **`XML::Document` does not delegate postcircumfix to its root element** —
-  `t/proxies.rakutest`, `t/query-methods.rakutest`, `t/example.rakutest`. Element-level
-  `$doc.root[1]` works now, but `$doc[1]` / `$doc<attr>` / `$doc.attribs` return `(Any)`.
-  Two neighbouring `Proxy` defects filed while fixing the blocker above may well be behind
-  this: [`todo/tickets/proxy-at-pos-store-and-shadowed-capture.md`](../../todo/tickets/proxy-at-pos-store-and-shadowed-capture.md)
-  (a `Proxy` returned from an `is rw` `AT-POS` loses its STORE, and its deferred capture
-  loses to a same-named outer lexical) and
-  [`todo/tickets/proxy-what-reports-proxy-instead-of-fetching.md`](../../todo/tickets/proxy-what-reports-proxy-instead-of-fetching.md).
-- **A missing `.string` method on `XML::Element`** (`t/proxies.rakutest` aborts on it).
-- **Three files still unbisected**: `t/make.rakutest`, `t/namespaces.rakutest`,
-  `t/open-xml.rakutest`.
+### Provenance and re-vendoring
+
+Vendored from the upstream v0.3.6 tag, commit
+`0349d282e257be61075f55abfde4c42a01bc8f10`, pinned in `batteries.lock`. Only
+`lib/`, `META6.json`, `LICENSE` and `README.md` are copied — upstream `t/`,
+`xt/`, `.github/` and any `.precomp` artifacts a local `raku` run leaves behind
+are excluded (BATTERIES.md §3). To re-vendor a newer version:
+
+```
+git clone --depth 1 --branch <tag> https://github.com/raku-community-modules/XML.git /tmp/xml
+rsync -a --exclude '.precomp' --exclude '.git' /tmp/xml/lib/ modules/XML/lib/
+cp /tmp/xml/META6.json /tmp/xml/LICENSE /tmp/xml/README.md modules/XML/
+# bump the `commit` column of the XML row in batteries.lock, then:
+scripts/battery-testsuite.sh --update      # review the whitelist diff
+python3 scripts/gen-batteries-manifest.py  # refresh site/content/batteries.json
+```
+
+No wiring code is needed: `resolve_bundled_lib_paths()` registers every
+`modules/<Dist>/lib` that exists, so creating the directory *is* the
+registration. `t/xml-battery.t` is the in-repo smoke test (parse, round-trip,
+build, mutate) so a resolution regression fails `make test`, not only the
+release-time gate.
 
 ## A note on the no-native-dependency rule
 
