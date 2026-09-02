@@ -9,8 +9,8 @@ use crate::parser::parse_result::{
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
     CompoundAssignOp, build_compound_assign_expr, compound_assign_marker,
-    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_comma_or_expr,
-    parse_compound_assign_op, parse_set_compound_assign_op,
+    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_colon_args,
+    parse_comma_or_expr, parse_compound_assign_op, parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -119,7 +119,16 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = parse_char(r, ')')?;
             (r, args)
         } else {
-            (rest, Vec::new())
+            // `.=method: args` is the topic form of the same colon-argument
+            // syntax supported by `$var .= method: args`. Keep the original
+            // remainder when there is no argument list so statement modifiers
+            // continue to see their leading whitespace.
+            let (r, _) = ws(rest)?;
+            if r.starts_with(':') && !r.starts_with("::") {
+                parse_colon_args(r)?
+            } else {
+                (rest, Vec::new())
+            }
         };
         // The `.=` metaop on the topic. Route through the `__mutsu_topic_dotassign`
         // marker (compiled to `TopicDotAssign`) so it can reassign a read-only
