@@ -232,6 +232,74 @@ impl Interpreter {
 
     /// Write back modified loop variable to the original scalar variable.
     /// Used when iterating over a list of scalar variables like `for ($a, $b, $c)`.
+    ///
+    /// A MULTI-parameter loop chunks the source, so `idx` counts chunks, not
+    /// items, and each of the chunk's `arity` slots has its own source variable
+    /// and its own parameter. `rw_param_names` is the per-slot alias marker
+    /// (empty for a slot whose parameter is a plain readonly binding, which
+    /// cannot have been written and must not overwrite its source), the same
+    /// distinction [`Self::write_back_for_rw_param`] makes for an `@`-array
+    /// source. Without this the single-slot path below wrote the whole CHUNK
+    /// over the FIRST source variable: `for ($a, $b) -> \x, \y { x = 9; y = 8 }`
+    /// left `$a` holding `(9, 8)` and `$b` untouched.
+    /// Route a `for ($a, $b, ...)` per-iteration source writeback to the
+    /// single- or multi-parameter form. A multi-parameter loop chunks the
+    /// source, so it needs the per-slot form.
+    pub(super) fn write_back_to_source_vars(
+        &mut self,
+        code: &CompiledCode,
+        spec: &crate::opcode::ForLoopSpec,
+        param_name: &Option<String>,
+        idx: usize,
+        arity: usize,
+    ) {
+        if spec.source_var_names.is_empty() {
+            return;
+        }
+        if spec.chunks_items() {
+            self.write_back_to_source_vars_multi(
+                code,
+                &spec.source_var_names,
+                &spec.source_var_locals,
+                &spec.rw_param_names,
+                idx,
+                arity.max(1),
+            );
+        } else {
+            self.write_back_to_source_var(
+                code,
+                &spec.source_var_names,
+                &spec.source_var_locals,
+                param_name,
+                idx,
+            );
+        }
+    }
+
+    pub(super) fn write_back_to_source_vars_multi(
+        &mut self,
+        code: &CompiledCode,
+        source_var_names: &[String],
+        source_var_locals: &[Option<u32>],
+        rw_param_names: &[String],
+        idx: usize,
+        arity: usize,
+    ) {
+        let base = idx * arity;
+        for (j, pname) in rw_param_names.iter().enumerate() {
+            if pname.is_empty() {
+                continue;
+            }
+            let Some(target) = source_var_names.get(base + j).filter(|t| !t.is_empty()) else {
+                continue;
+            };
+            let Some(current_val) = self.env().get(pname).cloned() else {
+                continue;
+            };
+            self.store_loop_source_var(code, source_var_locals, base + j, target, current_val);
+        }
+    }
+
     pub(super) fn write_back_to_source_var(
         &mut self,
         code: &CompiledCode,
@@ -247,19 +315,35 @@ impl Interpreter {
         let Some(current_val) = self.env().get(var_name).cloned() else {
             return;
         };
-        let target = &source_var_names[idx];
-        self.env_mut().insert(target.clone(), current_val.clone());
-        // §1.5: write straight into the compiler-baked slot when known, instead of
-        // re-resolving `target` by name; fall back to the by-name search only when
-        // the compiler recorded no slot (`our`/global/undeclared target).
+        let target = source_var_names[idx].clone();
+        if target.is_empty() {
+            return;
+        }
+        self.store_loop_source_var(code, source_var_locals, idx, &target, current_val);
+    }
+
+    /// Store one loop-source variable, preferring the compiler-baked slot.
+    ///
+    /// §1.5: write straight into the compiler-baked local slot when known,
+    /// instead of re-resolving `target` by name; fall back to the by-name search
+    /// only when the compiler recorded no slot (`our`/global/undeclared target).
+    fn store_loop_source_var(
+        &mut self,
+        code: &CompiledCode,
+        source_var_locals: &[Option<u32>],
+        idx: usize,
+        target: &str,
+        value: Value,
+    ) {
+        self.env_mut().insert(target.to_string(), value.clone());
         match source_var_locals.get(idx).copied().flatten() {
             Some(slot) => {
                 let slot = slot as usize;
                 if slot < self.locals.len() {
-                    self.locals[slot] = current_val;
+                    self.locals[slot] = value;
                 }
             }
-            None => self.update_local_if_exists(code, target, &current_val),
+            None => self.update_local_if_exists(code, target, &value),
         }
     }
 

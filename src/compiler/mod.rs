@@ -3347,7 +3347,14 @@ impl Compiler {
     fn for_source_var_locals(&self, names: &[String]) -> Vec<Option<u32>> {
         names
             .iter()
-            .map(|name| self.local_map.get(name).copied())
+            .map(|name| {
+                if name.is_empty() {
+                    // A non-variable position of a mixed source list; there is
+                    // nothing to write back to.
+                    return None;
+                }
+                self.local_map.get(name).copied()
+            })
             .collect()
     }
 
@@ -3360,14 +3367,19 @@ impl Compiler {
             return vec![name.clone()];
         }
         if let Expr::ArrayLiteral(items) = iterable {
+            // A MIXED list (`for $a, 1000, $b, 1_000_000 -> \x, $value`) still
+            // has writable sources at the variable positions; a position that is
+            // not a plain variable gets the empty name, which every consumer
+            // skips. Returning nothing for the whole list -- as this used to --
+            // dropped the write-through for `$a`/`$b` entirely.
             let names: Vec<String> = items
                 .iter()
-                .filter_map(|item| match item {
-                    Expr::Var(name) => Some(name.clone()),
-                    _ => None,
+                .map(|item| match item {
+                    Expr::Var(name) => name.clone(),
+                    _ => String::new(),
                 })
                 .collect();
-            if names.len() == items.len() {
+            if names.iter().any(|n| !n.is_empty()) {
                 return names;
             }
         }

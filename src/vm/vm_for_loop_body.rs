@@ -908,13 +908,7 @@ impl Interpreter {
                                 &hash_keys_for_writeback,
                             );
                         }
-                        self.write_back_to_source_var(
-                            code,
-                            &spec.source_var_names,
-                            &spec.source_var_locals,
-                            &param_name,
-                            idx,
-                        );
+                        self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         if let Some(ref mut coll) = collected
                             && self.stack.len() > stack_base
                         {
@@ -962,13 +956,7 @@ impl Interpreter {
                                 &hash_keys_for_writeback,
                             );
                         }
-                        self.write_back_to_source_var(
-                            code,
-                            &spec.source_var_names,
-                            &spec.source_var_locals,
-                            &param_name,
-                            idx,
-                        );
+                        self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -1020,13 +1008,7 @@ impl Interpreter {
                                 &hash_keys_for_writeback,
                             );
                         }
-                        self.write_back_to_source_var(
-                            code,
-                            &spec.source_var_names,
-                            &spec.source_var_locals,
-                            &param_name,
-                            idx,
-                        );
+                        self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -1067,13 +1049,7 @@ impl Interpreter {
                                 &hash_keys_for_writeback,
                             );
                         }
-                        self.write_back_to_source_var(
-                            code,
-                            &spec.source_var_names,
-                            &spec.source_var_locals,
-                            &param_name,
-                            idx,
-                        );
+                        self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         completed_all = false;
                         break 'for_loop;
                     }
@@ -1104,13 +1080,7 @@ impl Interpreter {
                                 &hash_keys_for_writeback,
                             );
                         }
-                        self.write_back_to_source_var(
-                            code,
-                            &spec.source_var_names,
-                            &spec.source_var_locals,
-                            &param_name,
-                            idx,
-                        );
+                        self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         break 'body_redo;
                     }
                     Err(e)
