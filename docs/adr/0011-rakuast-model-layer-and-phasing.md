@@ -234,6 +234,12 @@ earlier ones.
     constructor form like Rakudo, and lowers it to the existing `ParamDef.where_constraint` path
     through `EVAL`. Tests in `t/rakuast-construct-where.t`. Next: sub-signatures, type captures,
     array shapes, and signature constraints.
+  - **Slice 12 (signature return construction) — done (2026-09-02).** `Signature.new(:returns)`
+    now retains its return node, and `Trait::Returns.new($type)` / `Trait::Of.new($type)` build
+    the positional trait nodes already emitted by the converter. `Sub.new(:traits)` accepts those
+    return traits so hand-constructed signatures and traits can flow through the existing lowerer
+    and compiler under `EVAL`. Tests in `t/rakuast-construct-return-type.t` pass under both mutsu
+    and Rakudo.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.

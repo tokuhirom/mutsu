@@ -539,8 +539,8 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// Construction (Phase 4): build a `Value::RakuAst` from a `RakuAST::*.new(...)`
 /// / `.from-identifier(...)` call. Returns `Ok(None)` when the class/method is
 /// not a supported constructor yet (so normal dispatch handles it). Covers the
-/// single-positional-argument constructors: the literals (`.new`) and
-/// `Name.from-identifier`.
+/// single-positional-argument constructors such as literals, names, and
+/// return-type traits, plus the supported named-field constructors.
 pub fn construct(
     class_name: &str,
     method: &str,
@@ -585,6 +585,26 @@ pub fn construct(
         if let Some(value) = &signature {
             require_rakuast_class(value, RakuAstClass::Signature, "RakuAST::Sub.new")?;
         }
+        let traits = named_arg(args, "traits")
+            .map(|value| {
+                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
+                    RuntimeError::new("RakuAST::Sub.new expects `traits` to be a list")
+                })
+            })
+            .transpose()?;
+        if let Some(traits) = &traits {
+            for trait_node in traits {
+                if !matches!(
+                    trait_node.view(),
+                    ValueView::RakuAst(node)
+                        if matches!(node.class, RakuAstClass::TraitReturns | RakuAstClass::TraitOf)
+                ) {
+                    return Err(RuntimeError::new(
+                        "RakuAST::Sub.new expects `traits` to contain return-type traits",
+                    ));
+                }
+            }
+        }
         let body = match named_arg(args, "body") {
             Some(value) => {
                 require_rakuast_class(&value, RakuAstClass::Blockoid, "RakuAST::Sub.new")?;
@@ -592,7 +612,7 @@ pub fn construct(
             }
             None => empty_blockoid(),
         };
-        let mut fields = Vec::with_capacity(3);
+        let mut fields = Vec::with_capacity(4);
         if let Some(name) = name {
             fields.push(RakuAstField {
                 name: Some("name"),
@@ -603,6 +623,12 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("signature"),
                 value: RakuAstFieldValue::Node(signature),
+            });
+        }
+        if let Some(traits) = traits {
+            fields.push(RakuAstField {
+                name: Some("traits"),
+                value: RakuAstFieldValue::List(traits),
             });
         }
         fields.push(RakuAstField {
@@ -626,12 +652,23 @@ pub fn construct(
         for parameter in &parameters {
             require_rakuast_class(parameter, RakuAstClass::Parameter, "RakuAST::Signature.new")?;
         }
+        let returns = named_arg(args, "returns");
+        if let Some(returns) = &returns {
+            require_any_rakuast(returns, "RakuAST::Signature.new", "returns")?;
+        }
+        let mut fields = vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(parameters),
+        }];
+        if let Some(returns) = returns {
+            fields.push(RakuAstField {
+                name: Some("returns"),
+                value: RakuAstFieldValue::Node(returns),
+            });
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::Signature,
-            fields: vec![RakuAstField {
-                name: Some("parameters"),
-                value: RakuAstFieldValue::List(parameters),
-            }],
+            fields,
         }))));
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
@@ -898,6 +935,8 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
+        ("RakuAST::Trait::Returns", "new") => RakuAstClass::TraitReturns,
+        ("RakuAST::Trait::Of", "new") => RakuAstClass::TraitOf,
         _ => return None,
     })
 }
@@ -1047,6 +1086,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Blockoid
             | RakuAstClass::Sub
             | RakuAstClass::Signature
+            | RakuAstClass::TraitReturns
+            | RakuAstClass::TraitOf
             | RakuAstClass::Parameter
             | RakuAstClass::ParameterTargetVar
             | RakuAstClass::VarDeclarationSimple
