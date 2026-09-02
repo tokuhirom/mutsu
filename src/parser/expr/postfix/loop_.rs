@@ -1850,6 +1850,7 @@ fn postfix_expr_loop_from(
                 };
                 expr = Expr::MultiDimIndex {
                     target: Box::new(expr),
+                    is_positional: true,
                     dimensions: vec![list_expr],
                 };
                 rest = r2;
@@ -1881,6 +1882,7 @@ fn postfix_expr_loop_from(
                 ParsedBracketIndex::MultiDim(dimensions) => {
                     expr = Expr::MultiDimIndex {
                         target: Box::new(expr),
+                        is_positional: true,
                         dimensions,
                     };
                 }
@@ -2149,6 +2151,7 @@ fn postfix_expr_loop_from(
                 let (r2, _) = parse_char(r, '}')?;
                 expr = Expr::MultiDimIndex {
                     target: Box::new(expr),
+                    is_positional: false,
                     dimensions: vec![Expr::ArrayLiteral(items)],
                 };
                 rest = r2;
@@ -2159,6 +2162,7 @@ fn postfix_expr_loop_from(
             let (r, _) = parse_char(r, '}')?;
             expr = Expr::MultiDimIndex {
                 target: Box::new(expr),
+                is_positional: false,
                 dimensions: vec![keys_expr],
             };
             rest = r;
@@ -2213,6 +2217,7 @@ fn postfix_expr_loop_from(
                 ParsedBracketIndex::MultiDim(dimensions) => {
                     expr = Expr::MultiDimIndex {
                         target: Box::new(expr),
+                        is_positional: false,
                         dimensions,
                     };
                     rest = r;
@@ -2467,6 +2472,7 @@ fn postfix_expr_loop_from(
                         if let Expr::MultiDimIndex {
                             target: mdt,
                             dimensions: dims,
+                            ..
                         } = expr
                         {
                             let var_name = multidim_target_var_name(&mdt);
@@ -2529,6 +2535,7 @@ fn postfix_expr_loop_from(
                         if let Expr::MultiDimIndex {
                             target: mdt,
                             dimensions: dims,
+                            ..
                         } = original_expr.clone()
                         {
                             let var_name = multidim_target_var_name(&mdt);
@@ -2608,6 +2615,7 @@ fn postfix_expr_loop_from(
                 if let Expr::MultiDimIndex {
                     target: mdt,
                     dimensions: dims,
+                    ..
                 } = expr.clone()
                 {
                     // `:$delete` is the `delete` adverb with a runtime-decided
@@ -2689,6 +2697,7 @@ fn postfix_expr_loop_from(
                     if let Expr::MultiDimIndex {
                         target: mdt,
                         dimensions: dims,
+                        ..
                     } = target.as_ref()
                     {
                         let original_expr = expr.clone();

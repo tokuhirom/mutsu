@@ -689,7 +689,11 @@ impl Compiler {
                 self.compile_expr_index(target, index, *is_positional);
             }
             // Multi-dimensional indexing: @a[$x;$y;$z]
-            Expr::MultiDimIndex { target, dimensions } => {
+            Expr::MultiDimIndex {
+                target,
+                dimensions,
+                is_positional,
+            } => {
                 self.compile_expr(target);
                 for dim in dimensions {
                     self.compile_expr(dim);
@@ -700,8 +704,10 @@ impl Compiler {
                     self.code
                         .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
                 } else {
-                    self.code
-                        .emit(OpCode::MultiDimIndex(dimensions.len() as u32));
+                    self.code.emit(OpCode::MultiDimIndex {
+                        ndims: dimensions.len() as u32,
+                        is_positional: *is_positional,
+                    });
                 }
             }
             // Hash hyperslice: %hash{**}:adverb
@@ -1043,8 +1049,9 @@ impl Compiler {
                 target,
                 dimensions,
                 value,
+                is_positional,
             } => {
-                self.compile_expr_multidim_index_assign(target, dimensions, value);
+                self.compile_expr_multidim_index_assign(target, dimensions, value, *is_positional);
             }
             Expr::IndirectTypeLookup(inner) => {
                 self.compile_expr(inner);

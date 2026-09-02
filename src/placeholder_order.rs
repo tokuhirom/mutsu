@@ -353,6 +353,7 @@ fn check_bare_var_expr(expr: &Expr, var_name: &str, found: &mut bool) {
             target,
             dimensions,
             value,
+            ..
         } => {
             check_bare_var_expr(target, var_name, found);
             for d in dimensions {
@@ -706,6 +707,7 @@ fn order_check_expr(expr: &Expr, state: &mut OrderState) {
             target,
             dimensions,
             value,
+            ..
         } => {
             order_check_expr(target, state);
             for d in dimensions {

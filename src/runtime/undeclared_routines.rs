@@ -534,7 +534,9 @@ fn walk_expr(expr: &Expr, scan: &mut Scan) {
             walk_expr(target, scan);
             walk_expr(index, scan);
         }
-        Expr::MultiDimIndex { target, dimensions } => {
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
             walk_expr(target, scan);
             for d in dimensions {
                 walk_expr(d, scan);
@@ -544,6 +546,7 @@ fn walk_expr(expr: &Expr, scan: &mut Scan) {
             target,
             dimensions,
             value,
+            ..
         } => {
             walk_expr(target, scan);
             for d in dimensions {

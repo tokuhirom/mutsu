@@ -349,6 +349,7 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
     let Expr::MultiDimIndex {
         target: mdt,
         dimensions,
+        ..
     } = target.as_ref()
     else {
         return Expr::Exists {
@@ -443,7 +444,10 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         };
     }
     // Handle MultiDimIndex: @a[0;0;0]:kv etc.
-    if let Expr::MultiDimIndex { target, dimensions } = expr {
+    if let Expr::MultiDimIndex {
+        target, dimensions, ..
+    } = expr
+    {
         let mut args = vec![*target, Expr::Literal(Value::str(adverb.to_string()))];
         args.extend(dimensions);
         if let Some(cond_expr) = cond {

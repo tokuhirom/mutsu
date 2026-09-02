@@ -397,7 +397,10 @@ impl Compiler {
         // cell (a missing hash leaf gets a deferred `HashEntryRef`); the callee
         // binds through it. Slice dimensions that can't collapse to one cell
         // yield a list of leaf cells, or fall back to the plain read value.
-        if let Expr::MultiDimIndex { target, dimensions } = arg {
+        if let Expr::MultiDimIndex {
+            target, dimensions, ..
+        } = arg
+        {
             self.compile_expr(target);
             for dim in dimensions {
                 self.compile_expr(dim);

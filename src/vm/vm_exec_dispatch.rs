@@ -3798,18 +3798,28 @@ impl Interpreter {
                 self.exec_delete_index_expr_op()?;
                 *ip += 1;
             }
-            OpCode::MultiDimIndex(ndims) => {
-                self.exec_multi_dim_index_op(*ndims)?;
+            OpCode::MultiDimIndex {
+                ndims,
+                is_positional,
+            } => {
+                self.exec_multi_dim_index_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
-            OpCode::MultiDimIndexAssign { name_idx, ndims } => {
+            OpCode::MultiDimIndexAssign {
+                name_idx,
+                ndims,
+                is_positional,
+            } => {
                 let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims)?;
+                self.exec_multi_dim_index_assign_op(code, *name_idx, *ndims, *is_positional)?;
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
-            OpCode::MultiDimIndexAssignGeneric(ndims) => {
-                self.exec_multi_dim_index_assign_generic_op(*ndims)?;
+            OpCode::MultiDimIndexAssignGeneric {
+                ndims,
+                is_positional,
+            } => {
+                self.exec_multi_dim_index_assign_generic_op(*ndims, *is_positional)?;
                 *ip += 1;
             }
             OpCode::MultiDimIndexBindRef(ndims) => {

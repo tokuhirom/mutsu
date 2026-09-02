@@ -51,10 +51,15 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             value: Box::new(value),
             is_positional,
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => Expr::MultiDimIndexAssign {
             target,
             dimensions,
             value: Box::new(value),
+            is_positional,
         },
         // A method-call lvalue (`$o.a = v` — an rw accessor, or `$o.AT-POS(i) = v`).
         // Mirrors the statement-level `lvalue_assign_to_expr` so a chained assignment
@@ -261,15 +266,21 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 is_positional: true,
             }
         }
-        Expr::MultiDimIndex { target, dimensions } => {
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => {
             let lhs_expr = Expr::MultiDimIndex {
                 target: target.clone(),
                 dimensions: dimensions.clone(),
+                is_positional,
             };
             Expr::MultiDimIndexAssign {
                 target,
                 dimensions,
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
+                is_positional,
             }
         }
         Expr::AssignExpr {

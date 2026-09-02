@@ -4,7 +4,11 @@ use crate::vm::vm_comparison_ops::expand_range_to_list;
 impl Interpreter {
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: [target, dim0, dim1, ..., dimN-1] → [result]
-    pub(super) fn exec_multi_dim_index_op(&mut self, ndims: u32) -> Result<(), RuntimeError> {
+    pub(super) fn exec_multi_dim_index_op(
+        &mut self,
+        ndims: u32,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
@@ -20,9 +24,39 @@ impl Interpreter {
             self.check_shaped_array_bounds(&target, &dims, 0)?;
         }
 
-        let result = self.multi_dim_index_read(&target, &dims)?;
+        let mut result = self.multi_dim_index_read(&target, &dims)?;
+        // Under 6.d and earlier an ASSOCIATIVE multi-dim subscript is a slice
+        // even when every dimension is a single key: raku hands back a `List`
+        // (`%h{1;2}` is `(5,)`, so `%h{1;2} + 3` is `4`, not `8`). 6.e drops
+        // that wrapper and hands back the leaf itself. A dimension that is
+        // already a slice produced the list either way.
+        if Self::assoc_multislice(is_positional)
+            && ndims >= 2
+            && Self::walks_associative(&target)
+            && !dims.iter().any(Self::dim_is_multi)
+        {
+            result = Value::array(vec![result]);
+        }
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Whether an associative multi-dim subscript carries 6.d multislice
+    /// semantics: the subscript is an lvalue/rvalue `List`, one element per
+    /// selected leaf, even when every dimension is a single key. 6.e replaced
+    /// that with plain single-element semantics (`roast/S32-hash/
+    /// multislice-6e.t` pins the 6.e side).
+    fn assoc_multislice(is_positional: bool) -> bool {
+        !is_positional && !crate::parser::current_language_version().starts_with("6.e")
+    }
+
+    /// Whether a multi-dim read against this target walks an Associative --
+    /// the level a `{...}` subscript indexes by key.
+    fn walks_associative(target: &Value) -> bool {
+        matches!(
+            target.with_deref(|v| v.descalarize().clone()).view(),
+            ValueView::Hash(..) | ValueView::Pair(..) | ValueView::ValuePair(..)
+        )
     }
 
     /// Multi-dimensional index as an lvalue (`:=` bind RHS / raw `\target` /
@@ -850,6 +884,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         ndims: u32,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
         let mut dims = Vec::with_capacity(ndims);
@@ -922,7 +957,7 @@ impl Interpreter {
                 // also holding a borrow tied to `self` through the cell.
                 let mut contents = std::mem::replace(&mut *inner, Value::NIL);
                 drop(inner);
-                self.multi_dim_assign(&mut contents, &dims, value.clone())?;
+                self.multi_dim_assign(&mut contents, &dims, value.clone(), is_positional)?;
                 *cell.lock().unwrap() = contents;
             }
             self.stack.push(value);
@@ -938,7 +973,17 @@ impl Interpreter {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(&mut container, &resolved_dims, value.clone())?;
             } else {
-                self.multi_dim_assign(&mut container, &dims, value.clone())?;
+                // A container autovivified into a `$` scalar is held by a
+                // Scalar container, so it itemizes -- the same rule the
+                // single-subscript autoviv applies (`fresh_autoviv_container`).
+                // A sigil already constrains `@x` / `%h`, which never itemize.
+                let root_was_undef =
+                    matches!(container.view(), ValueView::Nil | ValueView::Package(..))
+                        && !var_name.starts_with(['@', '%']);
+                self.multi_dim_assign(&mut container, &dims, value.clone(), is_positional)?;
+                if root_was_undef {
+                    container = container.itemize_for_element_store();
+                }
             }
             self.env_mut().insert(var_name.clone(), container);
         }
@@ -971,6 +1016,7 @@ impl Interpreter {
     pub(super) fn exec_multi_dim_index_assign_generic_op(
         &mut self,
         ndims: u32,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
         let value = self.stack.pop().unwrap_or(Value::NIL);
@@ -986,7 +1032,7 @@ impl Interpreter {
             let resolved_dims = self.resolve_multidim_indices_for_assign(&target, &dims)?;
             Self::assign_array_multidim(&mut target, &resolved_dims, value.clone())?;
         } else {
-            self.multi_dim_assign(&mut target, &dims, value.clone())?;
+            self.multi_dim_assign(&mut target, &dims, value.clone(), is_positional)?;
         }
         self.stack.push(value);
         Ok(())
@@ -1069,18 +1115,81 @@ impl Interpreter {
         target: &mut Value,
         dims: &[Value],
         value: Value,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
-        if dims.iter().any(Self::dim_is_multi) {
+        // Under 6.d an ASSOCIATIVE multi-dim subscript is a slice lvalue --
+        // raku hands back a `List` even for all-scalar keys, so the assignment
+        // is a list assignment: `%h{1;2} = [1,2,3]` stores `1` at the single
+        // leaf, where the positional `@a[0;1] = [1,2,3]` (and 6.e's
+        // single-element associative subscript) stores the whole array.
+        if (Self::assoc_multislice(is_positional) && dims.len() >= 2)
+            || dims.iter().any(Self::dim_is_multi)
+        {
             let values: Vec<Value> = if let ValueView::Array(items, ..) = value.view() {
                 items.iter().cloned().collect()
             } else {
                 vec![value]
             };
             let mut vi = 0usize;
-            self.multi_dim_assign_slice(target, dims, &values, &mut vi)
+            self.multi_dim_assign_slice(target, dims, &values, &mut vi, is_positional)
         } else {
-            self.multi_dim_assign_scalar(target, dims, value)
+            self.multi_dim_assign_scalar(target, dims, value, is_positional)
         }
+    }
+
+    /// Whether this descent level must be walked as an Associative: the
+    /// subscript was written `{...}` / `<...>` and the level is a Hash (or an
+    /// undefined slot that autovivifies to one). An Associative has no shape --
+    /// a semicolon subscript is a chain of nested keys -- so the key is
+    /// stringified and the missing level autovivifies to a Hash instead of the
+    /// Array an integer-looking key would otherwise create.
+    fn assoc_level(target: &Value, is_positional: bool) -> bool {
+        Self::assoc_level_impl(target, is_positional)
+    }
+
+    /// A freshly autovivified *intermediate* Associative level. Itemized for
+    /// the same reason `fresh_autoviv_container` itemizes a single-subscript
+    /// nested autoviv: the level lives in a Scalar element slot, so `.raku`
+    /// renders it `${...}` and it counts as one item in list context.
+    fn fresh_assoc_level() -> Value {
+        Value::hash(std::collections::HashMap::new()).itemize_for_element_store()
+    }
+
+    /// A value stored at an Associative leaf lives in a Scalar container, so
+    /// it itemizes: `%h{1;2} = [1,2,3]` renders `${"2" => $[1, 2, 3]}`, the
+    /// same as the chained `%h{1}{2} = [1,2,3]`. Intermediate levels are left
+    /// alone -- `assoc_entry` already itemizes the ones it creates.
+    fn itemize_assoc_leaf(entry: &mut Value, is_leaf: bool) {
+        if is_leaf {
+            let v = std::mem::replace(entry, Value::NIL);
+            *entry = v.itemize_for_element_store();
+        }
+    }
+
+    /// Get (autovivifying) the nested Associative level `key` selects, so the
+    /// descent continues into a Hash rather than the Array an integer-looking
+    /// key would otherwise create.
+    fn assoc_entry<'a>(
+        map: &'a mut crate::value::HashData,
+        key: &Value,
+        is_leaf: bool,
+    ) -> &'a mut Value {
+        let k = Value::hash_key_encode(key);
+        let entry = map
+            .entry(k)
+            .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+        if !is_leaf && matches!(entry.view(), ValueView::Nil | ValueView::Package(..)) {
+            *entry = Self::fresh_assoc_level();
+        }
+        entry
+    }
+
+    fn assoc_level_impl(target: &Value, is_positional: bool) -> bool {
+        !is_positional
+            && matches!(
+                target.view(),
+                ValueView::Hash(..) | ValueView::Nil | ValueView::Package(..)
+            )
     }
 
     /// Slice-distribution arm of `multi_dim_assign`: walk the leaf
@@ -1092,6 +1201,7 @@ impl Interpreter {
         dims: &[Value],
         values: &[Value],
         vi: &mut usize,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         if dims.is_empty() {
             let v = values
@@ -1108,13 +1218,25 @@ impl Interpreter {
         // lock (shared by every snapshot) instead of failing `with_array_mut`.
         if target.is_container_ref() {
             return self.assign_through_cell(target, |slf, inner| {
-                slf.multi_dim_assign_slice(inner, dims, values, vi)
+                slf.multi_dim_assign_slice(inner, dims, values, vi, is_positional)
             });
         }
         let keys = self.resolve_assign_dim(target, &dims[0])?;
         let rest = &dims[1..];
+        let assoc = Self::assoc_level(target, is_positional);
         for key in keys {
-            if !matches!(target.view(), ValueView::Hash(..))
+            if assoc {
+                Self::ensure_hash(target);
+                target
+                    .with_hash_mut(|map| {
+                        let map = crate::value::gc_data_mut(map);
+                        let entry = Self::assoc_entry(map, &key, rest.is_empty());
+                        let r = self.multi_dim_assign_slice(entry, rest, values, vi, is_positional);
+                        Self::itemize_assoc_leaf(entry, rest.is_empty());
+                        r
+                    })
+                    .transpose()?;
+            } else if !matches!(target.view(), ValueView::Hash(..))
                 && let Some(i) = Self::index_to_usize(&key)
             {
                 Self::ensure_array_size(target, i + 1);
@@ -1122,7 +1244,13 @@ impl Interpreter {
                 target
                     .with_array_mut(|items, _| {
                         let items = crate::value::gc_data_mut(items);
-                        let r = self.multi_dim_assign_slice(&mut items[i], rest, values, vi);
+                        let r = self.multi_dim_assign_slice(
+                            &mut items[i],
+                            rest,
+                            values,
+                            vi,
+                            is_positional,
+                        );
                         // See the matching comment in `multi_dim_assign_scalar`
                         // (ADR-0049 §1.6/§4 slice 5).
                         if rest_is_leaf {
@@ -1142,7 +1270,7 @@ impl Interpreter {
                         let entry = map.entry(s.as_str().to_string()).or_insert_with(|| {
                             Value::package(crate::symbol::Symbol::intern("Any"))
                         });
-                        self.multi_dim_assign_slice(entry, rest, values, vi)
+                        self.multi_dim_assign_slice(entry, rest, values, vi, is_positional)
                     })
                     .transpose()?;
             }
@@ -1157,6 +1285,7 @@ impl Interpreter {
         target: &mut Value,
         dims: &[Value],
         value: Value,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         if dims.is_empty() {
             // Write through a `ContainerRef` leaf — see `multi_dim_assign_slice`.
@@ -1166,7 +1295,7 @@ impl Interpreter {
         // A celled intermediate level — see `multi_dim_assign_slice`.
         if target.is_container_ref() {
             return self.assign_through_cell(target, |slf, inner| {
-                slf.multi_dim_assign_scalar(inner, dims, value)
+                slf.multi_dim_assign_scalar(inner, dims, value, is_positional)
             });
         }
         let key = self
@@ -1178,7 +1307,18 @@ impl Interpreter {
         // An array index that arrives as a non-Int scalar (`"0"`, `0e0`, `0/1`)
         // is coerced to its integer when the target is (or autovivifies to) an
         // array; only a genuine hash target keeps the string as a key.
-        if !matches!(target.view(), ValueView::Hash(..))
+        if Self::assoc_level(target, is_positional) {
+            Self::ensure_hash(target);
+            target
+                .with_hash_mut(|map| {
+                    let map = crate::value::gc_data_mut(map);
+                    let entry = Self::assoc_entry(map, &key, rest.is_empty());
+                    let r = self.multi_dim_assign_scalar(entry, rest, value, is_positional);
+                    Self::itemize_assoc_leaf(entry, rest.is_empty());
+                    r
+                })
+                .transpose()?;
+        } else if !matches!(target.view(), ValueView::Hash(..))
             && let Some(i) = Self::index_to_usize(&key)
         {
             Self::ensure_array_size(target, i + 1);
@@ -1186,7 +1326,7 @@ impl Interpreter {
             target
                 .with_array_mut(|items, _| {
                     let items = crate::value::gc_data_mut(items);
-                    let r = self.multi_dim_assign_scalar(&mut items[i], rest, value);
+                    let r = self.multi_dim_assign_scalar(&mut items[i], rest, value, is_positional);
                     // Record the write in the embedded `initialized` set
                     // (ADR-0049 §1.6/§4 slice 5) exactly when this array is
                     // the *immediate* parent of the just-written leaf, so
@@ -1210,7 +1350,7 @@ impl Interpreter {
                     let entry = map
                         .entry(s.as_str().to_string())
                         .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
-                    self.multi_dim_assign_scalar(entry, rest, value)
+                    self.multi_dim_assign_scalar(entry, rest, value, is_positional)
                 })
                 .transpose()?;
         } else {

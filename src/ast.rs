@@ -683,12 +683,20 @@ pub(crate) enum Expr {
     MultiDimIndex {
         target: Box<Expr>,
         dimensions: Vec<Expr>,
+        /// true when the subscript was `[...]` (positional); false when
+        /// `{...}` / `<...>` (associative). An associative multi-dim
+        /// subscript is a chain of nested Hash keys, not a shape.
+        #[serde(default = "default_is_positional")]
+        is_positional: bool,
     },
     /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
     MultiDimIndexAssign {
         target: Box<Expr>,
         dimensions: Vec<Expr>,
         value: Box<Expr>,
+        /// See `MultiDimIndex::is_positional`.
+        #[serde(default = "default_is_positional")]
+        is_positional: bool,
     },
     IndexAssign {
         target: Box<Expr>,
@@ -2311,7 +2319,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::MultiDimIndexAssign {
             target,
             dimensions,
-            value,
+            value, ..
         } => {
             collect_ph_expr(target, out);
             for d in dimensions {
@@ -2931,6 +2939,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
             target,
             dimensions,
             value,
+            ..
         } => {
             collect_ph_expr_shallow(target, out);
             for d in dimensions {

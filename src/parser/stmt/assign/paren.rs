@@ -203,10 +203,15 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 value: Box::new(rhs),
                 is_positional,
             },
-            Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+            Expr::MultiDimIndex {
+                target,
+                dimensions,
+                is_positional,
+            } => Expr::MultiDimIndexAssign {
                 target,
                 dimensions,
                 value: Box::new(rhs),
+                is_positional,
             },
             _ => return Err(PError::expected("assignment expression")),
         };
@@ -320,10 +325,15 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             value: Box::new(rhs),
             is_positional,
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => Expr::MultiDimIndexAssign {
             target,
             dimensions,
             value: Box::new(rhs),
+            is_positional,
         },
         Expr::MethodCall {
             target,

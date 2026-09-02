@@ -489,7 +489,9 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
             walk_expr(target, ctx);
             walk_expr(index, ctx);
         }
-        Expr::MultiDimIndex { target, dimensions } => {
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
             walk_expr(target, ctx);
             for d in dimensions {
                 walk_expr(d, ctx);
@@ -499,6 +501,7 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
             target,
             dimensions,
             value,
+            ..
         } => {
             walk_expr(target, ctx);
             for d in dimensions {

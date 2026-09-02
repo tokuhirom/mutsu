@@ -558,11 +558,17 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
-        if let Expr::MultiDimIndex { target, dimensions } = expr {
+        if let Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } = expr
+        {
             let stmt = Stmt::Expr(Expr::MultiDimIndexAssign {
                 target,
                 dimensions,
                 value: Box::new(value),
+                is_positional,
             });
             return parse_statement_modifier(rest, stmt);
         }
@@ -667,7 +673,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 });
                 return parse_statement_modifier(rest, stmt);
             }
-            Expr::MultiDimIndex { target, dimensions } => {
+            Expr::MultiDimIndex {
+                target, dimensions, ..
+            } => {
                 // For bind (:=), use IndexAssign with flattened dimensions
                 // because bind semantics are handled by the IndexAssign VM path
                 let stmt = Stmt::Expr(Expr::IndexAssign {
