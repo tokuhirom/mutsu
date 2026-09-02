@@ -754,6 +754,11 @@ impl Interpreter {
                 result.push_str(&resumed.to_string_value());
                 continue;
             }
+            // A list element that is an Instance may define its own `Str`,
+            // which the pure stringifier below cannot call -- resolve those
+            // first, the same way `.Str` / prefix `~` do
+            // (`runtime/list_element_stringify.rs`).
+            let v = self.resolve_list_element_stringifiers(&v)?;
             result.push_str(&crate::runtime::utils::coerce_to_str(&v));
         }
         self.reconcile_caller_after_internal_dispatch(caller_code);
