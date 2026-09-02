@@ -38,7 +38,7 @@ use super::parse_assign_expr_or_comma;
 ///
 /// This does NOT depend on whether a type constraint was written — `my Mu
 /// \a := $a` and `my \a := $a` behave the same way in raku.
-fn build_sigilless_bind_stmt(
+pub(super) fn build_sigilless_bind_stmt(
     name: String,
     expr: Expr,
     type_constraint: Option<String>,
