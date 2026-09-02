@@ -8,6 +8,29 @@ Completed read, introspection, construction, and EVAL slices are recorded in
 `news/2026-07/rakuast-*.md` entries; the 2026-08 return-type / hyper-infix slice
 is [here](../../news/2026-08/rakuast-return-types-and-hyper-infix.md).
 
+## Current parity status
+
+RakuAST is **not yet a general `raku`-equivalence oracle**. The existing
+`t/rakuast*.t` files are dual-oracle tests for the constructs that mutsu has
+implemented so far; they do not imply that an arbitrary source program has the
+same `.AST` shape or that every construct can be lowered through `EVAL`. As of
+2026-09-02, the suite covered 93 files and 646 assertions.
+
+The 2026-09-02 direct probes against the system `raku` established the current
+boundary:
+
+- Ordinary scalar compound assignment (`$x += 3`), indexed compound assignment
+  (`@a[0] += 3`), `AT-POS` compound assignment, and defined-or assignment
+  (`$x //= 3`) now render the same `ApplyInfix` shape with
+  `MetaInfix::Assign(Infix(...))` in both implementations. Their execution
+  through `EVAL` also agrees for the covered cases.
+- Mutating method assignment (`$x .= abs`) still differs: `raku` retains
+  `ApplyDottyInfix` with `DottyInfix::CallAssign`, while mutsu still exposes its
+  lowered method-call assignment form. This remains an open representation
+  boundary below.
+- Therefore, “RakuAST is basically equivalent to `raku`” is currently true only
+  for the implemented and pinned slices, not for the RakuAST surface as a whole.
+
 ## Read-direction representation gaps
 
 Several source constructs are desugared or lose distinctions before the RakuAST
