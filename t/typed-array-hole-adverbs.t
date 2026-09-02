@@ -137,21 +137,17 @@ plan 28 + 26;
 }
 
 # A shaped multidim array's own fixed dimensions are just bounds, not
-# elements: a coordinate outside them is genuinely missing. Unlike an
-# in-bounds hole (which has its own non-Nil hole marker and reports `()`),
-# an out-of-range coordinate has no marker of its own -- it is a bare `Nil`,
-# the same representation a missing Hash key has -- so `:v`/`:k`/`:p` report
-# `Nil`, not `()`, matching `roast/S32-array/multislice-6e.t` and
-# `roast/S32-hash/multislice-6e.t` (both under `use v6.e.PREVIEW`; mutsu does
-# not branch this behavior on the language-version pragma, so it applies the
-# same rule under the default version too -- see
-# `todo/tickets/multidim-oob-coordinate-nil-vs-empty-list-version-pragma.md`
-# for the narrow divergence that leaves against plain, non-PREVIEW `raku`).
+# elements: a coordinate outside them is genuinely missing. Under this file's
+# (default) 6.d language version every kind of multidim miss reports `()` --
+# an out-of-range coordinate exactly like the in-bounds hole above. 6.e
+# reports `Nil` for all of them instead; that side is pinned by
+# t/multidim-adverb-miss-6e.t and by the whitelisted
+# roast/S32-{array,hash}/multislice-6e.t.
 {
     my @a[2;2];
     @a[0;0] = 1;
-    is-deeply (@a[5;5]:v), Nil, 'multidim: :v on an out-of-range coordinate is Nil';
-    is-deeply (@a[5;5]:k), Nil, 'multidim: :k on an out-of-range coordinate is Nil';
+    is-deeply (@a[5;5]:v), (), 'multidim: :v on an out-of-range coordinate is empty';
+    is-deeply (@a[5;5]:k), (), 'multidim: :k on an out-of-range coordinate is empty';
     is-deeply (@a[5;5]:exists), False, 'multidim: out-of-range coordinate does not exist';
 }
 

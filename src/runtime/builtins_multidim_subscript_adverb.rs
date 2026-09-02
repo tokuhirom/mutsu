@@ -89,7 +89,7 @@ impl Interpreter {
             "k" => Ok(if exists {
                 key
             } else {
-                multidim_missing_result(&value)
+                multidim_missing_result()
             }),
             "kv" => {
                 if exists {
@@ -107,14 +107,14 @@ impl Interpreter {
                     let v = array_to_list(value);
                     Ok(Value::value_pair(key, v))
                 } else {
-                    Ok(multidim_missing_result(&value))
+                    Ok(multidim_missing_result())
                 }
             }
             "v" => {
                 if exists {
                     Ok(array_to_list(value))
                 } else {
-                    Ok(multidim_missing_result(&value))
+                    Ok(multidim_missing_result())
                 }
             }
             "not-k" | "not-kv" | "not-p" | "not-v" => Ok(array_to_list(value)),
@@ -325,7 +325,7 @@ impl Interpreter {
             "k" => Ok(if exists {
                 key
             } else {
-                multidim_missing_result(&value)
+                multidim_missing_result()
             }),
             "kv" => {
                 if exists {
@@ -343,14 +343,14 @@ impl Interpreter {
                     let v = array_to_list(value);
                     Ok(Value::value_pair(key, v))
                 } else {
-                    Ok(multidim_missing_result(&value))
+                    Ok(multidim_missing_result())
                 }
             }
             "v" => {
                 if exists {
                     Ok(array_to_list(value))
                 } else {
-                    Ok(multidim_missing_result(&value))
+                    Ok(multidim_missing_result())
                 }
             }
             "not-k" | "not-kv" | "not-p" | "not-v" => Ok(array_to_list(value)),
