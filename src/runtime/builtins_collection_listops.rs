@@ -145,17 +145,19 @@ impl Interpreter {
                 }
                 Ok(changed.then(|| Value::array(mapped)))
             }
-            ValueView::Mixin(..) => match self.mixin_user_stringifier(value) {
-                Some(r) => Ok(Some(Value::str(r?.to_string_value()))),
-                None => Ok(None),
-            },
+            ValueView::Mixin(..) => {
+                // `join` stringifies elements through `.Str`, not through the
+                // Stringy-first string-context helper used by `~`.
+                match self.mixin_user_str(value) {
+                    Some(r) => Ok(Some(Value::str(r?.to_string_value()))),
+                    None => Ok(None),
+                }
+            }
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve().to_string();
-                for method in ["Stringy", "Str"] {
-                    if self.has_user_method(&cn, method) {
-                        let r = self.call_method_with_values(value.clone(), method, vec![])?;
-                        return Ok(Some(Value::str(r.to_string_value())));
-                    }
+                if self.has_user_method(&cn, "Str") {
+                    let r = self.call_method_with_values(value.clone(), "Str", vec![])?;
+                    return Ok(Some(Value::str(r.to_string_value())));
                 }
                 Ok(None)
             }

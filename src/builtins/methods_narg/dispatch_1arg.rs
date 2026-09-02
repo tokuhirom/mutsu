@@ -854,7 +854,12 @@ pub(crate) fn native_method_1arg(
                 // element (grep rw alias / `:=`-bound slot) is decontainerized
                 // first so a cell-wrapped Instance is also routed to runtime.
                 if items.iter().any(|v| {
-                    v.with_deref(|inner| matches!(inner.view(), ValueView::Instance { .. }))
+                    v.with_deref(|inner| {
+                        matches!(
+                            inner.view(),
+                            ValueView::Instance { .. } | ValueView::Mixin(..)
+                        )
+                    })
                 }) {
                     return None;
                 }

@@ -713,7 +713,7 @@ impl Interpreter {
             // Decontainerize a `ContainerRef` element (grep rw alias / `:=`-bound
             // slot) so a cell-wrapped Instance still gets its user-defined `.Str`.
             let v = v.deref_container();
-            if matches!(v.view(), ValueView::Instance { .. }) {
+            if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
                 let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
                     Ok(s) => s,
                     Err(e) => return Some(Err(e)),
