@@ -92,9 +92,11 @@ These must validate, render, expose through introspection, and lower through
 
 `RakuAST::Signature.new` accepts no `returns` argument yet, and
 `RakuAST::Trait::Returns` / `Trait::Of` are read-and-lower-only (the converter
-builds them, `EVAL` lowers them, but there is no `.new` constructor). Both are
-straightforward extensions of the existing per-class schema now that the node
-kinds exist.
+builds them, `EVAL` lowers them, but there is no `.new` constructor). **Closed
+2026-09-02:** `Signature.new(:returns)`, `Trait::Returns.new($type)`, and
+`Trait::Of.new($type)` now construct the existing node shapes; `Sub.new(:traits)`
+can attach the return traits so hand-built nodes reach the existing lowerer.
+Regression coverage is in `t/rakuast-construct-return-type.t`.
 
 ## Lowering and EVAL
 
