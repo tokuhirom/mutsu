@@ -860,9 +860,12 @@ fn dispatch_capture(
             for (k, v) in named {
                 map.insert(k.clone(), v.clone());
             }
-            // Capture.hash returns an immutable Map, not a mutable Hash.
+            // Capture.hash returns an immutable Map, not a mutable Hash — and
+            // a Map's values are not element containers (raku:
+            // `\(:x<1 2>).hash<x>.VAR.^name` is `List`).
             let mut data = crate::value::HashData::new(map);
             data.declared_type = Some("Map".to_string());
+            data.bare_values = true;
             Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
         }
         "list" => Some(Ok(Value::array(positional.to_vec()))),

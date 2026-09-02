@@ -749,6 +749,7 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     # nor `.Map` may itemize them -- and the read must not re-itemize either.
     my %m := Map.new((a => (1, 2)));
     is %m<a>.raku, '(1, 2)', 'slice 4b: Map.new does not itemize its values';
+    is %m<a>.VAR.^name, 'List', 'slice 4b: ...and .VAR answers the value, not Scalar';
     is takes(%m<a>), 2, 'slice 4b: ...so a Map value spreads in list context';
     is %m.raku, 'Map.new((:a((1, 2))))',
         'slice 4b: ...and the Map renders its values bare too';
@@ -767,11 +768,8 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     # counter-current: a slurpy `*%h` is bound from the call's capture, so its
     # values are not containers (raku: `%h<a>.VAR.^name` is `List`). Read
     # inside the sub -- returning through `my $v =` would itemize on the way.
-    # (`.VAR` still answers `Scalar` here rather than raku's `List` -- the
-    # per-hash "are my values containers" bit does not exist yet; recorded in
-    # todo/tickets/var-on-a-bare-valued-hash-answers-scalar.md.)
-    sub slurped(*%h) { (%h<a>.raku, takes(%h<a>)).join('|') }
-    is slurped(a => ('x', 'y')), '("x", "y")|2',
+    sub slurped(*%h) { (%h<a>.raku, %h<a>.VAR.^name, takes(%h<a>)).join('|') }
+    is slurped(a => ('x', 'y')), '("x", "y")|List|2',
         'slice 4b: a slurpy %-param does not itemize its values';
     # ...while a plain `%`-param receiving a real Hash keeps that Hash's own
     # element itemization.
@@ -785,6 +783,10 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     'abab' ~~ / [$<x>=[a] b]+ /;
     is $/.hash<x>.VAR.^name, 'Array', 'slice 4b: a Match capture map stays bare';
     is takes($/.hash<x>), 2, 'slice 4b: ...so a quantified capture spreads';
+    # A Capture's `.hash` is the same class of bare-valued hash.
+    my $cap = \(:x<1 2>);
+    is $cap.hash<x>.VAR.^name, 'List', 'slice 4b: a Capture .hash stays bare too';
+    is takes($cap.hash<x>), 2, 'slice 4b: ...and spreads in list context';
 }
 
 done-testing;

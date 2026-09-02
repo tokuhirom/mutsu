@@ -351,7 +351,10 @@ impl Value {
     /// scalars — the overwhelmingly common case — is never touched.
     pub fn hash(map: impl Into<HashData>) -> Self {
         let mut data: HashData = map.into();
-        if data.map.values().any(Value::needs_element_itemization) {
+        // A hash that has declared its values are not element containers keeps
+        // them bare through every later rebuild (copy-on-write, metadata
+        // re-tagging, `set_hash_original_keys`), which all route back here.
+        if !data.bare_values && data.map.values().any(Value::needs_element_itemization) {
             for v in data.map.values_mut() {
                 if v.needs_element_itemization() {
                     *v = v.clone().itemize_for_element_store();
@@ -376,7 +379,9 @@ impl Value {
     ///
     /// Use [`Value::hash`] for everything a Raku program would call a `Hash`.
     pub fn hash_bare_values(map: impl Into<HashData>) -> Self {
-        Value::from_repr(ValueRepr::Hash(Gc::new(map.into()), false))
+        let mut data: HashData = map.into();
+        data.bare_values = true;
+        Value::from_repr(ValueRepr::Hash(Gc::new(data), false))
     }
 
     /// True when this value is a `$`-scalar-itemized hash (`$(%h)` / `.item` /
@@ -535,7 +540,11 @@ impl Value {
                 kind,
                 ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy | ArrayKind::ItemArray
             ),
-            ValueView::Hash(_) => true,
+            // A `Map`, a `Match`'s capture map, a slurpy `*%h` and a
+            // `Capture`'s `.hash` all use the `Hash` repr but hold bare values
+            // (`HashData::bare_values`) — the hash-side twin of `ArrayKind`'s
+            // `List` vs `Array`.
+            ValueView::Hash(data) => !data.bare_values,
             ValueView::Scalar(inner) => inner.elements_are_containers(),
             _ => false,
         }

@@ -196,8 +196,10 @@ impl Interpreter {
     /// `Value` cannot make.
     ///
     /// A `Map` is a `Hash` whose values are NOT containers, and mutsu tells it
-    /// from a real `Hash` by the container's declared type, not its
-    /// representation.
+    /// from a real `Hash` by the container's declared type — belt and braces
+    /// with `HashData::bare_values`, which `Value::elements_are_containers`
+    /// reads and which also covers the bare-valued hashes that carry no
+    /// declared type (a slurpy `*%h`/`%_`, a `Match`'s capture map).
     ///
     /// A `LazyList` is genuinely ambiguous in mutsu: it is the reified form of
     /// BOTH a real `Array` assigned a lazy source (`my @a = ^Inf`, whose
@@ -209,12 +211,15 @@ impl Interpreter {
     /// is a real `Array`.
     fn container_elements_are_containers(&self, container: &Value, source_name: &str) -> bool {
         match container.view() {
-            ValueView::Hash(_) => !matches!(
-                self.container_type_metadata(container)
-                    .and_then(|info| info.declared_type)
-                    .as_deref(),
-                Some("Map")
-            ),
+            ValueView::Hash(data) => {
+                !data.bare_values
+                    && !matches!(
+                        self.container_type_metadata(container)
+                            .and_then(|info| info.declared_type)
+                            .as_deref(),
+                        Some("Map")
+                    )
+            }
             ValueView::LazyList(_) => source_name.starts_with('@'),
             _ => container.elements_are_containers(),
         }
