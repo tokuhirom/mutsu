@@ -323,6 +323,7 @@ impl Interpreter {
                 }
                 None
             }
+            "Str" | "Stringy" if args.is_empty() => self.dispatch_list_str_method(target),
             "join" if args.len() <= 1 => {
                 // `.join` on a Thread blocks until the thread completes and syncs
                 // its shared captured variables back to the parent (Raku
@@ -653,6 +654,28 @@ impl Interpreter {
         };
         let result: Vec<Value> = items.into_iter().skip(n).collect();
         Ok(Value::seq(result))
+    }
+
+    /// Dispatch `.Str`/`.Stringy` on a list whose elements need the
+    /// interpreter: an `Instance` element may define its own `Str`, which the
+    /// pure `to_string_value` renderer cannot call (it would print the
+    /// `C()` fallback instead). The native fast path returns `None` for
+    /// exactly those lists (`dispatch_core_coerce`), so anything reaching
+    /// here is one.
+    ///
+    /// The elements are resolved in place and the list is then handed to the
+    /// SAME pure renderer, so the list-shape rules (space separation, nested
+    /// flattening) stay in one place -- only the per-element stringification
+    /// moves.
+    fn dispatch_list_str_method(&mut self, target: Value) -> Option<Result<Value, RuntimeError>> {
+        if !Self::list_str_needs_interpreter(&target) {
+            return None;
+        }
+        let resolved = match self.resolve_list_element_stringifiers(&target) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        Some(Ok(Value::str(resolved.to_string_value())))
     }
 
     /// Dispatch the "join" method.

@@ -157,6 +157,14 @@ impl Interpreter {
                     None => Ok(value.to_string_value()),
                 }
             }
+            // A list holding an Instance element: the element's class may
+            // define its own `Str`, which the pure renderer cannot call. This
+            // is the same resolution `eq` performs, and `is` compares via `eq`
+            // (`runtime/list_element_stringify.rs`).
+            _ if Self::list_str_needs_interpreter(value) => {
+                let resolved = self.resolve_list_element_stringifiers(value)?;
+                Ok(resolved.to_string_value())
+            }
             _ => Ok(value.to_string_value()),
         }
     }

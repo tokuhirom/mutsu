@@ -648,6 +648,12 @@ pub(super) fn dispatch(
                 // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
                 None // fall through to runtime for exception with proper context
             }
+            // A list holding an `Instance` element needs the interpreter: the
+            // element's class may define its own `Str`, which this pure
+            // renderer cannot call (it would print the `ClassName()` fallback
+            // -- `~@a` then disagreed with `@a.join("")` for the same array).
+            // `dispatch_list_str_method` resolves the elements and re-renders.
+            _ if crate::Interpreter::list_str_needs_interpreter(target) => None,
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {

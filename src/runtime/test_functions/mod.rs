@@ -287,6 +287,14 @@ impl Interpreter {
                 return result.to_string_value();
             }
         }
+        // A list holding an Instance element renders through the element's own
+        // `Str` (`runtime/list_element_stringify.rs`) -- the same value `is`
+        // compared, so the diagnostic shows what the comparison saw.
+        if Self::list_str_needs_interpreter(val)
+            && let Ok(resolved) = self.resolve_list_element_stringifiers(val)
+        {
+            return resolved.to_string_value();
+        }
         val.to_string_value()
     }
 

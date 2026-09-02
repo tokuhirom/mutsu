@@ -262,6 +262,14 @@ impl Interpreter {
         if let Some(r) = self.mixin_user_stringifier(&v) {
             return Ok(Value::str(r?.to_string_value()));
         }
+        // A list element that is an Instance may define its own `Str`, which
+        // the pure stringifier the caller falls back to cannot call -- resolve
+        // those first, the same way `.Str` / prefix `~` / interpolation do
+        // (`runtime/list_element_stringify.rs`). `is @list, 'text'` in the
+        // vendored Test module lands here through infix `eq`.
+        if Self::list_str_needs_interpreter(&v) {
+            return self.resolve_list_element_stringifiers(&v);
+        }
         let (cn, is_type_object) = match v.view() {
             ValueView::Instance { class_name, .. } => (class_name.resolve().to_string(), false),
             ValueView::Package(name) => (name.resolve().to_string(), true),
