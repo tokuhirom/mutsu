@@ -179,6 +179,7 @@ impl Compiler {
         if let Expr::MultiDimIndex {
             target: mdtarget,
             dimensions,
+            ..
         } = target
         {
             let adverb_str = match adverb {

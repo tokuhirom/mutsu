@@ -1481,16 +1481,32 @@ pub(crate) enum OpCode {
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: [target, dim0, dim1, ..., dimN] → [result]
-    MultiDimIndex(u32),
+    ///
+    /// `is_positional` records the bracket kind — see `MultiDimIndexAssign`.
+    /// An associative multi-dim read is a slice even when every dimension is a
+    /// single key, so it hands back a `List` (`%h{1;2}` is `(5,)`).
+    MultiDimIndex {
+        ndims: u32,
+        is_positional: bool,
+    },
     /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
     /// Stack: [value, dim0, dim1, ..., dimN] (target by name)
+    ///
+    /// `is_positional` records the subscript's bracket kind: `[...]` walks a
+    /// (possibly shaped) Positional, while `{...}` / `<...>` walks a chain of
+    /// nested Hash keys — an Associative has no shape, so each level
+    /// autovivifies a Hash and stringifies its key.
     MultiDimIndexAssign {
         name_idx: u32,
         ndims: u32,
+        is_positional: bool,
     },
     /// Multi-dimensional index assignment (generic target)
     /// Stack: [target, dim0, ..., dimN, value]
-    MultiDimIndexAssignGeneric(u32),
+    MultiDimIndexAssignGeneric {
+        ndims: u32,
+        is_positional: bool,
+    },
     /// Multi-dimensional index as an lvalue (`:=` bind RHS, or a raw `\target` /
     /// `is rw` argument). Descends the nested array/hash through all (scalar)
     /// dimensions, promoting the leaf to a shared `ContainerRef` cell so a later
@@ -6842,7 +6858,7 @@ impl CompiledCode {
                     | OpCode::PreIncrementIndex(..)
                     | OpCode::PreDecrementIndex(..)
                     | OpCode::MultiDimIndexAssign { .. }
-                    | OpCode::MultiDimIndexAssignGeneric(_)
+                    | OpCode::MultiDimIndexAssignGeneric { .. }
                     | OpCode::CallFunc { .. }
                     | OpCode::CallFuncNamed { .. }
                     | OpCode::CallMethod { .. }

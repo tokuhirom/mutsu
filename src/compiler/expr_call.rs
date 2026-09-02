@@ -612,7 +612,11 @@ impl Compiler {
                     // `@a[i]` one. Without this arm the whole list assignment
                     // failed the target gate above and fell through to the
                     // runtime's "cannot assign through non-callable value".
-                    Expr::MultiDimIndex { target, dimensions } => {
+                    Expr::MultiDimIndex {
+                        target,
+                        dimensions,
+                        is_positional,
+                    } => {
                         let src_name = if seen_slurpy {
                             tmp_name.clone()
                         } else {
@@ -627,6 +631,7 @@ impl Compiler {
                             target: target.clone(),
                             dimensions: dimensions.clone(),
                             value: Box::new(rhs_item),
+                            is_positional: *is_positional,
                         });
                         self.code.emit(OpCode::Pop);
                         offset += 1;
@@ -1376,7 +1381,9 @@ impl Compiler {
                 });
             }
             // Multi-dim array element CAS: cas(@arr[d1;d2;...], $expected, $new)
-            else if let Expr::MultiDimIndex { target, dimensions } = &args[0]
+            else if let Expr::MultiDimIndex {
+                target, dimensions, ..
+            } = &args[0]
                 && let Some(arr_name) = match target.as_ref() {
                     Expr::ArrayVar(n) => Some(format!("@{}", n)),
                     Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
@@ -1571,7 +1578,9 @@ impl Compiler {
                     arity: 3,
                     arg_sources_idx: None,
                 });
-            } else if let Expr::MultiDimIndex { target, dimensions } = &args[0]
+            } else if let Expr::MultiDimIndex {
+                target, dimensions, ..
+            } = &args[0]
                 && let Some(arr_name) = match target.as_ref() {
                     Expr::ArrayVar(n) => Some(format!("@{}", n)),
                     Expr::Var(n) if n.starts_with('@') => Some(n.clone()),

@@ -928,6 +928,7 @@ impl Compiler {
         target: &Expr,
         dimensions: &[Expr],
         value: &Expr,
+        is_positional: bool,
     ) {
         if let Some(var_name) = Self::index_assign_target_name(target) {
             self.compile_expr(value);
@@ -938,6 +939,7 @@ impl Compiler {
             self.code.emit(OpCode::MultiDimIndexAssign {
                 name_idx,
                 ndims: dimensions.len() as u32,
+                is_positional,
             });
         } else {
             // Fallback: compile target, dims, value, use generic handler
@@ -946,8 +948,10 @@ impl Compiler {
                 self.compile_expr(dim);
             }
             self.compile_expr(value);
-            self.code
-                .emit(OpCode::MultiDimIndexAssignGeneric(dimensions.len() as u32));
+            self.code.emit(OpCode::MultiDimIndexAssignGeneric {
+                ndims: dimensions.len() as u32,
+                is_positional,
+            });
         }
     }
 

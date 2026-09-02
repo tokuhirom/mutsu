@@ -135,7 +135,9 @@ pub(super) fn mark_expr(expr: &mut Expr) {
             mark_expr(target);
             mark_value_leaf(index);
         }
-        Expr::MultiDimIndex { target, dimensions } => {
+        Expr::MultiDimIndex {
+            target, dimensions, ..
+        } => {
             mark_expr(target);
             for d in dimensions {
                 mark_value_leaf(d);
@@ -145,6 +147,7 @@ pub(super) fn mark_expr(expr: &mut Expr) {
             target,
             dimensions,
             value,
+            ..
         } => {
             mark_expr(target);
             for d in dimensions {

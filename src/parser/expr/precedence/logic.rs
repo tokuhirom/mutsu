@@ -488,12 +488,17 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 ],
             },
         )),
-        Expr::MultiDimIndex { target, dimensions } => Ok((
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => Ok((
             r,
             Expr::MultiDimIndexAssign {
                 target,
                 dimensions,
                 value: Box::new(rhs),
+                is_positional,
             },
         )),
         // `$::('name') = expr` in expression context (e.g. as a listop argument

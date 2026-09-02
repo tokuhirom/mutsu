@@ -130,7 +130,11 @@ pub(crate) fn build_compound_assign_expr(
         // `@lanes[$x;$y] +^= @D[$x]` died with "Cannot modify an immutable
         // value" (Digest::SHA3's `KeccakF1600`) even though the plain
         // `@a[$x;$y] = v` form has always worked.
-        Expr::MultiDimIndex { target, dimensions } => {
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => {
             // Bind each dimension to a temp so a side-effecting subscript
             // (`@a[$i++; f()] += 1`) is evaluated exactly once, shared by the
             // read-back and the write — same reason as the single-index arm.
@@ -158,12 +162,14 @@ pub(crate) fn build_compound_assign_expr(
             let read_back = Expr::MultiDimIndex {
                 target: target.clone(),
                 dimensions: tmp_dims.clone(),
+                is_positional,
             };
             let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
             body.push(Stmt::Expr(Expr::MultiDimIndexAssign {
                 target,
                 dimensions: tmp_dims,
                 value: Box::new(assigned_value),
+                is_positional,
             }));
             Expr::DoBlock { body, label: None }
         }

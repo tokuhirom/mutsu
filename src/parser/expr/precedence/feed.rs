@@ -112,10 +112,15 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             value: Box::new(source),
             is_positional,
         },
-        Expr::MultiDimIndex { target, dimensions } => Expr::MultiDimIndexAssign {
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => Expr::MultiDimIndexAssign {
             target,
             dimensions,
             value: Box::new(source),
+            is_positional,
         },
         Expr::Call { name, mut args } => {
             args.push(source);
