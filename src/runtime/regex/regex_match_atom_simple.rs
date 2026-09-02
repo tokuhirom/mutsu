@@ -5,6 +5,7 @@ use super::regex_helpers::{
     grapheme_end, is_word_char, matches_named_builtin,
 };
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
+use crate::runtime::regex_parse::RegexParseMode;
 
 impl Interpreter {
     #[allow(dead_code)]
@@ -748,13 +749,12 @@ impl Interpreter {
                             // Fallback: try resolving as a grammar token in the current package.
                             // This runs once per character checked against the class, so use the
                             // cheap STATIC resolver (pattern extracted straight from the token def)
-                            // rather than the heavy `with_args` path, which builds a fresh scratch
-                            // `Interpreter` per call — catastrophic here (profiled ~20% of a grammar
-                            // parse: `token name { <-restricted>+ }` resolved `restricted` per char).
+                            // rather than the heavy `with_args` path. Match against the remaining
+                            // input, not a one-character scratch string: a token excluded from a
+                            // class may itself consume multiple characters.
                             // A non-literal token body is not statically extractable, so fall back to
                             // evaluating it (empty args) only when the static resolver finds nothing.
                             if !pkg.is_empty() {
-                                let char_str = effective_c.to_string();
                                 let mut candidates =
                                     self.resolve_token_patterns_static_in_pkg(n, pkg);
                                 if candidates.is_empty() {
@@ -763,10 +763,13 @@ impl Interpreter {
                                 }
                                 for (sub_pat, sub_pkg, _sym_key) in &candidates {
                                     if self
-                                        .regex_match_len_at_start_in_pkg(
-                                            sub_pat, &char_str, sub_pkg,
-                                        )
-                                        .is_some_and(|len| len > 0)
+                                        .parse_regex_uncached(sub_pat, RegexParseMode::Match)
+                                        .and_then(|pattern| {
+                                            self.regex_match_end_from_caps_in_pkg(
+                                                &pattern, chars, pos, sub_pkg,
+                                            )
+                                        })
+                                        .is_some_and(|(end, _)| end > pos)
                                     {
                                         return true;
                                     }
