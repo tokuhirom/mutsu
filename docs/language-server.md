@@ -65,9 +65,26 @@ Today the server reports:
   `parse_program_partial` to grow positions and errors first (S3).
 - **Parse warnings**, at line granularity — sink-context warnings, VCS conflict
   markers, and the rest of what the parser collects while reading a unit.
+- **Calls to routines mutsu does not have** (`code: "UndeclaredRoutine"`), with
+  the replacement mutsu already computes: `sub greeting() { }; greetng()`
+  answers "Did you mean 'greeting'?". This is the D4 signal — a core routine
+  rakudo has and mutsu lacks reports exactly as a typo does, which is the point.
+  It is mutsu's own CHECK-time `X::Undeclared::Symbols` scan, and it inherits
+  that scan's contract: declarations are collected scope-blind across the unit,
+  and a unit that imports names the walker cannot see through is abandoned
+  rather than second-guessed, so a missed construct is a false negative and
+  never a false positive. No `Interpreter` is constructed for it.
 - **A parser crash, as a diagnostic**, phrased as a mutsu bug rather than a
   syntax error. `mutsu::analysis::check` catches the panic; a resident server
   cannot die on one bad document.
+
+Unknown *method* names are not reported. `$x.foo` cannot be judged without
+knowing what `$x` is, and mutsu's AST carries no type information — the same
+reason it carries no positions. The existing `(owner, name)` catalog
+(`src/builtins/native_method_row.rs`) cannot stand in for that: it is
+deliberately conservative, so absence from it means "unclassified", not "mutsu
+does not have it", and reporting absence as a defect would be a false positive.
+See the ADR's S2 findings.
 
 A parse failure inside a `use`d module is anchored at line 1 of the *open*
 document and names the other file in its message. Reporting that module's
@@ -109,6 +126,7 @@ which has no column, covers the whole line.
 | File | What lives there |
 | --- | --- |
 | `src/analysis.rs` (in `mutsu`) | The non-executing frontend: `check(source) -> Vec<Diagnostic>`. The only entry point in the interpreter that parses a document and keeps nothing but what it learned. |
+| `src/runtime/undeclared_routines.rs` (in `mutsu`) | The CHECK-time undeclared-routine walker, shared by the interpreter and the frontend. `check_undeclared_routines_without_interpreter` is the frontend's entry point; the static name predicates live in one function so the two paths cannot drift. |
 | `crates/mutsu-lsp/src/server.rs` | The protocol loop: capabilities, document sync, diagnostic publication, shutdown. |
 | `crates/mutsu-lsp/src/positions.rs` | mutsu positions to LSP positions. |
 | `crates/mutsu-lsp/src/diagnostics.rs` | `mutsu::analysis::Diagnostic` to `lsp_types::Diagnostic`. |

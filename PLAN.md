@@ -81,13 +81,14 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 
 - [ ] **Language server** — designed in [docs/adr/0065-language-server-targets-ai-agents.md](docs/adr/0065-language-server-targets-ai-agents.md)
       (an AI agent is the primary consumer, so only the methods an agent consumes are implemented,
-      and "does mutsu support this?" is a first-class diagnostic). **S0 (viability gate) and S1
-      (server skeleton + diagnostics) are done** — `crates/mutsu-lsp/`, `src/analysis.rs`,
-      [docs/language-server.md](docs/language-server.md). Next is **S2: make mutsu's built-in
-      method/routine names enumerable from one source, so "mutsu does not implement this" becomes a
-      first-class diagnostic (D4)** — the capability unique to mutsu, and it depends on no span
-      work. Then S3 (multiple diagnostics + recovery), S4 (symbols/definition), S5
-      (references/hover).
+      and "does mutsu support this?" is a first-class diagnostic). **S0 (viability gate), S1 (server
+      skeleton + diagnostics) and S2's routine half are done** — `crates/mutsu-lsp/`,
+      `src/analysis.rs`, [docs/language-server.md](docs/language-server.md). Next is **S3: multiple
+      diagnostics per document — give `parse_program_partial` positions and errors** (today a
+      document reports only its first parse failure). Then S4 (symbols/definition), S5
+      (references/hover). **S2's method half is deferred with a real design question**: `$x.foo`
+      needs the receiver type, which the AST does not carry, and the existing `(owner, name)`
+      catalog is conservative in the false-positive direction — see the ADR's S2 findings.
 - [ ] Debugger.
 - [ ] Native binary output.
 

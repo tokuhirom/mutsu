@@ -73,6 +73,29 @@ mod tests {
         assert_eq!(diagnostics[0].range.start.line, 1);
     }
 
+    /// ADR-0065 D4, the capability unique to a server built on the target
+    /// runtime: a name mutsu does not have is reported as such, and carries the
+    /// replacement mutsu already knows about.
+    #[test]
+    fn a_routine_mutsu_does_not_have_is_reported_with_its_own_code() {
+        let text = "sub greeting() { 1 }\nsay greetng();\n";
+        let diagnostics = diagnostics_for(text);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+        let d = &diagnostics[0];
+        assert_eq!(d.severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(
+            d.code,
+            Some(NumberOrString::String("UndeclaredRoutine".to_string())),
+            "a consumer keying on the code must be able to tell this from a syntax error"
+        );
+        assert_eq!(d.range.start.line, 1, "0-based line of the call");
+        assert!(
+            d.message.contains("greetng") && d.message.contains("greeting"),
+            "the diagnostic must name the unknown routine and the replacement: {:?}",
+            d.message
+        );
+    }
+
     #[test]
     fn a_document_that_crashes_the_parser_is_reported_not_propagated() {
         // Whatever input does this, if any does, must come back as a

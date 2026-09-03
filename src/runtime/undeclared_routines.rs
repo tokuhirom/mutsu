@@ -92,6 +92,12 @@ pub(crate) const PHASER_SUGGESTION_NAMES: &[&str] = &[
 #[derive(Default)]
 struct Scan {
     declared: HashSet<String>,
+    /// The subset of `declared` that is a *routine* declaration (`sub`, `multi
+    /// sub`). `declared` deliberately also absorbs variables and types, because
+    /// suppressing a call on any of them is the safe direction — but a
+    /// suggestion drawn from it would propose a variable as the routine the
+    /// user meant, which rakudo never does. Suggestions read this instead.
+    declared_routines: HashSet<String>,
     calls: Vec<(String, i64)>,
     line: i64,
     /// The unit imports names the walker cannot see (use/require/...): skip
@@ -99,13 +105,27 @@ struct Scan {
     bail: bool,
 }
 
+/// A declared name with its sigil and twigil removed.
+fn bare_name(name: &str) -> &str {
+    let bare = name.strip_prefix('\\').unwrap_or(name);
+    bare.strip_prefix(['$', '@', '%', '&'])
+        .unwrap_or(bare)
+        .trim_start_matches(['!', '.', '*', '^', ':'])
+}
+
 impl Scan {
+    /// Record a routine declaration: both a suppressor (like any other name)
+    /// and a suggestion candidate.
+    fn declare_routine(&mut self, name: &str) {
+        self.declare(name);
+        let bare = bare_name(name);
+        if !bare.is_empty() {
+            self.declared_routines.insert(bare.to_string());
+        }
+    }
+
     fn declare(&mut self, name: &str) {
-        let bare = name.strip_prefix('\\').unwrap_or(name);
-        let bare = bare
-            .strip_prefix(['$', '@', '%', '&'])
-            .unwrap_or(bare)
-            .trim_start_matches(['!', '.', '*', '^', ':']);
+        let bare = bare_name(name);
         if bare.is_empty() {
             return;
         }
@@ -229,7 +249,7 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
                 scan.bail = true;
                 return;
             }
-            scan.declare(&name.resolve());
+            scan.declare_routine(&name.resolve());
             walk_params(params, param_defs, scan);
             for (alt_params, alt_defs) in signature_alternates {
                 walk_params(alt_params, alt_defs, scan);
@@ -627,6 +647,84 @@ fn walk_expr(expr: &Expr, scan: &mut Scan) {
     }
 }
 
+/// Whether `name` is a routine mutsu knows about from *static* tables alone —
+/// the compilation unit's own declarations, the built-in and Test routine
+/// name lists, the native type-name coercions, the compiler's special call
+/// names, and whatever the parser harvested from this unit's imports.
+///
+/// Split out so the analysis frontend (`crate::analysis`, ADR-0065) can reach
+/// the same verdict without an `Interpreter`. Everything the *runtime* entry
+/// point additionally consults is per-interpreter registry state, which is
+/// empty in a freshly constructed one — so the two paths agree on any unit the
+/// frontend sees, and the one list of static predicates lives here rather than
+/// being duplicated and left to drift.
+fn known_without_an_interpreter(name: &str, declared: &HashSet<String>) -> bool {
+    declared.contains(name)
+        || Interpreter::is_builtin_function(name)
+        || Interpreter::is_test_function_name(name)
+        || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
+        || NATIVE_TYPE_NAMES.contains(&name)
+        || COMPILER_SPECIAL_CALL_NAMES.contains(&name)
+        || crate::parser::is_imported_function(name)
+}
+
+/// What the walker found: every call the static tables cannot explain, in
+/// source order, plus the unit's own routine declarations for suggestions.
+///
+/// `None` means the unit must not be judged at all — it imports names the
+/// walker cannot see through, so any verdict would risk a false positive.
+struct Unexplained {
+    calls: Vec<(String, i64)>,
+    declared_routines: HashSet<String>,
+}
+
+fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
+    let mut scan = Scan {
+        line: 1,
+        ..Default::default()
+    };
+    walk_stmts(stmts, &mut scan);
+    if scan.bail {
+        return None;
+    }
+    let calls = scan
+        .calls
+        .into_iter()
+        .filter(|(name, _)| !known_without_an_interpreter(name, &scan.declared))
+        .collect();
+    Some(Unexplained {
+        calls,
+        declared_routines: scan.declared_routines,
+    })
+}
+
+/// The CHECK-time undeclared-routine analysis, without constructing an
+/// `Interpreter`.
+///
+/// This is what a language server calls (ADR-0065 S2). Running the ordinary
+/// entry point against a *fresh* `Interpreter` would reach the same verdict —
+/// its extra lookups are all registry state a new interpreter has none of — but
+/// constructing one costs about 9 ms and retains roughly 7 KiB (measured on a
+/// debug build, 2026-09-03, `tests/long_lived_parse.rs`), which a resident
+/// process would pay on every keystroke. See
+/// `todo/perf/interpreter-new-is-expensive-and-retains-memory.md`.
+pub(crate) fn check_undeclared_routines_without_interpreter(
+    stmts: &[Stmt],
+) -> Result<(), RuntimeError> {
+    let Some(found) = unexplained_calls(stmts) else {
+        return Ok(());
+    };
+    let Some((name, line)) = found.calls.first() else {
+        return Ok(());
+    };
+    let suggestions = Interpreter::static_routine_suggestions(name, &found.declared_routines);
+    Err(Interpreter::undeclared_routine_error(
+        name,
+        *line,
+        suggestions,
+    ))
+}
+
 impl Interpreter {
     /// Build the X::Undeclared::Symbols error for an undeclared routine call,
     /// rakudo-style: `Undeclared routine:\n    <name> used at line <N>` plus
@@ -658,25 +756,15 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let mut scan = Scan {
-            line: 1,
-            ..Default::default()
-        };
-        walk_stmts(stmts, &mut scan);
-        if scan.bail {
+        let Some(found) = unexplained_calls(stmts) else {
             return Ok(());
-        }
-        for (name, line) in &scan.calls {
-            if scan.declared.contains(name)
-                || self.has_function(name)
+        };
+        for (name, line) in &found.calls {
+            // Everything beyond the static tables is per-interpreter registry
+            // state, which is why the analysis frontend can skip it entirely.
+            if self.has_function(name)
                 || self.has_multi_function(name)
                 || self.has_proto(name)
-                || Self::is_builtin_function(name)
-                || Self::is_test_function_name(name)
-                || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name.as_str())
-                || NATIVE_TYPE_NAMES.contains(&name.as_str())
-                || COMPILER_SPECIAL_CALL_NAMES.contains(&name.as_str())
-                || crate::parser::is_imported_function(name)
                 || self.env().contains_key(&format!("&{}", name))
                 || self.env().contains_key(name.as_str())
                 || self.get_our_var(name).is_some()
@@ -687,7 +775,12 @@ impl Interpreter {
             {
                 continue;
             }
-            let suggestions = self.suggest_routine_names(name);
+            // Rakudo suggests the unit's own routines, not just core ones:
+            // `sub greeting {}; greetng()` answers "Did you mean 'greeting'?".
+            // The interpreter's registry does not hold them at this point for
+            // every declaration form, and the walker has already collected
+            // them, so pass them along as extra candidates.
+            let suggestions = self.suggest_routine_names_including(name, &found.declared_routines);
             return Err(Self::undeclared_routine_error(name, *line, suggestions));
         }
         Ok(())
