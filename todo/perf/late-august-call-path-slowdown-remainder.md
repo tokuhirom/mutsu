@@ -115,9 +115,11 @@ locally. A fresh `bench-fib` profile now reads:
 **The biggest single remaining item is now `exec_call_func_op`'s two hash
 probes per call**, which is the subject of
 [ADR-0066](../../docs/adr/0066-call-dispatch-inline-cache.md) (Proposed). Read
-that before touching call dispatch: it also records the smaller, no-ADR-needed
-first step — putting `CompiledFns` values behind `Arc` — which on its own
-removes one of the two probes and makes the other cheap.
+that before touching call dispatch — including its "What step 1 actually
+measured" section, which records a prototyped-and-dropped shortcut (Arc-valued
+`CompiledFns`) and corrects the reasoning behind it: the cost is the two hash
+probes themselves, not the size of the map's values, because hashbrown's group
+scan reads the control-byte array and never touches a value.
 
 ## The rest, in rough order of size
 
