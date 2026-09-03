@@ -1332,7 +1332,7 @@ pub(crate) mod end_order {
     }
 }
 
-/// What a name in `pos_light_call_cache` resolves to.
+/// What a `(name, callsite package)` pair in `pos_light_call_cache` resolves to.
 ///
 /// Both variants denote a body that `is_positional_light_call_eligible` has
 /// already accepted for this name, so the hot `CallFunc` path can dispatch to
@@ -1350,12 +1350,10 @@ pub(crate) enum PosLightTarget {
     /// ultra-fast path: it hit `otf_call_cache` further down `exec_call_func_op`
     /// and re-derived the callsite analysis on every single call, which made a
     /// block-local sub 1.7x more expensive to call than an identical file-scope
-    /// one. `callsite_package` mirrors `otf_call_cache`'s package keying (the
-    /// same bare name means different routines in different packages).
-    Otf {
-        callsite_package: Symbol,
-        cf: Arc<CompiledFunction>,
-    },
+    /// one. The package half of the map key mirrors `otf_call_cache`'s package
+    /// keying (the same bare name means different routines in different
+    /// packages).
+    Otf { cf: Arc<CompiledFunction> },
 }
 
 pub struct Interpreter {
@@ -2878,8 +2876,13 @@ pub struct Interpreter {
     /// by its registration clone id (per-clone `state` in nested named subs).
     pub(crate) pending_nested_state_scope: Option<u64>,
     #[allow(clippy::type_complexity)]
+    /// Keyed by `(callee name, callsite package, arity, argument type names)`.
+    /// The package is part of the key because `resolve_function_with_types` is
+    /// package-sensitive: `PkgA::which` and `PkgB::which` are different
+    /// routines reached by the same bare name, and a package-blind key let
+    /// whichever package called first answer for both.
     pub(crate) fn_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, usize, Vec<String>), (Symbol, u64, String)>,
+        rustc_hash::FxHashMap<(Symbol, Symbol, usize, Vec<String>), (Symbol, u64, String)>,
     pub(crate) fn_resolve_gen: u64,
     pub(crate) fn_resolve_cache_gen: u64,
     pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
@@ -2913,9 +2916,14 @@ pub struct Interpreter {
     /// `fn_resolve_gen` like `multi_candidates_cache`.
     pub(crate) fn_base_name_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) fn_base_name_cache_gen: u64,
-    pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
+    /// Keyed by `(callee name, callsite package)` for the same reason as
+    /// [`Self::pos_light_call_cache`] below.
+    pub(crate) light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), (Symbol, u64)>,
     pub(crate) light_call_cache_gen: u64,
-    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, PosLightTarget>,
+    /// Keyed by `(callee name, callsite package)`: the same bare name means
+    /// different routines in two packages (`PkgA::which` vs `PkgB::which`), and
+    /// a name-only key made whichever package called first answer for both.
+    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), PosLightTarget>,
     pub(crate) pos_light_call_cache_gen: u64,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
@@ -3206,6 +3214,19 @@ pub struct Interpreter {
     /// around each pull, so nested pulls compare against their own entry.
     pub(crate) lazy_pull_entry_call_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
+    /// Direct-mapped call-dispatch cache (ADR-0066): what each callee name last
+    /// resolved to, so a repeat call skips both hash probes the name-keyed path
+    /// pays (`pos_light_call_cache`, then `compiled_fns`) — together about 60%
+    /// of `exec_call_func_op`'s self time on a call-dominated program. Inline
+    /// in the interpreter and indexed by a mask, so a lookup is one dependent
+    /// load; per-interpreter (hence per-thread), so the entries need no
+    /// synchronisation.
+    pub(crate) call_ic: [crate::opcode::CallIcSlot; crate::opcode::CALL_IC_WAYS],
+    /// Version stamp every filled [`Self::call_ic`] slot carries. Bumped on any
+    /// change to `pos_light_call_cache` (insert or the generation clear), which
+    /// makes a slot's validity exactly "the name-keyed cache has not moved
+    /// since I read it" — the property that lets the slot stand in for it.
+    pub(crate) pos_light_ic_epoch: u64,
 }
 
 /// Metadata stored per custom type created by Metamodel::Primitives.

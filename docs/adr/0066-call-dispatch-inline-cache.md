@@ -1,6 +1,6 @@
 # ADR-0066: Call dispatch should resolve through a per-callsite inline cache, not a name-keyed hash map
 
-- Status: **Proposed**
+- Status: **Accepted** (implemented 2026-09-03)
 - Date: 2026-09-03
 - Related: [ADR-0004](0004-jit-strategy.md) (J4d light-call caches),
   [ADR-0006](0006-baseline-interpreter-optimizations.md) (baseline interpreter
@@ -37,9 +37,19 @@ symbol twice each time.
 This is the classic case for a *monomorphic inline cache*: cache the resolved
 target **at the call site**, not in a global map keyed by name.
 
-## Decision (proposed)
+## Decision
 
-Add a per-callsite inline cache to the call opcodes.
+Resolve a repeat call from a cache the dispatcher can read without hashing,
+instead of from two name-keyed hash probes.
+
+The mechanics proposed below were superseded during implementation — the
+per-callsite addressing they describe was built, measured, and found no faster
+than the probes it replaced. **Read "What was actually built" for the shipped
+design**; this section is kept because the reasoning that follows it (and the
+"Why the existing fingerprint check cannot simply be dropped" section) is what
+the shipped design had to satisfy.
+
+Original proposal — add a per-callsite inline cache to the call opcodes:
 
 1. `OpCode::CallFunc` (and `CallFuncNamed`, and later `CallMethod`) gains a
    `cache_idx: u32`, assigned by the compiler — one slot per call site in a
@@ -137,6 +147,13 @@ strengthen the name-keyed one, and it is the reason step 4 of the decision says
 the cached target must be a handle plus enough identity to prove it belongs
 here.
 
+*As built, the constraint is discharged more directly than by either route:*
+the table itself now carries a version token, so the slot proves it is holding
+the right unit's body by comparing one `u64` rather than by re-deriving the body
+from a key. See "What was actually built" below. The reasoning above still
+explains why the check cannot simply be deleted — only what replaced it
+changed.
+
 ## Alternatives considered
 
 - **Do nothing.** The two probes are ~14% of a call-dominated benchmark and
@@ -152,19 +169,147 @@ here.
   megamorphic site simply keeps falling back to the current path, which is
   what it does today anyway.
 
+## What was actually built
+
+The decision's *goal* stands — the two hash probes are gone from a repeat call —
+but the structure that replaced them is not the per-callsite one this ADR
+proposed, because that structure was built, measured, and found to be no faster
+than the probes. Both the shipped design and the discarded one are recorded
+here.
+
+**1. Per-callsite addressing was built first, and it did not pay.** A call site
+was identified by its opcode index (which both the interpreter dispatch arm and
+the JIT's `call_func` shim already have, so no `OpCode` field and no compiler
+change was needed), a lazily-built `OnceLock` side table on `CompiledCode`
+mapped that index to a slot number, and the slots lived in a `Vec` on the
+`Interpreter`. It worked — on `benchmarks/fib.raku` the name-keyed cache was
+consulted twice in 242,785 calls and the inline cache answered the rest — and it
+**removed no retired instructions at all** (+0.07%).
+
+The reason is the one thing the ADR did not account for: *what the two probes
+cost is their dependent loads*, not their instruction count. A SwissTable probe
+is only about 15 instructions. Reaching a per-callsite slot through
+`OnceLock` → side table → index array → slot vector → slot is five dependent
+loads, which is what two probes cost. Trading a hash for an equally long pointer
+chase buys nothing.
+
+**2. What shipped is direct-mapped and inline in the interpreter.** The cache is
+a fixed 128-way `[CallIcSlot; N]` array *embedded in the `Interpreter`*, indexed
+by `name_sym.id() & (N - 1)`. A lookup is one masked load of a 32-byte entry —
+one dependent load — and four integer comparisons against tokens that all live
+in that same entry. Nothing is per-chunk, so `CompiledCode`, `OpCode`, the
+compiler and the opcode-index threading are all untouched. Colliding names
+evict each other, which costs a miss and nothing else.
+
+The ADR rejected an "interpreter-side cache" on the grounds that it "is itself a
+hash lookup". A direct-mapped array is not: there is no hashing, no probe
+sequence, and no bucket comparison — the mask *is* the lookup.
+
+**3. Validity is a version token on the table, not an `Arc` handle.** The ADR
+rejected caching a raw `*const CompiledFunction` because "any insertion that
+grows or rehashes the map invalidates every such pointer". That objection is
+answered by making the invalidation observable: `CompiledFns` is now a newtype
+over the map carrying an `id` drawn from a process-global counter and **re-drawn
+on every mutation**. Ids are never reused, so a single `u64` comparison proves
+both halves of what the pointer needs — that the table in hand is the very table
+the address came from, and that it has not been mutated since. That is strictly
+stronger than the fingerprint re-check it replaces (which proved neither), and
+it costs a compare instead of a probe. `id() == 0` marks a table that has never
+been mutated — the state of the several empty scratch tables the dispatch paths
+build — and can never validate an entry.
+
+An entry therefore carries four tokens: the epoch (below), the table id, the
+callee name, and the package the call ran under.
+
+**4. The name-keyed cache it memoises got an epoch.** `pos_light_call_cache` is
+still filled by the slow path; the dispatch cache is a memo of its answer, valid
+exactly while that cache has not moved. One counter, bumped on every insert and
+on the generation clear, expresses that — so the new cache adds no invalidation
+surface of its own. Everything that already retired the name-keyed cache
+(`fn_resolve_gen`, and thus `require`, module load, `EVAL`, class-body
+registration, `wrap`) retires the dispatch cache with it.
+
+## The bug this uncovered: the name-keyed caches were package-blind
+
+Writing the ADR's own adversarial case — "a call site reached from two different
+packages" — found a live, pre-existing wrong answer:
+
+```raku
+module PkgA { our sub which() { 'A' }; our sub probe() { which() } }
+module PkgB { our sub which() { 'B' }; our sub probe() { which() } }
+say PkgB::probe();  # B
+say PkgA::probe();  # B  -- rakudo says A
+```
+
+`which` is a *different routine* in each package, and the full resolver
+(`resolve_function_with_types`) knows that — it reads `current_package`. But
+three caches in front of it did not: `fn_resolve_cache` (keyed by name, arity
+and argument types), `light_call_cache` and `pos_light_call_cache` (keyed by
+name). Whichever package called a given bare name first therefore answered for
+every other package, in both directions, for the rest of the run. All three are
+now keyed by `(name, callsite package)`, which is the key their *contents*
+already assumed — `PosLightTarget::Otf` had been carrying a `callsite_package`
+field and checking it by hand, and that field is now redundant with the key and
+gone. Pinned by `t/call-inline-cache.t`.
+
+## Measured
+
+Retired instructions are the primary result. Cycles measured **across two
+builds** cannot support a conclusion at this effect size on this box: the same
+source built twice differs by more than the change is worth (the shipped
+binary's own IC-disabled run of `fib` was 151.3 Mcycles against the baseline
+binary's 141.9 — 6.6% apart with identical semantics, and a cross-build A/B of
+this change reported anywhere from −1.5% to +3.1% depending on which pair of
+builds was compared, `codegen-units=1` included).
+
+So the cycle figures below come from a **same-binary** A/B: one build carrying a
+temporary `MUTSU_CALL_IC=0` switch that skips the cache lookup, alternated
+against itself. That holds codegen, inlining and layout exactly fixed and leaves
+only the cache's own effect. (The switch was removed before merge.) Nine
+alternating pairs, P-core pinned, medians:
+
+| benchmark | instructions | cycles |
+| --- | ---: | ---: |
+| `fib` | −2.8% | −2.9% |
+| `bench-fib` | −2.8% | −2.5% |
+| `bench-tak` | −1.5% | −1.4% |
+| `method-call` | ~0 | ~0 |
+| `bench-class` | ~0 | ~0 |
+
+Instructions and cycles move together, which is the shape to expect from work
+that is simply removed. `method-call` and `bench-class` are unmoved because they
+dispatch through the method path, which this cache does not serve yet.
+
+Within the dispatcher, `exec_call_func_op` falls from 15.9% to 7.1% of a
+`bench-fib` profile.
+
+## Still open
+
+- The **named** light-call path (`light_call_cache`) and `CallMethod` still pay
+  two probes each. `CallMethod` is why `method-call` and `bench-class` show
+  nothing here, and is the obvious next consumer of the same table.
+- The cache is monomorphic per name. A megamorphic name evicts itself and falls
+  back to today's path, which is what it does now anyway.
+
 ## Consequences
 
-- The compiler must allocate and thread `cache_idx` through every call-opcode
-  emission site, and `CompiledCode::finalize` must size the side table.
-- Hand-built chunks (the ones that already skip `finalize`'s `locals_sym`
-  pre-interning) must degrade gracefully — an absent or short table means "no
-  cache", exactly as `const_sym` already handles a short slot table.
-- Cache validity becomes a correctness surface. Every mechanism that can
-  change what a name resolves to must invalidate: `fn_resolve_gen` covers
-  registration/`require`/module load today, and the fingerprint check covers
-  a same-key body swap. Anything that changes resolution *without* touching
-  either would be a live bug — the ADR's main risk, and the reason the
-  validation plan below is not optional.
+- Cache validity is a correctness surface. Every mechanism that can change what
+  a name resolves to must invalidate: `fn_resolve_gen` covers
+  registration/`require`/module load/`wrap`, and the table's `id` covers a body
+  swap or a different compilation unit. Anything that changes resolution
+  *without* touching either would be a live bug — the ADR's main risk, and the
+  reason the validation plan below is not optional.
+- `CompiledFns` no longer implements `DerefMut`. Every mutating entry point
+  lives on the newtype and re-draws the `id`; adding one that does not would
+  silently leave stale addresses validating. There are few (`insert`, `retain`,
+  `extend`) and they are all compile-time paths.
+- The dispatch cache holds raw addresses into a table it does not own, read
+  through `unsafe`. The invariant is documented at both the `CompiledFns` type
+  and the read site, and it is a *single* condition — `id` equality — rather
+  than a set of conditions a future change could partially break.
+- The shipped design needs nothing from the compiler or from `OpCode`, so the
+  original consequences about threading `cache_idx` and sizing a per-chunk side
+  table do not apply.
 
 ## Validation plan
 

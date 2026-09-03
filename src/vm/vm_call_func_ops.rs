@@ -2,6 +2,86 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Record a name-keyed positional-light target, retiring every filled
+    /// dispatch-cache entry that memoised the old table (ADR-0066).
+    #[inline]
+    pub(crate) fn pos_light_cache_insert(
+        &mut self,
+        name: Symbol,
+        pkg: Symbol,
+        target: crate::runtime::PosLightTarget,
+    ) {
+        self.bump_pos_light_ic_epoch();
+        self.pos_light_call_cache.insert((name, pkg), target);
+    }
+
+    /// Retire every filled dispatch-cache entry. Cheap: the entries carry the
+    /// epoch, so advancing it invalidates them all without touching the table.
+    #[inline]
+    pub(crate) fn bump_pos_light_ic_epoch(&mut self) {
+        // 0 is the "empty entry" marker, so never land on it.
+        self.pos_light_ic_epoch = match self.pos_light_ic_epoch.wrapping_add(1) {
+            0 => 1,
+            e => e,
+        };
+    }
+
+    /// The `CompiledFunction` address this name last resolved to, when all four
+    /// validity tokens still agree (see `CallIcSlot`).
+    #[inline]
+    fn call_ic_hit(
+        &self,
+        name_sym: Symbol,
+        pkg_sym: Symbol,
+        fns_id: u64,
+    ) -> Option<*const CompiledFunction> {
+        // Masked index: in bounds by construction, so no bounds check survives.
+        let slot = &self.call_ic[crate::opcode::CallIcSlot::way(name_sym)];
+        if slot.epoch == self.pos_light_ic_epoch
+            && slot.fns_id == fns_id
+            && slot.name == name_sym.id()
+            && slot.pkg == pkg_sym.id()
+        {
+            Some(slot.target as *const CompiledFunction)
+        } else {
+            None
+        }
+    }
+
+    /// Bind a cached target's lifetime to the table that vouches for it.
+    ///
+    /// # Safety
+    /// `ptr` must have been taken from `fns` while `fns.id()` had the value the
+    /// caller compared against, and `fns` must not have been mutated since.
+    #[inline]
+    unsafe fn ic_target(_fns: &CompiledFns, ptr: *const CompiledFunction) -> &CompiledFunction {
+        unsafe { &*ptr }
+    }
+
+    /// Remember what this name resolved to, for the current epoch.
+    #[inline]
+    fn call_ic_fill(
+        &mut self,
+        name_sym: Symbol,
+        pkg_sym: Symbol,
+        fns_id: u64,
+        target: &CompiledFunction,
+    ) {
+        // A table that has never been mutated has no identity to vouch for the
+        // address (id 0 is shared by every empty scratch table), so it cannot
+        // be cached. In practice such a table has nothing to resolve either.
+        if fns_id == 0 {
+            return;
+        }
+        self.call_ic[crate::opcode::CallIcSlot::way(name_sym)] = crate::opcode::CallIcSlot {
+            epoch: self.pos_light_ic_epoch,
+            fns_id,
+            target: target as *const CompiledFunction as usize,
+            name: name_sym.id(),
+            pkg: pkg_sym.id(),
+        };
+    }
+
     /// ADR-0024: `mainline_lexical_frame_active` (the read/write resolver for
     /// a mainline named sub's captured free variables) keys off the LAST
     /// `routine_stack` frame. This predicate predates ADR-0037 Slice 1, which
@@ -205,7 +285,9 @@ impl Interpreter {
                     .contains(&code.const_sym(name_idx)))
         {
             let name_sym = code.const_sym(name_idx);
-            if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
+            let cur_pkg_sym = self.current_package_sym();
+            if let Some((cached_key, cached_fp)) =
+                self.light_call_cache.get(&(name_sym, cur_pkg_sym))
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
@@ -403,26 +485,50 @@ impl Interpreter {
                 // `compiled_fns`, so take an `Arc` handle to it and let the
                 // borrow on `self` end before the call below.
                 let mut otf_hold: Option<Arc<CompiledFunction>> = None;
+                // ADR-0066: ask the direct-mapped dispatch cache first. A hit
+                // answers exactly what the two hash probes below would have —
+                // the name-keyed `pos_light_call_cache`, then `compiled_fns` —
+                // in one masked load and four integer comparisons, with no
+                // hashing at all. Those two probes are ~60% of this function's
+                // self time on a call-dominated program, and the cost is their
+                // dependent loads, so the replacement has to be one load: an
+                // earlier per-callsite design that reached its slots through a
+                // chunk-side index table measured no better than the probes.
+                let fns_id = compiled_fns.id();
                 let cur_pkg_sym = self.current_package_sym();
-                let cached: Option<&CompiledFunction> =
-                    match self.pos_light_call_cache.get(&name_sym) {
+                let mut cached: Option<&CompiledFunction> = self
+                    .call_ic_hit(name_sym, cur_pkg_sym, fns_id)
+                    // SAFETY: `call_ic_hit` yields the address only when the
+                    // slot's `fns_id` equals this table's — which proves both
+                    // that `compiled_fns` IS the table the address was taken
+                    // from (ids come from a global counter and are never
+                    // reused) and that it has not been mutated since (every
+                    // mutating entry point re-draws the id), so no rehash can
+                    // have moved the value. The referent therefore lives at
+                    // that address for as long as the borrow of the table.
+                    .map(|p| unsafe { Self::ic_target(compiled_fns, p) });
+                if cached.is_none() {
+                    cached = match self.pos_light_call_cache.get(&(name_sym, cur_pkg_sym)) {
                         Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
                             let (key, fingerprint) = (*key, *fingerprint);
                             compiled_fns
                                 .get(&key)
                                 .filter(|cf| cf.fingerprint == fingerprint)
                         }
-                        Some(crate::runtime::PosLightTarget::Otf {
-                            callsite_package,
-                            cf,
-                        }) => {
-                            if *callsite_package == cur_pkg_sym {
-                                otf_hold = Some(Arc::clone(cf));
-                            }
+                        Some(crate::runtime::PosLightTarget::Otf { cf }) => {
+                            otf_hold = Some(Arc::clone(cf));
                             None
                         }
                         None => None,
                     };
+                    // Only an ahead-of-time body is cached: an OTF body is
+                    // owned by the name-keyed cache (not by `compiled_fns`),
+                    // so it has no address this slot's `fns_id` could vouch
+                    // for, and it already skips the second probe anyway.
+                    if let Some(cf) = cached {
+                        self.call_ic_fill(name_sym, cur_pkg_sym, fns_id, cf);
+                    }
+                }
                 if let Some(cf) = cached.or(otf_hold.as_deref()) {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize {
@@ -484,6 +590,7 @@ impl Interpreter {
                 }
             } else {
                 self.pos_light_call_cache.clear();
+                self.bump_pos_light_ic_epoch();
                 self.pos_light_call_cache_gen = self.fn_resolve_gen;
             }
         }
@@ -492,7 +599,9 @@ impl Interpreter {
         if !skip_name_caches {
             let name_sym = code.const_sym(name_idx);
             if self.light_call_cache_gen == self.fn_resolve_gen {
-                if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
+                let cur_pkg_sym = self.current_package_sym();
+                if let Some((cached_key, cached_fp)) =
+                    self.light_call_cache.get(&(name_sym, cur_pkg_sym))
                     && let Some(cf) = compiled_fns.get(cached_key)
                     && cf.fingerprint == *cached_fp
                 {
@@ -661,10 +770,10 @@ impl Interpreter {
                             // `stack_args_have_slip` / the share checks above are
                             // per-CALL properties, and that path re-checks all of
                             // them in its own fused scan before dispatching.
-                            self.pos_light_call_cache.insert(
+                            self.pos_light_cache_insert(
                                 name_sym,
+                                cur_pkg_sym,
                                 crate::runtime::PosLightTarget::Otf {
-                                    callsite_package: cur_pkg_sym,
                                     cf: Arc::clone(&cf),
                                 },
                             );
@@ -759,7 +868,12 @@ impl Interpreter {
         if !has_lexical_override && arity <= 1 {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
-            let cache_key = (name_sym, 0usize, Vec::<String>::new());
+            let cache_key = (
+                name_sym,
+                self.current_package_sym(),
+                0usize,
+                Vec::<String>::new(),
+            );
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
                 && self.fn_resolve_cache_gen == self.fn_resolve_gen
@@ -1260,18 +1374,27 @@ impl Interpreter {
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     let name_sym = Symbol::intern(name);
-                    if !self.pos_light_call_cache.contains_key(&name_sym) {
-                        for (key, func) in compiled_fns {
+                    let cur_pkg_sym = self.current_package_sym();
+                    if !self
+                        .pos_light_call_cache
+                        .contains_key(&(name_sym, cur_pkg_sym))
+                    {
+                        let mut found: Option<Symbol> = None;
+                        for (key, func) in compiled_fns.iter() {
                             if std::ptr::eq(func, cf) {
-                                self.pos_light_call_cache.insert(
-                                    name_sym,
-                                    crate::runtime::PosLightTarget::Compiled {
-                                        key: *key,
-                                        fingerprint: cf.fingerprint,
-                                    },
-                                );
+                                found = Some(*key);
                                 break;
                             }
+                        }
+                        if let Some(key) = found {
+                            self.pos_light_cache_insert(
+                                name_sym,
+                                cur_pkg_sym,
+                                crate::runtime::PosLightTarget::Compiled {
+                                    key,
+                                    fingerprint: cf.fingerprint,
+                                },
+                            );
                         }
                     }
                     let result = self.call_compiled_function_positional_light(
@@ -1311,12 +1434,13 @@ impl Interpreter {
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let name_sym = Symbol::intern(name);
-                    if !self.light_call_cache.contains_key(&name_sym) {
+                    let cur_pkg_sym = self.current_package_sym();
+                    if !self.light_call_cache.contains_key(&(name_sym, cur_pkg_sym)) {
                         // Find the compiled_fns key for this function
-                        for (key, func) in compiled_fns {
+                        for (key, func) in compiled_fns.iter() {
                             if std::ptr::eq(func, cf) {
                                 self.light_call_cache
-                                    .insert(name_sym, (*key, cf.fingerprint));
+                                    .insert((name_sym, cur_pkg_sym), (*key, cf.fingerprint));
                                 break;
                             }
                         }

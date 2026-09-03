@@ -4464,6 +4464,56 @@ pub(crate) struct CompiledCode {
     pub(crate) jit: JitCodeState,
 }
 
+/// Number of ways in the direct-mapped call-dispatch cache (ADR-0066). A power
+/// of two so the index is a mask, and small enough that the whole table lives
+/// inline in the `Interpreter` — the point of the structure is that a lookup is
+/// ONE dependent load, which any pointer chase to reach the slots would undo.
+pub(crate) const CALL_IC_WAYS: usize = 128;
+
+/// One monomorphic call-dispatch cache entry (ADR-0066).
+///
+/// A filled entry records the `CompiledFunction` a callee name resolved to, as
+/// a raw address into the `CompiledFns` table it was resolved against. Four
+/// tokens, all in this one 32-byte line, have to agree before that address may
+/// be used again:
+///
+/// * `epoch` — `Interpreter::pos_light_ic_epoch`, bumped whenever the
+///   name-keyed `pos_light_call_cache` this entry memoises changes at all
+///   (including the wholesale clear that a `fn_resolve_gen` change triggers);
+/// * `fns_id` — [`CompiledFns::id`], which changes if the table in hand is a
+///   different one, or the same one after any mutation;
+/// * `name` and `pkg` — the callee symbol and the package the call ran under,
+///   which is the full key of the name-keyed cache. The table is direct-mapped
+///   on `name`, so two names that collide simply evict each other.
+#[derive(Clone, Copy, Default, Debug)]
+pub(crate) struct CallIcSlot {
+    /// 0 = empty; otherwise the `pos_light_ic_epoch` this entry was filled at.
+    pub(crate) epoch: u64,
+    pub(crate) fns_id: u64,
+    /// `*const CompiledFunction` into the table identified by `fns_id`.
+    pub(crate) target: usize,
+    /// `Symbol::id()` of the callee name this entry resolved.
+    pub(crate) name: u32,
+    /// `Symbol::id()` of the package the call ran under.
+    pub(crate) pkg: u32,
+}
+
+impl CallIcSlot {
+    pub(crate) const EMPTY: Self = Self {
+        epoch: 0,
+        fns_id: 0,
+        target: 0,
+        name: 0,
+        pkg: 0,
+    };
+
+    /// Which way of the table a callee name maps to.
+    #[inline]
+    pub(crate) fn way(name: crate::symbol::Symbol) -> usize {
+        (name.id() as usize) & (CALL_IC_WAYS - 1)
+    }
+}
+
 /// The per-local-slot attribute-key table of a chunk (see
 /// [`CompiledCode::local_attr_keys`]): one entry per slot, `Some((bare attribute
 /// `Symbol`, is_private))` for an attribute twigil and `None` otherwise.
@@ -7606,7 +7656,123 @@ impl CompiledCode {
 /// allocation). The slow resolution path probes candidate keys via
 /// `Symbol::lookup` (no interning of names that turn out not to exist), so a
 /// missed probe never grows the global symbol table.
-pub(crate) type CompiledFns = rustc_hash::FxHashMap<crate::symbol::Symbol, CompiledFunction>;
+pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, CompiledFunction>;
+
+/// The table itself, wrapped so that it carries a **version token** (`id`).
+///
+/// The token is what makes the per-callsite inline cache (ADR-0066) sound. A
+/// cache slot remembers the *address* of the `CompiledFunction` a call site
+/// resolved to, which is only meaningful while (a) the map in hand is the very
+/// same map instance the address was taken from, and (b) that map has not been
+/// mutated since (a rehash moves every value). One monotonically increasing
+/// `u64`, drawn from a process-global counter and re-drawn on every mutation,
+/// answers both: ids are never reused, so `fns.id() == slot.fns_id` proves both
+/// facts at once, in a single comparison and with no hashing.
+///
+/// `id() == 0` means "no identity yet" — the state of a freshly created, still
+/// empty table. It never compares equal to a filled slot, so an empty scratch
+/// table (`CompiledFns::default()`, of which the dispatch paths build several)
+/// can never be mistaken for the program's real table.
+///
+/// Reads go through `Deref` to the underlying map. Mutation deliberately does
+/// NOT (`DerefMut` is not implemented): every mutating entry point lives on
+/// this type and re-draws the token, so no mutation can silently leave a stale
+/// pointer validating.
+#[derive(Debug, Default)]
+pub(crate) struct CompiledFns {
+    map: CompiledFnMap,
+    id: u64,
+}
+
+impl CompiledFns {
+    /// The current version token; 0 for a table that has never been mutated.
+    #[inline]
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
+    fn next_id() -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn insert(&mut self, key: crate::symbol::Symbol, value: CompiledFunction) {
+        self.id = Self::next_id();
+        self.map.insert(key, value);
+    }
+
+    pub(crate) fn retain(
+        &mut self,
+        f: impl FnMut(&crate::symbol::Symbol, &mut CompiledFunction) -> bool,
+    ) {
+        self.id = Self::next_id();
+        self.map.retain(f);
+    }
+
+    pub(crate) fn into_values(self) -> impl Iterator<Item = CompiledFunction> {
+        self.map.into_values()
+    }
+}
+
+impl std::ops::Deref for CompiledFns {
+    type Target = CompiledFnMap;
+    #[inline]
+    fn deref(&self) -> &CompiledFnMap {
+        &self.map
+    }
+}
+
+impl Clone for CompiledFns {
+    fn clone(&self) -> Self {
+        // A clone is a different allocation, so it must not inherit the
+        // original's token (an inline-cache slot pointing into the original
+        // would otherwise validate against the copy).
+        Self {
+            map: self.map.clone(),
+            id: if self.map.is_empty() {
+                0
+            } else {
+                Self::next_id()
+            },
+        }
+    }
+}
+
+impl FromIterator<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
+    fn from_iter<T: IntoIterator<Item = (crate::symbol::Symbol, CompiledFunction)>>(
+        iter: T,
+    ) -> Self {
+        let map: CompiledFnMap = iter.into_iter().collect();
+        let id = if map.is_empty() { 0 } else { Self::next_id() };
+        Self { map, id }
+    }
+}
+
+impl Extend<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
+    fn extend<T: IntoIterator<Item = (crate::symbol::Symbol, CompiledFunction)>>(
+        &mut self,
+        iter: T,
+    ) {
+        self.id = Self::next_id();
+        self.map.extend(iter);
+    }
+}
+
+impl IntoIterator for CompiledFns {
+    type Item = (crate::symbol::Symbol, CompiledFunction);
+    type IntoIter = <CompiledFnMap as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CompiledFns {
+    type Item = (&'a crate::symbol::Symbol, &'a CompiledFunction);
+    type IntoIter = <&'a CompiledFnMap as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.iter()
+    }
+}
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
 /// call's stack values are named-arg values, and under which keys.
@@ -8085,5 +8251,108 @@ impl CompiledFunction {
                 Self::collect_param_names(sub_sig, declared);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compiled_fns_identity {
+    use super::*;
+
+    // The whole soundness argument for the dispatch cache (ADR-0066) rests on
+    // one property of this token: `fns.id() == slot.fns_id` implies `fns` is the
+    // very table the cached address was taken from AND that it has not been
+    // mutated since. These pin both halves.
+
+    fn dummy() -> CompiledFunction {
+        CompiledFunction {
+            code: CompiledCode::new(),
+            source_file: None,
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            return_type: None,
+            fingerprint: 1,
+            empty_sig: false,
+            is_rw: false,
+            is_cached: false,
+            is_raw: false,
+            param_local_slots: None,
+            has_inner_subs: false,
+            declares_inner_routines: false,
+            named_call_plan: None,
+            deprecated_info: None,
+            declared_locals: None,
+            param_name_syms: Vec::new(),
+            package: "GLOBAL".to_string(),
+            compiled_fns: None,
+            memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            package_sym_cache: std::sync::OnceLock::new(),
+            source_file_sym_cache: std::sync::OnceLock::new(),
+        }
+    }
+
+    #[test]
+    fn a_never_mutated_table_has_no_identity() {
+        // Several dispatch paths build an empty scratch table; none of them may
+        // ever validate a cached address, so they must all read as "no id".
+        assert_eq!(CompiledFns::default().id(), 0);
+        assert_eq!(CompiledFns::default().clone().id(), 0);
+        assert_eq!(CompiledFns::default().id(), CompiledFns::default().id());
+    }
+
+    #[test]
+    fn every_mutation_draws_a_fresh_id() {
+        let k = crate::symbol::Symbol::intern("f");
+        let mut fns = CompiledFns::default();
+        fns.insert(k, dummy());
+        let after_first = fns.id();
+        assert_ne!(after_first, 0, "a populated table has an identity");
+
+        // A second insert of the SAME key -- the body-swap case the fingerprint
+        // re-check used to cover -- must still retire cached addresses.
+        fns.insert(k, dummy());
+        assert_ne!(fns.id(), after_first, "insert re-draws the token");
+
+        let after_second = fns.id();
+        fns.extend(std::iter::empty());
+        assert_ne!(fns.id(), after_second, "extend re-draws the token");
+
+        let after_extend = fns.id();
+        fns.retain(|_, _| true);
+        assert_ne!(fns.id(), after_extend, "retain re-draws the token");
+    }
+
+    #[test]
+    fn a_clone_is_a_different_table() {
+        // A clone has its own storage, so an address into the original must not
+        // validate against it.
+        let mut fns = CompiledFns::default();
+        fns.insert(crate::symbol::Symbol::intern("g"), dummy());
+        let copy = fns.clone();
+        assert_ne!(copy.id(), fns.id());
+        assert_ne!(copy.id(), 0);
+    }
+
+    #[test]
+    fn ids_are_never_reused() {
+        // Uniqueness across the process is what rules out an ABA: a table that
+        // has been dropped can never have its id turn up on a live one.
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..64 {
+            let mut fns = CompiledFns::default();
+            fns.insert(crate::symbol::Symbol::intern("h"), dummy());
+            assert!(
+                seen.insert(fns.id()),
+                "id {} was handed out twice",
+                fns.id()
+            );
+        }
+    }
+
+    #[test]
+    fn cache_ways_are_a_power_of_two() {
+        // `CallIcSlot::way` masks instead of dividing, which is only an index if
+        // the table size is a power of two.
+        assert!(CALL_IC_WAYS.is_power_of_two());
+        assert!(CallIcSlot::way(crate::symbol::Symbol::intern("anything")) < CALL_IC_WAYS);
     }
 }

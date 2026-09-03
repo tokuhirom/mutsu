@@ -3077,6 +3077,8 @@ impl Interpreter {
             light_call_cache_gen: 0,
             pos_light_call_cache: Default::default(),
             pos_light_call_cache_gen: 0,
+            call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
+            pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),

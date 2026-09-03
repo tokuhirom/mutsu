@@ -35,7 +35,12 @@ impl Interpreter {
             .iter()
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
-        let cache_key = (name_sym, arity, type_sig.clone());
+        let cache_key = (
+            name_sym,
+            self.current_package_sym(),
+            arity,
+            type_sig.clone(),
+        );
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
         let use_cache = !self.has_multi_candidates_cached(name);
