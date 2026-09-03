@@ -620,6 +620,7 @@ impl Interpreter {
             );
             self.block_stack.push(sub_val);
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
+            let invocation_id = self.take_invocation_id();
             self.routine_stack.push(RoutineFrame {
                 package: def.package,
                 lexical_package: None,
@@ -630,7 +631,7 @@ impl Interpreter {
                 is_submethod: false,
                 is_block: false,
                 def_file: None,
-                invocation_id: crate::runtime::next_invocation_id(),
+                invocation_id,
             });
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.

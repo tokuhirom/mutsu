@@ -376,6 +376,7 @@ impl Interpreter {
                 .bind_function_args_values(&def.param_defs, &def.params, arg_values)
                 .is_ok()
             {
+                let invocation_id = interp.take_invocation_id();
                 interp.routine_stack.push(super::super::RoutineFrame {
                     package: def.package,
                     lexical_package: None,
@@ -386,7 +387,7 @@ impl Interpreter {
                     is_submethod: false,
                     is_block: false,
                     def_file: None,
-                    invocation_id: crate::runtime::next_invocation_id(),
+                    invocation_id,
                 });
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();

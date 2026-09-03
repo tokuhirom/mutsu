@@ -919,6 +919,9 @@ impl Interpreter {
             pos_light_call_cache: Default::default(),
             pos_light_call_cache_gen: 0,
             call_ic: [crate::opcode::CallIcSlot::EMPTY; crate::opcode::CALL_IC_WAYS],
+            // Equal, so the first call claims a block (see `take_invocation_id`).
+            next_invocation_id: 0,
+            invocation_id_block_end: 0,
             pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
             empty_sig_proto_names: std::collections::HashSet::new(),

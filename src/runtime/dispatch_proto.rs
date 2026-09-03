@@ -206,6 +206,7 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        let invocation_id = self.take_invocation_id();
         self.routine_stack.push(RoutineFrame {
             package: def.package,
             lexical_package: None,
@@ -216,7 +217,7 @@ impl Interpreter {
             is_submethod: false,
             is_block: false,
             def_file: None,
-            invocation_id: crate::runtime::next_invocation_id(),
+            invocation_id,
         });
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec(), None));

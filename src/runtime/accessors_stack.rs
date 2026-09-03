@@ -81,6 +81,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
+        let invocation_id = self.take_invocation_id();
         self.routine_stack.push(super::RoutineFrame {
             package,
             lexical_package: None,
@@ -91,7 +92,7 @@ impl Interpreter {
             is_submethod: false,
             is_block: false,
             def_file,
-            invocation_id: crate::runtime::next_invocation_id(),
+            invocation_id,
         });
     }
 
@@ -113,6 +114,7 @@ impl Interpreter {
         def_file: Option<Symbol>,
         is_submethod: bool,
     ) {
+        let invocation_id = self.take_invocation_id();
         self.routine_stack.push(super::RoutineFrame {
             package,
             lexical_package: Some(lexical_package),
@@ -123,7 +125,7 @@ impl Interpreter {
             is_submethod,
             is_block: false,
             def_file,
-            invocation_id: crate::runtime::next_invocation_id(),
+            invocation_id,
         });
     }
 
@@ -139,6 +141,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
     ) {
+        let invocation_id = self.take_invocation_id();
         self.routine_stack.push(super::RoutineFrame {
             package,
             lexical_package: None,
@@ -149,7 +152,7 @@ impl Interpreter {
             is_submethod: false,
             is_block: true,
             def_file,
-            invocation_id: crate::runtime::next_invocation_id(),
+            invocation_id,
         });
     }
 
@@ -400,6 +403,21 @@ impl Interpreter {
     /// The current package as an interned `Symbol`, read from the atomic mirror
     /// of `current_package`. Cheap enough (one relaxed load) for per-call use on
     /// the hot dispatch path, where `current_package()`'s `String` clone is not.
+    /// The next routine-invocation id (see `RoutineFrame::invocation_id`), taken
+    /// from this interpreter's claimed block. Refills from the process-global
+    /// block allocator only when the block runs out.
+    #[inline]
+    pub(crate) fn take_invocation_id(&mut self) -> u64 {
+        if self.next_invocation_id == self.invocation_id_block_end {
+            let base = crate::runtime::claim_invocation_id_block();
+            self.next_invocation_id = base;
+            self.invocation_id_block_end = base + crate::runtime::INVOCATION_ID_BLOCK;
+        }
+        let id = self.next_invocation_id;
+        self.next_invocation_id += 1;
+        id
+    }
+
     pub(crate) fn current_package_sym(&self) -> Symbol {
         Symbol::from_id(
             self.current_package_sym
