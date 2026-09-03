@@ -1098,11 +1098,11 @@ impl Interpreter {
             "No return arguments allowed when return value {} is already specified in the signature",
             spec.trim()
         );
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         err.set_code(Some(crate::value::RuntimeErrorCode::ParseGeneric));
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
-        attrs.insert("payload".to_string(), Value::str(message));
+        attrs.insert("payload".to_string(), Value::str(message.to_string()));
         // X::Comp::AdHoc does both X::Comp and X::AdHoc in rakudo, so this
         // satisfies both `~~ X::Comp` (misc2.t:326-329) and `~~ X::AdHoc`
         // (S06-signature/definite-return.t "even a Failure").

@@ -31,7 +31,7 @@ impl Interpreter {
                 Value::str(default_message.to_string()),
             );
             let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
-            let mut err = RuntimeError::new(default_message);
+            let mut err = RuntimeError::new(default_message.to_string());
             if is_fail {
                 err.control = Some(crate::value::Control::Fail);
             }
@@ -86,7 +86,7 @@ impl Interpreter {
             value.to_string_value()
         };
 
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         if is_fail {
             err.control = Some(crate::value::Control::Fail);
         }
@@ -108,7 +108,7 @@ impl Interpreter {
                 // Non-exception instance: wrap in X::AdHoc with payload
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("payload".to_string(), value);
-                attrs.insert("message".to_string(), Value::str(message));
+                attrs.insert("message".to_string(), Value::str(message.to_string()));
                 err.exception = Some(Box::new(Value::make_instance(
                     Symbol::intern("X::AdHoc"),
                     attrs,
@@ -118,7 +118,7 @@ impl Interpreter {
             // Non-instance value (Str, Int, etc.): wrap in X::AdHoc with payload
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("payload".to_string(), value);
-            attrs.insert("message".to_string(), Value::str(message));
+            attrs.insert("message".to_string(), Value::str(message.to_string()));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::AdHoc"),
                 attrs,

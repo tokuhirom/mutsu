@@ -495,7 +495,7 @@ impl Interpreter {
         // parse time by the statement-list unit-capture (see
         // `parser::stmt::stmtlist`), so no post-parse surgery is needed here.
         let mut stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
-            err.message = format!("Failed to parse module '{}': {}", module, err.message);
+            err.message = format!("Failed to parse module '{}': {}", module, err.message).into();
             // The parser's line/column above are relative to THIS module's own
             // source (`preprocessed`), not the entry-point script that
             // transitively `use`d it. Attach the module's own file and source

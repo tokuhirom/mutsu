@@ -7,7 +7,7 @@ impl Interpreter {
             .exception
             .as_ref()
             .map(|e| e.as_ref().clone())
-            .unwrap_or_else(|| Value::str(inner.message.clone()));
+            .unwrap_or_else(|| Value::str(inner.message.to_string()));
         let msg = format!(
             "An exception occurred while evaluating a CHECK\nException details:\n  {}",
             inner.message
@@ -906,7 +906,7 @@ impl Interpreter {
                         *ex.clone()
                     } else {
                         let mut attrs = std::collections::HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                        attrs.insert("message".to_string(), Value::str(e.message.to_string()));
                         Value::make_instance(crate::symbol::Symbol::intern("Exception"), attrs)
                     }
                 })

@@ -224,7 +224,7 @@ impl Interpreter {
                     .exception
                     .as_deref()
                     .cloned()
-                    .unwrap_or_else(|| Value::str(err.message.clone()));
+                    .unwrap_or_else(|| Value::str(err.message.to_string()));
                 // ADR-0031: the downstream tap's quit => handler for a
                 // whenever-subscribed source lives on the enclosing supply
                 // block's emitter (Decision A), not on this source's own

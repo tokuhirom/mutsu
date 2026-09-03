@@ -325,7 +325,7 @@ impl Interpreter {
                         }
                     }
                     Err(e) => {
-                        return Ok(io_exception_failure("X::IO::Spurt", e.message));
+                        return Ok(io_exception_failure("X::IO::Spurt", e.message.into_owned()));
                     }
                 }
             } else {
@@ -515,7 +515,7 @@ impl Interpreter {
                         _ => None,
                     })
                     .unwrap_or_else(|| "X::AdHoc".to_string());
-                Ok(io_exception_failure(&class_name, err.message))
+                Ok(io_exception_failure(&class_name, err.message.into_owned()))
             }
         }
     }

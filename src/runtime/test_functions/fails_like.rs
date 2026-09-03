@@ -24,7 +24,7 @@ impl Interpreter {
                 );
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("message".to_string(), Value::str(msg.clone()));
-                let mut err = RuntimeError::new(&msg);
+                let mut err = RuntimeError::new(msg.to_string());
                 err.exception = Some(Box::new(Value::make_instance(
                     Symbol::intern("X::Match::Bool"),
                     attrs,

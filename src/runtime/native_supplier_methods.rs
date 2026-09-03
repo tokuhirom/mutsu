@@ -137,11 +137,10 @@ impl Interpreter {
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers (e.g. die inside
                                     // a whenever body in a supply block).
-                                    let reason = err
-                                        .exception
-                                        .as_deref()
-                                        .cloned()
-                                        .unwrap_or_else(|| Value::str(err.message));
+                                    let reason =
+                                        err.exception.as_deref().cloned().unwrap_or_else(|| {
+                                            Value::str(err.message.into_owned())
+                                        });
                                     let quit_cbs = take_supplier_quit_callbacks(supplier_id);
                                     if !quit_cbs.is_empty() {
                                         for qcb in quit_cbs {
@@ -672,11 +671,10 @@ impl Interpreter {
                                     }
                                     // Route errors from tap callbacks to the
                                     // supplier's quit handlers.
-                                    let reason = err
-                                        .exception
-                                        .as_deref()
-                                        .cloned()
-                                        .unwrap_or_else(|| Value::str(err.message));
+                                    let reason =
+                                        err.exception.as_deref().cloned().unwrap_or_else(|| {
+                                            Value::str(err.message.into_owned())
+                                        });
                                     let quit_cbs = take_supplier_quit_callbacks(sid);
                                     if !quit_cbs.is_empty() {
                                         for qcb in quit_cbs {

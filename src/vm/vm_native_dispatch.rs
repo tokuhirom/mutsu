@@ -29,7 +29,7 @@ impl Interpreter {
             && e.is_warn()
             && let Some(resume) = e.return_value.clone()
         {
-            let message = e.message.clone();
+            let message = e.message.to_string();
             return Some(self.raise_resumable_warning(&message, resume));
         }
         result

@@ -443,7 +443,7 @@ impl Interpreter {
         index: usize,
         message: &str,
     ) -> Result<&'a Value, RuntimeError> {
-        Self::positional_value(args, index).ok_or_else(|| RuntimeError::new(message))
+        Self::positional_value(args, index).ok_or_else(|| RuntimeError::new(message.to_string()))
     }
 
     pub(super) fn positional_string(args: &[Value], index: usize) -> String {

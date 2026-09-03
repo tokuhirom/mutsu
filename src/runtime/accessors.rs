@@ -135,7 +135,7 @@ impl Interpreter {
         } else {
             "Died".to_string()
         };
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         // Carry the fail-site backtrace (recorded on the exception when `fail`
         // ran) so the throw site renders rakudo's dual-backtrace form.
         if let Some(orig) = Self::exception_backtrace_text(exception) {
@@ -364,10 +364,10 @@ impl Interpreter {
             value.to_string_value(),
             spec.trim()
         );
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
-        attrs.insert("payload".to_string(), Value::str(message));
+        attrs.insert("payload".to_string(), Value::str(message.to_string()));
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::AdHoc"),
             attrs,

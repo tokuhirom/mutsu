@@ -562,7 +562,7 @@ pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
         if r.starts_with('<') {
             let radix = base_clean.parse::<i64>().unwrap_or(base as i64);
             let err = crate::value::RuntimeError::radix_out_of_range(radix);
-            let message = err.message.clone();
+            let message = err.message.to_string();
             let exception = err
                 .exception
                 .expect("radix_out_of_range always attaches its exception");

@@ -30,7 +30,7 @@ fn make_no_match_error(method_name: &str) -> RuntimeError {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-    let mut err = RuntimeError::new(&msg);
+    let mut err = RuntimeError::new(msg.to_string());
     err.exception = Some(Box::new(ex));
     err
 }
@@ -1837,7 +1837,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     )
                 })
                 .unwrap_or_else(|| target.to_string_value());
-            let mut err = RuntimeError::new(&msg);
+            let mut err = RuntimeError::new(msg.to_string());
             err.exception = Some(Box::new(target.clone()));
             return Some(Err(err));
         }

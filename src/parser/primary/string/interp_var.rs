@@ -81,7 +81,7 @@ fn obsolete_p5_deref_throw(sigil: char, inner: &str) -> Expr {
     let err = crate::value::RuntimeError::obsolete_p5_deref(sigil, inner);
     let payload = match err.exception {
         Some(exception) => *exception,
-        None => literal_str(err.message.clone()),
+        None => literal_str(err.message.to_string()),
     };
     Expr::Call {
         name: Symbol::intern("die"),

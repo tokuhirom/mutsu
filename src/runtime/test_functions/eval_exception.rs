@@ -353,7 +353,7 @@ impl Interpreter {
                 let msg = if e.code().is_some_and(|c| c.is_parse()) {
                     format!("Unable to parse expression; {}", e.message)
                 } else {
-                    e.message.clone()
+                    e.message.to_string()
                 };
                 Some(msg)
             }

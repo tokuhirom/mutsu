@@ -238,8 +238,8 @@ impl Interpreter {
             let reason = match err.exception.as_deref() {
                 Some(exc) => self
                     .exception_message_text(exc)
-                    .unwrap_or_else(|| err.message.clone()),
-                None => err.message.clone(),
+                    .unwrap_or_else(|| err.message.to_string()),
+                None => err.message.to_string(),
             };
             let reason = reason.trim();
             if !reason.is_empty() {

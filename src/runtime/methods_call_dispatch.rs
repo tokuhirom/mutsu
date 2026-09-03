@@ -907,7 +907,7 @@ impl Interpreter {
                         && let Some(exc) = attributes.as_map().get("exception").cloned()
                     {
                         let msg = self.exception_message_or_died_with(&exc);
-                        let mut err = crate::value::RuntimeError::new(&msg);
+                        let mut err = crate::value::RuntimeError::new(msg.to_string());
                         err.exception = Some(Box::new(exc));
                         return Err(err);
                     }
@@ -918,7 +918,7 @@ impl Interpreter {
                 // the stored attribute), never the raw attribute — see
                 // `exception_message_text`.
                 let msg = self.exception_message_or_died_with(&target);
-                let mut err = crate::value::RuntimeError::new(&msg);
+                let mut err = crate::value::RuntimeError::new(msg.to_string());
                 // Classes doing X::Control throw as control exceptions so
                 // CONTROL blocks catch them instead of CATCH.
                 if does_x_control {
@@ -2384,7 +2384,7 @@ impl Interpreter {
                 // type repr (`X::AdHoc()`), which `target.to_string_value()`
                 // would yield for an exception built without a `message` attr.
                 let msg = self.exception_message_or_died_with(&target);
-                let mut err = RuntimeError::new(&msg);
+                let mut err = RuntimeError::new(msg.to_string());
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);
             }

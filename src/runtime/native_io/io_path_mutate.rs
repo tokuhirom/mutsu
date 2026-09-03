@@ -97,7 +97,10 @@ impl Interpreter {
                                 }
                             }
                             Err(e) => {
-                                return Ok(io_exception_failure("X::IO::Spurt", e.message));
+                                return Ok(io_exception_failure(
+                                    "X::IO::Spurt",
+                                    e.message.into_owned(),
+                                ));
                             }
                         }
                     } else {

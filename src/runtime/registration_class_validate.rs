@@ -307,7 +307,7 @@ impl Interpreter {
                     crate::symbol::Symbol::intern("X::Composition::NotComposable"),
                     attrs,
                 );
-                let mut err = RuntimeError::new(&msg);
+                let mut err = RuntimeError::new(msg.to_string());
                 err.exception = Some(Box::new(ex));
                 return Err(err);
             }
@@ -332,7 +332,7 @@ impl Interpreter {
                     crate::symbol::Symbol::intern("X::Composition::NotComposable"),
                     attrs,
                 );
-                let mut err = RuntimeError::new(&msg);
+                let mut err = RuntimeError::new(msg.to_string());
                 err.exception = Some(Box::new(ex));
                 return Err(err);
             }

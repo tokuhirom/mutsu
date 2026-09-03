@@ -72,7 +72,9 @@ pub(crate) fn run_slang_activation(
                 interp.add_lib_path(path);
             }
             interp.env.insert("*LANG".to_string(), comp_lang_instance());
-            interp.use_module(&module).map_err(|e| e.message.clone())?;
+            interp
+                .use_module(&module)
+                .map_err(|e| e.message.to_string())?;
             Ok(std::mem::take(&mut interp.defined_slang_rules))
         },
     );
