@@ -531,7 +531,21 @@ impl Interpreter {
 
     /// On successful block exit: restore `temp` saves, discard `let` saves.
     /// For `let`, only restore if the block returned an unsuccessful value.
+    /// The empty-range guard is inlined and the body is not: a routine with no
+    /// `let`/`temp` in scope -- the overwhelmingly common case on the hot call
+    /// path -- must not pay a call plus a `Vec` construction to discover it has
+    /// nothing to restore (1.3% of `bench-fib`'s self time).
+    #[inline]
     pub(crate) fn resolve_let_saves_on_success(&mut self, mark: usize, success: bool) {
+        if mark >= self.let_saves.len() {
+            self.let_saves.truncate(mark);
+            return;
+        }
+        self.resolve_let_saves_on_success_slow(mark, success);
+    }
+
+    #[inline(never)]
+    fn resolve_let_saves_on_success_slow(&mut self, mark: usize, success: bool) {
         // Collect restore actions first to avoid borrow conflicts.
         let restores: Vec<(String, Value, Option<u32>)> = (mark..self.let_saves.len())
             .rev()
