@@ -242,6 +242,7 @@ impl Interpreter {
                         &args,
                         compiled_fns,
                         name_str,
+                        code.const_sym(name_idx),
                         Some(spec),
                     );
                     self.recycle_locals(args);
@@ -463,6 +464,7 @@ impl Interpreter {
                                 &args,
                                 compiled_fns,
                                 name_str,
+                                code.const_sym(name_idx),
                             );
                             self.recycle_locals(args);
                             self.stack.push(result?);
@@ -539,8 +541,13 @@ impl Interpreter {
                             loan_env!(self, set_pending_callsite_line(cl));
                         }
                         let name_str = Self::const_str(code, name_idx);
-                        let result =
-                            self.call_compiled_function_light(cf, &args, compiled_fns, name_str);
+                        let result = self.call_compiled_function_light(
+                            cf,
+                            &args,
+                            compiled_fns,
+                            name_str,
+                            code.const_sym(name_idx),
+                        );
                         self.recycle_locals(args);
                         self.stack.push(result?);
                         // Slice F: drain captured-outer writes through to this
@@ -634,7 +641,13 @@ impl Interpreter {
                             && !mainline_capture_blocked
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
-                            self.call_compiled_function_light(&cf, &args, compiled_fns, name_str)
+                            self.call_compiled_function_light(
+                                &cf,
+                                &args,
+                                compiled_fns,
+                                name_str,
+                                name_sym,
+                            )
                         } else if !share_into_scalar
                             && !named_share
                             && !mainline_capture_blocked
@@ -660,6 +673,7 @@ impl Interpreter {
                                 &args,
                                 compiled_fns,
                                 name_str,
+                                name_sym,
                             )
                         } else {
                             // The body must run under its *defining* package, not
@@ -1260,8 +1274,13 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result =
-                        self.call_compiled_function_positional_light(cf, &args, compiled_fns, name);
+                    let result = self.call_compiled_function_positional_light(
+                        cf,
+                        &args,
+                        compiled_fns,
+                        name,
+                        name_sym,
+                    );
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }
@@ -1302,7 +1321,8 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = self.call_compiled_function_light(cf, &args, compiled_fns, name);
+                    let result =
+                        self.call_compiled_function_light(cf, &args, compiled_fns, name, name_sym);
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }

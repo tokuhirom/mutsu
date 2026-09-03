@@ -7,6 +7,7 @@ impl Interpreter {
         args: &[Value],
         compiled_fns: &CompiledFns,
         func_name: &str,
+        func_name_sym: Symbol,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
         // so it emits the call safepoint itself.
@@ -280,16 +281,18 @@ impl Interpreter {
         // positional-light path ran "frameless": `enclosing_routine_exists()`
         // wrongly answered `false` inside its body, so e.g. `EVAL 'return 1'`
         // escaped uncaught instead of being caught by a `CATCH` around the
-        // `EVAL` (ADR-0037 Slice 1). `func_name` is interned here rather than
-        // threaded as a pre-interned `Symbol` from the call site -- a
-        // thread-local intern-cache hit on every call after the first for a
-        // given call site, per `push_routine_with_location`'s doc comment.
+        // `EVAL` (ADR-0037 Slice 1). All three `Symbol`s are pre-resolved
+        // rather than interned here: the name is threaded from the call site
+        // (`CompiledCode::const_sym`), the package and defining file are
+        // cached on the `CompiledFunction`. Interning them per call cost
+        // ~26% on `benchmarks/bench-fib.raku`, since this is the hottest
+        // dispatch path and `Symbol::intern` hashes the whole string.
         self.push_routine_with_location(
-            Symbol::intern(&cf.package),
-            Symbol::intern(func_name),
+            cf.package_sym(),
+            func_name_sym,
             self.current_source_line(),
             self.current_source_file_sym(),
-            cf.source_file.as_deref().map(Symbol::intern),
+            cf.source_file_sym(),
         );
 
         // A routine (sub/method) body is its own topicalizer for a bare

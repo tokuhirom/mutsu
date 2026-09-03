@@ -11,8 +11,16 @@ impl Interpreter {
         args: &[Value],
         compiled_fns: &CompiledFns,
         func_name: &str,
+        func_name_sym: Symbol,
     ) -> Result<Value, RuntimeError> {
-        self.call_compiled_function_light_spec(cf, args, compiled_fns, func_name, None)
+        self.call_compiled_function_light_spec(
+            cf,
+            args,
+            compiled_fns,
+            func_name,
+            func_name_sym,
+            None,
+        )
     }
 
     /// [`Self::call_compiled_function_light`] with an optional out-of-band
@@ -27,6 +35,7 @@ impl Interpreter {
         args: &[Value],
         compiled_fns: &CompiledFns,
         func_name: &str,
+        func_name_sym: Symbol,
         named_spec: Option<&crate::opcode::NamedArgsSpec>,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): the light-call boundary skips
@@ -480,16 +489,15 @@ impl Interpreter {
         // path ran "frameless": `enclosing_routine_exists()` wrongly answered
         // `false` inside its body, so e.g. `EVAL 'return 1'` escaped uncaught
         // instead of being caught by a `CATCH` around the `EVAL` (ADR-0037
-        // Slice 1). `func_name` is interned here rather than threaded as a
-        // pre-interned `Symbol` from the call site -- a thread-local
-        // intern-cache hit on every call after the first for a given call
-        // site, per `push_routine_with_location`'s doc comment.
+        // Slice 1). All three `Symbol`s are pre-resolved rather than interned
+        // here -- see the matching push in `vm_call_light.rs` for the cost
+        // that made this worth threading.
         self.push_routine_with_location(
-            Symbol::intern(&cf.package),
-            Symbol::intern(func_name),
+            cf.package_sym(),
+            func_name_sym,
             self.current_source_line(),
             self.current_source_file_sym(),
-            cf.source_file.as_deref().map(Symbol::intern),
+            cf.source_file_sym(),
         );
 
         // A routine body is its own topicalizer for a bare `when`/`default`: a

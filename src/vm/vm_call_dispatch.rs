@@ -300,6 +300,8 @@ impl Interpreter {
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
             memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            package_sym_cache: std::sync::OnceLock::new(),
+            source_file_sym_cache: std::sync::OnceLock::new(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan();
