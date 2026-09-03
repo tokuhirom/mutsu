@@ -1,5 +1,71 @@
 use super::*;
 
+/// Build the `X::TypeCheck::Argument` for a positional-light arity mismatch.
+///
+/// Outlined and `#[cold]` on purpose: the message `format!` and the attribute
+/// map are dead weight on the hot path, but LLVM still reserves their stack
+/// slots in [`Interpreter::call_compiled_function_positional_light_at`]'s
+/// frame, which every recursive call touches. Keeping them out of that frame
+/// is the point — do not inline these back in.
+#[cold]
+#[inline(never)]
+fn positional_light_arity_error(
+    func_name: &str,
+    param_defs: &[crate::ast::ParamDef],
+    args: &[Value],
+    expected: usize,
+    actual: usize,
+    too_many: bool,
+) -> RuntimeError {
+    // Several call sites pattern-match on these exact messages (the general
+    // binder in `binding_signature.rs` produces the same two).
+    let msg = if too_many {
+        format!("Too many positionals passed; expected {expected} arguments but got {actual}")
+    } else {
+        format!("Too few positionals passed; expected {expected} arguments but got {actual}")
+    };
+    RuntimeError::typed(
+        "X::TypeCheck::Argument",
+        Interpreter::type_check_argument_attrs(func_name, param_defs, args, msg),
+    )
+}
+
+/// Build the `X::TypeCheck::Argument` for a positional-light parameter whose
+/// argument failed its type constraint. `#[cold]` for the same reason as
+/// [`positional_light_arity_error`].
+#[cold]
+#[inline(never)]
+fn positional_light_type_error(
+    func_name: &str,
+    param_defs: &[crate::ast::ParamDef],
+    args: &[Value],
+    param_idx: usize,
+    tc: &str,
+    got: &str,
+) -> RuntimeError {
+    let msg = format!(
+        "Type check failed in binding ${}: expected {}, got {}",
+        param_defs[param_idx].name, tc, got
+    );
+    let mut attrs = Interpreter::type_check_argument_attrs(func_name, param_defs, args, msg);
+    attrs.insert("expected".to_string(), Value::str(tc.to_string()));
+    attrs.insert("got".to_string(), Value::str(got.to_string()));
+    RuntimeError::typed("X::TypeCheck::Argument", attrs)
+}
+
+/// Build the error for a positional-light routine whose return value failed
+/// the declared return type. `#[cold]` for the same reason as
+/// [`positional_light_arity_error`].
+#[cold]
+#[inline(never)]
+fn positional_light_return_type_error(rt: &str, got: &Value) -> RuntimeError {
+    RuntimeError::new(format!(
+        "Type check failed for return value; expected {}, got {}",
+        rt,
+        runtime::value_type_name(got)
+    ))
+}
+
 impl Interpreter {
     /// Slice-taking wrapper over [`Self::call_compiled_function_positional_light_at`]
     /// for the cold call sites that already hold an owned argument vector
@@ -65,19 +131,17 @@ impl Interpreter {
         // positionals" arity error. Report it as a typed X::TypeCheck::Argument
         // carrying objname/signature/arguments, matching the interpreter path.
         if actual_count < positional_count {
-            let msg = format!(
-                "Too few positionals passed; expected {} arguments but got {}",
-                positional_count, actual_count
-            );
             self.current_unit = saved_unit;
-            let attrs = Self::type_check_argument_attrs(
+            let err = positional_light_arity_error(
                 func_name,
                 &cf.param_defs,
                 &self.stack[args_base..],
-                msg,
+                positional_count,
+                actual_count,
+                false,
             );
             self.stack.truncate(args_base);
-            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+            return Err(err);
         }
         // `is_positional_light_call_eligible` guarantees no slurpy/optional
         // param exists on this signature, so a surplus argument is always an
@@ -87,19 +151,17 @@ impl Interpreter {
         // (`binding_signature.rs`'s "Too many positionals passed" check) --
         // several call sites pattern-match on this exact message.
         if actual_count > positional_count {
-            let msg = format!(
-                "Too many positionals passed; expected {} arguments but got {}",
-                positional_count, actual_count
-            );
             self.current_unit = saved_unit;
-            let attrs = Self::type_check_argument_attrs(
+            let err = positional_light_arity_error(
                 func_name,
                 &cf.param_defs,
                 &self.stack[args_base..],
-                msg,
+                positional_count,
+                actual_count,
+                true,
             );
             self.stack.truncate(args_base);
-            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+            return Err(err);
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
@@ -258,21 +320,16 @@ impl Interpreter {
             self.active_loop_param_names = saved_active_loop_param_names;
             self.block_declared_vars = saved_block_declared_vars;
             self.current_unit = saved_unit;
-            let param_name = &cf.param_defs[param_idx].name;
-            let msg = format!(
-                "Type check failed in binding ${}: expected {}, got {}",
-                param_name, tc, got
-            );
-            let mut attrs = Self::type_check_argument_attrs(
+            let err = positional_light_type_error(
                 func_name,
                 &cf.param_defs,
                 &self.stack[args_base..],
-                msg,
+                param_idx,
+                tc,
+                got,
             );
             self.stack.truncate(args_base);
-            attrs.insert("expected".to_string(), Value::str(tc.to_string()));
-            attrs.insert("got".to_string(), Value::str(got.to_string()));
-            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+            return Err(err);
         }
         for (param_idx, slot) in param_slots.iter().enumerate() {
             if param_idx < actual_count {
@@ -591,11 +648,7 @@ impl Interpreter {
         {
             let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
             if !Self::light_return_type_check(check_val, rt) {
-                return Err(RuntimeError::new(format!(
-                    "Type check failed for return value; expected {}, got {}",
-                    rt,
-                    runtime::value_type_name(check_val)
-                )));
+                return Err(positional_light_return_type_error(rt, check_val));
             }
         }
 
