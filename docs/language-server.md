@@ -36,7 +36,10 @@ independently of the interpreter (`tag-release.yml` bumps only the root
 | `initialize` / `shutdown` / `exit` | Yes |
 | `textDocument/didOpen`, `didChange`, `didClose` | Yes, **full-document sync** |
 | `textDocument/publishDiagnostics` | Yes — parse errors and parse warnings |
-| `documentSymbol`, `workspaceSymbol`, `definition`, `references`, `hover` | Planned (ADR-0065 S4/S5) |
+| `textDocument/documentSymbol` | Yes — nested, with the Raku declarator in `detail` |
+| `workspace/symbol` | Yes — reads the workspace on demand, case-insensitive substring match |
+| `textDocument/definition` | Yes — the open document first, then the workspace |
+| `references`, `hover` | Planned (ADR-0065 S5) |
 | `completion`, `semanticTokens`, `signatureHelp`, `inlayHint` | **Out of scope** (D3) |
 | Incremental document sync | **Out of scope** (D3) |
 
@@ -90,6 +93,38 @@ deliberately conservative, so absence from it means "unclassified", not "mutsu
 does not have it", and reporting absence as a defect would be a false positive.
 See the ADR's S2 findings.
 
+## Symbols and definitions
+
+`documentSymbol` returns a nested outline: classes, roles, grammars, modules,
+subs, methods, tokens, rules, enums (with their values), subsets, attributes and
+top-level variables. A local inside a routine body is not an outline entry — it
+would bury the outline in noise — but the same declaration at the top of a class
+or a file is.
+
+LSP's `SymbolKind` has no spelling for a role, a grammar, a grammar token or a
+subset, so the mapping picks the nearest behavioural equivalent and puts the real
+Raku declarator in `detail`. An outline entry that says `CLASS` still reads
+"grammar".
+
+Ranges are line-granular, as everything here is: a declaration runs from its line
+to the last line its body demonstrably covers (the deepest `SetLine` marker
+inside it), which stops at its last statement rather than at the closing brace.
+`selectionRange` is exact, though — the name is a literal and the declaration
+line is short, so it is found in the text.
+
+`definition` needs no AST positions in either direction. The target is a
+declaration, which `SetLine` places; the source is whatever identifier the caret
+is on, which the server reads straight out of the document text. It searches the
+open document first (both the likeliest answer and the freshest, since the copy
+on disk may be older than what the client holds), then the workspace.
+
+`workspace/symbol` walks the workspace roots, parses what it finds and caches by
+modification time and size. There is no background index: an agent asks a
+workspace question occasionally and never while typing, and validating the cache
+against the file removes a class of staleness bug. The walk is capped at 4000
+files, because a query over an unbounded tree is a hang and a hung server is
+worse than a truncated answer.
+
 A parse failure inside a `use`d module is anchored at line 1 of the *open*
 document and names the other file in its message. Reporting that module's
 line and column against this document would point at an unrelated line, which
@@ -135,6 +170,9 @@ which has no column, covers the whole line.
 | `crates/mutsu-lsp/src/positions.rs` | mutsu positions to LSP positions. |
 | `crates/mutsu-lsp/src/diagnostics.rs` | `mutsu::analysis::Diagnostic` to `lsp_types::Diagnostic`. |
 | `crates/mutsu-lsp/src/documents.rs` | The open-document map. No rope, no diffing — sync is full-text. |
+| `src/analysis/symbols.rs` (in `mutsu`) | The declarations a document contains, nested, at line granularity. Runs over a recovering parse, so a broken document still has an outline. |
+| `crates/mutsu-lsp/src/symbols.rs` | mutsu's declarations to LSP symbols, and the `SymbolKind` mapping. |
+| `crates/mutsu-lsp/src/workspace.rs` | The files a workspace-wide query reads, and their cache. |
 | `crates/mutsu-lsp/tests/protocol.rs` | End-to-end tests over `lsp_server::Connection::memory()`, driving the real loop. |
 
 The loop is synchronous and single-threaded on purpose: D3 leaves nothing

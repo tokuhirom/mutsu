@@ -69,8 +69,20 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Vec<PError>) {
         if r.is_empty() || r.starts_with('}') {
             break;
         }
+        // Emit the same `Stmt::SetLine` marker the strict list emits. It is the
+        // only positional information the AST carries, so a consumer of a
+        // best-effort parse that wants to *place* what it found — the language
+        // server's document outline (ADR-0065 S4) — has nothing without it.
+        // Consumers that only look for declarations are unaffected: they match
+        // on specific variants and ignore markers, exactly as they do for the
+        // strict parse.
+        let line = crate::parser::primary::current_line_number(r);
+        let line_valid = crate::parser::primary::is_within_original_source(r);
         match statement(r) {
             Ok((r, stmt)) => {
+                if line_valid {
+                    stmts.push(Stmt::SetLine(line));
+                }
                 stmts.push(stmt);
                 rest = r;
             }

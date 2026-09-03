@@ -476,6 +476,63 @@ quietly.
 The general lesson is worth stating: **any new front end for mutsu's parser inherits the
 CLI's stack requirement.** It is not a property of the CLI; it is a property of the parser.
 
+## S4 findings (2026-09-03)
+
+D6's bet was that line granularity would carry `documentSymbol` and `definition` with no
+span retrofit. It did, and two of the three methods needed less positional machinery than
+expected.
+
+### 1. `Stmt::SetLine` carries the outline on its own — and `definition` needs no positions at all
+
+The parser interleaves a `SetLine` marker before every statement, including inside a class
+or routine body, so walking the statement list while tracking the most recent marker yields
+each declaration's line for free. A declaration's *end* is approximated by the deepest
+marker inside its body, which stops at its last statement rather than at the closing brace
+— accurate enough for an outline, and honest about what the AST knows.
+
+`definition` turned out not to need AST positions in either direction. The *target* is a
+declaration, which `SetLine` places. The *source* is whatever identifier the caret is on,
+and the server has the document text — an identifier is a lexical notion that needs no
+parse. Reading it out of the line sidesteps the whole "no positions for references"
+problem that D6 flagged as `references`'s (S5's) real cost. Note that this does not
+generalize: `references` needs to find *every* occurrence and rank them, which grep-like
+text scanning cannot do soundly.
+
+`selectionRange` is exact rather than line-wide for the same reason: the name is a literal
+and the declaration line is short, so finding it in the text gives the range a client puts
+the caret on. The match is anchored at identifier boundaries, or `has $.x` would select the
+`x` inside a nearby `max`.
+
+### 2. The best-effort parser was not emitting the markers, which S4 depended on
+
+`stmt_list_partial` never emitted `SetLine`; only the strict list did. The outline of a
+*broken* document — the whole point of ordering S3 before S4 — therefore reported every
+declaration on line 1. It now emits them exactly as the strict list does. Consumers of a
+best-effort parse are unaffected: they match on declaration variants and ignore markers,
+which is already what they do for a strict parse.
+
+### 3. LSP's `SymbolKind` has no Raku vocabulary, so the declarator goes in `detail`
+
+There is no kind for a role, a grammar, a grammar token or a subset. The mapping picks the
+nearest behavioural equivalent (a role is an interface, a token is a function, a grammar is
+a class) and puts the real Raku declarator in `detail`, so an outline that says `CLASS`
+still reads "grammar". Losing that distinction would be a quiet downgrade of exactly the
+information a Raku reader is scanning for.
+
+### 4. Workspace queries read on demand rather than maintaining an index
+
+`workspaceSymbol` and a cross-file `definition` walk the roots, parse what they find, and
+cache by modification time and size. No background index is maintained. That is the right
+trade for this consumer — an agent asks a workspace question occasionally and never while
+typing — and it removes a class of staleness bug, since the cache is validated against the
+file rather than trusted. The walk is capped (4000 files): a query over an unbounded tree
+is a hang, and a hung server is worse than a truncated answer.
+
+`rootUri`/`rootPath` are read alongside `workspaceFolders`. They are deprecated, but
+clients still send them, and a server that understood only the current spelling would
+silently have no workspace at all — a failure that looks like "no results" rather than like
+a bug.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -504,7 +561,7 @@ CLI's stack requirement.** It is not a property of the CLI; it is a property of 
 | **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path — **done 2026-09-03**, `crates/mutsu-lsp/`, `src/analysis.rs`, `docs/language-server.md` | S0 |
 | **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) — **routine half done 2026-09-03**; the method half is blocked on receiver types, see the S2 findings | S1 |
 | **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) — **done 2026-09-03** | S1 |
-| **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity | S1 |
+| **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity — **done 2026-09-03** | S1 |
 | **S5** | `references` / `hover`; expression spans on the variants these require (D6) | S4 |
 
 S2 delivers the capability unique to mutsu and depends on no span work, so the ordering
