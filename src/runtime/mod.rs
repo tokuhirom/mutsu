@@ -662,7 +662,9 @@ mod test_functions;
 pub(crate) use test_functions::TEST_MODULE_EXPORTS;
 pub(crate) mod thread_compat;
 pub(crate) mod types;
-mod undeclared_routines;
+// `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
+// interpreter-free entry point directly.
+pub(crate) mod undeclared_routines;
 mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;

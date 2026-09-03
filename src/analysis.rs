@@ -22,6 +22,7 @@
 //!   rather than an abort. mutsu is under active development and its parser is
 //!   not panic-free; `check` catches it.
 
+use crate::ast::Stmt;
 use crate::value::{RuntimeError, RuntimeErrorCode};
 
 /// How much a [`Diagnostic`] should be believed.
@@ -73,6 +74,46 @@ impl Diagnostic {
             in_other_file: None,
         }
     }
+}
+
+/// mutsu's CHECK-time undeclared-routine analysis, run without executing
+/// anything (ADR-0065 D4).
+///
+/// This is the first diagnostic that answers "does mutsu support this?" rather
+/// than "does this parse?". A core routine rakudo has and mutsu does not shows
+/// up here exactly as a typo does — which is the point: an agent writing Raku
+/// for mutsu has no other way to learn the difference short of running the
+/// code.
+///
+/// It shares the runtime's own walker and static name tables rather than
+/// reimplementing the rule, so the server and the interpreter cannot disagree
+/// about what counts as declared. That walker's contract is exactly the one a
+/// diagnostic needs: declarations are collected scope-blind across the whole
+/// unit and the check abandons a unit that imports names it cannot see through,
+/// so a missed construct yields a false *negative*, never a false positive.
+///
+/// No `Interpreter` is constructed. Everything the runtime entry point
+/// additionally consults is per-interpreter registry state that a fresh one has
+/// none of, so the verdict is identical — and constructing one would cost about
+/// 9 ms and retain roughly 7 KiB, on every keystroke.
+fn undeclared_routine_diagnostic(stmts: &[Stmt]) -> Option<Diagnostic> {
+    let err =
+        crate::runtime::undeclared_routines::check_undeclared_routines_without_interpreter(stmts)
+            .err()?;
+    let line = err.line().unwrap_or(1) as u32;
+    Some(Diagnostic {
+        severity: Severity::Error,
+        message: err.message,
+        line,
+        // The walker records the statement line, not an offset; `Stmt::SetLine`
+        // is the only positional information mutsu has (D6).
+        column: None,
+        // Its own code, not the `ParseGeneric` the error carries for the CLI's
+        // "===SORRY!===" rendering: a consumer keying on the code must be able
+        // to tell an unknown name from a syntax error.
+        code: Some("UndeclaredRoutine"),
+        in_other_file: None,
+    })
 }
 
 /// Deliberately exhaustive: a new `RuntimeErrorCode` variant should fail to
@@ -170,12 +211,13 @@ pub fn check(source: &str) -> Vec<Diagnostic> {
     // documents being analysed independently and a `use v6.e.PREVIEW` in the
     // first file silently changing how every later file is read.
     let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::parse_dispatch::parse_source(source)
+        let (stmts, _finish) = crate::parse_dispatch::parse_source(source)?;
+        Ok::<Option<Diagnostic>, RuntimeError>(undeclared_routine_diagnostic(&stmts))
     }));
 
     let mut diagnostics = Vec::new();
     match parsed {
-        Ok(Ok(_stmts)) => {}
+        Ok(Ok(undeclared)) => diagnostics.extend(undeclared),
         Ok(Err(err)) => diagnostics.push(diagnostic_from_parse_error(&err)),
         Err(payload) => {
             // "mutsu cannot handle this" is the single most valuable thing this
@@ -262,6 +304,70 @@ mod tests {
     fn warnings_do_not_leak_into_the_next_document() {
         check("my $x = 1;\n$x == 1;\n");
         assert_eq!(check("my $y = 2;\nsay $y;\n"), Vec::new());
+    }
+
+    /// ADR-0065 D4: "mutsu does not have this" is the diagnostic the server
+    /// exists to deliver, and a name nobody declared is its first form.
+    #[test]
+    fn a_call_to_a_routine_nobody_declared_is_reported() {
+        let diagnostics = check("say 1;\nnosuchsub();\n");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+        let d = &diagnostics[0];
+        assert_eq!(d.severity, Severity::Error);
+        assert_eq!(d.code, Some("UndeclaredRoutine"));
+        assert_eq!(d.line, 2);
+        assert!(
+            d.message.contains("Undeclared routine") && d.message.contains("nosuchsub"),
+            "{:?}",
+            d.message
+        );
+    }
+
+    #[test]
+    fn a_declared_routine_is_not_reported() {
+        assert_eq!(check("sub greet() { 1 }\ngreet();\n"), Vec::new());
+    }
+
+    #[test]
+    fn a_builtin_routine_is_not_reported() {
+        assert_eq!(check("say uc('x');\nsay elems([1, 2]);\n"), Vec::new());
+    }
+
+    /// D4 asks for the replacement to travel with the diagnostic. mutsu
+    /// computes one for its own CLI error, so it comes through here for free —
+    /// once the candidates include the unit's own subs, which they did not
+    /// until this slice (pinned against real raku by
+    /// `t/undeclared-routine-suggests-unit-own-subs.t`).
+    #[test]
+    fn a_near_miss_carries_a_suggestion() {
+        let diagnostics = check("sub greeting() { 1 }\ngreetng();\n");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+        assert!(
+            diagnostics[0].message.contains("greeting"),
+            "expected a 'Did you mean' pointing at the real name: {:?}",
+            diagnostics[0].message
+        );
+    }
+
+    /// The conservativeness contract, pinned. A unit that imports names the
+    /// walker cannot see through is abandoned rather than second-guessed: a
+    /// false positive here would be read by an agent as fact and acted on.
+    #[test]
+    fn a_unit_that_imports_unseen_names_is_not_second_guessed() {
+        let diagnostics = check("use Test;\nnosuchsub();\n");
+        assert!(
+            diagnostics
+                .iter()
+                .all(|d| d.code != Some("UndeclaredRoutine")),
+            "{diagnostics:#?}"
+        );
+    }
+
+    /// Still true with the analysis running: `check` reads the interpreter's
+    /// tables, it does not run the document.
+    #[test]
+    fn the_undeclared_check_does_not_run_the_document() {
+        assert_eq!(check("say 'THIS MUST NOT BE PRINTED';\n"), Vec::new());
     }
 
     #[test]

@@ -584,6 +584,48 @@ impl Interpreter {
         Self::suggest_from_candidates(name, &candidates)
     }
 
+    /// [`suggest_routine_names`](Self::suggest_routine_names) plus names the
+    /// caller knows are routines but the registry does not hold — the
+    /// compilation unit's own `sub` declarations, as collected by the
+    /// CHECK-time walker (`runtime/undeclared_routines.rs`). Rakudo suggests
+    /// those, and without them `sub greeting {}; greetng()` reports the typo
+    /// with no way to see what was meant.
+    pub(crate) fn suggest_routine_names_including(
+        &self,
+        name: &str,
+        extra: &HashSet<String>,
+    ) -> Vec<String> {
+        let mut candidates = Self::static_routine_candidates(extra);
+        candidates.extend(self.registry().functions.keys().map(|s| s.resolve()));
+        Self::suggest_from_candidates(name, &candidates)
+    }
+
+    /// The suggestion candidates that need no interpreter: the built-in routine
+    /// names, the phasers, and `extra` (the compilation unit's own routines).
+    /// Shared with [`suggest_routine_names_including`](Self::suggest_routine_names_including)
+    /// so the two paths cannot drift apart.
+    fn static_routine_candidates(extra: &HashSet<String>) -> Vec<String> {
+        let mut candidates: Vec<String> = extra.iter().cloned().collect();
+        candidates.extend(
+            crate::runtime::builtins::BUILTIN_FUNCTION_NAMES
+                .iter()
+                .map(|s| s.to_string()),
+        );
+        candidates.extend(
+            crate::runtime::undeclared_routines::PHASER_SUGGESTION_NAMES
+                .iter()
+                .map(|s| s.to_string()),
+        );
+        candidates
+    }
+
+    /// [`suggest_routine_names_including`](Self::suggest_routine_names_including)
+    /// for the analysis frontend, which has no interpreter to read a registry
+    /// from (ADR-0065 S2).
+    pub(crate) fn static_routine_suggestions(name: &str, extra: &HashSet<String>) -> Vec<String> {
+        Self::suggest_from_candidates(name, &Self::static_routine_candidates(extra))
+    }
+
     /// Suggest close type names (registered classes/roles) for an undeclared
     /// type `name`. Used for X::Undeclared::Symbols `.type_suggestion`.
     pub(crate) fn suggest_type_names(&self, name: &str) -> Vec<String> {

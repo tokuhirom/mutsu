@@ -442,6 +442,69 @@ fn line_numbers_survive_repeated_parses_of_differently_sized_buffers() {
     );
 }
 
+/// The same gate, on the entry point a language server actually calls.
+/// `mutsu::analysis::check` parses *and* runs the CHECK-time undeclared-routine
+/// analysis against a freshly constructed `Interpreter` — more per-call work
+/// than `dump_ast`, and therefore the one that has to hold up under repetition.
+#[test]
+fn repeated_analysis_of_an_unchanged_document_is_stable() {
+    let _guard = exclusive();
+    let n = iterations();
+
+    let baseline = mutsu::analysis::check(DOCUMENT);
+    for _ in 0..2 {
+        mutsu::analysis::check(DOCUMENT);
+    }
+
+    let symbols_before = mutsu::symbol::interned_count();
+    let rss_before = rss_kib();
+    let started = Instant::now();
+    for _ in 0..n {
+        let got = mutsu::analysis::check(DOCUMENT);
+        assert_eq!(
+            baseline, got,
+            "re-analysing an unchanged document produced a different report"
+        );
+    }
+    let elapsed = started.elapsed();
+    let symbol_growth = mutsu::symbol::interned_count() - symbols_before;
+    let rss_after = rss_kib();
+
+    println!("--- ADR-0065 S0 probe: {n} analysis::check calls ---");
+    println!(
+        "  wall clock      : {elapsed:?} total, {:?} per check",
+        elapsed / n as u32
+    );
+    println!(
+        "  interned symbols: +{symbol_growth} ({:.2}/check)",
+        symbol_growth as f64 / n as f64
+    );
+    if let (Some(before), Some(after)) = (rss_before, rss_after) {
+        println!(
+            "  resident memory : {:+} KiB ({:.3} KiB/check)",
+            after as isize - before as isize,
+            (after as f64 - before as f64) / n as f64,
+        );
+    }
+
+    // Same bound as the parse gate: one interned name per anonymous declaration
+    // per pass, and nothing else. A fresh `Interpreter` per check must not add
+    // a second source of permanent interning.
+    let anon_declarations_in_document = 1;
+    assert!(
+        symbol_growth <= anon_declarations_in_document * n,
+        "analysing an unchanged document interned {symbol_growth} new names over {n} checks          ({:.2}/check), above the {anon_declarations_in_document:.2}/check the document's          anonymous declaration accounts for",
+        symbol_growth as f64 / n as f64,
+    );
+    if let (Some(before), Some(after)) = (rss_before, rss_after) {
+        let growth = after.saturating_sub(before);
+        assert!(
+            growth < 32 * 1024,
+            "resident memory grew {growth} KiB over {n} analyses of an unchanged document"
+        );
+    }
+}
+
 /// D8's open question: whether documents can be analysed on more than one
 /// thread. The parser's working state (`SCOPES`, the memo tables,
 /// `ORIGINAL_SOURCE`) is thread-local and the symbol table is behind an

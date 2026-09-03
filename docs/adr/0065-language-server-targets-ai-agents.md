@@ -338,6 +338,85 @@ Two items from "Not decided here" are now decided in passing: `mutsu-lsp` is ver
 independently of the interpreter (`tag-release.yml` bumps only the root `Cargo.toml`) and
 is **not** in the release tarball yet; transport is stdio only.
 
+## S2 findings (2026-09-03)
+
+D4 said the work here was to make mutsu's built-in names enumerable: "they are
+currently string literals in `match method { ... }` arms ... the fix is to derive the
+dispatch arms and a name table from one source". Both halves of that turned out to be
+wrong, in opposite directions.
+
+### 1. The table already exists — and is the wrong shape for a diagnostic
+
+`src/builtins/native_method_row.rs` (ADR-0019 Phase E box E2a) is an `(owner, name)`
+catalog with per-arity recognition flags, already read in production by `.^methods` and
+`.^can`. So no enumeration work was needed.
+
+It cannot back a diagnostic, though, because it is **deliberately conservative in the
+direction that produces false positives**. A pair with no row reports "not servable", and
+whole owners are uncovered by construction — `Sub`, `Signature`, `IO::Path`, `IO::Handle`,
+`Cool`, and the untouched majority of `Any`/`Mu`'s surface. Absence from the table means
+"the 2026-08-10 probe did not classify this", not "mutsu does not have it". Reporting
+absence as a defect would tell an agent that a method mutsu implements does not exist,
+which is precisely the failure D5 says is unrecoverable.
+
+### 2. The real blocker for method diagnostics is the receiver type, not the name list
+
+`$x.foo` cannot be judged without knowing what `$x` is, and mutsu's AST carries no type
+information for the same reason it carries no positions. D4 did not account for this. The
+honest scope for method-name diagnostics is therefore the subset where the receiver is
+statically known — a literal, or a bareword type object (`Int.frobnicate`) — plus a table
+that distinguishes "known absent" from "unclassified". That is a separate slice with a
+real design question in it, and it is not what shipped here.
+
+### 3. The routine half needs no receiver, and mutsu already had it
+
+A call with no receiver has no ambiguity, so D4's signal is available immediately there:
+a core routine rakudo has and mutsu lacks reports exactly as a typo does, which is the
+point. And `src/runtime/undeclared_routines.rs` already implements rakudo's CHECK-time
+`X::Undeclared::Symbols` scan, with the contract a diagnostic needs stated in its own
+module docs: declarations are collected scope-blind across the unit and the check
+abandons a unit that imports names it cannot see through, so *"a missed construct can
+only produce a false negative, never a false positive"*.
+
+S2 therefore ships the routine half by wiring that existing analysis into
+`analysis::check`, and leaves the method half to a later slice.
+
+### 4. The analysis path constructs no `Interpreter`, and that is load-bearing
+
+The obvious implementation — build an `Interpreter` and call the runtime's own
+`check_undeclared_routines_mainline` — measured at **9.2 ms and ~7.2 KiB retained per
+construction** (debug, 4000 constructions, linear, unaffected by `MUTSU_GC=on`). On the
+same build that is twice the cost of parsing the whole document and fifteen times its
+memory, paid on every keystroke.
+
+Since every lookup the runtime path adds is per-interpreter registry state that a *fresh*
+interpreter has none of, the verdict is identical without one. The static predicates were
+factored into a single shared function so the two paths cannot drift, and
+`check_undeclared_routines_without_interpreter` is what the frontend calls. Analysis is
+now 5.0 ms per document with 0.52 KiB/call retained — the same memory profile as a plain
+parse, and cheaper than `dump_ast`, which additionally formats the AST.
+
+The interpreter-construction cost is recorded separately
+(`todo/perf/interpreter-new-is-expensive-and-retains-memory.md`): it is not an
+LSP-specific problem.
+
+### 5. D4's "carry the replacement" exposed a rakudo-parity gap in mutsu itself
+
+mutsu suggested a replacement for a core routine (`elem` → `elems`) but never for the
+unit's own: `sub greeting() { }; greetng()` reported the typo with no way to see what was
+meant, where rakudo answers "Did you mean 'greeting'?". Its suggestion candidates came
+from the interpreter's registry, which does not hold the unit's declarations at the point
+the check runs — while the walker had already collected them.
+
+The walker now tracks routine declarations separately from the names it collects to
+*suppress* calls. That distinction matters: the suppressing set deliberately absorbs
+variables and types, so drawing suggestions from it would offer a `my $greeting` as the
+routine you meant, which rakudo never does. Pinned by
+`t/undeclared-routine-suggests-unit-own-subs.t`, which passes unmodified under real raku.
+
+This is the D7 property in practice — the language server's requirements improving mutsu's
+own diagnostics rather than taxing them.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -364,7 +443,7 @@ is **not** in the release tarball yet; transport is stdio only.
 | --- | --- | --- |
 | **S0** | Long-lived-process viability probe (D8) — **done 2026-09-03**, `tests/long_lived_parse.rs` | — |
 | **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path — **done 2026-09-03**, `crates/mutsu-lsp/`, `src/analysis.rs`, `docs/language-server.md` | S0 |
-| **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) | S1 |
+| **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) — **routine half done 2026-09-03**; the method half is blocked on receiver types, see the S2 findings | S1 |
 | **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) | S1 |
 | **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity | S1 |
 | **S5** | `references` / `hover`; expression spans on the variants these require (D6) | S4 |
