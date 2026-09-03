@@ -60,9 +60,13 @@ learn mutsu's coverage short of running it (D4).
 
 Today the server reports:
 
-- **One parse error per document.** mutsu's parser stops at the first failure
-  and discards the partial result. Multiple diagnostics need
-  `parse_program_partial` to grow positions and errors first (S3).
+- **Every parse failure in the document.** mutsu's strict parser stops at the
+  first one, so the server reports that (its diagnosis is the richest available:
+  typed `X::` message, source context, hint) and then re-parses with recovery to
+  find what else is wrong. Recovered failures are rendered through the same code
+  path, so they are the same quality — and deduplicated by line, because the
+  recovering pass sees the first failure again and a repeat on an
+  already-reported line is more likely to be debris than a second defect.
 - **Parse warnings**, at line granularity — sink-context warnings, VCS conflict
   markers, and the rest of what the parser collects while reading a unit.
 - **Calls to routines mutsu does not have** (`code: "UndeclaredRoutine"`), with
@@ -136,7 +140,15 @@ which has no column, covers the whole line.
 The loop is synchronous and single-threaded on purpose: D3 leaves nothing
 latency-sensitive to overlap, and parsing on the loop thread keeps the parser's
 thread-local caches warm — the exact configuration the S0 probe validated for a
-long-lived process. `lsp-server` + `lsp-types` (rust-analyzer's crates) rather
+long-lived process.
+
+It is **not** the OS main thread, though. mutsu's parser is deeply recursive
+enough that on a default 8 MB stack it overflows at about fifty nested
+parentheses, and a stack overflow aborts the process — `catch_unwind` cannot turn
+that into a diagnostic the way it does an ordinary panic. The interpreter's own
+CLI spawns a 256 MB-stack thread for the same reason; the server runs its loop
+inside `mutsu_lsp::on_analysis_stack`. Any new front end for mutsu's parser
+inherits this requirement: it is a property of the parser, not of the CLI. `lsp-server` + `lsp-types` (rust-analyzer's crates) rather
 than `tower-lsp`, so no async runtime enters this repository at all.
 
 ## Why it lives in this repository

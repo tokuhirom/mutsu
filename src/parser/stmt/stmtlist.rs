@@ -6,6 +6,7 @@
 //! `mod.rs` at their original visibility.
 
 use super::*;
+use crate::parser::parse_result::PError;
 
 /// Parse a block: { stmts }
 /// Pushes/pops a lexical import scope so that `use` inside a block
@@ -58,8 +59,9 @@ pub(in crate::parser) fn stmt_list_with_lines_pub(input: &str) -> PResult<'_, Ve
 /// When a statement fails to parse, skip forward to the next statement
 /// boundary and continue parsing. Used by `load_module` so that
 /// partially-parseable `.rakumod` files still export their functions.
-pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
+pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Vec<PError>) {
     let mut stmts = Vec::new();
+    let mut skipped = Vec::new();
     let mut rest = input;
     while let Ok((r, _)) = ws_bol(rest) {
         let r = consume_semicolons(r);
@@ -72,7 +74,7 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
                 stmts.push(stmt);
                 rest = r;
             }
-            Err(_) => {
+            Err(e) => {
                 // Skip to next statement boundary and continue. Whatever was
                 // skipped is missing from the result, declarations included, so
                 // record it: a consumer that reasons about what a source file
@@ -80,6 +82,13 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
                 // `when`-matcher gobbled-block check) must know its view is
                 // partial rather than exhaustive.
                 note_partial_parse_skip();
+                // The failure itself is kept too, for the consumer that wants to
+                // *report* what could not be parsed rather than merely know that
+                // something could not be (ADR-0065 S3). A `PError`'s
+                // `remaining_len` measures the shared buffer's unconsumed tail,
+                // so each one still locates itself in the whole source with no
+                // offset bookkeeping here.
+                skipped.push(e);
                 match skip_to_next_statement(r) {
                     Some(next) => rest = next,
                     None => break,
@@ -87,7 +96,7 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
             }
         }
     }
-    (stmts, None)
+    (stmts, skipped)
 }
 
 thread_local! {

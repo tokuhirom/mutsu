@@ -44,7 +44,9 @@ fn main() -> ExitCode {
     }
 
     let (connection, io_threads) = Connection::stdio();
-    let result = mutsu_lsp::server::run(connection);
+    // Not the OS main thread: mutsu's parser needs the same deep stack the
+    // interpreter's own CLI gives it. See `mutsu_lsp::ANALYSIS_STACK_SIZE`.
+    let result = mutsu_lsp::on_analysis_stack(move || mutsu_lsp::server::run(connection));
     // Join before reporting: the writer thread must finish flushing whatever
     // the loop queued, including the response to `shutdown`.
     let joined = io_threads.join();
