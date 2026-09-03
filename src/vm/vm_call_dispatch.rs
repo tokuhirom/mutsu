@@ -18,17 +18,33 @@ fn global_otf_cache() -> &'static std::sync::Mutex<rustc_hash::FxHashMap<u64, Ar
 
 impl Interpreter {
     /// Record a deprecation event for a compiled function if it has deprecation info.
+    ///
+    /// Every call on the hottest dispatch path runs this, and virtually no
+    /// routine is deprecated -- so only the `is_some` test belongs at the call
+    /// site. The body (an env lookup by name plus a `String` build) is outlined
+    /// `#[cold]` so it neither costs a call nor reserves stack slots in
+    /// `call_compiled_function_positional_light_at`'s frame.
+    #[inline]
     pub(super) fn record_cf_deprecation(&self, cf: &CompiledFunction) {
-        if let Some((ref kind, ref name, ref package, ref msg)) = cf.deprecated_info {
-            let cl = self.pending_callsite_line();
-            let file = self
-                .env()
-                .get("*PROGRAM-NAME")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
-            let line = cl.unwrap_or(self.cur_source_line);
-            crate::runtime::deprecation::record_deprecation(kind, name, package, msg, &file, line);
+        if cf.deprecated_info.is_some() {
+            self.record_cf_deprecation_cold(cf);
         }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn record_cf_deprecation_cold(&self, cf: &CompiledFunction) {
+        let Some((kind, name, package, msg)) = cf.deprecated_info.as_ref() else {
+            return;
+        };
+        let cl = self.pending_callsite_line();
+        let file = self
+            .env()
+            .get("*PROGRAM-NAME")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let line = cl.unwrap_or(self.cur_source_line);
+        crate::runtime::deprecation::record_deprecation(kind, name, package, msg, &file, line);
     }
 
     /// Cached version of the Interpreter-native [`Self::has_multi_candidates`].

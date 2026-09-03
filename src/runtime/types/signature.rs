@@ -115,6 +115,7 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
 /// Strip the [`Value::varref`] wrapper the caller tagged an lvalue argument
 /// with, once the binder has taken the source name it needs. On the light-call
 /// path this runs once per parameter, so it must not materialize the name.
+#[inline]
 pub(crate) fn unwrap_varref_value(value: Value) -> Value {
     match value.as_varref() {
         Some((_, inner, _)) => inner.clone(),
