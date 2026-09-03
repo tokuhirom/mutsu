@@ -736,7 +736,6 @@ pub(crate) struct ClassAttributeDef {
 ///
 /// The value records *why* the name is readonly ([`ReadonlyKind`]), which is
 /// what decides the exception an assignment through it throws.
-#[derive(Default)]
 pub(crate) struct ReadonlySet {
     map: rustc_hash::FxHashMap<Symbol, ReadonlyKind>,
     /// Whether the topic `_` is currently in `map`.
@@ -756,14 +755,64 @@ pub(crate) struct ReadonlySet {
     /// `t/` suite on a debug binary (ADR-0014), so the invariant is checked by
     /// 3600+ files on every push.
     topic: bool,
+    /// Direct-mapped *positive* cache over [`Self::map`], indexed by
+    /// `sym.raw() & (READONLY_CACHE_SLOTS - 1)`.
+    ///
+    /// Every routine call marks each of its parameters readonly and unmarks
+    /// them on return, and in the recursive/monomorphic steady state the mark
+    /// is a pure no-op -- the same name is already in the set with the same
+    /// kind, put there by an outer frame. Answering "already marked with this
+    /// kind?" through the hash map cost a full SwissTable probe (plus, before
+    /// this cache, a hash *insert*: probe, write, length bookkeeping) on the
+    /// hottest call path; `bench-fib` spent ~6% of its cycles there.
+    ///
+    /// Invariant: an occupied slot `(s, k)` implies `map[s] == k`. A slot never
+    /// implies *absence*, so a miss (empty slot, or a slot holding a different
+    /// symbol that evicted this one) falls through to the map. That is what
+    /// makes the cache sound under collision: an insert always overwrites its
+    /// slot, and a remove only clears a slot that still names the symbol being
+    /// removed -- an evicted entry simply stops being cached, it is never
+    /// wrongly reported.
+    ///
+    /// Kept on the set itself, like [`Self::topic`], so every mutation path
+    /// maintains it by construction (including the whole-set `mem::take` /
+    /// assignment in `take_readonly_state` / `restore_readonly_state`, which
+    /// move the cache with the map it describes). Each read re-derives the slow
+    /// answer under `debug_assert`, and CI runs the whole `t/` suite on a debug
+    /// binary (ADR-0014), so the invariant is checked by 3600+ files per push.
+    cache: [Option<(Symbol, ReadonlyKind)>; READONLY_CACHE_SLOTS],
+}
+
+/// Slot count of [`ReadonlySet::cache`]. A power of two so the index is a mask.
+/// Sized to hold every readonly name a realistic call stack has live at once
+/// (parameters and loop aliases) without the table itself costing a cache line
+/// per probe.
+const READONLY_CACHE_SLOTS: usize = 64;
+
+impl Default for ReadonlySet {
+    fn default() -> Self {
+        Self {
+            map: rustc_hash::FxHashMap::default(),
+            topic: false,
+            cache: [None; READONLY_CACHE_SLOTS],
+        }
+    }
 }
 
 impl ReadonlySet {
+    #[inline(always)]
+    fn slot(sym: Symbol) -> usize {
+        (sym.raw() as usize) & (READONLY_CACHE_SLOTS - 1)
+    }
+
     #[inline]
     pub(crate) fn insert(&mut self, sym: Symbol, kind: ReadonlyKind) -> Option<ReadonlyKind> {
         if sym == crate::symbol::wk::topic() {
             self.topic = true;
         }
+        // Overwrite unconditionally: whatever this evicts stays correct in the
+        // map, it merely stops being cached.
+        self.cache[Self::slot(sym)] = Some((sym, kind));
         self.map.insert(sym, kind)
     }
 
@@ -772,11 +821,46 @@ impl ReadonlySet {
         if *sym == crate::symbol::wk::topic() {
             self.topic = false;
         }
+        let slot = Self::slot(*sym);
+        // Only clear a slot that still names this symbol -- a slot holding the
+        // symbol that evicted it still describes a live map entry.
+        if let Some((cached, _)) = self.cache[slot]
+            && cached == *sym
+        {
+            self.cache[slot] = None;
+        }
         self.map.remove(sym)
+    }
+
+    /// Is `sym` marked with exactly `kind`? The question every parameter mark
+    /// asks before doing anything, answered from the cache when it can be.
+    #[inline]
+    pub(crate) fn marked_with(&self, sym: Symbol, kind: ReadonlyKind) -> bool {
+        if let Some((cached, cached_kind)) = self.cache[Self::slot(sym)]
+            && cached == sym
+        {
+            debug_assert_eq!(
+                self.map.get(&sym),
+                Some(&cached_kind),
+                "ReadonlySet::cache drifted from the map"
+            );
+            return cached_kind == kind;
+        }
+        self.map.get(&sym) == Some(&kind)
     }
 
     #[inline]
     pub(crate) fn contains_key(&self, sym: &Symbol) -> bool {
+        if let Some((cached, cached_kind)) = self.cache[Self::slot(*sym)]
+            && cached == *sym
+        {
+            debug_assert_eq!(
+                self.map.get(sym),
+                Some(&cached_kind),
+                "ReadonlySet::cache drifted from the map"
+            );
+            return true;
+        }
         self.map.contains_key(sym)
     }
 
@@ -799,6 +883,79 @@ impl ReadonlySet {
             "ReadonlySet::topic drifted from the map"
         );
         self.topic
+    }
+}
+
+#[cfg(test)]
+mod readonly_set_cache_tests {
+    use super::{READONLY_CACHE_SLOTS, ReadonlySet};
+    use crate::ast::ReadonlyKind;
+    use crate::symbol::Symbol;
+
+    /// Two distinct symbols that land in the same `ReadonlySet::cache` slot.
+    /// Interned ids are assigned sequentially, so probing a few hundred names
+    /// always finds a colliding pair.
+    fn colliding_pair() -> (Symbol, Symbol) {
+        let syms: Vec<Symbol> = (0..READONLY_CACHE_SLOTS * 4)
+            .map(|i| Symbol::intern(&format!("__ro_cache_probe_{i}")))
+            .collect();
+        for (i, &a) in syms.iter().enumerate() {
+            for &b in &syms[i + 1..] {
+                if ReadonlySet::slot(a) == ReadonlySet::slot(b) {
+                    return (a, b);
+                }
+            }
+        }
+        unreachable!("no colliding symbol pair among {} names", syms.len());
+    }
+
+    /// The cache is a *positive* cache: an occupied slot proves membership, an
+    /// empty or evicted one proves nothing. Eviction and removal must never
+    /// turn that into a wrong answer.
+    #[test]
+    fn an_evicted_entry_is_still_reported_from_the_map() {
+        let (a, b) = colliding_pair();
+        let mut set = ReadonlySet::default();
+        set.insert(a, ReadonlyKind::Alias);
+        set.insert(b, ReadonlyKind::Alias); // evicts `a` from the shared slot
+        assert!(set.contains_key(&a), "an evicted entry is still a member");
+        assert!(set.contains_key(&b));
+        assert!(set.marked_with(a, ReadonlyKind::Alias));
+        assert!(set.marked_with(b, ReadonlyKind::Alias));
+
+        // Removing the evicted symbol must not clear the slot the *other*
+        // symbol now owns.
+        set.remove(&a);
+        assert!(!set.contains_key(&a));
+        assert!(set.contains_key(&b), "the evicting entry survives");
+        assert!(set.marked_with(b, ReadonlyKind::Alias));
+
+        set.remove(&b);
+        assert!(!set.contains_key(&b));
+        assert!(set.is_empty());
+    }
+
+    /// Re-marking with a different kind must be visible through the cache.
+    #[test]
+    fn a_rekinded_entry_reports_the_new_kind() {
+        let sym = Symbol::intern("__ro_cache_rekind");
+        let mut set = ReadonlySet::default();
+        set.insert(sym, ReadonlyKind::Alias);
+        assert!(set.marked_with(sym, ReadonlyKind::Alias));
+        set.insert(sym, ReadonlyKind::Immutable);
+        assert!(set.marked_with(sym, ReadonlyKind::Immutable));
+        assert!(!set.marked_with(sym, ReadonlyKind::Alias));
+        assert!(set.contains_key(&sym));
+    }
+
+    /// A symbol that was never inserted is not reported by a stale slot.
+    #[test]
+    fn a_never_inserted_symbol_is_not_a_member() {
+        let (a, b) = colliding_pair();
+        let mut set = ReadonlySet::default();
+        set.insert(a, ReadonlyKind::Alias);
+        assert!(!set.contains_key(&b), "a colliding non-member stays absent");
+        assert!(!set.marked_with(b, ReadonlyKind::Alias));
     }
 }
 
