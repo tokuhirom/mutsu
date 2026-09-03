@@ -1852,8 +1852,24 @@ impl Interpreter {
     /// is handled by the env_dirty-gated `reconcile_locals_from_env_at_site` that
     /// `drain_and_reconcile_after_cached_call` (and the slow call path) runs at
     /// each frame's call site.
+    /// The `is_empty` guard is inlined and the body is not: this runs on the
+    /// hottest call path, where the pending list is almost always empty, so an
+    /// out-of-line call whose whole work is one `is_empty()` was pure call
+    /// overhead (1.3% of `bench-fib`'s self time).
+    #[inline]
     pub(super) fn apply_pending_rw_writeback(&mut self, code: &CompiledCode) {
         if !self.pending_rw_writeback_sources.is_empty() {
+            self.apply_pending_rw_writeback_slow(code);
+        }
+        // Runs unconditionally: the rw drain above may PUSH into the caller-var
+        // list, but that list is also filled by `$CALLER::x = v` writers that
+        // never touch `pending_rw_writeback_sources` at all.
+        self.apply_pending_caller_var_writeback(code);
+    }
+
+    #[inline(never)]
+    fn apply_pending_rw_writeback_slow(&mut self, code: &CompiledCode) {
+        {
             let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
             for source in sources {
                 // §1.4/§1.5: prefer the compiler-baked caller slot for this source
@@ -1911,7 +1927,6 @@ impl Interpreter {
                 }
             }
         }
-        self.apply_pending_caller_var_writeback(code);
     }
 
     /// Carry a still-unclaimed RUNTIME-NAME write ACROSS a frame boundary.
@@ -1960,10 +1975,18 @@ impl Interpreter {
     /// *deeper* call (whose code lacks the slot) before returning to the frame that
     /// owns it, and that deeper call's drain must not consume the pending write.
     /// Each matched source is removed so it is applied exactly once.
+    /// Guard inlined, body out of line -- see
+    /// [`Self::apply_pending_rw_writeback`] for why.
+    #[inline]
     pub(super) fn apply_pending_caller_var_writeback(&mut self, code: &CompiledCode) {
         if self.pending_caller_var_writeback.is_empty() {
             return;
         }
+        self.apply_pending_caller_var_writeback_slow(code);
+    }
+
+    #[inline(never)]
+    fn apply_pending_caller_var_writeback_slow(&mut self, code: &CompiledCode) {
         let sources = std::mem::take(&mut self.pending_caller_var_writeback);
         let mut retained = Vec::new();
         for source in sources {
