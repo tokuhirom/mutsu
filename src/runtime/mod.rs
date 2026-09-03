@@ -736,7 +736,71 @@ pub(crate) struct ClassAttributeDef {
 ///
 /// The value records *why* the name is readonly ([`ReadonlyKind`]), which is
 /// what decides the exception an assignment through it throws.
-pub(crate) type ReadonlySet = rustc_hash::FxHashMap<Symbol, ReadonlyKind>;
+#[derive(Default)]
+pub(crate) struct ReadonlySet {
+    map: rustc_hash::FxHashMap<Symbol, ReadonlyKind>,
+    /// Whether the topic `_` is currently in `map`.
+    ///
+    /// Every routine call clears the caller's readonly mark on `$_` before
+    /// binding its parameters (see `call_compiled_function_positional_light_at`),
+    /// and the guard for that was "is the set non-empty" -- true for any program
+    /// with a single readonly parameter anywhere on the stack, so the call paid a
+    /// full hash `remove` that missed, on every call. This answers the question
+    /// exactly, in one branch.
+    ///
+    /// Kept on the set itself rather than on the `Interpreter` so that every
+    /// mutation path maintains it by construction -- including
+    /// [`replay_readonly_undo`], which reaches the set through a raw pointer from
+    /// a `Drop` impl and never sees the `Interpreter` at all. `topic_marked`
+    /// re-derives the slow answer under `debug_assert`, and CI runs the whole
+    /// `t/` suite on a debug binary (ADR-0014), so the invariant is checked by
+    /// 3600+ files on every push.
+    topic: bool,
+}
+
+impl ReadonlySet {
+    #[inline]
+    pub(crate) fn insert(&mut self, sym: Symbol, kind: ReadonlyKind) -> Option<ReadonlyKind> {
+        if sym == crate::symbol::wk::topic() {
+            self.topic = true;
+        }
+        self.map.insert(sym, kind)
+    }
+
+    #[inline]
+    pub(crate) fn remove(&mut self, sym: &Symbol) -> Option<ReadonlyKind> {
+        if *sym == crate::symbol::wk::topic() {
+            self.topic = false;
+        }
+        self.map.remove(sym)
+    }
+
+    #[inline]
+    pub(crate) fn contains_key(&self, sym: &Symbol) -> bool {
+        self.map.contains_key(sym)
+    }
+
+    #[inline]
+    pub(crate) fn get(&self, sym: &Symbol) -> Option<&ReadonlyKind> {
+        self.map.get(sym)
+    }
+
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    /// Is the topic `_` marked readonly? O(1), no hashing.
+    #[inline]
+    pub(crate) fn topic_marked(&self) -> bool {
+        debug_assert_eq!(
+            self.topic,
+            self.map.contains_key(&crate::symbol::wk::topic()),
+            "ReadonlySet::topic drifted from the map"
+        );
+        self.topic
+    }
+}
 
 /// One journaled readonly-set mutation (see `Interpreter::enter_readonly_frame`):
 /// the inverse to replay on scope exit, or a `Scope` sentinel marking a frame

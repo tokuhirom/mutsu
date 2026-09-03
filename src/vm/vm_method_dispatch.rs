@@ -321,9 +321,7 @@ impl Interpreter {
         // where `method m { $_ = ... }`). Clear it here, journaled by the
         // frame's readonly scope so it is restored on return; an explicit
         // (readonly) `$_` parameter re-marks it during param binding.
-        if !self.no_readonly_vars() {
-            self.unmark_readonly("_");
-        }
+        self.unmark_readonly_topic();
 
         // ADR-0035 slice 2: a body that reads `CALLER::`/`callframe()` needs a
         // caller-env frame pushed, mirroring `call_compiled_function_named_inner`
@@ -1427,9 +1425,7 @@ impl Interpreter {
         // A method gets a fresh, writable `$_` (Any) — clear any readonly mark
         // leaked from the caller's topic (see the slow path above). Journaled by
         // the frame's readonly scope; an explicit `$_` param re-marks it.
-        if !self.no_readonly_vars() {
-            self.unmark_readonly("_");
-        }
+        self.unmark_readonly_topic();
         // ADR-0035 slice 2: see the matching comment in `call_compiled_method`.
         // Pushed before the scoped-overlay install below so the pushed entry
         // captures the caller's (unoverlaid) env.

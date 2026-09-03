@@ -398,8 +398,8 @@ impl Interpreter {
         // A routine gets a fresh, writable `$_` — clear any readonly mark leaked
         // from the caller's topic (see vm_call_light.rs for the full rationale);
         // the param loop below re-marks `_` for an explicit `$_` param.
-        if cf.code.is_routine && !self.no_readonly_vars() {
-            self.unmark_readonly_sym(crate::symbol::wk::topic());
+        if cf.code.is_routine {
+            self.unmark_readonly_topic();
         }
         // Raku: a routine gets its own `$_` = `(Any)`, not the caller's topic.
         // Shadow the caller's topic with Any before the body reads it (gated on

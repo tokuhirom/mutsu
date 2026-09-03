@@ -296,6 +296,25 @@ impl Interpreter {
         self.unmark_readonly_sym(Symbol::intern(name));
     }
 
+    /// Clear a readonly mark on the topic `_`, if there is one.
+    ///
+    /// Every routine and method call has to do this before binding its own
+    /// `$_` (a caller's `given`/`with`/`for` may have marked the topic
+    /// read-only, and that must not leak into the callee). The guard used to
+    /// be "is the readonly set non-empty", which is true for any program with
+    /// a single readonly parameter live anywhere on the stack -- so the call
+    /// paid a full hash `remove` that missed. `ReadonlySet` tracks the topic's
+    /// membership directly, so the common case is one branch and no hashing.
+    #[inline]
+    pub(crate) fn unmark_readonly_topic(&mut self) {
+        // Bind first: the `borrow()` must end before `unmark_readonly_sym`
+        // takes a `borrow_mut()`.
+        let marked = self.readonly_vars.borrow().topic_marked();
+        if marked {
+            self.unmark_readonly_sym(crate::symbol::wk::topic());
+        }
+    }
+
     /// Remove an already-interned name from the readonly set. Like
     /// `mark_readonly_sym`, a no-op unmark journals nothing. A remove that
     /// exactly cancels the journal's newest entry (the per-iteration

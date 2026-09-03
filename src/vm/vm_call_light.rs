@@ -269,8 +269,8 @@ impl Interpreter {
         // journaled by the readonly frame, so it is restored on return — before
         // the param loop below, which re-marks `_` if the routine has an
         // explicit (readonly) `$_` parameter.
-        if cf.code.is_routine && !self.no_readonly_vars() {
-            self.unmark_readonly_sym(crate::symbol::wk::topic());
+        if cf.code.is_routine {
+            self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a
         // name-based reader needs it (reflective access anywhere / GetGlobal /
