@@ -652,7 +652,7 @@ impl Interpreter {
             && err.message.starts_with("Confused. parse error")
             && !err.message.starts_with("Unable to parse")
         {
-            err.message = format!("Unable to parse expression; {}", err.message);
+            err.message = format!("Unable to parse expression; {}", err.message).into();
         }
         result
     }

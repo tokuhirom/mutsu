@@ -133,9 +133,9 @@ impl Interpreter {
                 .message
                 .split_once("\n  in block ")
                 .map(|(user, _)| user.to_string())
-                .unwrap_or_else(|| signal.message.clone())
+                .unwrap_or_else(|| signal.message.to_string())
         } else {
-            signal.message.clone()
+            signal.message.to_string()
         };
         attrs.insert("message".to_string(), Value::str(message_text));
         if let Some(label) = signal.label.as_ref() {

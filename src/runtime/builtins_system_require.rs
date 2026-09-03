@@ -109,7 +109,7 @@ impl Interpreter {
         };
         self.emit_parse_warnings(tagged_warnings);
         let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
-            err.message = format!("Failed to parse module '{}': {}", file, err.message);
+            err.message = format!("Failed to parse module '{}': {}", file, err.message).into();
             err
         })?;
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at

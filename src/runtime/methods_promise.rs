@@ -51,7 +51,7 @@ impl Interpreter {
                 let error_val = if let Some(ex) = e.exception {
                     *ex
                 } else {
-                    Value::str(e.message)
+                    Value::str(e.message.into_owned())
                 };
                 new_promise.break_with(error_val, output, stderr);
             }

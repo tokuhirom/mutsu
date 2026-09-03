@@ -342,7 +342,7 @@ impl Interpreter {
                 );
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("message".to_string(), Value::str(msg.clone()));
-                let mut err = RuntimeError::new(&msg);
+                let mut err = RuntimeError::new(msg.to_string());
                 err.exception = Some(Box::new(Value::make_instance(
                     Symbol::intern("X::Match::Bool"),
                     attrs,
@@ -381,7 +381,7 @@ impl Interpreter {
                 };
                 let type_matched = if matcher_is_regex {
                     let actual = err.exception.as_ref().map(|e| e.as_ref().clone());
-                    let message = err.message.clone();
+                    let message = err.message.to_string();
                     self.matcher_accepts(&matcher_val, &message, actual.as_ref())
                 } else if expected_normalized.is_empty() || expected_normalized == "Exception" {
                     true
@@ -430,7 +430,7 @@ impl Interpreter {
                 (
                     type_matched,
                     Some(err.exception_value()),
-                    err.message.clone(),
+                    err.message.to_string(),
                 )
             }
         };

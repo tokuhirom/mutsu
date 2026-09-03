@@ -350,7 +350,7 @@ impl Interpreter {
             *exception
         } else {
             let mut attrs = HashMap::new();
-            attrs.insert("message".to_string(), Value::str(err.message));
+            attrs.insert("message".to_string(), Value::str(err.message.into_owned()));
             Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
         };
         let mut failure_attrs = HashMap::new();

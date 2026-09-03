@@ -307,7 +307,7 @@ impl Interpreter {
         match result {
             Ok(v) => promise.keep(v, String::new(), String::new()),
             Err(e) => promise.keep(
-                Self::async_socket_broken(Value::str(e.message)),
+                Self::async_socket_broken(Value::str(e.message.into_owned())),
                 String::new(),
                 String::new(),
             ),

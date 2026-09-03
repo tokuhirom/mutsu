@@ -651,7 +651,7 @@ impl Interpreter {
             crate::symbol::Symbol::intern("X::Syntax::Regex::QuantifierValue"),
             attrs,
         );
-        let mut err = RuntimeError::new(message);
+        let mut err = RuntimeError::new(message.to_string());
         err.exception = Some(Box::new(ex));
         err
     }

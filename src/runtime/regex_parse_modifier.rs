@@ -768,7 +768,7 @@ impl Interpreter {
                         attrs.insert("symbol".to_string(), Value::str(symbol));
                         attrs.insert("message".to_string(), Value::str(msg.clone()));
                         let ex = Value::make_instance(Symbol::intern("X::Undeclared"), attrs);
-                        let mut err = RuntimeError::new(&msg);
+                        let mut err = RuntimeError::new(msg.to_string());
                         err.exception = Some(Box::new(ex));
                         return Some(err);
                     }

@@ -141,7 +141,13 @@ pub struct RuntimeErrorCold {
 
 #[derive(Debug)]
 pub struct RuntimeError {
-    pub message: String,
+    /// The error text. `Cow` so a fixed message -- every
+    /// `RuntimeError::new("literal")` and, above all, the `"CX::Return"` of
+    /// the control signal every routine return raises -- costs no allocation.
+    /// `return_signal`'s `String` was a malloc/free pair per return, which a
+    /// call-graph profile of `bench-fib` charged with essentially all of that
+    /// benchmark's `malloc` time.
+    pub message: std::borrow::Cow<'static, str>,
     pub return_value: Option<Value>,
     /// The control-flow signal this error carries, if any (see `Control`).
     /// Replaces the former `is_*` bools for the migrated signals; read via the
@@ -179,7 +185,7 @@ pub(crate) fn expected_type_object(name: &str) -> Value {
 }
 
 impl RuntimeError {
-    pub(crate) fn new(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         Self {
             message: message.into(),
             return_value: None,
@@ -450,7 +456,7 @@ impl RuntimeError {
     }
 
     pub(crate) fn with_location(
-        message: impl Into<String>,
+        message: impl Into<std::borrow::Cow<'static, str>>,
         code: RuntimeErrorCode,
         line: usize,
         column: usize,
@@ -474,7 +480,7 @@ impl RuntimeError {
 
     pub(crate) fn last_signal() -> Self {
         Self {
-            message: "X::ControlFlow".to_string(),
+            message: std::borrow::Cow::Borrowed("X::ControlFlow"),
             control: Some(Control::Last),
             ..Self::new("")
         }
@@ -482,7 +488,7 @@ impl RuntimeError {
 
     pub(crate) fn next_signal() -> Self {
         Self {
-            message: "X::ControlFlow".to_string(),
+            message: std::borrow::Cow::Borrowed("X::ControlFlow"),
             control: Some(Control::Next),
             ..Self::new("")
         }
@@ -490,7 +496,7 @@ impl RuntimeError {
 
     pub(crate) fn redo_signal() -> Self {
         Self {
-            message: "X::ControlFlow".to_string(),
+            message: std::borrow::Cow::Borrowed("X::ControlFlow"),
             control: Some(Control::Redo),
             ..Self::new("")
         }
@@ -569,7 +575,7 @@ impl RuntimeError {
 
     pub(crate) fn goto_signal(label: String) -> Self {
         Self {
-            message: "X::ControlFlow".to_string(),
+            message: std::borrow::Cow::Borrowed("X::ControlFlow"),
             control: Some(Control::Goto),
             label: Some(label),
             ..Self::new("")
@@ -663,14 +669,14 @@ impl RuntimeError {
 
     pub(crate) fn return_signal(value: Value) -> Self {
         Self {
-            message: "CX::Return".to_string(),
+            message: std::borrow::Cow::Borrowed("CX::Return"),
             return_value: Some(value),
             control: Some(Control::Return),
             ..Self::new("")
         }
     }
 
-    pub(crate) fn warn_signal(message: impl Into<String>) -> Self {
+    pub(crate) fn warn_signal(message: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         Self {
             message: message.into(),
             control: Some(Control::Warn),
@@ -695,7 +701,7 @@ impl RuntimeError {
             // it. The `control` flag is what routes it to a CONTROL block, so
             // naming the failure here costs nothing and stops an escaping
             // signal reporting itself as "CX::Take".
-            message: "take without gather".to_string(),
+            message: std::borrow::Cow::Borrowed("take without gather"),
             control: Some(Control::Take),
             return_value: Some(value),
             exception: xcf.exception,
@@ -725,7 +731,7 @@ impl RuntimeError {
             // it. The `control` flag is what routes it to a CONTROL block, so
             // naming the failure here costs nothing and stops an escaping
             // signal reporting itself as "CX::Take".
-            message: "emit without supply or react".to_string(),
+            message: std::borrow::Cow::Borrowed("emit without supply or react"),
             control: Some(Control::Emit),
             return_value: Some(value),
             exception: xcf.exception,
@@ -734,7 +740,10 @@ impl RuntimeError {
     }
 
     /// Warn signal with a resume value stored in return_value.
-    pub(crate) fn warn_signal_with_resume(message: impl Into<String>, resume_value: Value) -> Self {
+    pub(crate) fn warn_signal_with_resume(
+        message: impl Into<std::borrow::Cow<'static, str>>,
+        resume_value: Value,
+    ) -> Self {
         Self {
             message: message.into(),
             control: Some(Control::Warn),
@@ -766,5 +775,30 @@ mod tests {
         assert!(RuntimeErrorCode::ParseUnparsed.is_parse());
         assert!(RuntimeErrorCode::ParseExpected.is_parse());
         assert!(RuntimeErrorCode::ParseGeneric.is_parse());
+    }
+
+    /// Every routine return raises a `Control::Return` signal, so its message
+    /// must never allocate. `Cow::Borrowed` is the whole point of the field's
+    /// type -- if this ever becomes `Owned`, the return path is mallocing and
+    /// freeing a string per call again (it cost ~7% of `bench-fib`'s retired
+    /// instructions before `Cow` landed).
+    #[test]
+    fn control_signal_messages_do_not_allocate() {
+        use super::{Control, RuntimeError};
+        use crate::value::Value;
+        use std::borrow::Cow;
+
+        let ret = RuntimeError::return_signal(Value::NIL);
+        assert!(matches!(ret.message, Cow::Borrowed("CX::Return")));
+        assert_eq!(ret.control, Some(Control::Return));
+
+        // A literal message passed to the ordinary constructor is borrowed too.
+        let plain = RuntimeError::new("Attempt to return outside of any Routine");
+        assert!(matches!(plain.message, Cow::Borrowed(_)));
+
+        // A computed message still works, as an owned variant.
+        let computed = RuntimeError::new(format!("no such thing: {}", "x"));
+        assert!(matches!(computed.message, Cow::Owned(_)));
+        assert_eq!(computed.message, "no such thing: x");
     }
 }

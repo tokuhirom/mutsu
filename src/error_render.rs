@@ -148,7 +148,7 @@ pub fn render_error(
     // For runtime errors with a backtrace, use the Raku-style format:
     // message\n  in sub foo at file line N\n  in block <unit> at file line N
     if err.backtrace().is_some() && err.code().is_none() {
-        let mut out = err.message.clone();
+        let mut out = err.message.to_string();
         if let Some(bt) = err.backtrace() {
             out.push('\n');
             out.push_str(bt);

@@ -484,7 +484,7 @@ impl Interpreter {
         } else {
             "Died".to_string()
         };
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         err.exception = Some(Box::new(exception.clone()));
         err
     }

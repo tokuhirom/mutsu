@@ -6,7 +6,7 @@ use crate::value::signature::{extract_sig_info, make_signature_value, param_defs
 pub(super) fn routine_unwrap_error(message: &str) -> RuntimeError {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.to_string()));
-    let mut err = RuntimeError::new(message);
+    let mut err = RuntimeError::new(message.to_string());
     err.exception = Some(Box::new(Value::make_instance(
         Symbol::intern("X::Routine::Unwrap"),
         attrs,

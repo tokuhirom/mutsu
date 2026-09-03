@@ -12,9 +12,9 @@ use crate::value::Value;
 pub(super) fn validate_regex_pattern_or_perror(pattern: &str) -> Result<(), PError> {
     validate_regex_structurally(pattern).map_err(|e| {
         if let Some(ex) = e.exception {
-            PError::fatal_with_exception(e.message, ex)
+            PError::fatal_with_exception(e.message.into_owned(), ex)
         } else {
-            PError::fatal(e.message)
+            PError::fatal(e.message.into_owned())
         }
     })
 }
@@ -160,9 +160,9 @@ pub(super) fn reject_trailing_p5_modifiers(rest: &str) -> Result<(), PError> {
             };
             let err = crate::value::RuntimeError::obsolete(&old, replacement);
             return Err(if let Some(ex) = err.exception {
-                PError::fatal_with_exception(err.message, ex)
+                PError::fatal_with_exception(err.message.into_owned(), ex)
             } else {
-                PError::fatal(err.message)
+                PError::fatal(err.message.into_owned())
             });
         }
     }

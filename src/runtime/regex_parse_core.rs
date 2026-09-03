@@ -2979,7 +2979,7 @@ impl Interpreter {
                                                 Symbol::intern("X::Undeclared"),
                                                 attrs,
                                             );
-                                            let mut err = RuntimeError::new(&msg);
+                                            let mut err = RuntimeError::new(msg.to_string());
                                             err.exception = Some(Box::new(ex));
                                             PENDING_REGEX_ERROR.with(|e| {
                                                 *e.borrow_mut() = Some(err);

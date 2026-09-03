@@ -113,7 +113,7 @@ impl Interpreter {
                     .exception
                     .as_deref()
                     .cloned()
-                    .unwrap_or_else(|| Value::str(err.message));
+                    .unwrap_or_else(|| Value::str(err.message.into_owned()));
                 self.call_method_with_values(e, "quit", vec![reason])?;
                 Ok(Value::NIL)
             }
@@ -484,7 +484,7 @@ impl Interpreter {
                 err.exception
                     .as_deref()
                     .cloned()
-                    .unwrap_or_else(|| Value::str(err.message.clone())),
+                    .unwrap_or_else(|| Value::str(err.message.to_string())),
                 String::new(),
                 String::new(),
             );
@@ -676,7 +676,7 @@ impl Interpreter {
                                 err.exception
                                     .as_deref()
                                     .cloned()
-                                    .unwrap_or_else(|| Value::str(err.message.clone())),
+                                    .unwrap_or_else(|| Value::str(err.message.to_string())),
                             ),
                         ),
                     };
@@ -877,7 +877,7 @@ impl Interpreter {
             err.exception
                 .as_deref()
                 .cloned()
-                .unwrap_or_else(|| Value::str(err.message.clone()))
+                .unwrap_or_else(|| Value::str(err.message.to_string()))
         };
 
         let mut captured: Vec<Value> = Vec::new();
@@ -980,7 +980,7 @@ impl Interpreter {
             err.exception
                 .as_deref()
                 .cloned()
-                .unwrap_or_else(|| Value::str(err.message.clone()))
+                .unwrap_or_else(|| Value::str(err.message.to_string()))
         };
 
         // Run the body for each source value; force lazy elements so a dying

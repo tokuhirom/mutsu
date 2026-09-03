@@ -30,7 +30,7 @@ impl Interpreter {
         is_fail: bool,
     ) -> RuntimeError {
         if value.is_nil() {
-            let mut err = RuntimeError::new(default_message);
+            let mut err = RuntimeError::new(default_message.to_string());
             if is_fail {
                 err.control = Some(crate::value::Control::Fail);
             }
@@ -63,7 +63,7 @@ impl Interpreter {
             value.to_string_value()
         };
 
-        let mut err = RuntimeError::new(&msg);
+        let mut err = RuntimeError::new(msg.to_string());
         if is_fail {
             err.control = Some(crate::value::Control::Fail);
         }

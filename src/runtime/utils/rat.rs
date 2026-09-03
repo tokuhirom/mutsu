@@ -20,7 +20,7 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
     );
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Str::Numeric"), attrs);
-    let mut err = RuntimeError::new(&msg);
+    let mut err = RuntimeError::new(msg.to_string());
     err.exception = Some(Box::new(ex));
     err
 }

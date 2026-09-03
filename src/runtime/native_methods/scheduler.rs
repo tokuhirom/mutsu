@@ -510,7 +510,7 @@ impl Interpreter {
                     let exception = e
                         .exception
                         .map(|boxed| *boxed)
-                        .unwrap_or_else(|| Value::str(e.message));
+                        .unwrap_or_else(|| Value::str(e.message.into_owned()));
                     let _ = self.call_sub_value(catch.clone(), vec![exception], true);
                 } else if let Some(handler) = state_scheduler::get_uncaught_handler() {
                     // No per-cue :catch: an uncaught exception goes to the
@@ -518,7 +518,7 @@ impl Interpreter {
                     // exception object so `$exception.message` works.
                     let exception = e.exception.map(|boxed| *boxed).unwrap_or_else(|| {
                         let mut attrs = HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(e.message.clone()));
+                        attrs.insert("message".to_string(), Value::str(e.message.to_string()));
                         Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                     });
                     let _ = self.call_sub_value(handler, vec![exception], true);

@@ -257,7 +257,7 @@ impl Interpreter {
                     let error_val = if let Some(ex) = e.exception {
                         *ex
                     } else {
-                        Value::str(e.message)
+                        Value::str(e.message.into_owned())
                     };
                     promise.break_with(error_val.clone(), output, stderr);
                     // Call uncaught_handler if set, running in a helper thread

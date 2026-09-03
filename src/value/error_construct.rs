@@ -71,7 +71,7 @@ impl RuntimeError {
         // Use the descriptive message (not the bare type name) so an uncaught
         // divide-by-zero prints like Rakudo (`Attempt to divide 1 by zero
         // using %`) instead of `X::Numeric::DivideByZero`.
-        let mut err = Self::new(&msg);
+        let mut err = Self::new(msg.to_string());
         err.exception = Some(Box::new(ex));
         err
     }
@@ -93,7 +93,7 @@ impl RuntimeError {
             Value::package(Symbol::intern(type_name)),
         );
         let ex = Value::make_instance(Symbol::intern("X::Numeric::Uninitialized"), attrs);
-        let mut err = Self::new(&msg);
+        let mut err = Self::new(msg.to_string());
         err.exception = Some(Box::new(ex));
         err
     }
@@ -108,7 +108,7 @@ impl RuntimeError {
         attrs.insert("message".to_string(), Value::str_from(&msg));
         attrs.insert("name".to_string(), Value::str_from(op_long_name));
         let ex = Value::make_instance(Symbol::intern("X::NoZeroArgMeaning"), attrs);
-        let mut err = Self::new(&msg);
+        let mut err = Self::new(msg.to_string());
         err.exception = Some(Box::new(ex));
         err
     }
@@ -223,7 +223,7 @@ impl RuntimeError {
             return ex;
         }
         let (class_name, text) = Self::split_typed_message_convention(&self.message)
-            .unwrap_or((self.untyped_exception_class(), self.message.as_str()));
+            .unwrap_or((self.untyped_exception_class(), self.message.as_ref()));
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str_from(text));
         // `X::Syntax::Missing`'s message IS `Missing {what}` in rakudo, so the

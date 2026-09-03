@@ -188,7 +188,7 @@ impl Interpreter {
                             .join(", ")
                     );
                     let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     attrs.insert("objname".to_string(), Value::str(proto_name.to_string()));
                     attrs.insert("signature".to_string(), Value::str(signature));
                     attrs.insert(

@@ -173,7 +173,7 @@ impl Interpreter {
     ) -> RuntimeError {
         let mut err = RuntimeError::new(message);
         let mut ex_attrs = std::collections::HashMap::new();
-        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
         let exception =
             Value::make_instance(Symbol::intern("X::TypeCheck::Binding::Parameter"), ex_attrs);
         err.exception = Some(Box::new(exception));
@@ -191,7 +191,7 @@ impl Interpreter {
         ) {
             err
         } else {
-            let message = err.message.clone();
+            let message = err.message.to_string();
             Self::parameter_binding_error(message, pd, interp)
         }
     }
@@ -252,7 +252,7 @@ impl Interpreter {
                         crate::runtime::utils::gist_value(&value)
                     ));
                     let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let exception = Value::make_instance(
                         Symbol::intern("X::TypeCheck::Binding::Parameter"),
                         ex_attrs,
@@ -275,7 +275,7 @@ impl Interpreter {
                         crate::runtime::utils::gist_value(&value)
                     ));
                     let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let exception = Value::make_instance(
                         Symbol::intern("X::TypeCheck::Binding::Parameter"),
                         ex_attrs,
@@ -301,7 +301,7 @@ impl Interpreter {
                         crate::runtime::value_type_name(&value)
                     ));
                     let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let exception = Value::make_instance(
                         Symbol::intern("X::TypeCheck::Binding::Parameter"),
                         ex_attrs,
@@ -341,7 +341,7 @@ impl Interpreter {
                         crate::runtime::utils::gist_value(&value)
                     ));
                     let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                     let exception = Value::make_instance(
                         Symbol::intern("X::TypeCheck::Binding::Parameter"),
                         ex_attrs,
@@ -1400,7 +1400,8 @@ impl Interpreter {
                                 crate::runtime::value_type_name(val)
                             ));
                             let mut ex_attrs = std::collections::HashMap::new();
-                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                            ex_attrs
+                                .insert("message".to_string(), Value::str(err.message.to_string()));
                             let exception = Value::make_instance(
                                 Symbol::intern("X::TypeCheck::Binding::Parameter"),
                                 ex_attrs,
@@ -1630,7 +1631,7 @@ impl Interpreter {
                             crate::runtime::value_type_name(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -2139,7 +2140,7 @@ impl Interpreter {
                             crate::runtime::utils::gist_value(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -2163,7 +2164,7 @@ impl Interpreter {
                             crate::runtime::utils::gist_value(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -2187,7 +2188,7 @@ impl Interpreter {
                             crate::runtime::utils::gist_value(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -2211,7 +2212,7 @@ impl Interpreter {
                             crate::runtime::utils::gist_value(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,
@@ -2228,7 +2229,7 @@ impl Interpreter {
                             crate::runtime::value_type_name(&value)
                         ));
                         let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
                         let exception = Value::make_instance(
                             Symbol::intern("X::TypeCheck::Binding::Parameter"),
                             ex_attrs,

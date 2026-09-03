@@ -20,7 +20,7 @@ impl RuntimeError {
             crate::symbol::Symbol::intern("X::Syntax::Number::RadixOutOfRange"),
             attrs,
         );
-        let mut err = Self::new(&msg);
+        let mut err = Self::new(msg.to_string());
         err.exception = Some(Box::new(ex));
         err
     }
@@ -827,7 +827,7 @@ but got '{}' ({}) as a value without a container.",
             },
             None => ("X::AdHoc".to_string(), {
                 let mut m = HashMap::new();
-                m.insert("message".to_string(), Value::str(self.message.clone()));
+                m.insert("message".to_string(), Value::str(self.message.to_string()));
                 m
             }),
         };

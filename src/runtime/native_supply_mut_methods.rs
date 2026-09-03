@@ -409,7 +409,7 @@ impl Interpreter {
                             err.exception
                                 .as_deref()
                                 .cloned()
-                                .unwrap_or_else(|| Value::str(err.message)),
+                                .unwrap_or_else(|| Value::str(err.message.into_owned())),
                         );
                     }
 
@@ -855,11 +855,10 @@ impl Interpreter {
                                         }
                                     }
                                     Err(err) => {
-                                        let reason = err
-                                            .exception
-                                            .as_deref()
-                                            .cloned()
-                                            .unwrap_or_else(|| Value::str(err.message.clone()));
+                                        let reason =
+                                            err.exception.as_deref().cloned().unwrap_or_else(
+                                                || Value::str(err.message.to_string()),
+                                            );
                                         if let Some(ref qf) = quit_cb {
                                             self.call_supply_quit_handler(qf.clone(), reason)?;
                                         } else {
@@ -911,7 +910,7 @@ impl Interpreter {
                                                         .as_deref()
                                                         .cloned()
                                                         .unwrap_or_else(|| {
-                                                            Value::str(err.message.clone())
+                                                            Value::str(err.message.to_string())
                                                         }),
                                                 ),
                                             ),

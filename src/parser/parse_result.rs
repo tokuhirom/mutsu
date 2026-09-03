@@ -263,7 +263,7 @@ impl PError {
     /// re-deriving them, so the two cannot drift apart. A caller must pass a
     /// *typed* error — an untyped one degrades to a plain fatal message.
     pub fn from_typed(err: crate::value::RuntimeError) -> Self {
-        let message = err.message.clone();
+        let message = err.message.to_string();
         match err.exception {
             Some(exception) => Self::fatal_with_exception(message, exception),
             None => Self::fatal(message),

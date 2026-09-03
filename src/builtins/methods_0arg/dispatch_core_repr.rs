@@ -229,7 +229,7 @@ pub(super) fn dispatch(
                 if let Some(ex) = attributes.as_map().get("exception") {
                     Some(Err(RuntimeError::from_exception_value(ex.clone())))
                 } else {
-                    Some(Err(RuntimeError::new(&msg)))
+                    Some(Err(RuntimeError::new(msg.to_string())))
                 }
             }
         }

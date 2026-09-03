@@ -125,7 +125,7 @@ fn undeclared_routine_diagnostic(stmts: &[Stmt]) -> Option<Diagnostic> {
     let line = err.line().unwrap_or(1) as u32;
     Some(Diagnostic {
         severity: Severity::Error,
-        message: err.message,
+        message: err.message.into_owned(),
         line,
         // The walker records the statement line, not an offset; `Stmt::SetLine`
         // is the only positional information mutsu has (D6).
@@ -150,7 +150,7 @@ fn code_name(code: RuntimeErrorCode) -> &'static str {
 
 /// Turn a parse failure into the single diagnostic it is.
 fn diagnostic_from_parse_error(err: &RuntimeError) -> Diagnostic {
-    let mut message = err.message.clone();
+    let mut message = err.message.to_string();
     if let Some(hint) = err.hint() {
         message.push_str("\nhint: ");
         message.push_str(hint);

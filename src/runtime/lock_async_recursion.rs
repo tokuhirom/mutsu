@@ -62,7 +62,7 @@ impl Interpreter {
                 Err(err) => {
                     let reason = match err.exception {
                         Some(ex) => *ex,
-                        None => Value::str(err.message),
+                        None => Value::str(err.message.into_owned()),
                     };
                     let _ = promise.try_break(reason);
                 }

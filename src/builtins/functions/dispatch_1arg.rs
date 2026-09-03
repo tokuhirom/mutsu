@@ -340,7 +340,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     let mut attrs = HashMap::new();
                     attrs.insert("message".to_string(), Value::str(msg.clone()));
                     let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-                    let mut err = RuntimeError::new(&msg);
+                    let mut err = RuntimeError::new(msg.to_string());
                     err.exception = Some(Box::new(ex));
                     Some(Err(err))
                 }
@@ -389,7 +389,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         crate::symbol::Symbol::intern("X::Multi::NoMatch"),
                         attrs,
                     );
-                    let mut err = RuntimeError::new(&msg);
+                    let mut err = RuntimeError::new(msg.to_string());
                     err.exception = Some(Box::new(ex));
                     Some(Err(err))
                 }

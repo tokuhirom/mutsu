@@ -121,7 +121,7 @@ impl Interpreter {
                                         .exception
                                         .as_deref()
                                         .cloned()
-                                        .unwrap_or_else(|| Value::str(err.message.clone()));
+                                        .unwrap_or_else(|| Value::str(err.message.to_string()));
                                     crate::runtime::native_methods::supplier_quit(sid, cause);
                                     react_subs[key].done = true;
                                     break;
@@ -781,11 +781,10 @@ impl Interpreter {
                                     // `next`/`redo` are loop control, not completion.
                                     if !err.is_next() && !err.is_redo() {
                                         // A `die` quits the supply: break with the cause.
-                                        let cause = err
-                                            .exception
-                                            .as_deref()
-                                            .cloned()
-                                            .unwrap_or_else(|| Value::str(err.message.clone()));
+                                        let cause =
+                                            err.exception.as_deref().cloned().unwrap_or_else(
+                                                || Value::str(err.message.to_string()),
+                                            );
                                         promise.break_with(cause, String::new(), String::new());
                                         return Ok(());
                                     }

@@ -139,17 +139,15 @@ Three things worth attacking next, in rough order of size:
    instruction count is the honest oracle for this kind of change: the code
    being moved never executes in the benchmark, so a cycles-only measurement
    cannot be told apart from the layout lottery.
-6. **`RuntimeError::return_signal` allocates a `String` per return.** It sets
-   `message: "CX::Return".to_string()`, so every routine return mallocs and
-   frees a 10-byte string. A call-graph profile attributes essentially all of
-   `bench-fib`'s `malloc` (2.2%) to it, with a matching share of `_int_free`
-   (2.0%) and `return_signal` itself (0.8%) — call it 4-5%. The clean fix is
-   `RuntimeError::message: Cow<'static, str>`, which would also stop the many
-   `RuntimeError::new("literal")` sites from allocating; it is a wide but
-   mechanical change (~337 `.message` reads, ~153 `message:` initializers) and
-   grows `RuntimeError` by 8 bytes, which wants its own measurement. The four
-   sites that compare `message` against `"CX::Return"` use it as the exception
-   *type name*, so it cannot simply be left empty.
+6. **`RuntimeError::return_signal` allocated a `String` per return** —
+   **closed** by `news/2026-09/runtime-error-message-is-a-cow.md`. `message` is
+   now `Cow<'static, str>`, so the control signal every routine return raises
+   costs no allocation (and neither does any
+   `RuntimeError::new("some literal")`). It was worth far more than the 4-5%
+   the malloc/free rows suggested: `fib` −14.8% cycles / **−7.2% retired
+   instructions**, `bench-fib` −11.2% / −7.2%, both orderings. `bench-tak`
+   barely moved, which is the correct control — its body has no explicit
+   `return`.
 
 ## Method notes for whoever picks this up
 

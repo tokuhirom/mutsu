@@ -391,7 +391,7 @@ impl Interpreter {
         );
         attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Package::Stubbed"), attrs);
-        let mut err = RuntimeError::new(&message);
+        let mut err = RuntimeError::new(message.to_string());
         err.exception = Some(Box::new(ex));
         Err(err)
     }
