@@ -22,6 +22,10 @@
 //!   rather than an abort. mutsu is under active development and its parser is
 //!   not panic-free; `check` catches it.
 
+pub mod symbols;
+
+pub use symbols::{Symbol, SymbolKind, symbols};
+
 use crate::ast::Stmt;
 use crate::value::{RuntimeError, RuntimeErrorCode};
 

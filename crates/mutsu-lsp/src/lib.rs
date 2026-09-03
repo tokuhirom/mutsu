@@ -13,6 +13,8 @@ pub mod diagnostics;
 pub mod documents;
 pub mod positions;
 pub mod server;
+pub mod symbols;
+pub mod workspace;
 
 /// The stack an analysis thread gets.
 ///

@@ -82,6 +82,144 @@ pub fn diagnostic_range(text: &str, line_1based: u32, column_1based: Option<u32>
     }
 }
 
+/// The full range of one 1-based line.
+pub fn line_range(text: &str, line_1based: u32) -> Range {
+    let (line, line_index) = line_text(text, line_1based);
+    Range {
+        start: Position {
+            line: line_index,
+            character: 0,
+        },
+        end: Position {
+            line: line_index,
+            character: utf16_offset(line, line.chars().count() as u32),
+        },
+    }
+}
+
+/// The range from the start of `first_line` to the end of `last_line`.
+pub fn span(text: &str, first_line: u32, last_line: u32) -> Range {
+    Range {
+        start: line_range(text, first_line).start,
+        end: line_range(text, last_line.max(first_line)).end,
+    }
+}
+
+/// Where `name` appears on `line_1based`, or the whole line when it does not.
+///
+/// LSP wants a declaration's `selectionRange` to cover the *name*, which is
+/// where "go to symbol" puts the caret. mutsu's AST cannot say where the name
+/// is — it has no positions (D6) — but the declaration line is short and the
+/// name is a literal, so finding it in the text is both cheap and exact. The
+/// match must be on an identifier boundary, or `has $.x` would select the `x`
+/// inside `max`.
+pub fn name_range(text: &str, line_1based: u32, name: &str) -> Range {
+    let (line, line_index) = line_text(text, line_1based);
+    if let Some(start_byte) = identifier_occurrence(line, name) {
+        let start = utf16_offset(line, line[..start_byte].chars().count() as u32);
+        let end = start + name.chars().map(|c| c.len_utf16() as u32).sum::<u32>();
+        return Range {
+            start: Position {
+                line: line_index,
+                character: start,
+            },
+            end: Position {
+                line: line_index,
+                character: end,
+            },
+        };
+    }
+    line_range(text, line_1based)
+}
+
+/// Byte offset of `name` in `line` as a whole identifier, if present.
+fn identifier_occurrence(line: &str, name: &str) -> Option<usize> {
+    if name.is_empty() {
+        return None;
+    }
+    let mut from = 0;
+    while let Some(found) = line[from..].find(name) {
+        let start = from + found;
+        let end = start + name.len();
+        let before_ok = line[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_identifier_char(c));
+        let after_ok = line[end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !is_identifier_char(c));
+        if before_ok && after_ok {
+            return Some(start);
+        }
+        from = start + name.chars().next().map_or(1, char::len_utf8);
+    }
+    None
+}
+
+fn is_identifier_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// The Raku identifier under `position`, if there is one.
+///
+/// `definition` needs to know what the caret is on, and mutsu's AST cannot say:
+/// it has no positions for *references*, only the `Stmt::SetLine` markers that
+/// place declarations (D6). Reading the identifier straight out of the document
+/// text sidesteps that entirely — the server has the text, and an identifier is
+/// a lexical notion that needs no parse.
+///
+/// Hyphens and apostrophes are identifier characters in Raku (`is-prime`,
+/// `don't`), but only between alphanumerics, so a trailing `-` in `$x-` is not
+/// taken.
+pub fn identifier_at(text: &str, position: Position) -> Option<String> {
+    let line = text.split('\n').nth(position.line as usize)?;
+    // LSP characters are UTF-16 code units; walk the line accumulating them to
+    // find the byte offset the caret is at.
+    let mut byte = line.len();
+    let mut units = 0u32;
+    for (offset, c) in line.char_indices() {
+        if units >= position.character {
+            byte = offset;
+            break;
+        }
+        units += c.len_utf16() as u32;
+    }
+    if units < position.character {
+        byte = line.len();
+    }
+
+    let bytes_start = line[..byte]
+        .char_indices()
+        .rev()
+        .take_while(|(i, c)| is_identifier_char(*c) || is_infix_identifier_char(line, *i, *c))
+        .map(|(i, _)| i)
+        .last()
+        .unwrap_or(byte);
+    let mut end = byte;
+    for (i, c) in line[byte..].char_indices() {
+        let absolute = byte + i;
+        if is_identifier_char(c) || is_infix_identifier_char(line, absolute, c) {
+            end = absolute + c.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let word = &line[bytes_start..end];
+    let word = word.trim_matches(|c| !is_identifier_char(c));
+    (!word.is_empty()).then(|| word.to_string())
+}
+
+/// `-` and `'` join an identifier only when they sit between two alphanumerics.
+fn is_infix_identifier_char(line: &str, offset: usize, c: char) -> bool {
+    if c != '-' && c != '\'' {
+        return false;
+    }
+    let before = line[..offset].chars().next_back();
+    let after = line[offset + c.len_utf8()..].chars().next();
+    matches!((before, after), (Some(b), Some(a)) if is_identifier_char(b) && is_identifier_char(a))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +328,117 @@ mod tests {
         let r = diagnostic_range("\n\n", 2, Some(1));
         assert_eq!(r.start, r.end);
         assert_eq!(r.start.line, 1);
+    }
+
+    #[test]
+    fn a_name_range_covers_just_the_name() {
+        let text = "class Foo {\n    method bar() { 1 }\n}\n";
+        let r = name_range(text, 2, "bar");
+        assert_eq!(
+            r.start,
+            Position {
+                line: 1,
+                character: 11
+            }
+        );
+        assert_eq!(
+            r.end,
+            Position {
+                line: 1,
+                character: 14
+            }
+        );
+    }
+
+    #[test]
+    fn a_name_range_does_not_match_inside_a_longer_word() {
+        // `x` must not select the `x` inside `max`.
+        let text = "my $max = 1;\nhas $.x;\n";
+        let r = name_range(text, 2, "x");
+        assert_eq!(r.start.character, 6, "the attribute's own x");
+    }
+
+    #[test]
+    fn a_name_that_is_not_on_the_line_falls_back_to_the_whole_line() {
+        let r = name_range("say 1;\n", 1, "elsewhere");
+        assert_eq!(r, line_range("say 1;\n", 1));
+    }
+
+    #[test]
+    fn the_identifier_under_the_caret_is_read_from_the_text() {
+        let text = "say frobnicate(1);\n";
+        let at = |ch| {
+            identifier_at(
+                text,
+                Position {
+                    line: 0,
+                    character: ch,
+                },
+            )
+        };
+        assert_eq!(at(4).as_deref(), Some("frobnicate"));
+        assert_eq!(at(9).as_deref(), Some("frobnicate"));
+        assert_eq!(at(1).as_deref(), Some("say"));
+    }
+
+    #[test]
+    fn a_hyphenated_identifier_is_one_word() {
+        let text = "say is-prime(7);\n";
+        assert_eq!(
+            identifier_at(
+                text,
+                Position {
+                    line: 0,
+                    character: 6
+                }
+            )
+            .as_deref(),
+            Some("is-prime")
+        );
+    }
+
+    #[test]
+    fn a_caret_on_punctuation_yields_nothing() {
+        assert_eq!(
+            identifier_at(
+                "  ;\n",
+                Position {
+                    line: 0,
+                    character: 2
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            identifier_at(
+                "say 1;\n",
+                Position {
+                    line: 9,
+                    character: 0
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn the_caret_position_is_utf16_when_reading_an_identifier() {
+        let text = "my $s = '🐪🐪'; say frobnicate(1);\n";
+        // `frobnicate` starts after the camels: 4 UTF-16 units for two camels.
+        let camel_units: u32 = "my $s = '🐪🐪'; say "
+            .chars()
+            .map(|c| c.len_utf16() as u32)
+            .sum();
+        assert_eq!(
+            identifier_at(
+                text,
+                Position {
+                    line: 0,
+                    character: camel_units + 2
+                }
+            )
+            .as_deref(),
+            Some("frobnicate")
+        );
     }
 }

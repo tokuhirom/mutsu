@@ -29,8 +29,20 @@ struct Client {
 }
 
 impl Client {
-    /// Connect and complete the initialize handshake.
+    /// Connect and complete the initialize handshake with no workspace.
     fn start() -> Client {
+        Client::start_in(serde_json::json!({ "capabilities": {} }))
+    }
+
+    /// Connect with `root` as the workspace root.
+    fn start_in_workspace(root: &std::path::Path) -> Client {
+        Client::start_in(serde_json::json!({
+            "capabilities": {},
+            "rootUri": format!("file://{}", root.display()),
+        }))
+    }
+
+    fn start_in(initialize_params: serde_json::Value) -> Client {
         let (server_connection, client_connection) = Connection::memory();
         // The same stack the binary gives the loop. mutsu's parser is deeply
         // recursive enough that this is not a formality: on a default stack it
@@ -46,7 +58,7 @@ impl Client {
             next_id: 0,
         };
 
-        let id = client.request("initialize", serde_json::json!({ "capabilities": {} }));
+        let id = client.request("initialize", initialize_params);
         let result = client
             .recv_response(id)
             .response_result
@@ -402,4 +414,217 @@ fn a_deeply_nested_document_does_not_take_the_server_down() {
     assert!(after.diagnostics.is_empty());
 
     client.shutdown();
+}
+
+/// ADR-0065 D3 lists `documentSymbol` as in scope because it gives an agent an
+/// exact answer where it would otherwise grep — and grep's false positives (a
+/// mention in a comment, an unrelated same-named method) are what make it a poor
+/// substitute.
+#[test]
+fn the_outline_of_a_document_is_nested_and_placed() {
+    let mut client = Client::start();
+    let path = "file:///tmp/outline.raku";
+    client.open(
+        path,
+        "class Foo {\n    has $.x;\n    method bar() { 1 }\n}\nsub baz() { 2 }\n",
+        1,
+    );
+
+    let id = client.request(
+        "textDocument/documentSymbol",
+        serde_json::json!({ "textDocument": { "uri": path } }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("documentSymbol must succeed");
+    let outline = result.as_array().expect("a nested outline");
+    assert_eq!(outline.len(), 2, "{result:#}");
+    assert_eq!(outline[0]["name"], "Foo");
+    assert_eq!(outline[0]["detail"], "class");
+    assert_eq!(outline[0]["selectionRange"]["start"]["line"], 0);
+    let children = outline[0]["children"].as_array().expect("class members");
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[1]["name"], "bar");
+    assert_eq!(
+        children[1]["selectionRange"]["start"],
+        serde_json::json!({ "line": 2, "character": 11 }),
+        "the selection range must land on the name, which is where a client puts the caret"
+    );
+    assert_eq!(outline[1]["name"], "baz");
+
+    client.shutdown();
+}
+
+/// The outline must survive a document that does not parse: that is the state a
+/// file being edited is in most of the time (S3).
+#[test]
+fn the_outline_survives_a_broken_document() {
+    let mut client = Client::start();
+    let path = "file:///tmp/broken-outline.raku";
+    client.open(
+        path,
+        "sub good() { 1 }\nsay $c.f (1, 2);\nclass Later { }\n",
+        1,
+    );
+
+    let id = client.request(
+        "textDocument/documentSymbol",
+        serde_json::json!({ "textDocument": { "uri": path } }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("documentSymbol must succeed");
+    let names: Vec<&str> = result
+        .as_array()
+        .expect("outline")
+        .iter()
+        .filter_map(|s| s["name"].as_str())
+        .collect();
+    assert!(names.contains(&"good"), "{result:#}");
+    assert!(names.contains(&"Later"), "{result:#}");
+
+    client.shutdown();
+}
+
+#[test]
+fn definition_finds_a_declaration_in_the_open_document() {
+    let mut client = Client::start();
+    let path = "file:///tmp/definition.raku";
+    client.open(path, "sub frobnicate() { 1 }\nsay frobnicate();\n", 1);
+
+    // The caret sits inside `frobnicate` on the second line.
+    let id = client.request(
+        "textDocument/definition",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 1, "character": 8 },
+        }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("definition must succeed");
+    assert_eq!(result["uri"], path, "{result:#}");
+    assert_eq!(result["range"]["start"]["line"], 0);
+    assert_eq!(
+        result["range"]["start"]["character"], 4,
+        "the range covers the name, not the whole declaration line"
+    );
+
+    client.shutdown();
+}
+
+#[test]
+fn definition_on_something_undeclared_answers_null_rather_than_erroring() {
+    let mut client = Client::start();
+    let path = "file:///tmp/no-definition.raku";
+    client.open(path, "say 1;\n", 1);
+
+    let id = client.request(
+        "textDocument/definition",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 0, "character": 5 },
+        }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("definition must succeed even with nothing to find");
+    assert!(result.is_null(), "{result:#}");
+
+    client.shutdown();
+}
+
+#[test]
+fn workspace_symbol_searches_files_on_disk() {
+    let root = std::env::temp_dir().join(format!("mutsu-lsp-ws-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("lib")).unwrap();
+    std::fs::write(
+        root.join("lib/Widget.rakumod"),
+        "class Widget {\n    method assemble() { 1 }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("main.raku"), "sub unrelated() { 1 }\n").unwrap();
+
+    let mut client = Client::start_in_workspace(&root);
+    let id = client.request("workspace/symbol", serde_json::json!({ "query": "widget" }));
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("workspace/symbol must succeed");
+    let found = result.as_array().expect("a flat symbol list");
+    assert_eq!(
+        found.len(),
+        1,
+        "case-insensitive substring match: {result:#}"
+    );
+    assert_eq!(found[0]["name"], "Widget");
+    assert!(
+        found[0]["location"]["uri"]
+            .as_str()
+            .unwrap()
+            .ends_with("lib/Widget.rakumod"),
+        "{result:#}"
+    );
+
+    // A member of that class is found by its own name, with its container.
+    let id = client.request(
+        "workspace/symbol",
+        serde_json::json!({ "query": "assemble" }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("workspace/symbol must succeed");
+    let found = result.as_array().unwrap();
+    assert_eq!(found.len(), 1, "{result:#}");
+    assert_eq!(found[0]["containerName"], "Widget");
+
+    client.shutdown();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn definition_falls_back_to_the_workspace_when_the_open_document_does_not_declare_it() {
+    let root = std::env::temp_dir().join(format!("mutsu-lsp-xdef-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("Helpers.rakumod"),
+        "sub helper() is export { 1 }\n",
+    )
+    .unwrap();
+    let script = root.join("script.raku");
+    std::fs::write(&script, "use Helpers;\nsay helper();\n").unwrap();
+
+    let mut client = Client::start_in_workspace(&root);
+    let uri = format!("file://{}", script.display());
+    client.open(&uri, "use Helpers;\nsay helper();\n", 1);
+
+    let id = client.request(
+        "textDocument/definition",
+        serde_json::json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": 1, "character": 6 },
+        }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("definition must succeed");
+    assert!(
+        result["uri"]
+            .as_str()
+            .unwrap_or("")
+            .ends_with("Helpers.rakumod"),
+        "{result:#}"
+    );
+    assert_eq!(result["range"]["start"]["line"], 0);
+
+    client.shutdown();
+    let _ = std::fs::remove_dir_all(&root);
 }
