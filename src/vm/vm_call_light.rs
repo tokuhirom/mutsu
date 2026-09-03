@@ -166,7 +166,7 @@ impl Interpreter {
         // the param loop below, which re-marks `_` if the routine has an
         // explicit (readonly) `$_` parameter.
         if cf.code.is_routine && !self.no_readonly_vars() {
-            self.unmark_readonly("_");
+            self.unmark_readonly_sym(crate::symbol::wk::topic());
         }
         // Bind params to slots. Also write the param into the overlay when a
         // name-based reader needs it (reflective access anywhere / GetGlobal /
@@ -218,12 +218,25 @@ impl Interpreter {
                 }
                 let val = Self::itemize_plain_scalar_param(&cf.param_defs[param_idx], val);
                 let param_name = &cf.param_defs[param_idx].name;
-                self.locals[*slot] = val.clone();
                 let needs_env = write_all_params
                     || val.is_nil()
                     || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
                 if needs_env {
-                    self.env_mut().insert(param_name.clone(), val);
+                    // The env mirror is keyed by the pre-interned param name
+                    // (`param_name_syms`), so this costs neither a `String`
+                    // clone nor a re-intern of the name on every call. The
+                    // key-shape bookkeeping `Env::insert` would have done is
+                    // still performed, on a borrow.
+                    crate::env::note_env_key(param_name);
+                    self.locals[*slot] = val.clone();
+                    match cf.param_name_syms.get(param_idx) {
+                        Some(sym) => self.env_mut().insert_sym(*sym, val),
+                        None => self.env_mut().insert(param_name.clone(), val),
+                    };
+                } else {
+                    // No env mirror: move the bound value straight into the
+                    // slot instead of cloning it and dropping the original.
+                    self.locals[*slot] = val;
                 }
                 match cf.param_name_syms.get(param_idx) {
                     Some(sym) => self.mark_readonly_sym(*sym),
@@ -250,11 +263,12 @@ impl Interpreter {
             && cf.code.is_routine
             && !cf.param_defs.iter().any(|pd| pd.name == "_")
         {
-            let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
+            let any_val = Value::package(crate::symbol::wk::any());
             if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
                 self.locals[slot] = any_val.clone();
             }
-            self.env_mut().insert("_".to_string(), any_val);
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::topic(), any_val);
         }
 
         let saved_stack_depth = self.stack.len();

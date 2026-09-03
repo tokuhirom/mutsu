@@ -402,8 +402,7 @@ fn empty_overlay_ref() -> &'static Arc<SymMap> {
 /// every `Env` mutator down to a `u32` compare — see [`Env::source_file_sym`].
 #[inline(always)]
 fn file_key() -> Symbol {
-    static FILE_KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
-    *FILE_KEY.get_or_init(|| Symbol::intern("?FILE"))
+    crate::symbol::wk::file()
 }
 
 /// Intern a `?FILE` value. A non-`Str` `?FILE` has no file symbol, matching

@@ -399,7 +399,7 @@ impl Interpreter {
         // from the caller's topic (see vm_call_light.rs for the full rationale);
         // the param loop below re-marks `_` for an explicit `$_` param.
         if cf.code.is_routine && !self.no_readonly_vars() {
-            self.unmark_readonly("_");
+            self.unmark_readonly_sym(crate::symbol::wk::topic());
         }
         // Raku: a routine gets its own `$_` = `(Any)`, not the caller's topic.
         // Shadow the caller's topic with Any before the body reads it (gated on
@@ -408,11 +408,12 @@ impl Interpreter {
             && cf.code.is_routine
             && !cf.param_defs.iter().any(|pd| pd.name == "_")
         {
-            let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
+            let any_val = Value::package(crate::symbol::wk::any());
             if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
                 self.locals[slot] = any_val.clone();
             }
-            self.env_mut().insert("_".to_string(), any_val);
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::topic(), any_val);
         }
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()

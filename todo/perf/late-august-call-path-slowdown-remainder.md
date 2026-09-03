@@ -86,8 +86,14 @@ both gone from the top of the profile.
 | 10.3% | `mutsu_jit_1` |
 | 11.3% | `Vec::extend_trusted` + `recycle_locals` + `Vec::resize` — the args/locals pool |
 | 5.5% | `replay_readonly_undo` + `HashMap::insert` + `unmark_readonly_sym` — readonly bookkeeping |
-| 2.6% | `LocalKey::with` |
+| 2.6% | `LocalKey::with` — **closed**, see below |
 | 1.8% | `resolve_let_saves_on_success` |
+
+The `Symbol::intern` / `LocalKey::with` rows are closed by
+`news/2026-09/hot-path-well-known-symbols-and-param-bind-move.md`: the call
+path re-interned the fixed names `"_"` and `"Any"` on every call, and the
+parameter bind loop cloned each bound argument twice. `bench-tak` −8.0%,
+`bench-fib` −5.2%, `fib` −4.2% locally.
 
 Three things worth attacking next, in rough order of size:
 
