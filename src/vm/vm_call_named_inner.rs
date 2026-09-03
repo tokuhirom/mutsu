@@ -99,7 +99,7 @@ impl Interpreter {
             routine_push_name,
             self.current_source_line(),
             self.current_source_file_sym(),
-            cf.source_file.as_deref().map(Symbol::intern),
+            cf.source_file_sym(),
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {

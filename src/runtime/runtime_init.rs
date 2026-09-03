@@ -2436,6 +2436,7 @@ impl Interpreter {
                 next_id: 1,
             })),
             program_path: None,
+            file_sym_memo: std::cell::RefCell::new(None),
             current_package: Arc::new(RwLock::new("GLOBAL".to_string())),
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
                 crate::symbol::Symbol::intern("GLOBAL").id(),

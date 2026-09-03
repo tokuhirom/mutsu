@@ -11,6 +11,14 @@ fn captures_pop(
     captures.get(&key).and_then(|envs| envs.borrow_mut().pop())
 }
 
+/// The interned `"?FILE"` env key. `Env::get(&str)` interns its key on every
+/// call, which is pure overhead for a fixed name read on the routine-frame
+/// push path — see [`Interpreter::current_source_file_sym`].
+fn file_key_sym() -> Symbol {
+    static FILE_KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+    *FILE_KEY.get_or_init(|| Symbol::intern("?FILE"))
+}
+
 impl Interpreter {
     /// Get the current source line number from the interpreter.
     pub(crate) fn current_source_line(&self) -> Option<u32> {
@@ -19,23 +27,50 @@ impl Interpreter {
 
     /// Get the current source file from the interpreter env.
     pub(crate) fn current_source_file(&self) -> Option<String> {
-        self.env().get("?FILE").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ => None,
-        })
+        self.env()
+            .get_sym(file_key_sym())
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            })
     }
 
     /// `Symbol` variant of [`Self::current_source_file`]: interns instead of
-    /// allocating a fresh `String`. `?FILE` is the same value for the whole
-    /// run of a compilation unit, so after the first call this is a
-    /// thread-local cache hit — no allocation — which is what makes it cheap
-    /// enough for `RoutineFrame` pushes on a hot call path (see
-    /// `vm_call_fast.rs`).
+    /// allocating a fresh `String`.
+    ///
+    /// ADR-0037 Slice 1 made every light/fast call path push a `RoutineFrame`,
+    /// and each push records the call-site file through here — so this went
+    /// from a cold-path helper to one of the hottest functions in the VM. Two
+    /// interns per call (the `"?FILE"` env key, then the path itself) cost
+    /// ~10% of `benchmarks/bench-fib.raku`, since `Symbol::intern` hashes the
+    /// whole string. Both are avoided now: the key is a process-wide
+    /// pre-interned `Symbol`, and the path is memoized on the identity of the
+    /// `Arc<String>` the env handed back.
+    ///
+    /// The env is still consulted on every call, so a `?FILE` change (module
+    /// load, `EVAL`, `run_from_file`) is observed immediately — the memo only
+    /// short-circuits when the very same `Arc` comes back. Holding that `Arc`
+    /// is also what makes pointer identity sound: the buffer cannot be freed
+    /// and a different string allocated at the same address while cached.
     pub(crate) fn current_source_file_sym(&self) -> Option<Symbol> {
-        self.env().get("?FILE").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
-            _ => None,
-        })
+        let v = self.env().get_sym(file_key_sym())?;
+        let ValueView::Str(s) = v.view() else {
+            return None;
+        };
+        let arc: &std::sync::Arc<String> = &s;
+        // Read the memo through a `let` so its `Ref` is unambiguously dropped
+        // before the `borrow_mut()` below (a miss falls through to it).
+        let hit = self
+            .file_sym_memo
+            .borrow()
+            .as_ref()
+            .and_then(|(cached, sym)| std::sync::Arc::ptr_eq(cached, arc).then_some(*sym));
+        if let Some(sym) = hit {
+            return Some(sym);
+        }
+        let sym = Symbol::intern(arc.as_str());
+        *self.file_sym_memo.borrow_mut() = Some((std::sync::Arc::clone(arc), sym));
+        Some(sym)
     }
 
     /// Attach the defining scope to an interpolating regex literal

@@ -174,11 +174,11 @@ impl Interpreter {
         // `line`/`file` are the CALLER's current position (the call-site);
         // `def_file` is where this routine's body was declared.
         self.push_routine_with_location(
-            Symbol::intern(&cf.package),
+            cf.package_sym(),
             fn_name_sym,
             self.current_source_line(),
             self.current_source_file_sym(),
-            cf.source_file.as_deref().map(Symbol::intern),
+            cf.source_file_sym(),
         );
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.

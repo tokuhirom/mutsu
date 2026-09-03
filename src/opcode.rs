@@ -7773,9 +7773,33 @@ pub(crate) struct CompiledFunction {
     /// happens to have in scope.
     pub(crate) compiled_fns: Option<std::sync::Arc<CompiledFns>>,
     pub(crate) memo_cache: MemoCache,
+    /// Lazily-interned [`Self::package`] — see [`Self::package_sym`].
+    pub(crate) package_sym_cache: std::sync::OnceLock<Symbol>,
+    /// Lazily-interned [`Self::source_file`] — see [`Self::source_file_sym`].
+    pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
 }
 
 impl CompiledFunction {
+    /// The declaring package as a `Symbol`, interned once per compiled
+    /// function. Every call that pushes a `RoutineFrame` needs it, so
+    /// interning it per call re-hashed the package string on the hottest
+    /// dispatch path (ADR-0037 Slice 1 made all four call paths push a
+    /// frame). Mirrors `CompiledCode::const_sym` / `param_name_syms`.
+    pub(crate) fn package_sym(&self) -> Symbol {
+        *self
+            .package_sym_cache
+            .get_or_init(|| Symbol::intern(&self.package))
+    }
+
+    /// The declaring source file as a `Symbol` (`None` = main script),
+    /// interned once per compiled function — see [`Self::package_sym`] for
+    /// why this is cached rather than interned per call.
+    pub(crate) fn source_file_sym(&self) -> Option<Symbol> {
+        *self
+            .source_file_sym_cache
+            .get_or_init(|| self.source_file.as_deref().map(Symbol::intern))
+    }
+
     /// Pre-compute the mapping from positional parameter index to locals slot index.
     ///
     /// Prefers the compiler-baked `code.param_local_slots` (authoritative slots
