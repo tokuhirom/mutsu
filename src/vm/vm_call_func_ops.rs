@@ -449,24 +449,24 @@ impl Interpreter {
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
                         if !has_junction && !call_has_slip && !share_into_scalar {
+                            // Bind straight out of the stack (no args buffer):
+                            // the callee takes the arguments in place from
+                            // `stack[start..]` and truncates back to `start` on
+                            // every exit path. The previous pooled buffer cost a
+                            // `Vec::extend` of the drained slots plus a second
+                            // pool round-trip and drop loop per call, ~7% of
+                            // `bench-fib` on the hottest dispatch path.
                             let start = self.stack.len() - arity_usize;
-                            // Pooled args buffer (J4d): `drain(..).collect()`
-                            // was one malloc/free per call on the hottest call
-                            // path; the locals pool already recycles
-                            // `Vec<Value>`s, so borrow it for the args too.
-                            let mut args = self.take_locals_from_pool(0);
-                            args.extend(self.stack.drain(start..));
                             if cl.is_some() {
                                 loan_env!(self, set_pending_callsite_line(cl));
                             }
-                            let result = self.call_compiled_function_positional_light(
+                            let result = self.call_compiled_function_positional_light_at(
                                 cf,
-                                &args,
+                                start,
                                 compiled_fns,
                                 name_str,
                                 code.const_sym(name_idx),
                             );
-                            self.recycle_locals(args);
                             self.stack.push(result?);
                             // Slice F: drain any captured-outer writes the body
                             // recorded through to this caller frame's local slots

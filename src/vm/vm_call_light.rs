@@ -1,10 +1,44 @@
 use super::*;
 
 impl Interpreter {
+    /// Slice-taking wrapper over [`Self::call_compiled_function_positional_light_at`]
+    /// for the cold call sites that already hold an owned argument vector
+    /// (the OTF promotion arm and the slow `call_function` resolution path).
+    /// The hot cached dispatch calls the `_at` form directly, leaving the
+    /// arguments where the caller's opcodes evaluated them -- on the VM stack.
     pub(super) fn call_compiled_function_positional_light(
         &mut self,
         cf: &CompiledFunction,
         args: &[Value],
+        compiled_fns: &CompiledFns,
+        func_name: &str,
+        func_name_sym: Symbol,
+    ) -> Result<Value, RuntimeError> {
+        let args_base = self.stack.len();
+        self.stack.extend(args.iter().cloned());
+        self.call_compiled_function_positional_light_at(
+            cf,
+            args_base,
+            compiled_fns,
+            func_name,
+            func_name_sym,
+        )
+    }
+
+    /// Bind and run `cf` with the arguments occupying `self.stack[args_base..]`.
+    /// The arguments are consumed: on every exit path (including both arity
+    /// errors and a parameter type-check failure) the stack is truncated back
+    /// to `args_base`.
+    ///
+    /// Taking the arguments in place is what removes the per-call intermediate
+    /// buffer the previous `&[Value]` signature forced: the caller used to
+    /// borrow a pooled `Vec`, `extend` the drained stack slots into it, and
+    /// recycle it after the call, which cost a `Vec::extend_trusted` plus a
+    /// second pool round-trip and drop loop on the hottest dispatch path.
+    pub(super) fn call_compiled_function_positional_light_at(
+        &mut self,
+        cf: &CompiledFunction,
+        args_base: usize,
         compiled_fns: &CompiledFns,
         func_name: &str,
         func_name_sym: Symbol,
@@ -23,7 +57,7 @@ impl Interpreter {
         let saved_unit = self.enter_compilation_unit(cf);
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
-        let actual_count = args.len();
+        let actual_count = self.stack.len() - args_base;
 
         // Every positional-light-eligible parameter is a mandatory positional
         // (no default, optional `?`, or slurpy -- see
@@ -36,10 +70,14 @@ impl Interpreter {
                 positional_count, actual_count
             );
             self.current_unit = saved_unit;
-            return Err(RuntimeError::typed(
-                "X::TypeCheck::Argument",
-                Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
-            ));
+            let attrs = Self::type_check_argument_attrs(
+                func_name,
+                &cf.param_defs,
+                &self.stack[args_base..],
+                msg,
+            );
+            self.stack.truncate(args_base);
+            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
         }
         // `is_positional_light_call_eligible` guarantees no slurpy/optional
         // param exists on this signature, so a surplus argument is always an
@@ -54,10 +92,14 @@ impl Interpreter {
                 positional_count, actual_count
             );
             self.current_unit = saved_unit;
-            return Err(RuntimeError::typed(
-                "X::TypeCheck::Argument",
-                Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
-            ));
+            let attrs = Self::type_check_argument_attrs(
+                func_name,
+                &cf.param_defs,
+                &self.stack[args_base..],
+                msg,
+            );
+            self.stack.truncate(args_base);
+            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
@@ -175,47 +217,71 @@ impl Interpreter {
         // env.contains_key). The overlay write is born-owned (no caller-env fork)
         // and is dropped on return, so no per-param save/restore is needed.
         let write_all_params = crate::opcode::reflective_name_access_possible();
-        for (param_idx, slot) in param_slots.iter().enumerate() {
-            if param_idx < actual_count {
-                let val = crate::runtime::types::unwrap_varref_value(args[param_idx].clone());
-                if let Some(ref tc) = cf.param_defs[param_idx].type_constraint
-                    && !Self::fast_type_check(&val, tc)
-                {
-                    // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
-                    match caller_env {
-                        Some(caller_env) => self.set_env(caller_env),
-                        // Reused frame: drop every by-name write made since
-                        // entry (the overlay was the shared empty singleton, so
-                        // all surviving entries are this call's param binds) —
-                        // the same wholesale discard the swap path gets from
-                        // dropping the scoped overlay.
-                        None => {
-                            if !self.env().overlay_is_shared_empty() {
-                                self.env_mut().retain_overlay(|_, _| false);
-                            }
-                        }
-                    }
-                    let used = std::mem::replace(&mut self.locals, saved_locals);
-                    self.recycle_locals(used);
-                    self.loop_local_vars = saved_loop_local_vars;
-                    self.loop_local_saved_env = saved_loop_local_saved_env;
-                    self.active_loop_param_names = saved_active_loop_param_names;
-                    self.block_declared_vars = saved_block_declared_vars;
-                    self.current_unit = saved_unit;
-                    {
-                        let param_name = &cf.param_defs[param_idx].name;
-                        let got = runtime::value_type_name(&val);
-                        let msg = format!(
-                            "Type check failed in binding ${}: expected {}, got {}",
-                            param_name, tc, got
-                        );
-                        let mut attrs =
-                            Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg);
-                        attrs.insert("expected".to_string(), Value::str(tc.to_string()));
-                        attrs.insert("got".to_string(), Value::str(got.to_string()));
-                        return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+        // Type-check the constrained parameters FIRST, against the arguments as
+        // they still sit untouched on the stack. Running the checks up front is
+        // what lets the bind loop below move each argument out of its stack slot
+        // instead of cloning it: a failure reported from here still sees the
+        // complete, unmodified argument list for `X::TypeCheck::Argument`'s
+        // `arguments` attribute. Only the failing index is remembered, so the
+        // borrow of `self.stack` ends before the `&mut self` rollback runs.
+        let mut type_failure: Option<(usize, &'static str)> = None;
+        for param_idx in 0..positional_count.min(actual_count) {
+            let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
+                continue;
+            };
+            let val = self.stack[args_base + param_idx].unwrap_varref();
+            if !Self::fast_type_check(val, tc) {
+                type_failure = Some((param_idx, runtime::value_type_name(val)));
+                break;
+            }
+        }
+        if let Some((param_idx, got)) = type_failure {
+            let tc = cf.param_defs[param_idx].type_constraint.as_ref().unwrap();
+            // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
+            match caller_env {
+                Some(caller_env) => self.set_env(caller_env),
+                // Reused frame: drop every by-name write made since
+                // entry (the overlay was the shared empty singleton, so
+                // all surviving entries are this call's param binds) —
+                // the same wholesale discard the swap path gets from
+                // dropping the scoped overlay.
+                None => {
+                    if !self.env().overlay_is_shared_empty() {
+                        self.env_mut().retain_overlay(|_, _| false);
                     }
                 }
+            }
+            let used = std::mem::replace(&mut self.locals, saved_locals);
+            self.recycle_locals(used);
+            self.loop_local_vars = saved_loop_local_vars;
+            self.loop_local_saved_env = saved_loop_local_saved_env;
+            self.active_loop_param_names = saved_active_loop_param_names;
+            self.block_declared_vars = saved_block_declared_vars;
+            self.current_unit = saved_unit;
+            let param_name = &cf.param_defs[param_idx].name;
+            let msg = format!(
+                "Type check failed in binding ${}: expected {}, got {}",
+                param_name, tc, got
+            );
+            let mut attrs = Self::type_check_argument_attrs(
+                func_name,
+                &cf.param_defs,
+                &self.stack[args_base..],
+                msg,
+            );
+            self.stack.truncate(args_base);
+            attrs.insert("expected".to_string(), Value::str(tc.to_string()));
+            attrs.insert("got".to_string(), Value::str(got.to_string()));
+            return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+        }
+        for (param_idx, slot) in param_slots.iter().enumerate() {
+            if param_idx < actual_count {
+                // Move the argument out of its stack slot (the slots are
+                // discarded by the `truncate` below, so nothing observes the
+                // `Nil` left behind) rather than cloning it and dropping the
+                // original.
+                let val = std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL);
+                let val = crate::runtime::types::unwrap_varref_value(val);
                 let val = Self::itemize_plain_scalar_param(&cf.param_defs[param_idx], val);
                 let param_name = &cf.param_defs[param_idx].name;
                 let needs_env = write_all_params
@@ -244,6 +310,10 @@ impl Interpreter {
                 }
             }
         }
+        // The arguments are consumed: drop their (now `Nil`) stack slots so the
+        // body runs with the same stack depth the caller's drain used to leave
+        // behind. Every early return above truncates for the same reason.
+        self.stack.truncate(args_base);
         // Bind-time param values that a name-based reader can observe were
         // already written into the (born-owned) overlay env above when
         // `needs_env` held. A slot-only param (read solely via GetLocal) never

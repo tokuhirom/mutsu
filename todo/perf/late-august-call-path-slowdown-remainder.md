@@ -97,12 +97,16 @@ parameter bind loop cloned each bound argument twice. `bench-tak` −8.0%,
 
 Three things worth attacking next, in rough order of size:
 
-1. **The args/locals `Vec` churn (~11%).** `exec_call_func_op` borrows a pooled
-   `Vec` for the args and `extend`s the drained stack into it; the light path
-   then borrows another for the callee locals, `resize`s it with `Value::NIL`,
-   clones each argument into its slot, and recycles both. The clone/drop pair
-   per argument exists only because the args buffer is recycled rather than
-   moved from.
+1. **The args/locals `Vec` churn (~11%).** The **args half is closed** by
+   `news/2026-09/positional-light-call-binds-from-the-stack.md`: the cached
+   positional dispatch no longer materializes an argument buffer at all — the
+   callee takes `args_base` and binds by move straight out of `self.stack`,
+   truncating on every exit path (`bench-tak` −10.6%, `fib` −7.2%, `bench-fib`
+   −6.7% locally, both orderings). What remains is the **locals** half: the
+   light path still borrows a pooled `Vec` for the callee locals and `resize`s
+   it with `Value::NIL` per call, and the same buffer shape is still copied
+   into on the *named* light path (`call_compiled_function_light`), which was
+   left untouched.
 2. **Readonly bookkeeping (~5.5%).** Every call marks each parameter readonly
    and unmarks it on exit: an `FxHashMap<Symbol, ReadonlyKind>` insert, a
    remove, and a journal push/pop per parameter per call. A monomorphic
