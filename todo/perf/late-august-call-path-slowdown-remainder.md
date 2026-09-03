@@ -128,6 +128,28 @@ Three things worth attacking next, in rough order of size:
    `wk::topic()`), `"/"`, `"!"`, `"__mutsu_in_eval"`. None are on `fib`'s path,
    so they need a profile of a different benchmark (loops, smartmatch,
    substitution, `try`) to rank before sweeping.
+5. **`call_compiled_function_positional_light_at`'s stack frame.** It was 1064
+   bytes and every recursive call touches all of it.
+   `news/2026-09/light-call-cold-error-paths-outlined.md` took it to 984 by
+   moving the four inline error constructions (`format!` + attribute maps) into
+   `#[cold] #[inline(never)]` helpers — `fib` −7.3% cycles / −1.7% retired
+   instructions. **984 bytes is still large and nothing else has been
+   identified as filling it**; `perf annotate` on the function shows the
+   remaining cost as `movaps ...,N(%rsp)` spill stores. Note that the retired-
+   instruction count is the honest oracle for this kind of change: the code
+   being moved never executes in the benchmark, so a cycles-only measurement
+   cannot be told apart from the layout lottery.
+6. **`RuntimeError::return_signal` allocates a `String` per return.** It sets
+   `message: "CX::Return".to_string()`, so every routine return mallocs and
+   frees a 10-byte string. A call-graph profile attributes essentially all of
+   `bench-fib`'s `malloc` (2.2%) to it, with a matching share of `_int_free`
+   (2.0%) and `return_signal` itself (0.8%) — call it 4-5%. The clean fix is
+   `RuntimeError::message: Cow<'static, str>`, which would also stop the many
+   `RuntimeError::new("literal")` sites from allocating; it is a wide but
+   mechanical change (~337 `.message` reads, ~153 `message:` initializers) and
+   grows `RuntimeError` by 8 bytes, which wants its own measurement. The four
+   sites that compare `message` against `"CX::Return"` use it as the exception
+   *type name*, so it cannot simply be left empty.
 
 ## Method notes for whoever picks this up
 
