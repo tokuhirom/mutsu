@@ -11,14 +11,6 @@ fn captures_pop(
     captures.get(&key).and_then(|envs| envs.borrow_mut().pop())
 }
 
-/// The interned `"?FILE"` env key. `Env::get(&str)` interns its key on every
-/// call, which is pure overhead for a fixed name read on the routine-frame
-/// push path — see [`Interpreter::current_source_file_sym`].
-fn file_key_sym() -> Symbol {
-    static FILE_KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
-    *FILE_KEY.get_or_init(|| Symbol::intern("?FILE"))
-}
-
 impl Interpreter {
     /// Get the current source line number from the interpreter.
     pub(crate) fn current_source_line(&self) -> Option<u32> {
@@ -27,50 +19,43 @@ impl Interpreter {
 
     /// Get the current source file from the interpreter env.
     pub(crate) fn current_source_file(&self) -> Option<String> {
-        self.env()
-            .get_sym(file_key_sym())
-            .and_then(|v| match v.view() {
-                ValueView::Str(s) => Some(s.to_string()),
-                _ => None,
-            })
+        self.env().get("?FILE").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
     }
 
-    /// `Symbol` variant of [`Self::current_source_file`]: interns instead of
-    /// allocating a fresh `String`.
+    /// `Symbol` variant of [`Self::current_source_file`] — the file a
+    /// `RoutineFrame` records as its CALL SITE.
     ///
-    /// ADR-0037 Slice 1 made every light/fast call path push a `RoutineFrame`,
-    /// and each push records the call-site file through here — so this went
-    /// from a cold-path helper to one of the hottest functions in the VM. Two
-    /// interns per call (the `"?FILE"` env key, then the path itself) cost
-    /// ~10% of `benchmarks/bench-fib.raku`, since `Symbol::intern` hashes the
-    /// whole string. Both are avoided now: the key is a process-wide
-    /// pre-interned `Symbol`, and the path is memoized on the identity of the
-    /// `Arc<String>` the env handed back.
+    /// ADR-0037 Slice 1 put a `RoutineFrame` push on all four call paths, so
+    /// this is now one of the hottest functions in the VM. It reads the value
+    /// straight off the env ([`crate::env::Env::source_file_sym`]) instead of
+    /// walking the overlay chain and interning the path, which together were
+    /// ~5% of `benchmarks/bench-fib.raku`.
     ///
-    /// The env is still consulted on every call, so a `?FILE` change (module
-    /// load, `EVAL`, `run_from_file`) is observed immediately — the memo only
-    /// short-circuits when the very same `Arc` comes back. Holding that `Arc`
-    /// is also what makes pointer identity sound: the buffer cannot be freed
-    /// and a different string allocated at the same address while cached.
+    /// The debug assertion re-derives the answer the slow way on every call.
+    /// CI runs the whole `t/` suite on the debug binary (ADR-0014), so an
+    /// `Env` mutator that forgets to maintain the field fails loudly there
+    /// rather than silently mis-attributing backtrace frames in release.
+    #[inline]
     pub(crate) fn current_source_file_sym(&self) -> Option<Symbol> {
-        let v = self.env().get_sym(file_key_sym())?;
-        let ValueView::Str(s) = v.view() else {
-            return None;
-        };
-        let arc: &std::sync::Arc<String> = &s;
-        // Read the memo through a `let` so its `Ref` is unambiguously dropped
-        // before the `borrow_mut()` below (a miss falls through to it).
-        let hit = self
-            .file_sym_memo
-            .borrow()
-            .as_ref()
-            .and_then(|(cached, sym)| std::sync::Arc::ptr_eq(cached, arc).then_some(*sym));
-        if let Some(sym) = hit {
-            return Some(sym);
-        }
-        let sym = Symbol::intern(arc.as_str());
-        *self.file_sym_memo.borrow_mut() = Some((std::sync::Arc::clone(arc), sym));
-        Some(sym)
+        debug_assert_eq!(
+            self.env().source_file_sym(),
+            self.source_file_sym_by_walk(),
+            "Env::file_sym diverged from a ?FILE chain walk: an Env mutator \
+             changed the visible ?FILE without maintaining it"
+        );
+        self.env().source_file_sym()
+    }
+
+    /// [`Self::current_source_file_sym`] the slow, authoritative way: a full
+    /// env-chain walk plus an intern. Only the debug assertion uses it.
+    fn source_file_sym_by_walk(&self) -> Option<Symbol> {
+        self.env().get("?FILE").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+            _ => None,
+        })
     }
 
     /// Attach the defining scope to an interpolating regex literal
