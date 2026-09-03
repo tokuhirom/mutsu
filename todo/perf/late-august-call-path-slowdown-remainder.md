@@ -95,7 +95,31 @@ path re-interned the fixed names `"_"` and `"Any"` on every call, and the
 parameter bind loop cloned each bound argument twice. `bench-tak` −8.0%,
 `bench-fib` −5.2%, `fib` −4.2% locally.
 
-Three things worth attacking next, in rough order of size:
+## State after the 2026-09-03 round
+
+Eight PRs landed against this ticket (#7259, #7261, #7262, #7265, #7266,
+#7267, #7268, #7269): cumulatively about **−38% on `benchmarks/fib.raku`**
+locally. A fresh `bench-fib` profile now reads:
+
+| share | symbol |
+| ---: | --- |
+| 36.3% | `call_compiled_function_positional_light_at` (self) |
+| 14.1% | `exec_call_func_op` (self) — **now ADR-0066**, see below |
+| 9.2% | `mutsu_jit_1` |
+| 4.3% | `vm_jit::try_enter` |
+| 3.2% | `Env::get_sym` |
+| ~4.5% | `unmark_readonly_sym` + `replay_readonly_undo` + `HashMap::insert` |
+
+`malloc`/`_int_free` have left the top of the profile entirely (item 6).
+
+**The biggest single remaining item is now `exec_call_func_op`'s two hash
+probes per call**, which is the subject of
+[ADR-0066](../../docs/adr/0066-call-dispatch-inline-cache.md) (Proposed). Read
+that before touching call dispatch: it also records the smaller, no-ADR-needed
+first step — putting `CompiledFns` values behind `Arc` — which on its own
+removes one of the two probes and makes the other cheap.
+
+## The rest, in rough order of size
 
 1. **The args/locals `Vec` churn (~11%).** The **args half is closed** by
    `news/2026-09/positional-light-call-binds-from-the-stack.md`: the cached
@@ -148,6 +172,15 @@ Three things worth attacking next, in rough order of size:
    instructions**, `bench-fib` −11.2% / −7.2%, both orderings. `bench-tak`
    barely moved, which is the correct control — its body has no explicit
    `return`.
+7. **Three per-call helpers paid a call to discover they had nothing to do** —
+   **closed** by `news/2026-09/hot-path-noop-guards-are-now-inlined.md`.
+   `apply_pending_rw_writeback`, `apply_pending_caller_var_writeback` and
+   `resolve_let_saves_on_success` each begin with a guard that is true in the
+   common case, but the guard lived inside an out-of-line function, so the
+   common case still paid a call/ret (1.31% + 1.27% + 1.26% of self time).
+   Now `#[inline]` wrapper + `#[inline(never)]` body: `fib` −8.7% cycles /
+   −5.1% retired instructions. **Look for more of this shape** — a comment
+   claiming "no cost when empty" is a hint that the guard is behind a call.
 
 ## Method notes for whoever picks this up
 
@@ -171,3 +204,15 @@ Three things worth attacking next, in rough order of size:
   symbolized profiles.
 - Per `todo/README.md` and CLAUDE.md, any number that ends up in a document
   comes from the bench CI, not from the session's local runs.
+- **Measure retired instructions, not just cycles**
+  (`perf stat -e cpu_core/instructions/u`). When the code a change touches is
+  never executed by the benchmark — an outlined cold path, a shrunk stack
+  frame — a cycles delta is indistinguishable from the ~5% layout lottery, and
+  it flips sign under a swap exactly the way a real win does. Instruction
+  counts are layout-insensitive. Also pick a *control* benchmark the change
+  cannot affect and confirm it does not move (`bench-tak` served this role for
+  the return-signal fix: no explicit `return` in its body).
+- **Run the correctness gate BEFORE the A/B.** A change that accidentally skips
+  work measures *faster*: the first A/B of #7269 read `bench-fib` −12.2%
+  because the split had captured an unconditional trailing call into the
+  guarded slow path. `make test` caught it; the honest number was −8.2%.
