@@ -32,9 +32,14 @@ impl Client {
     /// Connect and complete the initialize handshake.
     fn start() -> Client {
         let (server_connection, client_connection) = Connection::memory();
-        let server = std::thread::spawn(move || {
-            mutsu_lsp::server::run(server_connection).map_err(|e| e.to_string())
-        });
+        // The same stack the binary gives the loop. mutsu's parser is deeply
+        // recursive enough that this is not a formality: on a default stack it
+        // overflows — and *aborts*, which no `catch_unwind` can rescue — on a
+        // document with about fifty nested parentheses.
+        let server = std::thread::Builder::new()
+            .stack_size(mutsu_lsp::ANALYSIS_STACK_SIZE)
+            .spawn(move || mutsu_lsp::server::run(server_connection).map_err(|e| e.to_string()))
+            .expect("spawn the server thread");
         let mut client = Client {
             connection: client_connection,
             server: Some(server),
@@ -293,6 +298,29 @@ fn diagnostic_columns_are_utf16_offsets() {
     client.shutdown();
 }
 
+/// ADR-0065 S3: a document under edit is broken most of the time, and a report
+/// that goes quiet after the first failure hides everything below it.
+#[test]
+fn every_failure_in_the_document_reaches_the_client() {
+    let client = Client::start();
+    let path = "file:///tmp/two-errors.raku";
+
+    let published = client.open(
+        path,
+        "say 1;\nsay $c.f (1, 2);\nsay 2;\nsay $d.g (3, 4);\nsay 3;\n",
+        1,
+    );
+    let lines: Vec<u32> = published
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == Some(DiagnosticSeverity::ERROR))
+        .map(|d| d.range.start.line)
+        .collect();
+    assert_eq!(lines, vec![1, 3], "{:#?}", published.diagnostics);
+
+    client.shutdown();
+}
+
 #[test]
 fn an_unimplemented_request_is_answered_rather_than_ignored() {
     let mut client = Client::start();
@@ -338,6 +366,40 @@ fn the_session_survives_a_document_that_breaks_the_parser() {
         "{:#?}",
         published.diagnostics
     );
+
+    client.shutdown();
+}
+
+/// A stack overflow aborts the process, so `mutsu::analysis::check`'s
+/// panic-catching cannot turn one into a diagnostic the way it does an ordinary
+/// panic. The server therefore runs on the same deep stack the interpreter's own
+/// CLI uses. Measured on a debug build: with an 8 MB stack this document
+/// overflows at about fifty nested parentheses; with the analysis stack a
+/// thousand are fine.
+///
+/// If the big stack is ever removed, this test does not fail politely — it
+/// aborts the test binary, which is exactly the visibility the defect deserves.
+#[test]
+fn a_deeply_nested_document_does_not_take_the_server_down() {
+    let client = Client::start();
+    let path = "file:///tmp/deep.raku";
+
+    let depth = 200;
+    let text = format!(
+        "my $x = {}1{};\nsay $x;\n",
+        "(".repeat(depth),
+        ")".repeat(depth)
+    );
+    let published = client.open(path, &text, 1);
+    assert!(
+        published.diagnostics.is_empty(),
+        "{depth} nested parentheses are valid Raku: {:#?}",
+        published.diagnostics
+    );
+
+    // Still serving afterwards.
+    let after = client.change(path, "say 1;\n", 2);
+    assert!(after.diagnostics.is_empty());
 
     client.shutdown();
 }

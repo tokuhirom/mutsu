@@ -165,6 +165,42 @@ fn diagnostic_from_parse_error(err: &RuntimeError) -> Diagnostic {
     }
 }
 
+/// The failures a *recovering* parse finds beyond the ones already reported.
+///
+/// mutsu's strict parser stops at the first failure, which for an editor is the
+/// wrong shape: a document under edit is broken most of the time, and a report
+/// that goes quiet after line 3 hides everything below it.
+/// `parse_program_recovering` skips each unparseable statement and keeps going,
+/// rendering every skipped one through the same path the strict error takes —
+/// so the extra diagnostics are the same quality as the first, not a lower tier.
+///
+/// **Deduplicated by line against what is already reported.** The recovery pass
+/// re-parses from scratch, so its first failure is almost always the strict
+/// parse's failure seen again; and a statement skipped by recovery can leave the
+/// parser mid-construct, so a second failure on a line already accounted for is
+/// far more likely to be a cascade than a second real defect. Under D5 a
+/// plausible-looking wrong diagnostic is the expensive kind of mistake, so the
+/// tie is broken toward saying less.
+fn recovered_parse_errors(source: &str, already: &[Diagnostic]) -> Vec<Diagnostic> {
+    let recovered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::parser::parse_program_recovering(source)
+    }));
+    let Ok((_stmts, _finish, errors)) = recovered else {
+        return Vec::new();
+    };
+    let mut reported: Vec<u32> = already.iter().map(|d| d.line).collect();
+    let mut out = Vec::new();
+    for err in &errors {
+        let diagnostic = diagnostic_from_parse_error(err);
+        if reported.contains(&diagnostic.line) {
+            continue;
+        }
+        reported.push(diagnostic.line);
+        out.push(diagnostic);
+    }
+    out
+}
+
 /// Split the `"\n    at FILE:LINE"` suffix `add_parse_warning` bakes into every
 /// parse warning back into (message, line).
 ///
@@ -211,14 +247,23 @@ pub fn check(source: &str) -> Vec<Diagnostic> {
     // documents being analysed independently and a `use v6.e.PREVIEW` in the
     // first file silently changing how every later file is read.
     let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let (stmts, _finish) = crate::parse_dispatch::parse_source(source)?;
-        Ok::<Option<Diagnostic>, RuntimeError>(undeclared_routine_diagnostic(&stmts))
+        match crate::parse_dispatch::parse_source(source) {
+            Ok((stmts, _finish)) => Ok(undeclared_routine_diagnostic(&stmts)),
+            Err(err) => Err(err),
+        }
     }));
 
     let mut diagnostics = Vec::new();
     match parsed {
         Ok(Ok(undeclared)) => diagnostics.extend(undeclared),
-        Ok(Err(err)) => diagnostics.push(diagnostic_from_parse_error(&err)),
+        Ok(Err(err)) => {
+            // The strict parse's diagnosis of the *first* failure is the best
+            // one available: it carries the typed `X::` message, the
+            // surrounding source context and the hint. Report it, then recover
+            // past it to find what else is wrong.
+            diagnostics.push(diagnostic_from_parse_error(&err));
+            diagnostics.extend(recovered_parse_errors(source, &diagnostics));
+        }
         Err(payload) => {
             // "mutsu cannot handle this" is the single most valuable thing this
             // server reports (D4), and a panic is its bluntest form. Say so
@@ -304,6 +349,47 @@ mod tests {
     fn warnings_do_not_leak_into_the_next_document() {
         check("my $x = 1;\n$x == 1;\n");
         assert_eq!(check("my $y = 2;\nsay $y;\n"), Vec::new());
+    }
+
+    fn errors(source: &str) -> Vec<Diagnostic> {
+        check(source)
+            .into_iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect()
+    }
+
+    /// ADR-0065 S3: mutsu's strict parser stops at the first failure, which for
+    /// a document under edit hides everything below it.
+    #[test]
+    fn a_second_failure_further_down_the_document_is_reported_too() {
+        let text = "say 1;\nsay $c.f (1, 2);\nsay 2;\nsay $d.g (3, 4);\nsay 3;\n";
+        let errors = errors(text);
+        assert_eq!(errors.len(), 2, "{errors:#?}");
+        assert_eq!(errors[0].line, 2);
+        assert_eq!(errors[1].line, 4);
+    }
+
+    /// The recovering pass re-parses from scratch, so its first failure is the
+    /// strict parse's failure seen again. Reporting it twice would be noise a
+    /// consumer has to learn to ignore.
+    #[test]
+    fn the_first_failure_is_not_reported_twice() {
+        let errors = errors("say 1;\nsay $c.f (1, 2);\nsay 2;\n");
+        assert_eq!(errors.len(), 1, "{errors:#?}");
+        assert_eq!(errors[0].line, 2);
+    }
+
+    /// The first diagnostic keeps the strict parser's own diagnosis, which is
+    /// the richest one available (typed `X::` message, source context, hint).
+    #[test]
+    fn the_first_diagnostic_is_still_the_strict_parsers_own() {
+        let errors = errors("my $x = 1;\n}\nsay $x;\n");
+        assert_eq!(errors[0].code, Some("ParseUnparsed"));
+        assert_eq!(
+            errors[0].column,
+            Some(1),
+            "the strict path knows the column"
+        );
     }
 
     /// ADR-0065 D4: "mutsu does not have this" is the diagnostic the server

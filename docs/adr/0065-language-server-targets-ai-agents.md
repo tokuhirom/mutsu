@@ -417,6 +417,65 @@ routine you meant, which rakudo never does. Pinned by
 This is the D7 property in practice — the language server's requirements improving mutsu's
 own diagnostics rather than taxing them.
 
+## S3 findings (2026-09-03)
+
+### 1. The slice is better understood as "keep analysing past the first failure"
+
+Framed as "multiple diagnostics per document" this looks like a nicety: a document usually
+has one syntax error. The framing that matters is the other one — **a document under edit
+is broken most of the time**, and a report that goes quiet after the first failure hides
+everything below it. That also makes S3 a prerequisite for S4 being useful at all: symbols
+and definitions are wanted *while* the file is mid-edit, not only when it is complete.
+
+### 2. Recovery reuses the strict parser's diagnosis rather than a lower tier
+
+`parse_program`'s ~110-line failure-rendering block was extracted as `render_parse_error`,
+so a skipped statement is diagnosed to exactly the same standard as the first failure —
+typed `X::` message where an alternative diagnosed one, rakudo's `.pre`/`.post` context,
+the hint. Under D5 that matters more than the count: a second diagnostic of lower quality
+would be worse than no second diagnostic.
+
+This needed no offset arithmetic. A `PError`'s `remaining_len` measures the *shared
+buffer's* unconsumed tail, not an offset within whichever suffix the failing parser was
+called on, so a failure raised inside `statement(rest)` already locates itself in the whole
+source.
+
+### 3. Cascade risk was measured, not assumed, and is low
+
+Over the 217 files of `modules/`, 11 fail to parse, **2 report more than one failure**, for
+11 extra diagnostics. Inspecting those two: every extra points at a distinct real
+construct on its own line, not at debris from the previous skip. Recovery is deduplicated
+by line against what is already reported — the recovering pass re-parses from scratch, so
+its first failure is the strict parse's failure seen again, and a second failure on a line
+already accounted for is far more likely to be a cascade than a second defect. The tie is
+broken toward saying less.
+
+The undeclared-routine analysis deliberately does **not** run on a recovered parse. Its
+false-positive direction inverts there: a skipped statement may have held the very `sub`
+declaration that explains a later call. `stmt_list_partial`'s existing
+`note_partial_parse_skip` exists for exactly this class of consumer.
+
+### 4. The server was one deep document away from dying, and S1 shipped it that way
+
+The survey overflowed its stack before it produced a single number, which exposed a defect
+in S1: `mutsu-lsp` parsed on the OS main thread. mutsu's own CLI does not — `src/main.rs`
+spawns a 256 MB-stack thread because grammar matching and nested expression parsing are
+deeply recursive.
+
+Measured on a debug build: with an 8 MB stack, `my $x = ((( ... )))` **overflows at about
+fifty nested parentheses**; twenty are fine. With the analysis stack, a thousand are fine.
+Fifty is not exotic — a nested data literal reaches it.
+
+A stack overflow **aborts the process**. `analysis::check`'s `catch_unwind`, which turns a
+parser panic into a diagnostic (S1 finding 3), cannot rescue it, so the whole session would
+have died — every open document with it — on a file the CLI reads without complaint. The
+server now runs its loop inside `mutsu_lsp::on_analysis_stack`, and the protocol tests
+spawn their server the same way, so a regression aborts the test binary rather than passing
+quietly.
+
+The general lesson is worth stating: **any new front end for mutsu's parser inherits the
+CLI's stack requirement.** It is not a property of the CLI; it is a property of the parser.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -444,7 +503,7 @@ own diagnostics rather than taxing them.
 | **S0** | Long-lived-process viability probe (D8) — **done 2026-09-03**, `tests/long_lived_parse.rs` | — |
 | **S1** | Server skeleton, full-document reparse, diagnostics from the existing single-error path — **done 2026-09-03**, `crates/mutsu-lsp/`, `src/analysis.rs`, `docs/language-server.md` | S0 |
 | **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) — **routine half done 2026-09-03**; the method half is blocked on receiver types, see the S2 findings | S1 |
-| **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) | S1 |
+| **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) — **done 2026-09-03** | S1 |
 | **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity | S1 |
 | **S5** | `references` / `hover`; expression spans on the variants these require (D6) | S4 |
 

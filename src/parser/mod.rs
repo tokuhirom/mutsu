@@ -110,6 +110,7 @@ pub(crate) fn with_user_sub_preseed<R>(names: Vec<String>, f: impl FnOnce() -> R
 use std::cell::RefCell;
 
 use crate::ast::Stmt;
+use crate::parser::parse_result::PError;
 use crate::value::RuntimeErrorCode;
 use crate::value::{RuntimeError, Value};
 
@@ -412,6 +413,136 @@ fn with_parse_hint(mut err: RuntimeError) -> RuntimeError {
     err
 }
 
+/// Render one parser failure into the `RuntimeError` every consumer sees: its
+/// position in `source`, the `X::`-typed message where one of the failed
+/// alternatives diagnosed the input precisely, rakudo's `.pre`/`.post` context,
+/// and a hint where the message shape admits one.
+///
+/// Extracted from [`parse_program`] so error *recovery* can render the failures
+/// it skips over to exactly the same standard (ADR-0065 S3). A `PError`'s
+/// `remaining_len` is the length of the unconsumed tail, which is a property of
+/// the shared buffer rather than of whichever suffix the failing parser was
+/// invoked on — so this renders a failure from a nested `statement(rest)` call
+/// against the whole `source` correctly, with no offset arithmetic at the call
+/// site.
+///
+/// The caller decides what a *fatal* diagnosis means; this only builds the
+/// error.
+fn render_parse_error(source: &str, e: PError) -> RuntimeError {
+    if e.is_fatal() {
+        // Fatal parse errors (e.g. bare say/print/put) pass through directly
+        let mut err = RuntimeError::new(format!("{}", e));
+        err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+        // A fatal raised with `fatal_at` carries the failure position;
+        // surface it as line/column so the CLI/`is_run` render the
+        // ===SORRY!=== snippet with the offending line.
+        if let Some(consumed) = e.consumed_from(source.len()) {
+            let tail = &source[consumed..];
+            let near_offset = consumed + leading_ws_bytes(tail);
+            let (line_num, col_num) = line_col_at_offset(source, near_offset);
+            err.set_line(Some(line_num));
+            err.set_column(Some(col_num));
+        }
+        if let Some(ex) = e.exception {
+            // A fatal diagnosis's own exception (built far from here,
+            // e.g. `pod_begin_without_identifier_error`) usually carries
+            // only `message`. `err.set_line` above computed the real
+            // `line`/`column` from the failure position; without also
+            // copying them onto the exception's own attributes here,
+            // `$!.line`/`$!.column` (the actual X::Comp accessors, read
+            // straight from the instance) stayed unset even though the
+            // CLI's own `===SORRY!===` rendering (which reads `err`
+            // directly) already had them. Other X::Comp builders in this
+            // file (`build_vcs_conflict_error`, etc.) set `line` on their
+            // exception's attrs by hand at construction; this generalizes
+            // that for every site that instead relies on `remaining_len`.
+            if let crate::value::ValueView::Instance { attributes, .. } = ex.view() {
+                if let Some(line) = err.line() {
+                    attributes.insert_if_absent(
+                        "line".to_string(),
+                        crate::value::Value::int(line as i64),
+                    );
+                }
+                if let Some(column) = err.column() {
+                    attributes.insert_if_absent(
+                        "column".to_string(),
+                        crate::value::Value::int(column as i64),
+                    );
+                }
+            }
+            err.exception = Some(ex);
+        }
+        return err;
+    }
+    if let Some(consumed) = e.consumed_from(source.len()) {
+        let tail = &source[consumed..];
+        let near_offset = consumed + leading_ws_bytes(tail);
+        let (line_num, col_num) = line_col_at_offset(source, near_offset);
+        // One of the alternatives that failed here may have diagnosed the
+        // input precisely and named its Raku exception class in the
+        // `"X::Type: text"` convention (`X::Syntax::CannotMeta: Cannot do
+        // . because it is too fiddly`). Every message merged into a
+        // `PError` shares the same furthest failure position
+        // (`update_best_error` only merges at an equal score), so such a
+        // message describes *this* failure and is strictly better than
+        // the generic "Confused." wrapper — which would otherwise bury it
+        // inside an "expected A or B or …" list and leave the exception
+        // classed `X::Syntax::Confused`.
+        if let Some(typed) = e.typed_convention_message() {
+            let mut err = RuntimeError::with_location(
+                typed.to_string(),
+                RuntimeErrorCode::ParseExpected,
+                line_num,
+                col_num,
+            );
+            // A SOFT diagnosis may still carry a structured exception —
+            // the message convention preserves only the class, and some
+            // sites also need the attributes rakudo's exception has
+            // (`X::UnitScope::Invalid.what`). The fatal branch above
+            // already forwards it; without the same here, a
+            // `throws-like …, X::…, what => …` matched the class and
+            // then died on `No such method 'what'`.
+            if let Some(ex) = e.exception {
+                err.exception = Some(ex);
+            }
+            // rakudo's X::Comp family also carries `.pre`/`.post` (the
+            // source text immediately around the eject point, current
+            // line only). This is the one place both the full original
+            // source and the failure offset are unambiguously known, so
+            // compute it here rather than at each individual raise site.
+            let pre_full = &source[..consumed];
+            let pre = pre_full.rsplit('\n').next().unwrap_or(pre_full).to_string();
+            let post = tail.split('\n').next().unwrap_or(tail).to_string();
+            err.set_pre_post_context(pre, post);
+            with_parse_hint(err)
+        } else if let Some(context) = near_snippet(tail, 60) {
+            with_parse_hint(RuntimeError::with_location(
+                format!(
+                    "Confused. parse error at line {}, column {}: {} — near: {:?}",
+                    line_num, col_num, e, context
+                ),
+                RuntimeErrorCode::ParseExpected,
+                line_num,
+                col_num,
+            ))
+        } else {
+            with_parse_hint(RuntimeError::with_location(
+                format!(
+                    "Confused. parse error at line {}, column {}: {}",
+                    line_num, col_num, e
+                ),
+                RuntimeErrorCode::ParseExpected,
+                line_num,
+                col_num,
+            ))
+        }
+    } else {
+        let mut err = RuntimeError::new(format!("Confused. parse error: {}", e));
+        err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+        with_parse_hint(err)
+    }
+}
+
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
@@ -490,118 +621,14 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             }
         }
         Err(e) => {
-            if e.is_fatal() {
-                // Fatal parse errors (e.g. bare say/print/put) pass through directly
-                let mut err = RuntimeError::new(format!("{}", e));
-                err.set_code(Some(RuntimeErrorCode::ParseGeneric));
-                // A fatal raised with `fatal_at` carries the failure position;
-                // surface it as line/column so the CLI/`is_run` render the
-                // ===SORRY!=== snippet with the offending line.
-                if let Some(consumed) = e.consumed_from(source.len()) {
-                    let tail = &source[consumed..];
-                    let near_offset = consumed + leading_ws_bytes(tail);
-                    let (line_num, col_num) = line_col_at_offset(source, near_offset);
-                    err.set_line(Some(line_num));
-                    err.set_column(Some(col_num));
-                }
-                if let Some(ex) = e.exception {
-                    // A fatal diagnosis's own exception (built far from here,
-                    // e.g. `pod_begin_without_identifier_error`) usually carries
-                    // only `message`. `err.set_line` above computed the real
-                    // `line`/`column` from the failure position; without also
-                    // copying them onto the exception's own attributes here,
-                    // `$!.line`/`$!.column` (the actual X::Comp accessors, read
-                    // straight from the instance) stayed unset even though the
-                    // CLI's own `===SORRY!===` rendering (which reads `err`
-                    // directly) already had them. Other X::Comp builders in this
-                    // file (`build_vcs_conflict_error`, etc.) set `line` on their
-                    // exception's attrs by hand at construction; this generalizes
-                    // that for every site that instead relies on `remaining_len`.
-                    if let crate::value::ValueView::Instance { attributes, .. } = ex.view() {
-                        if let Some(line) = err.line() {
-                            attributes.insert_if_absent(
-                                "line".to_string(),
-                                crate::value::Value::int(line as i64),
-                            );
-                        }
-                        if let Some(column) = err.column() {
-                            attributes.insert_if_absent(
-                                "column".to_string(),
-                                crate::value::Value::int(column as i64),
-                            );
-                        }
-                    }
-                    err.exception = Some(ex);
-                }
+            let fatal = e.is_fatal();
+            let err = render_parse_error(source, e);
+            if fatal {
+                // A fatal diagnosis is the answer outright: return before the
+                // VCS-conflict override below, as this arm always has.
                 return Err(err);
             }
-            if let Some(consumed) = e.consumed_from(source.len()) {
-                let tail = &source[consumed..];
-                let near_offset = consumed + leading_ws_bytes(tail);
-                let (line_num, col_num) = line_col_at_offset(source, near_offset);
-                // One of the alternatives that failed here may have diagnosed the
-                // input precisely and named its Raku exception class in the
-                // `"X::Type: text"` convention (`X::Syntax::CannotMeta: Cannot do
-                // . because it is too fiddly`). Every message merged into a
-                // `PError` shares the same furthest failure position
-                // (`update_best_error` only merges at an equal score), so such a
-                // message describes *this* failure and is strictly better than
-                // the generic "Confused." wrapper — which would otherwise bury it
-                // inside an "expected A or B or …" list and leave the exception
-                // classed `X::Syntax::Confused`.
-                if let Some(typed) = e.typed_convention_message() {
-                    let mut err = RuntimeError::with_location(
-                        typed.to_string(),
-                        RuntimeErrorCode::ParseExpected,
-                        line_num,
-                        col_num,
-                    );
-                    // A SOFT diagnosis may still carry a structured exception —
-                    // the message convention preserves only the class, and some
-                    // sites also need the attributes rakudo's exception has
-                    // (`X::UnitScope::Invalid.what`). The fatal branch above
-                    // already forwards it; without the same here, a
-                    // `throws-like …, X::…, what => …` matched the class and
-                    // then died on `No such method 'what'`.
-                    if let Some(ex) = e.exception {
-                        err.exception = Some(ex);
-                    }
-                    // rakudo's X::Comp family also carries `.pre`/`.post` (the
-                    // source text immediately around the eject point, current
-                    // line only). This is the one place both the full original
-                    // source and the failure offset are unambiguously known, so
-                    // compute it here rather than at each individual raise site.
-                    let pre_full = &source[..consumed];
-                    let pre = pre_full.rsplit('\n').next().unwrap_or(pre_full).to_string();
-                    let post = tail.split('\n').next().unwrap_or(tail).to_string();
-                    err.set_pre_post_context(pre, post);
-                    Err(with_parse_hint(err))
-                } else if let Some(context) = near_snippet(tail, 60) {
-                    Err(with_parse_hint(RuntimeError::with_location(
-                        format!(
-                            "Confused. parse error at line {}, column {}: {} — near: {:?}",
-                            line_num, col_num, e, context
-                        ),
-                        RuntimeErrorCode::ParseExpected,
-                        line_num,
-                        col_num,
-                    )))
-                } else {
-                    Err(with_parse_hint(RuntimeError::with_location(
-                        format!(
-                            "Confused. parse error at line {}, column {}: {}",
-                            line_num, col_num, e
-                        ),
-                        RuntimeErrorCode::ParseExpected,
-                        line_num,
-                        col_num,
-                    )))
-                }
-            } else {
-                let mut err = RuntimeError::new(format!("Confused. parse error: {}", e));
-                err.set_code(Some(RuntimeErrorCode::ParseGeneric));
-                Err(with_parse_hint(err))
-            }
+            Err(err)
         }
     };
 
@@ -702,10 +729,17 @@ pub(crate) fn parse_program_partial_with_operators(
     result
 }
 
-/// Best-effort parse: returns all statements that could be parsed before the
-/// first error.  Used for loading `.rakumod` modules that may contain syntax
-/// mutsu does not yet support.
-pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
+/// Best-effort parse: keeps every statement that parsed, skips the ones that
+/// did not, and reports each skipped one as a rendered `RuntimeError`.
+///
+/// Used for loading `.rakumod` modules that may contain syntax mutsu does not
+/// yet support (which wants only the statements — see [`parse_program_partial`])
+/// and by the analysis frontend, which wants the errors too: a document being
+/// edited is broken most of the time, and everything downstream of the first
+/// failure is still worth analysing (ADR-0065 S3).
+pub(crate) fn parse_program_recovering(
+    input: &str,
+) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -743,9 +777,21 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
     } else {
         (input, None)
     };
-    let (stmts, _) = stmt::stmt_list_partial(source);
+    let (stmts, skipped) = stmt::stmt_list_partial(source);
+    let errors = skipped
+        .into_iter()
+        .map(|e| render_parse_error(source, e))
+        .collect();
     primary::restore_source_state(saved_source_state);
     stmt::simple::set_current_language_version(&saved_language_version);
+    (stmts, finish_content, errors)
+}
+
+/// Best-effort parse, keeping the statements that parsed and dropping the rest.
+/// See [`parse_program_recovering`] for the variant that also reports what it
+/// could not parse.
+pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
+    let (stmts, finish_content, _errors) = parse_program_recovering(input);
     (stmts, finish_content)
 }
 
