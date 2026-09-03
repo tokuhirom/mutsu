@@ -1232,11 +1232,28 @@ pub(crate) struct RoutineFrame {
     pub invocation_id: u64,
 }
 
-static NEXT_INVOCATION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Hands out *blocks* of routine-invocation ids, not individual ones.
+///
+/// The id is an opaque per-call discriminator, so all it has to be is unique
+/// among concurrently live frames and never 0 (0 means "the mainline is the
+/// innermost scope"). It used to be an `AtomicU64::fetch_add` per id, which put
+/// a `lock xadd` on a process-global line on the entry path of *every* routine
+/// call — about 8% of `benchmarks/fib.raku`, spent entirely on being ready to
+/// interleave with threads that are usually not there. Each interpreter claims
+/// a block instead and counts inside it with a plain increment, so the atomic
+/// fires once per `INVOCATION_ID_BLOCK` calls per thread and ids stay globally
+/// unique. Blocks are never returned; at 2^64 ids that is not a budget.
+static NEXT_INVOCATION_ID_BLOCK: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
 
-/// Take the next routine-invocation id (see `RoutineFrame::invocation_id`).
-pub(crate) fn next_invocation_id() -> u64 {
-    NEXT_INVOCATION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+/// Ids claimed per block. Large enough that the atomic is noise on any call
+/// path; a thread that exits having used one id wastes the rest, which costs
+/// nothing.
+const INVOCATION_ID_BLOCK: u64 = 4096;
+
+/// Claim a fresh block of invocation ids, returning its first id.
+fn claim_invocation_id_block() -> u64 {
+    NEXT_INVOCATION_ID_BLOCK.fetch_add(INVOCATION_ID_BLOCK, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// CompUnit::Repository::Installation runtime state. Boxed inside `Interpreter`
@@ -3214,6 +3231,11 @@ pub struct Interpreter {
     /// around each pull, so nested pulls compare against their own entry.
     pub(crate) lazy_pull_entry_call_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
+    /// Next routine-invocation id this interpreter will hand out, and one past
+    /// the end of the block it was claimed from (see `NEXT_INVOCATION_ID_BLOCK`).
+    /// Equal when the block is exhausted, which is the refill condition.
+    pub(crate) next_invocation_id: u64,
+    pub(crate) invocation_id_block_end: u64,
     /// Direct-mapped call-dispatch cache (ADR-0066): what each callee name last
     /// resolved to, so a repeat call skips both hash probes the name-keyed path
     /// pays (`pos_light_call_cache`, then `compiled_fns`) — together about 60%

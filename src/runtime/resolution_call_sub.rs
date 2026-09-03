@@ -767,6 +767,7 @@ impl Interpreter {
                 "__mutsu_callable_id".to_string(),
                 Value::int(data.id as i64),
             );
+            let invocation_id = self.take_invocation_id();
             self.routine_stack.push(RoutineFrame {
                 package: data.package,
                 lexical_package: None,
@@ -777,7 +778,7 @@ impl Interpreter {
                 is_submethod: false,
                 is_block: true,
                 def_file: None,
-                invocation_id: crate::runtime::next_invocation_id(),
+                invocation_id,
             });
             self.block_stack.push(block_sub);
             let return_spec = data

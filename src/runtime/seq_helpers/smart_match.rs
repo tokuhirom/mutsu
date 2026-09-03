@@ -492,6 +492,7 @@ impl Interpreter {
                 {
                     let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
+                    let invocation_id = self.take_invocation_id();
                     self.routine_stack.push(super::super::RoutineFrame {
                         package,
                         lexical_package: None,
@@ -502,7 +503,7 @@ impl Interpreter {
                         is_submethod: false,
                         is_block: false,
                         def_file: None,
-                        invocation_id: crate::runtime::next_invocation_id(),
+                        invocation_id,
                     });
                     if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
                         self.reset_capture_env_vars();
