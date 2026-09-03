@@ -74,6 +74,38 @@ thread_local! {
     static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
+/// Pre-interned symbols for names the VM resolves on hot paths.
+///
+/// [`Symbol::intern`] hashes the whole string and takes a thread-local borrow,
+/// so re-interning a fixed name inside a per-call code path is pure overhead —
+/// it showed up as `Symbol::intern` + `LocalKey::with` in a `bench-fib`
+/// profile. Each accessor resolves once per process and is a plain load
+/// afterwards. Interned ids are global and append-only, so caching them in a
+/// `OnceLock` is valid for the life of the process and across threads.
+pub(crate) mod wk {
+    use super::Symbol;
+
+    macro_rules! well_known {
+        ($($(#[$m:meta])* $f:ident => $s:literal;)*) => {$(
+            $(#[$m])*
+            #[inline(always)]
+            pub(crate) fn $f() -> Symbol {
+                static CELL: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+                *CELL.get_or_init(|| Symbol::intern($s))
+            }
+        )*};
+    }
+
+    well_known! {
+        /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
+        topic => "_";
+        /// The `Any` type object, the value a routine's fresh topic is seeded with.
+        any => "Any";
+        /// The dynamic `$?FILE`, stored sigil-less with its twigil.
+        file => "?FILE";
+    }
+}
+
 impl Symbol {
     /// The raw interned id. Only for storing a `Symbol` where a plain integer is
     /// needed (an `AtomicU32` slot); pair with [`Symbol::from_raw`].

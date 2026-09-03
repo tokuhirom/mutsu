@@ -117,10 +117,10 @@ impl Interpreter {
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
-            let old = self.env().get("_").cloned();
-            self.env_mut().insert(
-                "_".to_string(),
-                Value::package(crate::symbol::Symbol::intern("Any")),
+            let old = self.env().get_sym(crate::symbol::wk::topic()).cloned();
+            self.env_mut().insert_sym(
+                crate::symbol::wk::topic(),
+                Value::package(crate::symbol::wk::any()),
             );
             old
         } else {
@@ -353,10 +353,10 @@ impl Interpreter {
         if cf.code.is_routine && !use_scoped {
             match saved_topic {
                 Some(v) => {
-                    self.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert_sym(crate::symbol::wk::topic(), v);
                 }
                 None => {
-                    self.env_mut().remove("_");
+                    self.env_mut().remove_sym(crate::symbol::wk::topic());
                 }
             }
         }
