@@ -27,6 +27,7 @@ pub mod symbols;
 pub use symbols::{Symbol, SymbolKind, symbols};
 
 use crate::ast::Stmt;
+use crate::interpreter::Interpreter;
 use crate::value::{RuntimeError, RuntimeErrorCode};
 
 /// How much a [`Diagnostic`] should be believed.
@@ -78,6 +79,23 @@ impl Diagnostic {
             in_other_file: None,
         }
     }
+}
+
+/// Whether mutsu implements a built-in routine by this name.
+///
+/// The other half of D4's coverage question, in the form `hover` needs: a name
+/// that is declared nowhere in the workspace is either a routine mutsu provides
+/// or one it does not have at all, and those are very different answers to
+/// someone writing Raku for mutsu.
+pub fn is_builtin_routine(name: &str) -> bool {
+    Interpreter::is_builtin_function(name) || Interpreter::is_test_function_name(name)
+}
+
+/// Names close to `name` that mutsu does have — the same "Did you mean"
+/// candidates its own error carries, exposed for a consumer that wants to offer
+/// them before the code is run.
+pub fn suggest_routines(name: &str) -> Vec<String> {
+    Interpreter::static_routine_suggestions(name, &std::collections::HashSet::new())
 }
 
 /// mutsu's CHECK-time undeclared-routine analysis, run without executing

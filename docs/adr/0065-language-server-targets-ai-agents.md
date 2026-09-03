@@ -533,6 +533,39 @@ clients still send them, and a server that understood only the current spelling 
 silently have no workspace at all — a failure that looks like "no results" rather than like
 a bug.
 
+## S5a findings (2026-09-03)
+
+S5 was scheduled as one slice, "`references` / `hover`". Splitting it was the first thing
+S4 made obvious: `hover` is `definition`'s machinery with a different answer attached
+(position → identifier → symbol) and needs no spans at all, while `references` is the *only*
+method that genuinely does. Shipping them together would have held a cheap, useful method
+behind the heaviest engineering in the plan.
+
+### 1. Signatures are reconstructed from the parse, not lifted from the source
+
+`hover` shows `sub add(Int $a, Int $b --> Int)` by rendering the parsed `ParamDef`s back to
+Raku source form. Copying the declaration's source text would have been easier and is the
+wrong answer: what a writer targeting mutsu needs to see is **what mutsu understood the
+signature to be**, which is exactly where a divergence would show up.
+
+The rendering is deliberately partial. `where` clauses, sub-signatures and default
+*expressions* are dropped — rendering an expression back to source needs a printer mutsu
+does not have, and a half-rendered default would be a hover that lies. A default is shown
+as `= ...`, which says "there is one" without claiming what it is.
+
+Two AST details had to be recovered rather than assumed: `ParamDef::name` stores `@rest`
+for an array but a bare `a` for `$a` (the scalar sigil is stripped at parse time), and
+`required` only ever means "a named parameter written with `!`" — a mandatory positional
+carries no flag at all, so positional optionality reads `optional_marker` instead.
+
+### 2. "mutsu implements this" is worth saying out loud
+
+The obvious design reports only the negative — hovering a routine mutsu lacks says so. The
+affirmative case is reported too, because to this consumer silence is indistinguishable
+from "the server did not understand the question", and "mutsu has this" is precisely what
+someone writing for mutsu wants confirmed. It is the same D4 signal as S2's diagnostic,
+delivered where a reader is already looking and before the code is ever run.
+
 ## Rejected alternatives
 
 - **A lossless CST / red-green tree (rust-analyzer, rowan).** The correct architecture for
@@ -562,7 +595,8 @@ a bug.
 | **S2** | Enumerable built-in name tables → "mutsu does not support this" diagnostics (D4) — **routine half done 2026-09-03**; the method half is blocked on receiver types, see the S2 findings | S1 |
 | **S3** | Multiple diagnostics per document + error recovery (give `parse_program_partial` positions and errors) — **done 2026-09-03** | S1 |
 | **S4** | `documentSymbol` / `workspaceSymbol` / `definition` at line granularity — **done 2026-09-03** | S1 |
-| **S5** | `references` / `hover`; expression spans on the variants these require (D6) | S4 |
+| **S5a** | `hover` — signature and mutsu coverage status; needs no spans — **done 2026-09-03** | S4 |
+| **S5b** | `references`; expression spans on the variants it requires (D6) | S4 |
 
 S2 delivers the capability unique to mutsu and depends on no span work, so the ordering
 front-loads distinctive value ahead of the heaviest engineering.

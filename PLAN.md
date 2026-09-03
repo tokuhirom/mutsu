@@ -82,11 +82,13 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 - [ ] **Language server** — designed in [docs/adr/0065-language-server-targets-ai-agents.md](docs/adr/0065-language-server-targets-ai-agents.md)
       (an AI agent is the primary consumer, so only the methods an agent consumes are implemented,
       and "does mutsu support this?" is a first-class diagnostic). **S0 (viability gate), S1 (server
-      skeleton), S2's routine half, S3 (error recovery) and S4 (symbols/definition) are done** — `crates/mutsu-lsp/`,
-      `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5:
-      `references` and `hover`** — `references` is the first method that genuinely needs
-      per-occurrence positions, since a line may hold several and text scanning cannot rank them
-      soundly. **S2's method half is deferred with a real design question**: `$x.foo` needs the
+      skeleton), S2's routine half, S3 (error recovery), S4 (symbols/definition) and S5a (hover) are done** — `crates/mutsu-lsp/`,
+      `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5b:
+      `references`** — the one remaining method that genuinely needs per-occurrence positions,
+      since a line may hold several and text scanning cannot rank them soundly. It is where D6's
+      "spans only on the variants a feature demands" finally gets exercised, so settle the target
+      variants (~5 reference nodes) before touching the parser's hot path or the bincode AST
+      cache. **S2's method half is deferred with a real design question**: `$x.foo` needs the
       receiver type, which the AST does not carry, and the existing `(owner, name)` catalog is
       conservative in the false-positive direction — see the ADR's S2 findings.
 - [ ] Debugger.
