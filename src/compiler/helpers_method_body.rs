@@ -216,6 +216,8 @@ impl Compiler {
             deprecated_info: None,
             declared_locals: None,
             param_name_syms: Vec::new(),
+            param_fast_types: Vec::new(),
+            return_fast_type: None,
             package: package_name.to_string(),
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),

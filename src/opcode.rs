@@ -7854,6 +7854,73 @@ pub(crate) struct NamedParamBind {
 /// A compiled function body (SubDecl compiled to bytecode).
 pub(crate) type MemoCache = std::sync::Arc<std::sync::Mutex<Vec<(Vec<Value>, Value)>>>;
 
+/// The type constraints the light call paths are allowed to check inline, as a
+/// discriminant rather than the constraint's spelling.
+///
+/// Only these eight names get a routine onto the light/positional-light call
+/// paths at all (`Interpreter::is_fast_type_name`, the sole gate in
+/// `vm_call_eligibility.rs`), so classifying the constraint string once at
+/// registration time turns the per-call check from a `match` over `&str`
+/// (length dispatch plus a byte compare against five three-letter candidates)
+/// into a jump table over a `u8`. `Wild` covers `Any`/`Mu`/`Cool`, which accept
+/// every value including a bare type object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FastParamType {
+    Int,
+    Str,
+    Num,
+    Bool,
+    Rat,
+    /// `Any` / `Mu` / `Cool`: satisfied by every value.
+    Wild,
+}
+
+impl FastParamType {
+    /// Classify a type-constraint spelling, or `None` when it is not one the
+    /// light paths handle. This is the single source of truth behind
+    /// `Interpreter::is_fast_type_name`.
+    pub(crate) fn of(name: &str) -> Option<Self> {
+        Some(match name {
+            "Int" => Self::Int,
+            "Str" => Self::Str,
+            "Num" => Self::Num,
+            "Bool" => Self::Bool,
+            "Rat" => Self::Rat,
+            "Any" | "Mu" | "Cool" => Self::Wild,
+            _ => return None,
+        })
+    }
+}
+
+/// A parameter's precomputed type-check plan (see [`FastParamType`]), parallel
+/// to `CompiledFunction::param_defs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FastParamCheck {
+    /// The parameter has no type constraint: nothing to check.
+    Unconstrained,
+    /// Check `kind`; `name_sym` is the constraint name pre-interned, so the
+    /// bare-type-object case (`sub f(Int $a); f(Int)`) compares two `Symbol`s
+    /// instead of resolving one to a `&str` and comparing bytes.
+    Fast {
+        kind: FastParamType,
+        name_sym: Symbol,
+    },
+}
+
+impl FastParamCheck {
+    /// The plan for a `type_constraint` field, or `None` when the constraint is
+    /// not one the light paths handle (such a routine never reaches them).
+    fn of(constraint: Option<&String>) -> Option<Self> {
+        match constraint {
+            None => Some(Self::Unconstrained),
+            Some(tc) => FastParamType::of(tc).map(|kind| Self::Fast {
+                kind,
+                name_sym: Symbol::intern(tc),
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
@@ -7910,6 +7977,15 @@ pub(crate) struct CompiledFunction {
     /// paths mark every param read-only on entry; without this each mark would
     /// re-hash the parameter name string on every call.
     pub(crate) param_name_syms: Vec<Symbol>,
+    /// Precomputed type-check plans, parallel to `param_defs` (see
+    /// [`FastParamCheck`]). Empty when the precompute has not run (a hand-built
+    /// chunk) or when some parameter's constraint is not light-path-checkable;
+    /// both cases fall back to the by-name `fast_type_check`.
+    pub(crate) param_fast_types: Vec<FastParamCheck>,
+    /// The declared return type's precomputed plan (see [`FastParamCheck`]).
+    /// `None` when there is no return type, or when it is not one the light
+    /// return check handles by tag.
+    pub(crate) return_fast_type: Option<FastParamCheck>,
     /// The package this routine was declared in (e.g. `"P"` for a sub in
     /// `package P { ... }`, `"GLOBAL"` for a top-level sub). The dispatch sets
     /// `current_package` from this on entry so package-scoped variable
@@ -8187,13 +8263,34 @@ impl CompiledFunction {
         self.declared_locals = Some(declared.iter().map(|n| Symbol::intern(n)).collect());
     }
 
-    /// Pre-intern the parameter names (see `param_name_syms`).
+    /// Pre-intern the parameter names (see `param_name_syms`) and classify each
+    /// parameter's type constraint (see `param_fast_types`).
+    ///
+    /// Both derive from `param_defs` alone, so they are computed together: every
+    /// construction site already calls this once its signature is final, and
+    /// keeping them in one place is what stops a new site from remembering the
+    /// names and forgetting the tags.
     pub(crate) fn precompute_param_name_syms(&mut self) {
         self.param_name_syms = self
             .param_defs
             .iter()
             .map(|pd| Symbol::intern(&pd.name))
             .collect();
+        // All-or-nothing: a single unclassifiable constraint leaves the vector
+        // empty, and the call paths then use the by-name check for every
+        // parameter. Such a routine cannot reach the light paths anyway
+        // (`is_fast_type_name` gates them), so the fallback is for hand-built
+        // chunks, not for a signature mix.
+        self.param_fast_types = self
+            .param_defs
+            .iter()
+            .map(|pd| FastParamCheck::of(pd.type_constraint.as_ref()))
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default();
+        self.return_fast_type = self
+            .return_type
+            .as_ref()
+            .and_then(|rt| FastParamCheck::of(Some(rt)));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -8282,6 +8379,8 @@ mod compiled_fns_identity {
             deprecated_info: None,
             declared_locals: None,
             param_name_syms: Vec::new(),
+            param_fast_types: Vec::new(),
+            return_fast_type: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,
             memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),

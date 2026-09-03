@@ -573,6 +573,8 @@ impl Compiler {
             deprecated_info,
             declared_locals: None,
             param_name_syms: Vec::new(),
+            param_fast_types: Vec::new(),
+            return_fast_type: None,
             // The declaring package, matching the package component of this
             // function's `compiled_fns` key (built from `key_package` above).
             package: key_package,
