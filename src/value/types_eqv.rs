@@ -122,6 +122,35 @@ impl Value {
             (ValueView::Seq(a), ValueView::Seq(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
+            // RakuAST nodes are model objects: eqv compares their complete
+            // immutable tree, not their Arc identity. This lets two
+            // separately constructed copies of the same node compare eqv,
+            // while `values_identical` still distinguishes their identity.
+            (ValueView::RakuAst(a), ValueView::RakuAst(b)) => {
+                a.class == b.class
+                    && a.fields.len() == b.fields.len()
+                    && a.fields.iter().zip(b.fields.iter()).all(|(af, bf)| {
+                        af.name == bf.name
+                            && match (&af.value, &bf.value) {
+                                (
+                                    crate::rakuast::RakuAstFieldValue::Node(av),
+                                    crate::rakuast::RakuAstFieldValue::Node(bv),
+                                ) => av.eqv(bv),
+                                (
+                                    crate::rakuast::RakuAstFieldValue::List(av),
+                                    crate::rakuast::RakuAstFieldValue::List(bv),
+                                ) => {
+                                    av.len() == bv.len()
+                                        && av.iter().zip(bv.iter()).all(|(x, y)| x.eqv(y))
+                                }
+                                (
+                                    crate::rakuast::RakuAstFieldValue::Adverb(av),
+                                    crate::rakuast::RakuAstFieldValue::Adverb(bv),
+                                ) => av == bv,
+                                _ => false,
+                            }
+                    })
+            }
             // Num: use bit-exact comparison to distinguish signed zeros,
             // but treat all NaN bit patterns as identical (Raku considers all NaN equal).
             (ValueView::Num(a), ValueView::Num(b)) => {
