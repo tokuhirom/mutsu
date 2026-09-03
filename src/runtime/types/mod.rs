@@ -266,6 +266,15 @@ impl Interpreter {
     /// already marked) journals nothing.
     #[inline]
     pub(crate) fn mark_readonly_sym_with(&mut self, sym: Symbol, kind: ReadonlyKind) {
+        // The steady state of a recursive/monomorphic call: the name is already
+        // in the set with exactly this kind (an outer frame marked it), so the
+        // insert would overwrite a value with itself and the journal arm below
+        // would be `Some(_) => {}`. Answering that from the set's direct-mapped
+        // cache turns a hash insert into one array load on the hottest path.
+        let already = self.readonly_vars.borrow().marked_with(sym, kind);
+        if already {
+            return;
+        }
         let previous = self.readonly_vars.borrow_mut().insert(sym, kind);
         if self.readonly_frames.get() == 0 {
             return;
