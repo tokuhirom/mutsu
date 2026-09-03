@@ -103,6 +103,11 @@ pub(crate) mod wk {
         any => "Any";
         /// The dynamic `$?FILE`, stored sigil-less with its twigil.
         file => "?FILE";
+        /// A lexically rebound `&return`. Probed on EVERY routine return (both
+        /// the interpreter's `OpCode::Return` and the JIT's `ret` shim), so it
+        /// must never be re-interned there -- the thread-local intern cache is
+        /// a string-keyed hash lookup, which showed up as 5.3% of `bench-fib`.
+        rebound_return => "&return";
     }
 }
 

@@ -4408,7 +4408,12 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Check if &return has been lexically rebound; if so, call
                 // the rebound function instead of performing a built-in return.
-                if let Some(rebound) = self.env().get("&return").cloned()
+                // Pre-interned: this runs on every return (see the matching
+                // probe in `vm_jit_helpers::ret`).
+                if let Some(rebound) = self
+                    .env()
+                    .get_sym(crate::symbol::wk::rebound_return())
+                    .cloned()
                     && matches!(
                         rebound.view(),
                         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }

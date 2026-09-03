@@ -115,7 +115,19 @@ Three things worth attacking next, in rough order of size:
    operations.
 3. **`mutsu_jit_1` +50% since August.** The natively-compiled body itself got
    slower, which nothing in the interpreter explains. Dump the generated code
-   for both builds before guessing.
+   for both builds before guessing. (Note that `vm_jit_helpers::ret`, the shim
+   the generated code calls on every return, was separately fixed — see below —
+   so re-measure `mutsu_jit_1` itself before assuming the +50% is still there.)
+4. **The remaining `env().get("<fixed name>")` probes.** Closed for `&return`
+   by `news/2026-09/jit-return-probes-a-pre-interned-symbol.md`: the rebound-
+   `&return` probe on every routine return re-interned the name, a thread-local
+   string-keyed hash lookup that was 5.3% of `bench-fib` under `LocalKey::with`
+   plus its share of `__memcmp_avx2_movbe` (`bench-fib` −6.6%, `fib` −6.8%,
+   `bench-tak` −4.8% locally, both orderings). **75 more `env().get("...")`
+   call sites remain** with a literal key — `"_"` (which already has
+   `wk::topic()`), `"/"`, `"!"`, `"__mutsu_in_eval"`. None are on `fib`'s path,
+   so they need a profile of a different benchmark (loops, smartmatch,
+   substitution, `try`) to rank before sweeping.
 
 ## Method notes for whoever picks this up
 

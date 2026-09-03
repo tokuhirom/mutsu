@@ -328,7 +328,13 @@ pub(super) unsafe extern "C" fn ret(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
     panic_boundary(|| {
         let val = interp.stack.pop().unwrap_or(Value::NIL);
-        if let Some(rebound) = interp.env().get("&return").cloned()
+        // Pre-interned (`wk::rebound_return`): this probe runs on every return
+        // out of natively-compiled code, and `Env::get(&str)` would re-intern
+        // the name -- a thread-local string-keyed hash lookup per return.
+        if let Some(rebound) = interp
+            .env()
+            .get_sym(crate::symbol::wk::rebound_return())
+            .cloned()
             && matches!(
                 rebound.view(),
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
