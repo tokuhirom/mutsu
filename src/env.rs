@@ -371,6 +371,8 @@ pub struct Env {
     /// recursion) stays O(1) while shallow nesting (methods, ~2-5 deep) pays no
     /// flatten.
     depth: u16,
+    /// This env's visible `?FILE`, pre-interned — see [`Env::source_file_sym`].
+    file_sym: Option<Symbol>,
 }
 
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
@@ -396,6 +398,24 @@ fn empty_overlay_ref() -> &'static Arc<SymMap> {
     EMPTY.get_or_init(|| Arc::new(SymMap::default()))
 }
 
+/// The interned `"?FILE"` key. Interning it once keeps the maintenance hook in
+/// every `Env` mutator down to a `u32` compare — see [`Env::source_file_sym`].
+#[inline(always)]
+fn file_key() -> Symbol {
+    static FILE_KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+    *FILE_KEY.get_or_init(|| Symbol::intern("?FILE"))
+}
+
+/// Intern a `?FILE` value. A non-`Str` `?FILE` has no file symbol, matching
+/// what a chain walk followed by a `ValueView::Str` match would yield.
+#[inline]
+fn file_sym_of(v: &Value) -> Option<Symbol> {
+    match v.view() {
+        crate::value::ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+        _ => None,
+    }
+}
+
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
@@ -403,6 +423,7 @@ impl Env {
             parent: None,
             tombstones: None,
             depth: 0,
+            file_sym: None,
         }
     }
 
@@ -416,6 +437,11 @@ impl Env {
     /// to a single tier once it reaches [`MAX_OVERLAY_DEPTH`]. See
     /// docs/vm-dual-store.md.
     pub(crate) fn scoped_child(mut parent: Env) -> Self {
+        // A fresh overlay is empty with no tombstones, so the child's visible
+        // `?FILE` is exactly the parent's -- including on the empty-tier-reuse
+        // and flatten paths below, which only skip/collapse tiers that were
+        // already invisible to lookups. See `source_file_sym`.
+        let file_sym = parent.file_sym;
         // Empty-tier reuse: a scoped parent whose overlay never received a
         // write (and has no tombstones) is invisible to lookups, so chain the
         // new child over the parent's own parent instead of stacking another
@@ -449,6 +475,7 @@ impl Env {
                     depth: flat.depth + 1,
                     parent: Some(Arc::new(flat)),
                     tombstones: None,
+                    file_sym,
                 };
             }
             return Self {
@@ -456,6 +483,7 @@ impl Env {
                 depth: arc.depth + 1,
                 parent: Some(arc),
                 tombstones: None,
+                file_sym,
             };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
@@ -468,7 +496,42 @@ impl Env {
             depth: parent.depth + 1,
             parent: Some(Arc::new(parent)),
             tombstones: None,
+            file_sym,
         }
+    }
+
+    /// This env's visible `?FILE` as a `Symbol`, or `None` when `?FILE` is
+    /// unset or is not a `Str`.
+    ///
+    /// Equivalent to `get("?FILE")` followed by `Symbol::intern`, but O(1):
+    /// every `RoutineFrame` push records the call-site file (ADR-0037 Slice 1
+    /// put a push on all four call paths), and resolving it through the
+    /// overlay chain plus an intern of the whole path was ~5% of
+    /// `benchmarks/bench-fib.raku`.
+    ///
+    /// The value is carried BY the env rather than mirrored on the
+    /// `Interpreter` deliberately: the runtime swaps whole envs in and out at
+    /// ~50 sites (`self.env = saved_env`), and an interpreter-side mirror
+    /// silently went stale at every one of them. Living on `Env` makes those
+    /// swaps correct for free — the answer travels with the env it describes.
+    /// It is maintained by the mutators above; `Interpreter::current_source_file_sym`
+    /// carries a debug assertion that re-derives it from a full chain walk on
+    /// every call, so any mutator that forgets the hook fails the whole `t/`
+    /// suite, which CI runs on the debug binary (ADR-0014).
+    #[inline(always)]
+    pub(crate) fn source_file_sym(&self) -> Option<Symbol> {
+        self.file_sym
+    }
+
+    /// Re-derive [`Self::source_file_sym`] after a bulk overlay edit that may
+    /// have dropped `?FILE` (`retain`, `retain_overlay`): the overlay's own
+    /// entry wins, else the parent chain's.
+    fn refresh_file_sym(&mut self) {
+        self.file_sym = match self.inner.get(&file_key()) {
+            Some(v) => file_sym_of(v),
+            None if self.is_tombstoned(file_key()) => None,
+            None => self.parent.as_ref().and_then(|p| p.file_sym),
+        };
     }
 
     /// True if `key` is tombstoned (removed) in this scoped overlay.
@@ -511,6 +574,7 @@ impl Env {
         if map.is_empty() {
             self.inner = empty_overlay();
         }
+        self.refresh_file_sym();
     }
 
     /// Collapse a scoped env into a flat (`parent=None`) env. For a flat env
@@ -543,6 +607,8 @@ impl Env {
                     parent: None,
                     tombstones: None,
                     depth: 0,
+                    // Flattening preserves every visible value, `?FILE` included.
+                    file_sym: self.file_sym,
                 }
             }
         }
@@ -579,11 +645,14 @@ impl Env {
         }
         let mut out = SymMap::default();
         collect(self, &mut out, keep);
+        // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
+        let file_sym = out.get(&file_key()).and_then(file_sym_of);
         Self {
             inner: Arc::new(out),
             parent: None,
             tombstones: None,
             depth: 0,
+            file_sym,
         }
     }
 
@@ -703,12 +772,14 @@ impl Env {
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         note_env_key(&key);
         let sym = Symbol::intern(&key);
-        self.untombstone(sym);
-        self.cow_mut().insert(sym, value)
+        self.insert_sym(sym, value)
     }
 
     #[inline]
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
+        if key == file_key() {
+            self.file_sym = file_sym_of(&value);
+        }
         self.untombstone(key);
         self.cow_mut().insert(key, value)
     }
@@ -740,6 +811,9 @@ impl Env {
             && let crate::value::ValueView::ContainerRef(cell) = existing.view()
         {
             let cell = cell.clone();
+            if key == file_key() {
+                self.file_sym = file_sym_of(&value);
+            }
             *cell.lock().unwrap() = value;
             return;
         }
@@ -751,6 +825,11 @@ impl Env {
     }
 
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
+        if key == file_key() {
+            // Flat: the key is gone. Scoped: the tombstone below stops the
+            // parent tier shadowing through. Either way nothing is visible.
+            self.file_sym = None;
+        }
         // Absent from a flat env's overlay: nothing to remove and no parent tier
         // to tombstone, so the result is `None` either way. Bail before
         // `cow_mut()`, whose `Arc::make_mut` costs an atomic RMW -- and a full
@@ -820,6 +899,7 @@ impl Env {
         F: FnMut(&Symbol, &mut Value) -> bool,
     {
         self.cow_mut().retain(f);
+        self.refresh_file_sym();
     }
 
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
@@ -951,7 +1031,7 @@ impl Env {
     /// `entry_or_insert` pays when the caller already holds a Symbol.
     pub fn entry_or_insert_sym(&mut self, key: Symbol, value: Value) {
         if !self.contains_key_sym(key) {
-            self.cow_mut().insert(key, value);
+            self.insert_sym(key, value);
         }
     }
 
@@ -959,7 +1039,7 @@ impl Env {
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
         let sym = Symbol::intern(&key);
         if !self.contains_key_sym(sym) {
-            self.cow_mut().insert(sym, f());
+            self.insert_sym(sym, f());
         }
     }
 
@@ -988,22 +1068,27 @@ impl From<HashMap<String, Value>> for Env {
             .into_iter()
             .map(|(k, v)| (Symbol::intern(&k), v))
             .collect();
+        let file_sym = sym_map.get(&file_key()).and_then(file_sym_of);
         Self {
             inner: Arc::new(sym_map),
             parent: None,
             tombstones: None,
             depth: 0,
+            file_sym,
         }
     }
 }
 
 impl From<HashMap<Symbol, Value>> for Env {
     fn from(map: HashMap<Symbol, Value>) -> Self {
+        let map: SymMap = map.into_iter().collect();
+        let file_sym = map.get(&file_key()).and_then(file_sym_of);
         Self {
-            inner: Arc::new(map.into_iter().collect()),
+            inner: Arc::new(map),
             parent: None,
             tombstones: None,
             depth: 0,
+            file_sym,
         }
     }
 }

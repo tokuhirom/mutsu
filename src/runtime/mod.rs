@@ -1410,11 +1410,6 @@ pub struct Interpreter {
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
     pub(crate) program_path: Option<String>,
-    /// Memo for [`Interpreter::current_source_file_sym`]: the `?FILE`
-    /// `Arc<String>` last seen and the `Symbol` it interned to. See that
-    /// method for why the intern is worth caching and why holding the `Arc`
-    /// is what makes the identity test sound.
-    pub(crate) file_sym_memo: std::cell::RefCell<Option<(Arc<String>, Symbol)>>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM

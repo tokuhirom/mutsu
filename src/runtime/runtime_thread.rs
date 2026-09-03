@@ -571,9 +571,6 @@ impl Interpreter {
                 next_id: cloned_next_handle_id,
             })),
             program_path: self.program_path.clone(),
-            // Per-thread memo (see `current_source_file_sym`): start empty
-            // rather than sharing the parent's `RefCell`, which is not `Sync`.
-            file_sym_memo: std::cell::RefCell::new(None),
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
             current_package: Arc::new(RwLock::new(self.current_package())),
