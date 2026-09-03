@@ -484,6 +484,16 @@ pub(super) fn dispatch(
                 ValueView::Slip(items) => {
                     format!("Slip|{:p}", Arc::as_ptr(&items))
                 }
+                ValueView::RakuAst(node) => {
+                    // RakuAST nodes are reference-like model objects. The
+                    // Arc allocation is stable across Value clones, so its
+                    // address supplies the node identity used by `.WHICH`.
+                    format!(
+                        "{}|{}",
+                        node.class.printed_name(),
+                        node as *const _ as usize
+                    )
+                }
                 ValueView::Array(items, ..) => {
                     format!("Array|{:p}", crate::gc::Gc::as_ptr(&items))
                 }

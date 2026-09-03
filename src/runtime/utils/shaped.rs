@@ -224,6 +224,10 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         }
         (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        // RakuAST nodes are Arc-backed model objects. Cloning a Value keeps
+        // the same node allocation, while separately constructed but
+        // structurally equal nodes get different allocations.
+        (ValueView::RakuAst(a), ValueView::RakuAst(b)) => std::ptr::eq(a, b),
         (ValueView::Sub(a), ValueView::Sub(b)) => {
             if crate::gc::Gc::ptr_eq(&a, &b) {
                 return true;
