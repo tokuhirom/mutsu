@@ -50,8 +50,8 @@ impl Interpreter {
         // A routine gets a fresh, writable `$_` — clear any readonly mark leaked
         // from the caller's topic (see vm_call_light.rs for the full rationale);
         // param binding below re-marks `_` for an explicit `$_` parameter.
-        if cf.code.is_routine && !self.no_readonly_vars() {
-            self.unmark_readonly("_");
+        if cf.code.is_routine {
+            self.unmark_readonly_topic();
         }
         let return_spec = cf.return_type.clone();
 

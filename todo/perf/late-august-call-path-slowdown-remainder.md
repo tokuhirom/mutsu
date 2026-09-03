@@ -133,12 +133,23 @@ scan reads the control-byte array and never touches a value.
    it with `Value::NIL` per call, and the same buffer shape is still copied
    into on the *named* light path (`call_compiled_function_light`), which was
    left untouched.
-2. **Readonly bookkeeping (~5.5%).** Every call marks each parameter readonly
+2. **Readonly bookkeeping (~4.5%).** Every call marks each parameter readonly
    and unmarks it on exit: an `FxHashMap<Symbol, ReadonlyKind>` insert, a
    remove, and a journal push/pop per parameter per call. A monomorphic
    recursive call re-marks a symbol its own caller already marked with the same
    kind; the code tries to make that journal nothing but still pays both map
    operations.
+   The **topic-unmark** part is closed by
+   `news/2026-09/readonly-set-knows-whether-the-topic-is-marked.md`: the guard
+   was "is the set non-empty", true for any program with one readonly parameter
+   live, so every call hash-removed `_` and missed. `ReadonlySet` now carries a
+   `topic: bool` (checked by `debug_assert` against the map on every read).
+   `bench-fib` −2.3% retired instructions; the cycle delta is inside the layout
+   noise floor.
+   What is left is `mark_readonly_sym_with`'s unconditional `insert` and
+   `replay_readonly_undo`'s journal. The architecturally right answer is to make
+   readonly-ness a property of the **local slot / container** rather than a
+   global name-keyed map — that is ADR-scale, not a micro-fix.
 3. **`mutsu_jit_1` +50% since August.** The natively-compiled body itself got
    slower, which nothing in the interpreter explains. Dump the generated code
    for both builds before guessing. (Note that `vm_jit_helpers::ret`, the shim
