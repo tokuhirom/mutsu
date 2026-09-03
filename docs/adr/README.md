@@ -91,3 +91,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0063](0063-nativecall-outbound-callback-ownership-and-reentrancy.md) | A NativeCall callback is a process-lifetime closure that re-enters the calling VM | Accepted (implemented) |
 | [0064](0064-var-descriptor-carries-the-contained-value.md) | A `.VAR` container descriptor carries the value its container holds | Accepted (implemented) |
 | [0065](0065-language-server-targets-ai-agents.md) | The language server targets AI agents, and is scoped to the protocol surface an agent actually consumes | Proposed (design only; no implementation) |
+| [0066](0066-call-dispatch-inline-cache.md) | Call dispatch resolves through a per-callsite inline cache, not a name-keyed hash map | Proposed (design only; no implementation) |
