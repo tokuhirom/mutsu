@@ -11,6 +11,7 @@
 
 pub mod diagnostics;
 pub mod documents;
+pub mod hover;
 pub mod positions;
 pub mod server;
 pub mod symbols;

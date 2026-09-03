@@ -336,12 +336,15 @@ fn every_failure_in_the_document_reaches_the_client() {
 #[test]
 fn an_unimplemented_request_is_answered_rather_than_ignored() {
     let mut client = Client::start();
-    client.open("file:///tmp/hover.raku", "say 1;\n", 1);
+    client.open("file:///tmp/unimplemented.raku", "say 1;\n", 1);
 
+    // `completion` is out of scope by decision, not by omission (ADR-0065 D3):
+    // an agent does not type character by character, and implementing it would
+    // require caret-position scope resolution.
     let id = client.request(
-        "textDocument/hover",
+        "textDocument/completion",
         serde_json::json!({
-            "textDocument": { "uri": "file:///tmp/hover.raku" },
+            "textDocument": { "uri": "file:///tmp/unimplemented.raku" },
             "position": { "line": 0, "character": 0 },
         }),
     );
@@ -350,7 +353,10 @@ fn an_unimplemented_request_is_answered_rather_than_ignored() {
         .response_result
         .expect_err("an unimplemented method must error");
     assert_eq!(error.code, lsp_server::ErrorCode::MethodNotFound as i32);
-    assert!(error.message.contains("textDocument/hover"), "{error:?}");
+    assert!(
+        error.message.contains("textDocument/completion"),
+        "{error:?}"
+    );
 
     client.shutdown();
 }
@@ -627,4 +633,87 @@ fn definition_falls_back_to_the_workspace_when_the_open_document_does_not_declar
 
     client.shutdown();
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// ADR-0065 D3's `hover`: "type/signature, and mutsu coverage status". The
+/// coverage half is what only a server built on the target runtime can offer.
+#[test]
+fn hover_shows_a_signature_for_a_declared_routine() {
+    let mut client = Client::start();
+    let path = "file:///tmp/hover-sig.raku";
+    client.open(
+        path,
+        "sub add(Int $a, Int $b --> Int) { $a + $b }\nsay add(1, 2);\n",
+        1,
+    );
+
+    let id = client.request(
+        "textDocument/hover",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 1, "character": 5 },
+        }),
+    );
+    let result = client
+        .recv_response(id)
+        .response_result
+        .expect("hover must succeed");
+    let text = result["contents"]["value"].as_str().expect("markdown");
+    assert!(text.contains("sub add(Int $a, Int $b --> Int)"), "{text}");
+    assert!(text.contains("line 1"), "{text}");
+
+    client.shutdown();
+}
+
+#[test]
+fn hover_says_whether_mutsu_has_the_routine_at_all() {
+    let mut client = Client::start();
+    let path = "file:///tmp/hover-coverage.raku";
+    client.open(path, "say uc('x');\nsay elem([1, 2]);\n", 1);
+
+    // A routine mutsu provides.
+    let id = client.request(
+        "textDocument/hover",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 0, "character": 5 },
+        }),
+    );
+    let result = client.recv_response(id).response_result.expect("hover");
+    let text = result["contents"]["value"].as_str().expect("markdown");
+    assert!(text.contains("mutsu implements this"), "{text}");
+
+    // A routine it does not, with mutsu's own suggestion attached.
+    let id = client.request(
+        "textDocument/hover",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 1, "character": 6 },
+        }),
+    );
+    let result = client.recv_response(id).response_result.expect("hover");
+    let text = result["contents"]["value"].as_str().expect("markdown");
+    assert!(text.contains("mutsu has no routine named `elem`"), "{text}");
+    assert!(text.contains("elems"), "{text}");
+
+    client.shutdown();
+}
+
+#[test]
+fn hover_on_nothing_answers_null() {
+    let mut client = Client::start();
+    let path = "file:///tmp/hover-nothing.raku";
+    client.open(path, "  ;\n", 1);
+
+    let id = client.request(
+        "textDocument/hover",
+        serde_json::json!({
+            "textDocument": { "uri": path },
+            "position": { "line": 0, "character": 2 },
+        }),
+    );
+    let result = client.recv_response(id).response_result.expect("hover");
+    assert!(result.is_null(), "{result:#}");
+
+    client.shutdown();
 }

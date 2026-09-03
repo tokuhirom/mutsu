@@ -16,7 +16,8 @@ use lsp_types::notification::{
     Notification as NotificationTrait, PublishDiagnostics,
 };
 use lsp_types::request::{
-    DocumentSymbolRequest, GotoDefinition, Request as RequestTrait, WorkspaceSymbolRequest,
+    DocumentSymbolRequest, GotoDefinition, HoverRequest, Request as RequestTrait,
+    WorkspaceSymbolRequest,
 };
 use lsp_types::{
     DocumentSymbolResponse, GotoDefinitionResponse, Location, OneOf, PositionEncodingKind,
@@ -52,6 +53,7 @@ pub fn server_capabilities() -> ServerCapabilities {
             },
         )),
         document_symbol_provider: Some(OneOf::Left(true)),
+        hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         definition_provider: Some(OneOf::Left(true)),
         ..Default::default()
@@ -101,6 +103,7 @@ fn handle_request(documents: &Documents, workspace: &mut Workspace, request: Req
         DocumentSymbolRequest::METHOD => document_symbol(documents, request),
         WorkspaceSymbolRequest::METHOD => workspace_symbol(workspace, request),
         GotoDefinition::METHOD => definition(documents, workspace, request),
+        HoverRequest::METHOD => hover(documents, workspace, request),
         method => {
             return Response::new_err(
                 id,
@@ -205,6 +208,68 @@ fn definition(
         }
     }
     Ok(serde_json::Value::Null)
+}
+
+/// Answer `textDocument/hover`: what mutsu knows about the name under the caret.
+///
+/// The lookup order mirrors `definition` — open document, then workspace — and
+/// then asks the question only a server built on the target runtime can:
+/// whether mutsu provides this routine at all (ADR-0065 D3/D4).
+fn hover(
+    documents: &Documents,
+    workspace: &mut Workspace,
+    request: Request,
+) -> Result<serde_json::Value, BoxError> {
+    let params: lsp_types::HoverParams = serde_json::from_value(request.params)?;
+    let uri = params.text_document_position_params.text_document.uri;
+    let position = params.text_document_position_params.position;
+    let Some(document) = documents.get(&uri) else {
+        return Ok(serde_json::Value::Null);
+    };
+    let Some(name) = crate::positions::identifier_at(&document.text, position) else {
+        return Ok(serde_json::Value::Null);
+    };
+    let range = crate::positions::name_range(&document.text, position.line + 1, &name);
+
+    if let Some(symbol) =
+        mutsu::analysis::symbols::find(&mutsu::analysis::symbols(&document.text), &name)
+    {
+        return Ok(serde_json::to_value(crate::hover::render(
+            &name,
+            crate::hover::Known::Declared {
+                symbol,
+                origin: "in this document".to_string(),
+            },
+            range,
+        ))?);
+    }
+    for path in workspace.files() {
+        let label = path.display().to_string();
+        let Some(text) = workspace.text_of(&path) else {
+            continue;
+        };
+        if let Some(symbol) = mutsu::analysis::symbols::find(&mutsu::analysis::symbols(text), &name)
+        {
+            return Ok(serde_json::to_value(crate::hover::render(
+                &name,
+                crate::hover::Known::Declared {
+                    symbol,
+                    origin: format!("in {label}"),
+                },
+                range,
+            ))?);
+        }
+    }
+    let known = if mutsu::analysis::is_builtin_routine(&name) {
+        crate::hover::Known::Builtin
+    } else {
+        crate::hover::Known::Unknown {
+            suggestions: mutsu::analysis::suggest_routines(&name),
+        }
+    };
+    Ok(serde_json::to_value(crate::hover::render(
+        &name, known, range,
+    ))?)
 }
 
 fn uri_of_path(path: &std::path::Path) -> Option<Uri> {

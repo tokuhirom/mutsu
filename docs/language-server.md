@@ -39,7 +39,8 @@ independently of the interpreter (`tag-release.yml` bumps only the root
 | `textDocument/documentSymbol` | Yes — nested, with the Raku declarator in `detail` |
 | `workspace/symbol` | Yes — reads the workspace on demand, case-insensitive substring match |
 | `textDocument/definition` | Yes — the open document first, then the workspace |
-| `references`, `hover` | Planned (ADR-0065 S5) |
+| `textDocument/hover` | Yes — signature, and whether mutsu implements the name |
+| `references` | Planned (ADR-0065 S5b — the one method that needs per-occurrence spans) |
 | `completion`, `semanticTokens`, `signatureHelp`, `inlayHint` | **Out of scope** (D3) |
 | Incremental document sync | **Out of scope** (D3) |
 
@@ -125,6 +126,15 @@ against the file removes a class of staleness bug. The walk is capped at 4000
 files, because a query over an unbounded tree is a hang and a hung server is
 worse than a truncated answer.
 
+`hover` answers with the declaration's signature where there is one, and with
+mutsu's coverage otherwise: a built-in mutsu provides is confirmed as such, and
+a name mutsu has never heard of says so, with mutsu's own "Did you mean"
+attached. Signatures are *reconstructed from the parse* rather than copied out
+of the source, because what a writer targeting mutsu needs to see is what mutsu
+understood the signature to be. The rendering drops `where` clauses,
+sub-signatures and default expressions — a default shows as `= ...`, which says
+there is one without claiming what it is.
+
 A parse failure inside a `use`d module is anchored at line 1 of the *open*
 document and names the other file in its message. Reporting that module's
 line and column against this document would point at an unrelated line, which
@@ -173,6 +183,7 @@ which has no column, covers the whole line.
 | `src/analysis/symbols.rs` (in `mutsu`) | The declarations a document contains, nested, at line granularity. Runs over a recovering parse, so a broken document still has an outline. |
 | `crates/mutsu-lsp/src/symbols.rs` | mutsu's declarations to LSP symbols, and the `SymbolKind` mapping. |
 | `crates/mutsu-lsp/src/workspace.rs` | The files a workspace-wide query reads, and their cache. |
+| `crates/mutsu-lsp/src/hover.rs` | What mutsu can say about the name under the caret, rendered as markdown. |
 | `crates/mutsu-lsp/tests/protocol.rs` | End-to-end tests over `lsp_server::Connection::memory()`, driving the real loop. |
 
 The loop is synchronous and single-threaded on purpose: D3 leaves nothing

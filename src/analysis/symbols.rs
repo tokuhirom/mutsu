@@ -18,7 +18,7 @@
 //! a file with a syntax error still yields the symbols around it — which is the
 //! point, since a document under edit is broken most of the time (S3).
 
-use crate::ast::{PackageKind, Stmt};
+use crate::ast::{PackageKind, ParamDef, Stmt};
 
 /// What a declaration declares. Deliberately mutsu's own vocabulary rather than
 /// LSP's `SymbolKind`, which has no spelling for a role, a grammar token or a
@@ -70,6 +70,11 @@ pub struct Symbol {
     /// 1-based last line the declaration covers, best effort: the deepest
     /// `Stmt::SetLine` seen inside its body. Never less than `line`.
     pub end_line: u32,
+    /// The rendered signature, for a routine that has one: `(Int $n, :$verbose
+    /// --> Str)`. Reconstructed from the parsed parameters rather than from the
+    /// source text, so it reflects what mutsu actually understood the signature
+    /// to be — which is the useful thing to show someone writing for mutsu.
+    pub signature: Option<String>,
     pub children: Vec<Symbol>,
 }
 
@@ -134,13 +139,20 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 };
                 out.push(declaration(name.resolve(), kind, line, body, false));
             }
-            Stmt::SubDecl { name, body, .. } => {
-                out.push(declaration(
+            Stmt::SubDecl {
+                name,
+                body,
+                param_defs,
+                return_type,
+                ..
+            } => {
+                out.push(declaration_with_signature(
                     name.resolve(),
                     SymbolKind::Sub,
                     line,
                     body,
                     true,
+                    render_signature(param_defs, return_type.as_deref()),
                 ));
             }
             Stmt::ProtoDecl {
@@ -160,6 +172,8 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 name,
                 body,
                 is_private,
+                param_defs,
+                return_type,
                 ..
             } => {
                 let kind = if *is_private {
@@ -167,7 +181,14 @@ fn collect(stmts: &[Stmt], line: &mut u32, in_routine: bool) -> Vec<Symbol> {
                 } else {
                     SymbolKind::Method
                 };
-                out.push(declaration(name.resolve(), kind, line, body, true));
+                out.push(declaration_with_signature(
+                    name.resolve(),
+                    kind,
+                    line,
+                    body,
+                    true,
+                    render_signature(param_defs, return_type.as_deref()),
+                ));
             }
             Stmt::TokenDecl { name, body, .. } => {
                 out.push(declaration(
@@ -217,7 +238,83 @@ fn leaf(name: String, kind: SymbolKind, line: u32) -> Symbol {
         kind,
         line,
         end_line: line,
+        signature: None,
         children: Vec::new(),
+    }
+}
+
+/// Render a parsed signature back to Raku source form.
+///
+/// An approximation on purpose: `where` clauses, sub-signatures and default
+/// *expressions* are dropped, because rendering an expression back to source
+/// needs a printer mutsu does not have, and a half-rendered default would be a
+/// diagnostic that lies. What is kept — type, sigil, name, optionality,
+/// namedness, slurpiness, return type — is what a caller needs.
+pub(crate) fn render_signature(params: &[ParamDef], return_type: Option<&str>) -> Option<String> {
+    let rendered: Vec<String> = params
+        .iter()
+        .filter(|p| !p.is_invocant)
+        .map(render_param)
+        .collect();
+    if rendered.is_empty() && return_type.is_none() {
+        return Some("()".to_string());
+    }
+    let mut inner = rendered.join(", ");
+    if let Some(ret) = return_type {
+        if !inner.is_empty() {
+            inner.push(' ');
+        }
+        inner.push_str(&format!("--> {ret}"));
+    }
+    Some(format!("({inner})"))
+}
+
+fn render_param(param: &ParamDef) -> String {
+    let mut out = String::new();
+    if let Some(constraint) = &param.type_constraint {
+        out.push_str(constraint);
+        out.push(' ');
+    }
+    if param.named {
+        out.push(':');
+    }
+    let prefix = if param.double_slurpy {
+        "**"
+    } else if param.onearg {
+        "+"
+    } else if param.slurpy {
+        "*"
+    } else {
+        ""
+    };
+    out.push_str(prefix);
+    out.push_str(&sigil_name(param));
+    // Raku spells the two optionality cases differently: a *named* parameter is
+    // optional unless marked `!`, a positional is required unless marked `?`.
+    // `required` in the AST only ever means "a named parameter written with
+    // `!`" — a mandatory positional carries no flag at all, which is why the
+    // positional case reads `optional_marker` instead.
+    if param.named && param.required {
+        out.push('!');
+    } else if !param.named && param.optional_marker {
+        out.push('?');
+    }
+    if param.default.is_some() {
+        out.push_str(" = ...");
+    }
+    out
+}
+
+/// A parameter's name with its sigil.
+///
+/// `ParamDef::name` holds `@rest` for an array but a bare `a` for `$a`: the
+/// scalar sigil is stripped at parse time. Putting it back is what makes a
+/// rendered signature read like the source it came from.
+fn sigil_name(param: &ParamDef) -> String {
+    if param.sigilless || param.name.starts_with(['$', '@', '%', '&']) {
+        param.name.clone()
+    } else {
+        format!("${}", param.name)
     }
 }
 
@@ -230,6 +327,17 @@ fn declaration(
     body: &[Stmt],
     body_is_routine: bool,
 ) -> Symbol {
+    declaration_with_signature(name, kind, line, body, body_is_routine, None)
+}
+
+fn declaration_with_signature(
+    name: String,
+    kind: SymbolKind,
+    line: &mut u32,
+    body: &[Stmt],
+    body_is_routine: bool,
+    signature: Option<String>,
+) -> Symbol {
     let start = *line;
     // The body's own `SetLine` markers advance the shared cursor; wherever it
     // ends up is the last line the declaration demonstrably covers. The closing
@@ -241,6 +349,7 @@ fn declaration(
         kind,
         line: start,
         end_line,
+        signature,
         children,
     }
 }
@@ -420,6 +529,47 @@ class Foo {
             .find(|(s, _)| s.name == "Foo")
             .expect("Foo is present");
         assert_eq!(foo.1, None);
+    }
+
+    #[test]
+    fn a_routine_carries_its_rendered_signature() {
+        let found = symbols("sub add(Int $a, Int $b --> Int) { $a + $b }\n");
+        assert_eq!(
+            found[0].signature.as_deref(),
+            Some("(Int $a, Int $b --> Int)")
+        );
+    }
+
+    #[test]
+    fn optional_named_and_slurpy_parameters_keep_their_spelling() {
+        let found = symbols("sub f($a, $b?, :$verbose, :$name!, *@rest) { 1 }\n");
+        assert_eq!(
+            found[0].signature.as_deref(),
+            Some("($a, $b?, :$verbose, :$name!, *@rest)")
+        );
+    }
+
+    #[test]
+    fn a_routine_with_no_parameters_renders_empty_parentheses() {
+        let found = symbols("sub nothing() { 1 }\n");
+        assert_eq!(found[0].signature.as_deref(), Some("()"));
+    }
+
+    #[test]
+    fn a_default_is_shown_as_present_without_rendering_the_expression() {
+        // Rendering an expression back to source needs a printer mutsu does not
+        // have, and a half-rendered default would be worse than an honest
+        // ellipsis.
+        let found = symbols("sub f($a = 42) { $a }\n");
+        let signature = found[0].signature.as_deref().unwrap_or_default();
+        assert!(signature.contains("= ..."), "{signature:?}");
+    }
+
+    #[test]
+    fn a_class_has_no_signature_but_its_methods_do() {
+        let found = symbols("class C {\n    method m(Str $s) { $s }\n}\n");
+        assert_eq!(found[0].signature, None);
+        assert_eq!(found[0].children[0].signature.as_deref(), Some("(Str $s)"));
     }
 
     #[test]
