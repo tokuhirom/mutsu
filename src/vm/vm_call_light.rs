@@ -288,11 +288,25 @@ impl Interpreter {
         // borrow of `self.stack` ends before the `&mut self` rollback runs.
         let mut type_failure: Option<(usize, &'static str)> = None;
         for param_idx in 0..positional_count.min(actual_count) {
-            let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
-                continue;
+            // `param_fast_types` classified every constraint at registration
+            // time; `None` means the precompute never ran (a hand-built chunk),
+            // which falls back to matching the constraint string per call.
+            let ok = match cf.param_fast_types.get(param_idx) {
+                Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
+                Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                    let val = self.stack[args_base + param_idx].unwrap_varref();
+                    Self::fast_type_check_tagged(val, kind, name_sym)
+                }
+                None => {
+                    let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
+                        continue;
+                    };
+                    let val = self.stack[args_base + param_idx].unwrap_varref();
+                    Self::fast_type_check(val, tc)
+                }
             };
-            let val = self.stack[args_base + param_idx].unwrap_varref();
-            if !Self::fast_type_check(val, tc) {
+            if !ok {
+                let val = self.stack[args_base + param_idx].unwrap_varref();
                 type_failure = Some((param_idx, runtime::value_type_name(val)));
                 break;
             }
@@ -647,7 +661,13 @@ impl Interpreter {
             && let Some(ref rt) = cf.return_type
         {
             let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
-            if !Self::light_return_type_check(check_val, rt) {
+            let passed = match cf.return_fast_type {
+                Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                    Self::light_return_type_check_tagged(check_val, kind, name_sym)
+                }
+                _ => Self::light_return_type_check(check_val, rt),
+            };
+            if !passed {
                 return Err(positional_light_return_type_error(rt, check_val));
             }
         }
@@ -758,10 +778,43 @@ impl Interpreter {
 
     /// Check if a type name is one of the basic types that fast_type_check handles.
     pub(super) fn is_fast_type_name(name: &str) -> bool {
-        matches!(
-            name,
-            "Int" | "Str" | "Num" | "Bool" | "Rat" | "Any" | "Mu" | "Cool"
-        )
+        crate::opcode::FastParamType::of(name).is_some()
+    }
+
+    /// [`Self::fast_type_check`] against a constraint already classified at
+    /// registration time ([`crate::opcode::FastParamCheck`]).
+    ///
+    /// Dispatches on the *value*'s shape once and answers from a `u8` tag,
+    /// where the by-name form matches the constraint string on every call and
+    /// re-inspects the value up to three times. The arms mirror that function
+    /// exactly -- keep them in step.
+    #[inline]
+    pub(super) fn fast_type_check_tagged(
+        val: &Value,
+        kind: crate::opcode::FastParamType,
+        name_sym: Symbol,
+    ) -> bool {
+        use crate::opcode::FastParamType as T;
+        match val.view() {
+            // Allomorphs and other mixins go through the full `isa_check`, as
+            // in the by-name form: an `IntStr` satisfies both `Int` and `Str`.
+            ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
+            // A bare type object satisfies a smiley-less nominal constraint of
+            // its own name (`Int` for `Int $a`), and any of `Any`/`Mu`/`Cool`.
+            // Interning is injective, so the `Symbol` compare is exactly the
+            // by-name form's `sym.resolve() == type_name`.
+            ValueView::Package(sym) => kind == T::Wild || sym == name_sym,
+            ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
+            ValueView::Str(_) => matches!(kind, T::Str | T::Wild),
+            ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
+            ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
+            ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
+            // Every other value shape satisfies only `Any`/`Mu`/`Cool` -- the
+            // by-name form's `_` arm compares `value_type_name(val)` against a
+            // name that, on this path, is always one of the five concrete
+            // types above, so it can only be false.
+            _ => kind == T::Wild,
+        }
     }
 
     /// Return type check that handles type objects, Nil, and Failure passthrough.
@@ -780,6 +833,43 @@ impl Interpreter {
             return sym.resolve() == type_name;
         }
         Self::fast_type_check(val, type_name)
+    }
+
+    /// [`Self::light_return_type_check`] against a return type already
+    /// classified at registration time (`CompiledFunction::return_fast_type`).
+    ///
+    /// One `view()` dispatch answers what the by-name form asks in four
+    /// (`is_nil`, the `Failure` probe, the type-object probe, then
+    /// `fast_type_check`'s own two). The arms mirror it exactly -- note the
+    /// deliberate asymmetry with the *parameter* check: a returned type object
+    /// must match the declared return type by name even for `Any`/`Mu`/`Cool`.
+    #[inline]
+    fn light_return_type_check_tagged(
+        val: &Value,
+        kind: crate::opcode::FastParamType,
+        name_sym: Symbol,
+    ) -> bool {
+        use crate::opcode::FastParamType as T;
+        if val.is_nil() {
+            return true;
+        }
+        match val.view() {
+            // A `Failure` passes any return type; any other instance satisfies
+            // only `Any`/`Mu`/`Cool`, exactly as `fast_type_check`'s `_` arm
+            // does (`value_type_name` can never equal one of the five concrete
+            // type names for an instance).
+            ValueView::Instance { class_name, .. } => {
+                class_name.resolve() == "Failure" || kind == T::Wild
+            }
+            ValueView::Package(sym) => sym == name_sym,
+            ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
+            ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
+            ValueView::Str(_) => matches!(kind, T::Str | T::Wild),
+            ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
+            ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
+            ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
+            _ => kind == T::Wild,
+        }
     }
 
     /// Fast type check for common types.

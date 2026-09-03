@@ -296,6 +296,8 @@ impl Interpreter {
             deprecated_info,
             declared_locals: None,
             param_name_syms: Vec::new(),
+            param_fast_types: Vec::new(),
+            return_fast_type: None,
             package: pkg.clone(),
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
