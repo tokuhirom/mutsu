@@ -4408,12 +4408,15 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Check if &return has been lexically rebound; if so, call
                 // the rebound function instead of performing a built-in return.
-                // Pre-interned: this runs on every return (see the matching
-                // probe in `vm_jit_helpers::ret`).
-                if let Some(rebound) = self
-                    .env()
-                    .get_sym(crate::symbol::wk::rebound_return())
-                    .cloned()
+                // Pre-interned, and gated on the process-global latch (see the
+                // matching probe in `vm_jit_helpers::ret`): this runs on every
+                // return, and with no rebinding anywhere the lookup is a miss
+                // that walks every overlay tier plus the global base.
+                if crate::env::return_rebound_possible()
+                    && let Some(rebound) = self
+                        .env()
+                        .get_sym(crate::symbol::wk::rebound_return())
+                        .cloned()
                     && matches!(
                         rebound.view(),
                         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }

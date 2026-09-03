@@ -33,6 +33,13 @@ static GLOBAL_BASE: OnceLock<SymMap> = OnceLock::new();
 /// later calls are ignored (the base is identical for every interpreter in a
 /// process, so re-installation is a no-op rather than an error).
 pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
+    // The base tier is read through by `get_sym` when the overlay chain misses,
+    // so it is the one place a `&return` binding could become visible without
+    // passing `insert_sym`. It only ever holds built-in enum values, but latch
+    // the flag from here too so the invariant does not depend on that.
+    if map.contains_key(&crate::symbol::wk::rebound_return()) {
+        RETURN_REBOUND_SEEN.store(true, Ordering::Relaxed);
+    }
     let _ = GLOBAL_BASE.set(map.into_iter().collect());
 }
 
@@ -240,6 +247,27 @@ static ELEM_INDEX_META_SEEN: AtomicBool = AtomicBool::new(false);
 /// (correct) probe run.
 static PLACEHOLDER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for a lexically rebound `&return`
+/// (`my &return = ...` / `my &return := ...`).
+///
+/// Raku lets `return` be rebound lexically, so *every* routine return has to ask
+/// "is `&return` bound here?" before raising the built-in return signal — both
+/// the interpreter's `OpCode::Return` arm and the JIT's `ret` shim. That question
+/// is an `Env::get_sym` miss, which walks the whole overlay/parent chain and then
+/// consults [`GLOBAL_BASE`]: measured as ~2% of `bench-fib`, where it is pure
+/// waste (2 chain tiers hashed per call, 6421 `get_sym` entries for 3193 calls,
+/// all of them misses).
+///
+/// Rebinding `&return` is vanishingly rare, and the binding can only become
+/// visible to a return by first being *inserted* into an env — every insert path
+/// funnels through [`Env::insert_sym`] (`insert` / `insert_through*` /
+/// `entry_or_insert*` all delegate to it, and `inner_mut` has no callers), so
+/// latching the flag there catches every creation site. Same soundness argument
+/// as [`CLOSURE_META_KEY_SEEN`]: the flag is monotonic, the insert runs earlier in
+/// program order than any return that could observe the binding, and an over-set
+/// only makes the (correct) probe run.
+static RETURN_REBOUND_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any closure-writeback metadata key may exist in some env. See
 /// [`CLOSURE_META_KEY_SEEN`].
 #[inline]
@@ -273,6 +301,13 @@ pub(crate) fn elem_index_meta_possible() -> bool {
 #[inline]
 pub(crate) fn placeholder_var_possible() -> bool {
     PLACEHOLDER_KEY_SEEN.load(Ordering::Relaxed)
+}
+
+/// True if some env may hold a lexically rebound `&return`. See
+/// [`RETURN_REBOUND_SEEN`].
+#[inline]
+pub(crate) fn return_rebound_possible() -> bool {
+    RETURN_REBOUND_SEEN.load(Ordering::Relaxed)
 }
 
 /// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] / [`PLACEHOLDER_KEY_SEEN`]
@@ -778,6 +813,12 @@ impl Env {
     pub fn insert_sym(&mut self, key: Symbol, value: Value) -> Option<Value> {
         if key == file_key() {
             self.file_sym = file_sym_of(&value);
+        }
+        // Latch the "someone rebound `&return`" flag here (see
+        // [`RETURN_REBOUND_SEEN`]): this is the single funnel every env insert
+        // passes through, so no creation site can slip past it.
+        if key == crate::symbol::wk::rebound_return() {
+            RETURN_REBOUND_SEEN.store(true, Ordering::Relaxed);
         }
         self.untombstone(key);
         self.cow_mut().insert(key, value)
