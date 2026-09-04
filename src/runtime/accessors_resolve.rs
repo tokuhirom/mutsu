@@ -291,10 +291,18 @@ impl Interpreter {
         // already selected by the pseudo-package prefix, which is how
         // `&CALLER::LEXICAL::("infix:<+>")` reaches the built-in operator.
         let normalized_name = Self::normalize_categorical_operator_name(bare_name);
+        // `postcircumfix:<...>` joins the list for the same reason the other
+        // three are here: the term must denote the *operator*, which for a name
+        // carrying user proto/multi candidates is the by-name routine reference
+        // whose call path gives the CORE routine priority. Capturing the user's
+        // own candidates instead is what made the standard delegation idiom
+        // (`my constant &old-same = &postcircumfix:<[ ]>` above the module's own
+        // candidates) recurse into itself forever -- ADR-0041 SS1.1.
         if core_visible
             && (normalized_name.starts_with("infix:<")
                 || normalized_name.starts_with("prefix:<")
-                || normalized_name.starts_with("postfix:<"))
+                || normalized_name.starts_with("postfix:<")
+                || normalized_name.starts_with("postcircumfix:<"))
             && normalized_name.ends_with('>')
         {
             // A concrete operator sub bound in env — a `my &infix:<op>` binding or

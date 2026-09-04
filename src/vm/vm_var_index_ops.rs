@@ -405,10 +405,16 @@ impl Interpreter {
         self.exec_index_op_with_positional(false)
     }
 
-    pub(super) fn exec_index_op_with_positional(
+    pub(crate) fn exec_index_op_with_positional(
         &mut self,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // `skip_postcircumfix_overload` is set by the CORE subscript routine
+        // (what `&postcircumfix:<[ ]>` resolves to) so that a user candidate
+        // delegating back to it does not re-enter itself. Take it here, before
+        // any early return, so the suppression covers exactly this dispatch and
+        // never leaks onto a later, unrelated subscript.
+        let core_subscript_call = std::mem::take(&mut self.skip_postcircumfix_overload);
         let mut index = self.stack.pop().unwrap();
         // An *itemized* list/Range used as a subscript (`@a[$(7,8,9)]`,
         // `@a[my $ = ^2]`) is a SINGLE index, not a slice: itemization makes it
@@ -548,7 +554,9 @@ impl Interpreter {
         // `prefix:<~>`/`infix:<...>` operator overloads are checked ahead of
         // their native fallback (`vm_misc_coerce.rs`, `builtins_operators_infix.rs`).
         // See todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md.
-        if let ValueView::Instance { .. } = target.view() {
+        if let ValueView::Instance { .. } = target.view()
+            && !core_subscript_call
+        {
             let op_name = if is_positional {
                 "postcircumfix:<[ ]>"
             } else {
