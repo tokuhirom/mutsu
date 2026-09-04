@@ -77,6 +77,7 @@ impl Compiler {
                 label: label.clone(),
                 scope_isolate: false,
                 isolate_decls_idx: u32::MAX,
+                scope_routines: Self::stmts_declare_routines(body),
             });
             let saved = self.push_dynamic_scope_lexical();
             self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
@@ -105,6 +106,7 @@ impl Compiler {
             label: label.clone(),
             scope_isolate: false,
             isolate_decls_idx: u32::MAX,
+            scope_routines: Self::stmts_declare_routines(body),
         });
         self.compile_block_inline(body);
         self.code.patch_body_end(idx);
@@ -133,6 +135,7 @@ impl Compiler {
             label: label.clone(),
             scope_isolate: true,
             isolate_decls_idx: u32::MAX,
+            scope_routines: Self::stmts_declare_routines(body),
         });
         // Record every `my`/`state` declaration compiled in the body (including
         // ones nested in expressions like `(state $a)++` and ones shadowing an

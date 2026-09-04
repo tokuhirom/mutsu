@@ -7,10 +7,10 @@ use Test;
 # refused at declaration time. Every expectation below was measured against
 # Rakudo v2026.06 (2026-09-04) first; raku is the oracle.
 #
-# The inner scopes below are statement-form bare blocks on purpose: a
-# value-position `do { ... }` block does not yet restore the routine registry
-# in mutsu (it leaks a block-local plain `sub` too), which is a separate
-# defect -- see todo/tickets/do-block-does-not-scope-routine-declarations.md.
+# The inner scopes below are statement-form bare blocks. The value-position
+# `do { ... }` form scopes its routine declarations too (it did not until
+# news/2026-09/do-block-scopes-its-routine-declarations.md); that form has its
+# own pin file, t/do-block-scopes-routine-decls.t.
 
 plan 22;
 

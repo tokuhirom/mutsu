@@ -66,6 +66,7 @@ impl Interpreter {
         label: &Option<String>,
         scope_isolate: bool,
         isolate_decls_idx: u32,
+        scope_routines: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -77,6 +78,16 @@ impl Interpreter {
         let once_scope = self.next_once_scope_id();
         self.push_once_scope(once_scope);
         self.push_enum_scope();
+        // A `do { ... }` block is a block, so a routine declared directly in it
+        // is lexical to it: it must not leak out, and an outer routine of the
+        // same name must come back when the block exits. `OpCode::BlockScope`
+        // (the statement-form bare block), every routine call and every
+        // for-loop body that declares routines already take this
+        // snapshot/restore pair; the value-position `do` form was the one that
+        // did not, so `sub foo() {...}` inside it permanently replaced an outer
+        // `foo`. The compiler sets `scope_routines` only when the body actually
+        // declares a routine, so the common case pays nothing.
+        let routine_snapshot = scope_routines.then(|| self.snapshot_routine_registry());
         let saved_env = if scope_isolate {
             Some((self.env().clone(), self.locals.clone()))
         } else {
@@ -124,6 +135,9 @@ impl Interpreter {
         };
         self.pop_enum_scope();
         self.pop_once_scope();
+        if let Some(routine_snapshot) = routine_snapshot {
+            self.restore_routine_registry(routine_snapshot);
+        }
         // Restore scope if scope_isolate is true
         if let Some((saved_env, saved_locals)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::NIL);
