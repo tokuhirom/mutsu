@@ -71,18 +71,16 @@ half.
 
 ## Also still open in the same area
 
-A two-hop sigilless bind chain rejects the write:
+~~A two-hop sigilless bind chain rejects the write~~ — **FIXED 2026-09-04**, see
+`news/2026-09/sigilless-bind-chain-takes-on-its-sources-binding.md`. It was two
+gaps, not one: the parser's container-shape filter never admitted a bareword
+source at all, and the store resolved such a source through the
+`__mutsu_sigilless_alias::` chain, which only links to a NAMED variable (so an
+element alias dropped the write into a copy and a value binding looked
+writable). Pinned by `t/sigilless-bind-chain.t`.
 
-```
-$ raku  -e 'my $a = 1; my \y := $a; my \x := y; x = 5; say $a'
-5
-$ mutsu -e '...same...'
-Cannot modify an immutable Int (1)
-```
-
-Same family (the second bind does not reach the first alias's cell), listed in
-`news/2026-08/sigilless-alias-write-now-type-checked.md`'s "what is still open" and
-unaffected by the 2026-09-04 fix.
+This ticket's own divergence — the LOOP parameter's missing type check — is
+unaffected: it uses `store_loop_source_var`, not the bind path.
 
 ## Reproduce
 

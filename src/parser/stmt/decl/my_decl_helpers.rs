@@ -45,10 +45,18 @@ fn build_sigilless_bind_stmt(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
-    let binds_a_container = matches!(
-        expr,
-        Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
-    );
+    let binds_a_container = match expr {
+        Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. } => true,
+        // A SIGILLESS source (`my \y := $a; my \x := y`) denotes whatever `y`
+        // was bound to, so the chain must be able to reach the first alias's
+        // container. A bareword is only admitted when it is a declared
+        // sigilless value term -- an ordinary bareword (a type name, a listop
+        // call) keeps the readonly path. The sigiled-target twin
+        // (`my $x := y`) already routes this way, through the `__scalar_bind`
+        // branch in `compile_stmt`'s `VarDecl` arm.
+        Expr::BareWord(ref n) => crate::parser::stmt::simple::is_user_declared_value_term(n),
+        _ => false,
+    };
     let decl = Stmt::VarDecl {
         name: name.clone(),
         expr,
