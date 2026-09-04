@@ -573,7 +573,11 @@ impl Interpreter {
 
         for (key, val) in self.env.iter() {
             let key_s = key.resolve();
-            if key_s.starts_with("__mutsu_callable_id::") {
+            // Internal bookkeeping markers use package-like separators (for
+            // example, the inline-package prepass marker contains
+            // `::Exporter::exported`). They must not appear as pseudo-package
+            // members when a named package's stash is assembled.
+            if key_s.starts_with("__mutsu_") {
                 continue;
             }
             if (package_name == "MY" || package_name == "GLOBAL")

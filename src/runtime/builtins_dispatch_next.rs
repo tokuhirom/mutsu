@@ -47,6 +47,27 @@ enum DispatchFrameKind {
 }
 
 impl Interpreter {
+    /// Return the built-in implementation of an infix operator for the final
+    /// leg of a `callsame` chain.  Core operators are not represented as
+    /// `FunctionDef`s in the multi-dispatch list, but Raku still exposes that
+    /// native candidate after a user-defined operator candidate.  Calling the
+    /// ordinary infix dispatcher here would select the user candidate again,
+    /// so use the pure native reduction implementation directly.
+    fn native_infix_next_candidate(
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let op = name.strip_prefix("infix:<")?.strip_suffix('>')?;
+        if args.len() != 2 {
+            return None;
+        }
+        match Self::apply_reduction_op(op, &args[0], &args[1]) {
+            Ok(value) => Some(Ok(value)),
+            Err(error) if error.message.starts_with("Unsupported reduction operator:") => None,
+            Err(error) => Some(Err(error)),
+        }
+    }
+
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
     /// `multi_dispatch_stack` are independent stacks, each stamped with a
     /// shared monotonic `dispatch_token` at push time. `callsame`/`nextsame`/
@@ -1268,6 +1289,16 @@ impl Interpreter {
                 }
             }
             let Some(idx) = matched_idx else {
+                // Core infix operators are implicit final candidates: they do
+                // not occur in `candidates`, but `callsame` from a user
+                // `infix:<op>` must still reach them.
+                if let Some(result) = Self::native_infix_next_candidate(&_name, &call_args) {
+                    let result = result?;
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
                 // No candidate matches — return Nil (nowhere to defer to)
                 if tail_call {
                     return Err(RuntimeError::return_signal(Value::NIL));

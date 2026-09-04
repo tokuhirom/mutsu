@@ -361,6 +361,220 @@ impl Interpreter {
         self.otf_compile_function_def(&tmp_def)
     }
 
+    /// Register the routines declared by an inline package before CHECK
+    /// phasers run.  Raku makes an inline package's interface available during
+    /// compilation, but keeps the package body's procedural statements in
+    /// their normal runtime order.  `reorder_phasers` therefore places a
+    /// top-level `module` after CHECK; without this declaration-only pass an
+    /// import from CHECK sees neither the package's routines nor its exports.
+    ///
+    /// This deliberately compiles only routine bodies.  Executing the package
+    /// body here would change observable ordering (for example, a `say` in the
+    /// module must still happen after CHECK), while the routine registry and
+    /// export table are the compile-time interface needed by `import`.
+    pub(crate) fn preregister_inline_package_subs(
+        &mut self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut declarations = Vec::new();
+        Self::collect_inline_package_subs(stmts, "GLOBAL", &mut declarations);
+
+        for (package, stmt) in declarations {
+            let Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                return_type,
+                associativity,
+                signature_alternates,
+                body,
+                multi,
+                is_rw,
+                is_raw,
+                is_export,
+                export_tags,
+                is_test_assertion,
+                supersede,
+                custom_traits,
+                ..
+            } = stmt
+            else {
+                unreachable!("package routine collector returned a non-sub declaration");
+            };
+
+            // Declaration-only registration cannot safely apply a user trait:
+            // its argument may need the package body (or a preceding `use`) to
+            // have run. Leave those declarations to the normal package-body
+            // registration pass. Built-in/internal traits below are fully
+            // represented by the metadata passed to the registrar.
+            if custom_traits.iter().any(|(trait_name, _)| {
+                !trait_name.starts_with("__")
+                    && trait_name != "default"
+                    && !trait_name.starts_with("DEPRECATED")
+                    && trait_name != "hidden-from-USAGE"
+            }) {
+                continue;
+            }
+
+            let saved_package = self.current_package();
+            self.set_current_package(package.clone());
+
+            let site_fingerprint = crate::ast::sub_registration_fingerprint(
+                &params,
+                &param_defs,
+                &body,
+                return_type.as_ref(),
+                multi,
+                is_rw,
+                is_raw,
+            );
+
+            let metadata = crate::opcode::compiled_routine_metadata(
+                &params,
+                &param_defs,
+                &body,
+                is_rw,
+                is_raw,
+            );
+            let compiled =
+                self.compile_forward_declared_sub(name, &params, &param_defs, &body, is_rw, is_raw);
+            let traits: Vec<(String, Option<crate::opcode::DeclTraitArg>)> = custom_traits
+                .iter()
+                .filter(|(trait_name, _)| {
+                    trait_name.starts_with("__")
+                        || *trait_name == "default"
+                        || trait_name.starts_with("DEPRECATED")
+                        || *trait_name == "hidden-from-USAGE"
+                })
+                .map(|(trait_name, _)| (trait_name.clone(), None))
+                .collect();
+            let result = (|| {
+                let result = self.register_compiled_sub_decl(
+                    &name.resolve(),
+                    &params,
+                    &param_defs,
+                    return_type.as_ref(),
+                    associativity.as_ref(),
+                    &[],
+                    multi,
+                    is_rw,
+                    is_raw,
+                    is_test_assertion,
+                    supersede,
+                    &traits,
+                    Some(site_fingerprint),
+                    &metadata,
+                    Some(&compiled),
+                );
+
+                if matches!(
+                    &result,
+                    Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
+                ) {
+                    if is_export && !self.suppress_exports {
+                        self.register_exported_sub(package.clone(), name.resolve(), export_tags);
+                    }
+                    for (alt_params, alt_param_defs) in &signature_alternates {
+                        let alt_metadata = crate::opcode::compiled_routine_metadata(
+                            alt_params,
+                            alt_param_defs,
+                            &body,
+                            is_rw,
+                            is_raw,
+                        );
+                        let alt_compiled = self.compile_forward_declared_sub(
+                            name,
+                            alt_params,
+                            alt_param_defs,
+                            &body,
+                            is_rw,
+                            is_raw,
+                        );
+                        self.register_sub_alternate_decl(
+                            &name.resolve(),
+                            alt_params,
+                            alt_param_defs,
+                            return_type.as_ref(),
+                            associativity.as_ref(),
+                            &[],
+                            multi,
+                            is_rw,
+                            is_raw,
+                            is_test_assertion,
+                            supersede,
+                            &traits,
+                            Some(&alt_metadata),
+                            Some(&alt_compiled),
+                        )?;
+                    }
+                }
+                result
+            })();
+
+            let installed = matches!(
+                &result,
+                Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed)
+            );
+            self.set_current_package(saved_package);
+            if installed {
+                self.env_mut().insert(
+                    format!(
+                        "__mutsu_inline_package_sub_preregistered::{package}::{}::{site_fingerprint}",
+                        name.resolve()
+                    ),
+                    Value::TRUE,
+                );
+            }
+            result?;
+        }
+        Ok(())
+    }
+
+    fn collect_inline_package_subs(
+        stmts: &[Stmt],
+        parent_package: &str,
+        out: &mut Vec<(String, Stmt)>,
+    ) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::Package {
+                    name,
+                    body,
+                    is_unit: false,
+                    is_my: false,
+                    ..
+                } => {
+                    let name = name.resolve();
+                    let package = if let Some(absolute) = name.strip_prefix("GLOBAL::") {
+                        absolute.to_string()
+                    } else if parent_package == "GLOBAL" {
+                        name
+                    } else {
+                        format!("{parent_package}::{name}")
+                    };
+                    Self::collect_package_body_subs(body, &package, out);
+                }
+                Stmt::SyntheticBlock(inner) => {
+                    Self::collect_inline_package_subs(inner, parent_package, out);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn collect_package_body_subs(body: &[Stmt], package: &str, out: &mut Vec<(String, Stmt)>) {
+        for stmt in body {
+            match stmt {
+                Stmt::SubDecl { .. } => out.push((package.to_string(), stmt.clone())),
+                Stmt::SyntheticBlock(inner) => Self::collect_package_body_subs(inner, package, out),
+                Stmt::Package { .. } => {
+                    Self::collect_inline_package_subs(std::slice::from_ref(stmt), package, out)
+                }
+                _ => {}
+            }
+        }
+    }
+
     /// Register top-level, non-empty sub bodies before execution so calls that appear
     /// earlier in source can resolve to later definitions.
     pub(crate) fn preregister_top_level_subs(
