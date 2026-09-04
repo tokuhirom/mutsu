@@ -1285,7 +1285,12 @@ impl Compiler {
                 // sigilless bind (`my Int \d := 7`) keeps container mutability.
                 self.sigilless_locals.insert(name.clone());
                 // Whether this term is writable depends on what the declaration
-                // bound it to, which only the runtime knows.
+                // bound it to, which only the runtime knows. The verdict is
+                // taken with the bind source still on the stack, by the
+                // `MarkSigillessBindSource` the declaration itself emits (see
+                // `sigilless_bind_vardecl` in the `Stmt::VarDecl` arm); this op
+                // writes the readonly marker, and has to run AFTER the store
+                // because a declaration clears that marker.
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::MarkSigillessBind(name_idx));
             }
@@ -1875,6 +1880,17 @@ impl Compiler {
                         // value from the local slot via `GetLocal` after `SetLocal`.
                         if *is_our && !is_constant {
                             self.code.emit(OpCode::Dup);
+                        }
+                        // A sigilless bind (`my \x := EXPR`) settles its
+                        // writability from what the RHS actually DENOTES, and
+                        // that is on the stack right here. Reading it back off
+                        // the destination slot after the store cannot tell an
+                        // aliased container apart from a slot that was boxed
+                        // into a cell for an unrelated reason -- see
+                        // `OpCode::MarkSigillessBind`.
+                        if sigilless_bind_vardecl {
+                            let src_idx = self.code.add_constant(Value::str(name.clone()));
+                            self.code.emit(OpCode::MarkSigillessBindSource(src_idx));
                         }
                         if bind_vardecl {
                             self.code.emit(OpCode::MarkBindContext);

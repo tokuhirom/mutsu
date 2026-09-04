@@ -1765,12 +1765,34 @@ pub(crate) enum OpCode {
     /// "Cannot modify an immutable Int (5)". The compiler cannot tell an `is rw`
     /// accessor call from an ordinary one, so the test is necessarily made here.
     ///
+    /// Record whether a sigilless declaration's bind SOURCE — still on the
+    /// stack — denotes a container, for the [`OpCode::MarkSigillessBind`] that
+    /// follows the store. Emitted immediately before the store by the
+    /// declaration itself; see that opcode for why the pair brackets the store.
+    MarkSigillessBindSource(u32),
     /// Emitted right after the declaration, this writes the ordinary
     /// `__mutsu_sigilless_readonly::<name>` marker the parser used to set
     /// statically, so every existing consumer (`CheckReadOnly` in any frame, the
     /// `++`/`--` mutability gate, the redeclaration clear) keeps working
     /// unchanged. It only ever RAISES the marker: a bind whose source is itself
     /// readonly has already set it, and that must not be lowered.
+    ///
+    /// The BIND SOURCE, not the destination slot, is the oracle — which is why
+    /// [`OpCode::MarkSigillessBindSource`] runs before the store and leaves its
+    /// verdict in `Interpreter::sigilless_bind_source` for this op to consume.
+    /// This op used to derive the answer itself by asking whether the slot now
+    /// held a container, which is ambiguous: a slot also becomes a
+    /// `ContainerRef` for reasons that have nothing to do with this bind.
+    /// Same-named `my` lexicals in one compiled unit share ONE slot, so when any
+    /// of them is written by a directly-nested named sub
+    /// (`needs_cell_named_sub` — name-keyed, and a name is all that is available
+    /// while same-named locals collapse onto one slot), EVERY declaration
+    /// through that slot is boxed at its declaration site by
+    /// `box_decl_local_cell`. `my \x := $s.uc` in a sibling block then read back
+    /// a `ContainerRef` and stayed writable, so the assignment raku refuses
+    /// silently succeeded. The bind source cannot be confused that way; the
+    /// slot inspection survives only as the fallback for a `MarkSigillessBind`
+    /// reached with no recorded verdict.
     MarkSigillessBind(u32),
     /// Mark a variable as readonly (for `:=` binding / `constant`). The
     /// [`ReadonlyKind`] records *why*, which decides the exception an
