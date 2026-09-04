@@ -85,10 +85,14 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       skeleton), S2's routine half, S3 (error recovery), S4 (symbols/definition) and S5a (hover) are done** — `crates/mutsu-lsp/`,
       `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5b:
       `references`** — the one remaining method that genuinely needs per-occurrence positions,
-      since a line may hold several and text scanning cannot rank them soundly. It is where D6's
-      "spans only on the variants a feature demands" finally gets exercised, so settle the target
-      variants (~5 reference nodes) before touching the parser's hot path or the bincode AST
-      cache. **S2's method half is deferred with a real design question**: `$x.foo` needs the
+      since a line may hold several and text scanning cannot rank them soundly. **Start from
+      [todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md](todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md),
+      not from D6**: reconnaissance during S5a found the parser already knows every byte offset,
+      so a thread-local occurrence table behind the analysis flag is likely cheaper than spans on
+      AST variants and touches neither `Expr`'s size nor the bincode cache. Its blocker is parser
+      **backtracking** (phantom references from failed alternatives), so **the first step is a
+      measurement of the phantom rate over `modules/`/`vendor/`/`t/`** — that number decides the
+      design, and D6/S5b get amended from it. **S2's method half is deferred with a real design question**: `$x.foo` needs the
       receiver type, which the AST does not carry, and the existing `(owner, name)` catalog is
       conservative in the false-positive direction — see the ADR's S2 findings.
 - [ ] Debugger.
@@ -159,6 +163,11 @@ bench CI, never a local run.
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
       [todo/perf/interpreter-call-path-in-hot-loops.md](todo/perf/interpreter-call-path-in-hot-loops.md).
+      Its concrete consumer is retiring the native `Test` provider
+      ([todo/deep/vendor-real-test-module.md](todo/deep/vendor-real-test-module.md)), which is a
+      BATTERIES.md rung-3 retirement and therefore a §1 goal item, not polish. **Read that ticket's
+      2026-09-04 re-measurement first**: the `&`-sigil signature gate it long blamed is closed, while
+      the symptom (~40× raku per real-`Test` assertion) is undiminished.
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
       [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome.
