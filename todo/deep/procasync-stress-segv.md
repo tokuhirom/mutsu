@@ -500,3 +500,75 @@ so the test proves the real spawn installs the stack, not merely that one can be
 **This ticket stays open.** The underlying `advent2014-day05.t` / `stress.t` crash is still
 un-root-caused; what changed is that the *next* recurrence will finally arrive with a thread name
 and a backtrace instead of a bare `Wstat: 11`.
+
+## §10 The recurrence arrived, with a backtrace (2026-09-04, CI run 33882510623)
+
+The `gc-stress` job of an unrelated PR (#7306, a sigilless-bind parser/VM change
+that touches neither threads nor dispatch caching) failed on
+`roast/integration/advent2014-day05.t`, **exit 134 = SIGABRT**, and §9's
+diagnostics produced the report the previous eight lines predicted:
+
+```
+signal: 6 (SIGABRT)      si_code: -6
+thread: pool             tid: 44222 (ppid 44215)
+argv: target/release/mutsu roast/integration/advent2014-day05.t
+--- backtrace (symbolized, best effort) ---
+   0: mutsu::crash_report::report::write_report
+   1: mutsu::crash_report::handler::handler
+   3: pthread_kill        4: gsignal        5: abort
+   9: cfree
+  10: mutsu::vm::vm_call_dispatch::…::has_multi_candidates_cached_sym
+  11: mutsu::vm::vm_call_func_ops::…::exec_call_func_op
+  …
+  28: …::call_sub_value
+  29: …::call_supply_tap
+  30: …::native_supplier_mut
+  …
+  42: mutsu::vm::guard_worker_panic
+  43: …::spawn_callable_promise::{{closure}}
+```
+
+### What is new, and what it rules out
+
+- **It is not a SEGV.** `abort` is reached from `__libc_free` via glibc's
+  malloc-corruption path (`+0x297b6` → `+0xa90d5` → `+0xab40a` →
+  `__libc_free`), i.e. glibc detected a corrupted chunk while freeing. The
+  ticket's title says "segv"; the failure mode is **heap corruption**. Whatever
+  the earlier bare `Wstat: 11` crashes were, this one is a bad free, and a
+  corrupted heap can present as either.
+- **The frame is a per-Interpreter cache, on a worker thread.**
+  `has_multi_candidates_cached_sym` frees only in `multi_candidates_cache.clear()`
+  (the generation-change branch) — and that map is **not shared**: a spawned
+  interpreter initialises `multi_candidates_cache: Default::default()`
+  (`runtime/runtime_thread.rs`). So a plain two-threads-one-`HashMap` race is
+  ruled out; either the map's own allocation was corrupted by an *earlier*
+  out-of-bounds write elsewhere, or the free attributed to this frame is really
+  an inlined `sym.resolve()`'s temporary `String` (release build, best-effort
+  symbolisation — do not trust the frame to be the culprit).
+- **The path into it is the supply-tap one**, not `Proc::Async`:
+  `spawn_callable_promise` → `vm_call_on_value` → a compiled closure →
+  `native_supplier_mut` → `call_supply_tap` → `call_sub_value`. That is the same
+  `start`-block/`Supply` machinery `stress.t` exercises.
+
+### What to do with it
+
+The interner itself was read and is sound for this shape (append-only ids,
+`Box::leak`ed strings never freed, per-thread `INTERN_CACHE`/`RESOLVE_CACHE`,
+`as_str` indexing would panic rather than corrupt on a bad id) — so the next
+step is **not** another read of that code. It is to reproduce under a heap
+checker on the failing file:
+
+```
+MUTSU_GC_STRESS=1 valgrind --tool=memcheck --track-origins=yes \
+  target/release/mutsu roast/integration/advent2014-day05.t
+```
+
+Memcheck reports the *first* invalid write, which is what a corrupted-chunk
+abort cannot. Failing that, an ASan build (`RUSTFLAGS=-Zsanitizer=address`,
+nightly) on the same file. Do this in a dedicated session — it needs the
+release+gc-stress configuration and many repetitions, since the crash is
+intermittent (the same job passed on re-run).
+
+A re-run of the same commit's `gc-stress` job passed, so it remains
+intermittent, and it must NOT be quarantined: this is a memory-safety bug, not a
+flaky assertion.
