@@ -735,8 +735,12 @@ groups, **none of them a regression** — every one was re-run against `main` at
    subscript in between. `exec_index_op_with_positional` normalizes a `Seq`
    receiver to an `ArrayKind::List` array and the read then goes through
    `resolve_array_entry` — the decontainerization chokepoint — which is correct
-   for every other array read and wrong for this one. Filed as
-   `todo/tickets/producer-seq-index-read-decontainerizes-the-element-cell.md`.
+   for every other array read and wrong for this one. Filed as a ticket, and
+   closed 2026-09-04 (`news/2026-09/producer-seq-write-through-a-named-receiver.md`):
+   four of its five rows were already fixed by the slice 4/5 and ADR-0064 work
+   and the analysis above no longer described a failing case; the one that
+   survived — a named receiver holding the producer's `Seq` — had a different
+   cause, the cell write-through existing only in the computed-target op.
 
 That third group is this ADR's §6 blast-radius consequence seen from the other
 side: the chokepoint that stops a cell leaking into `.raku`/`.WHAT` also stops

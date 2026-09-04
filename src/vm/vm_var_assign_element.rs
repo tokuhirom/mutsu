@@ -454,6 +454,75 @@ impl Interpreter {
         }
     }
 
+    /// A positional subscript of an element-producing `Seq` (`@a.values`,
+    /// `@a.kv`, `@a.pairs`) keeps the producer's element cells alive, so the
+    /// assignment writes THROUGH the cell to the source container. Neither the
+    /// named nor the generic element-assign machinery knows how to store into a
+    /// `Seq`, so without this the write is silently discarded.
+    ///
+    /// Returns `None` when the target is not such a `Seq` (the caller falls
+    /// through to its ordinary paths), otherwise the value to push as the
+    /// assignment's result.
+    ///
+    /// Shared by [`Self::exec_index_assign_generic_op`] (the computed-target
+    /// spelling, `(@a.values)[0] = "x"`) and the named-receiver one
+    /// (`my \s = @a.values; s[0] = "x"`), which used to differ: the same Seq
+    /// reached through a variable dropped the write.
+    pub(crate) fn try_seq_element_cell_assign(
+        &mut self,
+        target: &Value,
+        idx: &Value,
+        val: &Value,
+        is_positional: bool,
+    ) -> Option<Result<(), RuntimeError>> {
+        if !is_positional {
+            return None;
+        }
+        let ValueView::Seq(body) = target.view() else {
+            return None;
+        };
+        if !body.has_element_containers() {
+            return None;
+        }
+        let indices: Vec<usize> = match idx.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
+                items.iter().filter_map(Self::index_to_usize).collect()
+            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
+                let expanded = match self.assignment_rhs_values(idx) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                expanded.iter().filter_map(Self::index_to_usize).collect()
+            }
+            _ => Self::index_to_usize(idx).into_iter().collect(),
+        };
+        let values = match self.assignment_rhs_values(val) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        for (value_index, element_index) in indices.iter().copied().enumerate() {
+            let Some(slot) = body.get(element_index).cloned() else {
+                continue;
+            };
+            let ValueView::ContainerRef(cell) = slot.view() else {
+                return Some(Err(RuntimeError::assignment_ro_value(
+                    slot.deref_container(),
+                )));
+            };
+            let assigned = values.get(value_index).cloned().unwrap_or(Value::NIL);
+            if let Err(e) = self.check_container_cell_constraint(&cell, &assigned) {
+                return Some(Err(e));
+            }
+            *cell.lock().unwrap() = assigned;
+        }
+        Some(Ok(()))
+    }
+
     pub(super) fn exec_index_assign_expr_named_op(
         &mut self,
         code: &CompiledCode,
@@ -611,6 +680,34 @@ impl Interpreter {
                 // element container (ADR-0036). Storing that cell would make
                 // every later write to the source rewrite this element.
                 self.stack[stack_len - 2] = old.into_deref().itemize_for_element_store();
+            }
+        }
+        // A named receiver that holds an element-producing `Seq`
+        // (`my \s = @a.values; s[0] = "x"`) writes THROUGH the producer's
+        // element cells, exactly as the computed-target spelling
+        // (`(@a.values)[0] = "x"`) already did. Nothing below knows how to
+        // store into a `Seq`, so without this the write was silently dropped.
+        // Checked before the fast paths, which all assume an Array/Hash target.
+        {
+            let target = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get(Self::const_str(code, name_idx)).cloned());
+            if let Some(target) = target
+                && matches!(target.view(), ValueView::Seq(body) if body.has_element_containers())
+                && self.stack.len() >= 2
+            {
+                let idx = self.stack.pop().unwrap_or(Value::NIL);
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                if let Some(res) =
+                    self.try_seq_element_cell_assign(&target, &idx, &val, is_positional)
+                {
+                    res?;
+                    self.stack.push(Self::itemize_value(val));
+                    return Ok(());
+                }
+                // Not handled after all -- put the operands back untouched.
+                self.stack.push(val);
+                self.stack.push(idx);
             }
         }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind

@@ -3838,42 +3838,10 @@ impl Interpreter {
         };
 
         // A positional subscript of a mutable collection producer keeps the
-        // producer's element cells alive. The normal generic path only knows
-        // how to assign into an Array/Hash target; a Seq target would otherwise
-        // fall through and silently discard the write. Assign through the cell
-        // directly, preserving the producer's source and its element type
-        // constraint.
-        if is_positional
-            && let ValueView::Seq(body) = target.view()
-            && body.has_element_containers()
-        {
-            let indices: Vec<usize> = match idx.view() {
-                ValueView::Array(items, kind) if !kind.is_itemized() => {
-                    items.iter().filter_map(Self::index_to_usize).collect()
-                }
-                ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. } => self
-                    .assignment_rhs_values(&idx)?
-                    .iter()
-                    .filter_map(Self::index_to_usize)
-                    .collect(),
-                _ => Self::index_to_usize(&idx).into_iter().collect(),
-            };
-            let values = self.assignment_rhs_values(&val)?;
-            for (value_index, element_index) in indices.iter().copied().enumerate() {
-                let Some(slot) = body.get(element_index).cloned() else {
-                    continue;
-                };
-                let ValueView::ContainerRef(cell) = slot.view() else {
-                    return Err(RuntimeError::assignment_ro_value(slot.deref_container()));
-                };
-                let assigned = values.get(value_index).cloned().unwrap_or(Value::NIL);
-                self.check_container_cell_constraint(&cell, &assigned)?;
-                *cell.lock().unwrap() = assigned;
-            }
+        // producer's element cells alive; assign through the cell (see
+        // `try_seq_element_cell_assign`, shared with the named-receiver op).
+        if let Some(res) = self.try_seq_element_cell_assign(&target, &idx, &val, is_positional) {
+            res?;
             let result = if idx_is_single_element {
                 Self::itemize_value(val)
             } else {
