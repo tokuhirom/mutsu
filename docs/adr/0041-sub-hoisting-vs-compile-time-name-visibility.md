@@ -320,3 +320,41 @@ the outer `foo`). Making that work needs the sub registry to carry lexical
 scope, which is the same missing mechanism §6.2's proto/multi shadowing bug
 needs, and the same shape ADR-0039 describes for `@`/`%` containers. Those
 three should be resourced as one campaign, not three patches.
+
+## 7. Campaign status 2026-09-04: the lexical-scoping half is done; the BEGIN-time half is not
+
+§6.4 asked for the proto/multi shadowing bug, the container-side analogue and
+the BEGIN-time residue to be resourced as **one campaign**. The first of those
+is now closed, in four slices, and the finding is that it did **not** require
+giving the registry lexical scope. Three separate mechanisms were each blind to
+one key shape or one boundary:
+
+1. **`our` is not lexically shadowable.** `register_proto_decl`'s lexical-shadow
+   exemption was keyed on lexical nesting alone, so a nested `our proto`
+   redeclaring a package-scoped one was accepted where raku refuses it. Gated on
+   `!is_our` (`news/2026-09/our-proto-is-not-lexically-shadowable.md`).
+2. **`do { ... }` did not scope its routine declarations.** Every other block
+   form takes the `snapshot_routine_registry`/`restore_routine_registry` pair;
+   `OpCode::DoBlockExpr` took none of it, so a `do`-block `sub` permanently
+   replaced an outer one. The opcode grew a compile-time `scope_routines` flag
+   (`news/2026-09/do-block-scopes-its-routine-declarations.md`).
+3. **A package body's family was invisible, then merged.** `run_class_body`'s
+   `class_subs` tail probe tested the exact `Pkg::name` key and so never saw a
+   `multi`'s `Pkg::name/arity:types` candidates, leaving method dispatch at
+   `current_package = GLOBAL`; and the bare-name candidate gathers pooled every
+   package in `bare_name_packages()` into one ranking, merging two independent
+   families across a package boundary
+   (`news/2026-09/package-body-multi-is-lexical-to-the-package.md`).
+
+The lesson for §6.4's remaining work: "the registry needs lexical scope" was too
+big a diagnosis for this half. The registry's *key shape*
+(`Pkg::name` vs `Pkg::name/arity:types`) and its *snapshot boundary* were the
+real gaps, and both were fixable at the mechanism that already owned them.
+
+**Still open**, unchanged: rows 1 and 4 of §6.3's table — a `&name` reference
+inside a `constant` initializer or a `BEGIN` block still sees declarations that
+only the hoist pass has made visible. §6.3's rejection of Option B stands: the
+discriminator is compile time vs run time, not textual position. Also newly
+filed from this campaign:
+`todo/tickets/our-multi-in-a-package-body-cannot-see-its-own-our-proto.md`,
+a *registration-order* defect in the CHECK-time inline-package prepass.

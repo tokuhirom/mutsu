@@ -28,6 +28,43 @@ fn function_key_base_name(key: &str) -> &str {
 }
 
 impl Interpreter {
+    /// The package chain a bare-name *multi-candidate* search may draw from,
+    /// innermost first.
+    ///
+    /// [`Self::bare_name_packages`] lists every package enclosing the running
+    /// code, and the candidate gathers used to pool every one of them into a
+    /// single ranking. That is right only while no enclosing scope declares its
+    /// own `proto`: raku gives a `proto` a **fresh** candidate list, and a
+    /// `multi` declared without one in scope extends the innermost visible
+    /// proto's list instead. Pooling across a package that has its own proto
+    /// merged two independent families, so
+    ///
+    /// ```raku
+    /// module M { proto foo($){*}; multi foo(Int $x){"in-mod"}; our sub go(){ foo(5) } }
+    /// proto foo($){*}; multi foo(Int $x){"mainline"};
+    /// M::go();   # raku: in-mod   mutsu: Ambiguous call to foo(Int)
+    /// ```
+    ///
+    /// answered "Ambiguous call ... (Int $x), (Int $x)" — the same signature
+    /// twice, from the two packages. Truncating the walk after the innermost
+    /// package that declares its own proto restores the shadow while leaving
+    /// the no-proto case merging exactly as before.
+    fn candidate_search_packages(&self, name: &str) -> Vec<String> {
+        let pkgs = self.bare_name_packages();
+        let registry = self.registry();
+        let mut out = Vec::with_capacity(pkgs.len());
+        for pkg in pkgs {
+            let owns_proto = registry
+                .proto_functions
+                .contains_key(&Symbol::intern(&format!("{}::{}", pkg, name)));
+            out.push(pkg);
+            if owns_proto {
+                break;
+            }
+        }
+        out
+    }
+
     /// Whether ANY registered function key carries `name`'s base name — a
     /// cheap negative gate for [`Self::resolve_function_with_types`]. When
     /// this is `false`, no lookup pattern in the resolver (qualified, typed,
@@ -359,8 +396,10 @@ impl Interpreter {
             return None;
         }
         // Bare name: search the current package, then each enclosing package,
-        // then GLOBAL (see `bare_name_packages`).
-        let search_pkgs = self.bare_name_packages();
+        // then GLOBAL (see `bare_name_packages`), stopping at the innermost one
+        // that declares its own `proto` for this name (see
+        // `candidate_search_packages`).
+        let search_pkgs = self.candidate_search_packages(name);
         for pkg in &search_pkgs {
             if let Some(def) = self
                 .registry()
@@ -527,7 +566,7 @@ impl Interpreter {
         let arity = arg_values.len();
         let mut all_matches = Vec::new();
 
-        let search_pkgs = self.bare_name_packages();
+        let search_pkgs = self.candidate_search_packages(name);
 
         // Collect from typed candidates
         let typed_prefixes: Vec<String> = search_pkgs
