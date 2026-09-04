@@ -750,6 +750,14 @@ impl Value {
             // A typed hash's value constraint rides on the promoted cell (see
             // `array_slot_ref`).
             let value_type = data.value_type.clone();
+            // See `array_slot_ref` for why the owner name comes from the
+            // container descriptor, with the bare sigil as the fallback.
+            let owner = data
+                .descriptor_name
+                .as_deref()
+                .filter(|n| n.starts_with('%'))
+                .unwrap_or("%")
+                .to_string();
             match data.map.get_mut(key) {
                 Some(elem) => {
                     if let ValueView::ContainerRef(cell) = elem.view() {
@@ -764,7 +772,7 @@ impl Value {
                     // See `array_slot_ref` for why the owner name starts as
                     // the bare sigil.
                     if let Some(tc) = value_type.as_deref() {
-                        crate::value::register_element_constraint(&cell, tc, "%");
+                        crate::value::register_element_constraint(&cell, tc, &owner);
                     }
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
@@ -805,6 +813,14 @@ impl Value {
             // A typed hash's value constraint rides on the promoted cell (see
             // `array_slot_ref`).
             let value_type = data.value_type.clone();
+            // See `array_slot_ref` for why the owner name comes from the
+            // container descriptor, with the bare sigil as the fallback.
+            let owner = data
+                .descriptor_name
+                .as_deref()
+                .filter(|n| n.starts_with('%'))
+                .unwrap_or("%")
+                .to_string();
             match data.map.get_mut(key) {
                 Some(elem) => {
                     if let ValueView::ContainerRef(cell) = elem.view() {
@@ -826,7 +842,7 @@ impl Value {
                     // See `array_slot_ref` for why the owner name starts as
                     // the bare sigil.
                     if let Some(tc) = value_type.as_deref() {
-                        crate::value::register_element_constraint(&cell, tc, "%");
+                        crate::value::register_element_constraint(&cell, tc, &owner);
                     }
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))

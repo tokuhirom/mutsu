@@ -258,6 +258,20 @@ impl Value {
             // (ADR-0036 slice 4), so a write through the cell — an lvalue
             // return, a `:=` alias — is checked exactly like `@a[i] = v`.
             let value_type = data.value_type.clone();
+            // ... and so does the name of the container it is an element of.
+            // rakudo blames the DECLARING variable, which is exactly what the
+            // container descriptor records (ADR-0064) and which travels with the
+            // container: `sub f() { my Int @z = 1, 2; @z }; my @b := f();
+            // my $r := @b[0]; $r = "s"` blames `@z`, not `@b`. Falls back to the
+            // bare sigil -- what rakudo prints for an anonymous container --
+            // when there is no descriptor name, or when it is the `"element"`
+            // sentinel an unsupplied `@`-parameter binds.
+            let owner = data
+                .descriptor_name
+                .as_deref()
+                .filter(|n| n.starts_with('@'))
+                .unwrap_or("@")
+                .to_string();
             let elem = &mut data[idx];
             if let ValueView::ContainerRef(cell) = elem.view() {
                 return Some(Value::ContainerRef(cell.clone()));
@@ -281,7 +295,7 @@ impl Value {
             // the source variable retags it (`retag_element_owner`), so the
             // failure blames `@a` the way a direct store does.
             if let Some(tc) = value_type.as_deref() {
-                crate::value::register_element_constraint(&cell, tc, "@");
+                crate::value::register_element_constraint(&cell, tc, &owner);
             }
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))
