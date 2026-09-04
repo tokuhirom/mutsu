@@ -313,8 +313,15 @@ impl Interpreter {
                     }
                 }
             }
-            if let Some(native_result) =
-                self.try_native_method(&target, Symbol::intern(&method), &args)
+            // An `is Array`/`is List` subclass instance answers through its
+            // backing storage, so the native probe must not answer FOR the
+            // instance first (`.elems` on the Instance is 1, not its element
+            // count). The `CallMethod` opcode takes its delegation before its
+            // own native probe for the same reason; falling through here reaches
+            // the shared one in `call_method_with_values`.
+            if !self.delegates_to_array_storage(&target, &method)
+                && let Some(native_result) =
+                    self.try_native_method(&target, Symbol::intern(&method), &args)
             {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "native");
                 native_result
