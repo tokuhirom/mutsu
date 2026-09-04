@@ -44,8 +44,9 @@ pub(super) fn install() {
     if std::env::var("MUTSU_CRASH_REPORT").as_deref() == Ok("0") {
         return;
     }
-    // Per-thread: every caller gets its own alternate stack.
-    install_alt_stack();
+    // Per-thread: every caller gets its own alternate stack. The main thread's
+    // is never given back, so the previous one is dropped on the floor.
+    std::mem::forget(install_alt_stack());
     if INSTALLED.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -70,21 +71,70 @@ pub(super) fn install() {
 }
 
 /// Give the calling thread a large alternate stack, so the handler still has
-/// somewhere to run when the fault *is* the stack running out. Without this a
-/// stack-overflow SIGSEGV would simply never reach the handler.
-fn install_alt_stack() {
+/// somewhere to run when the fault *is* the stack running out — and, just as
+/// importantly, so it has room to run *at all*.
+///
+/// Rust's runtime already installs an alternate stack on every thread it
+/// spawns, but it is `SIGSTKSZ`-sized (8 KiB on glibc/x86-64), sized for
+/// `std`'s own guard-page check. Our handler needs more than that (a 4 KiB
+/// path buffer, a 2 KiB header buffer and the raw-backtrace frames), so on a
+/// thread that keeps `std`'s stack the handler *overflows it and faults again*
+/// — silently, since a second fault inside the handler is fatal. That is
+/// exactly why a SIGSEGV on a worker thread used to leave no report at all
+/// (`todo/deep/procasync-stress-segv.md` §8.2, candidate 2).
+///
+/// Returns the stack this one replaced, wrapped in a guard: dropping it frees
+/// our stack and puts the previous one back, so a short-lived thread does not
+/// leak. Leak it with `std::mem::forget` for a thread that lives as long as
+/// the process.
+#[must_use = "dropping the guard immediately gives the alternate stack back"]
+fn install_alt_stack() -> AltStack {
     let mut stack = Vec::<u8>::with_capacity(ALT_STACK_SIZE);
     let ptr = stack.as_mut_ptr();
-    std::mem::forget(stack); // lives for the rest of the process
-    // SAFETY: `ptr` owns ALT_STACK_SIZE bytes that are never freed.
-    unsafe {
+    std::mem::forget(stack); // owned by the returned guard from here on
+    // SAFETY: `ptr` owns ALT_STACK_SIZE bytes, kept alive by the guard.
+    let previous = unsafe {
         let ss = libc::stack_t {
             ss_sp: ptr.cast(),
             ss_flags: 0,
             ss_size: ALT_STACK_SIZE,
         };
-        libc::sigaltstack(&ss, std::ptr::null_mut());
+        let mut old: libc::stack_t = std::mem::zeroed();
+        libc::sigaltstack(&ss, &mut old);
+        old
+    };
+    AltStack { ptr, previous }
+}
+
+/// Owns one thread's alternate signal stack; see [`install_alt_stack`].
+pub struct AltStack {
+    ptr: *mut u8,
+    previous: libc::stack_t,
+}
+
+impl Drop for AltStack {
+    fn drop(&mut self) {
+        // Restore first, so nothing is running on the memory we free next.
+        // A thread only reaches here on its own normal exit, never from inside
+        // the handler.
+        // SAFETY: `previous` is what `sigaltstack` handed back at install
+        // time, and `ptr` is the allocation made there.
+        unsafe {
+            libc::sigaltstack(&self.previous, std::ptr::null_mut());
+            drop(Vec::from_raw_parts(self.ptr, 0, ALT_STACK_SIZE));
+        }
     }
+}
+
+/// Give the calling thread its own alternate signal stack for as long as the
+/// guard lives. Unlike [`install`] this installs no handler — the disposition
+/// is process-wide and already set by the main thread — so it is exactly the
+/// per-thread half, and cheap enough to run on every worker mutsu spawns.
+pub(super) fn install_thread_alt_stack() -> Option<AltStack> {
+    if std::env::var("MUTSU_CRASH_REPORT").as_deref() == Ok("0") {
+        return None;
+    }
+    Some(install_alt_stack())
 }
 
 fn report_dir() -> Box<[u8]> {
@@ -180,12 +230,31 @@ fn hand_off(sig: c_int, si_code: c_int) {
 
 pub(super) fn selftest_if_requested() {
     match std::env::var("MUTSU_CRASH_SELFTEST").as_deref() {
-        Ok("segv") => {
-            // A real fault, so the report's si_addr is a real fault address.
-            // SAFETY: none — deliberately dereferencing null.
-            unsafe { std::ptr::null_mut::<u8>().write_volatile(1) };
-        }
+        Ok("segv") => crash_segv(),
         Ok("abort") => std::process::abort(),
+        // The same two faults, but on a worker spawned exactly the way a
+        // `start` block or a Supply tap is. That is the half the mechanism
+        // silently lacked: the handler is process-wide, so it *ran* on such a
+        // thread, then overflowed `std`'s 8 KiB alternate stack and died
+        // without writing anything. Faulting here goes through the real
+        // `spawn_user_thread` path, so the test proves the production spawn
+        // installs the stack — not merely that a stack can be installed.
+        Ok("segv-thread") => {
+            let _ =
+                crate::runtime::builtins_system::spawn_user_thread("selftest", crash_segv).join();
+        }
+        Ok("abort-thread") => {
+            let _ = crate::runtime::builtins_system::spawn_user_thread("selftest", || {
+                std::process::abort()
+            })
+            .join();
+        }
         _ => {}
     }
+}
+
+/// A real fault, so the report's `si_addr` is a real fault address.
+fn crash_segv() {
+    // SAFETY: none — deliberately dereferencing null.
+    unsafe { std::ptr::null_mut::<u8>().write_volatile(1) };
 }

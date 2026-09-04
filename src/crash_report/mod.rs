@@ -32,6 +32,15 @@
 //! `[profile.release]` sets `debug = false` — but the raw frame addresses can
 //! still be resolved offline with `addr2line -f -e target/release/mutsu`.
 //!
+//! The *alternate signal stack* is per-thread, and it is not optional: the
+//! handler needs more room than the 8 KiB `SIGSTKSZ` stack `std` gives every
+//! thread it spawns, so on a thread that keeps `std`'s it overflows and faults
+//! a second time — fatally and silently. Every thread mutsu spawns therefore
+//! takes [`install_thread_alt_stack`] in
+//! `builtins_system::spawn_registered_thread`. A thread mutsu does *not* spawn
+//! (a dependency's own worker) still gets no report; there is no portable hook
+//! for that, and mutsu has no such threads today.
+//!
 //! The default `tmp/crash` is resolved against the process's **startup**
 //! working directory, so a later `chdir` cannot move it — but a process that
 //! *starts* elsewhere (a subprocess spawned with `:cwd`, or one inheriting a
@@ -50,9 +59,10 @@ mod report;
 /// Install the fatal-signal handler and an alternate signal stack for the
 /// calling thread.
 ///
-/// Idempotent for the process-wide part; the alternate stack is per-thread, so
-/// calling this from a second thread gives that thread its own (leaking one
-/// stack allocation per call — call it from long-lived threads only).
+/// Idempotent for the process-wide part; the alternate stack is per-thread and
+/// this entry point never gives it back, so call it only from a thread that
+/// lives as long as the process. Worker threads take
+/// [`install_thread_alt_stack`] instead, whose guard frees the stack on exit.
 ///
 /// Disabled entirely by `MUTSU_CRASH_REPORT=0`. Reports are written to
 /// `tmp/crash` relative to the startup working directory, or to
@@ -62,11 +72,34 @@ pub fn install() {
     handler::install();
 }
 
+/// Give the calling thread the larger alternate signal stack the handler needs,
+/// for as long as the returned guard lives.
+///
+/// The signal *disposition* is process-wide and [`install`] has already set it,
+/// so a worker thread needs only this half. It is not optional: Rust gives every
+/// thread it spawns an 8 KiB `SIGSTKSZ` alternate stack, which the handler
+/// overflows — faulting a second time, fatally and silently, so the crash that
+/// most needs a report is the one that leaves none. Every thread mutsu spawns
+/// takes this guard in `builtins_system::spawn_registered_thread`.
+///
+/// Dropping the guard restores the previous alternate stack and frees ours, so
+/// a finished worker leaves nothing behind.
+#[cfg(all(unix, feature = "native"))]
+pub(crate) fn install_thread_alt_stack() -> Option<handler::AltStack> {
+    handler::install_thread_alt_stack()
+}
+
+/// No-op stand-in for the builds with no signal handling (wasm, non-unix).
+#[cfg(not(all(unix, feature = "native")))]
+pub(crate) fn install_thread_alt_stack() {}
+
 /// Deliberately crash when `MUTSU_CRASH_SELFTEST` asks for it, so the report
 /// pipeline itself can be tested end to end (`tests/crash_report.rs`).
 ///
 /// `segv` dereferences a null pointer (a real fault, with a real `si_addr`),
-/// `abort` calls `abort()`. Any other value is ignored.
+/// `abort` calls `abort()`. The `-thread` variants do the same thing on a
+/// worker spawned exactly the way `start` blocks and Supply taps are, which is
+/// what pins the per-thread half of the mechanism.
 pub fn selftest_if_requested() {
     #[cfg(all(unix, feature = "native"))]
     handler::selftest_if_requested();
