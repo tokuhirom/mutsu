@@ -5373,6 +5373,29 @@ impl Interpreter {
                 // whole `Array`/`Hash` and a `Proxy` all are; everything else —
                 // an `Int`, a `Str`, an instance, a type object — IS the value,
                 // and rakudo refuses an assignment through the name.
+                // A SIGILLESS source (`my \y := $a; my \x := y`) denotes
+                // whatever it was itself bound to, and its own slot already
+                // holds exactly that: the shared cell when it aliases a
+                // container, the bare value when it was bound to one. `GetLocal`
+                // derefs the cell for the ordinary read that produced this
+                // `VarRef`, so recover it here and hand the CELL to the store.
+                // Without this the store falls back to resolving the source by
+                // name through the `__mutsu_sigilless_alias::` chain, which only
+                // records a chain to a NAMED variable — an element alias
+                // (`my \e := @a[0]; my \f := e`) has no entry there, so the
+                // write landed in a copy.
+                if let Some(raw) = self
+                    .stack
+                    .last()
+                    .and_then(Value::varref_slot)
+                    .filter(|slot| *slot != u32::MAX)
+                    .and_then(|slot| self.locals.get(slot as usize))
+                    .filter(|raw| raw.is_container_ref())
+                    .cloned()
+                {
+                    self.stack.pop();
+                    self.stack.push(raw);
+                }
                 let writable = self.stack.last().is_some_and(|bound| {
                     let source = match bound.as_varref() {
                         // A `WrapVarRef` over one of the compiler's synthetic
@@ -5387,8 +5410,21 @@ impl Interpreter {
                             inner
                         }
                         // Over a real variable name it denotes that variable's
-                        // container.
-                        Some(_) => return true,
+                        // container — unless that name is itself an immutable
+                        // sigilless binding (`my \lit := 5; my \z := lit`),
+                        // which has no container to hand on. A sigiled source
+                        // never carries this marker.
+                        Some((name, _, _)) => {
+                            return !name.with_str(|s| {
+                                crate::env::closure_meta_keys_possible()
+                                    && matches!(
+                                        self.env()
+                                            .get(&crate::runtime::sigilless_readonly_key(s))
+                                            .map(Value::view),
+                                        Some(ValueView::Bool(true))
+                                    )
+                            });
+                        }
                         None => bound,
                     };
                     source.is_container_ref()
