@@ -56,3 +56,57 @@ methods with no `&mut Interpreter` — and is the whole of the remaining work.
 ## Reproduce
 
 The two one-liners above, no fixtures.
+
+## Re-measured 2026-09-04, and one candidate fix is ruled out
+
+Six renderers diverge, not one, and they are all of them — the value reads are
+already right:
+
+| | rakudo | mutsu |
+| --- | --- | --- |
+| `say $l` | `(1 9 3)` | `(1 Proxy 3)` |
+| `$l.gist` | `(1 9 3)` | `(1 Proxy 3)` |
+| `$l.raku` | `$(1, 9, 3)` | `$(1, Proxy, 3)` |
+| `$l.join(",")` | `1,9,3` | `1,Proxy,3` |
+| `"$l"` | `1 9 3` | `1 Proxy 3` |
+| `~$l` | `1 9 3` | `1 Proxy 3` |
+| `$l[1]` | `9` | `9` ✓ |
+| `$l[1] = 7` | stores | stores ✓ |
+| `my @a = 1, $p, 3; say @a` | `[1 9 3]` | `[1 9 3]` ✓ (the ARRAY store FETCHes, per ADR-0040 §9) |
+
+**Ruled out: FETCHing when the List is constructed.** That is the obvious cheap
+fix — make a list literal behave like the array store — and it is wrong.
+rakudo's List keeps the Proxy LIVE:
+
+```raku
+my $v = 9; my $p := Proxy.new(FETCH => -> $ { $v }, STORE => -> $, $x { $v = $x });
+my $l = (1, $p, 3);
+say $l;          # (1 9 3)
+$v = 42;
+say $l;          # (1 42 3)   <-- re-FETCHed, so the Proxy is still in the list
+```
+
+mutsu already agrees about what the list HOLDS (its `$l[1] = 7` reaches the
+Proxy's STORE). So the FETCH has to happen at every render, which is exactly the
+question the ticket says belongs in an ADR-0040 amendment.
+
+## What the amendment has to decide
+
+`Interpreter::resolve_proxies_in_value` already exists and is already cheap on
+the no-Proxy path (`value_has_proxy` is an allocation-free scan) — `is-deeply`
+uses it. The open question is *which* sites call it, and there are two shapes:
+
+1. **The statement-level renderers** (`say`/`print`/`put`/`note`, string
+   interpolation, `~`) are unambiguous VM chokepoints with `&mut Interpreter` in
+   hand. Cheap and obviously correct.
+2. **The method renderers** (`.gist`, `.raku`, `.Str`, `.perl`, `.join`, `.fmt`,
+   …) are the open-ended half: they reach `Value` methods with no interpreter.
+   The natural chokepoint is a "decide the receiver first" guard at
+   `call_method_with_values_inner` (the same shape
+   `delegates_to_array_storage` uses, see
+   `news/2026-09/array-subclass-delegation-is-one-decision.md`) — but that needs
+   a *stated rule* for which method names are renderers, which is precisely what
+   an ADR should fix rather than a patch.
+
+Doing only (1) is worse than doing neither: `say $l` and `$l.gist` would then
+disagree with each other, where today they are at least uniformly wrong.
