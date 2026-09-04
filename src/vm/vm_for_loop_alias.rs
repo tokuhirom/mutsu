@@ -68,6 +68,18 @@ pub(super) enum ForElementAlias {
     /// walking. CBOR::Simple's Capture encoding hit exactly that: the second
     /// element of `[$list, $hash]` came back as the inner list's `[1]`.
     ArrayValue(Value),
+    /// A plain `$`-scalar source (`for $a -> \x`, `-> $x is rw`, `<->`). A
+    /// scalar is not a container OF elements: the loop yields one item, and the
+    /// container that item lives in is the variable's own. Carries the
+    /// compiler-baked slot so the promotion writes the cell back where the
+    /// variable is authoritative.
+    ///
+    /// This is what retires `store_loop_source_var` for the scalar case: the
+    /// parameter binds the variable's container, so a write through it goes
+    /// through the ordinary container chokepoint -- and is type-checked there,
+    /// which the raw slot write never was (`my SmallInt $a; for $a -> \x
+    /// { x = 1000 }` silently stored 1000 where rakudo throws).
+    ScalarVar(String, Option<u32>),
     /// A `%h.values` source, keyed by the key order captured before the loop —
     /// the same order the materialized `.values` list was built from, so
     /// position `idx` names the key whose value the loop is binding.
@@ -169,6 +181,36 @@ impl Interpreter {
                 Some(arr) if source.starts_with('$') => ForElementAlias::ArrayValue(arr),
                 _ => ForElementAlias::ArrayIndex(source.to_string()),
             };
+        }
+        // A plain `$`-scalar source. `TagContainerRef` spells such a source with
+        // NO sigil (`for $a` tags `"a"`, while the deref'd-container shape
+        // `for @$s` tags `"$s"` and a direct array tags `"@a"`), which is
+        // exactly the discriminator: a bare name is a scalar variable, and a
+        // scalar is not a container OF elements. The loop yields one item and
+        // the container that item lives in is the variable's own.
+        //
+        // `values_mode` is excluded here for the reason spelled out just below:
+        // a mutable QuantHash's `for $b.values` also tags a bare scalar name,
+        // and its items are WEIGHTS, not the variable. (`kv_mode`,
+        // `loop_var_wraps_element` and `container_reversed` were already
+        // declined above.)
+        if !source.starts_with(['@', '%', '$', '&']) && !spec.values_mode && items.len() == 1 {
+            // ... and only when the loop really iterates the VARIABLE, not a
+            // derived producer on it. `for $pair.value` tags the same bare name
+            // and also yields one item, but that item is the pair's VALUE:
+            // aliasing the variable there replaced the whole `Pair` with it
+            // (`roast/S04-blocks-and-statements/pointy-rw.t`). The item-is-the-
+            // source test is the scalar twin of `items_are_source_elements`.
+            let current = spec
+                .source_container_local
+                .and_then(|slot| self.locals.get(slot as usize))
+                .map(|v| v.deref_container())
+                .filter(|v| !v.is_nil())
+                .or_else(|| self.get_env_with_main_alias(source));
+            if current.is_some_and(|v| Self::loop_var_unchanged(&items[0], &v)) {
+                return ForElementAlias::ScalarVar(source.to_string(), spec.source_container_local);
+            }
+            return ForElementAlias::None;
         }
         // A mutable QuantHash (`for $b.values`) binds to a scalar, so it never
         // reaches here: its `container_binding` carries no `%` sigil. That is
@@ -359,6 +401,7 @@ impl Interpreter {
                 }
                 arr.array_slot_ref(idx, true)
             }
+            ForElementAlias::ScalarVar(source, slot) => self.scalar_var_container(source, *slot),
             ForElementAlias::HashValue(source, keys) => {
                 let key = keys.get(idx)?;
                 let hash = self.get_env_with_main_alias(source)?.deref_container();
@@ -376,6 +419,42 @@ impl Interpreter {
                 ))
             }
         }
+    }
+
+    /// The shared `ContainerRef` cell a `$`-scalar loop source binds through,
+    /// promoting the variable to one if it is not already.
+    ///
+    /// The freshly minted cell inherits the variable's declared `of`-type, the
+    /// same rule the `:=` bind promotion applies (ADR-0042: the constraint
+    /// belongs to the container, not to a name) -- from here on the cell is what
+    /// every write to either the loop parameter or the variable reaches, so a
+    /// name-keyed check would never run again.
+    fn scalar_var_container(&mut self, source: &str, slot: Option<u32>) -> Option<Value> {
+        let bare = source.strip_prefix('$').unwrap_or(source);
+        let raw = slot
+            .and_then(|s| self.locals.get(s as usize).cloned())
+            .filter(|v| !v.is_nil())
+            .or_else(|| self.get_env_with_main_alias(bare))?;
+        if raw.is_container_ref() {
+            return Some(raw);
+        }
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(raw));
+        if let Some(ty) = self.var_type_constraint(bare) {
+            // The tag spells a scalar source without its sigil; the message
+            // spells the variable the way the source does.
+            let display = format!("${bare}");
+            crate::value::register_container_constraint_named(&cell, &ty, &display);
+        }
+        let container = Value::container_ref(cell);
+        // The variable IS the cell now, so a direct write to it and a write
+        // through the loop parameter reach the same container.
+        if let Some(s) = slot
+            && let Some(dst) = self.locals.get_mut(s as usize)
+        {
+            *dst = container.clone();
+        }
+        self.set_env_with_main_alias(bare, container.clone());
+        Some(container)
     }
 
     /// Tell a promoted element cell which container it belongs to, so an
