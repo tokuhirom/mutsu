@@ -103,6 +103,48 @@ fn abort_is_reported_too() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The half that used to be missing: a fatal signal on a *worker* thread.
+///
+/// The handler's disposition is process-wide, so it always ran on such a
+/// thread — and then overflowed the 8 KiB `SIGSTKSZ` alternate stack `std`
+/// installs, faulting a second time and dying with nothing written. Three CI
+/// recurrences of `roast/integration/advent2014-day05.t` each cost a red run
+/// and yielded no backtrace for exactly this reason
+/// (`todo/deep/procasync-stress-segv.md` §8.2).
+///
+/// The selftest faults on a thread spawned through the production
+/// `spawn_user_thread` path, so this asserts the real spawn installs the
+/// larger stack, not merely that one can be installed.
+#[test]
+fn a_segv_on_a_worker_thread_is_reported() {
+    let (signal, dir) = run_crashing("segv-thread", "segv-thread", &[]);
+    assert_eq!(signal, Some(libc::SIGSEGV));
+
+    let report = read_report(&dir);
+    assert_eq!(field(&report, "signal:"), "11 (SIGSEGV)");
+    assert_eq!(field(&report, "fault-addr:"), "0x0000000000000000");
+    // The `thread:` field is what makes a worker crash actionable at all: it
+    // says which subsystem died. It must NOT be the main thread here.
+    assert_eq!(field(&report, "thread:"), "selftest");
+    // ... and the tid must be the worker's, not the process's.
+    assert_ne!(field(&report, "tid:"), field(&report, "pid:"));
+    assert!(report.contains("--- backtrace (raw) ---"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The sent-signal counterpart, so both hand-off paths (`si_code > 0` returns
+/// and re-faults; `si_code <= 0` re-raises) are covered off the main thread.
+#[test]
+fn an_abort_on_a_worker_thread_is_reported() {
+    let (signal, dir) = run_crashing("abort-thread", "abort-thread", &[]);
+    assert_eq!(signal, Some(libc::SIGABRT));
+    let report = read_report(&dir);
+    assert_eq!(field(&report, "signal:"), "6 (SIGABRT)");
+    assert_eq!(field(&report, "thread:"), "selftest");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn reporting_can_be_switched_off() {
     let (signal, dir) = run_crashing("segv", "off", &[("MUTSU_CRASH_REPORT", "0")]);

@@ -85,6 +85,12 @@ where
             }
         }
         let _guard = WorkerGuard;
+        // This thread's own alternate signal stack. `std` already gave it an
+        // 8 KiB one, which the crash handler overflows — so without this a
+        // fatal signal on a worker faults a second time inside the handler and
+        // the process dies leaving no crash report at all
+        // (`todo/deep/procasync-stress-segv.md` §8.2). Dropped with the thread.
+        let _alt_stack = crate::crash_report::install_thread_alt_stack();
         // Registered-mutator flag + leave the parent-granted quiescent
         // state (parking first if a scan is in progress): this thread's
         // quiescence now counts toward (and is required by) the STW

@@ -448,3 +448,55 @@ The actionable item is unchanged and is §8.2's, not the crash itself: **make a 
 non-`mutsu-main` thread actually produce a report.** Three recurrences have now each cost a red CI
 and yielded no backtrace. Extending `tests/crash_report.rs` to fault each thread class mutsu spawns
 is contained work that does not need the underlying race to reproduce.
+
+## §9 The diagnostics gap is closed, 2026-09-04 — and it was candidate 2
+
+§8.2 listed three candidate explanations for "the crash left no report". It is the second one:
+**the handler ran and then faulted itself.** The gap reproduces deterministically, with no need
+for the underlying race — `await start { <anything that segfaults> }` is enough:
+
+```
+$ MUTSU_CRASH_DIR=$PWD/tmp/crash mutsu -e 'use NativeCall; sub strdup(int64) is native(Str) {*}; strdup(0)'
+tmp/crash/1034030.txt        # main thread: report written
+$ MUTSU_CRASH_DIR=$PWD/tmp/crash mutsu -e 'use NativeCall; sub strdup(int64) is native(Str) {*}; await start { strdup(0) }'
+(nothing)                    # worker thread: no report
+```
+
+`strace -f -e trace=sigaltstack` says the rest in four lines (the worker is pid 1035196):
+
+```
+1035196 sigaltstack({ss_sp=0x72daeb614000, ss_flags=0, ss_size=8192}, NULL) = 0
+1035196 --- SIGSEGV {si_signo=SIGSEGV, si_code=SEGV_MAPERR, si_addr=NULL} ---
+1035196 --- SIGSEGV {si_signo=SIGSEGV, si_code=SEGV_ACCERR, si_addr=0x72daeb613848} ---
+1035196 +++ killed by SIGSEGV (core dumped) +++
+```
+
+`ss_size=8192` is **`std`'s** alternate signal stack — Rust installs a `SIGSTKSZ`-sized one on
+every thread it spawns, for its own guard-page check. mutsu's 256 KiB stack was installed only by
+threads that called `crash_report::install()` (the process's first thread and `mutsu-main`), and a
+worker kept `std`'s. The handler needs more than 8 KiB (a 4 KiB path buffer, a 2 KiB header buffer,
+and the raw-backtrace frames), so on a worker it **overflowed the alternate stack** — the second
+SIGSEGV above, at `0x…613848`, is 0x7b8 bytes below the alternate stack's base — and a fault inside
+the handler is fatal and silent. The signal disposition was never the problem: the handler is
+process-wide and did run (confirmed with a `rust-gdb` breakpoint on it).
+
+The fix is the per-thread half, applied at the one funnel every mutsu thread goes through
+(`builtins_system::spawn_registered_thread`): each worker takes
+`crash_report::install_thread_alt_stack()`, an RAII guard that installs the 256 KiB stack and gives
+the previous one back when the thread exits, so nothing leaks. Every thread class now reports:
+
+| crash | before | after |
+| --- | --- | --- |
+| main thread | `thread: mutsu-main` | unchanged |
+| `start` block | *no report* | `thread: pool` |
+| `Thread.start` | *no report* | `thread: raku-thread` |
+| worker stack overflow | *no report*, bare SIGSEGV | `thread: pool`, **and** `std`'s "has overflowed its stack" message |
+
+Pinned by two new `tests/crash_report.rs` cases driven by `MUTSU_CRASH_SELFTEST=segv-thread` /
+`abort-thread`, which fault on a thread spawned through the production `spawn_user_thread` path —
+so the test proves the real spawn installs the stack, not merely that one can be installed. See
+`news/2026-09/crash-reports-from-worker-threads.md`.
+
+**This ticket stays open.** The underlying `advent2014-day05.t` / `stress.t` crash is still
+un-root-caused; what changed is that the *next* recurrence will finally arrive with a thread name
+and a backtrace instead of a bare `Wstat: 11`.
