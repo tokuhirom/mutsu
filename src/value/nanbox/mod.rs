@@ -456,14 +456,42 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::BagImm | Kind::BagMut => gc_op::<BagData>(bits, op),
             Kind::MixImm | Kind::MixMut => gc_op::<MixData>(bits, op),
             Kind::Match => gc_op::<MatchNode>(bits, op),
-            Kind::Nil
+            payload_free_kinds!() => {}
+        }
+    }
+}
+
+/// The kinds whose word carries its whole value inline, with no `Arc`/`Gc`/
+/// `Weak` payload for [`payload_op`] to bump or release.
+///
+/// A macro rather than two lists: it is expanded both as `payload_op`'s
+/// do-nothing arm and as [`kind_owns_payload`]'s negated test, so the two can
+/// never disagree about which kinds are payload-free.
+macro_rules! payload_free_kinds {
+    () => {
+        Kind::Nil
             | Kind::Whatever
             | Kind::HyperWhatever
             | Kind::Bool
             | Kind::Package
-            | Kind::CompUnitDepSpec => {}
-        }
-    }
+            | Kind::CompUnitDepSpec
+    };
+}
+use payload_free_kinds;
+
+/// True when a word of this kind owns a heap payload, i.e. when cloning or
+/// dropping it has to reach [`payload_op`] at all.
+///
+/// `Clone`/`Drop` called `payload_op` for every non-`Int`/`Num` word, so a
+/// `Nil` -- the single most-cloned value in the interpreter, since it is the
+/// fill of every locals frame, the `mem::replace` placeholder of every
+/// argument move and the `unwrap_or` of every stack pop -- paid a call plus a
+/// ~60-way jump table to reach an empty arm. On `bench-fib`, **98% of all
+/// `payload_op` calls were `Kind::Nil`** (216 of 220 sampled), and the function
+/// was 3.9% of the profile.
+#[inline(always)]
+const fn kind_owns_payload(kind: Kind) -> bool {
+    !matches!(kind, payload_free_kinds!())
 }
 
 // ---- JIT Tier B raw-word exports ------------------------------------------------
@@ -561,7 +589,9 @@ impl NanBox {
 impl Clone for NanBox {
     fn clone(&self) -> Self {
         let bits = self.0.get();
-        if let Classified::Kind(kind) = classify(bits) {
+        if let Classified::Kind(kind) = classify(bits)
+            && kind_owns_payload(kind)
+        {
             // SAFETY: `self` is live, so the word owns its payload reference;
             // CloneBump adds one for the new word.
             unsafe { payload_op(kind, bits, PayloadOp::CloneBump) };
@@ -573,7 +603,9 @@ impl Clone for NanBox {
 impl Drop for NanBox {
     fn drop(&mut self) {
         let bits = self.0.get();
-        if let Classified::Kind(kind) = classify(bits) {
+        if let Classified::Kind(kind) = classify(bits)
+            && kind_owns_payload(kind)
+        {
             // SAFETY: dropping consumes this word's payload ownership exactly
             // once.
             unsafe { payload_op(kind, bits, PayloadOp::Release) };
