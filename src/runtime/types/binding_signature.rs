@@ -2368,26 +2368,52 @@ impl Interpreter {
                         // one write (the wrap-chain relay no longer depends on
                         // same-name env-merge coincidence).
                         if let Some(cell_key) = rw_shared_cell_key.take() {
-                            let existing = self
+                            // ADR-0040 §9 states the `Proxy` boundary from the
+                            // store side: a `Proxy` is FETCHed when it lands
+                            // INSIDE a container. An `is rw`/`is raw` parameter
+                            // is the other side of that boundary — it BINDS the
+                            // caller's container, it does not store into one —
+                            // so when the caller's variable holds a `Proxy` the
+                            // parameter must bind that `Proxy`. Boxing the
+                            // (already argument-FETCHed) value into a fresh cell
+                            // instead did two wrong things at once: the body's
+                            // `$x = 42` wrote the cell rather than firing the
+                            // `Proxy`'s `STORE` (a silently dropped write), and
+                            // installing that cell under the caller's name
+                            // REPLACED the caller's `Proxy` binding with a plain
+                            // container (`$p.VAR.^name` went `Proxy` -> `Scalar`).
+                            // Deciding this here — from the container the
+                            // parameter binds — is what the callee-name-keyed
+                            // `skip_proxy_fetch` list at the call site cannot do.
+                            if let Some(proxy) = self
                                 .env
                                 .get(&cell_key)
-                                .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
-                                .cloned();
-                            value = match existing {
-                                Some(cell) => cell,
-                                None => {
-                                    let cell = if matches!(value.view(), ValueView::ContainerRef(_))
-                                    {
-                                        value
-                                    } else {
-                                        Value::container_ref(crate::gc::Gc::new(
-                                            crate::value::ContainerCell::new(value),
-                                        ))
-                                    };
-                                    self.env.insert(cell_key, cell.clone());
-                                    cell
-                                }
-                            };
+                                .filter(|v| matches!(v.view(), ValueView::Proxy { .. }))
+                                .cloned()
+                            {
+                                value = proxy;
+                            } else {
+                                let existing = self
+                                    .env
+                                    .get(&cell_key)
+                                    .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                                    .cloned();
+                                value = match existing {
+                                    Some(cell) => cell,
+                                    None => {
+                                        let cell =
+                                            if matches!(value.view(), ValueView::ContainerRef(_)) {
+                                                value
+                                            } else {
+                                                Value::container_ref(crate::gc::Gc::new(
+                                                    crate::value::ContainerCell::new(value),
+                                                ))
+                                            };
+                                        self.env.insert(cell_key, cell.clone());
+                                        cell
+                                    }
+                                };
+                            }
                         }
                         // Plain `$` params are item bindings (raku: `f([1,2])`
                         // binds `$v` as `$[1, 2]`); rw/raw cells and sigilless

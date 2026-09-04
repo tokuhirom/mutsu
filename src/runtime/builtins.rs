@@ -200,6 +200,14 @@ impl Interpreter {
         container: Option<Value>,
         source_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0040 §9's bind exclusion: `@a[0] := $p` installs the `Proxy`
+        // itself as that element's container. `.VAR` on such an element IS the
+        // `Proxy` (raku: `@a[0].VAR.^name` is `Proxy`), so there is no
+        // synthesized `Scalar` descriptor to build -- the container already
+        // exists and describes itself.
+        if matches!(element.view(), ValueView::Proxy { .. }) {
+            return Ok(Value::proxy_var_object(element, String::new()));
+        }
         if let Some(c) = container.as_ref() {
             // A producer Seq can be a flat stream whose value cells occur at
             // selected positions (`.kv`) or inside Pair values (`.pairs`).

@@ -668,6 +668,15 @@ impl Interpreter {
         let caller_code = self.current_code;
         let mut result = String::new();
         for v in values {
+            // Interpolation is a READ, so a `Proxy` FETCHes here exactly as it
+            // does for `~` (`coerce_stringy_operand`) and `say`. Top-level
+            // only; a `Proxy` nested in an interpolated container is
+            // `todo/tickets/list-element-proxy-not-rendered-through-fetch.md`.
+            let v = if v.is_proxy_value() {
+                self.auto_fetch_proxy(&v)?
+            } else {
+                v
+            };
             // Interpolating an unhandled Failure into a string throws its underlying
             // exception (Raku: a Failure is an "unthrown exception" that explodes on
             // use as a value). Mirrors the prefix:<~> stringify path; without this,
