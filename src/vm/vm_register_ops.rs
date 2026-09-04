@@ -812,6 +812,25 @@ impl Interpreter {
             if code.captured_mutated_locals.contains(sym) {
                 continue;
             }
+            // So must an **rw for-loop parameter**: it aliases the source
+            // element, so raku reads *through* it and a later write to the
+            // element is visible (`for @a -> $x is rw, $y is rw { $c = -> { $x
+            // } }; @a[0] = 99; $c()` is `99`). A single-parameter rw loop binds
+            // natively and never registers as loop-local, so it never reached
+            // this freeze; a MULTI-parameter one binds through
+            // `build_for_bind_stmts`' declaration prefix, which does register,
+            // and the deep-deref below turned its element cell into a snapshot.
+            // Only *rw* parameters are exempt -- a non-rw one copies, so its
+            // per-iteration freeze is correct and stays (`for @a.kv -> $i, $v`
+            // reads the iteration's value, not the array's later one).
+            if sym.with_str(|s| {
+                let bare = s.trim_start_matches('$');
+                self.active_loop_rw_param_names
+                    .iter()
+                    .any(|set| set.contains(bare))
+            }) {
+                continue;
+            }
             if !matches!(
                 env.get_sym(*sym).map(Value::view),
                 Some(ValueView::ContainerRef(_))

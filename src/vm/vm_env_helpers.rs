@@ -62,6 +62,7 @@ impl Interpreter {
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
+            saved_active_loop_rw_param_names: std::mem::take(&mut self.active_loop_rw_param_names),
         };
         self.call_frames.push(frame);
     }
@@ -88,6 +89,7 @@ impl Interpreter {
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
+            saved_active_loop_rw_param_names: std::mem::take(&mut self.active_loop_rw_param_names),
         };
         self.call_frames.push(frame);
     }
@@ -112,6 +114,8 @@ impl Interpreter {
         self.frame_authoritative = std::mem::take(&mut frame.saved_frame_authoritative);
         self.frame_owned = std::mem::take(&mut frame.saved_frame_owned);
         self.active_loop_param_names = std::mem::take(&mut frame.saved_active_loop_param_names);
+        self.active_loop_rw_param_names =
+            std::mem::take(&mut frame.saved_active_loop_rw_param_names);
         self.exit_readonly_frame(frame.readonly_mark);
         frame
     }

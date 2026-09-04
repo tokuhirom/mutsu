@@ -62,7 +62,7 @@ impl Interpreter {
 
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit path.
-        self.push_loop_local_scope(Default::default());
+        self.push_loop_local_scope(Default::default(), Default::default());
 
         'c_loop: loop {
             // Deferred lazy-pull suspension (see `gather_suspend_pending`):
@@ -240,7 +240,7 @@ impl Interpreter {
 
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit path.
-        self.push_loop_local_scope(Default::default());
+        self.push_loop_local_scope(Default::default(), Default::default());
 
         let mut first = true;
         'repeat_loop: loop {

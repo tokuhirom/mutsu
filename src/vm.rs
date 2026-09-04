@@ -354,6 +354,9 @@ pub(crate) struct VmCallFrame {
     /// OUTER loop's parameter name would be mistaken for that loop's
     /// per-iteration binding by `block_captured_scalars`.
     pub saved_active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    /// The caller frame's `active_loop_rw_param_names` stack — saved and
+    /// restored exactly like `saved_active_loop_param_names`.
+    pub saved_active_loop_rw_param_names: Vec<rustc_hash::FxHashSet<String>>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

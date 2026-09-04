@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 116;
+plan 120;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -821,6 +821,53 @@ plan 116;
     my $elapsed = now - $t0;
     ok $elapsed < 20, "a read-only loop over Pair elements is O(n) ({$elapsed.round(0.01)}s)";
     is $sum, 31996000, 'the read-only Pair loop actually visited every element';
+}
+
+# ADR-0045 §1.3 rows 11/20, the READ half for the MULTI-parameter shapes.
+#
+# An `is rw` loop parameter aliases the source element, so a closure over it
+# reads *through* the element container: a later write to the array is visible.
+# The write direction was fixed with row 16; the read direction froze the
+# element into a per-iteration snapshot, because a multi-parameter binds
+# through `build_for_bind_stmts`' declaration prefix (which registers the name
+# as loop-local) and `freeze_readonly_owned_captures` then deep-dereffed the
+# cell. A SINGLE-parameter rw loop binds natively, never registers, and was
+# already right -- so this is the two forms agreeing.
+{
+    my @a = 1, 2, 3, 4;
+    my $c;
+    for @a -> $x is rw, $y is rw { $c = -> { $x } if $x == 1 }
+    @a[0] = 99;
+    is $c(), 99, 'a read-only closure over a multi-param rw loop var reads through the element';
+}
+{
+    my @a = 10, 20;
+    my $c;
+    for @a.kv -> $i, $v is rw { $c = -> { $v } if $i == 0 }
+    @a[0] = 99;
+    is $c(), 99, '... and the same through a `.kv` value slot';
+}
+# The negative that bounds it: a NON-rw parameter copies, so its per-iteration
+# freeze is correct and must survive. Both of these read the iteration's own
+# value, not the array's later one.
+#
+# The parameters are named `$m`/`$n`/`$w` rather than the natural `$x`/`$y`/`$v`
+# on purpose: reusing a name that ANOTHER loop in this file binds as `is rw`
+# trips a separate, pre-existing bug where the two loops' bindings interfere
+# (`todo/tickets/same-named-loop-params-in-one-unit-interfere.md`). These rows
+# are about the non-rw freeze, so they use names of their own.
+{
+    my @a = 10, 20;
+    my $c;
+    for @a.kv -> $i, $w { $c = -> { $w } if $i == 0 }
+    @a[0] = 99;
+    is $c(), 10, 'a non-rw `.kv` value slot still freezes per iteration';
+}
+{
+    my @a = 10, 20, 30, 40;
+    my @c;
+    for @a -> $m, $n { @c.push(-> { $m }) }
+    is-deeply @c>>.(), [10, 30], 'a non-rw multi-param keeps per-iteration identity';
 }
 
 done-testing;

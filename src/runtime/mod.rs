@@ -3301,6 +3301,28 @@ pub struct Interpreter {
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
     /// env keys. Consulted by `block_captured_scalars` only; never persisted.
     pub(crate) active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    /// Parallel to [`Self::active_loop_param_names`], for the parameters that
+    /// **alias** rather than copy: the bare names the enclosing `for` loops
+    /// currently bind as genuinely rw parameters (`is rw`, a `<->` block, a
+    /// sigilless `\v`, a `.kv` value slot).
+    ///
+    /// An rw parameter is the source element's own container, so a closure over
+    /// it reads *through* it and a later write to the element is visible
+    /// (`for @a -> $x is rw, $y is rw { $c = -> { $x } }; @a[0] = 99; $c()` is
+    /// `99`). `freeze_readonly_owned_captures` consults this to leave such a
+    /// name alone: a MULTI-parameter loop binds through
+    /// `build_for_bind_stmts`' declaration prefix, which registers the name as
+    /// loop-local, and the freeze would otherwise deep-deref the element cell
+    /// into a per-iteration snapshot. A single-parameter rw loop binds natively
+    /// and never registers, so it was always right -- this is what makes the two
+    /// forms agree.
+    ///
+    /// Runtime-scoped, not a per-`CompiledCode` name set: names are reused
+    /// across the loops of one compilation unit, so a compile-time set would let
+    /// one loop's `is rw` exempt an unrelated later loop's same-named *non-rw*
+    /// parameter (measured: `t/for-loop-element-alias.t`'s per-iteration
+    /// identity rows).
+    pub(crate) active_loop_rw_param_names: Vec<rustc_hash::FxHashSet<String>>,
     /// Names of every `constant $name = ...` scalar ever declared in this run
     /// (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
     /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
