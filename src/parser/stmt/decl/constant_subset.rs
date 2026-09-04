@@ -368,7 +368,7 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     {
         let n = format!(
             "__mutsu_anon_subset_{}",
-            ANON_SUBSET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            crate::anon_names::next_id(crate::anon_names::AnonKind::Subset, &ANON_SUBSET_COUNTER,)
         );
         (r, n)
     } else {

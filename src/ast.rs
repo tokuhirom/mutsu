@@ -36,7 +36,9 @@ static CLASS_DECL_ID_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::
 /// Allocate the next class-declaration site id (always non-zero; 0 means
 /// "no stable site", e.g. a runtime-synthesized or deserialized node).
 pub(crate) fn next_class_decl_id() -> u64 {
-    CLASS_DECL_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    // The unit-local analysis counter starts at 1 for the same reason this
+    // global does: 0 is the "no stable site" sentinel and must not be mintable.
+    crate::anon_names::next_id(crate::anon_names::AnonKind::DeclId, &CLASS_DECL_ID_COUNTER)
 }
 
 /// Specifies how delegation (`handles`) should forward methods.

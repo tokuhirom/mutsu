@@ -5,7 +5,7 @@ use crate::parser::parse_result::{PError, PResult};
 use crate::parser::primary::var::parse_ident_with_hyphens;
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 
 static ANON_CLASS_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -16,7 +16,7 @@ static ANON_ROLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// literal was ever parsed — and both kinds must draw from the same counter so
 /// their rendered `<anon|N>` ids stay distinct within a process.
 pub(crate) fn next_anon_role_name() -> String {
-    let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let id = crate::anon_names::next_id(crate::anon_names::AnonKind::Role, &ANON_ROLE_COUNTER);
     format!("__ANON_ROLE_{id}__")
 }
 
@@ -72,10 +72,12 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
                 break;
             }
         }
-        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id =
+            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
         (r, format!("__ANON_CLASS_{id}__"), parents, does_roles)
     } else if rest.starts_with('{') {
-        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id =
+            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
         (rest, format!("__ANON_CLASS_{id}__"), Vec::new(), Vec::new())
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Named class in expression context: `class Foo { ... }`. The name may
@@ -158,7 +160,8 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, _) = ws(rest)?;
     let rest = rest.strip_prefix("::").map_or(rest, |r| r.trim_start());
     let (rest, name) = if rest.starts_with('{') {
-        let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let id =
+            crate::anon_names::next_id(crate::anon_names::AnonKind::Class, &ANON_CLASS_COUNTER);
         (rest, format!("__ANON_GRAMMAR_{id}__"))
     } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Same identifier-start class as the class/role expression paths: a

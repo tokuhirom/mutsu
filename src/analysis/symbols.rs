@@ -83,11 +83,15 @@ pub struct Symbol {
 /// Never fails: a document that does not parse yields the declarations that
 /// survived recovery, and one that parses to nothing yields an empty list.
 pub fn symbols(source: &str) -> Vec<Symbol> {
-    let collected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let (stmts, _finish, _errors) = crate::parser::parse_program_recovering(source);
-        let mut line = 1;
-        collect(&stmts, &mut line, false)
-    }));
+    // Unit-local anonymous-name counters -- see `analysis::check` and
+    // `crate::anon_names`.
+    let collected = crate::anon_names::with_unit_local_names(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (stmts, _finish, _errors) = crate::parser::parse_program_recovering(source);
+            let mut line = 1;
+            collect(&stmts, &mut line, false)
+        }))
+    });
     collected.unwrap_or_default()
 }
 

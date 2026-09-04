@@ -204,9 +204,13 @@ fn diagnostic_from_parse_error(err: &RuntimeError) -> Diagnostic {
 /// plausible-looking wrong diagnostic is the expensive kind of mistake, so the
 /// tie is broken toward saying less.
 fn recovered_parse_errors(source: &str, already: &[Diagnostic]) -> Vec<Diagnostic> {
-    let recovered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::parser::parse_program_recovering(source)
-    }));
+    // The recovery pass is a second parse of the same document, so it mints
+    // anonymous names too -- unit-local here as well (`crate::anon_names`).
+    let recovered = crate::anon_names::with_unit_local_names(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::parser::parse_program_recovering(source)
+        }))
+    });
     let Ok((_stmts, _finish, errors)) = recovered else {
         return Vec::new();
     };
@@ -268,12 +272,20 @@ pub fn check(source: &str) -> Vec<Diagnostic> {
     // difference is invisible; in a resident one it is the difference between
     // documents being analysed independently and a `use v6.e.PREVIEW` in the
     // first file silently changing how every later file is read.
-    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        match crate::parse_dispatch::parse_source(source) {
-            Ok((stmts, _finish)) => Ok(undeclared_routine_diagnostic(&stmts)),
-            Err(err) => Err(err),
-        }
-    }));
+    // Unit-local anonymous-name counters: a resident server re-parses one
+    // document thousands of times, and each anonymous declaration would
+    // otherwise mint, intern and permanently leak a fresh process-global
+    // registry name every time (ADR-0065 S0). Nothing an analysis parse names
+    // is ever registered, so unit-local uniqueness is enough — see
+    // `crate::anon_names`.
+    let parsed = crate::anon_names::with_unit_local_names(|| {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match crate::parse_dispatch::parse_source(source) {
+                Ok((stmts, _finish)) => Ok(undeclared_routine_diagnostic(&stmts)),
+                Err(err) => Err(err),
+            }
+        }))
+    });
 
     let mut diagnostics = Vec::new();
     match parsed {

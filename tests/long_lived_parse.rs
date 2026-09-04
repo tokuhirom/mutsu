@@ -487,13 +487,18 @@ fn repeated_analysis_of_an_unchanged_document_is_stable() {
         );
     }
 
-    // Same bound as the parse gate: one interned name per anonymous declaration
-    // per pass, and nothing else. A fresh `Interpreter` per check must not add
-    // a second source of permanent interning.
-    let anon_declarations_in_document = 1;
-    assert!(
-        symbol_growth <= anon_declarations_in_document * n,
-        "analysing an unchanged document interned {symbol_growth} new names over {n} checks          ({:.2}/check), above the {anon_declarations_in_document:.2}/check the document's          anonymous declaration accounts for",
+    // ZERO, not "one per anonymous declaration per pass". An analysis-only
+    // parse mints its anonymous registry names from UNIT-LOCAL counters
+    // (`mutsu::anon_names`), so re-analysing the same document re-uses the same
+    // names instead of leaking a fresh interned one every time -- which was the
+    // only unbounded component S0 originally found. The plain-parse probe above
+    // keeps the process-global counters and still grows by 1.00/parse, which is
+    // correct: names it mints CAN reach the registry.
+    assert_eq!(
+        symbol_growth,
+        0,
+        "analysing an unchanged document interned {symbol_growth} new names over {n} checks \
+         ({:.2}/check); an analysis parse must mint no process-global names at all",
         symbol_growth as f64 / n as f64,
     );
     if let (Some(before), Some(after)) = (rss_before, rss_after) {
@@ -503,6 +508,62 @@ fn repeated_analysis_of_an_unchanged_document_is_stable() {
             "resident memory grew {growth} KiB over {n} analyses of an unchanged document"
         );
     }
+}
+
+/// The other analysis entry point. `symbols` runs its own recovering parse, and
+/// a server calls it on every keystroke, so its leak would have been the larger
+/// of the two. Same rule, same zero.
+#[test]
+fn repeated_symbol_outlines_of_an_unchanged_document_intern_nothing() {
+    let _guard = exclusive();
+    let n = iterations();
+
+    let baseline = mutsu::analysis::symbols(DOCUMENT);
+    for _ in 0..2 {
+        mutsu::analysis::symbols(DOCUMENT);
+    }
+
+    let symbols_before = mutsu::symbol::interned_count();
+    for _ in 0..n {
+        let got = mutsu::analysis::symbols(DOCUMENT);
+        assert_eq!(
+            baseline.len(),
+            got.len(),
+            "re-outlining an unchanged document produced a different symbol count"
+        );
+    }
+    let symbol_growth = mutsu::symbol::interned_count() - symbols_before;
+
+    println!("--- ADR-0065 S0 probe: {n} analysis::symbols calls ---");
+    println!(
+        "  interned symbols: +{symbol_growth} ({:.2}/call)",
+        symbol_growth as f64 / n as f64
+    );
+    assert_eq!(
+        symbol_growth, 0,
+        "outlining an unchanged document interned {symbol_growth} new names over {n} calls"
+    );
+}
+
+/// The other half of the rule: the unit-local mode is OFF for every existing
+/// caller. A plain parse's anonymous names can reach the registry, so they must
+/// stay process-unique — this pins that the mode did not leak out of the
+/// analysis entry points and start handing two compilation units the same
+/// `__ANON_CLASS_0__`.
+#[test]
+fn a_plain_parse_still_mints_process_global_anonymous_names() {
+    let _guard = exclusive();
+
+    let before = mutsu::symbol::interned_count();
+    for _ in 0..4 {
+        mutsu::dump_ast(DOCUMENT).expect("parses");
+    }
+    let growth = mutsu::symbol::interned_count() - before;
+    assert!(
+        growth >= 4,
+        "a plain parse minted only {growth} names over 4 parses of a document with an \
+         anonymous class; the process-global counters must still advance once per parse"
+    );
 }
 
 /// D8's open question: whether documents can be analysed on more than one
