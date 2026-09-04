@@ -1,71 +1,141 @@
-# Two `for` loops in one unit that name their parameters the same interfere
+# A `for` loop's multi-parameter bind is treated as a mutation of a same-named lexical
 
-Two independent `for` loops, in separate blocks, that happen to use the same
-parameter names do not behave independently: an `is rw` loop earlier in the unit
-changes what a *later, unrelated, non-rw* loop's closures capture.
+*(Retitled and rewritten 2026-09-04 after a full investigation. The original
+title — "Two `for` loops in one unit that name their parameters the same
+interfere" — described one symptom of a broader defect, and its central
+hypothesis was disproved. The original text is preserved in the "What the
+original ticket said, and what was wrong with it" section below, so nothing is
+lost.)*
+
+## The divergence
+
+A `for` loop's **multi**-parameter list binds through an assignment. When a
+parameter's name collides with **any** local slot of the same compiled unit, that
+assignment writes the outer lexical's slot, and every closure created in the body
+ends up sharing one container — so they all observe the last iteration:
 
 ```raku
-{
-    my @b = 1, 2, 3, 4;
-    my $q;
-    for @b -> $x is rw, $y is rw { $q = -> { $x } if $x == 1 }
-    @b[0] = 99;
-    say $q();        # raku 99, mutsu 99
-}
-{
-    my @a = 10, 20, 30, 40;
-    my @c;
-    for @a -> $x, $y { @c.push(-> { $x }) }
-    say @c>>.();     # raku [10 30], mutsu [30 30]   <-- per-iteration identity lost
-}
+my $x = 1;                      # an enclosing `my`, or a popped sibling block's
+my @a = 10, 20, 30, 40;
+my @c;
+for @a -> $x, $y { @c.push(-> { $x }) }
+say @c>>.();     # raku: [10 30]   mutsu: [30 30]
 ```
 
-Delete the first block, or rename its parameters, and the second prints
-`[10 30]`. It is the second block that is wrong, and nothing in it changed.
+Silent: exit 0, the enclosing `$x` still reads `1` afterwards, only the closures
+are wrong.
 
-## Scope
+## What was established (measured 2026-09-04, debug build at `ea4cfdb57`)
 
-- Pre-existing: reproduces on `main` (verified at `a1d291bfa`, before
-  `news/2026-09/multi-param-rw-closure-reads-through-the-element.md` landed).
-- The interference runs both ways. The single-statement form of the *first*
-  block on its own (`my @a=1,2,3,4; my $c; for @a -> $x is rw, $y is rw { $c =
-  -> { $x } if $x==1 }; @a[0]=99; say $c()`) used to print `1`; in the two-block
-  file above it printed `99` even before the fix — the later loop's presence was
-  changing the earlier loop's answer.
-- Same shape as the landmine
-  `news/2026-09/proxy-fetches-at-the-container-store.md` closed for `Proxy`
-  elements, and as the one
-  `todo/tickets/closure-for-loop-param-hijacked-by-same-named-captured-outer.md`
-  describes: a per-*compilation-unit*, name-keyed mechanism standing in for a
-  per-*binding* one.
+1. **`MUTSU_SHADOW_SLOTS` does not fix it, and structurally cannot.** The
+   original ticket's proposed first experiment was to turn the gate on. Done: the
+   repro is byte-identical with the gate on and off. §1.4 mints a fresh slot only
+   for a genuine **ancestor** shadow, and deliberately lets an already-popped
+   **sibling** reuse its slot — and that restriction is itself a fix
+   (`docs/lexical-scope-slot-campaign.md`, "Root-cause fix: shadow ⟺
+   active-ancestor, not `local_map` presence"), because minting duplicate
+   `code.locals` entries corrupted every by-name writeback resolver. So this is
+   **not** a datapoint for §1.4.
+2. **`is rw` is irrelevant.** Any same-named local reproduces it. An ordinary
+   enclosing `my $x` (very common) is enough; so is `{ my $x = 5; }` in an
+   already-closed sibling block. Two loops are not needed at all.
+3. **Arity is what is load-bearing.** The single-parameter loop
+   (`for @a -> $x { }`) is correct even with a colliding `my $x`, because its
+   bind happens inside the `ForLoop` opcode exec and compiles to **no name-write
+   op at all**. Only the multi-parameter path emits one
+   (`Compiler::build_for_bind_stmts` → `Stmt::Assign` → `SetLocal`/`SetGlobal`).
+4. **The chain is:** that `SetLocal` makes `CompiledCode::compute_free_vars`
+   record the name in `self_mutated` → the outer local is classed
+   `captured_mutated_locals` → `box_captured_lexicals` boxes it into a shared
+   `ContainerRef` cell at closure-capture time → each iteration's bind then
+   writes *through* that one cell, which every closure has captured.
 
-## Likely cause
+## Two candidate fixes were implemented and both fell short
 
-Same-named `my` locals share one local slot per compiled chunk, and several
-closure-capture mechanisms are keyed by NAME over the whole `CompiledCode`
-(`captured_mutated_locals`, `needs_cell_locals`, `for_loop_param_syms`,
-`free_var_writes`). One loop's `$x` being captured-and-mutated therefore marks
-*the name* for the whole unit, so the other loop's `$x` takes the boxed/cell
-path (or the frozen path) it should not.
+Both are recorded because each got partway and each failed for an instructive
+reason. Neither was landed.
 
-This was found while fixing the read half of ADR-0045 rows 11/20: the runtime
-`active_loop_rw_param_names` stack that fix introduced is deliberately
-runtime-scoped rather than a per-`CompiledCode` name set for exactly this
-reason (a compile-time set let one loop's `is rw` exempt another loop's non-rw
-parameter). The remaining interference is in the older, compile-time sets.
+### (A) Bind with a declaration instead of an assignment
 
-## Why it is a ticket rather than a fix
+The `@`/`%` arm of that same match in `build_for_bind_stmts` **already**
+declares, with the reason written out ("a fresh per-iteration lexical, not an
+alias of a same-named outer"), so bringing the plain-scalar arm in line looks
+like the obvious fix — and it does fix every standalone shape above.
 
-Making these sets per-binding rather than per-name means giving same-named
-locals in disjoint scopes distinct slots — the `MUTSU_SHADOW_SLOTS` campaign
-(`docs/lexical-scope-slot-campaign.md` §1.3/§1.4), which is gated off by
-default. Before that lands, any narrower fix is another name-keyed heuristic.
-Check whether turning the shadow-slot gate on makes the repro above pass; if it
-does, this ticket is really a datapoint for that campaign rather than its own
-piece of work.
+It breaks **nested same-named multi-param loops**
+(`t/for-multi-param-shared-lane.t` test 4,
+`t/for-multi-param-type-constraint.t` test 10): the VM's save/restore of the
+shadowed outer binding (`vm_for_loop_body.rs`, `saved_multi_params`) is keyed on
+`ForLoopSpec::multi_param_locals`, a snapshot of `local_map` taken **before** the
+bind prefix compiles. A declaration can allocate a slot that snapshot does not
+know about, so the slot is never restored and the inner loop's values leak out.
+Patching the spec after the bind prefix compiles (the `loop_idx` op is already at
+hand) changes the failure rather than removing it — the outer loop then restores
+`Nil`. The whole `saved_multi_params` apparatus is written around the assumption
+"a multi-param binds via plain `Stmt::Assign`", and untangling it is the real
+size of this work.
+
+### (B) Exclude the bind ops from the mutation scan, by op POSITION
+
+Record which op positions the readonly plain-scalar multi-param binds compile to
+(`for_loop_readonly_multi_param_bind_ops`) and skip exactly those in
+`compute_free_vars` — in both the name-write branch (`op_name_write_const_idx`,
+which catches the `SetGlobal` spelling) and the slot-based `OpCode::SetLocal`
+arm.
+
+Positions, not names: a name set also swallows a *genuine* mutation of the
+enclosing lexical elsewhere in the unit, which was verified to break three real
+shapes (`my $x = 1; my $c = -> { $x }; $x = 2; for @a -> $x, $y {}` must still
+let `$c()` see `2`). The position-keyed version keeps all three correct.
+
+This fixes the original ticket's repro and every standalone shape, and breaks no
+existing test. It is **still not enough**: as soon as the same-named outer
+lexical *is* genuinely mutated somewhere in the unit, it legitimately earns its
+cell, and the loop's bind writes through it again. Severing the cell per
+iteration at the bind op (the loop setup already severs once at loop *entry*)
+does not help either — the closure does not take its value from the slot at that
+point. That residue is enough to poison a whole `t/` file: any file containing
+one genuinely-mutated `$x` makes every multi-param `$x` loop in it wrong again,
+which is why the partial fix could not be honestly pinned by a test and was not
+landed.
+
+## Where this really sits
+
+The residue is the shared local slot: two `$x` bindings in one unit are one slot,
+so no per-binding cell decision is expressible. That is §1.3 (slot-indexed
+locals / retiring the by-name resolvers) of
+`docs/lexical-scope-slot-campaign.md` — **not** §1.4, and not a heuristic that
+can be added around the edges. Fix (B) is a correct, precisely-scoped
+*component* of that work and is worth re-implementing on top of it; fix (A)
+additionally needs `saved_multi_params` re-keyed off something other than a
+pre-bind `local_map` snapshot.
+
+## What the original ticket said, and what was wrong with it
+
+It framed the bug as two loops interfering — an `is rw` loop earlier in the unit
+changing what a later, unrelated, non-rw loop's closures capture — and noted the
+interference ran both ways. That is a real symptom, but it is a special case:
+`is rw` is not required, a second loop is not required, and the "likely cause"
+section correctly named `captured_mutated_locals` / `needs_cell_locals` while
+attributing the fix to the wrong campaign phase (§1.4's shadow-slot gate, which
+was measured to make no difference).
 
 ## Reproduce
 
-The file above, no fixtures. `t/for-loop-element-alias.t` names two of its
-non-rw rows `$m`/`$n`/`$w` to steer around this; that is the marker to remove
-when this is fixed.
+The four-line repro at the top, no fixtures. Two more that isolate the residues:
+
+```raku
+# residue: a genuine outer mutation re-earns the cell
+my @a = 1, 2, 3, 4;
+my $x = 1;
+my $c = -> { $x };
+$x = 2;                       # this write is real and must keep its cell
+for @a -> $x, $y { }
+say $c();                     # raku 2 -- correct today, and fix (B) keeps it
+
+# the single-parameter form is correct today and must stay correct
+my $z = 1;
+my @b = 10, 20, 30; my @cs;
+for @b -> $z { @cs.push(-> { $z }) }
+say @cs>>.();                 # raku [10 20 30], mutsu [10 20 30]
+```
