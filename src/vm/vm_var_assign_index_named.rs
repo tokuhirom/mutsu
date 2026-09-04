@@ -3908,6 +3908,38 @@ impl Interpreter {
                 target.descalarize().clone(),
             ));
         }
+        // A `List` is immutable as a CONTAINER: its element slots cannot be
+        // replaced, so `(5, 6)[0] = 10` is "Cannot modify an immutable List
+        // ((5 6))" in rakudo. An element that IS a container stays writable
+        // through that container (`my $a = 1; ($a, 6)[0] = 9` sets `$a`), which
+        // is why the refusal is keyed on the ELEMENT, not on the list.
+        //
+        // The named store (`my @t := (5, 6); @t[0] = 10`) has applied this rule
+        // for a while; the anonymous spelling reached the generic auto-vivify
+        // path below instead and silently succeeded. `[5, 6][0] = 10` is
+        // unaffected -- a bracket array is `ArrayKind::Array`, a real mutable
+        // container.
+        if is_positional
+            && let ValueView::Array(items, kind) = target.descalarize().view()
+            && matches!(
+                kind,
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+            )
+            && let Some(i) = Self::index_to_usize(&idx)
+            && !matches!(
+                items.get(i).map(Value::view),
+                Some(ValueView::Scalar(_) | ValueView::ContainerRef(_))
+            )
+        {
+            let display = target.descalarize().to_string_value();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!("Cannot modify an immutable List ({display})")),
+            );
+            attrs.insert("value".to_string(), target.descalarize().clone());
+            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+        }
         let key = idx.to_string_value();
         // A single scalar index names one element, so the assignment's rvalue is
         // itemized (like a scalar-variable / named single-index assignment);
