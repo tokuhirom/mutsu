@@ -10,17 +10,31 @@ impl Interpreter {
     /// positional-light — not just the OTF/named path that already set it. The
     /// gate (real, non-mangled, non-GLOBAL package) keeps the hot GLOBAL-function
     /// path (fib, ...) free of any lock/string churn: it returns `None` cheaply.
+    ///
+    /// Only the two cheap halves of that gate are inlined here (an emptiness
+    /// test and a 6-byte compare); the `"::&"` substring search and the two
+    /// `String` clones live in the outlined slow half, so a GLOBAL routine's
+    /// call site does not even pay a call.
+    #[inline]
     pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<String> {
-        if !cf.package.is_empty() && cf.package != "GLOBAL" && !cf.package.contains("::&") {
-            let saved = self.current_package();
-            self.set_current_package(cf.package.clone());
-            Some(saved)
-        } else {
-            None
+        if cf.package.is_empty() || cf.package == "GLOBAL" {
+            return None;
         }
+        self.enter_routine_package_outlined(cf)
+    }
+
+    #[inline(never)]
+    fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<String> {
+        if cf.package.contains("::&") {
+            return None;
+        }
+        let saved = self.current_package();
+        self.set_current_package(cf.package.clone());
+        Some(saved)
     }
 
     /// Restore the package saved by [`enter_routine_package`].
+    #[inline]
     pub(super) fn leave_routine_package(&mut self, saved: Option<String>) {
         if let Some(s) = saved {
             self.set_current_package(s);
@@ -246,6 +260,11 @@ impl Interpreter {
     /// and a non-variable literal (`f([1,2])`) has no caller to share with — both
     /// must keep the fast path. A variable arg reaches the binder as a `VarRef`,
     /// so peek inside without cloning.
+    ///
+    /// Inlined: this runs per argument on every call, and for the ordinary
+    /// non-varref argument the whole answer is one tag test -- as an outlined
+    /// call it cost more to reach than to compute.
+    #[inline]
     pub(super) fn arg_is_container_value(arg: &Value) -> bool {
         let ValueView::VarRef { name, value, .. } = arg.view() else {
             return false;

@@ -203,11 +203,22 @@ impl Interpreter {
     /// compiled argument list, i.e. exactly the arity the call op carries,
     /// before any position's value is spread into zero or more runtime
     /// arguments. `None` when there is no descriptor or no `|` argument.
+    ///
+    /// Inlined down to the `arg_sources_idx` test: a call site with no
+    /// argument-source table (the common one) answers `None` without a call,
+    /// and the constant-pool scan that builds the position vector stays
+    /// outlined.
+    #[inline]
     pub(super) fn decode_arg_slip_positions(
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
     ) -> Option<Vec<usize>> {
         let idx = arg_sources_idx?;
+        Self::decode_arg_slip_positions_at(code, idx)
+    }
+
+    #[inline(never)]
+    fn decode_arg_slip_positions_at(code: &CompiledCode, idx: u32) -> Option<Vec<usize>> {
         let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
             return None;
         };
@@ -224,6 +235,7 @@ impl Interpreter {
         }
     }
 
+    #[inline]
     pub(super) fn unwrap_var_ref_value(value: Value) -> Value {
         match value.as_varref() {
             Some((_, inner, _)) => inner.clone(),
