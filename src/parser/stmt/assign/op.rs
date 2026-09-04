@@ -187,13 +187,40 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
 /// Which value of the LHS makes a short-circuiting compound assignment KEEP
 /// the current value instead of storing the RHS.
 #[derive(Clone, Copy)]
-enum ShortCircuitKeep {
+pub(crate) enum ShortCircuitKeep {
     /// `//=` keeps a DEFINED LHS.
     Defined,
     /// `||=` keeps a TRUE LHS.
     True,
     /// `&&=` keeps a FALSE LHS.
     False,
+}
+
+/// The short-circuit rule for an op, or `None` when the op always stores.
+pub(crate) fn short_circuit_keep(op: CompoundAssignOp) -> Option<ShortCircuitKeep> {
+    match op {
+        CompoundAssignOp::DefinedOr => Some(ShortCircuitKeep::Defined),
+        CompoundAssignOp::LogicalOr => Some(ShortCircuitKeep::True),
+        CompoundAssignOp::LogicalAnd => Some(ShortCircuitKeep::False),
+        _ => None,
+    }
+}
+
+/// The test a short-circuit compound assignment applies to its (already
+/// evaluated) LHS, and whether a TRUE test means KEEP.
+pub(crate) fn short_circuit_test(keep: ShortCircuitKeep, lhs: Expr) -> (Expr, bool) {
+    match keep {
+        ShortCircuitKeep::Defined => (
+            Expr::Call {
+                name: Symbol::intern("defined"),
+                args: vec![lhs],
+            },
+            true,
+        ),
+        ShortCircuitKeep::True => (lhs, true),
+        // `&&=` STORES when the LHS is true.
+        ShortCircuitKeep::False => (lhs, false),
+    }
 }
 
 /// Build `$x //= v` / `$x ||= v` / `$x &&= v` as a real short circuit that does
@@ -217,12 +244,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
     op: CompoundAssignOp,
     rhs: Expr,
 ) -> Option<Expr> {
-    let keep = match op {
-        CompoundAssignOp::DefinedOr => ShortCircuitKeep::Defined,
-        CompoundAssignOp::LogicalOr => ShortCircuitKeep::True,
-        CompoundAssignOp::LogicalAnd => ShortCircuitKeep::False,
-        _ => return None,
-    };
+    let keep = short_circuit_keep(op)?;
     let tmp_name = format!(
         "__mutsu_compound_lhs_{}",
         TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)

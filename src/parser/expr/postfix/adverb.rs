@@ -312,6 +312,36 @@ pub(crate) fn collect_remaining_adverbs<'a>(
 }
 
 /// Extract the variable name from a MultiDimIndex target expression.
+/// The `:delete` lowering target for a multi-dim subscript.
+///
+/// `postcircumfix:<{; }>` has exactly two candidates -- `(\SELF, @indices)` and
+/// `(\SELF, @indices, :$exists!)` -- so `:delete` on an ASSOCIATIVE multi-dim
+/// subscript does not resolve at all, and rakudo throws `X::Multi::NoMatch`.
+/// The positional `postcircumfix:<[; ]>` spelling accepts it.
+///
+/// Decided from the subscript FORM the source used rather than from the
+/// receiver's runtime type: `$h{"a";"b"}` names a scalar whose value the delete
+/// builtin cannot always resolve by name, and the form is what rakudo
+/// dispatches on anyway.
+///
+/// `ndims == 1` is NOT the `{; }` form at all: a one-dimension multi-dim
+/// subscript is only ever produced by the `||` splat (`%h{|| @indices}`), which
+/// is an ordinary `postcircumfix:<{ }>` SLICE and does accept `:delete` --
+/// rakudo answers `(42, 666)` for `t/multidim-splat-lazy.t`'s spelling.
+///
+/// And it is a 6.d-and-earlier rule, exactly like the multislice wrapper it
+/// belongs to (`Interpreter::assoc_multislice`): **6.e grew the candidate** and
+/// `%h{"a";"b";"c"}:delete` answers `42` there. Measured on rakudo v2026.06,
+/// which is why `t/hash-multislice-container.t` (`use v6.e.PREVIEW`) keeps
+/// asserting the deletion while the 6.d spelling now throws.
+pub(crate) fn multidim_delete_fn(is_positional: bool, ndims: usize) -> &'static str {
+    if is_positional || ndims < 2 || crate::parser::current_language_version().starts_with("6.e") {
+        "__mutsu_multidim_delete"
+    } else {
+        "__mutsu_multidim_delete_assoc"
+    }
+}
+
 pub(crate) fn multidim_target_var_name(target: &Expr) -> String {
     match target {
         Expr::ArrayVar(name) => format!("@{}", name),

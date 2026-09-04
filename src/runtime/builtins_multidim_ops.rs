@@ -60,6 +60,35 @@ pub(super) fn multidim_missing_result() -> Value {
 }
 
 impl Interpreter {
+    /// `:delete` on an ASSOCIATIVE multi-dim subscript (`%h{1;2}:delete`).
+    ///
+    /// `postcircumfix:<{; }>` has exactly two candidates -- `(\SELF, @indices)`
+    /// and `(\SELF, @indices, :$exists!)` -- so this does not resolve at all.
+    /// mutsu used to accept it and delete the innermost key, which is the worst
+    /// of both: neither rakudo's refusal nor a behaviour anyone can rely on.
+    /// The positional spelling (`@a[1;2]:delete`, `postcircumfix:<[; ]>`) IS
+    /// valid and keeps [`Self::builtin_multidim_delete`]; the parser picks
+    /// between the two by subscript form (`multidim_delete_fn`).
+    pub(super) fn builtin_multidim_delete_assoc(&mut self) -> Result<Value, RuntimeError> {
+        let msg = concat!(
+            "Cannot resolve caller postcircumfix:<{; }>(Hash:D, List:D, :delete); ",
+            "none of these signatures matches:\n",
+            "    (\\SELF, @indices)\n",
+            "    (\\SELF, @indices, :$exists!)"
+        )
+        .to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert(
+            "name".to_string(),
+            Value::str("postcircumfix:<{; }>".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
     /// Handle :delete on multidim index.
     /// Args: [var_name_string, dim0, dim1, ...]
     pub(super) fn builtin_multidim_delete(

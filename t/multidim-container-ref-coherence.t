@@ -45,14 +45,23 @@ plan 11;
     is-deeply @array, [[[42,Any,[314]],],], 'dynamic :$delete mutates the live array';
 }
 
-# --- hash: delete through a cross-frame cell ---
+# --- hash: a multi-dim :delete is refused under 6.d ---
+# `postcircumfix:<{; }>` has only `(\SELF, @indices)` and
+# `(\SELF, @indices, :$exists!)` before 6.e, so `:delete` does not resolve at
+# all -- rakudo v2026.06 throws X::Multi::NoMatch here, and mutsu used to
+# accept it and delete the innermost key. (6.e grew the candidate; the 6.e
+# spelling is asserted by `t/hash-multislice-container.t`.) The cross-frame
+# cell coherence this block exists for is exercised with the adverb 6.d DOES
+# have.
 {
     my %hash;
     sub setup3() { %hash = a => { b => { c => 42, d => 666 } }; }
 
     setup3();
-    is %hash{"a";"b";"c"}:delete, 42, 'hash multidim :delete returns value (cross-frame cell)';
-    is-deeply %hash, {a => {b => {d => 666}}}, 'hash multidim :delete mutates the live hash';
+    throws-like { %hash{"a";"b";"c"}:delete }, X::Multi::NoMatch,
+      'hash multidim :delete does not resolve a caller under 6.d';
+    is (%hash{"a";"b";"c"}:exists), True,
+      'hash multidim :exists reads through the cross-frame cell';
 }
 
 # --- read through a cross-frame cell ---

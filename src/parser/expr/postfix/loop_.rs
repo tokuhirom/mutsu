@@ -1,7 +1,7 @@
 use super::adverb::{
     DeleteAdverb, apply_delete_to_exists, build_adverb_error_call,
     build_user_postcircumfix_adverb_call, collect_remaining_adverbs, determine_subscript_what,
-    multidim_target_var_name, normalize_adverb_name, parse_delete_adverb,
+    multidim_delete_fn, multidim_target_var_name, normalize_adverb_name, parse_delete_adverb,
     parse_dynamic_subscript_adverb, parse_subscript_adverb_with_expr,
     subscript_adverb_expr_with_cond, supports_postfix_call_adverbs, try_parse_exists_adverb,
     try_parse_unknown_adverb,
@@ -2472,14 +2472,16 @@ fn postfix_expr_loop_from(
                         if let Expr::MultiDimIndex {
                             target: mdt,
                             dimensions: dims,
+                            is_positional,
                             ..
                         } = expr
                         {
                             let var_name = multidim_target_var_name(&mdt);
+                            let dims_len = dims.len();
                             let mut args = vec![Expr::Literal(Value::str(var_name))];
                             args.extend(dims);
                             expr = Expr::Call {
-                                name: Symbol::intern("__mutsu_multidim_delete"),
+                                name: Symbol::intern(multidim_delete_fn(is_positional, dims_len)),
                                 args,
                             };
                         } else if let Expr::Call { name, mut args } = expr {
@@ -2535,20 +2537,31 @@ fn postfix_expr_loop_from(
                         if let Expr::MultiDimIndex {
                             target: mdt,
                             dimensions: dims,
+                            is_positional,
                             ..
                         } = original_expr.clone()
                         {
                             let var_name = multidim_target_var_name(&mdt);
+                            let dims_len = dims.len();
                             let mut args = vec![Expr::Literal(Value::str(var_name))];
                             args.extend(dims);
+                            let delete_fn = multidim_delete_fn(is_positional, dims_len);
                             let delete_expr = Expr::Call {
-                                name: Symbol::intern("__mutsu_multidim_delete"),
+                                name: Symbol::intern(delete_fn),
                                 args,
                             };
-                            expr = Expr::Ternary {
-                                cond: Box::new(cond),
-                                then_expr: Box::new(delete_expr),
-                                else_expr: Box::new(original_expr),
+                            // When the subscript form has no `:delete` candidate at
+                            // all, the adverb's VALUE never gets to decide anything:
+                            // `%h{1;2}:delete(0)` throws exactly like `:delete`
+                            // does. Every form that DOES have one keeps the guard.
+                            expr = if delete_fn != "__mutsu_multidim_delete_assoc" {
+                                Expr::Ternary {
+                                    cond: Box::new(cond),
+                                    then_expr: Box::new(delete_expr),
+                                    else_expr: Box::new(original_expr),
+                                }
+                            } else {
+                                delete_expr
                             };
                         } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb")
                         {
@@ -2615,6 +2628,7 @@ fn postfix_expr_loop_from(
                 if let Expr::MultiDimIndex {
                     target: mdt,
                     dimensions: dims,
+                    is_positional,
                     ..
                 } = expr.clone()
                 {
@@ -2626,16 +2640,25 @@ fn postfix_expr_loop_from(
                     // the by-name `self.env.get` the builtin used, which missed an
                     // outer hash assigned inside a sub).
                     let var_name = multidim_target_var_name(&mdt);
+                    let dims_len = dims.len();
                     let mut del_args = vec![Expr::Literal(Value::str(var_name))];
                     del_args.extend(dims);
+                    let delete_fn = multidim_delete_fn(is_positional, dims_len);
                     let delete_expr = Expr::Call {
-                        name: Symbol::intern("__mutsu_multidim_delete"),
+                        name: Symbol::intern(delete_fn),
                         args: del_args,
                     };
-                    expr = Expr::Ternary {
-                        cond: Box::new(Expr::Var(adverb_var.to_string())),
-                        then_expr: Box::new(delete_expr),
-                        else_expr: Box::new(expr),
+                    // See the `:delete($cond)` lowering: when the subscript form
+                    // has no `:delete` candidate, the runtime flag never gets to
+                    // choose.
+                    expr = if delete_fn != "__mutsu_multidim_delete_assoc" {
+                        Expr::Ternary {
+                            cond: Box::new(Expr::Var(adverb_var.to_string())),
+                            then_expr: Box::new(delete_expr),
+                            else_expr: Box::new(expr),
+                        }
+                    } else {
+                        delete_expr
                     };
                 } else if matches!(&expr, Expr::Call { name, .. }
                     if name == "__mutsu_multidim_subscript_adverb"

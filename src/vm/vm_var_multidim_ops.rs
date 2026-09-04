@@ -35,6 +35,14 @@ impl Interpreter {
             && Self::walks_associative(&target)
             && !dims.iter().any(Self::dim_is_multi)
         {
+            // A leaf that never existed reads as the `Any` type object, which
+            // is what the named-root spelling already produces (`my %h;
+            // %h{1;2}` is `(Any,)`). The chain-rooted spelling reaches here
+            // with a bare `Nil` because the whole intermediate is missing, not
+            // just the leaf.
+            if result.is_nil() {
+                result = Value::package(crate::symbol::Symbol::intern("Any"));
+            }
             result = Value::array(vec![result]);
         }
         self.stack.push(result);
@@ -52,10 +60,29 @@ impl Interpreter {
 
     /// Whether a multi-dim read against this target walks an Associative --
     /// the level a `{...}` subscript indexes by key.
+    ///
+    /// An UNDEFINED target counts: multislice-ness is a property of the
+    /// SUBSCRIPT FORM, not of what the container happens to hold yet, and rakudo
+    /// hands back the wrapper for every not-yet-existing intermediate --
+    /// `my %o; (%o<i>{1;2}).raku` is `(Any,)`, as are the `my $x; $x{1;2}` and
+    /// `my @a; @a[0]{1;2}` spellings. Without this the chain-rooted
+    /// `%o<i>{1;2} //= 7` saw a bare `Nil`, found it undefined and stored --
+    /// where the named-rooted `%h{1;2} //= 7` correctly did nothing, so the two
+    /// spellings of one construct disagreed.
+    ///
+    /// A DEFINED non-associative target (`my %o = i => 5; %o<i>{1;2}`) is a
+    /// different case: rakudo throws "Type Int does not support associative
+    /// indexing" where mutsu still answers `Nil`. That gap is untouched here.
     fn walks_associative(target: &Value) -> bool {
         matches!(
             target.with_deref(|v| v.descalarize().clone()).view(),
-            ValueView::Hash(..) | ValueView::Pair(..) | ValueView::ValuePair(..)
+            ValueView::Hash(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                // Undefined: `Nil`, or a type object (`Any`, the value a
+                // not-yet-autovivified intermediate reads as).
+                | ValueView::Nil
+                | ValueView::Package(_)
         )
     }
 

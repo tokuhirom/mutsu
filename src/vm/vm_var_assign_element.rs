@@ -549,6 +549,26 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(value));
         }
+        // `%h{*} = ...` is refused: an associative slice has no order to assign
+        // across. rakudo answers `X::AdHoc` with this exact message, and the
+        // refusal does not depend on the hash being empty. Without it the
+        // `Whatever` fell through to the ordinary key path and was STRINGIFIED
+        // into a literal `"*"` key -- a silent write that nothing detects.
+        //
+        // Deliberately narrow: a READ (`%h{*}`, which lists the values) is
+        // unaffected, and so is the POSITIONAL `@a[*] = 7, 8, 9`, which rakudo
+        // does allow because an array's order is well-defined.
+        if !is_positional
+            && matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Whatever)
+            )
+        {
+            return Err(RuntimeError::new(
+                "Cannot assign to *, as the order of keys is non-deterministic",
+            ));
+        }
+
         // A variable still holding a DEFERRED vivification token has no
         // container to assign into yet (`my $x := %h<g>; $x[0] = 'x'`); every
         // helper below resolves the token to `Any` and drops the write. Handle
