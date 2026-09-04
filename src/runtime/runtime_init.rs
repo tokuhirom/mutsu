@@ -3107,6 +3107,7 @@ impl Interpreter {
             given_pointy_captured: Vec::new(),
             loop_local_vars: Vec::new(),
             active_loop_param_names: Vec::new(),
+            active_loop_rw_param_names: Vec::new(),
             constant_var_names_seen: rustc_hash::FxHashSet::default(),
             loop_local_saved_env: Vec::new(),
             loop_cond_active: false,

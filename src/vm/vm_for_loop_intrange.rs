@@ -79,7 +79,7 @@ impl Interpreter {
                 .map(|n| std::iter::once(n.clone()).collect())
                 .unwrap_or_default()
         };
-        self.push_loop_local_scope(loop_param_names);
+        self.push_loop_local_scope(loop_param_names, Default::default());
 
         // When resuming a gather coroutine, start from the saved position and
         // restore the chained inner state (a loop nested in this body) into

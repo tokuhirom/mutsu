@@ -460,7 +460,25 @@ impl Interpreter {
                 })
                 .collect()
         };
-        self.push_loop_local_scope(loop_param_names.clone());
+        // The parameters that ALIAS the source element (`is rw` / `<->` /
+        // sigilless `\v` / a `.kv` value slot). A closure over one of these
+        // reads through the element container, so it must not be frozen into a
+        // per-iteration snapshot -- see
+        // `Interpreter::active_loop_rw_param_names`. Disjoint from
+        // `loop_param_names` above, which is the non-rw (copying) set.
+        let loop_rw_param_names: rustc_hash::FxHashSet<String> = spec
+            .rw_param_names
+            .iter()
+            .filter(|name| !name.is_empty())
+            .map(|name| name.trim_start_matches('$').to_string())
+            .filter(|name| {
+                !name.starts_with('&')
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && name != "_"
+            })
+            .collect();
+        self.push_loop_local_scope(loop_param_names.clone(), loop_rw_param_names);
         // ADR-0027: the for-loop's own pointy parameter(s) are a genuine
         // per-iteration fresh binding but, unlike an ordinary loop-body `my`
         // declaration, are bound via a direct env/slot store (below) that

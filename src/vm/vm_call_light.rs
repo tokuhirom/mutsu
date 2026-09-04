@@ -179,6 +179,7 @@ impl Interpreter {
         // (mirrors vm_call_fast.rs) — this path also bypasses
         // `with_nested_registers`.
         let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
+        let saved_active_loop_rw_param_names = std::mem::take(&mut self.active_loop_rw_param_names);
         // Isolate the caller's block-scope `my`-declaration tracking (mirrors the
         // loop-local isolation above). Without this, the callee's routine-level
         // `my $x` — which runs before the callee enters any of its own blocks —
@@ -332,6 +333,7 @@ impl Interpreter {
             self.loop_local_vars = saved_loop_local_vars;
             self.loop_local_saved_env = saved_loop_local_saved_env;
             self.active_loop_param_names = saved_active_loop_param_names;
+            self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
             self.block_declared_vars = saved_block_declared_vars;
             self.current_unit = saved_unit;
             let err = positional_light_type_error(
@@ -593,6 +595,7 @@ impl Interpreter {
                 self.loop_local_vars = saved_loop_local_vars;
                 self.loop_local_saved_env = saved_loop_local_saved_env;
                 self.active_loop_param_names = saved_active_loop_param_names;
+                self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
                 self.block_declared_vars = saved_block_declared_vars;
                 self.finish_positional_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
@@ -642,6 +645,7 @@ impl Interpreter {
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.active_loop_param_names = saved_active_loop_param_names;
+        self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
         self.block_declared_vars = saved_block_declared_vars;
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
