@@ -535,8 +535,59 @@ impl Interpreter {
     /// Every `^`-prefixed name is a `HOW` meta-method (`^name`, `^mro`,
     /// `^parents`, `^methods`, `^attributes`, ...) and therefore describes the
     /// type by construction.
-    pub(super) fn is_type_identity_method(method: &str) -> bool {
-        method.starts_with('^') || matches!(method, "WHAT" | "WHICH" | "isa" | "does")
+    pub(crate) fn is_type_identity_method(method: &str) -> bool {
+        method.starts_with('^')
+            || matches!(
+                method,
+                // Type identity.
+                "WHAT" | "WHICH" | "isa" | "does"
+                // Object construction: `self.new(...)` inside a subclass method
+                // (and the `bless`/`BUILD` protocol it redispatches through)
+                // builds an instance of the CLASS. Delegating it to the backing
+                // `Array` built one of those instead -- `t/array-subclass-vector.t`
+                // died with "bless can only be called on a class or instance".
+                // `clone` belongs here for the same reason: raku's
+                // `R.new(1,2).clone.^name` is `R`, not `Array`.
+                    | "new"
+                    | "bless"
+                    | "clone"
+                    | "CREATE"
+                    | "BUILD"
+                    | "BUILDALL"
+                    | "TWEAK"
+            )
+    }
+
+    /// Whether `method` on `target` must be answered by an `is Array`/`is List`
+    /// subclass instance's backing `__mutsu_array_storage` rather than by the
+    /// instance itself.
+    ///
+    /// The three dispatch entries that can receive such a receiver — the
+    /// `CallMethod` opcode, `CallMethodDynamic` (a runtime method name), and the
+    /// interpreter's own `call_method_with_values` — each used to decide this
+    /// for themselves, or not at all, so the same call answered differently
+    /// depending on how its name was spelled.
+    pub(crate) fn delegates_to_array_storage(&mut self, target: &Value, method: &str) -> bool {
+        if Self::is_type_identity_method(method) {
+            return false;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return false;
+        };
+        if !attributes.contains_key("__mutsu_array_storage") {
+            return false;
+        }
+        let cn = class_name.resolve();
+        !self.has_user_method(&cn, method)
+            && self
+                .mro_readonly(&cn)
+                .iter()
+                .any(|n| Self::is_positional_base(n))
     }
 
     fn exec_call_method_op_impl(

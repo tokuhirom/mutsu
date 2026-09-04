@@ -205,6 +205,43 @@ impl Interpreter {
         if let Some(result) = self.try_var_meta_delegate(&target, method, &args) {
             return result;
         }
+        // Array-subclass instance delegation, the interpreter-entry twin of the
+        // one in `vm_call_method_ops.rs`. An `is Array`/`is List` subclass keeps
+        // its elements in a backing `__mutsu_array_storage` attribute; without
+        // this, every caller that reaches the dispatcher HERE rather than
+        // through the `CallMethod` opcode — a runtime method name
+        // (`$v."$m"()`), and the `CallMethodMut` path for any name its own
+        // allowlist does not carry — asked the by-name builtin dispatchers about
+        // the Instance instead of about its elements.
+        //
+        // That was not merely a wrong answer. `builtin_elems` is defined AS
+        // `$x.elems`, and `dispatch_elems_method` answers `.elems` by calling
+        // `builtin_elems`, so an Instance that neither of them can serve looped
+        // between them until the stack overflowed
+        // (`class R is Array {}; my $m = "elems"; R.new(1,2)."$m"()`). The
+        // `!args.is_empty()` guard in `dispatch_elems_method` was the same cycle,
+        // caught for the MOP-shaped spelling only.
+        //
+        // Same exclusions as the opcode twin, both inside
+        // `delegates_to_array_storage`: a user method of that name wins, and
+        // `is_type_identity_method` names the receiver itself, not its elements.
+        //
+        // Placed with the other "decide the receiver first" guards, ahead of
+        // every by-name interceptor: several of them answer for a Cool
+        // receiver by stringifying it, which is how `$v."$m"()` with `$m` =
+        // `join` answered `R()` instead of `12` even though the call reached
+        // this function's own tail.
+        if self.delegates_to_array_storage(&target, method)
+            && let ValueView::Instance { attributes, .. } = target.view()
+        {
+            let storage = attributes
+                .as_map()
+                .get("__mutsu_array_storage")
+                .cloned()
+                .unwrap_or_else(|| Value::real_array(Vec::new()));
+            return self.call_method_with_values(storage, method, args);
+        }
+
         // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
         // Set/Bag/Mix/... receiver is not `Instance`/`Package`, so none of this
         // function's by-name native dispatch below (`dispatch_method_by_name_*`,
