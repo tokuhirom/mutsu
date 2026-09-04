@@ -7982,6 +7982,11 @@ pub(crate) struct CompiledFunction {
     /// chunk) or when some parameter's constraint is not light-path-checkable;
     /// both cases fall back to the by-name `fast_type_check`.
     pub(crate) param_fast_types: Vec<FastParamCheck>,
+    /// Whether binding each parameter itemizes the incoming value, parallel to
+    /// `param_defs` (see `Interpreter::param_binds_itemized_scalar`). Empty when
+    /// the precompute has not run (a hand-built chunk), which falls back to
+    /// re-deriving it from the `ParamDef`.
+    pub(crate) param_itemize_on_bind: Vec<bool>,
     /// The declared return type's precomputed plan (see [`FastParamCheck`]).
     /// `None` when there is no return type, or when it is not one the light
     /// return check handles by tag.
@@ -8291,6 +8296,11 @@ impl CompiledFunction {
             .return_type
             .as_ref()
             .and_then(|rt| FastParamCheck::of(Some(rt)));
+        self.param_itemize_on_bind = self
+            .param_defs
+            .iter()
+            .map(crate::runtime::Interpreter::param_binds_itemized_scalar)
+            .collect();
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -8380,6 +8390,7 @@ mod compiled_fns_identity {
             declared_locals: None,
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),
+            param_itemize_on_bind: Vec::new(),
             return_fast_type: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,

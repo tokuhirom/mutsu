@@ -973,9 +973,25 @@ impl Interpreter {
     /// excluded (container-alias writeback, see `itemize_scalar_assign_result`),
     /// as are `&`-sigiled and internal `__mutsu_` names.
     pub(crate) fn itemize_scalar_store(name: &str, val: Value) -> Value {
-        if name == "_" || name.starts_with('&') || name.starts_with("__mutsu") {
+        if Self::name_is_itemize_exempt(name) {
             return val;
         }
+        Self::itemize_scalar_store_value(val)
+    }
+
+    /// True when a name is exempt from scalar-store itemization: the topic, a
+    /// `&`-sigiled Callable binding, and the internal `__mutsu*` keys. Purely a
+    /// property of the name, so a caller binding the same name repeatedly (a
+    /// routine parameter, on every call) can settle it once -- see
+    /// `CompiledFunction::param_itemize_on_bind`.
+    #[inline]
+    pub(crate) fn name_is_itemize_exempt(name: &str) -> bool {
+        name == "_" || name.starts_with('&') || name.starts_with("__mutsu")
+    }
+
+    /// The value half of [`Self::itemize_scalar_store`], for a caller that has
+    /// already settled the name half.
+    pub(crate) fn itemize_scalar_store_value(val: Value) -> Value {
         match val.view() {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.itemize())
@@ -1005,7 +1021,7 @@ impl Interpreter {
             // A `but`-mixed container keeps the itemization the `$` confers —
             // see the Mixin arm of `itemize_value`.
             ValueView::Mixin(inner, overrides) => Value::mixin_parts(
-                std::sync::Arc::new(Self::itemize_scalar_store(name, (**inner).clone())),
+                std::sync::Arc::new(Self::itemize_scalar_store_value((**inner).clone())),
                 overrides.clone(),
             ),
             _ => val,

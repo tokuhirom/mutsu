@@ -574,6 +574,7 @@ impl Compiler {
             declared_locals: None,
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),
+            param_itemize_on_bind: Vec::new(),
             return_fast_type: None,
             // The declaring package, matching the package component of this
             // function's `compiled_fns` key (built from `key_package` above).
