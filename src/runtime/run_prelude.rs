@@ -379,6 +379,58 @@ impl Interpreter {
         let mut declarations = Vec::new();
         Self::collect_inline_package_subs(stmts, "GLOBAL", &mut declarations);
 
+        // Protos first: a candidate's `our`-scope check reads `proto_subs`.
+        for (package, stmt) in &declarations {
+            let Stmt::ProtoDecl {
+                name,
+                params,
+                param_defs,
+                return_type,
+                body,
+                is_method,
+                is_our,
+                ..
+            } = stmt
+            else {
+                continue;
+            };
+            // A `proto method` is a METHOD-level proto (the class method table
+            // owns it), never a package proto sub -- same exclusion the
+            // `RegisterProtoSub` opcode makes.
+            if *is_method {
+                continue;
+            }
+            let name_str = name.resolve();
+            let saved_package = self.current_package();
+            self.set_current_package(package.clone());
+            let result = self.register_proto_decl(
+                &name_str,
+                params,
+                param_defs,
+                return_type.as_ref(),
+                body,
+                *is_our,
+                None,
+                false,
+            );
+            // Tell the in-sequence `RegisterProtoSub` that this key's proto is
+            // its OWN prepass registration and not a redeclaration -- the same
+            // protocol `__mutsu_inline_package_sub_preregistered` already uses
+            // for the candidates. Only set when the prepass actually installed
+            // one, so a genuine duplicate `our proto` in the body still errors.
+            if result.is_ok() {
+                self.env.insert(
+                    format!("__mutsu_inline_package_proto_preregistered::{package}::{name_str}"),
+                    Value::TRUE,
+                );
+            }
+            self.set_current_package(saved_package);
+            // A declaration-only prepass must not turn a body-level problem
+            // into a hard failure: leave any error to the in-sequence
+            // registration, which has the real compiled routine.
+            drop(result);
+        }
+
         for (package, stmt) in declarations {
             let Stmt::SubDecl {
                 name,
@@ -399,7 +451,8 @@ impl Interpreter {
                 ..
             } = stmt
             else {
-                unreachable!("package routine collector returned a non-sub declaration");
+                // A `ProtoDecl` from the same collector; handled in the pass above.
+                continue;
             };
 
             // Declaration-only registration cannot safely apply a user trait:
@@ -565,7 +618,17 @@ impl Interpreter {
     fn collect_package_body_subs(body: &[Stmt], package: &str, out: &mut Vec<(String, Stmt)>) {
         for stmt in body {
             match stmt {
-                Stmt::SubDecl { .. } => out.push((package.to_string(), stmt.clone())),
+                // `ProtoDecl` rides along with the candidates: a package body's
+                // `our proto` has to be published by this prepass too, or the
+                // `our multi` candidates it collects below are rejected with
+                // "Cannot declare individual multi candidates in 'our' scope" --
+                // that check looks the proto up in `proto_subs`, and the package
+                // body (where the in-sequence `RegisterProtoSub` lives) has not
+                // run yet. `preregister_inline_package_subs` registers every
+                // collected proto BEFORE any candidate for exactly that reason.
+                Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. } => {
+                    out.push((package.to_string(), stmt.clone()))
+                }
                 Stmt::SyntheticBlock(inner) => Self::collect_package_body_subs(inner, package, out),
                 Stmt::Package { .. } => {
                     Self::collect_inline_package_subs(std::slice::from_ref(stmt), package, out)
