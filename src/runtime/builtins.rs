@@ -607,6 +607,7 @@ impl Interpreter {
             "__mutsu_multidim_subscript_adverb" => self.builtin_multidim_subscript_adverb(&args),
             "__mutsu_multidim_exists_adverb" => self.builtin_multidim_exists_adverb(&args),
             "__mutsu_multidim_delete" => self.builtin_multidim_delete(&mut args),
+            "__mutsu_multidim_delete_assoc" => self.builtin_multidim_delete_assoc(),
             "__mutsu_multidim_dynamic_adverb" => self.builtin_multidim_dynamic_adverb(&mut args),
             "__mutsu_multidim_subscript_adverb_dyn" => {
                 self.builtin_multidim_subscript_adverb_dyn(&mut args)

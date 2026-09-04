@@ -24,33 +24,132 @@ where
         index: Box::new(tmp_idx_expr.clone()),
         is_positional: false,
     };
-    let assigned_value = build_assigned_value(lhs_expr);
-    Expr::DoBlock {
-        body: vec![
-            Stmt::VarDecl {
-                name: tmp_idx.clone(),
-                expr: index,
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            },
-            // Preserve the subscript's positional/associative kind so an
-            // autovivified intermediate is a Hash for `%h<a><b> += 1`
-            // (associative) and an Array for `@a[0][1] += 1` (positional) —
-            // a hardcoded `true` here wrongly made `%h<a><b> += 1` an Array.
-            Stmt::Expr(Expr::IndexAssign {
-                target: Box::new(target),
-                index: Box::new(tmp_idx_expr.clone()),
-                value: Box::new(assigned_value),
-                is_positional,
-            }),
-        ],
-        label: None,
+    let mut body = vec![Stmt::VarDecl {
+        name: tmp_idx.clone(),
+        expr: index,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    }];
+    // Preserve the subscript's positional/associative kind so an autovivified
+    // intermediate is a Hash for `%h<a><b> += 1` (associative) and an Array for
+    // `@a[0][1] += 1` (positional) — a hardcoded `true` here wrongly made
+    // `%h<a><b> += 1` an Array.
+    let store = move |value: Expr| Expr::IndexAssign {
+        target: Box::new(target),
+        index: Box::new(tmp_idx_expr),
+        value: Box::new(value),
+        is_positional,
+    };
+    body.push(Stmt::Expr(store(build_assigned_value(lhs_expr))));
+    Expr::DoBlock { body, label: None }
+}
+
+/// [`compound_index_assign_expr`] for a plain compound-assignment operator,
+/// which additionally knows how to SHORT CIRCUIT (see
+/// [`short_circuit_subscript_assign`]).
+fn compound_index_assign_op_expr(
+    target: Expr,
+    index: Expr,
+    is_positional: bool,
+    op: CompoundAssignOp,
+    rhs: Expr,
+) -> Expr {
+    let Some(keep) = short_circuit_keep(op) else {
+        return compound_index_assign_expr(target, index, is_positional, |lhs| {
+            compound_assigned_value_expr(lhs, op, rhs)
+        });
+    };
+    let tmp_idx = format!(
+        "__mutsu_idx_{}",
+        TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+    let mut body = vec![Stmt::VarDecl {
+        name: tmp_idx.clone(),
+        expr: index,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    }];
+    let lhs_expr = Expr::Index {
+        target: Box::new(target.clone()),
+        index: Box::new(tmp_idx_expr.clone()),
+        is_positional: false,
+    };
+    let store = move |value: Expr| Expr::IndexAssign {
+        target: Box::new(target),
+        index: Box::new(tmp_idx_expr),
+        value: Box::new(value),
+        is_positional,
+    };
+    let tail = short_circuit_subscript_assign(keep, lhs_expr, rhs, &mut body, store);
+    body.push(Stmt::Expr(tail));
+    Expr::DoBlock { body, label: None }
+}
+
+/// The subscript twin of [`short_circuit_compound_assign_expr`]: `//=`/`||=`/
+/// `&&=` must NOT store when the current value is kept, and for a subscript
+/// that is observable — the flat `LHS = (LHS // v)` desugar wrote the value
+/// back and so AUTOVIVIFIED a path rakudo leaves untouched:
+///
+/// ```raku
+/// my %h is default(9); %h<a> //= 7;   # rakudo {}, mutsu used to give {:a(9)}
+/// my %h;               %h{1;2} //= 7; # rakudo {}, mutsu used to give
+///                                     #   {"1" => ${"2" => Any}}
+/// ```
+///
+/// The multi-dim associative case is the sharpest: under 6.d `%h{1;2}` is a
+/// MULTISLICE, so the lvalue is a one-element `List` — always defined and
+/// always true — and `//=`/`||=` can therefore never store. Only the store was
+/// wrong; the read already produced the wrapper.
+///
+/// Pushes the LHS temp declaration onto `body` and returns the ternary.
+fn short_circuit_subscript_assign(
+    keep: ShortCircuitKeep,
+    lhs_expr: Expr,
+    rhs: Expr,
+    body: &mut Vec<Stmt>,
+    store: impl FnOnce(Expr) -> Expr,
+) -> Expr {
+    let tmp_lhs = format!(
+        "__mutsu_compound_lhs_{}",
+        TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    body.push(Stmt::VarDecl {
+        name: tmp_lhs.clone(),
+        expr: lhs_expr,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    });
+    let (test, true_means_keep) = short_circuit_test(keep, Expr::Var(tmp_lhs.clone()));
+    let kept = Expr::Var(tmp_lhs);
+    let stored = store(rhs);
+    let (then_expr, else_expr) = if true_means_keep {
+        (kept, stored)
+    } else {
+        (stored, kept)
+    };
+    Expr::Ternary {
+        cond: Box::new(test),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
     }
 }
 
@@ -124,11 +223,12 @@ pub(crate) fn build_compound_assign_expr(
             index,
             is_positional,
         } => {
-            return Ok(compound_index_assign_expr(
+            return Ok(compound_index_assign_op_expr(
                 *target,
                 *index,
                 is_positional,
-                |lhs_expr| compound_assigned_value_expr(lhs_expr, op, rhs),
+                op,
+                rhs,
             ));
         }
         // `@a[$x;$y] op= rhs` — the multi-dimensional twin of the `Expr::Index`
@@ -171,13 +271,23 @@ pub(crate) fn build_compound_assign_expr(
                 dimensions: tmp_dims.clone(),
                 is_positional,
             };
-            let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
-            body.push(Stmt::Expr(Expr::MultiDimIndexAssign {
+            let store = move |value: Expr| Expr::MultiDimIndexAssign {
                 target,
                 dimensions: tmp_dims,
-                value: Box::new(assigned_value),
+                value: Box::new(value),
                 is_positional,
-            }));
+            };
+            let tail = match short_circuit_keep(op) {
+                None => store(compound_assigned_value_expr(read_back, op, rhs)),
+                // See `short_circuit_subscript_assign`: an associative
+                // multi-dim lvalue is a MULTISLICE (a one-element `List`), so
+                // it is always defined and always true and `//=`/`||=` can
+                // never store -- and must not autovivify the path either.
+                Some(keep) => {
+                    short_circuit_subscript_assign(keep, read_back, rhs, &mut body, store)
+                }
+            };
+            body.push(Stmt::Expr(tail));
             Expr::DoBlock { body, label: None }
         }
         Expr::MethodCall {
