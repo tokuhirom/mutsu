@@ -517,6 +517,28 @@ impl Interpreter {
         result
     }
 
+    /// A method that reports the RECEIVER'S OWN TYPE IDENTITY, and so must never
+    /// be delegated to a builtin subclass's backing storage.
+    ///
+    /// The `is Array`/`is List` delegation hands every non-user method to the
+    /// instance's `__mutsu_array_storage`, which is a plain `Array`. That is
+    /// right for the Positional protocol and for rendering (raku: `R.new(1,2).raku`
+    /// really is `[1, 2]`, and `.Str` really is `1 2`), but wrong for anything
+    /// that answers *what the receiver is*: `R.new.^name` must be `R`, not
+    /// `Array`, and `.WHAT`/`.WHICH`/`.isa(R)`/`.does(R)`/`.^parents` all
+    /// followed it into the storage. The Associative twin never had the problem
+    /// because it delegates through a curated allowlist
+    /// (`is_hash_storage_method`), which simply omits these; this is the same
+    /// rule stated as an exclusion, since the Array side deliberately delegates
+    /// by default.
+    ///
+    /// Every `^`-prefixed name is a `HOW` meta-method (`^name`, `^mro`,
+    /// `^parents`, `^methods`, `^attributes`, ...) and therefore describes the
+    /// type by construction.
+    pub(super) fn is_type_identity_method(method: &str) -> bool {
+        method.starts_with('^') || matches!(method, "WHAT" | "WHICH" | "isa" | "does")
+    }
+
     fn exec_call_method_op_impl(
         &mut self,
         code: &CompiledCode,
@@ -1699,6 +1721,7 @@ impl Interpreter {
                 {
                     let cn = class_name.resolve();
                     if !self.has_user_method(&cn, method)
+                        && !Self::is_type_identity_method(method)
                         && attributes.contains_key("__mutsu_array_storage")
                         && self
                             .mro_readonly(&cn)
