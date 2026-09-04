@@ -3080,6 +3080,24 @@ impl Interpreter {
             }
         }
 
+        // The array twin of the check above. `my Int @a; @a[0][1] = 5` must die
+        // for the same reason -- descending a second subscript through an
+        // element that does not exist autovivifies an Array/Hash *into* that
+        // element, and a typed container refuses it. mutsu silently accepted it
+        // and left `[[(Int) 5]]` where raku throws "Type check failed for an
+        // element of @a[0]; expected Int but got Array ([])".
+        //
+        // Unlike the hash check above, this one reads the constraint off the
+        // CONTAINER (`ArrayData::value_type`) rather than off the variable's
+        // declaration, so it fires for any root that reaches this op -- a `my`
+        // array, a `:=`-bound alias, or the shared array an attribute accessor
+        // hands back.
+        if let Some(err) =
+            self.typed_array_element_autoviv_error(&var_name, &inner_key, outer_positional)
+        {
+            return Err(err);
+        }
+
         // Autovivify the root. A declared-but-undefined scalar (`my $x;` holds
         // the `Any` type object) needs this just as much as a wholly absent
         // variable does: raku vivifies a *chained* subscript write through an
@@ -3451,6 +3469,56 @@ impl Interpreter {
     /// Stack order: [value, idx_outermost, ..., idx_innermost] (innermost on top).
     /// positional_flags_idx is a constant index holding an array of booleans
     /// (innermost to outermost) indicating whether each subscript is positional.
+    /// The `X::TypeCheck::Assignment` a nested subscript store must raise when
+    /// descending through a *missing* element of a **typed** array would
+    /// autovivify an Array/Hash there (`my Int @a; @a[0][1] = 5`).
+    ///
+    /// The constraint is read from the container's own `value_type`, not from
+    /// the variable's declaration, so the check is root-agnostic. Returns
+    /// `None` -- the overwhelmingly common case -- when the root is not a typed
+    /// array, when the element already holds a container (nothing is
+    /// autovivified), or when the constraint accepts the intermediate.
+    fn typed_array_element_autoviv_error(
+        &mut self,
+        var_name: &str,
+        inner_key: &str,
+        outer_positional: bool,
+    ) -> Option<RuntimeError> {
+        let inner_i = inner_key.parse::<usize>().ok()?;
+        let root = self.env().get(var_name)?.deref_container();
+        let ValueView::Array(arr, _) = root.view() else {
+            return None;
+        };
+        let ty = arr.value_type.clone()?;
+        if matches!(ty.as_str(), "Any" | "Mu") {
+            return None;
+        }
+        // An element that is already a container is descended into, not
+        // autovivified, so no intermediate is stored and nothing is checked.
+        if let Some(existing) = arr.items().get(inner_i)
+            && matches!(
+                existing.view(),
+                ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
+            )
+        {
+            return None;
+        }
+        drop(root);
+        let probe = if outer_positional {
+            Value::real_array(Vec::new())
+        } else {
+            Value::hash(std::collections::HashMap::new())
+        };
+        if loan_env!(self, type_matches_value(&ty, &probe)) {
+            return None;
+        }
+        Some(crate::runtime::utils::type_check_element_typed_error(
+            &format!("{var_name}[{inner_i}]"),
+            &ty,
+            &probe,
+        ))
+    }
+
     pub(super) fn exec_index_assign_deep_nested_op(
         &mut self,
         code: &CompiledCode,

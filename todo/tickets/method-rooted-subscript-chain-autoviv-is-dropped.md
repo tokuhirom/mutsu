@@ -55,3 +55,95 @@ patch.
 - `src/runtime/builtins.rs` (dispatch) and
   `src/runtime/builtins_multidim_assign.rs` --
   `__mutsu_index_assign_method_lvalue_nested`'s implementation.
+
+## Re-investigated 2026-09-04 (second pass): what is actually measured
+
+Re-run on `main` (`cc5a39584`) against `raku` v2026.06. The repro stands, and
+the surface is **wider** than this file said. Four findings change the plan.
+
+### 1. The loss is not multi-dim-specific and not two-level-specific
+
+```raku
+class A { has @.a; }
+my $o = A.new;
+$o.a[0]<x>   = 5;   # raku [{x => 5}]           mutsu []
+$o.a[0][1]   = 5;   # raku [[(Any) 5]]          mutsu []
+$o.a[0]<x><y>= 5;   # raku [{x => {y => 5}}]    mutsu []
+class B { has %.h; }
+B.new.h<a><b> = 5;  # raku {a => {b => 5}}      mutsu {}
+```
+
+A single-level `$o.a[0] = 5` works. So the rule is: **a method-rooted chain of
+depth >= 2 that must autovivify loses the whole write.**
+
+### 2. Deleting the compiler arm does not help
+
+Disabling the `Expr::Index { target: MethodCall }` arm (so the chain falls
+through to the generic path) leaves all four shapes still answering `[]`/`{}`.
+The generic fallback is not container-aware for a method root either, so this is
+not a matter of removing a wrong special case.
+
+### 3. The mechanism that *does* work is already there — via a name
+
+```raku
+class A { has @.a; }
+my $o = A.new;
+my $t := $o.a;
+$t[0]<x> = 5;   say $o.a;   # [{x => 5}]  -- correct, and it reaches the attribute
+$t[0][1] = 5;               # correct
+```
+
+The accessor already hands back the attribute's **shared** container (that is
+why `$o.a.push(1)` works), and the variable-rooted chain walk autovivifies into
+it in place and the mutation reaches the attribute. So the fix is a *routing*
+problem: evaluate the accessor once, give the result a name (a synthetic
+lexical), and run the ordinary variable-rooted chain against it. No new chain
+walker is needed.
+
+### 4. The blocker for that routing is the typed check — and the builtin's own
+### typed check is what the variable-rooted path is missing
+
+The builtin exists to reject `class A { has Int @.a }; $o.a[0]<x> = 5`. The
+variable-rooted path did not perform that check at all (`my Int @a; @a[0][1] = 5`
+silently produced `[[(Int) 5]]`), so routing the method root through it would
+have traded a Tier S data loss for a permissive divergence.
+
+**That half is now fixed** and is the prerequisite slice:
+`news/2026-09/typed-array-nested-autoviv-type-check.md` — the check is read off
+the container's own `ArrayData::value_type`, not off the variable's declaration,
+so it is root-agnostic and fires for a `my` array, a `:=`-bound alias, or an
+accessor's shared array alike. (The hash-rooted twin, `my Int %h; %h<a><b> = 5`,
+already threw.)
+
+### 5. The builtin's `Instance` branch does not work either
+
+The `AT-POS`/`AT-KEY` branch this file's "why it is not a one-liner" section
+treats as load-bearing is broken in both directions today:
+
+```raku
+class Q { has %.d is rw; method AT-KEY($k) is rw { %!d{$k} } }
+class U { has Q $.query = Q.new(d => {foo => [1,2]}) }
+my $u = U.new;
+$u.query<foo>[0] = 99;              # raku {foo => [99 2]}
+                                    # mutsu: bogus "Type check failed for an element
+                                    #        of @query (no autovivification in typed
+                                    #        container); expected Q but got Hash"
+my $t := $u.query; $t<foo>[0] = 99; # raku {foo => [99 2]}   mutsu: silently dropped
+```
+
+The branch runs, finds no `Proxy` element, falls through, and the typed check
+below it then fires on `target` (the `U` instance) whose `.query` attribute is
+typed `Q` — producing a type error for a shape that has no type problem. So
+preserving that branch is not a constraint on the redesign; it is a third bug.
+
+### Remaining plan
+
+- **Slice A (done)** — container-based typed-element autoviv check on the
+  variable-rooted chain.
+- **Slice B** — desugar a method-call-rooted lvalue subscript chain to
+  "bind the accessor result to a synthetic lexical, then run the variable-rooted
+  chain", and delete the plain-container half of
+  `__mutsu_index_assign_method_lvalue_nested`. This is what closes the Tier S
+  data loss.
+- **Slice C** — an `Instance` root with `AT-POS`/`AT-KEY` in an lvalue chain
+  (finding 5). Broken both ways today, independent of B.
