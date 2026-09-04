@@ -239,11 +239,29 @@ impl Interpreter {
                 // during body processing (e.g., class-scoped subs).
                 // Only count functions that are actual subs (not methods, which are
                 // registered via MethodDecl and stored in the class methods table).
+                //
+                // A `multi sub` does NOT register under the bare `Pkg::name`
+                // key: `insert_multi_overload` keys its candidates
+                // `Pkg::name/arity:types` (plus `__mN` for same-signature
+                // siblings). Probing only the exact key therefore missed every
+                // class-body `proto`+`multi` family, `has_class_scoped_subs`
+                // stayed false, and method dispatch left `current_package` at
+                // GLOBAL -- so `bare_name_packages()` inside a method never
+                // reached the class and the family was unreachable from the
+                // class's own methods ("Unknown function"). Accept the multi
+                // key shape as well.
                 if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
                     let fq = format!("{}::{}", cx.name, sub_name);
-                    if self.registry().functions.contains_key(&Symbol::intern(&fq))
-                        && !saved_functions_keys.contains(&fq)
-                    {
+                    let multi_prefix = format!("{fq}/");
+                    let registered = {
+                        let registry = self.registry();
+                        registry.functions.keys().any(|k| {
+                            let ks = k.resolve();
+                            (ks == fq || ks.starts_with(&multi_prefix))
+                                && !saved_functions_keys.contains(&ks)
+                        })
+                    };
+                    if registered {
                         self.registry_mut()
                             .class_subs
                             .entry(cx.name.to_string())
