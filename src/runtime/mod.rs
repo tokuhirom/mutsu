@@ -2966,6 +2966,17 @@ pub struct Interpreter {
     /// whose result is wanted as a container (`:=` bind RHS / `.VAR` chain).
     /// Consumed and unconditionally cleared at CallMethod entry.
     pub(crate) accessor_ref_pending: bool,
+    /// `(sigilless name, the bind source denotes a container)`, recorded by
+    /// `OpCode::MarkSigillessBindSource` with the source still on the stack and
+    /// consumed by `OpCode::MarkSigillessBind` just after the declaration's
+    /// store. The two ops bracket the store because neither side alone can
+    /// answer the question: the marker has to be written AFTER the store (a
+    /// declaration clears the name's inherited readonly flag), but the store
+    /// destroys the evidence — a slot can hold a `ContainerRef` for reasons
+    /// unrelated to this bind (see `OpCode::MarkSigillessBind`). Carries the
+    /// name so a store that re-enters user code (a tied container's `STORE`)
+    /// cannot make one declaration consume another's verdict.
+    pub(crate) sigilless_bind_source: Option<(Symbol, bool)>,
     pub(crate) constant_context: Box<Cell<bool>>,
     /// Slice 2a (`docs/scalar-array-sharing.md`): set by `MarkArrayShareContext`
     /// just before a `SetLocal` for `$scalar = @arr` / `$scalar = %hash`. Tells

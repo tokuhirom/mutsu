@@ -5362,33 +5362,81 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::MarkSigillessBindSource(name_idx) => {
+                // The bind SOURCE, still on the stack: this op is emitted
+                // immediately before the declaration's own store, so the value
+                // about to be bound is the top of the stack.
+                //
+                // Only a real container can be written through. A `VarRef`
+                // (the wrapper `WrapVarRef` puts on a source variable), a
+                // `ContainerRef` cell (an element or an already-shared cell), a
+                // whole `Array`/`Hash` and a `Proxy` all are; everything else —
+                // an `Int`, a `Str`, an instance, a type object — IS the value,
+                // and rakudo refuses an assignment through the name.
+                let writable = self.stack.last().is_some_and(|bound| {
+                    let source = match bound.as_varref() {
+                        // A `WrapVarRef` over one of the compiler's synthetic
+                        // bind temps (`__mutsu_bind_index_ref_N`) denotes
+                        // nothing of its own — it is a wrapper the index
+                        // compile puts around the element reference it just
+                        // produced, so that reference is the oracle. An
+                        // immutable `List` element arrives there as a plain
+                        // value (`my (\a) := (5,)`), a real array/hash element
+                        // as a promoted cell.
+                        Some((name, inner, _)) if name.with_str(|s| s.starts_with("__mutsu_")) => {
+                            inner
+                        }
+                        // Over a real variable name it denotes that variable's
+                        // container.
+                        Some(_) => return true,
+                        None => bound,
+                    };
+                    source.is_container_ref()
+                        || matches!(
+                            source.view(),
+                            ValueView::Array(..) | ValueView::Hash(..) | ValueView::Proxy { .. }
+                        )
+                });
+                self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
+                *ip += 1;
+            }
             OpCode::MarkSigillessBind(name_idx) => {
-                let name = Self::const_str(code, *name_idx).to_string();
-                // Read the RAW binding (not a dereferenced value): the local
-                // slot first, since a sigilless term normally owns one, and the
-                // env otherwise (a captured or by-name binding).
-                let bound = code
-                    .locals
-                    .iter()
-                    .rposition(|n| n == &name)
-                    .and_then(|idx| self.locals.get(idx).cloned())
-                    .or_else(|| self.env().get(&name).cloned())
-                    .unwrap_or(Value::NIL);
-                // Only a real container can be written through. A `ContainerRef`
-                // cell (a `:=` alias, an array/hash element), a whole
-                // `Array`/`Hash` and a `Proxy` all are; everything else — an
-                // `Int`, a `Str`, an instance, a type object — IS the value, and
-                // rakudo refuses an assignment through the name.
-                let writable = matches!(
-                    bound.view(),
-                    ValueView::ContainerRef(_)
-                        | ValueView::Array(..)
-                        | ValueView::Hash(..)
-                        | ValueView::Proxy { .. }
-                );
+                let name_sym = code.const_sym(*name_idx);
+                // The verdict `MarkSigillessBindSource` took from the bind
+                // source, if this declaration emitted one.
+                let recorded = match self.sigilless_bind_source.take() {
+                    Some((sym, writable)) if sym == name_sym => Some(writable),
+                    // A store that re-entered user code left someone else's
+                    // verdict here; it is gone now and this one has none.
+                    _ => None,
+                };
+                let writable = recorded.unwrap_or_else(|| {
+                    // Fallback for a `MarkSigillessBind` with no paired source
+                    // op: read the RAW binding (not a dereferenced value) — the
+                    // local slot first, since a sigilless term normally owns
+                    // one, and the env otherwise (a captured or by-name
+                    // binding).
+                    let name = name_sym.resolve();
+                    let bound = code
+                        .locals
+                        .iter()
+                        .rposition(|n| n == &name)
+                        .and_then(|idx| self.locals.get(idx).cloned())
+                        .or_else(|| self.env().get(&name).cloned())
+                        .unwrap_or(Value::NIL);
+                    matches!(
+                        bound.view(),
+                        ValueView::ContainerRef(_)
+                            | ValueView::Array(..)
+                            | ValueView::Hash(..)
+                            | ValueView::Proxy { .. }
+                    )
+                });
                 if !writable {
-                    self.env_mut()
-                        .insert(crate::runtime::sigilless_readonly_key(&name), Value::TRUE);
+                    self.env_mut().insert(
+                        crate::runtime::sigilless_readonly_key(&name_sym.resolve()),
+                        Value::TRUE,
+                    );
                 }
                 *ip += 1;
             }

@@ -883,6 +883,7 @@ impl Interpreter {
             bound_decont_active: Box::new(std::cell::Cell::new(false)),
             rebind_context: Box::new(std::cell::Cell::new(false)),
             accessor_ref_pending: false,
+            sigilless_bind_source: None,
             constant_context: Box::new(std::cell::Cell::new(false)),
             array_share_context: Box::new(std::cell::Cell::new(false)),
             array_share_source: Box::new(std::cell::Cell::new(None)),
