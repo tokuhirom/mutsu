@@ -949,6 +949,34 @@ impl Compiler {
                 ndims: dimensions.len() as u32,
                 is_positional,
             });
+        } else if let Some((name, chain)) = Self::index_chain_target(target) {
+            // `%o<inner>{1;2} = 5`: the target is a subscript chain rooted at a
+            // named variable. `MultiDimIndexAssignGeneric` would pop the chain's
+            // *value* and mutate that detached copy, so an autovivified level
+            // (the common case -- the chain names a slot that does not exist
+            // yet) was silently dropped. Carry the root name and the chain
+            // instead, so the VM walks the real container.
+            let flags: Vec<Value> = chain.iter().map(|(_, p)| Value::truth(*p)).collect();
+            let prefix_flags_idx = self.code.add_constant(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(flags)),
+                crate::value::ArrayKind::Array,
+            ));
+            // Stack: [value, prefix_innermost, ..., prefix_outermost, dim0, ...]
+            self.compile_expr(value);
+            for (idx_expr, _) in &chain {
+                self.compile_expr(idx_expr);
+            }
+            for dim in dimensions {
+                self.compile_expr(dim);
+            }
+            let name_idx = self.code.add_constant(Value::str(name));
+            self.code.emit(OpCode::MultiDimIndexAssignNested {
+                name_idx,
+                prefix_depth: chain.len() as u32,
+                prefix_flags_idx,
+                ndims: dimensions.len() as u32,
+                is_positional,
+            });
         } else {
             // Fallback: compile target, dims, value, use generic handler
             self.compile_expr(target);

@@ -1520,6 +1520,23 @@ pub(crate) enum OpCode {
         ndims: u32,
         is_positional: bool,
     },
+    /// Multi-dimensional index assignment whose target is a subscript CHAIN
+    /// rooted at a named variable: `%o<inner>{1;2} = 5`, `@a[0]{1;2} = 5`.
+    /// Stack: [value, prefix0, ..., prefixP-1, dim0, ..., dimN-1]
+    ///
+    /// The chain prefix is walked (autovivifying each missing level with the
+    /// bracket kind of the subscript that follows it) against the *resolved*
+    /// root variable, so the assignment lands in the real container instead of
+    /// the detached value `MultiDimIndexAssignGeneric` would have popped.
+    /// `prefix_flags_idx` names a constant Array of Bool: the `is_positional`
+    /// flag of each prefix subscript, innermost first.
+    MultiDimIndexAssignNested {
+        name_idx: u32,
+        prefix_depth: u32,
+        prefix_flags_idx: u32,
+        ndims: u32,
+        is_positional: bool,
+    },
     /// Multi-dimensional index assignment (generic target)
     /// Stack: [target, dim0, ..., dimN, value]
     MultiDimIndexAssignGeneric {
@@ -4690,6 +4707,7 @@ impl CompiledCode {
                 | OpCode::TopicDotAssign(idx)
                 | OpCode::IndexAssignExprNested { name_idx: idx, .. }
                 | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
                 | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
                 OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
                 _ => None,
@@ -5343,6 +5361,7 @@ impl CompiledCode {
                 | OpCode::TopicDotAssign(idx)
                 | OpCode::IndexAssignExprNested { name_idx: idx, .. }
                 | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+                | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
                 | OpCode::MultiDimIndexAssign { name_idx: idx, .. } => Some(*idx),
                 OpCode::AtomicCompoundVar { name_idx, .. } => Some(*name_idx),
                 _ => None,
@@ -5694,6 +5713,7 @@ impl CompiledCode {
             | OpCode::IndexAssignExprNamed { name_idx: idx, .. }
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+            | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
             | OpCode::IndexElemAutoviv { name_idx: idx, .. } => Some(*idx),
             _ => None,
         }
@@ -5770,6 +5790,7 @@ impl CompiledCode {
             OpCode::IndexAssignExprNamed { name_idx: idx, .. }
             | OpCode::IndexAssignExprNested { name_idx: idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
+            | OpCode::MultiDimIndexAssignNested { name_idx: idx, .. }
             | OpCode::IndexElemAutoviv { name_idx: idx, .. }
                 if matches!(self.constants.get(*idx as usize).map(Value::view), Some(ValueView::Str(name)) if name.starts_with('$')) =>
             {
@@ -5799,6 +5820,7 @@ impl CompiledCode {
             OpCode::IndexAssignExprNamed { name_idx, .. }
             | OpCode::IndexAssignExprNested { name_idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx, .. }
+            | OpCode::MultiDimIndexAssignNested { name_idx, .. }
             | OpCode::IndexElemAutoviv { name_idx, .. } => Some(*name_idx),
             // Element increment/decrement (`@a[$i]++`, `%h{$k}--`) and element
             // delete (`@a[$i]:delete`, `%h{$k}:delete`) mutate the container in
@@ -6949,6 +6971,7 @@ impl CompiledCode {
                     | OpCode::PreIncrementIndex(..)
                     | OpCode::PreDecrementIndex(..)
                     | OpCode::MultiDimIndexAssign { .. }
+                    | OpCode::MultiDimIndexAssignNested { .. }
                     | OpCode::MultiDimIndexAssignGeneric { .. }
                     | OpCode::CallFunc { .. }
                     | OpCode::CallFuncNamed { .. }

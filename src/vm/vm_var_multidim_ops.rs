@@ -924,91 +924,318 @@ impl Interpreter {
                 .get(&var_name)
                 .is_some_and(crate::runtime::utils::is_shaped_array);
 
-        // Capture container type metadata before mutation (Arc pointer may change)
+        let assign_value = value.clone();
+        self.mutate_named_container(code, &var_name, !is_shaped, move |slf, container| {
+            if is_shaped {
+                // For shaped arrays, use bounds-checked assignment
+                Self::assign_array_multidim(container, &resolved_dims, assign_value)
+            } else {
+                slf.multi_dim_assign(container, &dims, assign_value, is_positional)
+            }
+        })?;
+
+        self.stack.push(value);
+        Ok(())
+    }
+
+    /// Mutate the container held by `var_name` in place, then write the result
+    /// back to every store that holds it.
+    ///
+    /// The mutation runs against an owned copy rather than a `&mut` into env,
+    /// because the assignment needs `&mut self` (WhateverCode dimensions call
+    /// back into the interpreter).
+    ///
+    /// When the variable is bound to a shared container cell — e.g. it was
+    /// assigned by a sub/closure that captured the outer variable, leaving a
+    /// `ContainerRef` in both env and locals — the write goes THROUGH the cell,
+    /// so it is visible to every holder; mutating the env snapshot would only
+    /// touch a copy and silently drop the write.
+    ///
+    /// `itemize_undef_root`: a container this assignment had to autovivify into
+    /// a `$` scalar is held by a Scalar container, so it itemizes — the same
+    /// rule the single-subscript autoviv applies (`fresh_autoviv_container`).
+    /// A sigil already constrains `@x` / `%h`, which never itemize.
+    pub(super) fn mutate_named_container(
+        &mut self,
+        code: &CompiledCode,
+        var_name: &str,
+        itemize_undef_root: bool,
+        f: impl FnOnce(&mut Self, &mut Value) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let old_type_info = self
             .env()
-            .get(&var_name)
+            .get(var_name)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v));
 
-        // If the variable is bound to a shared container cell — e.g. it was
-        // assigned by a sub/closure that captured the outer variable, leaving a
-        // `ContainerRef` in both env and locals — mutate THROUGH the cell. The
-        // cell is shared, so the write is visible everywhere; mutating the env
-        // snapshot (the path below) would only touch a copy and silently drop the
-        // write. This mirrors the simple-index assignment's ContainerRef handling.
-        let container_cell = match self.env().get(&var_name).map(Value::view) {
+        let container_cell = match self.env().get(var_name).map(Value::view) {
             Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
             _ => self
-                .locals_get_by_name(code, &var_name)
+                .locals_get_by_name(code, var_name)
                 .and_then(|v| match v.view() {
                     ValueView::ContainerRef(cell) => Some(cell.clone()),
                     _ => None,
                 }),
         };
         if let Some(cell) = container_cell {
+            // Move the contents out of the guard so the assignment can borrow
+            // `&mut self` without also holding a borrow tied to `self` through
+            // the cell.
             let mut inner = cell.lock().unwrap();
-            if is_shaped {
-                Self::assign_array_multidim(&mut inner, &resolved_dims, value.clone())?;
-                drop(inner);
-            } else {
-                // Move the contents out of the guard so the assignment can
-                // borrow `&mut self` (WhateverCode resolution needs it) without
-                // also holding a borrow tied to `self` through the cell.
-                let mut contents = std::mem::replace(&mut *inner, Value::NIL);
-                drop(inner);
-                self.multi_dim_assign(&mut contents, &dims, value.clone(), is_positional)?;
-                *cell.lock().unwrap() = contents;
+            let mut contents = std::mem::replace(&mut *inner, Value::NIL);
+            drop(inner);
+            let r = f(self, &mut contents);
+            *cell.lock().unwrap() = contents;
+            return r;
+        }
+
+        if self.env().contains_key(var_name) {
+            let mut container = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            let root_was_undef = itemize_undef_root
+                && matches!(container.view(), ValueView::Nil | ValueView::Package(..))
+                && !var_name.starts_with(['@', '%']);
+            f(self, &mut container)?;
+            if root_was_undef {
+                container = container.itemize_for_element_store();
             }
-            self.stack.push(value);
+            self.env_mut().insert(var_name.to_string(), container);
+        } else if let Some(mut container) = self.locals_get_by_name(code, var_name) {
+            // The variable lives only in the locals slot (no env entry yet).
+            // Without this arm the mutation would be dropped on the floor.
+            f(self, &mut container)?;
+            self.update_local_if_exists(code, var_name, &container);
             return Ok(());
         }
 
-        // Mutate a clone of the target variable, then store it back. (Taking a
-        // `&mut` into env would conflict with the `&mut self` the assignment
-        // needs for WhateverCode resolution.)
-        if self.env().contains_key(&var_name) {
-            let mut container = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
-            if is_shaped {
-                // For shaped arrays, use bounds-checked assignment
-                Self::assign_array_multidim(&mut container, &resolved_dims, value.clone())?;
-            } else {
-                // A container autovivified into a `$` scalar is held by a
-                // Scalar container, so it itemizes -- the same rule the
-                // single-subscript autoviv applies (`fresh_autoviv_container`).
-                // A sigil already constrains `@x` / `%h`, which never itemize.
-                let root_was_undef =
-                    matches!(container.view(), ValueView::Nil | ValueView::Package(..))
-                        && !var_name.starts_with(['@', '%']);
-                self.multi_dim_assign(&mut container, &dims, value.clone(), is_positional)?;
-                if root_was_undef {
-                    container = container.itemize_for_element_store();
-                }
-            }
-            self.env_mut().insert(var_name.clone(), container);
-        }
         // Also sync the updated container into the Interpreter locals slot (if any)
         // so that a later locals write-through does not restore the stale
         // pre-assignment copy from locals into env. Without this, shaped
         // array element writes like `@a[i;j] = v` can be silently lost
         // before a closure captures the env (e.g. `start { ... }`).
-        if let Some(updated) = self.env().get(&var_name).cloned() {
-            self.update_local_if_exists(code, &var_name, &updated);
+        if let Some(updated) = self.env().get(var_name).cloned() {
+            self.update_local_if_exists(code, var_name, &updated);
         }
 
         // Re-register container type metadata if Arc pointer changed. Hashes
         // embed metadata in `HashData`, so the re-tagged value must be written
         // back (no-op Arc for array/instance side-table containers).
         if let Some(info) = old_type_info
-            && let Some(updated) = self.env().get(&var_name).cloned()
+            && let Some(updated) = self.env().get(var_name).cloned()
         {
             let tagged = self.tag_container_metadata(updated, info);
-            self.env_mut().insert(var_name.clone(), tagged.clone());
-            self.update_local_if_exists(code, &var_name, &tagged);
+            self.env_mut().insert(var_name.to_string(), tagged.clone());
+            self.update_local_if_exists(code, var_name, &tagged);
         }
+
+        Ok(())
+    }
+
+    /// Multi-dimensional index assignment through a subscript CHAIN rooted at a
+    /// named variable (`%o<inner>{1;2} = 5`).
+    /// Stack: [value, prefix0, ..., prefixP-1, dim0, ..., dimN-1]
+    pub(super) fn exec_multi_dim_index_assign_nested_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        prefix_depth: u32,
+        prefix_flags_idx: u32,
+        ndims: u32,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let mut dims = Vec::with_capacity(ndims as usize);
+        for _ in 0..ndims {
+            dims.push(self.stack.pop().unwrap_or(Value::NIL));
+        }
+        dims.reverse();
+        let dims = Self::expand_pipe_multidim_dims(dims);
+
+        let prefix_depth = prefix_depth as usize;
+        let mut keys = Vec::with_capacity(prefix_depth);
+        for _ in 0..prefix_depth {
+            keys.push(self.stack.pop().unwrap_or(Value::NIL));
+        }
+        keys.reverse();
+        let value = self.stack.pop().unwrap_or(Value::NIL);
+
+        let flags: Vec<bool> = match code
+            .constants
+            .get(prefix_flags_idx as usize)
+            .map(Value::view)
+        {
+            Some(ValueView::Array(items, ..)) => items.iter().map(|v| v.truthy()).collect(),
+            _ => vec![false; prefix_depth],
+        };
+        let prefix: Vec<(Value, bool)> = keys
+            .into_iter()
+            .zip(flags.into_iter().chain(std::iter::repeat(false)))
+            .collect();
+
+        let var_name = Self::const_str(code, name_idx).to_string();
+        let assign_value = value.clone();
+        // A chain never targets a shaped array's dimensions directly, so the
+        // `$`-root itemization rule always applies (as it does for the
+        // un-chained op's non-shaped branch).
+        self.mutate_named_container(code, &var_name, true, move |slf, container| {
+            slf.multi_dim_assign_nested(container, &prefix, &dims, assign_value, is_positional)
+        })?;
 
         self.stack.push(value);
         Ok(())
+    }
+
+    /// Walk the subscript-chain prefix (`<inner>` in `%o<inner>{1;2}`) down to
+    /// the container the dimension group applies to, autovivifying each missing
+    /// level with the bracket kind of the subscript that follows it, then hand
+    /// the dimension group to `multi_dim_assign`.
+    fn multi_dim_assign_nested(
+        &mut self,
+        target: &mut Value,
+        prefix: &[(Value, bool)],
+        dims: &[Value],
+        value: Value,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let Some(((key, level_positional), rest)) = prefix.split_first() else {
+            return self.multi_dim_assign(target, dims, value, is_positional);
+        };
+        // A celled intermediate level — see `multi_dim_assign_slice`.
+        if target.is_container_ref() {
+            return self.assign_through_cell(target, |slf, inner| {
+                slf.multi_dim_assign_nested(inner, prefix, dims, value, is_positional)
+            });
+        }
+        let level_positional = *level_positional;
+        let key = self
+            .resolve_assign_dim(target, key)?
+            .into_iter()
+            .next()
+            .unwrap_or(Value::NIL);
+        if Self::assoc_level(target, level_positional) {
+            Self::ensure_hash(target);
+            self.assign_chain_into_hash_key(
+                target,
+                Value::hash_key_encode(&key),
+                rest,
+                dims,
+                value,
+                is_positional,
+            )?;
+        } else if !matches!(target.view(), ValueView::Hash(..))
+            && let Some(i) = Self::index_to_usize(&key)
+        {
+            let old_len = target.with_array_mut(|items, _| items.len()).unwrap_or(0);
+            Self::ensure_array_size(target, i + 1);
+            let r = target
+                .with_array_mut(|items, _| {
+                    let items = crate::value::gc_data_mut(items);
+                    let r = self.assign_chain_into_slot(
+                        &mut items[i],
+                        rest,
+                        dims,
+                        value,
+                        is_positional,
+                    );
+                    // Mark the slot written, so `ArrayData::hole_at` tells it
+                    // apart from a genuine gap (ADR-0049 §1.6/§4 slice 5).
+                    if r.is_ok() {
+                        items
+                            .initialized
+                            .get_or_insert_with(Default::default)
+                            .insert(i);
+                    }
+                    r
+                })
+                .transpose();
+            // A refused assignment leaves no autovivified debris: rakudo throws
+            // without having touched the container, so undo the growth.
+            if r.is_err() && i >= old_len {
+                target.with_array_mut(|items, _| {
+                    crate::value::gc_data_mut(items).truncate(old_len);
+                });
+            }
+            r?;
+        } else if let ValueView::Str(s) = key.view() {
+            let k = s.as_str().to_string();
+            Self::ensure_hash(target);
+            self.assign_chain_into_hash_key(target, k, rest, dims, value, is_positional)?;
+        } else {
+            return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
+        }
+        Ok(())
+    }
+
+    /// Continue a subscript chain into a Hash entry, autovivifying the key.
+    /// A refused assignment removes a key this walk had to create, so a throw
+    /// leaves the container exactly as rakudo does — untouched.
+    fn assign_chain_into_hash_key(
+        &mut self,
+        target: &mut Value,
+        key: String,
+        rest: &[(Value, bool)],
+        dims: &[Value],
+        value: Value,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let r = target
+            .with_hash_mut(|map| {
+                let map = crate::value::gc_data_mut(map);
+                let existed = map.contains_key(&key);
+                let entry = map
+                    .entry(key.clone())
+                    .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                let r = self.assign_chain_into_slot(entry, rest, dims, value, is_positional);
+                if r.is_err() && !existed {
+                    map.remove(&key);
+                }
+                r
+            })
+            .transpose();
+        r.map(|_| ())
+    }
+
+    /// Continue a subscript chain into the slot it selected. A level this
+    /// assignment had to autovivify lives in a Scalar element slot, so it
+    /// itemizes — the same rule `fresh_autoviv_container` applies to the
+    /// single-subscript chain (`%o<a><b> = 5` renders `{:a(${:b(5)})}`).
+    fn assign_chain_into_slot(
+        &mut self,
+        entry: &mut Value,
+        rest: &[(Value, bool)],
+        dims: &[Value],
+        value: Value,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let was_undef = matches!(entry.view(), ValueView::Nil | ValueView::Package(..));
+        if let Some((_, next_positional)) = rest.first() {
+            if was_undef {
+                // The bracket kind of the NEXT subscript decides what an absent
+                // level autovivifies to: `%o<a><b>` makes a Hash, `%o<a>[0]` an
+                // Array.
+                *entry = Self::fresh_chain_level(*next_positional);
+            }
+            self.multi_dim_assign_nested(entry, rest, dims, value, is_positional)?;
+        } else {
+            // The dimension group runs against the slot as-is: it applies its
+            // own autovivification rules (and, for a positional multi-dim
+            // subscript, refuses to autovivify at all — see `multi_dim_assign`).
+            self.multi_dim_assign(entry, dims, value, is_positional)?;
+        }
+        if was_undef {
+            let v = std::mem::replace(entry, Value::NIL);
+            *entry = v.itemize_for_element_store();
+        }
+        Ok(())
+    }
+
+    /// A freshly autovivified *intermediate* chain level, per the bracket kind
+    /// of the subscript that will index it. Not itemized here — the caller
+    /// itemizes once, after the descent.
+    fn fresh_chain_level(positional: bool) -> Value {
+        if positional {
+            Value::real_array(Vec::new())
+        } else {
+            Value::hash(std::collections::HashMap::new())
+        }
     }
 
     /// Multi-dimensional index assignment with generic (expression) target.
@@ -1117,6 +1344,18 @@ impl Interpreter {
         value: Value,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // A POSITIONAL multi-dim subscript does not autovivify its invocant:
+        // `ASSIGN-POS` has no candidate taking more than one index on an
+        // undefined invocant, so `my $x; $x[0;1] = 5` and `%o<i>[0;1] = 5`
+        // (with `%o<i>` absent) throw `X::Multi::NoMatch`. The associative
+        // spelling does autovivify — `ASSIGN-KEY` is defined on `Any:U`, which
+        // is why `my $x; $x{1;2} = 5` builds the nested Hash chain.
+        if is_positional
+            && dims.len() >= 2
+            && matches!(target.view(), ValueView::Nil | ValueView::Package(..))
+        {
+            return Err(Self::assign_pos_no_match(target, dims, &value));
+        }
         // Under 6.d an ASSOCIATIVE multi-dim subscript is a slice lvalue --
         // raku hands back a `List` even for all-scalar keys, so the assignment
         // is a list assignment: `%h{1;2} = [1,2,3]` stores `1` at the single
@@ -1135,6 +1374,38 @@ impl Interpreter {
         } else {
             self.multi_dim_assign_scalar(target, dims, value, is_positional)
         }
+    }
+
+    /// The `X::Multi::NoMatch` rakudo throws when a positional multi-dim
+    /// subscript is assigned through an undefined invocant. The reported
+    /// capture is `ASSIGN-POS(<invocant>:U: <dim>, ..., <assignee>)`.
+    fn assign_pos_no_match(target: &Value, dims: &[Value], value: &Value) -> RuntimeError {
+        fn smiley(v: &Value) -> &'static str {
+            if matches!(v.view(), ValueView::Nil | ValueView::Package(..)) {
+                ":U"
+            } else {
+                ":D"
+            }
+        }
+        let invocant = match target.view() {
+            ValueView::Package(sym) => sym.resolve().to_string(),
+            _ => "Any".to_string(),
+        };
+        let args = dims
+            .iter()
+            .chain(std::iter::once(value))
+            .map(|v| format!("{}{}", crate::runtime::utils::value_type_name(v), smiley(v)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let name = format!("ASSIGN-POS({invocant}:U: {args})");
+        let msg = format!("Cannot resolve caller {name}; none of these signatures matches:");
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str(name));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Multi::NoMatch"), attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(ex));
+        err
     }
 
     /// Whether this descent level must be walked as an Associative: the

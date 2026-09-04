@@ -3818,6 +3818,25 @@ impl Interpreter {
                 self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
+            OpCode::MultiDimIndexAssignNested {
+                name_idx,
+                prefix_depth,
+                prefix_flags_idx,
+                ndims,
+                is_positional,
+            } => {
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                self.exec_multi_dim_index_assign_nested_op(
+                    code,
+                    *name_idx,
+                    *prefix_depth,
+                    *prefix_flags_idx,
+                    *ndims,
+                    *is_positional,
+                )?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                *ip += 1;
+            }
             OpCode::MultiDimIndexAssignGeneric {
                 ndims,
                 is_positional,
