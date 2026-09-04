@@ -5430,7 +5430,16 @@ impl Interpreter {
                     source.is_container_ref()
                         || matches!(
                             source.view(),
-                            ValueView::Array(..) | ValueView::Hash(..) | ValueView::Proxy { .. }
+                            ValueView::Array(..)
+                                | ValueView::Hash(..)
+                                | ValueView::Proxy { .. }
+                                // A DEFERRED vivification token: the element does
+                                // not exist yet, but the binding still denotes it
+                                // and a write through the name creates it
+                                // (`my @a; my \p := @a[5]; p = 9` gives
+                                // `[Any, Any, Any, Any, Any, 9]`). The `$`-sigil
+                                // spelling already resolved the token this way.
+                                | ValueView::HashEntryRef { .. }
                         )
                 });
                 self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
