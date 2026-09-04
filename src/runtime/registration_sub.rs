@@ -1721,6 +1721,16 @@ impl Interpreter {
         // (GLOBAL) package too, same as `mark_my_scoped_package_item` above.
         if is_our {
             self.mark_our_scoped_package_item(key.clone());
+        } else {
+            // ... and the negative half, for the same reason: a BARE proto keeps
+            // the whole multi lexical however its candidates are declared, so
+            // `module M { proto sub f($) {*}; our multi sub f(Int) {…} }` leaves
+            // no `&f` in `M`'s stash and rakudo answers "Could not find symbol
+            // '&f' in 'M'" for `M::f(1)`. Without this the key was marked by
+            // neither side -- a plain `sub` marks itself my-scoped, but a
+            // candidate that says `our` does not, and the proto said nothing --
+            // so the qualified call resolved.
+            self.mark_my_scoped_package_item(key.clone());
         }
         // A `proto` declared inside an inner lexical scope SHADOWS an outer
         // routine of the same name instead of redeclaring it: raku gives the
