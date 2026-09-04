@@ -165,3 +165,22 @@ say @c;       # raku [1 7]     mutsu []     -- the mainline @c is emptied
 ```
 
 (Both measured 2026-09-01 on `target/debug/mutsu` vs raku v2026.06.)
+
+## Slice 2's read side measured, and withdrawn (2026-09-04) — see ADR-0039 §9
+
+Both acceptance rows above still reproduce. §4.2's first bullet (container reads
+emit `GetLocal(slot)`) was implemented and measured: **7 `t/` files, 12
+assertions**, and row (b) is fixed by it alone. Every one of the 12 is a *store*
+site that leaves the slot and `env` naming different containers — an
+expression-position declaration that allocates no slot (and a monotonic
+`local_map` that still holds a popped sibling's slot), or a genuine same-named
+shadow producing two `code.locals` entries with one name for an env-centric
+`IndexAssignExprNamed` to resolve between.
+
+So the first bullet is not independently landable, and the blocker is §1.3 of
+`docs/lexical-scope-slot-campaign.md`, not anything internal to this ADR. ADR-0039
+§9 records the enumeration, the withdrawn diff's shape, and the inverted order
+slice 2 should now take (store sites first, read flip last). Resource slice 2
+with §1.3, alongside
+`todo/tickets/same-named-loop-params-in-one-unit-interfere.md`, which reached the
+same conclusion from the scalar side.
