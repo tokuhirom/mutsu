@@ -10,6 +10,15 @@ on:
   # runs the interpreter from the last deploy, not from HEAD — when you want it
   # to pick up interpreter changes, trigger this workflow by hand
   # (`gh workflow run pages.yml`, or the "Run workflow" button).
+  #
+  # The daily schedule below is the safety net for everything the push filter
+  # deliberately ignores: a newly published npm package, roast-whitelist.txt
+  # growth (the landing page's "N% of the spec passes" figure), a module
+  # vendored into modules/ outside a site change, and the bench-data history
+  # that bench-trend.html renders. Without it the deployed site can sit stale
+  # for weeks until someone remembers to press "Run workflow".
+  schedule:
+    - cron: '17 21 * * *'
   push:
     branches: [main]
     paths:
