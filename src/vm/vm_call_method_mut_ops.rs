@@ -394,6 +394,10 @@ impl Interpreter {
         }
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
+        // ADR-0040's store boundary, Proxy half — the same hook the statically
+        // named mutator dispatch applies (`@a."$name"($p)` stores the FETCHed
+        // value too).
+        let args = self.fetch_proxy_mutator_args(&method, args)?;
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
@@ -602,6 +606,9 @@ impl Interpreter {
         } else {
             args
         };
+        // ADR-0040's store boundary, Proxy half — see
+        // `Interpreter::fetch_proxy_mutator_args`.
+        let args = self.fetch_proxy_mutator_args(&method, args)?;
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;

@@ -1085,6 +1085,29 @@ bare through every later rebuild. The remaining `.VAR` gap is tracked outside th
 
 ---
 
+## 9. The `Proxy` half of the same boundary (added 2026-09-04)
+
+The store boundary this ADR established turned out to answer a second question the same way.
+Raku reads the RHS of `=` in value context, so a `Proxy` that lands *inside* a container is
+**FETCHed on the way in** and the element that lands is a plain value:
+`my @a = Proxy.new(...)` is `[5]`, not `[Proxy]`. mutsu stored the `Proxy` itself and re-FETCHed
+it on every read, which is observable the moment the Proxy's backing lexical changes — and which
+made an `is rw` loop over such an element fire the Proxy's `STORE` instead of writing the array
+(`todo/deep/proxy-assigned-into-an-array-is-not-fetched.md`, closed by
+`news/2026-09/proxy-fetches-at-the-container-store.md`).
+
+The fix is the same boundary, one call earlier: `Interpreter::fetch_proxy_for_store` (and its
+element-wise twin `fetch_proxy_container_elements`, discriminated by `ArrayKind` exactly like
+`itemize_real_array_elements`) runs at every site this ADR's itemization runs at — the scalar and
+`@`/`%` var stores, the element/nested/deep/multi-dim/generic index assigns, the `[...]`/`{...}`/
+`%(...)` construction ops, the `push`/`unshift`/`append`/`prepend`/`splice` mutators, the
+`state` initializer, and the rw-accessor writeback. Two things are deliberately outside it: a
+`:=` bind installs the `Proxy` itself (which is what keeps `$p.VAR.^name` a `Proxy`), and a
+`List`'s elements are not containers, so `my $l = (1, $p, 3)` keeps its Proxy — the same §1.6
+discriminator, unchanged.
+
+Pinned by `t/proxy-store-boundary.t` (28 rows, dual-oracled against `raku`).
+
 ---
 
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*

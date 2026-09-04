@@ -769,9 +769,10 @@ any *new* place a cell can reach will be found by a full roast sweep, not by rea
 (`$c = -> { $v }`) still snapshots by value, so it does not see a later write to the element — the
 read half of rows 11/20 for the multi-parameter shapes. It is pre-existing and multi-parameter-wide
 (`for @a -> $x is rw, $y is rw` shows it on `main` with no `.kv` involved), and is filed as
-`todo/tickets/multi-param-read-only-closure-capture-snapshots-the-element.md`. Also
-`todo/tickets/proxy-assigned-into-an-array-is-not-fetched.md`, which is why
-`t/for-loop-element-alias.t`'s new multi-parameter row names its parameters `$p`/`$q`.
+`todo/tickets/multi-param-read-only-closure-capture-snapshots-the-element.md`. Also the
+Proxy-store finding, which is why `t/for-loop-element-alias.t`'s new multi-parameter row named its
+parameters `$p`/`$q`; that one was fixed on 2026-09-04 (ADR-0040 §9,
+`news/2026-09/proxy-fetches-at-the-container-store.md`) and the parameters are `$x`/`$y` again.
 
 ### Slice 6 — the sweep, 2026-09-01
 

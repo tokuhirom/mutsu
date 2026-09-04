@@ -598,8 +598,11 @@ impl Interpreter {
                     ValueView::Int(_) | ValueView::Str(_)
                 )
             {
-                let slot = &mut self.stack[stack_len - 2];
-                let old = std::mem::replace(slot, Value::NIL);
+                let old = std::mem::replace(&mut self.stack[stack_len - 2], Value::NIL);
+                // ADR-0040's store boundary, Proxy half: an element is a
+                // `Scalar` container, so a `Proxy` rvalue is FETCHed here and
+                // the plain value is what lands (`@a[0] = Proxy.new(...)`).
+                let old = self.fetch_proxy_for_store(old)?;
                 // An element ASSIGNMENT stores a COPY; only a `:=` bind (which
                 // arrives wrapped in a `__mutsu_bind_index_value` Pair, so it is
                 // untouched here) aliases. The RHS can BE a first-class element
@@ -607,7 +610,7 @@ impl Interpreter {
                 // a method return, most visibly `.value` on a Pair carrying an
                 // element container (ADR-0036). Storing that cell would make
                 // every later write to the source rewrite this element.
-                *slot = old.into_deref().itemize_for_element_store();
+                self.stack[stack_len - 2] = old.into_deref().itemize_for_element_store();
             }
         }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind

@@ -197,6 +197,10 @@ impl Interpreter {
         // Applied AFTER the per-element one-arg/Slip flattening decision
         // above, so arity is untouched (§2 part 3).
         let result = runtime::utils::itemize_real_array_elements(result);
+        // The Proxy half of the same boundary: a real `[...]` literal's
+        // elements are containers, so an element `Proxy` FETCHes on the way in
+        // (a `(...)` List's elements are not, and keep theirs).
+        let result = self.fetch_proxy_container_elements(result)?;
         self.stack.push(result);
         Ok(())
     }
@@ -224,6 +228,10 @@ impl Interpreter {
         let result = self.decay_nil_container_elements(result);
         // ADR-0040 slice 2: see `exec_make_array_op`.
         let result = runtime::utils::itemize_real_array_elements(result);
+        // The Proxy half of the same boundary: a real `[...]` literal's
+        // elements are containers, so an element `Proxy` FETCHes on the way in
+        // (a `(...)` List's elements are not, and keep theirs).
+        let result = self.fetch_proxy_container_elements(result)?;
         self.stack.push(result);
         Ok(())
     }
@@ -252,6 +260,9 @@ impl Interpreter {
             map.insert(key, val);
         }
         let result = self.decay_nil_container_elements(Value::hash(map));
+        // The Proxy half of the same boundary: a Hash value is a `Scalar`
+        // container, so a `Proxy` stored as one FETCHes on the way in.
+        let result = self.fetch_proxy_container_elements(result)?;
         self.stack.push(result);
         Ok(())
     }
@@ -289,6 +300,9 @@ impl Interpreter {
             }
         }
         let result = self.decay_nil_container_elements(Value::hash(map));
+        // The Proxy half of the same boundary: a Hash value is a `Scalar`
+        // container, so a `Proxy` stored as one FETCHes on the way in.
+        let result = self.fetch_proxy_container_elements(result)?;
         self.stack.push(result);
         Ok(())
     }

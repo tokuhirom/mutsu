@@ -894,6 +894,9 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let value = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0040's store boundary, Proxy half: a multi-dim element is a
+        // `Scalar` container too, so an assigned `Proxy` FETCHes on the way in.
+        let value = self.fetch_proxy_for_store(value)?;
 
         let var_name = Self::const_str(code, name_idx).to_string();
 
@@ -1056,6 +1059,9 @@ impl Interpreter {
         }
         keys.reverse();
         let value = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0040's store boundary, Proxy half: a multi-dim element is a
+        // `Scalar` container too, so an assigned `Proxy` FETCHes on the way in.
+        let value = self.fetch_proxy_for_store(value)?;
 
         let flags: Vec<bool> = match code
             .constants
@@ -1247,6 +1253,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let ndims = ndims as usize;
         let value = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0040's store boundary, Proxy half: a multi-dim element is a
+        // `Scalar` container too, so an assigned `Proxy` FETCHes on the way in.
+        let value = self.fetch_proxy_for_store(value)?;
         let mut dims = Vec::with_capacity(ndims);
         for _ in 0..ndims {
             dims.push(self.stack.pop().unwrap_or(Value::NIL));

@@ -21,7 +21,7 @@ use Test;
 # (derived producers — `.kv`/`.reverse`/`.sort`/`@$s`) and slice 5 (bind-time
 # enforcement).
 
-plan 115;
+plan 116;
 
 # ---------------------------------------------------------------------------
 # Class 1 — a binding that outlives the loop body still writes through.
@@ -153,17 +153,15 @@ plan 115;
 # The raw multi-parameter bind is not `.kv`-specific: a chunked rw multi-param
 # over a plain array aliases its elements too.
 #
-# The parameters are `$p`/`$q` on purpose. Naming them `$x` makes the Q6 Proxy
-# rows below fail, and that is NOT this row's doing: a *plain* `my $x = 1`
-# anywhere in the file does it too, on `main` as well. mutsu stores a `Proxy`
-# assigned into an Array without FETCHing it (raku's `my @a = Proxy.new(...)`
-# is `[5]`, mutsu's is `[Proxy]`) and compensates inside the loop; a same-named
-# lexical disturbs the compensation and the Proxy's STORE fires. See
-# todo/tickets/proxy-assigned-into-an-array-is-not-fetched.md.
+# These parameters used to be named `$p`/`$q` to dodge a landmine: the Q6 Proxy
+# rows below failed if any `$x` existed anywhere in the file, because mutsu
+# stored a Proxy assigned into an Array without FETCHing it and compensated
+# inside the loop. The store FETCHes now (ADR-0040's boundary), so `$x`/`$y`
+# are safe again -- and the same-named-lexical landmine below is the point.
 {
     my @a = 1, 2, 3, 4;
     my $c;
-    for @a -> $p is rw, $q is rw { $c = -> { $p = $p + 1 } if $p == 1 }
+    for @a -> $x is rw, $y is rw { $c = -> { $x = $x + 1 } if $x == 1 }
     @a[0] = 99;
     $c();
     is-deeply @a, [100, 2, 3, 4],
@@ -685,12 +683,16 @@ plan 115;
 # ADR-0045 §5 Q6 — a `Proxy` element under an aliasing loop. Assigning a Proxy
 # into an Array FETCHes it, so the element is a plain value and the loop must
 # write the ARRAY, never the Proxy's STORE target.
+#
+# The `my $x` above is deliberate: it is exactly the unrelated same-named
+# lexical that used to flip the loop's Proxy compensation and fire STORE.
 {
     my $n = 5;
     my @a = Proxy.new(FETCH => -> $ { $n }, STORE => -> $, $v { $n = $v });
     for @a -> $x is rw { $x = 42 }
     is $n, 5, 'Q6: an `is rw` loop over a FETCHed Proxy element leaves the Proxy target alone';
     is @a[0], 42, 'Q6: ... and writes the array element';
+    is @a.raku, '[42]', 'Q6: ... and the element itself is a plain value, not the Proxy';
 }
 
 # ADR-0045 §5 Q1 — `box_captured_lexicals` must not double-box an already-cell

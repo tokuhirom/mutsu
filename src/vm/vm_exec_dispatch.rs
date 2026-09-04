@@ -4899,6 +4899,15 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::StateVarInit(slot, key_idx) => {
+                // ADR-0040's store boundary, Proxy half: a `state $s = $p`
+                // initializer is an ordinary assignment, so it stores what the
+                // Proxy FETCHes. Done here because the handler itself is
+                // infallible.
+                if self.stack.last().is_some_and(Value::is_proxy_value) {
+                    let val = self.stack.pop().unwrap_or(Value::NIL);
+                    let val = self.fetch_proxy_for_store(val)?;
+                    self.stack.push(val);
+                }
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;
             }

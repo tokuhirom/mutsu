@@ -2892,8 +2892,10 @@ impl Interpreter {
         let outer_idx = self.stack.pop().unwrap_or(Value::NIL);
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         // Detect bind marker (__mutsu_bind_index_value) and extract the actual value
+        let mut is_bind_value = false;
         let val = match raw_val.view() {
             ValueView::Pair(name, payload) if name == "__mutsu_bind_index_value" => {
+                is_bind_value = true;
                 match payload.view() {
                     ValueView::Array(items, ..) if !items.is_empty() => {
                         items.first().cloned().unwrap_or(Value::NIL)
@@ -2902,6 +2904,14 @@ impl Interpreter {
                 }
             }
             _ => raw_val,
+        };
+        // ADR-0040's store boundary, Proxy half: a chained subscript still
+        // lands in an element `Scalar`, so an assigned `Proxy` FETCHes. A `:=`
+        // bind installs the Proxy itself and is exempt.
+        let val = if is_bind_value {
+            val
+        } else {
+            self.fetch_proxy_for_store(val)?
         };
 
         // Junction / slice outer subscript (`%h<x>{any('p','q')} = v`,
@@ -3476,6 +3486,10 @@ impl Interpreter {
         // indices_val[0] = innermost, indices_val[depth-1] = outermost
 
         let raw_val_for_junction = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0040's store boundary, Proxy half — see the two-level op. The
+        // bind marker (`__mutsu_bind_index_value`) is a `Pair`, never a
+        // `Proxy`, so the probe inside skips it.
+        let raw_val_for_junction = self.fetch_proxy_for_store(raw_val_for_junction)?;
 
         // Junction / slice OUTERMOST subscript (`%h<a><b>{any('p','q')} = v`):
         // autothread per outer key. The rest of this op handles a single scalar
@@ -3769,6 +3783,8 @@ impl Interpreter {
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0040's store boundary, Proxy half — see the named op.
+        let raw_val = self.fetch_proxy_for_store(raw_val)?;
         let idx = self.stack.pop().unwrap_or(Value::NIL);
         let target = self.stack.pop().unwrap_or(Value::NIL);
         // A Range (including one held in an itemized Scalar) is Positional but
