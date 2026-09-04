@@ -1751,9 +1751,23 @@ impl Interpreter {
             }
         }
         let prefix = format!("{key}/");
-        self.registry_mut().functions.retain(|existing, _| {
+        // A CHECK-time inline-package prepass may have installed the package's
+        // multi candidates before the proto's source-order registration. Keep
+        // those candidates when the proto clears stale entries; the ordinary
+        // RegisterDecl opcodes will recognize their pre-registration markers
+        // and skip the duplicate install later.
+        let inline_marker_prefix = format!(
+            "__mutsu_inline_package_sub_preregistered::{}::{}::",
+            self.current_package(),
+            name
+        );
+        let has_inline_markers = self
+            .env
+            .keys()
+            .any(|marker| marker.resolve().starts_with(&inline_marker_prefix));
+        self.registry_mut().functions.retain(|existing, _def| {
             let resolved = existing.resolve();
-            resolved != key && !resolved.starts_with(&prefix)
+            resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers)
         });
         // Invalidate name-keyed resolution caches.
         self.fn_resolve_gen += 1;

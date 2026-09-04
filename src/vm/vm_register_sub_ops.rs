@@ -244,6 +244,21 @@ impl Interpreter {
             } else {
                 name.resolve()
             };
+            // Inline package routines are registered once by the declaration-
+            // only prepass so CHECK can import them before the package body
+            // executes. The package body still contains its ordinary
+            // RegisterDecl opcodes; skip those copies, otherwise duplicate
+            // `multi` candidates make `callsame` redispatch through the same
+            // user routine repeatedly instead of reaching the native base.
+            let preregistered = site_fp.is_some_and(|fingerprint| {
+                self.env()
+                    .get(&format!(
+                        "__mutsu_inline_package_sub_preregistered::{}::{}::{fingerprint}",
+                        self.current_package(),
+                        resolved_name
+                    ))
+                    .is_some()
+            });
             // The hoist pre-pass (see `hoist_sub_decls`) registers this same
             // declaration early, purely so the name is callable before its
             // textual position — but a custom parameter trait like `is query`
@@ -256,6 +271,9 @@ impl Interpreter {
             let is_hoisted_pass = custom_traits.iter().any(|(t, _)| t == "__hoisted");
             if !is_hoisted_pass {
                 self.check_param_custom_traits(param_defs)?;
+            }
+            if preregistered {
+                return Ok(());
             }
             // ADR-0019 C6e-3c: a plan-derived def always registers with an
             // EMPTY body — its identity and dispatch run entirely from the
