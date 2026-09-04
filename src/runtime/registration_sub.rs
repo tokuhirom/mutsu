@@ -958,8 +958,13 @@ impl Interpreter {
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
                     "message".to_string(),
+                    // rakudo's own wording, verbatim (v2026.06): the message a
+                    // user sees for this should be the one the spec's
+                    // implementation gives, and it says what to do about it.
                     Value::str(
-                        "Cannot declare individual multi candidates in 'our' scope".to_string(),
+                        "Cannot use 'our' with individual multi candidates. \
+                         Please declare an our-scoped proto instead"
+                            .to_string(),
                     ),
                 );
                 return Err(RuntimeError::typed("X::Declaration::Scope::Multi", attrs));
@@ -1745,7 +1750,24 @@ impl Interpreter {
                 self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
                 Some(ValueView::Bool(true))
             );
-        if !allow_lexical_shadow {
+        // The CHECK-time inline-package prepass may have installed THIS proto
+        // already, so the package's `our multi` candidates could pass their
+        // `our`-scope check (`preregister_inline_package_subs`). Its marker
+        // says the entry in `proto_subs` is that pre-registration and not a
+        // redeclaration -- the proto protocol twin of
+        // `__mutsu_inline_package_sub_preregistered`. Consumed here, so a
+        // genuine second `our proto` for the same name in the same body is
+        // still refused.
+        let prepass_marker = format!(
+            "__mutsu_inline_package_proto_preregistered::{}::{}",
+            self.current_package(),
+            name
+        );
+        let is_prepass_reregistration = self.env.get(&prepass_marker).is_some();
+        if is_prepass_reregistration {
+            self.env.remove(&prepass_marker);
+        }
+        if !allow_lexical_shadow && !is_prepass_reregistration {
             if self
                 .registry()
                 .functions
