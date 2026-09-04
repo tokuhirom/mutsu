@@ -90,7 +90,7 @@ Two shapes still diverge, and they are the file's remaining scope:
 | | rakudo | mutsu |
 |---|---|---|
 | `my $x := (5, 6)[0]; $x = 10` | `Cannot assign to an immutable value` | silently succeeds |
-| `(5, 6)[0] = 10` | `Cannot modify an immutable List ((5 6))` | silently succeeds |
+| ~~`(5, 6)[0] = 10`~~ | `Cannot modify an immutable List ((5 6))` | **fixed 2026-09-05, see below** |
 
 Both are the `$`-sigil / direct-store side of the same promotion, and neither
 goes through `MarkSigillessBindSource`. The shapes that DO refuse correctly —
@@ -102,3 +102,35 @@ in place.
 (Message nit while here: mutsu renders the refused container with `.gist`
 (`Cannot modify an immutable List (5 6)`) where rakudo uses `.raku`-ish
 parenthesisation (`((5 6))`).)
+
+## The direct-store half landed 2026-09-05
+
+`(5, 6)[0] = 10` now refuses, matching rakudo. The named store had applied this
+rule for a while; the ANONYMOUS spelling reached
+`exec_index_assign_generic_op`'s auto-vivify path instead, which has a guard for
+an immutable `Range` receiver but had none for an immutable `List`. The refusal
+is keyed on the ELEMENT, not on the list — an element that IS a container stays
+writable through it (`my $a = 1; ($a, 6)[0] = 9` sets `$a`) — the same rule the
+named store states. Pinned by `t/immutable-list-literal-store.t`.
+
+What is left of this file is therefore ONE shape, the `$`-sigil bind:
+
+```
+my $x := (5, 6)[0]; $x = 10     # rakudo: Cannot assign to an immutable value
+                                # mutsu: silently succeeds
+```
+
+The sigilless twin (`my \x := (5, 6)[0]`) refuses correctly, because
+`MarkSigillessBindSource` settles writability from the bind source and an
+immutable `List` element arrives there as a plain value. The `$`-sigil bind has
+no such verdict step — it takes the container the promotion primitive minted,
+which is where the over-promotion this file describes still bites.
+
+One neighbouring divergence found while measuring, NOT fixed: rakudo's
+`(my $x = $a, 6)[0] = 10` writes through `$x`, because an inline declaration in
+a list literal denotes the freshly-declared variable's container. mutsu's list
+literal holds a bare value there — before this change the write was silently
+dropped, now it is refused; both diverge. Extending
+`scalar_container_alias_name` to cover `Expr::DoStmt(VarDecl)` was tried and did
+not reach it, so the inline declaration does not arrive in that shape at this
+position; finding what it does arrive as is the next step for that row.
