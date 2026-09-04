@@ -353,7 +353,11 @@ impl Interpreter {
                 // original.
                 let val = std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL);
                 let val = crate::runtime::types::unwrap_varref_value(val);
-                let val = Self::itemize_plain_scalar_param(&cf.param_defs[param_idx], val);
+                // Whether this parameter itemizes its bound value depends only
+                // on its declaration, so it was settled at registration time
+                // (`param_itemize_on_bind`). Re-deriving it per bind scanned the
+                // parameter's `traits: Vec<String>` twice with string compares.
+                let val = Self::bind_itemize_param(cf, param_idx, val);
                 let param_name = &cf.param_defs[param_idx].name;
                 let needs_env = write_all_params
                     || val.is_nil()
