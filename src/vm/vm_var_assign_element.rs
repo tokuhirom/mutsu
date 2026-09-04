@@ -639,6 +639,40 @@ impl Interpreter {
         result
     }
 
+    /// The value currently occupying `target`'s element at `index`, for the one
+    /// shape a `Proxy` element can be reached by: a plain `@`/`%` container (or
+    /// a cell holding one) under a simple `Int`/`Str` subscript. Every other
+    /// shape -- a slice subscript, a `Junction`/`Whatever`/`Range` index, a
+    /// nested or multi-dimensional path, a tied or `Seq` target -- returns
+    /// `None`, so the caller falls through to the ordinary store paths.
+    fn existing_element_container(
+        target: &Value,
+        index: &Value,
+        is_positional: bool,
+    ) -> Option<Value> {
+        let target = target.clone().into_deref();
+        if is_positional {
+            let ValueView::Int(i) = index.view() else {
+                return None;
+            };
+            let ValueView::Array(items, _) = target.view() else {
+                return None;
+            };
+            let i: usize = i.try_into().ok()?;
+            items.items().get(i).cloned()
+        } else {
+            let key = match index.view() {
+                ValueView::Str(s) => s.to_string(),
+                ValueView::Int(i) => i.to_string(),
+                _ => return None,
+            };
+            let ValueView::Hash(map) = target.view() else {
+                return None;
+            };
+            map.get(&key).cloned()
+        }
+    }
+
     fn exec_index_assign_expr_named_op_seeded_inner(
         &mut self,
         code: &CompiledCode,
@@ -688,14 +722,15 @@ impl Interpreter {
         // (`(@a.values)[0] = "x"`) already did. Nothing below knows how to
         // store into a `Seq`, so without this the write was silently dropped.
         // Checked before the fast paths, which all assume an Array/Hash target.
-        {
-            let target = target_slot
+        //
+        // The `Proxy` destination check below shares this one target lookup, so
+        // the pair costs the hot element-assign path a single resolve, not two.
+        if self.stack.len() >= 2
+            && let Some(target) = target_slot
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
-                .or_else(|| self.env().get(Self::const_str(code, name_idx)).cloned());
-            if let Some(target) = target
-                && matches!(target.view(), ValueView::Seq(body) if body.has_element_containers())
-                && self.stack.len() >= 2
-            {
+                .or_else(|| self.env().get(Self::const_str(code, name_idx)).cloned())
+        {
+            if matches!(target.view(), ValueView::Seq(body) if body.has_element_containers()) {
                 let idx = self.stack.pop().unwrap_or(Value::NIL);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if let Some(res) =
@@ -708,6 +743,40 @@ impl Interpreter {
                 // Not handled after all -- put the operands back untouched.
                 self.stack.push(val);
                 self.stack.push(idx);
+            }
+            // ADR-0040 §9, seen from the DESTINATION side. §9's exclusion says a
+            // `:=` bind installs the `Proxy` itself, so an element can
+            // legitimately BE a `Proxy` container (`@a[0] := $p`). Such an
+            // element mediates its own store, exactly like a `Proxy`-bound
+            // scalar local (`exec_set_local_op`): `@a[0] = 20` must fire that
+            // `Proxy`'s `STORE`, not overwrite the container with a plain value.
+            // Checked here, before the fast paths and the slow path, because
+            // every one of them ends in a plain `items_mut()[i] = ...` /
+            // `insert(k, v)` that would replace it -- the same "one hook above
+            // the dispatch" shape slice 1's itemization uses. A `:=` bind (a
+            // `__mutsu_bind_index_value` marker Pair) is deliberately excluded:
+            // it is installing a container, not storing.
+            let stack_len = self.stack.len();
+            if stack_len >= 2
+                && !matches!(
+                    self.stack[stack_len - 2].view(),
+                    ValueView::Pair(n, _) if n.as_str() == "__mutsu_bind_index_value"
+                )
+                && let Some(existing) = Self::existing_element_container(
+                    &target,
+                    &self.stack[stack_len - 1],
+                    is_positional,
+                )
+                && matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
+            {
+                self.stack.pop();
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                loan_env!(self, assign_proxy_lvalue(existing, val.clone()))?;
+                // The STORE may have written a caller lexical by name (the same
+                // drain the scalar Proxy-store site runs).
+                self.apply_pending_rw_writeback(code);
+                self.stack.push(val);
+                return Ok(());
             }
         }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind

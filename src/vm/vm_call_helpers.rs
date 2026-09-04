@@ -141,6 +141,48 @@ impl Interpreter {
         (args, if has_source { Some(sources) } else { None })
     }
 
+    /// Callees whose arguments are **containers by contract**, so the call-site
+    /// argument auto-FETCH (`auto_fetch_proxy_args`) must not run on them.
+    ///
+    /// Two closed categories, and nothing else belongs here:
+    ///
+    /// 1. The control-flow builtins that hand a value straight back out of the
+    ///    routine (`return`/`return-rw`/`leave`) or into an exception
+    ///    (`die`/`fail`). FETCHing there would decontainerize a `Proxy` a
+    ///    routine deliberately returns.
+    /// 2. The compiler/parser lowerings of **lvalue, bind and container-
+    ///    introspection syntax** (`__mutsu_*`). These are not user routines at
+    ///    all: they are the desugaring of `$o.a = v`, `$o.a[0] = v`,
+    ///    `$o.a[0]:delete`, `@a[0] := v` and `@a[0].VAR`, and each one is
+    ///    *given* the container it is about to write through, install, or
+    ///    describe. `@a[0] := $proxy` in particular must install the `Proxy`
+    ///    itself — ADR-0040 §9 states that a `:=` bind is outside the store
+    ///    boundary that FETCHes — so FETCHing its argument snapshotted the
+    ///    value and the element stopped tracking; and `@a[0].VAR` must see
+    ///    that installed `Proxy` to answer `Proxy` rather than `Scalar`.
+    ///
+    /// A *user* routine's `is rw` / `is raw` parameter is deliberately NOT
+    /// handled here: whether an argument keeps its container is a property of
+    /// the parameter it binds to, not of the callee's name, and that decision
+    /// is made where the parameter is known (`bind_function_args_values`, the
+    /// `rw_shared_cell_key` arm).
+    pub(super) fn callee_takes_arg_containers(name: &str) -> bool {
+        matches!(
+            name,
+            "return-rw"
+                | "return"
+                | "die"
+                | "fail"
+                | "leave"
+                | "__mutsu_assign_method_lvalue"
+                | "__mutsu_index_assign_method_lvalue"
+                | "__mutsu_index_delete_method_lvalue"
+                | "__mutsu_bind_index_value"
+                | "__mutsu_index_var_meta"
+                | "__mutsu_anon_index_var_meta"
+        )
+    }
+
     /// Auto-FETCH any Proxy values in function call arguments.
     pub(super) fn auto_fetch_proxy_args(
         &mut self,

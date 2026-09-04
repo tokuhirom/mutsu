@@ -967,19 +967,11 @@ impl Interpreter {
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
-        // Don't auto-FETCH Proxy args for control flow builtins that must preserve containers,
-        // or when in lvalue assignment context (e.g. f() = 42 calls f with in_lvalue_assignment=true).
-        let skip_proxy_fetch = matches!(
-            name.as_str(),
-            "return-rw"
-                | "return"
-                | "die"
-                | "fail"
-                | "leave"
-                | "__mutsu_assign_method_lvalue"
-                | "__mutsu_index_assign_method_lvalue"
-                | "__mutsu_index_delete_method_lvalue"
-        ) || self.in_lvalue_assignment;
+        // Don't auto-FETCH Proxy args for callees that take their arguments as
+        // CONTAINERS by contract, or when in lvalue assignment context
+        // (e.g. `f() = 42` calls f with in_lvalue_assignment=true).
+        let skip_proxy_fetch =
+            Self::callee_takes_arg_containers(name.as_str()) || self.in_lvalue_assignment;
         let args = if skip_proxy_fetch {
             args
         } else {

@@ -221,6 +221,20 @@ impl Interpreter {
     /// `concat_values` / `to_str_context` handle those, including built-in
     /// `.gist`/`.Str`). Shared by infix `~` and the string-comparison ops.
     pub(crate) fn coerce_stringy_operand(&mut self, v: Value) -> Result<Value, RuntimeError> {
+        // A string context is a READ, so a `Proxy` operand FETCHes: `"x" ~ $p`
+        // is `x5`, not `xProxy`. Every other value context already FETCHed
+        // (arithmetic via `eval_binary_with_junctions`, `say`/`print`/`note`,
+        // method dispatch, coercion); `~` and the string comparators were the
+        // hole. Top-level only — a `Proxy` nested inside a rendered container
+        // is `todo/tickets/list-element-proxy-not-rendered-through-fetch.md`,
+        // which needs a decision about the pure-`Value` renderers first.
+        // Tag-probed: this coercion runs on every `~`/`eq` operand, so the
+        // common non-`Proxy` case must not even clone the value.
+        let v = if v.is_proxy_value() {
+            self.auto_fetch_proxy(&v)?
+        } else {
+            v
+        };
         // Unhandled Failure throws in string context (infix `~`, `eq`/…),
         // matching Rakudo: `(sub { ... }).() ~ ""` dies with X::StubCode.
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {

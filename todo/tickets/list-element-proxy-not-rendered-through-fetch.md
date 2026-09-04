@@ -40,6 +40,19 @@ probably be answered as an amendment to it.
 Also weigh the cost: `resolve_proxies_in_value` starts with a full recursive `value_has_proxy` scan,
 so a naive deep FETCH on every render adds an O(n) traversal to `say @big-array`.
 
+## Update 2026-09-04: the top-level half is done, the nested half is what is left
+
+`news/2026-09/string-context-fetches-a-top-level-proxy.md`: infix `~`, the
+string comparators, and interpolation now FETCH a **top-level** `Proxy`
+operand (`"x$p"` is `x5`, not `xProxy`), at the two existing chokepoints
+`coerce_stringy_operand` and the `StringConcat` loop. That was a divergence in
+its own right and was never this ticket's subject.
+
+This ticket's subject is unchanged and still reproduces: a `Proxy` *inside* a
+rendered container. `say (1, $p, 3)` still prints `(1 Proxy 3)`. The design
+question below is exactly as stated — the remaining renderers are pure `Value`
+methods with no `&mut Interpreter` — and is the whole of the remaining work.
+
 ## Reproduce
 
 The two one-liners above, no fixtures.

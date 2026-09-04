@@ -1108,6 +1108,36 @@ discriminator, unchanged.
 
 Pinned by `t/proxy-store-boundary.t` (28 rows, dual-oracled against `raku`).
 
+### 9.1 The bind side of the same boundary (added 2026-09-04)
+
+§9's two exclusions are not corner cases; they are the other half of the rule,
+and both were being violated. A `Proxy` reached the boundary as a **bind
+target** in two spellings, and each was FETCHed by the *call-site* argument
+auto-FETCH before the machinery that would have honoured the exclusion ever ran:
+
+- `sub f($x is rw) { $x = 42 }` given a `Proxy` argument. An `is rw`/`is raw`
+  parameter binds the caller's container; it does not store into one. The write
+  was dropped AND the caller's `Proxy` binding was replaced by the shared
+  `ContainerRef` cell the rw path installs
+  (`news/2026-09/rw-param-binds-the-caller-proxy-container.md`).
+- `@a[0] := $proxy`. §9 already says a `:=` bind installs the `Proxy` itself;
+  the element spelling snapshotted the fetched value instead, then overwrote it
+  on the next store and mis-described it through `.VAR`
+  (`news/2026-09/element-bind-installs-the-proxy-container.md`).
+
+The unifying finding: **whether an argument keeps its container is a property of
+the parameter or bind target it binds to, never of the callee's name.** The
+call-site name list (now `Interpreter::callee_takes_arg_containers`) is kept only
+for what it can legitimately express — the control-flow builtins, and the
+compiler lowerings of lvalue/bind/introspection syntax, which are not user
+routines at all — while the parameter decision moved to the binder, where the
+parameter is known.
+
+A store to an element that IS a `Proxy` fires that `Proxy`'s `STORE`, hooked
+above the element-assign dispatch in the same "one hook, not dozens of
+`items_mut()[i] =` sites" shape slice 1 used for itemization. Pinned by
+`t/proxy-binds-container-not-value.t` (24 rows, dual-oracled).
+
 ---
 
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*
