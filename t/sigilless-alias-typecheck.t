@@ -21,7 +21,7 @@ use Test;
 # residual scope. A `try { }` block is not a closure boundary, so it exercises
 # the same direct-store code path as an ordinary statement.
 
-plan 6;
+plan 8;
 
 subtest 'direct := bind alias to a subset-typed scalar' => {
     plan 2;
@@ -79,3 +79,44 @@ subtest 'untyped sigilless bind is unaffected (no false-positive check)' => {
     is $a, "now a string", 'untyped alias write still succeeds';
     is x, "now a string", 'untyped alias reads the new value';
 }
+
+# An UNINITIALIZED scalar holds its TYPE OBJECT (`my $a` holds `Any`, `my Int
+# $c` holds `Int`), and the bind used to treat that as "not a simple scalar",
+# skip the cell promotion, and alias the bare type object -- so every write was
+# refused as a store into an immutable package instead of reaching (and being
+# checked against) the source container.
+subtest 'an alias of an UNDEFINED scalar still writes through' => {
+    plan 4;
+    my $a;
+    my \x := $a;
+    x = 5;
+    is $a, 5, 'an untyped undefined source is written through';
+    is $a.VAR.^name, 'Scalar', '... and the source is still a Scalar container';
+
+    class C {}
+    my C $o;
+    my \y := $o;
+    y = C.new;
+    is $o.^name, 'C', 'a class-typed undefined source is written through';
+
+    # Binding a type object LITERAL is a different shape -- no source variable --
+    # and stays correctly immutable.
+    my \z := Int;
+    dies-ok { z = 5 }, 'a bind to a type object literal is still immutable';
+};
+
+subtest 'an alias of an UNDEFINED typed scalar is type-checked' => {
+    plan 3;
+    my Int $c;
+    my \x := $c;
+    throws-like { x = "str" }, X::TypeCheck::Assignment,
+        'a wrong-typed write through the alias throws';
+    x = 5;
+    is $c, 5, '... and a right-typed one lands';
+
+    subset S of Int where * < 128;
+    my S $d;
+    my \y := $d;
+    throws-like { y = 1000 }, X::TypeCheck::Assignment,
+        'a subset constraint is enforced through the alias too';
+};
