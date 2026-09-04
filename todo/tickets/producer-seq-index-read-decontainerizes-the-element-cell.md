@@ -81,3 +81,34 @@ Two halves, and the first one has real blast radius:
 The five rows above, plus the four contrast rows, as a `t/` file checked against
 real raku. Note `(@a.values)[0].WHAT` must stay `(Str)` — raku decontainerizes
 there — so the pin has to assert both directions.
+
+## Re-verified 2026-09-04 (TRIAGE regeneration): all five headline rows now pass
+
+Measured against `raku` v2026.06 on a fresh `target/debug/mutsu`:
+
+| row | raku | mutsu | |
+| --- | --- | --- | --- |
+| `say (@a.values)[0].VAR.^name` | `Scalar` | `Scalar` | OK |
+| `(@a.values)[0] = "x"; say @a` | `[x B]` | `[x B]` | OK |
+| `(@a.kv)[1] = "x"; say @a` | `[x B]` | `[x B]` | OK |
+| `my $c := (@a.values)[0]; $c = "x"; say @a` | `[x B]` | `[x B]` | OK |
+| `say (@a.values)[0].WHAT` | `(Str)` | `(Str)` | OK (the decontainerizing direction held) |
+
+So the "Root cause" section above — `exec_index_op_with_positional` normalizing
+a `Seq` receiver through `resolve_array_entry` — no longer describes a failing
+case, and neither half of "Why this is not a one-line fix" is still the blocker.
+Closed by the ADR-0036 slice 4/5 and ADR-0064 work that landed 2026-09-01/02
+(#7218-#7230); this file was never re-checked afterwards.
+
+**One row survives**, the named-receiver spelling this file mentions in passing
+as row 67:
+
+```
+$ raku  -e 'my @a = <A B>; my \s = @a.values; s[0] = "x"; say @a'   # [x B]
+$ mutsu -e 'my @a = <A B>; my \s = @a.values; s[0] = "x"; say @a'   # [A B]   X  silent
+```
+
+The read through that path already keeps the cell (this file said so); it is the
+*write* that is dropped. That single row is what remains of this ticket — the
+rest of the file should be rewritten down to it, or the ticket retired to
+`news/` with a `t/` pin for all six rows.

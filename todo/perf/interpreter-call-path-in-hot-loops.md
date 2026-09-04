@@ -250,3 +250,56 @@ zero-arg `c()`) is a separate, smaller win and should be measured separately.
 applies, and raku's optimizer additionally inlines a wrapper whose `&`-argument is a known constant,
 so raku's own absolute numbers for A/B are not a fair per-call baseline. The un-confoundable number
 is mutsu's A/B ratio against mutsu's own plain-call cost.
+
+## Re-measured 2026-09-04 (TRIAGE regeneration) — the `&`-sigil gate is CLOSED, the cost moved
+
+Do not start from the "Where to start" section above. It is stale.
+
+Release build, 200 000 iterations with the result accumulated, the exact shape that section
+names (`sub f(&c) { 1 }` never touching `c`, versus `sub f($c) { 1 }`, both called with
+`-> { 2 }`):
+
+| shape | opcodes executed | `function-full-resolve` | wall clock |
+| --- | --- | --- | --- |
+| `&`-param | 400 606 (`CheckReadOnly` 200 000, `MakeAnonSubParams` 200 000) | **1** (`f`) | 1.84 µs/iter |
+| `$`-param | 400 606 — *byte-identical* | **1** (`f`) | 1.93 µs/iter |
+
+`CallOnCodeVar`, `GetCodeVar`, `MakeNamedArg` and `WrapVarRef` — the five 200 000-count rows
+this file's `MUTSU_VM_STATS` table used as the evidence — no longer appear at all, and the
+per-call by-name re-resolve is gone. The signature-shape gate has been closed somewhere in the
+August/September call-path work; the 6.75x figure and the `function-full-resolve`-per-call
+diagnosis are both obsolete.
+
+**The symptom this file exists for is unchanged**, which is why the ticket stays open. Same
+day, same release build, 2 000 `ok 1, "x"` assertions:
+
+| provider | per assertion |
+| --- | --- |
+| raku | 0.0060 ms |
+| mutsu, native `Test` provider | 0.0021 ms |
+| mutsu, `MUTSU_REAL_TEST=1` | **0.2412 ms** (40x raku) |
+
+essentially identical to the 0.224 ms recorded on 2026-08-29. So the vendored-`Test` blocker is
+real and undiminished; only its attribution was wrong.
+
+### Where the cost actually appears to be now
+
+`MUTSU_VM_STATS=1` on that same 2 000-assertion run under `MUTSU_REAL_TEST=1`:
+
+```
+function-call opcodes=12024 interpreter_fallbacks=10012 (83.3% of opcodes)
+function-full-resolve total=50060 by name (top 6):
+    nqp::join=12003  nqp::split=12003  nqp::time=8010  nqp::iseq_i=6015
+    ok=6000  proclaim=6000
+```
+
+That is **~25 full by-name resolutions per assertion**, dominated by `nqp::` ops, and
+**83.3% of all function-call opcodes falling back to the interpreter path**. Neither number
+has anything to do with the `&`-sigil parameter. The next session should:
+
+1. establish why an `nqp::`-prefixed call never reaches a cached dispatch path (it is a fixed,
+   known name — it should resolve once);
+2. find what disqualifies these call sites from the compiled/light path, given
+   `interpreter_fallbacks` is 83% here and 0% on the micro-benchmark above;
+3. rewrite this file's "Root cause" and "Where to start" sections from that, and delete the
+   `&`-sigil framing.
