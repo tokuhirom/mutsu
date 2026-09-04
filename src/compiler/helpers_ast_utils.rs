@@ -306,6 +306,34 @@ impl Compiler {
         Some((name, chain))
     }
 
+    /// Like `index_assign_deep_nested_target`, but accepts a chain of any depth
+    /// (one or more) and does not reserve the outermost subscript for the
+    /// caller. Used by the multi-dim assignment, whose own dimensions are a
+    /// separate subscript group: `%o<inner>{1;2}` is the chain `[<inner>]` over
+    /// the root `%o` plus the `{1;2}` dimension group.
+    ///
+    /// Returns `(var_name, vec![(index_expr, is_positional), ...])` ordered from
+    /// innermost (closest to the variable) to outermost.
+    pub(super) fn index_chain_target(target: &Expr) -> Option<(String, Vec<(&Expr, bool)>)> {
+        let mut chain: Vec<(&Expr, bool)> = Vec::new();
+        let mut current = target;
+        while let Expr::Index {
+            target: inner_target,
+            index: inner_index,
+            is_positional: inner_is_positional,
+        } = current
+        {
+            chain.push((inner_index, *inner_is_positional));
+            current = inner_target;
+        }
+        if chain.is_empty() {
+            return None;
+        }
+        let name = Self::index_assign_target_name(current)?;
+        chain.reverse();
+        Some((name, chain))
+    }
+
     /// Register `our`-scoped subs declared inside *nested* blocks early, so
     /// they are reachable via the `OUR::` pseudo-package before (or regardless
     /// of whether) the declaring block has executed. Raku installs `our sub`s
