@@ -358,3 +358,51 @@ discriminator is compile time vs run time, not textual position. Also newly
 filed from this campaign:
 `todo/tickets/our-multi-in-a-package-body-cannot-see-its-own-our-proto.md`,
 a *registration-order* defect in the CHECK-time inline-package prepass.
+
+## 8. Attempt at §6.4 (2026-09-05): "hide the hoist-only registrations" measured and withdrawn
+
+§6.4 says any fix must key off *is this reference being evaluated at BEGIN
+time*, which mutsu already knows: `Interpreter::check_phaser_depth` is non-zero
+exactly inside a `constant` initializer or a `BEGIN`/`CHECK` block (it is what
+wraps a throw in `X::Comp::BeginTime`). That suggests a mechanism with no new
+position bookkeeping at all:
+
+> Record, per registry key, what a HOIST-pass registration displaced. An
+> in-sequence registration clears the record, because that declaration has now
+> genuinely been reached. `CheckPhaserStart` restores every still-recorded key
+> to what the hoist displaced; `CheckPhaserEnd` puts the hoisted entries back.
+
+The appeal is that it needs no source positions: "which declarations has the
+program reached?" is answered by which in-sequence `RegisterDecl` ops have run.
+It was implemented and measured, and it does not work. Two facts, both found by
+instrumenting `register_compiled_sub_decl` rather than by reading:
+
+1. **An in-sequence registration is not observable.** For
+   `sub foo(){"outer"}; { BEGIN { say foo() }; sub foo(){"inner"} }` the four
+   `RegisterDecl` ops report `hoisted=true → Installed`,
+   `hoisted=false → Unchanged`, `hoisted=true → Installed`, … : the in-sequence
+   registration of a declaration whose hoisted twin is byte-identical takes the
+   idempotent `SubRegisterOutcome::Unchanged` path and performs no registry
+   write. So "has this declaration been reached?" cannot be derived from
+   registry writes. (A sweep keyed on the declaration's *name* rather than the
+   write does clear it, but see 2.)
+2. **A plain mainline `sub` leaves no `registry().functions` entry at the point
+   the registration reports `Installed`.** Immediately after op 0's
+   `Installed`, a scan of `functions` for any key containing `foo` is empty —
+   so the displaced-def recording has nothing to record, and restoring it hides
+   the routine entirely (`Unknown function: foo`). Where a plain mainline sub's
+   callable identity actually lives, and why `GLOBAL::foo` is absent there, is
+   the archaeology the next attempt has to do first.
+
+Both rows of §6.3 therefore remain open, and the shape of the eventual fix is
+narrower than before: the discriminator has to be the declaration's **textual
+position**, carried on the declaration plan (`CompiledSubDeclPlan` has no
+`source_line` today) and compared against the reference's line, because the
+alternative — inferring "reached" from registration order — is not observable in
+this registry.
+
+The measurement stands regardless of mechanism: `BEGIN`-time and `constant`-
+initializer references are the only two shapes that diverge, ordinary runtime
+references agree with rakudo in every position, and the divergence is `inner`
+where rakudo says `outer` (a block-nested redeclaration) or an accepted program
+where rakudo refuses to compile (a forward reference).
