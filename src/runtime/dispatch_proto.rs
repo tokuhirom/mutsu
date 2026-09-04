@@ -57,6 +57,17 @@ impl Interpreter {
     }
 
     pub(crate) fn has_proto(&self, name: &str) -> bool {
+        // Same gate `resolve_proto_function` applies: a `my`-scoped (non-`our`)
+        // proto is not in the package stash, so a package-qualified call must
+        // not even see that a proto exists. Without this the resolver answered
+        // `None` (correctly gated) while this probe answered `true`, and the
+        // caller reported "Cannot resolve caller M::f(Int:D); none of these
+        // signatures matches" where rakudo says "Could not find symbol '&f' in
+        // 'M'" -- refusing for the wrong reason, and leaking the candidate
+        // signatures of a routine the caller cannot see.
+        if self.qualified_name_hidden_here(name) {
+            return false;
+        }
         self.bare_name_packages()
             .iter()
             .any(|pkg| self.registry().has_proto(pkg, name))
