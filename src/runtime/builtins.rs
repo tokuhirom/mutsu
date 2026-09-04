@@ -4,6 +4,8 @@ use crate::symbol::Symbol;
 /// All built-in (core) function names. Single source of truth for
 /// `is_builtin_function` and for "Did you mean ...?" routine suggestions.
 pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
+    "postcircumfix:<[ ]>",
+    "postcircumfix:<{ }>",
     "defined",
     "undefine",
     "say",
@@ -1439,6 +1441,11 @@ impl Interpreter {
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(&args),
             "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),
+            // The subscript operators as ordinary CORE routines (see
+            // `builtins_postcircumfix.rs`): callable by name, and what
+            // `&postcircumfix:<[ ]>` resolves to as a term.
+            "postcircumfix:<[ ]>" => self.builtin_postcircumfix_subscript(&args, true),
+            "postcircumfix:<{ }>" => self.builtin_postcircumfix_subscript(&args, false),
             // Boolean coercion functions
             "not" => Ok(Value::truth(!args.first().unwrap_or(&Value::NIL).truthy())),
             "so" => Ok(Value::truth(args.first().unwrap_or(&Value::NIL).truthy())),

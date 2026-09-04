@@ -220,3 +220,103 @@ sooner, leaves §1.2's redeclaration bug open) and Option B (the real fix,
 larger), and should re-verify §1.2's redeclaration-check code path (its exact
 location in `registration_sub.rs`/`compiler/mod.rs` was traced by symptom,
 not read line-by-line) before committing to a design.
+
+## 6. Re-investigation 2026-09-04: the crash is fixed; two of this ADR's premises were wrong
+
+The motivating symptom (§1.1) — a stack overflow from the `Array::Rounded`
+delegation idiom — is fixed, and **not by either option below**. Everything in
+this section was measured on `main` (b0a4fdae0) against `raku` v2026.06.
+
+### 6.1 What was actually wrong, and what fixed it
+
+`&postcircumfix:<[ ]>` was never on the operator fast path in
+`resolve_code_var` (`src/runtime/accessors_resolve.rs`), which already routed
+`infix:<...>` / `prefix:<...>` / `postfix:<...>` terms to a by-name routine
+reference whose call path (`vm_dispatch_helpers.rs`) deliberately gives the
+CORE routine priority over a same-named user declaration. So the analogous
+idiom for an infix has always worked:
+
+```raku
+class F {}
+my constant &oldadd = &infix:<+>;
+multi sub infix:<+>(F $a, F $b) { "F+F" }
+say oldadd(1, 2);        # 3        (CORE, not the user candidate)
+say F.new + F.new;       # F+F
+```
+
+`postcircumfix` fell off that path and dropped through to the generic
+`has_multi_keys` branch, which materialises *the user's own candidates* by
+value — so `old-same` was the very candidate that called it. The hoist pass is
+what made those candidates visible that early, which is why §1.2 read the
+failure as a hoisting bug; but the hoist is not what made the captured term
+*wrong*. Even a textually-preceding user candidate would have been captured
+there, and would have recursed identically.
+
+Two further gaps had to close for the term to be usable at all (§2's third
+bullet): mutsu had no CORE subscript routine, so `postcircumfix:<[ ]>(@a, 1)`
+answered "Unknown function" and `&postcircumfix:<[ ]>` answered `Nil`. Both
+subscript operators are now ordinary builtins
+(`src/runtime/builtins_postcircumfix.rs`), driving the same opcode the syntax
+lowers to, with the user-candidate probe in `exec_index_op_with_positional`
+suppressed for exactly that one dispatch — the CORE candidate performs native
+indexing and must never re-enter the override delegating to it.
+
+Pinned in `t/core-postcircumfix-routine.t` and
+`t/user-postcircumfix-core-delegation.t`.
+
+### 6.2 Premise that was wrong: "plain subs are the scope-blind case"
+
+§1.2 says mutsu's redeclaration check "is name-based and scope-blind for plain
+subs, while operator names are apparently exempted". Measured, it is the other
+way round. A plain single sub shadows correctly:
+
+```
+sub foo() { "outer" }
+{ sub foo() { "inner" }; say foo(); }   # raku: inner   mutsu: inner
+say foo();                              # raku: outer   mutsu: outer
+```
+
+It is `proto`/`multi` that are not lexically scoped at all: an inner-block
+`proto sub foo` raises a false `Redeclaration of routine 'foo'`, and an
+inner-block `multi sub foo(Int)` *merges* into the outer candidate set
+(`Ambiguous call to foo(Int); these signatures all match: (Int $x), (Int $x)`)
+where raku shadows. That is a distinct defect with its own repros; it is
+tracked separately and is not a prerequisite for anything here.
+
+### 6.3 Premise that was wrong: Option B is not safe as specified
+
+§4 recommends Option B — emit each `RegisterDecl` at its own textual position
+so the registry is genuinely "what has been declared so far". Measured against
+raku, that model is incorrect, because the discriminator is **compile time vs
+run time**, not textual position at run time. raku installs a sub's pad entry
+at compile time, so an ordinary *runtime* reference sees the whole scope
+regardless of order, while only a `BEGIN`-time evaluation sees a partial one:
+
+| source | raku | mutsu today |
+|---|---|---|
+| `sub foo(){"outer"}; { my constant &old = &foo; say old(); sub foo(){"inner"} }` | `outer` | `inner` |
+| `sub foo(){"outer"}; { my $old = &foo; say $old(); sub foo(){"inner"} }` | `inner` | `inner` |
+| `say f(); constant X = 1; sub f(){42}` | works | works |
+| `constant X = f(); sub f(){42}; say X` | compile error | `42` |
+
+Row 2 and row 3 are exactly what Option B would break: emitting `f`'s
+registration in source order makes a runtime reference *before* that point stop
+resolving, which raku does not do. Option B is therefore rejected as written.
+Any future fix must key off "is this reference being evaluated at BEGIN time",
+information the compiler has at the reference site, not off the position of the
+registration.
+
+### 6.4 What is still open
+
+Rows 1 and 4 of the table above are unfixed: a `&name` (or `name(...)`)
+reference inside a `constant` initializer or a `BEGIN` block still sees
+declarations that only the hoist pass has made visible. That is the residue of
+this ADR, and it no longer blocks the postcircumfix idiom that motivated it.
+It is worth noting why it is not merely "Option A": with the registry keyed by
+fully-qualified `Package::name`, an inner-block declaration *overwrites* the
+outer entry for the duration of the block, so suppressing the not-yet-reached
+declaration does not by itself reveal what raku would have found (row 1 wants
+the outer `foo`). Making that work needs the sub registry to carry lexical
+scope, which is the same missing mechanism §6.2's proto/multi shadowing bug
+needs, and the same shape ADR-0039 describes for `@`/`%` containers. Those
+three should be resourced as one campaign, not three patches.

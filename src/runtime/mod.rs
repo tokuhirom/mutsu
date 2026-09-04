@@ -405,6 +405,7 @@ mod builtins_multidim_exists_adverb;
 mod builtins_multidim_ops;
 mod builtins_multidim_subscript;
 mod builtins_multidim_subscript_adverb;
+mod builtins_postcircumfix;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
@@ -1801,6 +1802,16 @@ pub struct Interpreter {
     /// than a proto sub candidate.
     proto_dispatch_stack: Vec<(String, Vec<Value>, Option<ProtoMethodCtx>)>,
     pending_dispatch_error: Option<RuntimeError>,
+    /// One-shot suppression of the user `postcircumfix:<[ ]>`/`<{ }>`
+    /// multi-candidate probe in `exec_index_op_with_positional`. Set only
+    /// while the *core* subscript routine (`builtin_postcircumfix_subscript`,
+    /// what `&postcircumfix:<[ ]>` resolves to) drives that op: real Raku's
+    /// CORE candidate performs native indexing and never re-enters the
+    /// user's override, so a delegating candidate (`old-same SELF, $index`,
+    /// the `Array::Rounded` idiom) must not recurse into itself. Consumed by
+    /// the probe with `mem::take`, so it only ever masks the one immediately
+    /// following dispatch, never a nested subscript evaluated underneath it.
+    pub(crate) skip_postcircumfix_overload: bool,
     /// Distribution selectors (`:ver`/`:auth`/`:api`) of the `use` currently
     /// being resolved, split off the module name by `use_module_with_tags` and
     /// consulted by `resolve_module_path` to pick among installed dists that

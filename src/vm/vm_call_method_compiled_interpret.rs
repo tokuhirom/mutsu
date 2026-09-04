@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn try_compiled_method_or_interpret(
+    pub(crate) fn try_compiled_method_or_interpret(
         &mut self,
         target: Value,
         method: &str,

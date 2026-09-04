@@ -2840,6 +2840,7 @@ impl Interpreter {
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
+            skip_postcircumfix_overload: false,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
             pending_inner_export_subs: HashMap::new(),
