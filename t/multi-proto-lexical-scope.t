@@ -12,7 +12,7 @@ use Test;
 # in mutsu (it leaks a block-local plain `sub` too), which is a separate
 # defect -- see todo/tickets/do-block-does-not-scope-routine-declarations.md.
 
-plan 18;
+plan 22;
 
 # --- 1. plain single sub shadowing (was already correct; guard it) ----------
 {
@@ -128,4 +128,30 @@ dies-ok { EVAL 'our multi d8(Int $x) { 1 }' },
     is @seen.join("|"), "nn|ii|ss",
         "an inner operator candidate merges with the enclosing ones";
     is (1 mplsop 2), "ii", "the outer operator candidates survive the block";
+}
+
+# --- 10. `our` is not lexically shadowable ---------------------------------
+# `our` installs the routine in the *package*, not in the lexical scope, so a
+# second `our proto` for the same name is a genuine redeclaration however
+# deeply nested its block is. raku: "Redeclaration of routine 'foo' (already
+# defined in package GLOBAL)". The lexical-shadow exemption above must not
+# cover it.
+dies-ok { EVAL 'our proto d10a($) {*}; our multi d10a(Int $x) { "o" }; { our proto d10a($) {*}; our multi d10a(Int $x) { "i" } }' },
+    "a nested `our proto` redeclaring a package-scoped one is rejected";
+dies-ok { EVAL 'our proto d10b($) {*}; our multi d10b(Int $x) { "o" }; sub s10b() { our proto d10b($) {*}; our multi d10b(Int $x) { "i" } }; s10b()' },
+    "an `our proto` inside a routine body redeclares the package one too";
+
+# A `my`-scoped inner proto still shadows an outer `our` one: that one *is* a
+# lexical declaration, and raku allows it.
+{
+    our proto s10c($) {*}
+    our multi s10c(Int $x) { "outer" }
+    my $inner;
+    {
+        proto s10c($) {*}
+        multi s10c(Int $x) { "inner" }
+        $inner = s10c(5);
+    }
+    is $inner, "inner", "a lexical proto still shadows an outer `our` proto";
+    is s10c(5), "outer", "the `our` proto comes back after the block";
 }

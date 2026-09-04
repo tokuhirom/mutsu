@@ -1729,7 +1729,14 @@ impl Interpreter {
         // exemption in `register_sub_decl_with_metadata`; EVAL is excluded there
         // for the same reason (an EVAL'd declaration has its own restore path and
         // its own outer-name bookkeeping).
-        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+        //
+        // `our` is the exception: it installs the routine in the *package*, not
+        // in the lexical scope, so a second `our proto` for the same name is a
+        // genuine redeclaration however deeply nested its block is. raku refuses
+        // it at compile time ("already defined in package GLOBAL"); the
+        // shadow exemption must not cover it.
+        let allow_lexical_shadow = !is_our
+            && (self.block_scope_depth > 0 || is_lexical_hoist)
             && !matches!(
                 self.env.get("__mutsu_in_eval").map(Value::view),
                 Some(ValueView::Bool(true))
