@@ -65,3 +65,40 @@ then make the rule unconditional and drop the flag.
 ```
 mutsu -e 'my @t := (5, 6); my $x := @t[0]; $x = 10; say @t'   # (10 6); raku dies
 ```
+
+## Re-measured 2026-09-05: the sigilless half is fixed; two shapes remain
+
+The three rows at the top of this file now all agree with rakudo — including
+the first one, the whole reason the file exists:
+
+```
+my @t := (5, 6);   my \a := @t[0]; a = 10;   # rakudo AND mutsu: Cannot modify an immutable Int (5)
+my @t  = (5, 6);   my \a := @t[0]; a = 10;   # both: [10, 6]
+my $x = 1; my @t := ($x, 6); my \a := @t[0]; a = 10;   # both: $x is 10
+```
+
+`news/2026-09/sigilless-bind-writability-comes-from-its-source.md` is what
+closed them: a sigilless bind now settles its writability from the BIND SOURCE
+(taken with the source still on the stack) instead of from what the destination
+slot happens to hold afterwards, and an immutable `List` element arrives there
+as a plain value rather than a promoted cell. So the over-promotion this file
+describes is still real in `Value::array_slot_ref`, but it no longer reaches the
+sigilless binding.
+
+Two shapes still diverge, and they are the file's remaining scope:
+
+| | rakudo | mutsu |
+|---|---|---|
+| `my $x := (5, 6)[0]; $x = 10` | `Cannot assign to an immutable value` | silently succeeds |
+| `(5, 6)[0] = 10` | `Cannot modify an immutable List ((5 6))` | silently succeeds |
+
+Both are the `$`-sigil / direct-store side of the same promotion, and neither
+goes through `MarkSigillessBindSource`. The shapes that DO refuse correctly —
+`my \x := (5,6)[0]`, `my @t := (5,6); @t[0] = 10`, `my $l := (5,6); $l[0] = 10`
+— show the immutability signal is reaching the store for a *named* container;
+what is missing is the same signal for an anonymous `List` literal subscripted
+in place.
+
+(Message nit while here: mutsu renders the refused container with `.gist`
+(`Cannot modify an immutable List (5 6)`) where rakudo uses `.raku`-ish
+parenthesisation (`((5 6))`).)
