@@ -373,6 +373,18 @@ impl Compiler {
                     custom_traits.retain(|(t, _)| {
                         t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
                     });
+                    // This IS a hoist-pass registration, so say so — exactly as
+                    // `hoist_sub_decls` does. Without the marker an `our multi`
+                    // lifted out of a nested block registered here, at the
+                    // compunit head, long before the block's own `our proto` had
+                    // run, and the "Cannot declare individual multi candidates in
+                    // 'our' scope" check fired on a perfectly valid
+                    // `{ our proto f(...) {*}; our multi f(...) {...} }`. The
+                    // in-sequence registration inside the block runs after the
+                    // proto and enforces the check for real.
+                    if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
+                        custom_traits.push(("__hoisted".to_string(), None));
+                    }
                     *name
                 }
                 _ => unreachable!("collect() only pushes SubDecl statements"),
@@ -443,22 +455,27 @@ impl Compiler {
     /// [`Compiler::lexical_dup_routines`].
     pub(super) fn mark_lexical_body(&mut self, body: &[Stmt]) {
         self.in_lexical_scope = true;
-        let mut all_multi: HashMap<String, bool> = HashMap::new();
+        // Per name: (protos, singles, multis) declared directly in this body.
+        // One `proto` plus any number of `multi`s is ONE routine, not a
+        // redeclaration; a second `proto`, a second single, or a single mixed
+        // with either really is one (raku raises X::Redeclaration for all three).
+        let mut tally: HashMap<String, (usize, usize, usize)> = HashMap::new();
         for stmt in body {
-            if let Stmt::SubDecl { name, multi, .. } = stmt {
-                let name = name.resolve();
-                match all_multi.get(&name) {
-                    None => {
-                        all_multi.insert(name, *multi);
-                    }
-                    Some(prev_all_multi) => {
-                        // Several `multi`s of one name are one routine, not a
-                        // redeclaration; anything else in the mix conflicts.
-                        if !(*prev_all_multi && *multi) {
-                            self.lexical_dup_routines.insert(name);
-                        }
-                    }
-                }
+            let (name, is_proto, is_multi) = match stmt {
+                Stmt::ProtoDecl { name, .. } => (name.resolve(), true, false),
+                Stmt::SubDecl { name, multi, .. } => (name.resolve(), false, *multi),
+                _ => continue,
+            };
+            let (protos, singles, multis) = tally.entry(name.clone()).or_default();
+            if is_proto {
+                *protos += 1;
+            } else if is_multi {
+                *multis += 1;
+            } else {
+                *singles += 1;
+            }
+            if *protos > 1 || *singles > 1 || (*singles == 1 && *protos + *multis > 0) {
+                self.lexical_dup_routines.insert(name);
             }
         }
     }

@@ -1705,6 +1705,7 @@ impl Interpreter {
         body: &[Stmt],
         is_our: bool,
         compiled: Option<&crate::opcode::CompiledFunction>,
+        is_lexical_hoist: bool,
     ) -> Result<(), RuntimeError> {
         let key = format!("{}::{}", self.current_package(), name);
         // `our proto sub f(|) {*}` makes the whole multi a package symbol. Its
@@ -1716,15 +1717,38 @@ impl Interpreter {
         if is_our {
             self.mark_our_scoped_package_item(key.clone());
         }
-        if self
-            .registry()
-            .functions
-            .contains_key(&Symbol::intern(&key))
-        {
-            return Err(RuntimeError::redeclaration_routine(name));
-        }
-        if self.registry().proto_subs_contains(&key) {
-            return Err(RuntimeError::redeclaration_routine(name));
+        // A `proto` declared inside an inner lexical scope SHADOWS an outer
+        // routine of the same name instead of redeclaring it: raku gives the
+        // inner proto a fresh candidate set, and the outer routine comes back
+        // when the scope exits. mutsu's registry is keyed by the fully-qualified
+        // `Package::name`, so both protos collide on one key; the block-scope
+        // routine-registry snapshot/restore (`snapshot_routine_registry`) is what
+        // makes the shadow come back, exactly as it does for a plain `my sub`.
+        // Without this exemption a perfectly valid inner `proto` was rejected
+        // outright with "Redeclaration of routine". Mirrors the identical
+        // exemption in `register_sub_decl_with_metadata`; EVAL is excluded there
+        // for the same reason (an EVAL'd declaration has its own restore path and
+        // its own outer-name bookkeeping).
+        let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
+            && !matches!(
+                self.env.get("__mutsu_in_eval").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                Some(ValueView::Bool(true))
+            );
+        if !allow_lexical_shadow {
+            if self
+                .registry()
+                .functions
+                .contains_key(&Symbol::intern(&key))
+            {
+                return Err(RuntimeError::redeclaration_routine(name));
+            }
+            if self.registry().proto_subs_contains(&key) {
+                return Err(RuntimeError::redeclaration_routine(name));
+            }
         }
         let prefix = format!("{key}/");
         self.registry_mut().functions.retain(|existing, _| {

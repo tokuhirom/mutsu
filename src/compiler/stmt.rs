@@ -1141,6 +1141,23 @@ impl Compiler {
                                         || t == "default"
                                         || t.starts_with("DEPRECATED")
                                 });
+                                // Mark this copy as a hoist-pass registration,
+                                // exactly as `hoist_sub_decls` does for the
+                                // value-position (inline) block path. Without the
+                                // marker the pre-pass looked like a real
+                                // declaration, and an `our multi` inside a
+                                // statement-form bare block hit the "Cannot
+                                // declare individual multi candidates in 'our'
+                                // scope" check here — before the block's own
+                                // `our proto` had run. The in-sequence
+                                // registration below runs after the proto and
+                                // enforces the check for real.
+                                if !custom_traits.iter().any(|(t, _)| t == "__lexical_hoist") {
+                                    custom_traits.push(("__lexical_hoist".to_string(), None));
+                                }
+                                if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
+                                    custom_traits.push(("__hoisted".to_string(), None));
+                                }
                             }
                             self.compile_stmt(&hoisted);
                         }
@@ -4293,10 +4310,31 @@ impl Compiler {
                 return_type,
                 body,
                 is_method,
+                custom_traits,
                 ..
             } => {
                 self.note_operator_decl(&name.resolve());
-                let idx = self.code.add_proto_decl_plan(stmt);
+                // A `proto` declared inside a routine/closure BODY is lexical to
+                // that body and shadows an outer routine of the same name rather
+                // than redeclaring it. The registry is keyed by `Package::name`,
+                // so registration cannot tell the two apart on its own — mark the
+                // plan the same way `hoist_sub_decls` marks a body-local
+                // `SubDecl`. (A bare block needs no marker: `block_scope_depth`
+                // is already non-zero while its body runs.) The marker is
+                // internal, so the `trait_mod:<is>` loop in
+                // `exec_register_proto_sub_op` skips it like every other `__`
+                // trait.
+                let body_local =
+                    self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
+                let idx = if body_local && !custom_traits.iter().any(|t| t == "__lexical_hoist") {
+                    let mut marked = stmt.clone();
+                    if let Stmt::ProtoDecl { custom_traits, .. } = &mut marked {
+                        custom_traits.push("__lexical_hoist".to_string());
+                    }
+                    self.code.add_proto_decl_plan(&marked)
+                } else {
+                    self.code.add_proto_decl_plan(stmt)
+                };
                 // A trivial proto body (empty, or a bare `{*}`) dispatches
                 // implicitly and has no candidate body of its own to compile
                 // (mirrors `vm_resolve_trivial_proto_candidate`'s gate). A

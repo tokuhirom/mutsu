@@ -1160,6 +1160,10 @@ impl Interpreter {
         // pattern, SBOM::CycloneDX). Skip the package-level registration for
         // method protos; the method-table path already handles them.
         if !*is_method {
+            // Marked by the compiler when this `proto` is declared directly in a
+            // routine/closure body, where it lexically shadows an outer routine
+            // of the same name instead of redeclaring it.
+            let is_lexical_hoist = custom_traits.iter().any(|t| t == "__lexical_hoist");
             self.register_proto_decl(
                 &name_str,
                 params,
@@ -1168,6 +1172,7 @@ impl Interpreter {
                 body,
                 *is_our,
                 compiled,
+                is_lexical_hoist,
             )?;
         }
         if *is_export {
