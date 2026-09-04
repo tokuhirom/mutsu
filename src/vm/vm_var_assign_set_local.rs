@@ -1697,10 +1697,22 @@ impl Interpreter {
             }
             // Only use ContainerRef for same-scope rebind when the value is a
             // simple scalar (not a type object, array, hash, etc.)
+            // A `Package` (type object) is NOT excluded here, unlike the
+            // other reference-ish shapes. This whole branch runs only for a
+            // bind whose source is a VARIABLE (`bind_source`), and an
+            // uninitialized scalar holds its type object -- `my $a` holds
+            // `Any`, `my Int $c` holds `Int`. Treating that as "not a simple
+            // scalar" skipped the cell promotion, so the alias bound the bare
+            // type object and every write through it was refused as a store
+            // into an immutable package: `my $a; my \x := $a; x = 5` died
+            // where raku assigns, and `my Int $c; my \x := $c; x = "s"` gave
+            // `X::Assignment::RO` instead of a type-check failure. Binding a
+            // type object LITERAL (`my \x := Int`) is a different shape --
+            // no source variable, so `bind_source` is `None` and it never
+            // reaches here; it stays correctly immutable.
             let val_is_simple_scalar = !matches!(
                 val.view(),
-                ValueView::Package(_)
-                    | ValueView::Array(..)
+                ValueView::Array(..)
                     | ValueView::Hash(..)
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
