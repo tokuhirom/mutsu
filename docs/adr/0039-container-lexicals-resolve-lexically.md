@@ -731,3 +731,71 @@ live and both spawning while sharing a name can still collide inside that
 window. Slice 2 remains the end state and subsumes all of it — once a container
 resolves through its slot, no entry lifetime needs managing. What changed is
 that the recorded, reproducible failure mode is closed and pinned.
+
+## 9. Slice 2, first bullet measured (2026-09-04): the read side alone costs 7 `t/` files, and the reason is §1.3
+
+§4.2's first bullet — "`Expr::ArrayVar` / `Expr::HashVar` emit `GetLocal(slot)`
+when `local_map` holds the sigiled name" — was implemented in isolation and
+measured, then withdrawn. The point of recording it is that "high blast radius"
+was previously an estimate; it is now an enumerated list, and the enumeration
+says the read side is *not* where the work is.
+
+**Fallout: 7 files, 12 assertions** out of `prove t/`'s 3642 files / 36919
+tests (`t/block-local-my-scope.t` 21+23, `t/buf-and-list-mutators.t` 38,
+`t/feed-operators.t` 17+18, `t/parameterized-quanthash-key-typecheck.t` 4+8,
+`t/push-inline-array-decl.t` 5, `t/quanthash-element-assign.t` 2-4,
+`t/var-decl-constraint-clear.t` 7).
+
+**One of §6's two slice-2 acceptance rows is fixed by the read change alone.**
+Row (b) — `my @c = 1; sub g { @c.push(7) }; my $h = { my @c; g(); @c }; $h(); say @c`
+— answers raku's `[1 7]` instead of `[]`. It was never a *write* bug: the named
+sub's push already reached the mainline slot; the closure's own `my @c` clobbered
+`env["@c"]`, and only the final by-name read believed it. Row (a) (a closure's
+`@a.push` landing on an inner block's shadow) is untouched, because it is a
+write-lane defect.
+
+### Why the 12 failures are all one thing
+
+Every one of them is a store site that leaves the slot and `env` naming
+different containers, which a by-name read papered over:
+
+1. **An expression-position container declaration allocates no slot.**
+   `compile_expr_stmt`'s `Stmt::VarDecl` arm (`compiler/expr_block.rs`) takes
+   `decl_slot` only when the declaration `shadows_outer`; otherwise it emits
+   `MarkVarDeclContext; SetGlobal(name)` and the container lives in `env` alone.
+   `local_map` is **monotonic in the default build** (`pop_local_scope` is a
+   no-op unless `shadow_slots_active()`), so a popped sibling block's `@a` slot
+   is still in `local_map` — the read compiled to that stale slot while the
+   declaration wrote only `env`. This is `t/block-local-my-scope.t` 21/23,
+   `t/feed-operators.t` 17/18, `t/push-inline-array-decl.t` 5,
+   `t/buf-and-list-mutators.t` 38.
+2. **A genuine same-named shadow gives `code.locals` two entries with one
+   name**, and the element-assign lane resolves by name across them.
+   `my %h = (1 => "a"); { my %h; %h<s> = "t"; say %h<s> }` compiles to
+   `locals: ["%h", "%h"]`, `IndexAssignExprNamed { target_slot: Some(1) }`,
+   `GetLocal(1)` — and answers `(Any)`, because the handler is env-centric and
+   its baked `target_slot` is deliberately ignored unless
+   `shadow_slots_active()` (`vm_var_assign_index_named.rs`: an out-of-range
+   baked slot must not silently become "not local here"). The mutation COW'd a
+   third container that no slot points at. This is
+   `t/var-decl-constraint-clear.t` 7 and the two QuantHash files.
+
+### What this changes about slice 2's plan
+
+- The first bullet is **not independently landable**, and not because it is
+  large — it is three lines. It is blocked on the *store* lane, which is the
+  actual content of slice 2.
+- The blocking dependency is **§1.3 of `docs/lexical-scope-slot-campaign.md`**
+  (slot-indexed locals / retiring the by-name resolvers), not something internal
+  to this ADR: cause 1 is `local_map`'s monotonicity, cause 2 is duplicate
+  `code.locals` names, and both are exactly what §1.3 exists to remove. Slice 2
+  should be resourced as part of §1.3, sharing its safety net, rather than as a
+  standalone container-only change — which also puts it in the same bucket as
+  `todo/tickets/same-named-loop-params-in-one-unit-interfere.md`, whose own
+  investigation reached §1.3 from the scalar side.
+- **Order within slice 2 is therefore inverted from §4.2's bullet order**: make
+  the container *store* sites slot-addressed first (expression-position
+  declarations allocate a slot; `IndexAssignExprNamed` honours its baked
+  `target_slot`), then flip the read. The read flip is the cheap last step and
+  its acceptance is already written (§6's rows (a) and (b), plus the 12
+  assertions above as the regression set).
