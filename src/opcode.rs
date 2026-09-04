@@ -1406,6 +1406,13 @@ pub(crate) enum OpCode {
         /// values (block-local declarations don't leak), while mutations of OUTER
         /// variables persist. `u32::MAX` when there are none / not isolated.
         isolate_decls_idx: u32,
+        /// True when the body declares a routine (`sub`/`proto`) directly in
+        /// its own scope. A `do { ... }` block is a block, so such a routine is
+        /// lexical to it: the VM snapshots the routine registry on entry and
+        /// restores it on exit, exactly as `OpCode::BlockScope` and the
+        /// routine-call paths already do. False skips that work entirely, which
+        /// is the overwhelmingly common case.
+        scope_routines: bool,
     },
     OnceExpr {
         body_end: u32,

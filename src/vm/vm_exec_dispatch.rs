@@ -4998,6 +4998,7 @@ impl Interpreter {
                 label,
                 scope_isolate,
                 isolate_decls_idx,
+                scope_routines,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_do_block_expr_op(
@@ -5006,6 +5007,7 @@ impl Interpreter {
                     label,
                     *scope_isolate,
                     *isolate_decls_idx,
+                    *scope_routines,
                     ip,
                     compiled_fns,
                 )?;

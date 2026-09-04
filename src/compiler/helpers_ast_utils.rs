@@ -408,7 +408,9 @@ impl Compiler {
     /// routine-registry scoping (hoist + snapshot/restore). Mirrors the set of
     /// statements that [`hoist_sub_decls`] acts on (`Stmt::SubDecl`).
     pub(crate) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. }))
+        stmts
+            .iter()
+            .any(|s| matches!(s, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. }))
     }
 
     /// Constant-pool index for the qualified name of a top-level
