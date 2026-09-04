@@ -295,7 +295,29 @@ impl Compiler {
                 // Elements are stored into the list -> a closure element escapes.
                 self.with_escape(true, |c| {
                     for elem in elems {
+                        // ... and it holds an array/hash ELEMENT's container for
+                        // the same reason: rakudo's
+                        // `my @a = 1, 2; my (\p, \q) := (@a[0], @a[1]); p = 9`
+                        // writes `[9 2]`. An `Expr::Index` has no source NAME for
+                        // the `WrapVarRef` tag below, so compile it the way a `:=`
+                        // bind to a subscript does and let the element reference
+                        // itself reach `MakeArray` -- a `ContainerRef` is a scalar
+                        // item, so it never flattens, and every reader derefs it.
+                        // The reference is a DEFERRED vivification token, which is
+                        // what keeps `my @a; (@a[5],)` from growing `@a` while a
+                        // later write through the alias still does (rakudo:
+                        // `[Any, Any, Any, Any, Any, 9]`).
+                        let element_ref =
+                            matches!(elem, Expr::Index { .. }) && !c.suppress_list_var_alias;
+                        let saved_autoviv = c.scalar_bind_autovivify;
+                        let saved_terminal = c.bind_terminal;
+                        if element_ref {
+                            c.scalar_bind_autovivify = true;
+                            c.bind_terminal = true;
+                        }
                         c.compile_expr(elem);
+                        c.scalar_bind_autovivify = saved_autoviv;
+                        c.bind_terminal = saved_terminal;
                         // A List (`($a, $b)`) holds the *container* of each scalar
                         // variable element, not a snapshot of its value: a later
                         // mutation of `$a` is visible when the List is read
