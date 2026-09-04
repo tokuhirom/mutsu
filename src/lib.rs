@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod anon_names;
 mod ast;
 mod builtins;
 pub(crate) mod chain_compare;
