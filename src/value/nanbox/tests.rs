@@ -617,3 +617,62 @@ fn debug_matches_the_repr_debug() {
         )
     );
 }
+
+/// `Clone`/`Drop` skip [`payload_op`] entirely for a payload-free kind (see
+/// [`kind_owns_payload`]). Pin both directions of that classification.
+///
+/// The listing side is guaranteed by construction -- `payload_free_kinds!` is
+/// expanded both as `payload_op`'s do-nothing arm and as
+/// `kind_owns_payload`'s test -- but "the macro lists the right kinds" is not,
+/// so check each listed kind really does round-trip through a clone and a drop
+/// unchanged.
+#[test]
+fn payload_free_kinds_survive_clone_and_drop_without_payload_op() {
+    let payload_free = [
+        ValueRepr::Nil,
+        ValueRepr::Whatever,
+        ValueRepr::HyperWhatever,
+        ValueRepr::Bool(true),
+        ValueRepr::Bool(false),
+        ValueRepr::Package(crate::symbol::Symbol::intern("Int")),
+        ValueRepr::CompUnitDepSpec {
+            short_name: crate::symbol::Symbol::intern("Test"),
+        },
+    ];
+    for repr in payload_free {
+        let expect = format!("{repr:?}");
+        let word = NanBox::from_repr(repr);
+        match classify(word.0.get()) {
+            Classified::Kind(kind) => assert!(
+                !kind_owns_payload(kind),
+                "{kind:?} is missing from payload_free_kinds!()"
+            ),
+            other => panic!(
+                "{expect} classified as {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
+        // A clone and a drop of the clone must leave the original intact --
+        // exactly what the skipped `payload_op` would have guaranteed.
+        drop(word.clone());
+        assert_eq!(format!("{:?}", word.into_repr()), expect);
+    }
+}
+
+/// The other direction: a refcounted word must never be classified
+/// payload-free, or its clone would not bump and its drop would not release.
+#[test]
+fn refcounted_kinds_are_never_payload_free() {
+    let s = Arc::new("shared".to_string());
+    let word = NanBox::from_repr(ValueRepr::Str(s.clone()));
+    match classify(word.0.get()) {
+        Classified::Kind(kind) => assert!(kind_owns_payload(kind), "Str must own its payload"),
+        other => panic!("Str classified as {:?}", std::mem::discriminant(&other)),
+    }
+    let dup = word.clone();
+    assert_eq!(Arc::strong_count(&s), 3, "clone still bumps");
+    drop(dup);
+    assert_eq!(Arc::strong_count(&s), 2, "drop still releases");
+    drop(word);
+    assert_eq!(Arc::strong_count(&s), 1);
+}
