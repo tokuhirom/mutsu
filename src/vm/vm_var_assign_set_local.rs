@@ -404,6 +404,14 @@ impl Interpreter {
         self.explicit_initializer_context.set(false);
         self.vardecl_context.set(false);
         self.shaped_decl_context = false;
+        // ADR-0040's store boundary, Proxy half: `=` reads its RHS in value
+        // context, so a `Proxy` assigned INTO a container is FETCHed and the
+        // plain value is what lands. Every bind flavour is exempt — `:=`
+        // installs the Proxy itself, which is what makes `$p = 1` fire `STORE`.
+        // See `Interpreter::fetch_proxy_for_store`.
+        if !is_bind && !is_rebind && !scalar_bind && !param_raw_bind {
+            raw_popped = self.fetch_proxy_for_store(raw_popped)?;
+        }
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Assigning it to an `@`/`%` container reifies the Seq (raku list
         // semantics), so pull every element from the iterator first — the array/
@@ -1137,6 +1145,10 @@ impl Interpreter {
                 // with one call. A `:=` bind is deliberately excluded -- a
                 // bound `List`'s elements are NOT containers (§1.6/row 24).
                 assigned = Self::itemize_elements_for_var_assign(name, assigned);
+                // The Proxy half of the same boundary: those elements are
+                // `Scalar` containers, so `my @a = (1, $p, 3)` FETCHes each one
+                // on the way in (`fetch_proxy_container_elements`).
+                assigned = self.fetch_proxy_container_elements(assigned)?;
             }
             // `@a = Nil` resets to the *outgoing container's* own
             // `is default(...)` -- see `array_assign_nil_container_default`.
@@ -1274,6 +1286,13 @@ impl Interpreter {
                 Self::itemize_scalar_store(name, v)
             }
         };
+        // The Proxy half of ADR-0040's store boundary for a `%` container: a
+        // Hash value is a `Scalar` container, so `my %h = (k => $p)` FETCHes on
+        // the way in. (`@` is hooked inside its own branch, beside the
+        // element itemization it mirrors.)
+        if !is_bind && !is_rebind && name.starts_with('%') {
+            val = self.fetch_proxy_container_elements(val)?;
+        }
         if val.is_nil()
             && !self.locals[idx].is_nil()
             && let Some(def) = self.var_default(name)

@@ -801,7 +801,11 @@ impl Interpreter {
             ValueView::Nil => Vec::new(),
             _ => vec![args[2].clone()],
         };
-        let value = args[3].clone();
+        // ADR-0040's store boundary, Proxy half: the whole call is exempt from
+        // the caller's argument auto-FETCH (`skip_proxy_fetch`) because the
+        // TARGET must keep its container, but the assigned VALUE is an ordinary
+        // rvalue — `$obj.attr = $p` stores what `$p` FETCHes.
+        let value = self.fetch_proxy_for_store(args[3].clone())?;
         let target_var = args.get(4).and_then(|v| {
             let name = v.to_string_value();
             if name.is_empty() { None } else { Some(name) }

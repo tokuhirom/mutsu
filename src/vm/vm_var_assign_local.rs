@@ -169,6 +169,8 @@ impl Interpreter {
             // that bypass `coerce_to_array` (here, the reified-LazyList
             // gather).
             assigned = Self::itemize_elements_for_var_assign(name, assigned);
+            // The Proxy half of the same boundary — see the SetLocal sibling.
+            assigned = self.fetch_proxy_container_elements(assigned)?;
             let class_name = match self.locals[idx].view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 ValueView::Package(class_name) => Some(class_name),

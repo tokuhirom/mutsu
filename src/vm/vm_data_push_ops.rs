@@ -61,6 +61,15 @@ impl Interpreter {
         value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
+        // ADR-0040's store boundary, Proxy half: the pushed element is a
+        // `Scalar` container, so a `Proxy` is FETCHed on the way in exactly as
+        // `@a[0] = $p` is. Done before the branches below, each of which pops
+        // the value for its own store path.
+        if self.stack.last().is_some_and(Value::is_proxy_value) {
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let val = self.fetch_proxy_for_store(val)?;
+            self.stack.push(val);
+        }
         // A lazy `@`-array (infinite source) cannot be pushed to: there is no
         // end to append after. raku throws `X::Cannot::Lazy`
         // ("Cannot push to a lazy list onto a Array"). (L2)
