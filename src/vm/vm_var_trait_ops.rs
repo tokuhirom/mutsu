@@ -22,6 +22,20 @@ impl Interpreter {
         // trait name (`default`, `rw`, ...) or a non-lexical class: `env` has
         // no Package binding for those under this literal name.
         let trait_name = self.lexical_env_remap_name(&trait_name);
+        // `my @a is Alias` / `my %h is Alias` where `Alias` is a `constant`
+        // bound to a type object (`my constant Rounded = Array::Rounded;` — the
+        // standard "give a verbosely-named class a short name" packaging idiom,
+        // and the shape an `is export`ed alias arrives in downstream). The trait
+        // name is baked into the constant pool exactly as written, so every
+        // registry probe below misses it and the variable silently kept the base
+        // container type.
+        //
+        // Deliberately narrow, because this name is also how the BUILT-IN
+        // variable traits arrive (`default`, `rw`, `TypeConverter`, ...) and an
+        // unrelated lexical can shadow one of those bare names (the trap
+        // `lexical_env_remap_name`'s own `\u{0}` guard was added for): remap only
+        // when the literal name is NOT itself a registered class or role, and
+        // only onto a name that IS one.
         // Under shadow slots a by-name `position` search resolves to the OUTER
         // same-named slot, so the trait would tag/replace the wrong container
         // (e.g. `my @a is default(42)` shadowing an outer `@a` tagged the outer
@@ -443,6 +457,25 @@ impl Interpreter {
             }
         }
 
+        // `my @a is Alias` / `my %h is Alias` where `Alias` is a `constant`
+        // bound to a type object (`my constant Rounded = Array::Rounded;` — the
+        // standard "give a verbosely-named class a short name" packaging idiom,
+        // and the shape an `is export`ed alias arrives in downstream). The trait
+        // name is baked into the constant pool exactly as written, so every
+        // registry probe below misses it and the variable silently kept the base
+        // container type.
+        //
+        // Resolved HERE, below every built-in variable trait (`default`, `rw`,
+        // ...), and not beside `lexical_env_remap_name` at the top: those names
+        // reach this op the same way, and an unrelated lexical can bind one of
+        // them to a type object (`my $default = Int` aliases the bare name
+        // `default`), which would rename the built-in trait out from under its
+        // own branch — the trap that guard was added for.
+        let trait_name = match self.trait_name_through_constant_alias(&trait_name) {
+            Some(aliased) => aliased,
+            None => trait_name,
+        };
+
         // `my @a is CustomClass` where CustomClass subclasses `Array` (e.g.
         // `class Array::Rounded is Array {...}`) or composes `Positional`:
         // back the variable with a blessed instance, so indexing overrides
@@ -745,5 +778,28 @@ impl Interpreter {
         let msg = &e.message;
         msg.contains("No matching candidates for proto sub: trait_mod:<is>")
             || msg.contains("Cannot resolve caller trait_mod:<is>")
+    }
+
+    /// Resolve an `is Alias` trait name that is a `constant` bound to a type
+    /// object down to the class/role it names, or `None` when it is not one.
+    /// See the call site in [`Self::exec_apply_var_trait_op`] for why this is
+    /// deliberately narrow.
+    fn trait_name_through_constant_alias(&mut self, trait_name: &str) -> Option<String> {
+        if self.registry().classes.contains_key(trait_name)
+            || self.registry().roles.contains_key(trait_name)
+        {
+            return None;
+        }
+        let bound = self.get_env_with_main_alias(trait_name)?;
+        let ValueView::Package(p) = bound.view() else {
+            return None;
+        };
+        let aliased = p.resolve();
+        if aliased == trait_name {
+            return None;
+        }
+        (self.registry().classes.contains_key(&aliased)
+            || self.registry().roles.contains_key(&aliased))
+        .then_some(aliased)
     }
 }

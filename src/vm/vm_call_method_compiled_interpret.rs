@@ -323,6 +323,7 @@ impl Interpreter {
             // so callers that route through this entry (e.g. index `$v[0]` →
             // AT-POS) also reach the storage instead of returning Nil.
             if !self.has_user_method(class, method)
+                && !Self::is_type_identity_method(method)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && attributes.contains_key("__mutsu_array_storage")
                 && self
