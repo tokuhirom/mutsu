@@ -3092,8 +3092,10 @@ impl Interpreter {
         // declaration, so it fires for any root that reaches this op -- a `my`
         // array, a `:=`-bound alias, or the shared array an attribute accessor
         // hands back.
-        if let Some(err) =
-            self.typed_array_element_autoviv_error(&var_name, &inner_key, outer_positional)
+        if let Some(err) = self.lvalue_root_temp_not_a_container(&var_name) {
+            return Err(err);
+        }
+        if let Some(err) = self.typed_element_autoviv_error(&var_name, &inner_key, outer_positional)
         {
             return Err(err);
         }
@@ -3469,33 +3471,75 @@ impl Interpreter {
     /// Stack order: [value, idx_outermost, ..., idx_innermost] (innermost on top).
     /// positional_flags_idx is a constant index holding an array of booleans
     /// (innermost to outermost) indicating whether each subscript is positional.
+    /// A subscript chain rooted at an accessor-style method call runs against a
+    /// compiler temp holding the accessor's return value
+    /// (`bind_method_rooted_chain_root`). When that value is not a container
+    /// the chain walk has nothing to store into and would silently drop the
+    /// write -- the exact class of failure the routing exists to remove -- so
+    /// fail loudly instead.
+    ///
+    /// Keyed on the temp's name prefix, so ordinary variable-rooted chains
+    /// (whose "root is not a container" behaviour is a separate, older gap)
+    /// are untouched.
+    fn lvalue_root_temp_not_a_container(&mut self, var_name: &str) -> Option<RuntimeError> {
+        if !var_name.starts_with(crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX) {
+            return None;
+        }
+        let root = self.env().get(var_name)?.deref_container();
+        if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+            return None;
+        }
+        let got = crate::value::types::what_type_name(&root);
+        drop(root);
+        Some(RuntimeError::new(format!(
+            "Cannot subscript-assign through {}: it returned {}, not an Array or Hash container",
+            crate::runtime::utils::format_var_name_for_error(var_name),
+            got
+        )))
+    }
+
     /// The `X::TypeCheck::Assignment` a nested subscript store must raise when
-    /// descending through a *missing* element of a **typed** array would
-    /// autovivify an Array/Hash there (`my Int @a; @a[0][1] = 5`).
+    /// descending through a *missing* element of a **typed** container would
+    /// autovivify an Array/Hash there (`my Int @a; @a[0][1] = 5`,
+    /// `my Int %h; %h<a><b> = 5`).
     ///
     /// The constraint is read from the container's own `value_type`, not from
-    /// the variable's declaration, so the check is root-agnostic. Returns
-    /// `None` -- the overwhelmingly common case -- when the root is not a typed
-    /// array, when the element already holds a container (nothing is
-    /// autovivified), or when the constraint accepts the intermediate.
-    fn typed_array_element_autoviv_error(
+    /// the variable's declaration, so the check is root-agnostic: it fires for
+    /// a `my` container, a `:=`-bound alias, and the shared container an
+    /// attribute accessor hands back -- which reaches this op through a
+    /// compiler temp and so has no declaration to consult at all. Returns
+    /// `None` -- the overwhelmingly common case -- when the root is not typed,
+    /// when the element already holds a container (nothing is autovivified),
+    /// or when the constraint accepts the intermediate.
+    fn typed_element_autoviv_error(
         &mut self,
         var_name: &str,
         inner_key: &str,
         outer_positional: bool,
     ) -> Option<RuntimeError> {
-        let inner_i = inner_key.parse::<usize>().ok()?;
         let root = self.env().get(var_name)?.deref_container();
-        let ValueView::Array(arr, _) = root.view() else {
-            return None;
+        let (ty, existing, slot_name) = match root.view() {
+            ValueView::Array(arr, _) => {
+                let inner_i = inner_key.parse::<usize>().ok()?;
+                (
+                    arr.value_type.clone()?,
+                    arr.items().get(inner_i).cloned(),
+                    format!("{var_name}[{inner_i}]"),
+                )
+            }
+            ValueView::Hash(map) => (
+                map.value_type.clone()?,
+                map.get(inner_key).cloned(),
+                format!("{var_name}{{'{inner_key}'}}"),
+            ),
+            _ => return None,
         };
-        let ty = arr.value_type.clone()?;
         if matches!(ty.as_str(), "Any" | "Mu") {
             return None;
         }
         // An element that is already a container is descended into, not
         // autovivified, so no intermediate is stored and nothing is checked.
-        if let Some(existing) = arr.items().get(inner_i)
+        if let Some(existing) = &existing
             && matches!(
                 existing.view(),
                 ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
@@ -3513,9 +3557,7 @@ impl Interpreter {
             return None;
         }
         Some(crate::runtime::utils::type_check_element_typed_error(
-            &format!("{var_name}[{inner_i}]"),
-            &ty,
-            &probe,
+            &slot_name, &ty, &probe,
         ))
     }
 
@@ -3540,6 +3582,9 @@ impl Interpreter {
             return result;
         }
         let var_name = Self::const_str(code, name_idx).to_string();
+        if let Some(err) = self.lvalue_root_temp_not_a_container(&var_name) {
+            return Err(err);
+        }
         let native_fill = {
             let tc = loan_env!(self, var_type_constraint(&var_name));
             Self::native_fill_for_constraint(tc.as_deref())

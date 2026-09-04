@@ -117,7 +117,29 @@ pub(crate) fn attribute_default_never_assign_error(
 
 /// Format the variable name for error messages, adding `$` sigil for
 /// scalar variables that don't already have a sigil prefix.
+/// Prefix of the compiler temp an lvalue subscript chain rooted at a method call
+/// is bound to (`compile_expr_index_assign`). The rest of the name is the
+/// accessor spelling plus a `#<n>` uniquifier, so an element type check raised
+/// against the temp can still report `@!a` instead of an internal name.
+pub(crate) const LVALUE_ROOT_TEMP_PREFIX: &str = "__mutsu_lvroot_";
+
 pub(crate) fn format_var_name_for_error(name: &str) -> String {
+    // An lvalue chain rooted at a method call runs against a compiler temp
+    // (`__mutsu_lvroot_@.a#37[0]`). Recover the accessor spelling the user
+    // actually wrote so the error reads `@!a[0]`, like rakudo, instead of
+    // leaking the temp.
+    if let Some(rest) = name.strip_prefix(LVALUE_ROOT_TEMP_PREFIX) {
+        if let Some(hash) = rest.find('#') {
+            let (accessor, tail) = rest.split_at(hash);
+            let subscript = tail.find(['[', '{']).map(|i| &tail[i..]).unwrap_or("");
+            return format!(
+                "{}{}",
+                format_var_name_for_error(&format!("{}.{}", &accessor[..1], &accessor[1..])),
+                subscript
+            );
+        }
+        return format_var_name_for_error(rest);
+    }
     // Rakudo always names the ATTRIBUTE in an assignment error, whichever syntax
     // wrote it: `$.n = $v` (through the `is rw` accessor) reports `$!n`, exactly
     // as a direct `$!n = $v` does. Normalize the `.`-twigil accessor form here so

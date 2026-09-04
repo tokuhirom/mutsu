@@ -588,6 +588,81 @@ impl Compiler {
         }
     }
 
+    /// For an lvalue subscript chain of depth >= 2 whose innermost target is an
+    /// accessor-style method call (`$o.a[0]<x>`, `$o.h<a><b><c>`), evaluate that
+    /// method call once into a compiler temp and return the same chain with the
+    /// method call replaced by the temp's name.
+    ///
+    /// The temp is a plain env entry holding the accessor's return value, so it
+    /// is *node-shared* with the attribute's container: the ordinary
+    /// variable-rooted chain walk then autovivifies and stores in place, and the
+    /// write reaches the attribute. Returns `None` for every other shape,
+    /// including a single-level `$o.a[0] = v` (already handled, and it needs the
+    /// accessor write-back path).
+    ///
+    /// The temp's name embeds the accessor spelling (`@.a`) so an element type
+    /// error still names something the user wrote -- see
+    /// `format_var_name_for_error`.
+    fn bind_method_rooted_chain_root(&mut self, target: &Expr) -> Option<Expr> {
+        // `target` is the chain BELOW the outermost subscript, so requiring one
+        // `Expr::Index` here is what makes this depth >= 2.
+        let Expr::Index { .. } = target else {
+            return None;
+        };
+        // Walk down to the root, remembering the levels on the way.
+        let mut levels: Vec<(&Expr, bool)> = Vec::new();
+        let mut cur = target;
+        while let Expr::Index {
+            target: inner,
+            index,
+            is_positional,
+        } = cur
+        {
+            levels.push((index.as_ref(), *is_positional));
+            cur = inner.as_ref();
+        }
+        let Expr::MethodCall {
+            name: method_name,
+            args,
+            modifier,
+            ..
+        } = cur
+        else {
+            return None;
+        };
+        // Only a no-argument accessor-style call yields a container to store
+        // through; a call with arguments (or an adverb) can compute a fresh
+        // value, and writing into that must keep its existing behaviour.
+        if !args.is_empty() || modifier.is_some() {
+            return None;
+        }
+        self.compile_expr(cur);
+        let sigil = if levels.last().map(|(_, p)| *p).unwrap_or(true) {
+            '@'
+        } else {
+            '%'
+        };
+        let tmp = format!(
+            "{}{}{}#{}",
+            crate::runtime::utils::LVALUE_ROOT_TEMP_PREFIX,
+            sigil,
+            method_name.resolve(),
+            self.code.constants.len()
+        );
+        let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
+        self.code.emit(OpCode::SetGlobal(tmp_idx));
+        // Rebuild the chain against the temp, innermost level first.
+        let mut rebuilt = Expr::Var(tmp);
+        for (index, is_positional) in levels.into_iter().rev() {
+            rebuilt = Expr::Index {
+                target: Box::new(rebuilt),
+                index: Box::new(index.clone()),
+                is_positional,
+            };
+        }
+        Some(rebuilt)
+    }
+
     pub(super) fn compile_expr_index_assign(
         &mut self,
         target: &Expr,
@@ -733,6 +808,29 @@ impl Compiler {
                 .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
             return;
         }
+        // A subscript chain rooted at an accessor-style method call
+        // (`$o.a[0]<x> = 5`, `$o.h<a><b> = 5`) is compiled by evaluating the
+        // accessor ONCE into a compiler temp and then running the ordinary
+        // variable-rooted chain against that temp.
+        //
+        // The accessor hands back the attribute's *shared* container (which is
+        // why `$o.a.push(1)` reaches the attribute), so the chain walk
+        // autovivifies into it in place and the write lands. Previously this
+        // shape was rewritten into the `__mutsu_index_assign_method_lvalue_nested`
+        // runtime builtin, which rebuilt the containers copy-on-write and never
+        // installed a freshly autovivified level back into the attribute -- so
+        // `$o.a[0]<x> = 5` left `[]` and the write was silently lost, at every
+        // depth >= 2 and in both the `[...]` and `<...>` spellings. Same temp
+        // trick as `compile_expr_method_on_nested_index`, which already relies
+        // on the node sharing for `$obj.attr<a><b>.push`.
+        //
+        // Only depth >= 2 routes here: a single-level `$o.a[0] = v` is already
+        // correct through `__mutsu_index_assign_method_lvalue`, which also
+        // performs the accessor write-back a non-container attribute needs.
+        if let Some(rewritten) = self.bind_method_rooted_chain_root(target) {
+            self.compile_expr_index_assign(&rewritten, index, value, outer_positional);
+            return;
+        }
         if let Some(name) = Self::index_assign_target_name(target) {
             let target_slot = self.local_map.get(&name).copied();
             if Self::index_assign_target_requires_eval(target) {
@@ -793,35 +891,6 @@ impl Compiler {
                 outer_positional,
                 inner_positional,
             });
-        } else if let Expr::Index {
-            target: method_call_target,
-            index: inner_index,
-            ..
-        } = target
-            && let Expr::MethodCall {
-                target: method_target,
-                name: method_name,
-                args: method_args,
-                ..
-            } = method_call_target.as_ref()
-            && method_args.is_empty()
-            && let Some(var_name) = Self::method_call_target_var_name(method_target)
-        {
-            // Nested subscript on a method call (e.g., $o.a[42]<foo> = 3 or $o.h<key1><key2> = val).
-            // This would autovivify an intermediate value in the typed container, which Raku disallows.
-            // Emit a call to __mutsu_index_assign_method_lvalue_nested that checks type constraints.
-            let rewritten = Expr::Call {
-                name: Symbol::intern("__mutsu_index_assign_method_lvalue_nested"),
-                args: vec![
-                    (**method_target).clone(),
-                    Expr::Literal(Value::str(method_name.resolve().to_string())),
-                    (**inner_index).clone(),
-                    index.clone(),
-                    value.clone(),
-                    Expr::Literal(Value::str(var_name)),
-                ],
-            };
-            self.compile_expr(&rewritten);
         } else if let Expr::MethodCall {
             target: method_target,
             name: method_name,
