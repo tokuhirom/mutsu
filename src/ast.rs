@@ -1164,6 +1164,14 @@ pub(crate) enum Stmt {
         /// (`sub f { state $n = 0 if 1; ++$n }` counts 1, 2, 3 across calls).
         /// Mirrors `Stmt::For` / `Stmt::Given`'s flag of the same name.
         is_statement_modifier: bool,
+        /// True when the source keyword was `unless`, i.e. `cond` holds the
+        /// parser's synthetic `!` wrapper around the written condition and
+        /// `else_branch` is necessarily empty (rakudo rejects `unless`/`else`
+        /// at compile time). Carries no execution meaning — `unless X` and
+        /// `if !X` run identically — but raku models them as different nodes
+        /// (`RakuAST::Statement::Unless` vs `::If`), so the RakuAST converter
+        /// needs the source keyword back. Mirrors `Stmt::While::is_until`.
+        is_unless: bool,
     },
     While {
         cond: Expr,
@@ -3316,6 +3324,7 @@ mod env_only_decl_tests {
             else_branch: vec![],
             binding_var: None,
             is_statement_modifier: false,
+            is_unless: false,
         };
         // Wrapped in a gather-shaped Block([While { body: [...] }]).
         let body = vec![Stmt::Block(vec![Stmt::While {

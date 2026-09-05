@@ -32,6 +32,7 @@ impl Compiler {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                ..
             } if Self::do_if_branch_supported(then_branch)
                 && Self::do_if_branch_supported(else_branch) =>
             {
@@ -257,6 +258,7 @@ impl Compiler {
                         else_branch,
                         binding_var,
                         is_statement_modifier,
+                        ..
                     } => {
                         self.compile_do_if_expr_bound(
                             cond,

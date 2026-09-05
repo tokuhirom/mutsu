@@ -193,8 +193,10 @@ impl Compiler {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                is_unless,
             } => Stmt::If {
                 is_statement_modifier: *is_statement_modifier,
+                is_unless: *is_unless,
                 cond: cond.clone(),
                 then_branch: Self::rewrite_next_targets_in_stmts(
                     then_branch,
@@ -563,6 +565,7 @@ impl Compiler {
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: false,
+                is_unless: false,
             });
         }
         // Declare temp variables for extracted ENTER phaser expressions
@@ -673,6 +676,7 @@ impl Compiler {
                 else_branch: undo_ph,
                 binding_var: None,
                 is_statement_modifier: false,
+                is_unless: false,
             });
         }
         loop_body.extend(leave_ph);
@@ -705,6 +709,7 @@ impl Compiler {
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: false,
+                is_unless: false,
             }]
         } else {
             vec![Stmt::If {
@@ -713,6 +718,7 @@ impl Compiler {
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: false,
+                is_unless: false,
             }]
         };
 
@@ -811,8 +817,10 @@ impl Compiler {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                is_unless,
             } => Stmt::If {
                 is_statement_modifier: *is_statement_modifier,
+                is_unless: *is_unless,
                 cond: Self::rewrite_enter_phaser_expr(cond, extracted, counter),
                 then_branch: Self::rewrite_enter_phaser_stmts(then_branch, extracted, counter),
                 else_branch: Self::rewrite_enter_phaser_stmts(else_branch, extracted, counter),

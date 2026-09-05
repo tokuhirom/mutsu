@@ -397,6 +397,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             else_branch,
             binding_var: None,
             is_statement_modifier: false,
+            is_unless: false,
         },
     ))
 }

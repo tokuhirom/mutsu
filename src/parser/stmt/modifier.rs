@@ -133,6 +133,7 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
         else_branch: Vec::new(),
         binding_var: None,
         is_statement_modifier: true,
+        is_unless: false,
     };
     Some(Stmt::SyntheticBlock(vec![decl, init]))
 }
@@ -487,6 +488,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: false,
             },
         )));
     }
@@ -521,6 +523,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: true,
             },
         )));
     }
@@ -855,6 +858,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: false,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -880,6 +884,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: false,
             }],
             is_statement_modifier: true,
         };
@@ -934,6 +939,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: false,
             };
             let given_stmt = Stmt::Given {
                 topic: cond,
@@ -953,6 +959,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
+                is_unless: false,
             }],
             is_statement_modifier: true,
         };

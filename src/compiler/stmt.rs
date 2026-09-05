@@ -558,6 +558,7 @@ impl Compiler {
             else_branch: Vec::new(),
             binding_var: None,
             is_statement_modifier: false,
+            is_unless: false,
         };
 
         Some(vec![decl, for_stmt, writeback])
@@ -730,6 +731,7 @@ impl Compiler {
             })],
             binding_var: None,
             is_statement_modifier: false,
+            is_unless: false,
         };
 
         Some(vec![idx_decl, slice_decl, src_decl, for_stmt, writeback])
@@ -2325,6 +2327,7 @@ impl Compiler {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                ..
             } => {
                 // Check for heredoc scope violations in then/else branches
                 if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
@@ -4922,6 +4925,7 @@ impl Compiler {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                ..
             } => {
                 self.compile_if_value(
                     cond,

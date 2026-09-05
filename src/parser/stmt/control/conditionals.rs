@@ -448,6 +448,7 @@ pub(crate) fn lower_if_chain(
             else_branch,
             binding_var: clause.binding_var,
             is_statement_modifier: false,
+            is_unless: false,
         }];
     }
 
@@ -517,6 +518,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             else_branch: Vec::new(),
             binding_var: None,
             is_statement_modifier: false,
+            is_unless: true,
         },
     ))
 }

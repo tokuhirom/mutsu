@@ -89,6 +89,7 @@ pub enum RakuAstClass {
     ParameterTargetVar,
     // Phase 2 slice 4: conditionals and loops.
     StatementIf,
+    StatementUnless,
     StatementLoopWhile,
     StatementLoop,
     // Phase 2 slice 5: elsif chains.
@@ -128,6 +129,8 @@ pub enum RakuAstClass {
     StatementWhen,
     StatementDefault,
     StatementModifierGiven,
+    StatementModifierIf,
+    StatementModifierUnless,
     // Phase 2 slice 19: ternary.
     Ternary,
     // Phase 2 slice 22: positional subscripts.
@@ -239,6 +242,7 @@ impl RakuAstClass {
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
             StatementIf => "RakuAST::Statement::If",
+            StatementUnless => "RakuAST::Statement::Unless",
             StatementLoopWhile => "RakuAST::Statement::Loop::While",
             StatementLoop => "RakuAST::Statement::Loop",
             StatementElsif => "RakuAST::Statement::Elsif",
@@ -263,6 +267,8 @@ impl RakuAstClass {
             StatementWhen => "RakuAST::Statement::When",
             StatementDefault => "RakuAST::Statement::Default",
             StatementModifierGiven => "RakuAST::StatementModifier::Given",
+            StatementModifierIf => "RakuAST::StatementModifier::If",
+            StatementModifierUnless => "RakuAST::StatementModifier::Unless",
             Ternary => "RakuAST::Ternary",
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
@@ -540,6 +546,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Parameter,
     RakuAstClass::ParameterTargetVar,
     RakuAstClass::StatementIf,
+    RakuAstClass::StatementUnless,
     RakuAstClass::StatementLoopWhile,
     RakuAstClass::StatementLoop,
     RakuAstClass::StatementElsif,
@@ -564,6 +571,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementWhen,
     RakuAstClass::StatementDefault,
     RakuAstClass::StatementModifierGiven,
+    RakuAstClass::StatementModifierIf,
+    RakuAstClass::StatementModifierUnless,
     RakuAstClass::Ternary,
     RakuAstClass::SemiList,
     RakuAstClass::PostcircumfixArrayIndex,

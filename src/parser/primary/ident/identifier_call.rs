@@ -569,6 +569,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         else_branch: Vec::new(),
                         binding_var: None,
                         is_statement_modifier: false,
+                        is_unless: false,
                     })),
                 ));
             }
