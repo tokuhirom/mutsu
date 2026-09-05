@@ -1085,6 +1085,16 @@ impl Interpreter {
         // target variable name is the 5th argument. Capture it so we can write
         // the new env value straight through to the local slot after dispatch,
         // keeping locals coherent without depending on the `env_dirty` backstop.
+        // ADR-0067 slice 3a: a routine hands back the container it was given,
+        // and the invocant is parameter zero. When the callee binds its invocant
+        // raw (`.snitch`, `method m(\S:) is raw`), box the caller's location into
+        // a container here — this is the only site where the frame's `code`
+        // (needed for slot resolution) and the invocant value are both in hand.
+        let mut args = args;
+        if name == "__mutsu_assign_method_lvalue" {
+            self.box_raw_lvalue_invocant(code, &mut args);
+        }
+        let args = args;
         let lvalue_writeback_target = match name.as_str() {
             "__mutsu_assign_method_lvalue" => args
                 .get(4)

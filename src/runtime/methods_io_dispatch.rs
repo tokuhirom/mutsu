@@ -127,9 +127,20 @@ impl Interpreter {
         if !crate::parser::current_language_version().starts_with("6.e") {
             return None;
         }
+        // ADR-0067 slice 3a: `.snitch` declares its invocant raw
+        // (`method snitch(\snitchee: ...)`), so an lvalue call hands it the
+        // caller's *container* and `$a.snitch = 5` writes through it. Log the
+        // contained value — a container is transparent to the logger — but
+        // return the invocant EXACTLY as given, container and all, which is what
+        // makes the write reach `$a`.
         let logged = match args.first() {
-            None => self.dispatch_note(target),
-            Some(snitcher) => self.call_sub_value(snitcher.clone(), vec![target.clone()], false),
+            None => {
+                let shown = target.deref_container();
+                self.dispatch_note(&shown)
+            }
+            Some(snitcher) => {
+                self.call_sub_value(snitcher.clone(), vec![target.deref_container()], false)
+            }
         };
         Some(logged.map(|_| target.clone()))
     }

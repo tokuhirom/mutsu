@@ -488,6 +488,112 @@ spellings hand the lvalue call a *global temp*
 needs either a global-name container route or the temps promoted to locals —
 a choice worth making explicitly rather than discovering mid-slice.
 
+#### Slice 3a — IMPLEMENTED 2026-09-05
+
+Every row below was re-measured against raku v2026.07 and a debug `mutsu` built
+from `main` at `f833d9893` before any code was written; all of the ADR's numbers
+still held.
+
+**What shipped.**
+
+- **The declaration oracle** (`src/runtime/raw_invocant.rs`, new).
+  `Interpreter::method_returns_raw_invocant(target, method, args)` answers the
+  ADR's contract as one function: resolve the routine (a user method always
+  wins over the native table, as ordinary dispatch does) and require **both**
+  `method_is_rw_capable` (slice 2's oracle) **and** a raw invocant parameter.
+  Raw-invocant spellings, all verified against raku: the sigil-less `\S:` (the
+  parser records `sigilless: true, is_invocant: true`), `$s is raw:` and
+  `$s is rw:`. `Any:D $s:` is not raw — the E2 control. The invocant class is
+  resolved with `what_type_name` rather than ADR-0059's Instance/type-object-only
+  helper, because a raw invocant is precisely the case where the invocant is an
+  ordinary `Int` and the routine came from `augment class Any`.
+- **The native declaration table**, in the same module. It has exactly one row,
+  `snitch`, gated on 6.e (below which the method does not exist at all). The
+  ADR's other two proposals were measured and **do not belong**: `$a.list =:= $a`
+  is `False` and `.list` returns a `List`, so `$a.list = 7`'s reaching `$a` is
+  *list assignment* into a List whose element is the invocant's container — a
+  different mechanism, and listing it here would silently replace it. `.item` is
+  genuinely raw (`$a.item =:= $a` is `True`) but the compiler erases
+  `$a.item = 5` to a plain store, so the row would never be consulted.
+- **The runtime-gated box** (`src/vm/vm_raw_invocant_lvalue.rs`, new), called
+  from `exec_call_func_op`'s `__mutsu_assign_method_lvalue` arm — the only site
+  where the frame's `code` (needed for slot resolution) and the invocant value
+  are both in hand.
+- **The consumer**, `try_raw_invocant_container_lvalue`, spliced into
+  `assign_method_lvalue_with_values` immediately after the type-object half. It
+  runs the routine with the container invocant and writes through whatever
+  container comes back — the general rule, so `method m(\S:) is raw { 42 }` is
+  refused exactly as raku refuses it.
+- **`dispatch_snitch`** now logs `deref_container()` and returns the invocant
+  exactly as given, container and all.
+
+**The global-temp decision: a global-name container route, not local promotion.**
+`capture_lvalue_invocant_cell` tries three routes in order — (1)
+`capture_var_cell` for a frame local, (2) a direct slot box for a `$`-scalar
+local whose value is *reference*-shaped, (3) a cell stored in **env under the
+name**. Route 3 is what serves E4/E5. Promoting the temps to locals was rejected
+on blast radius: `__mutsu_tmp_assign_method_target_N` is read back by the
+copy-out tail through `GetGlobal` and by `IndexAssignExprNamed`, so promoting it
+would touch the whole temp protocol for every lvalue method call, whereas the
+env cell is transparent — `GetGlobal` already dereferences a `ContainerRef`, so
+the tail reads the written value and `IndexAssignExprNamed` puts it back into
+`@a[0]` / `%h<a>` with no per-shape code, exactly as this ADR predicted. Route 3
+is restricted to scalar-shaped values (mirroring `capture_var_cell_inner`'s own
+`is_reference` guard) so an `Array`/`Hash` env entry is never given a cell that
+disagrees with its identity-shared storage.
+
+**Route 2 was added after measurement, and closes a silent wrong answer.**
+`class C { method m(\S:) is raw { S } }; my $c = C.new; $c.m = 5` is `5` in raku
+(the raw invocant is the *variable's* container, so the write replaces its whole
+contents); mutsu reported success and dropped the write. `capture_var_cell_inner`
+deliberately refuses to re-containerize a reference for the general capture
+paths, so this route boxes the slot directly — narrowly, only for a `$`-scalar
+local (`@a`/`%h` locals keep their sigil in `code.locals`) and only behind the
+raw-invocant gate.
+
+**Slice 2's lesson did not repeat, and the ADR's reason why is worth recording.**
+The runtime gate was sufficient here without a matching compile-side change,
+because the routine's *body* was already compiled correctly — slice 2 had
+already widened `compile_method_body`'s rw-tail flag to `is_rw || is_raw`, and
+slice 1 had already made the sigil-less `BareWord` tail (`{ S }`) denote its
+container. 3a only had to make the *invocant* arrive as one. The three slices
+compose exactly as the ADR's "one rule, four mechanical parts" claimed.
+
+**One guard the boxing required.** Every path below the new branch in
+`assign_method_lvalue_with_values` matches `Instance`/`Array`/`Hash` directly and
+would silently skip a `ContainerRef`, so the target is decontainerized at a
+single chokepoint right after the branch declines. That is what keeps the boxing
+invisible to the other ~40 branches — the specific hazard this slice's re-scoping
+identified.
+
+**Pinned by** `t/raw-invocant-lvalue-container.t` (21 tests) and
+`t/snitch-lvalue-raw-invocant.t` (12 tests), both byte-identical under `mutsu`
+and `raku`. Between them they cover the three rw-capable spellings, both sigiled
+raw-invocant spellings, the array-element / hash-element invocants, the
+instance-valued scalar, the observing body, the unchanged rvalue call
+(`$a.snitch =:= $a`), and the three regression controls: not rw-capable, not a
+raw invocant, and a raw-invocant routine that returns a value rather than a
+location.
+
+**E6 does not belong to 3a — measured, and it is not reachable from this
+mechanism.** `class C { has $.v is rw }; $c.v.snitch = 9` compiles with **no
+temp and no writeback tail**: the invocant is read by a bare `CallMethodMut` on
+the accessor and argument 4 is `LoadNil`, so there is no name to box and nothing
+would read a cell back. The producer it needs already exists — `MarkAccessorRefContext`,
+which is what makes `my $x := $c.v; $x = 9` write through today — but emitting it
+before an lvalue invocant is an *unconditional compile-side* change (rawness is
+not statically known), so it must be paired with the decontainerize-at-the-chokepoint
+guard above and re-measured across every `$obj.acc.m = v` shape. That is its own
+slice. The mutation discriminator, not `.VAR`, is what settled this: `$c.v`
+produces a container for a `:=` bind but not in argument position
+(`sub g($y is rw) {...}; g($c.v)` dies with "expects a writable container").
+
+**Also still refusing after 3a, all loudly (not silently wrong), all out of
+scope:** `@a.snitch = (7,8)` and `%h.snitch = (b=>2)` (aggregate invocants —
+route 3's scalar restriction declines them), `$a.list = 5` (list assignment, see
+above), `$a.snitch.snitch = 5` (a chained lvalue invocant), and `42.snitch = 5`
+(raku also dies, with a different message).
+
 ### Slice 4 — the chain walk steps through an object
 
 Part 5, variable-rooted half: replace
