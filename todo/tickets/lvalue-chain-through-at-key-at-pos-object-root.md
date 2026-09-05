@@ -1,57 +1,68 @@
 # An lvalue subscript chain rooted at a subscriptable OBJECT is not routed through AT-KEY/AT-POS
 
-When the root of an lvalue subscript chain is an accessor that returns an
-**object** implementing `AT-KEY`/`AT-POS` — rather than a plain Array/Hash —
-the write does not reach it:
+**Designed: [ADR-0067](../../docs/adr/0067-a-routine-hands-back-the-container-it-was-given.md)**
+(2026-09-05), Slices 4 (variable-rooted) and 5 (method-rooted). The companion
+finding `todo/deep/native-method-cannot-return-an-lvalue-container.md` is Slices
+2-3 of the same design. Read the ADR for the mechanism; this file records the
+repro set.
 
-```raku
-class Q { has %.d is rw; method AT-KEY($k) is rw { %!d{$k} } }
-class U { has Q $.query = Q.new(d => {foo => [1,2]}) }
-my $u = U.new;
-$u.query<foo>[0] = 99;
-say $u.query.d;
-# raku:  {foo => [99 2]}
-# mutsu: Cannot subscript-assign through %!query: it returned Q, not an Array
-#        or Hash container
+When an lvalue subscript chain steps through an **object** implementing
+`AT-KEY`/`AT-POS` — rather than a plain Array/Hash — the write does not reach
+it.
+
+## Repro set (re-measured 2026-09-05 against raku v2026.07 and `main` @ 37dd63f33)
+
+All rows use `class Q { has %.d; method AT-KEY($k) is rw { %!d{$k} } }`.
+
+| Spelling | raku | mutsu |
+|---|---|---|
+| `$u.query<foo>[0] = 99` (method-rooted, depth 2 — the original headline) | `{foo => [99 2]}` | loud refusal: `Cannot subscript-assign through %!query: it returned Q, ...` |
+| `my $q = Q.new(...); $q<foo>[0] = 99` (**variable**-rooted, depth 2) | `{foo => [99 2]}` | `{foo => [1 2]}` — **silent, exit 0** |
+| `$u.query<foo> = 99` (method-rooted, depth 1) | `{foo => 99}` | `{foo => 1}` — **silent** |
+| `my $t := $u.query; $t<foo>[0] = 99` | `{foo => [99 2]}` | `{foo => [1 2]}` — **silent** |
+| `$q.AT-KEY("foo")[0] = 99` (explicit spelling) | `{foo => [99 2]}` | `{foo => [1 2]}` — **silent** |
+| `$q<foo><bar>[0] = 99` (depth 3) | `{foo => {bar => [99 2]}}` | `No such method 'd' for invocant of type 'Hash'` — **the instance is replaced by a Hash** |
+| `$q<foo> = 99` (var-rooted, depth 1) | `{foo => 99}` | correct |
+| `my $e := $q<foo>; $e[0] = 99` | `{foo => [99 2]}` | **correct** |
+| `$q<foo>.push(99)` | `{foo => [1 2 99]}` | correct |
+
+**Correction to the previous text.** This file said the failure is "at least
+loud and honest" now. That is true for exactly one of the six broken spellings;
+the other four are silent, and the depth-3 one corrupts the object. The
+variable-rooted silent row is the better acceptance case.
+
+## Root cause (gdb-confirmed 2026-09-05)
+
+`exec_index_assign_expr_nested_op` (`src/vm/vm_var_assign_index_named.rs:2963`)
+*does* have an Instance branch, and it *is* entered. Breaking at :2984, :3014
+and :3033 on the variable-rooted repro shows all three hit: the branch calls
+`AT-KEY`, discards its container on the very next line —
+
+```rust
+let inner = self.call_method_with_values(target, at, vec![inner_idx.clone()])?
+    .deref_container();
 ```
 
-Measured 2026-09-04 against `raku` v2026.06.
+— writes only if the element is a `Proxy` or the inner value is an Instance with
+`ASSIGN-*`, and otherwise falls through to the generic Hash/Array walk (:3033)
+against a root that is not a container. That walk drops the write, and at depth
+3 autovivifies a Hash over the instance.
 
-## History
+The accessor is called as an **rvalue**. The `:=`-bound row above proves the
+container-mode read of the same subscript already produces the right thing, so
+the fix is to call it in lvalue mode and descend into what comes back — the walk
+already descends `ContainerRef` (`descend_container_ref`, :3401).
 
-This shape has never worked. Before
-`news/2026-09/method-rooted-lvalue-subscript-chain-writes-through.md` it was
-handled by `__mutsu_index_assign_method_lvalue_nested`, whose `Instance` branch
-looked for a `Proxy` element behind `AT-POS`/`AT-KEY` and, finding none, fell
-through to a typed-attribute check that then fired on the *outer* object — so
-the same code answered a nonsensical `Type check failed for an element of
-@query ...; expected Q but got Hash`. The `:=`-bound spelling
-(`my $t := $u.query; $t<foo>[0] = 99`) dropped the write silently.
+The method-rooted half has the same shape one level up: the compiler temp
+`bind_method_rooted_chain_root` installs
+(`src/compiler/expr_closure.rs:606,639`) is filled by a plain
+`self.compile_expr(cur)`, an rvalue read.
 
-Now that the chain is routed through the variable-rooted walk, the failure is
-at least loud and honest: the walk refuses a root that is not a container.
+## Not the fix
 
-## What a fix needs
-
-The chain walk (`exec_index_assign_expr_nested_op` /
-`exec_index_assign_deep_nested_op` in `src/vm/vm_var_assign_index_named.rs`)
-descends only into `Array`/`Hash`/`ContainerRef` roots. For an `Instance` root
-it would have to call the user's `AT-KEY`/`AT-POS` — in **lvalue** mode, so the
-returned element is a container it can store through (an `is rw` method, or a
-`Proxy`). That is the same "a method must be able to return an lvalue
-container" problem as `todo/deep/native-method-cannot-return-an-lvalue-container.md`,
-and it should be designed with it rather than special-cased here.
-
-Do NOT fix this by reintroducing an accessor-keyed slow path: the deleted one
-is exactly what dropped the writes this ticket's neighbours were about.
-
-## Re-verified 2026-09-05
-
-Still reproduces on `main` at `e4994a3`, with the same loud error
-("Cannot subscript-assign through %!query: it returned Q, not an Array or Hash
-container"). The dependency named above has also not moved: the
-2026-08-31 deep-triage note on
-`todo/deep/native-method-cannot-return-an-lvalue-container.md` says a bounded
-design campaign for universal container-reference propagation has to happen
-before an implementation slice can be selected, and no such campaign has
-started. So this ticket is still blocked on that design, not on effort.
+Do NOT reintroduce an accessor-keyed slow path. The deleted
+`__mutsu_index_assign_method_lvalue_nested` is exactly what dropped the writes
+this ticket's neighbours were about
+(`news/2026-09/method-rooted-lvalue-subscript-chain-writes-through.md`); its
+copy-on-write rebuild is what made autovivified levels evaporate. ADR-0067's
+routing adds no new walker.
