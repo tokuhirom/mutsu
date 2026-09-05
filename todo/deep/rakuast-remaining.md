@@ -77,6 +77,14 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *`until` / `repeat … until`.* Both were rendered *wrongly* (as a `While` over a
+  negated condition) rather than refused; `Stmt::While`/`Stmt::Loop` already kept
+  an `is_until` flag the converter did not read. Found by a gist-comparison sweep
+  against rakudo; the three other hits from that sweep need parser changes and
+  are filed as `todo/tickets/rakuast-fat-arrow-key-spelling-swapped.md` and
+  `todo/tickets/rakuast-unless-and-parens.md`, both with measured shapes. Pinned
+  by `t/rakuast-until-loop.t`; see
+  [the news entry](../../news/2026-09/rakuast-until-loop.md).
 - *Interpolated code blocks.* `"a{ $x }b"` renders its `{ ... }` segment as a
   plain `Block` (mutsu's `DoStmt` wrapper has no RakuAST counterpart) and lowers
   back to that wrapper — without which the segment became a closure and the

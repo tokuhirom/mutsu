@@ -304,14 +304,32 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }))
         }
         Stmt::While {
-            cond, body, label, ..
+            cond,
+            body,
+            label,
+            is_until,
+            ..
         } => {
-            // mutsu desugars `until X` to `while !X` (same as unless/if above).
+            // mutsu stores `until X` as `while !X` PLUS an `is_until` flag, so
+            // the source keyword is recoverable: raku has a `Loop::Until` class
+            // and renders the *undecorated* condition, so the `!` the parser
+            // added is stripped back off.
             let mut fields = label_fields(label);
-            fields.push(node_field(Some("condition"), convert_expr(cond)?));
+            fields.push(node_field(
+                Some("condition"),
+                convert_expr(if *is_until {
+                    strip_negation(cond)?
+                } else {
+                    cond
+                })?,
+            ));
             fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(RakuAstNode {
-                class: RakuAstClass::StatementLoopWhile,
+                class: if *is_until {
+                    RakuAstClass::StatementLoopUntil
+                } else {
+                    RakuAstClass::StatementLoopWhile
+                },
                 fields,
             }))
         }
@@ -322,20 +340,33 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             repeat,
             label,
+            is_until,
             ..
         } => {
             if *repeat {
-                // `repeat { } while X`. mutsu desugars `repeat { } until X` to a
-                // negated `while` condition (same collapse as while/until), so
-                // this always renders as `Loop::RepeatWhile`.
+                // `repeat { } while X` / `repeat { } until X`. As with the plain
+                // `while`, mutsu negates the condition and keeps an `is_until`
+                // flag, so both the class and the undecorated condition are
+                // recoverable.
                 let cond = cond
                     .as_ref()
                     .ok_or_else(|| unsupported("repeat loop without condition"))?;
                 let mut fields = label_fields(label);
                 fields.push(node_field(Some("body"), block_node(body)?));
-                fields.push(node_field(Some("condition"), convert_expr(cond)?));
+                fields.push(node_field(
+                    Some("condition"),
+                    convert_expr(if *is_until {
+                        strip_negation(cond)?
+                    } else {
+                        cond
+                    })?,
+                ));
                 return Ok(Some(RakuAstNode {
-                    class: RakuAstClass::StatementLoopRepeatWhile,
+                    class: if *is_until {
+                        RakuAstClass::StatementLoopRepeatUntil
+                    } else {
+                        RakuAstClass::StatementLoopRepeatWhile
+                    },
                     fields,
                 }));
             }
@@ -1784,6 +1815,21 @@ fn constant_declaration(
         class: RakuAstClass::VarDeclarationConstant,
         fields,
     })))
+}
+
+/// Strip the `!` the parser adds when it stores `until X` as `while !X`.
+///
+/// The flag and the negation are planted together, so an `is_until` loop whose
+/// condition is *not* a `!` would mean the two had drifted apart; refuse rather
+/// than render a condition that is not the one in the source.
+fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
+    match cond {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr,
+        } => Ok(expr),
+        _ => Err(unsupported("`until` loop without the parser's negation")),
+    }
 }
 
 /// A class declaration's `traits` list, in source order: `is P` inheritance
