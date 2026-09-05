@@ -9,7 +9,7 @@ use Test;
 #
 # Every expectation below was checked against raku v2026.07.
 
-plan 22;
+plan 26;
 
 # --- K1/K2/K4: the three rw-capable spellings, instance invocant -------------
 
@@ -130,16 +130,32 @@ plan 22;
 }
 
 {
-    # The type-object twin of the row above is NOT asserted as a refusal: it
-    # reaches mutsu's legacy `$obj.name($value)` setter convention
-    # (`methods_mut_method_lvalue.rs`), which silently reports success where
-    # raku dies. That is a pre-existing divergence of a different mechanism --
-    # see todo/tickets/type-object-lvalue-falls-into-setter-convention.md. What
-    # the oracle owes here is that the write does not land.
+    # The type-object twin of the row above. It used to reach mutsu's legacy
+    # `$obj.name($value)` setter convention and silently report success where
+    # raku dies; the oracle now gates that chain, so it is a real refusal.
     class N3 { method m(\x) { x } }
     my $a = 42;
-    try { N3.m($a) = 5 };
-    is $a, 42, 'a plain class method still does not write the caller container';
+    dies-ok { N3.m($a) = 5 }, 'a plain class method is not an lvalue either';
+    is $a, 42, '... and the caller variable is untouched';
+}
+
+{
+    # The sigil'd-parameter spelling of the same, which additionally used to
+    # bind the *assigned value* into the method's first parameter.
+    class N4 { method m($x) { $x } }
+    my $a = 42;
+    dies-ok { N4.m($a) = 5 }, 'a plain class method with a $-parameter likewise';
+    is $a, 42, '... and its caller variable is untouched too';
+}
+
+{
+    # The method is called once, with its REAL argument -- not re-called as a
+    # setter with the assigned value (`$`-param) or the invocant (`\`-param).
+    my @seen;
+    class N5 { method m($x) { @seen.push($x); $x } }
+    my $a = 42;
+    try { N5.m($a) = 5 };
+    is-deeply @seen, [42], 'the method sees its real argument, exactly once';
 }
 
 # --- an `is rw` ATTRIBUTE accessor keeps working (the shape the oracle must
