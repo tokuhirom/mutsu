@@ -667,6 +667,39 @@ impl Interpreter {
     /// Dispatch .raku/.perl on constrained Hash.
     pub(super) fn dispatch_constrained_hash_raku(
         &mut self,
+        map: &crate::gc::Gc<crate::value::HashData>,
+        info: &ContainerTypeInfo,
+        itemized: bool,
+    ) -> Result<Value, RuntimeError> {
+        // A typed hash can be circular (`my %oh{Any}; %oh<a> = %oh`). Join the
+        // walk `raku_value` maintains so the loop renders as the `%Hash_<addr>`
+        // back-reference instead of recursing until the stack dies.
+        use crate::builtins::methods_0arg::raku_repr::{hash_cycle_enter, hash_cycle_exit};
+        let ptr = crate::gc::Gc::as_ptr(map) as usize;
+        let is_top = match hash_cycle_enter(ptr) {
+            Ok(is_top) => is_top,
+            Err(name) => return Ok(Value::str(name)),
+        };
+        let result = self.constrained_hash_raku_body(map, info, itemized);
+        let had_cycle = hash_cycle_exit(ptr);
+        let Ok(rendered) = result else {
+            return result;
+        };
+        if is_top && had_cycle {
+            let base = rendered.to_string_value();
+            return Ok(Value::str(format!(
+                "((my {}) = {})",
+                crate::builtins::methods_0arg::raku_repr::hash_cycle_var_name(ptr),
+                base
+            )));
+        }
+        Ok(rendered)
+    }
+
+    /// The body of [`Self::dispatch_constrained_hash_raku`], without the
+    /// cycle bookkeeping its caller wraps around it.
+    fn constrained_hash_raku_body(
+        &mut self,
         map: &crate::value::HashData,
         info: &ContainerTypeInfo,
         itemized: bool,

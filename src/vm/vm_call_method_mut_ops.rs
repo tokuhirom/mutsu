@@ -2785,20 +2785,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 let call_result = if !skip_native {
-                    // Resolve hash sentinel entries (bound variable refs, self-refs)
-                    // before passing to native methods that iterate hash values.
-                    let effective_target = if let ValueView::Hash(items) = target.view() {
-                        if Self::hash_has_sentinels(&items) {
-                            Some(self.resolve_hash_for_iteration(&items))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    let dispatch_target = effective_target.as_ref().unwrap_or(&target);
-                    if let Some(native_result) =
-                        self.try_native_method(dispatch_target, method_sym, &args)
+                    if let Some(native_result) = self.try_native_method(&target, method_sym, &args)
                     {
                         // A native method reaching this tail returns a value and
                         // does not write the receiver back into env (mutating
@@ -2811,7 +2798,7 @@ impl Interpreter {
                             "native",
                         );
                         self.shadow_check_native_row_candidate(
-                            dispatch_target,
+                            &target,
                             &method,
                             method_sym,
                             args.len(),
@@ -2821,7 +2808,7 @@ impl Interpreter {
                     } else {
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                         self.shadow_check_native_row_candidate(
-                            dispatch_target,
+                            &target,
                             &method,
                             method_sym,
                             args.len(),

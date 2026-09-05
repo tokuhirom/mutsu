@@ -2261,7 +2261,12 @@ impl Interpreter {
                                     pending_source_cell = Some((source_name.clone(), cell.clone()));
                                 }
                             } else if is_self_hash_ref {
-                                hd.map.insert(key.clone(), Self::self_hash_ref_marker());
+                                // `%h<k> = %h` stores the hash *itself*, so the
+                                // structure is genuinely circular (rakudo does the
+                                // same). Insert the value directly rather than
+                                // through `itemize_value`/`hash_insert_through`,
+                                // which would copy the node and break the cycle.
+                                hd.map.insert(key.clone(), val.clone());
                             } else if elem_is_value_share {
                                 // Slice 2b: replace the `=`-shared cell rather than
                                 // write through it, so the source stays unaffected.
@@ -2394,7 +2399,12 @@ impl Interpreter {
                                         }
                                     } else {
                                         arr[i] = if is_self_array_ref {
-                                            Self::self_array_ref_marker()
+                                            // `@a[i] = @a` stores the array
+                                            // *itself*, so the structure is
+                                            // genuinely circular (rakudo does the
+                                            // same) and the cycle-aware renderers
+                                            // print a back-reference.
+                                            val.clone()
                                         } else {
                                             // A native integer array stores the
                                             // wrapped value (e.g. -1 -> 255 in a
