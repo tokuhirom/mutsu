@@ -1100,9 +1100,10 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(Expr::ArrayLiteral(items))
         }
-        // A postfix method call (`$x.abs`) or a positional subscript (`@a[1]`).
-        // Hyper-calls and associative subscripts carry a different postfix and are
-        // deferred.
+        // A postfix method call (`$x.abs`, `$x.?abs`, `$x."abs"()`), a hyper
+        // method call (`@a>>.abs`), a postfix operator (`$x++`), or a positional
+        // subscript (`@a[1]`). Associative subscripts carry a different postfix
+        // and are deferred.
         RakuAstClass::ApplyPostfix => {
             let operand = lower_expr(named_child(node, "operand")?)?;
             let postfix = named_child(node, "postfix")?;
@@ -1111,8 +1112,45 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     target: Box::new(operand),
                     name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
                     args: arg_exprs(postfix)?,
-                    modifier: None,
+                    modifier: dispatch_modifier(postfix)?,
                     quoted: false,
+                }),
+                // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
+                // QuotedString rather than a Name. Only a single-literal-segment
+                // name round-trips; an interpolated one is a different internal
+                // node (`MethodCallDynamic`).
+                RakuAstClass::CallQuotedMethod => Ok(Expr::MethodCall {
+                    target: Box::new(operand),
+                    name: crate::symbol::Symbol::intern(&quoted_method_name(postfix)?),
+                    args: arg_exprs(postfix)?,
+                    modifier: None,
+                    quoted: true,
+                }),
+                // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
+                // method-call postfix.
+                RakuAstClass::MetaPostfixHyper => {
+                    let inner = named_child_or_positional(postfix)?;
+                    let (name, quoted) = match inner.class {
+                        RakuAstClass::CallMethod => (call_name_str(inner)?, false),
+                        RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
+                        _ => return Err(unsupported(node)),
+                    };
+                    Ok(Expr::HyperMethodCall {
+                        target: Box::new(operand),
+                        name: crate::symbol::Symbol::intern(&name),
+                        args: arg_exprs(inner)?,
+                        modifier: if quoted {
+                            None
+                        } else {
+                            dispatch_modifier(inner)?
+                        },
+                        quoted,
+                    })
+                }
+                // `$x++` / `$x--` -> Postfix(operator => "++").
+                RakuAstClass::Postfix => Ok(Expr::PostfixOp {
+                    op: postfix_token(postfix)?,
+                    expr: Box::new(operand),
                 }),
                 // `$f(EXPR)` -> Call::Term(args) -> a call on the operand term.
                 RakuAstClass::CallTerm => Ok(Expr::CallOn {
@@ -1136,6 +1174,68 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         _ => Err(unsupported(node)),
     }
+}
+
+/// The `.?` / `.+` / `.*` dispatch modifier of a `Call::Method`, as the single
+/// character mutsu's `MethodCall.modifier` keeps. The field is absent for a
+/// plain `.method`.
+fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
+    let Some(f) = node.fields.iter().find(|f| f.name == Some("dispatch")) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::Node(v) = &f.value else {
+        return Err(unsupported(node));
+    };
+    let ValueView::Str(s) = v.view() else {
+        return Err(unsupported(node));
+    };
+    // The rendered form is `.?` / `.+` / `.*`; mutsu keeps only the modifier.
+    match s.strip_prefix('.').and_then(|rest| {
+        let mut chars = rest.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => Some(c),
+            _ => None,
+        }
+    }) {
+        Some(c) => Ok(Some(c)),
+        None => Err(unsupported(node)),
+    }
+}
+
+/// The name of a `Call::QuotedMethod`, whose `name` child is a `QuotedString`
+/// rather than a `Name`. Only a single `StrLiteral` segment lowers; an
+/// interpolated method name is a different internal node.
+fn quoted_method_name(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    let quoted = named_child(node, "name")?;
+    if quoted.class != RakuAstClass::QuotedString {
+        return Err(unsupported(node));
+    }
+    let Some(f) = quoted.fields.iter().find(|f| f.name == Some("segments")) else {
+        return Err(unsupported(node));
+    };
+    let RakuAstFieldValue::List(items) = &f.value else {
+        return Err(unsupported(node));
+    };
+    let [only] = items.as_slice() else {
+        return Err(unsupported(node));
+    };
+    let ValueView::RakuAst(seg) = only.view() else {
+        return Err(unsupported(node));
+    };
+    if seg.class != RakuAstClass::StrLiteral {
+        return Err(unsupported(node));
+    }
+    match positional_leaf(seg)?.view() {
+        ValueView::Str(s) => Ok(s.to_string()),
+        _ => Err(unsupported(node)),
+    }
+}
+
+/// The `TokenKind` for a `Postfix` operator node. Unlike `Infix`/`Prefix`, a
+/// `Postfix` carries its operator in a NAMED `operator` field.
+fn postfix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+    let name = leaf_str(node, "operator")?;
+    crate::compiler::helpers_ops::op_name_to_token_kind(&name).ok_or_else(|| unsupported(node))
 }
 
 /// The `TokenKind` for an `Infix`/`Prefix` operator node (its positional operator

@@ -77,6 +77,13 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Postfix lowering.* `EVAL` lowers the rest of the `ApplyPostfix` cluster:
+  `Postfix` (`$x++`/`$x--`), `MetaPostfix::Hyper` (`@a>>.abs`), a
+  `Call::Method`'s `.?`/`.+`/`.*` dispatch modifier, and `Call::QuotedMethod`.
+  It also fixed a silent no-op: `op_name_to_token_kind` had no `++`/`--` row, so
+  the already-lowering *prefix* `++$x` became `Unary { op: Ident("++") }` and did
+  not increment. Pinned by `t/rakuast-eval-postfix.t`; see
+  [the news entry](../../news/2026-09/rakuast-postfix-lowering.md).
 - *Class / role / method / attribute lowering.* `EVAL` accepts
   `RakuAST::Class`, `RakuAST::Role`, `RakuAST::Method`, and the attribute form
   of `VarDeclaration::Simple` (`scope => "has"`), lowering them to

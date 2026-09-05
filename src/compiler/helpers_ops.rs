@@ -119,6 +119,13 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "~~" => TokenKind::SmartMatch,
         "!~~" => TokenKind::BangTilde,
         "=>" => TokenKind::FatArrow,
+        // Increment / decrement, which appear as a `Prefix` (`++$x`) and as the
+        // only two `Postfix` operators (`$x++`). Without these two rows they
+        // fell through to the `Ident` catch-all below, and an
+        // `Expr::Unary { op: Ident("++") }` is not an increment to the compiler:
+        // `EVAL(Q[my $x = 1; ++$x; say $x].AST)` silently printed 1.
+        "++" => TokenKind::PlusPlus,
+        "--" => TokenKind::MinusMinus,
         // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
         // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
         // represents with a generic `Ident` token (the inverse of
