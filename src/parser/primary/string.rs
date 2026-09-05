@@ -43,7 +43,7 @@ pub(in crate::parser) use qx::qx_string;
 
 pub(crate) use helpers::{
     count_repeated_bracket, process_q_escapes, quote_delimiters, read_delimited_content,
-    read_multi_bracketed, unicode_bracket_close,
+    read_delimited_content_interpolating, read_multi_bracketed, unicode_bracket_close,
 };
 pub(crate) use heredoc::parse_to_heredoc_with_flags;
 pub(crate) use interp_content::parse_single_quote_qq;

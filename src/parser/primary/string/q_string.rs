@@ -88,7 +88,8 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
 
     // Read delimited content
     let escape = flags.q_mode || flags.qq_mode || flags.backslash;
-    let (after, content) = read_delimited_content(rest, escape)?;
+    let (after, content) =
+        read_delimited_content_interpolating(rest, escape, flags.has_interpolation())?;
 
     // Process content with flags
     if flags.quotewords {
@@ -273,7 +274,8 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
 
     // Read delimited content
     let escape = flags.q_mode || flags.qq_mode || flags.backslash;
-    let (rest, content) = read_delimited_content(after_q, escape)?;
+    let (rest, content) =
+        read_delimited_content_interpolating(after_q, escape, flags.has_interpolation())?;
 
     // For q-mode with symmetric delimiters, pre-process \<delim> → <delim>
     let delim_char = after_q.trim_start().chars().next().unwrap_or('/');
@@ -398,7 +400,7 @@ pub(crate) fn parse_q_quoted_content(
             // Multi-bracket delimiter (e.g. q{{ ... }}, q[[ ... ]])
             let open_str: String = std::iter::repeat_n(first, repeat_count).collect();
             let close_str: String = std::iter::repeat_n(close_ch, repeat_count).collect();
-            let (rest, content) = read_multi_bracketed(input, &open_str, &close_str, true)?;
+            let (rest, content) = read_multi_bracketed(input, &open_str, &close_str, true, is_qq)?;
             return Ok((
                 rest,
                 make_q_content_expr(content, is_qq, q_closure_interp, first, close_ch),
