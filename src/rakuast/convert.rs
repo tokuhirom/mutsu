@@ -34,6 +34,11 @@ fn leaf_field(name: Option<&'static str>, value: Value) -> RakuAstField {
 
 /// Top-level: a parsed program becomes a `RakuAST::StatementList`.
 pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _scope = DeclaredNames::collect(stmts);
+    statement_list_inner(stmts)
+}
+
+fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     for stmt in stmts {
         if let Some(node) = convert_stmt(stmt)? {
@@ -44,6 +49,92 @@ pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError
         class: RakuAstClass::StatementList,
         fields,
     })
+}
+
+/// What a bareword naming something the same compilation unit declared means.
+///
+/// raku resolves such a name at parse time, so `class C { }; C.new` renders `C`
+/// as a `Type::Simple` — exactly like a builtin type — and
+/// `constant X = 5; X` renders `X` as a `Term::Name`. Both measured against
+/// rakudo 2026.07. mutsu's parser leaves both as `Expr::BareWord`, so the
+/// converter has to re-derive which is which from the unit's own declarations.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeclaredKind {
+    /// A `class` / `role` / `grammar` / `enum` name.
+    Type,
+    /// A `constant` name.
+    Constant,
+}
+
+thread_local! {
+    /// The names the compilation unit currently being converted declares.
+    /// Empty outside a conversion, so a nested/re-entrant conversion that never
+    /// ran `statement_list` simply sees no declarations and keeps the old
+    /// bareword boundary.
+    static DECLARED_NAMES: std::cell::RefCell<std::collections::HashMap<String, DeclaredKind>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// RAII guard installing the unit's declared names for the duration of a
+/// conversion, restoring whatever was there before (so a nested conversion
+/// cannot leak its names into the outer one).
+struct DeclaredNames(std::collections::HashMap<String, DeclaredKind>);
+
+impl DeclaredNames {
+    fn collect(stmts: &[Stmt]) -> Self {
+        let mut names = std::collections::HashMap::new();
+        collect_declared_names(stmts, &mut names);
+        Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
+    }
+}
+
+impl Drop for DeclaredNames {
+    fn drop(&mut self) {
+        DECLARED_NAMES.with(|d| {
+            *d.borrow_mut() = std::mem::take(&mut self.0);
+        });
+    }
+}
+
+fn declared_kind(name: &str) -> Option<DeclaredKind> {
+    DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
+}
+
+/// Walk a statement list for the names it declares. Nested blocks count: raku
+/// resolves a name declared anywhere the reference can see it, and a bareword
+/// that reaches conversion at all was already accepted by the parser.
+fn collect_declared_names(
+    stmts: &[Stmt],
+    out: &mut std::collections::HashMap<String, DeclaredKind>,
+) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::ClassDecl { name, body, .. } => {
+                out.insert(name.resolve(), DeclaredKind::Type);
+                collect_declared_names(body, out);
+            }
+            Stmt::RoleDecl { name, body, .. } => {
+                out.insert(name.resolve(), DeclaredKind::Type);
+                collect_declared_names(body, out);
+            }
+            Stmt::EnumDecl { name, .. } | Stmt::SubsetDecl { name, .. } => {
+                out.insert(name.resolve(), DeclaredKind::Type);
+            }
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                out.insert(name.clone(), DeclaredKind::Constant);
+            }
+            Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Package { body, .. }
+            | Stmt::SubDecl { body, .. }
+            | Stmt::MethodDecl { body, .. } => collect_declared_names(body, out),
+            _ => {}
+        }
+    }
 }
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
@@ -1016,9 +1107,20 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             _ => Err(unsupported("non-fat-arrow positional pair")),
         },
-        // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`. Only
-        // known builtin types convert; a non-type bareword stays the boundary.
+        // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
+        // A name the same compilation unit declared. raku resolves it at parse
+        // time: a type name renders exactly like a builtin one, a constant
+        // renders as a `Term::Name`. Any other bareword stays the boundary.
+        Expr::BareWord(name) if declared_kind(name).is_some() => {
+            match declared_kind(name).expect("just checked") {
+                DeclaredKind::Type => Ok(simple_type_node(name)),
+                DeclaredKind::Constant => Ok(RakuAstNode {
+                    class: RakuAstClass::TermName,
+                    fields: vec![node_field(None, name_from_identifier(name))],
+                }),
+            }
+        }
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
             let semilist = RakuAstNode {
@@ -2013,10 +2115,22 @@ fn method_call_postfix(
         if modifier.is_some() {
             return Err(unsupported("quoted method name with a modifier"));
         }
-        call_quoted_method(name, args)
-    } else {
-        call_method(name, args, modifier)
+        return call_quoted_method(name, args);
     }
+    // `.^name` is a *metamethod* call, not an ordinary call with a dispatch
+    // modifier: raku gives it its own `Call::MetaMethod` class whose `name` is a
+    // plain string. Only `.?` / `.+` / `.*` are dispatch modifiers.
+    if modifier == Some('^') {
+        let mut fields = vec![leaf_field(Some("name"), Value::str(name.to_string()))];
+        if !args.is_empty() {
+            fields.push(node_field(Some("args"), arg_list(args)?));
+        }
+        return Ok(RakuAstNode {
+            class: RakuAstClass::CallMetaMethod,
+            fields,
+        });
+    }
+    call_method(name, args, modifier)
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.

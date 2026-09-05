@@ -1107,6 +1107,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             Ok(Expr::BracketArray(items, false))
         }
+        // A bareword naming a `constant` the same unit declared. Its value is
+        // whatever the declaration bound, so it lowers to the same bareword the
+        // parser produces.
+        RakuAstClass::TermName => {
+            let name = match positional_leaf(named_child_or_positional(node)?)?.view() {
+                ValueView::Str(s) => s.to_string(),
+                _ => return Err(unsupported(node)),
+            };
+            Ok(Expr::BareWord(name))
+        }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
         // itself (a leading backslash), which is how the converter reads it
@@ -1347,6 +1357,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     args: arg_exprs(postfix)?,
                     modifier: None,
                     quoted: true,
+                }),
+                // `.^name` -> a metamethod call. Its `name` is a plain string,
+                // not a `Name` node, and mutsu keeps the `^` in the same
+                // `modifier` slot the dispatch modifiers use.
+                RakuAstClass::CallMetaMethod => Ok(Expr::MethodCall {
+                    target: Box::new(operand),
+                    name: crate::symbol::Symbol::intern(&leaf_str(postfix, "name")?),
+                    args: arg_exprs(postfix)?,
+                    modifier: Some('^'),
+                    quoted: false,
                 }),
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.

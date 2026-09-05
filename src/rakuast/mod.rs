@@ -167,6 +167,11 @@ pub enum RakuAstClass {
     // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
     // `constant X = 5` — a declaration of its own, not a scoped `my`.
     VarDeclarationConstant,
+    // A bareword naming something the unit declared that is not a type — a
+    // `constant`, in practice.
+    TermName,
+    // `.^name` — a metamethod call, distinct from `.?`/`.+`/`.*` dispatch.
+    CallMetaMethod,
     // Class/role declaration traits (`is Parent`, `does Role`, `is rw`).
     TraitIs,
     TraitDoes,
@@ -273,6 +278,8 @@ impl RakuAstClass {
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            TermName => "RakuAST::Term::Name",
+            CallMetaMethod => "RakuAST::Call::MetaMethod",
             TraitIs => "RakuAST::Trait::Is",
             TraitDoes => "RakuAST::Trait::Does",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
@@ -570,6 +577,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::TermName,
+    RakuAstClass::CallMetaMethod,
     RakuAstClass::TraitIs,
     RakuAstClass::TraitDoes,
     RakuAstClass::StatementPrefixPhaserBegin,
