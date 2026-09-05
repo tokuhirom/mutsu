@@ -159,11 +159,6 @@ pub(crate) fn format_num_str(f: f64) -> String {
     format!("{}", f)
 }
 
-/// Helper for .raku representation of a value
-fn is_self_array_ref_marker(v: &Value) -> bool {
-    matches!(v.view(), ValueView::Pair(name, _) if name == "__mutsu_self_array_ref")
-}
-
 /// Key of the pre-rendered-`.raku` marker pair.
 ///
 /// A value whose correct `.raku` is only reachable through method dispatch (a
@@ -385,11 +380,6 @@ fn raku_array_wrap_counted(
     }
 }
 
-fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
-    // Fallback without count (used for self-referencing snapshot rendering)
-    raku_array_wrap_counted(inner, kind, 2, false) // count=2 to avoid trailing comma
-}
-
 /// Apply the `Scalar`-container itemization rule to an already-rendered repr.
 ///
 /// Every value held in a `$`-container — a `$(...)` item, a `$`-sigil
@@ -403,7 +393,7 @@ fn raku_array_wrap(inner: &str, kind: ArrayKind) -> String {
 pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
     // Don't double-itemize a value whose repr already carries a sigil: an
     // explicitly itemized `$[...]`, or a cycle-reference placeholder for a
-    // recursive structure (`%hash_<ptr>` / `@Array_<ptr>`).
+    // recursive structure (`%Hash_<ptr>` / `@Array_<ptr>`).
     if base.starts_with(['$', '@', '%']) {
         return base;
     }
@@ -544,34 +534,70 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
         IN_SHAPED_RAKU.with(|f| f.set(false));
         return format!("Array.new(:shape({}), {})", shape_str, content);
     }
-    let snapshot = |k: ArrayKind| {
-        let inner = items
-            .iter()
-            .filter(|item| !is_self_array_ref_marker(item))
-            .map(&render_element)
-            .collect::<Vec<_>>()
-            .join(", ");
-        raku_array_wrap(&inner, k)
-    };
-    let rendered: Vec<_> = items
-        .iter()
-        .map(|item| {
-            if is_self_array_ref_marker(item) {
-                snapshot(kind)
-            } else {
-                render_element(item)
-            }
-        })
-        .collect();
+    // A self-referential element is the array itself; `raku_value`'s cycle
+    // detector renders it as the `@Array_<ptr>` back-reference, so no special
+    // case is needed here.
+    let rendered: Vec<_> = items.iter().map(&render_element).collect();
     let count = rendered.len();
     let inner = rendered.join(", ");
     // For a real (`@`-sigil) array, a single Iterable element needs a trailing
-    // comma (`[1..5,]`); a self-referential marker element does not.
-    let single_listy = count == 1
-        && kind.is_real_array()
-        && !is_self_array_ref_marker(&items[0])
-        && element_needs_trailing_comma(&items[0]);
+    // comma (`[1..5,]`) -- including a lone back-reference, which rakudo
+    // renders as `((my @Array_1) = [@Array_1,])`.
+    let single_listy =
+        count == 1 && kind.is_real_array() && element_needs_trailing_comma(&items[0]);
     raku_array_wrap_counted(&inner, kind, count, single_listy)
+}
+
+// Cycle detection for a recursive HASH structure, shared by this module's
+// `raku_value` and the interpreter-side `dispatch_constrained_hash_raku` (which
+// renders a *typed* hash, because that needs method dispatch for its values).
+// Both walks have to see the same "currently rendering" stack, or a cycle that
+// crosses from one to the other recurses forever.
+thread_local! {
+    static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
+    static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The name rakudo gives a hash node a `.raku` walk loops back to.
+pub(crate) fn hash_cycle_var_name(ptr: usize) -> String {
+    // Rakudo names the looping node after its *type*: `%Hash_<addr>`
+    // (matching `@Array_<addr>`), so `.raku` round-trips.
+    format!("%Hash_{}", ptr)
+}
+
+/// Push `ptr` onto the in-progress hash walk. `Err(name)` when the node is
+/// already being rendered further up — the caller must emit `name` and stop.
+/// `Ok(is_top)` says whether this is the outermost hash of the walk, i.e. the
+/// node that carries the `((my %Hash_x) = ...)` preamble.
+pub(crate) fn hash_cycle_enter(ptr: usize) -> Result<bool, String> {
+    let seen = SEEN_HASH_PTRS.with(|seen| {
+        seen.borrow()
+            .iter()
+            .find(|(p, _)| *p == ptr)
+            .map(|(_, name)| name.clone())
+    });
+    if let Some(name) = seen {
+        HASH_CYCLE_FOUND.with(|f| f.set(true));
+        return Err(name);
+    }
+    let is_top = SEEN_HASH_PTRS.with(|seen| seen.borrow().is_empty());
+    SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push((ptr, hash_cycle_var_name(ptr))));
+    if is_top {
+        HASH_CYCLE_FOUND.with(|f| f.set(false));
+    }
+    Ok(is_top)
+}
+
+/// Pop `ptr`, reporting whether a cycle was found while it was on the stack.
+pub(crate) fn hash_cycle_exit(ptr: usize) -> bool {
+    let had_cycle = HASH_CYCLE_FOUND.with(|f| f.get());
+    SEEN_HASH_PTRS.with(|seen| {
+        let mut s = seen.borrow_mut();
+        if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
+            s.remove(pos);
+        }
+    });
+    had_cycle
 }
 
 pub fn raku_value(v: &Value) -> String {
@@ -804,6 +830,12 @@ pub fn raku_value(v: &Value) -> String {
             // `$(...)`), anything else is paren-wrapped (`$(Map.new(...))`).
             if v.hash_is_itemized() {
                 let base = raku_value(&v.clone().with_hash_itemized(false));
+                // A cycle back-reference (`%Hash_<ptr>`) already names the
+                // container, so rakudo prints it bare: `:self(%Hash_1)`, never
+                // `:self($(%Hash_1))`. Same guard as `itemize_scalar_repr`.
+                if base.starts_with(['$', '@', '%']) {
+                    return base;
+                }
                 return if base.starts_with(['{', '[', '(']) {
                     format!("${base}")
                 } else {
@@ -837,27 +869,12 @@ pub fn raku_value(v: &Value) -> String {
             // Cycle detection for recursive hash structures.
             // When a self-referencing hash is found, produce Raku-style output:
             //   ((my %Hash_<ptr>) = {:a(42), :b(%Hash_<ptr>)})
-            thread_local! {
-                static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
-                static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-            }
             let ptr = crate::gc::Gc::as_ptr(&map) as usize;
-            let var_name = format!("%hash_{}", ptr);
-            let cycle_var = SEEN_HASH_PTRS.with(|seen| {
-                seen.borrow()
-                    .iter()
-                    .find(|(p, _)| *p == ptr)
-                    .map(|(_, name)| name.clone())
-            });
-            if let Some(name) = cycle_var {
-                HASH_CYCLE_FOUND.with(|f| f.set(true));
-                return name;
-            }
-            let is_top = SEEN_HASH_PTRS.with(|seen| seen.borrow().is_empty());
-            SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push((ptr, var_name.clone())));
-            if is_top {
-                HASH_CYCLE_FOUND.with(|f| f.set(false));
-            }
+            let var_name = hash_cycle_var_name(ptr);
+            let is_top = match hash_cycle_enter(ptr) {
+                Ok(is_top) => is_top,
+                Err(name) => return name,
+            };
             let mut sorted_keys: Vec<&String> = map.keys().collect();
             sorted_keys.sort();
             let parts: Vec<String> = sorted_keys
@@ -896,20 +913,14 @@ pub fn raku_value(v: &Value) -> String {
                     }
                 })
                 .collect();
-            let had_cycle = HASH_CYCLE_FOUND.with(|f| f.get());
-            SEEN_HASH_PTRS.with(|seen| {
-                let mut s = seen.borrow_mut();
-                if let Some(pos) = s.iter().rposition(|(p, _)| *p == ptr) {
-                    s.remove(pos);
-                }
-            });
+            let had_cycle = hash_cycle_exit(ptr);
             // A typed hash (`my Int %`, `my Int %{Str}`) renders in the
             // `(my ValueType %{KeyType} = ...)` form rather than a bare `{...}`,
             // so `.raku` round-trips its element/key type. Mirrors the slow-path
             // `dispatch_constrained_hash_raku`; kept here so the native fast path
             // and the itemized wrapper (`$(my Int %)`) stay type-aware without an
             // interpreter round-trip. (`Map` is handled above and returns early.)
-            if map.value_type.is_some() || map.key_type.is_some() {
+            let hash_repr = if map.value_type.is_some() || map.key_type.is_some() {
                 // An object hash with no element-type constraint is a
                 // `:{...}` literal — rakudo's Hash[Mu,Mu], shown as `my Mu`.
                 let value_type = map
@@ -921,13 +932,14 @@ pub fn raku_value(v: &Value) -> String {
                     None => String::new(),
                 };
                 let inner = parts.join(", ");
-                return if inner.is_empty() {
+                if inner.is_empty() {
                     format!("(my {} %{})", value_type, key_suffix)
                 } else {
                     format!("(my {} %{} = {})", value_type, key_suffix, inner)
-                };
-            }
-            let hash_repr = format!("{{{}}}", parts.join(", "));
+                }
+            } else {
+                format!("{{{}}}", parts.join(", "))
+            };
             if is_top && had_cycle {
                 format!("((my {}) = {})", var_name, hash_repr)
             } else {

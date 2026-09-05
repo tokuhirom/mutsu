@@ -331,11 +331,22 @@ impl Interpreter {
         // `my $card = …` would clobber a same-named variable in the enclosing
         // scope — day18's assertion declares exactly that.
         let mut scoped: Vec<String> = env.iter().map(|(k, _)| k.clone()).collect();
+        // The names the body declares with `my`. They are lexical to the body, so
+        // besides being restored below they must be kept out of the caller-slot
+        // writeback: a block-local name in `pending_local_updates` makes the VM
+        // treat it as a caller lexical and refresh it *from env* at the body's
+        // next call (`writeback_match_locals`), which on a re-run of the same
+        // block overwrites the freshly-initialized slot with the outer binding
+        // (or `Any` when there is none).
+        let mut block_locals: Vec<String> = Vec::new();
         for stmt in stmts.iter() {
-            if let Stmt::VarDecl { name, .. } = stmt
-                && !scoped.contains(name)
-            {
-                scoped.push(name.clone());
+            if let Stmt::VarDecl { name, .. } = stmt {
+                if !block_locals.contains(name) {
+                    block_locals.push(name.clone());
+                }
+                if !scoped.contains(name) {
+                    scoped.push(name.clone());
+                }
             }
         }
         let saved: Vec<(String, Option<Value>)> = scoped
@@ -359,15 +370,24 @@ impl Interpreter {
         let result = if writes_back_to_caller {
             let before = self.pending_local_updates.len();
             let body_result = self.eval_regex_code_block_body(&stmts);
+            // The body itself can drain the log (any call it makes runs
+            // `drain_pending_local_updates_after_call`), so the list may be
+            // SHORTER than it was on entry — clamp before splitting.
+            let before = before.min(self.pending_local_updates.len());
             // The regex's own `:my`/`:let` lexicals are not caller lexicals — they
             // are harvested into `regex_vars` below and must not be written into
             // the caller's slots as well. Neither is the `make` slot, which is
-            // engine state, not a variable the caller can declare.
+            // engine state, not a variable the caller can declare, nor the body's
+            // own `my` declarations, which are lexical to the body.
             let kept: Vec<(String, Value)> = self
                 .pending_local_updates
                 .split_off(before)
                 .into_iter()
-                .filter(|(name, _)| name != "made" && !caps.regex_vars.contains_key(name))
+                .filter(|(name, _)| {
+                    name != "made"
+                        && !caps.regex_vars.contains_key(name)
+                        && !block_locals.contains(name)
+                })
                 .collect();
             self.pending_local_updates.extend(kept);
             body_result.map(|_| Value::NIL)

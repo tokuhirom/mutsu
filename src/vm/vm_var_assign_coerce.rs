@@ -351,12 +351,11 @@ impl Interpreter {
             }
             _ => self.coerce_object_to_hash(value),
         };
-        // Resolve hash sentinel entries (self-refs) and decont `:=`-bound
-        // `ContainerRef` cells when assigning to a new hash variable:
-        // assignment creates new containers, so the copy snapshots values
-        // instead of sharing cells.
+        // Decont `:=`-bound `ContainerRef` cells when assigning to a new hash
+        // variable: assignment creates new containers, so the copy snapshots
+        // values instead of sharing cells.
         if let ValueView::Hash(items) = hash_val.view()
-            && (Self::hash_has_sentinels(&items) || items.values().any(Value::is_container_ref))
+            && items.values().any(Value::is_container_ref)
         {
             return Ok(self.resolve_hash_for_iteration(&items));
         }

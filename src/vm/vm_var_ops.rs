@@ -1,9 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
 
-const SELF_HASH_REF_SENTINEL: &str = "__mutsu_self_hash_ref";
-const SELF_ARRAY_REF_SENTINEL: &str = "__mutsu_self_array_ref";
-
 /// Whether an anonymous state variable's name carries the PER-CALL
 /// classification the parser baked in at mint time: `__ANON_STATE_PC_<id>__`
 /// means the `$` sits inside a nested block within a routine, so its counter
@@ -63,10 +60,6 @@ impl Interpreter {
         Value::proxy_parts(new_fetcher, new_storer, subclass, false)
     }
 
-    pub(super) fn self_hash_ref_marker() -> Value {
-        Value::pair(SELF_HASH_REF_SENTINEL.to_string(), Value::TRUE)
-    }
-
     pub(crate) fn resolve_hash_entry(
         &self,
         items: &crate::gc::Gc<crate::value::HashData>,
@@ -74,9 +67,6 @@ impl Interpreter {
     ) -> Value {
         match items.get(key) {
             Some(value) => match value.view() {
-                ValueView::Pair(name, _) if name == SELF_HASH_REF_SENTINEL => {
-                    Value::hash_with_data(items.clone())
-                }
                 // Phase 2 element container: a `:=`-bound entry holds a shared
                 // `ContainerRef` cell; decontainerize on read (the chokepoint).
                 ValueView::ContainerRef(cell) => {
@@ -93,16 +83,8 @@ impl Interpreter {
         }
     }
 
-    /// Check if a hash contains any sentinel entries (bound refs or self-refs)
-    /// that need resolution before the hash can be iterated.
-    pub(super) fn hash_has_sentinels(items: &HashMap<String, Value>) -> bool {
-        items
-            .values()
-            .any(|v| matches!(v.view(), ValueView::Pair(name, _) if name == SELF_HASH_REF_SENTINEL))
-    }
-
-    /// Resolve all sentinel entries in a hash, returning a new hash with
-    /// bound variable references replaced by their current values.
+    /// Resolve a hash's `:=`-bound element cells, returning a new hash whose
+    /// entries snapshot the cells' current values (assignment semantics).
     pub(super) fn resolve_hash_for_iteration(
         &self,
         items: &crate::gc::Gc<crate::value::HashData>,
@@ -110,9 +92,6 @@ impl Interpreter {
         let mut resolved = HashMap::new();
         for (key, value) in items.iter() {
             let resolved_value = match value.view() {
-                ValueView::Pair(name, _) if name == SELF_HASH_REF_SENTINEL => {
-                    Value::hash_with_data(items.clone())
-                }
                 // Decont a `:=`-bound shared cell: the resolved copy
                 // snapshots the current value (assignment semantics).
                 ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
@@ -121,10 +100,6 @@ impl Interpreter {
             resolved.insert(key.clone(), resolved_value);
         }
         Value::hash_with_data(Value::hash_arc(resolved))
-    }
-
-    pub(super) fn self_array_ref_marker() -> Value {
-        Value::pair(SELF_ARRAY_REF_SENTINEL.to_string(), Value::TRUE)
     }
 
     pub(super) fn resolve_array_entry(
@@ -136,9 +111,6 @@ impl Interpreter {
     ) -> Value {
         match items.get(idx) {
             Some(value) => match value.view() {
-                ValueView::Pair(name, _) if name == SELF_ARRAY_REF_SENTINEL => {
-                    Value::array_with_kind(items.clone(), kind)
-                }
                 // If the element is a hole (Package("Any") from deletion or
                 // uninitialized gap) and a non-Nil default is available,
                 // return the default instead of the hole value.

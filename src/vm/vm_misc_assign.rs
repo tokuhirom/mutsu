@@ -168,19 +168,7 @@ impl Interpreter {
             None
         };
         let mut val = if name.starts_with('%') {
-            let hash_val = self.coerce_object_to_hash(raw_val);
-            // Resolve hash sentinel entries (bound variable refs) when assigning
-            // to a new hash variable. Assignment creates new containers, so bound
-            // refs must be resolved to their current values.
-            if let ValueView::Hash(items) = hash_val.view() {
-                if Self::hash_has_sentinels(&items) {
-                    self.resolve_hash_for_iteration(&items)
-                } else {
-                    hash_val
-                }
-            } else {
-                hash_val
-            }
+            self.coerce_object_to_hash(raw_val)
         } else if name.starts_with('@') {
             let mut assigned = runtime::coerce_to_array(raw_val);
             // Check for shaped array on current value, and preserve on re-assignment.

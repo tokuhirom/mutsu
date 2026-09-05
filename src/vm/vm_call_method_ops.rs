@@ -2070,34 +2070,6 @@ impl Interpreter {
                     });
                     Ok(removed.unwrap_or(Value::NIL))
                 } else if !skip_native {
-                    // Resolve hash sentinel entries (bound variable refs, self-refs)
-                    // before passing to native methods that iterate hash values.
-                    if let ValueView::Hash(items) = target.view()
-                        && Self::hash_has_sentinels(&items)
-                    {
-                        let resolved = self.resolve_hash_for_iteration(&items);
-                        if let Some(native_result) =
-                            self.try_native_method(&resolved, method_sym, &args)
-                        {
-                            crate::vm::vm_stats::record_dispatch_entry_outcome(
-                                "callmethod",
-                                "native",
-                            );
-                            let result = native_result;
-                            // Native method on a by-value resolved hash is env-pure
-                            // (see the sibling native-method branches below that set
-                            // method_dispatch_pure): no env_dirty mark needed.
-                            match modifier {
-                                Some("?") => {
-                                    self.stack.push(result.unwrap_or(Value::NIL));
-                                }
-                                _ => {
-                                    self.stack.push(result?);
-                                }
-                            }
-                            return Ok(());
-                        }
-                    }
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
                     if method == "Slip"
