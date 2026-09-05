@@ -34,11 +34,25 @@ impl Interpreter {
 
         // RakuAST model classes are native type objects rather than entries in
         // the user-class registry.  Expose the constructors/accessors that the
-        // model layer really implements so `.^methods(:local)` is useful (and
-        // does not fall through to an empty built-in method list).
+        // model layer really implements so `.^methods` is useful (and does not
+        // fall through to an empty built-in method list).
+        //
+        // `Type/Metamodel/MethodContainer.rakudoc`: the default is the methods
+        // of the class *and its parents*, stopping at Cool/Any/Mu; `:local` is
+        // only what the class itself declares; `:all` adds the Any/Mu tail on
+        // top of both. The model MRO supplies the first two, and `:all` falls
+        // through to the ordinary built-in list below after seeding the model
+        // names — otherwise `RakuAST::IntLiteral.^methods` was empty even
+        // though `.^methods(:local)` and `.^can("value")` both found `value`.
         if local && let Some(names) = crate::rakuast::local_method_names(&class_name) {
             self.push_native_method_objects(&names, &class_name, &mut result);
             return Ok(Value::array(result));
+        }
+        if let Some(names) = crate::rakuast::inherited_method_names(&class_name) {
+            self.push_native_method_objects(&names, &class_name, &mut result);
+            if !all {
+                return Ok(Value::array(result));
+            }
         }
 
         // Extract mixin role names from the invocant for runtime role method collection

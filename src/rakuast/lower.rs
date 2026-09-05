@@ -896,13 +896,14 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             })
         }
         // A pointy block in expression position (`-> $x { … }`) is a closure. A
-        // single parameter lowers to `Expr::Lambda`; several to `AnonSubParams`. A
-        // zero-parameter block stays the boundary.
+        // single parameter lowers to `Expr::Lambda`; zero or several to
+        // `AnonSubParams` — which is exactly what the parser builds for
+        // `-> { … }`, an arity-0 closure that (unlike a bare block) rejects
+        // arguments.
         RakuAstClass::PointyBlock => {
             let (params, param_defs) = signature_positional_params(node)?;
             let body = lower_block(node)?;
             match params.len() {
-                0 => Err(unsupported(node)),
                 1 => Ok(Expr::Lambda {
                     param: params.into_iter().next().unwrap(),
                     body,
@@ -938,6 +939,33 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 other => vec![other],
             };
             Ok(Expr::BracketArray(items, false))
+        }
+        // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
+        // `Expr::Reduction` keeps the triangle form in the operator string
+        // itself (a leading backslash), which is how the converter reads it
+        // back out into the `triangle` field.
+        RakuAstClass::TermReduce => {
+            let infix = named_child(node, "infix")?;
+            if infix.class != RakuAstClass::Infix {
+                return Err(unsupported(node));
+            }
+            let infix_value = positional_leaf(infix)?;
+            let op = match infix_value.view() {
+                ValueView::Str(s) => s.to_string(),
+                _ => return Err(unsupported(node)),
+            };
+            let triangle = bool_field(node, "triangle")?;
+            let args = named_child(node, "args")?;
+            // A reduction takes exactly one argument expression (a list, an
+            // array variable, ...); the converter never builds more.
+            let [only] = args.fields.as_slice() else {
+                return Err(unsupported(node));
+            };
+            let op = op.to_string();
+            Ok(Expr::Reduction {
+                op: if triangle { format!("\\{op}") } else { op },
+                expr: Box::new(lower_expr(child_node(&only.value)?)?),
+            })
         }
         // The `*` whatever term.
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),

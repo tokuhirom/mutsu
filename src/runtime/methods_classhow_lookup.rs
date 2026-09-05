@@ -37,6 +37,20 @@ impl Interpreter {
                 (Symbol::intern(&type_name), type_name)
             }
         };
+        // RakuAST model classes are native type objects with no registry entry,
+        // so the MRO walk below finds nothing for them. Answer from the same
+        // model metadata `.^methods` and `.^can` use, keeping the three in
+        // lockstep — `RakuAST::IntLiteral.^lookup("value")` returned `(Mu)`
+        // while `.^can("value")` found it.
+        if let Some(names) = crate::rakuast::inherited_method_names(&class_name_str) {
+            return names.contains(&method_name).then(|| {
+                Value::routine_parts(
+                    Symbol::intern(&class_name_str),
+                    Symbol::intern(method_name),
+                    false,
+                )
+            });
+        }
         // Check user-defined class methods first, walking the receiver's full
         // MRO rather than only its own class — `B.^lookup('foo')` must find a
         // `foo` declared only on an ancestor `A` (`class B is A {}`), exactly

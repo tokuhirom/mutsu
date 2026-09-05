@@ -640,9 +640,11 @@ impl Interpreter {
             _ => self.mop_receiver_owner(target),
         };
         // RakuAST model classes are native type objects rather than ordinary
-        // ClassDef entries. Keep `.^can` in lockstep with `.^methods(:local)`
-        // and `.^method_table` by consulting their shared model metadata.
-        if let Some(names) = crate::rakuast::local_method_names(&class_name) {
+        // ClassDef entries. Keep `.^can` in lockstep with `.^methods` and
+        // `.^method_table` by consulting their shared model metadata. Like an
+        // ordinary `.^can` this spans the whole MRO, not just the receiver's
+        // own class, so an inherited model method is found too.
+        if let Some(names) = crate::rakuast::inherited_method_names(&class_name) {
             return if names.contains(&method_name) {
                 vec![Value::routine_parts(
                     Symbol::intern(&class_name),
