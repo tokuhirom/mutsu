@@ -258,13 +258,62 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             then_branch,
             else_branch,
             binding_var,
-            ..
+            is_statement_modifier,
+            is_unless,
         } => {
-            // mutsu desugars `unless X` to `if !X`, so an `unless` renders as a
-            // `Statement::If` whose condition is `ApplyPrefix(!)` — a documented
-            // divergence (raku keeps `Statement::Unless` with the bare condition).
             if binding_var.is_some() {
                 return Err(unsupported("`if EXPR -> $var` topic binding"));
+            }
+            // mutsu stores `unless X` as `if !X` PLUS an `is_unless` flag, so the
+            // source keyword is recoverable: raku has `Statement::Unless` (and
+            // `StatementModifier::Unless`) and renders the *undecorated*
+            // condition, so the `!` the parser added is stripped back off. Same
+            // shape as `Stmt::While::is_until` below.
+            let written_cond = if *is_unless {
+                strip_negation(cond)?
+            } else {
+                cond
+            };
+            // A postfix `if`/`unless` introduces no block of its own: raku hangs
+            // the condition off the modified statement as a `condition-modifier`
+            // rather than building a `Statement::If` around it. Mirrors the
+            // `given` modifier arm below.
+            if *is_statement_modifier {
+                let mut body = then_branch
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)));
+                let (Some(modified), None) = (body.next(), body.next()) else {
+                    return Err(unsupported("multi-statement if/unless modifier body"));
+                };
+                if !else_branch.is_empty() {
+                    return Err(unsupported("if/unless modifier with an else branch"));
+                }
+                let mut statement = convert_stmt(modified)?
+                    .ok_or_else(|| unsupported("empty if/unless modifier body"))?;
+                statement.fields.push(node_field(
+                    Some("condition-modifier"),
+                    RakuAstNode {
+                        class: if *is_unless {
+                            RakuAstClass::StatementModifierUnless
+                        } else {
+                            RakuAstClass::StatementModifierIf
+                        },
+                        fields: vec![node_field(None, convert_expr(written_cond)?)],
+                    },
+                ));
+                return Ok(Some(statement));
+            }
+            // `unless` cannot carry `elsif`/`else` (rakudo rejects it at compile
+            // time), so its node is just condition + body — note `body`, not
+            // `then`.
+            if *is_unless {
+                return Ok(Some(RakuAstNode {
+                    class: RakuAstClass::StatementUnless,
+                    fields: vec![
+                        node_field(Some("condition"), convert_expr(written_cond)?),
+                        node_field(Some("body"), block_node(then_branch)?),
+                    ],
+                }));
             }
             let mut fields = vec![
                 node_field(Some("condition"), convert_expr(cond)?),
@@ -1828,7 +1877,9 @@ fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
             op: crate::token_kind::TokenKind::Bang,
             expr,
         } => Ok(expr),
-        _ => Err(unsupported("`until` loop without the parser's negation")),
+        _ => Err(unsupported(
+            "`unless`/`until` without the parser's negation",
+        )),
     }
 }
 

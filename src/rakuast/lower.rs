@@ -65,6 +65,32 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 }
                 return Err(unsupported(modifier));
             }
+            // A postfix `if`/`unless`: raku hangs the condition off the modified
+            // statement rather than wrapping it in a `Statement::If`. mutsu
+            // models it as an `If` whose `is_statement_modifier` is set (so its
+            // branch is not a block literal) — and, for `unless`, whose
+            // condition carries the parser's `!`.
+            if let Some(modifier) = node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("condition-modifier"))
+            {
+                let modifier = child_node(&modifier.value)?;
+                let is_unless = match modifier.class {
+                    RakuAstClass::StatementModifierIf => false,
+                    RakuAstClass::StatementModifierUnless => true,
+                    _ => return Err(unsupported(modifier)),
+                };
+                let cond = lower_expr(named_child_or_positional(modifier)?)?;
+                return Ok(Stmt::If {
+                    cond: negate_if(cond, is_unless),
+                    then_branch: vec![statement],
+                    else_branch: Vec::new(),
+                    binding_var: None,
+                    is_statement_modifier: true,
+                    is_unless,
+                });
+            }
             Ok(statement)
         }
         _ => lower_stmt_inner(node),
@@ -76,6 +102,18 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::StatementIf => lower_if(node),
+        // `unless C { … }`. mutsu stores it as a negated condition plus the
+        // `is_unless` flag, which is what the converter reads back, so the
+        // lowerer has to re-plant both. raku's node names the block `body`
+        // (not `then`) and cannot carry `elsif`/`else`.
+        RakuAstClass::StatementUnless => Ok(Stmt::If {
+            cond: negate_if(lower_expr(named_child(node, "condition")?)?, true),
+            then_branch: lower_block(named_child(node, "body")?)?,
+            else_branch: Vec::new(),
+            binding_var: None,
+            is_statement_modifier: false,
+            is_unless: true,
+        }),
         RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
         // `repeat { … } while/until C` runs the body once before testing the
@@ -204,6 +242,7 @@ fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 else_branch,
                 binding_var: None,
                 is_statement_modifier: false,
+                is_unless: false,
             }];
         }
     }
@@ -213,6 +252,7 @@ fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         else_branch,
         binding_var: None,
         is_statement_modifier: false,
+        is_unless: false,
     })
 }
 

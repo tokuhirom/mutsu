@@ -1457,6 +1457,7 @@ impl Compiler {
                                 else_branch: vec![],
                                 binding_var: None,
                                 is_statement_modifier: false,
+                                is_unless: false,
                             },
                             Stmt::Expr(Expr::Var(seen_name)),
                         ],

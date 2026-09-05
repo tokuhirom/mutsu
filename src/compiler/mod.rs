@@ -3045,6 +3045,7 @@ impl Compiler {
                     else_branch: Vec::new(),
                     binding_var: None,
                     is_statement_modifier: false,
+                    is_unless: false,
                 });
             }
         }
@@ -3685,6 +3686,7 @@ impl Compiler {
                             else_branch,
                             binding_var,
                             is_statement_modifier,
+                            ..
                         } => {
                             self.compile_if_value(
                                 cond,

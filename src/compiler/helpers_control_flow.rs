@@ -66,6 +66,7 @@ impl Compiler {
                         else_branch,
                         binding_var,
                         is_statement_modifier,
+                        ..
                     } => self.compile_if_value(
                         cond,
                         then_branch,

@@ -245,6 +245,7 @@ impl Compiler {
                 else_branch: inner_else,
                 binding_var: inner_binding,
                 is_statement_modifier: inner_is_modifier,
+                ..
             },
         ] = else_branch
         {

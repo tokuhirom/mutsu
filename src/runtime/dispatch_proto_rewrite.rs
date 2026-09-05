@@ -60,8 +60,10 @@ impl Interpreter {
                 else_branch,
                 binding_var,
                 is_statement_modifier,
+                is_unless,
             } => Stmt::If {
                 is_statement_modifier: *is_statement_modifier,
+                is_unless: *is_unless,
                 cond: Self::rewrite_proto_dispatch_expr(cond),
                 then_branch: Self::rewrite_proto_dispatch_stmts(then_branch),
                 else_branch: Self::rewrite_proto_dispatch_stmts(else_branch),

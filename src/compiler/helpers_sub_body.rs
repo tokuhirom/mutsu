@@ -734,6 +734,7 @@ impl Compiler {
                         else_branch,
                         binding_var,
                         is_statement_modifier,
+                        ..
                     } => {
                         sub_compiler.compile_if_value(
                             cond,
@@ -1256,6 +1257,7 @@ impl Compiler {
                         else_branch,
                         binding_var,
                         is_statement_modifier,
+                        ..
                     } = stmt
                 {
                     sub_compiler.compile_if_value(
@@ -1404,6 +1406,7 @@ impl Compiler {
                             else_branch,
                             binding_var,
                             is_statement_modifier,
+                            ..
                         } => {
                             sub_compiler.compile_if_value(
                                 cond,
