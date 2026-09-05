@@ -1172,6 +1172,7 @@ impl Interpreter {
         code: &CompiledCode,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        bare_args: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
@@ -1215,7 +1216,9 @@ impl Interpreter {
             false
         };
         self.set_pending_call_arg_sources(arg_sources);
+        self.pending_call_topic_bare = bare_args;
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+        self.pending_call_topic_bare = false;
         self.set_pending_call_arg_sources(None);
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
@@ -1230,6 +1233,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        bare_args: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
@@ -1293,7 +1297,9 @@ impl Interpreter {
                 false
             };
             self.set_pending_call_arg_sources(arg_sources.clone());
+            self.pending_call_topic_bare = bare_args;
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+            self.pending_call_topic_bare = false;
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?

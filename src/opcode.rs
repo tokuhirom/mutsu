@@ -1475,11 +1475,22 @@ pub(crate) enum OpCode {
     CallOnValue {
         arity: u32,
         arg_sources_idx: Option<u32>,
+        /// Every positional argument at this call site is a syntactically
+        /// container-less expression (a literal, or an operator result built
+        /// only out of such) — see
+        /// [`crate::compiler::Compiler::expr_yields_container_less_value`].
+        /// A bare block invoked this way binds its implicit `$_` to a value
+        /// with no container, so `{ $_ = 5 }(7)` is `X::AdHoc` "Cannot assign
+        /// to an immutable value" in raku while `{ $_ = 5 }($v)` writes
+        /// through. Consumed via `Interpreter::pending_call_topic_bare`.
+        bare_args: bool,
     },
     CallOnCodeVar {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        /// See [`OpCode::CallOnValue`]'s `bare_args`.
+        bare_args: bool,
     },
     /// Third field: true when this is a bare block `{ }`, false for `sub { }`.
     MakeAnonSub(u32, Option<u32>, bool),
@@ -4087,6 +4098,25 @@ pub(crate) struct CompiledCode {
     /// `push_call_frame`-bypassing "fast native loop" paths, which would leak
     /// the mark permanently).
     pub(crate) pointy_alias_param: bool,
+    /// Whether this block was written directly as the callback of a
+    /// `.map`/`.grep` (method or listop form) whose SOURCE provably yields bare
+    /// items — a list of literals, a `Range`, `%h.keys` (the same
+    /// [`crate::compiler::Compiler::for_iterable_yields_bare_items`] oracle the
+    /// `for`-loop topic marking uses). raku binds the callback's implicit `$_`
+    /// to the source element, so with no container behind that element
+    /// `$_ = ...` is `X::AdHoc` "Cannot assign to an immutable value"
+    /// (`(1, 2).map({ $_ = 5 })`) — while `@a.map({ $_ = 5 })` writes through.
+    ///
+    /// Decided at COMPILE time from the receiver's syntax rather than at
+    /// runtime from the element's shape: a real `Array`'s elements are stored
+    /// bare in mutsu, so a runtime "is this item a container" test would
+    /// additionally reject `@a.list.map({ $_ = 5 })`, `@a[0..1].map(...)` and
+    /// `@a.Seq.map(...)`, all of which raku accepts (measured 2026-09-05).
+    ///
+    /// Consumed at the loop/call site (`resolution_map_grep*.rs`,
+    /// `call_compiled_closure_with_topic`), never as a body prologue — see
+    /// `pointy_alias_param` above for why a prologue leaks the mark.
+    pub(crate) immutable_topic: bool,
     /// Whether this code contains opcodes that write to env (SetGlobal,
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
@@ -4884,6 +4914,7 @@ impl CompiledCode {
             source_line: None,
             is_pointy_block: false,
             pointy_alias_param: false,
+            immutable_topic: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),

@@ -509,25 +509,34 @@ impl Interpreter {
         // `ForLoopSpec::source_items_are_bare`) gets the same treatment: the
         // topic aliases the item itself, with no container behind it, so raku
         // rejects `$_ = ...` and reports the item's own type from `.VAR`.
-        let topic_readonly =
-            !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty() && {
-                spec.source_items_are_bare
-                    || match &container_binding {
-                        None => false,
-                        Some(name) => {
-                            if let Some(val) = self.get_env_with_main_alias(name) {
-                                matches!(
-                                    val.view(),
-                                    ValueView::Mix(_, false)
-                                        | ValueView::Set(_, false)
-                                        | ValueView::Bag(_, false)
-                                )
-                            } else {
-                                false
-                            }
+        // Whether this loop binds the implicit topic at all (as opposed to a
+        // named/multi parameter, which leaves `$_` alone).
+        let binds_implicit_topic = param_name.is_none() && spec.multi_param_names.is_empty();
+        // `readonly_vars` is keyed by bare name, so an enclosing construct that
+        // marked ITS topic immutable (an outer `for 1, 2`, a `.map` over a
+        // literal) is still in force here. A loop whose own topic IS writable
+        // must therefore clear that mark, not merely refrain from setting one:
+        // `for 1, 2 { for @b { $_ = 1 } }` wrongly threw "Cannot assign to an
+        // immutable value". Saved and restored on every exit path below.
+        let saved_topic_readonly = binds_implicit_topic.then(|| self.readonly_kind("_"));
+        let topic_readonly = !spec.is_rw && binds_implicit_topic && {
+            spec.source_items_are_bare
+                || match &container_binding {
+                    None => false,
+                    Some(name) => {
+                        if let Some(val) = self.get_env_with_main_alias(name) {
+                            matches!(
+                                val.view(),
+                                ValueView::Mix(_, false)
+                                    | ValueView::Set(_, false)
+                                    | ValueView::Bag(_, false)
+                            )
+                        } else {
+                            false
                         }
                     }
-            };
+                }
+        };
         let total_items = chunked_items.len();
         // `is copy` loop param (is_rw set, do_writeback suppressed): the param
         // owns a DISTINCT container per iteration. Mutations write through the
@@ -776,6 +785,13 @@ impl Interpreter {
                 self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
                 self.env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
+            } else if binds_implicit_topic {
+                // See `saved_topic_readonly`: this loop's topic is writable, so
+                // an enclosing construct's mark must not carry into the body --
+                // including its deep flag, which would otherwise refuse a
+                // `.value = ...` through THIS loop's own (mutable) topic.
+                self.unmark_readonly("_");
+                self.env_mut().remove("__mutsu_deep_readonly::_");
             }
             // Mark named params readonly when not in rw mode.
             // Skip @-sigil and %-sigil params: they bind to a mutable
@@ -1160,8 +1176,8 @@ impl Interpreter {
                                 resume_body_ip,
                                 inner: nested.map(Box::new),
                             });
-                        if topic_readonly {
-                            self.unmark_readonly("_");
+                        if let Some(saved) = saved_topic_readonly {
+                            self.restore_topic_readonly(saved);
                             self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
@@ -1177,9 +1193,9 @@ impl Interpreter {
                         return Err(e);
                     }
                     Err(e) => {
-                        // Unmark readonly before propagating error
-                        if topic_readonly {
-                            self.unmark_readonly("_");
+                        // Restore the topic marking before propagating error
+                        if let Some(saved) = saved_topic_readonly {
+                            self.restore_topic_readonly(saved);
                             self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
@@ -1223,9 +1239,9 @@ impl Interpreter {
                 break;
             }
         }
-        // Unmark readonly topic after loop completion
-        if topic_readonly {
-            self.unmark_readonly("_");
+        // Restore the topic marking after loop completion
+        if let Some(saved) = saved_topic_readonly {
+            self.restore_topic_readonly(saved);
             self.env_mut().remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion

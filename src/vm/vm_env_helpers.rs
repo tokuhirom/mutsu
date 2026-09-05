@@ -64,6 +64,11 @@ impl Interpreter {
             saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
             saved_active_loop_rw_param_names: std::mem::take(&mut self.active_loop_rw_param_names),
         };
+        // A call-site "the topic argument is a bare literal" flag
+        // (`OpCode::CallOnValue`'s `bare_args`) belongs to exactly one call.
+        // `call_compiled_closure_with_topic` reads it before pushing its frame;
+        // clearing it here stops it reaching any deeper block call.
+        self.pending_call_topic_bare = false;
         self.call_frames.push(frame);
     }
 

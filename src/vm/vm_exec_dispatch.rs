@@ -3674,6 +3674,7 @@ impl Interpreter {
             OpCode::CallOnValue {
                 arity,
                 arg_sources_idx,
+                bare_args,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above. The
@@ -3685,7 +3686,13 @@ impl Interpreter {
                 // `my $w = &warn; $w.("x")` raises a resumable `warn` signal from
                 // inside the dispatched callable, exactly like a direct `warn`
                 // (which the `ExecCall` arm below already handles).
-                match self.exec_call_on_value_op(code, *arity, *arg_sources_idx, compiled_fns) {
+                match self.exec_call_on_value_op(
+                    code,
+                    *arity,
+                    *arg_sources_idx,
+                    *bare_args,
+                    compiled_fns,
+                ) {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
@@ -3700,6 +3707,7 @@ impl Interpreter {
                 name_idx,
                 arity,
                 arg_sources_idx,
+                bare_args,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above.
@@ -3712,6 +3720,7 @@ impl Interpreter {
                     *name_idx,
                     *arity,
                     *arg_sources_idx,
+                    *bare_args,
                     compiled_fns,
                 ) {
                     Ok(()) => {}

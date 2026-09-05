@@ -586,6 +586,7 @@ impl Interpreter {
             build_attr_writes: std::cell::RefCell::new(Vec::new()),
             defining_class: None,
             pending_call_arg_sources: None,
+            pending_call_topic_bare: false,
             require_propagates_missing_module: false,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),

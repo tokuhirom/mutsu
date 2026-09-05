@@ -1386,6 +1386,13 @@ pub(crate) struct Compiler {
     /// sub-expressions, so a Pair nested in the value (`f(a => (b => 1))`)
     /// does not inherit it — only the outermost, genuinely-named pair does.
     mint_named_pair: bool,
+    /// One-shot: the block argument about to be compiled is the callback of a
+    /// `.map`/`.grep` (method or listop form) whose source provably yields bare
+    /// items, so its implicit `$_` aliases an immutable value. Set only around
+    /// compiling that one argument; `compile_expr_anon_sub` reads and clears it
+    /// at entry, so a block nested inside the callback does not inherit it.
+    /// See [`crate::opcode::CompiledCode::immutable_topic`].
+    pending_immutable_topic_block: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Scalar variables `:=`-bound to a non-itemized value (no Scalar
@@ -1638,6 +1645,7 @@ impl Compiler {
             rw_tail: false,
             bind_target_direct: false,
             mint_named_pair: false,
+            pending_immutable_topic_block: false,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
@@ -3242,6 +3250,49 @@ impl Compiler {
                 target, name, args, ..
             } if args.is_empty() && *name == "keys" => {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether `expr` provably evaluates to a value that has no container of
+    /// its own — a literal, or an operator result built only out of such.
+    ///
+    /// Used to decide whether a bare block invoked as `$b(EXPR)` binds its
+    /// implicit `$_` to something assignable: raku rejects `{ $_ = 5 }(7)`
+    /// ("Cannot assign to an immutable value") but accepts `{ $_ = 9 }($v)`
+    /// and `{ $_ = 9 }(@a[0])`, which alias the caller's container. Deliberately
+    /// conservative — anything that could denote an lvalue (a variable, a
+    /// subscript, an attribute, a call result) answers `false`, so a missed
+    /// shape only leaves today's behaviour in place instead of inventing a
+    /// throw raku does not have.
+    pub(crate) fn expr_yields_container_less_value(expr: &Expr) -> bool {
+        use crate::token_kind::TokenKind;
+        match expr {
+            Expr::Grouped(inner) => Self::expr_yields_container_less_value(inner),
+            // A container-valued literal is excluded: `[1,2]`/`{a=>1}` are
+            // containers whose elements stay assignable.
+            Expr::Literal(v) => !matches!(
+                v.view(),
+                crate::value::ValueView::Array(..) | crate::value::ValueView::Hash(..)
+            ),
+            Expr::Unary { op, expr } => {
+                matches!(op, TokenKind::Minus | TokenKind::Plus | TokenKind::Bang)
+                    && Self::expr_yields_container_less_value(expr)
+            }
+            // An arithmetic/string operator always mints a fresh value.
+            Expr::Binary { left, op, right } => {
+                matches!(
+                    op,
+                    TokenKind::Plus
+                        | TokenKind::Minus
+                        | TokenKind::Star
+                        | TokenKind::Slash
+                        | TokenKind::Percent
+                        | TokenKind::StarStar
+                        | TokenKind::Tilde
+                ) && Self::expr_yields_container_less_value(left)
+                    && Self::expr_yields_container_less_value(right)
             }
             _ => false,
         }

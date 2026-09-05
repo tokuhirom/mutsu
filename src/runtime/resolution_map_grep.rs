@@ -90,6 +90,35 @@ pub(crate) fn bind_loop_topic(
     }
 }
 
+/// Set the topic's read-only marking for one iteration of a map/grep loop.
+///
+/// raku binds a callback's implicit `$_` to the source ELEMENT, so `$_ = ...`
+/// is legal exactly when that element has a container behind it:
+/// `(1, 2).map({ $_ = 5 })` throws X::AdHoc "Cannot assign to an immutable
+/// value" while `@a.map({ $_ = 5 })` writes through. `immutable_topic` is the
+/// COMPILE-TIME verdict for this callback (`CompiledCode::immutable_topic`,
+/// decided from the receiver's syntax by
+/// `Compiler::for_iterable_yields_bare_items`) rather than a runtime test on
+/// the element: a real `Array`'s elements are stored bare in mutsu, so
+/// "is this item a container" would also reject `@a.list.map({ $_ = 5 })`,
+/// `@a[0..1].map(...)` and `@a.Seq.map(...)`, which raku accepts.
+///
+/// The marking is set in BOTH directions: `readonly_vars` is keyed by bare
+/// name, so a writable topic must also CLEAR a mark an enclosing construct
+/// (an outer `for 1, 2`, an outer map over a literal) left on `$_`.
+///
+/// Callers must already hold a `ReadonlyFrameGuard`: these loops run the body
+/// through `run_reuse` without `push_call_frame`, so without an open readonly
+/// scope the mark would skip the undo journal and leak permanently (see the
+/// guard's own comment at each call site).
+pub(crate) fn set_loop_topic_readonly(vm: &mut Interpreter, immutable_topic: bool) {
+    if immutable_topic {
+        vm.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+    } else {
+        vm.unmark_readonly("_");
+    }
+}
+
 /// Convert a `CallArg` to an `Expr` for expression-level call compilation,
 /// preserving named (`k => v`) and slip (`|v`) args. Mirrors the compiler's
 /// `call_args_to_expr_args`.
@@ -507,6 +536,15 @@ impl Interpreter {
 
             let is_whatever_code = block_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
+            // The compiler saw this callback written directly against a source
+            // that provably yields bare items (`(1, 2).map({ $_ = 5 })`), so
+            // its implicit topic has no container to assign into -- see
+            // `CompiledCode::immutable_topic` and `set_loop_topic_readonly`.
+            let immutable_topic = !is_whatever_code
+                && data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|cc| cc.immutable_topic);
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
@@ -603,6 +641,7 @@ impl Interpreter {
                     // `resolution_map_grep_rw.rs`).
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm

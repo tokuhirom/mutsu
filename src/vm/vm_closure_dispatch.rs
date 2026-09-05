@@ -214,6 +214,11 @@ impl Interpreter {
         // One-shot: consumed here so a nested call inside the body does not
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance = std::mem::take(&mut self.suppress_binding_error_enhance);
+        // One-shot, and read BEFORE `push_call_frame` (which clears it): the
+        // call site said every positional argument is a container-less
+        // expression, so this block's implicit `$_` has nothing behind it to
+        // assign to. See `Interpreter::pending_call_topic_bare`.
+        let topic_arg_is_bare = std::mem::take(&mut self.pending_call_topic_bare);
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -661,6 +666,36 @@ impl Interpreter {
             {
                 self.env_mut()
                     .insert_sym(crate::symbol::Symbol::intern("_"), first.clone());
+                // raku binds a bare block's implicit `$_` to the argument
+                // itself: `{ $_ = 5 }(7)` is X::AdHoc "Cannot assign to an
+                // immutable value", while `{ $_ = 9 }($v)` / `(@a[0])` write
+                // through the caller's container. `topic_arg_is_bare` is the
+                // call site's own syntactic verdict (see
+                // `Compiler::expr_yields_container_less_value`) and
+                // `cc.immutable_topic` the `.map`/`.grep`-over-a-literal one;
+                // both are conservative, so an unrecognised shape keeps the
+                // topic writable rather than inventing a throw.
+                //
+                // `explicit_topic`/`capture_rw_topic` mean the native `.map`
+                // loop supplied this topic from a real container it will write
+                // back to (`@a.map({ $_ *= 10 })`), which must stay writable —
+                // and `explicit_topic` overwrites the bind above further down,
+                // so it must be excluded here, not merely below.
+                //
+                // Set in BOTH directions: `readonly_vars` is keyed by bare
+                // name, so a writable topic must also CLEAR a mark an
+                // enclosing construct left on `$_` -- `for 1, 2 { @a.map({ $_
+                // = 5 }) }` (whose native rw-map topic IS a writable element)
+                // wrongly threw. `push_call_frame` above journals either way.
+                if (topic_arg_is_bare || cc.immutable_topic)
+                    && !capture_rw_topic
+                    && explicit_topic.is_none()
+                    && !first.is_container_ref()
+                {
+                    self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+                } else {
+                    self.unmark_readonly_topic();
+                }
             }
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
             // A block lexically captures $_ from its creation scope (the env-merge
@@ -705,6 +740,16 @@ impl Interpreter {
                 crate::symbol::Symbol::intern("_"),
                 Value::package(crate::symbol::Symbol::intern("Any")),
             );
+            // ...and that fresh `$_` is WRITABLE, whatever the caller's topic
+            // was. `readonly_vars` is keyed by bare name, so a construct that
+            // marked its own topic immutable (a `for 1, 2` alias, a
+            // `.map`/`.grep` over a literal) would otherwise have that mark
+            // still in force inside an unrelated routine called from the body:
+            // `for 1, 2 { f() }` with `sub f() { $_ = 5 }` wrongly threw
+            // "Cannot assign to an immutable value". `push_call_frame` above
+            // journals the unmark, so the caller's marking is restored on
+            // return.
+            self.unmark_readonly_topic();
         }
 
         // Raku: $! is scoped per routine — fresh Nil on entry. Gated on

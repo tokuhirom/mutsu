@@ -73,15 +73,20 @@ impl Compiler {
     /// `is_block` = true for bare blocks `{ }`, false for `sub { }`.
     /// Bare blocks are NOT routine boundaries for `return`.
     pub(super) fn compile_expr_anon_sub(&mut self, body: &[Stmt], is_rw: bool, is_block: bool) {
+        // One-shot, consumed here so only THIS block (not one nested inside it)
+        // picks up the enclosing `.map`/`.grep`-over-a-literal verdict the
+        // caller set -- see `CompiledCode::immutable_topic`.
+        let immutable_topic = std::mem::take(&mut self.pending_immutable_topic_block);
         if is_rw {
             // A bare `is rw` block (a `<->`-style loop body) keeps its tail
             // as a value; only an anonymous `sub ... is rw` hands out its
             // tail's container (ADR-0059 Slice 2).
-            let compiled = if is_block {
+            let mut compiled = if is_block {
                 self.compile_closure_body(&[], &[], body)
             } else {
                 self.compile_routine_closure_body(&[], &[], body, true)
             };
+            compiled.immutable_topic = immutable_topic;
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::SubDecl {
@@ -122,11 +127,15 @@ impl Compiler {
                 return;
             }
             let placeholders = crate::ast::collect_placeholders_shallow(body);
-            let compiled = if is_block {
+            let mut compiled = if is_block {
                 self.compile_closure_body(&placeholders, &[], body)
             } else {
                 self.compile_routine_closure_body(&placeholders, &[], body, false)
             };
+            // Only a bare, parameterless block topicalizes the element; a
+            // placeholder block (`{ $^a }`) binds its own parameter and keeps
+            // the enclosing `$_`.
+            compiled.immutable_topic = immutable_topic && placeholders.is_empty();
             let esc = self.escaping_position;
             let cc_idx = self.add_closure_code_baked(compiled, esc);
             let idx = self.code.add_stmt(Stmt::Block(body.to_vec()));
