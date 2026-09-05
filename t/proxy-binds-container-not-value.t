@@ -6,7 +6,7 @@ use Test;
 # container itself. Every expected value below was oracled against
 # `raku` v2026.06.
 
-plan 24;
+plan 34;
 
 # --- `is rw` / `is raw` parameters bind the caller's Proxy container --------
 
@@ -103,3 +103,51 @@ plan 24;
     $n = 9;
     is "$p", '9', 'and the FETCH is live, not snapshotted';
 }
+
+# --- binding a Proxy-BOUND VARIABLE into an element -------------------------
+# `@a[0] := $p` and `@a[0] := Proxy.new(...)` mean the same thing in Raku, but
+# they installed the Proxy at different depths: the literal became the element,
+# while binding a variable aliased it through the ordinary `ContainerRef` cell
+# the element-bind machinery uses for any lexical. The destination-side Proxy
+# check read only the outer layer, so the `$p` spelling missed it and the store
+# replaced the binding instead of firing its STORE.
+
+{
+    my $n = 5;
+    my $p := Proxy.new(FETCH => -> $ { $n }, STORE => -> $, $v { $n = $v });
+    my @a = 1, 2, 3;
+    @a[1] := $p;
+    is @a[1].VAR.^name, 'Proxy', 'binding a Proxy-bound variable installs the Proxy';
+    $n = 7;
+    is @a[1], 7, 'and the element tracks it live';
+    @a[1] = 99;
+    is $n, 99, 'a store into that element fires the Proxy STORE';
+    is @a[1].VAR.^name, 'Proxy', 'and the element is still the Proxy afterwards';
+    is @a[1], 99, 'the element reads back the stored value';
+}
+
+{
+    my $n = 5;
+    my $p := Proxy.new(FETCH => -> $ { $n }, STORE => -> $, $v { $n = $v });
+    my %h;
+    %h<k> := $p;
+    is %h<k>.VAR.^name, 'Proxy', 'the hash spelling installs the Proxy too';
+    $n = 7;
+    is %h<k>, 7, 'and the hash value tracks it live';
+    %h<k> = 77;
+    is $n, 77, 'a store into that hash value fires the Proxy STORE';
+    is %h<k>.VAR.^name, 'Proxy', 'and the hash value is still the Proxy afterwards';
+}
+
+{
+    # A plain lexical bound into an element must still ALIAS (not be mistaken
+    # for a store-mediating container): the alias cell is unwrapped only to
+    # look for a Proxy, and a non-Proxy cell falls through untouched.
+    my $x = 1;
+    my @c = 9, 9;
+    @c[0] := $x;
+    $x = 4;
+    is @c[0], 4, 'a plain lexical bound into an element still aliases it';
+}
+
+done-testing;

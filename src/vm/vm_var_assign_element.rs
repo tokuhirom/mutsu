@@ -673,17 +673,37 @@ impl Interpreter {
         result
     }
 
-    /// The value currently occupying `target`'s element at `index`, for the one
-    /// shape a `Proxy` element can be reached by: a plain `@`/`%` container (or
-    /// a cell holding one) under a simple `Int`/`Str` subscript. Every other
+    /// The container currently mediating `target`'s element at `index`, for the
+    /// one shape a `Proxy` element can be reached by: a plain `@`/`%` container
+    /// (or a cell holding one) under a simple `Int`/`Str` subscript. Every other
     /// shape -- a slice subscript, a `Junction`/`Whatever`/`Range` index, a
     /// nested or multi-dimensional path, a tied or `Seq` target -- returns
     /// `None`, so the caller falls through to the ordinary store paths.
+    ///
+    /// The slot is unwrapped through any alias cells, because the two `:=` bind
+    /// spellings install the `Proxy` at different depths: `@a[0] := Proxy.new(...)`
+    /// installs the `Proxy` itself, while `@a[0] := $p` -- binding a variable
+    /// whose own container is that `Proxy` -- aliases it through the ordinary
+    /// `ContainerRef` cell the element-bind machinery uses for any lexical. Both
+    /// spellings mean the same thing in Raku, so both must find the same
+    /// mediating container here; reading only the outer layer made the `$p`
+    /// spelling miss it and fall through to a store that replaced the binding.
     fn existing_element_container(
         target: &Value,
         index: &Value,
         is_positional: bool,
     ) -> Option<Value> {
+        /// Unwrap alias cells to the container that actually mediates a store.
+        /// Bounded so a cell cycle cannot spin.
+        fn unwrap_alias_cells(mut v: Value) -> Value {
+            for _ in 0..16 {
+                if !matches!(v.view(), ValueView::ContainerRef(_)) {
+                    break;
+                }
+                v = v.into_deref();
+            }
+            v
+        }
         let target = target.clone().into_deref();
         if is_positional {
             let ValueView::Int(i) = index.view() else {
@@ -693,7 +713,7 @@ impl Interpreter {
                 return None;
             };
             let i: usize = i.try_into().ok()?;
-            items.items().get(i).cloned()
+            items.items().get(i).cloned().map(unwrap_alias_cells)
         } else {
             let key = match index.view() {
                 ValueView::Str(s) => s.to_string(),
@@ -703,7 +723,7 @@ impl Interpreter {
             let ValueView::Hash(map) = target.view() else {
                 return None;
             };
-            map.get(&key).cloned()
+            map.get(&key).cloned().map(unwrap_alias_cells)
         }
     }
 

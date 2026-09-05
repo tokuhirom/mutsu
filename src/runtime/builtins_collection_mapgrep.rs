@@ -216,11 +216,18 @@ impl Interpreter {
         }
         if has_k || has_kv || has_p {
             let original_items = list_items.clone();
-            let filtered = self.eval_grep_over_items(func, list_items)?;
-            let indices = crate::runtime::methods_collection_ops::compute_grep_indices(
-                &original_items,
-                &filtered,
-            );
+            let (filtered, matched_indices) =
+                self.eval_grep_over_items_indexed(func, list_items)?;
+            // The grep loop's own indices, where it has them: re-deriving them
+            // by scanning the source for a value `===` to each result element
+            // cannot find a `Proxy` slot, which shifts every key after it.
+            let indices = match matched_indices {
+                Some(indices) => indices,
+                None => crate::runtime::methods_collection_ops::compute_grep_indices(
+                    &original_items,
+                    &filtered,
+                ),
+            };
             if has_k {
                 let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::int(i as i64)).collect();
                 Ok(Value::array(idx_vals))

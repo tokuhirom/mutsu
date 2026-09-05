@@ -1,6 +1,155 @@
 use super::*;
 use crate::value::AttrMap;
 
+/// Depth cap for the gist-dispatch probe. Cycles are caught by container
+/// identity (below); this only keeps a pathologically deep structure from
+/// blowing the stack.
+const GIST_PROBE_MAX_DEPTH: usize = 256;
+
+/// Container identity, for the visited set. Only the `Gc`-backed containers can
+/// participate in a cycle, so the others have no identity to track. A `:=`-bound
+/// element holds a `ContainerRef` cell and a cycle can close through one
+/// (`my @e; @e.push(@e)`), so cells count too.
+fn container_id(value: &Value) -> Option<usize> {
+    match value.view() {
+        ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+        ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+        ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+        _ => None,
+    }
+}
+
+/// `seen` holds every container already walked — not just the ancestors. A
+/// circular structure (`my @c; @c = 42, @c`) would otherwise be re-walked once
+/// per path reaching it, which is exponential for a graph with two cyclic
+/// edges. This mirrors the `.raku` twin, `contains_dispatch_leaf_seen` in
+/// `runtime::methods_raku_dispatch`.
+fn contains_instance_seen(
+    value: &Value,
+    seen: &mut std::collections::HashSet<usize>,
+    depth: usize,
+) -> bool {
+    if depth > GIST_PROBE_MAX_DEPTH {
+        return false;
+    }
+    if matches!(value.view(), ValueView::Instance { .. }) {
+        return true;
+    }
+    if let Some(id) = container_id(value)
+        && !seen.insert(id)
+    {
+        return false;
+    }
+    if let Some(items) = value.as_list_items() {
+        return items
+            .iter()
+            .any(|v| contains_instance_seen(v, seen, depth + 1));
+    }
+    match value.view() {
+        ValueView::Hash(map) => map
+            .values()
+            .any(|v| contains_instance_seen(v, seen, depth + 1)),
+        _ => false,
+    }
+}
+
+/// Whether `value` reaches itself — some `Gc`-backed container is its own
+/// ancestor, as in `my @c; @c = 42, @c`.
+///
+/// The interpreter-side gist walk (`gist_item` in
+/// `runtime::methods_call_dispatch`) is a plain recursion with no cycle handling
+/// of its own, so it hands a cyclic receiver to [`gist_value`] — the one gist
+/// renderer that carries the cycle rule (Rakudo's `(\Array_… = …)`
+/// back-reference). Keeping that rule in one renderer is why this is a handoff
+/// rather than another copy of the visited-set walk. (The builtins-side fast
+/// path asks the same question, but folds it into the dispatch probe it already
+/// runs — `GistRoute` in `builtins::methods_0arg::dispatch_core_repr` — so a
+/// large receiver is not walked twice.)
+///
+/// A plain DAG is *not* a cycle: Rakudo renders a shared-but-not-nested
+/// container in full at each occurrence, so the probe tracks the *ancestor*
+/// chain. `done` memoizes subtrees already proven acyclic, which keeps a
+/// diamond-shaped graph from being re-walked once per path.
+pub(crate) fn contains_cycle(value: &Value) -> bool {
+    fn walk(
+        v: &Value,
+        active: &mut Vec<usize>,
+        done: &mut std::collections::HashSet<usize>,
+        depth: usize,
+    ) -> bool {
+        if depth > GIST_PROBE_MAX_DEPTH {
+            return false;
+        }
+        let id = container_id(v);
+        if let Some(id) = id {
+            if active.contains(&id) {
+                return true;
+            }
+            if done.contains(&id) {
+                return false;
+            }
+            active.push(id);
+        }
+        let children: Vec<Value> = match v.view() {
+            ValueView::Hash(map) => map.values().cloned().collect(),
+            ValueView::Pair(_, val) => vec![val.clone()],
+            ValueView::ValuePair(k, val) => vec![k.clone(), val.clone()],
+            ValueView::Scalar(inner) => vec![inner.clone()],
+            ValueView::ContainerRef(cell) => vec![cell.lock().unwrap().clone()],
+            _ => match v.as_list_items() {
+                Some(items) => items.to_vec(),
+                None => Vec::new(),
+            },
+        };
+        let found = children.iter().any(|c| walk(c, active, done, depth + 1));
+        if let Some(id) = id {
+            active.pop();
+            if !found {
+                done.insert(id);
+            }
+        }
+        found
+    }
+    walk(
+        value,
+        &mut Vec::new(),
+        &mut std::collections::HashSet::new(),
+        0,
+    )
+}
+
+/// Whether `value` is a *collection* holding (transitively) an `Instance` whose
+/// `.gist` may need interpreter dispatch — the guard for the VM's collection
+/// gist bypass (`vm::vm_native_dispatch`).
+///
+/// Only a collection receiver triggers the bypass. A bare instance (e.g. a
+/// `Buf`, whose gist `native_method_0arg` renders purely via
+/// `dispatch_core_repr`) is dispatched normally — the builtins layer itself
+/// defers a collection whose elements may have a user `method gist`, so
+/// bypassing a bare instance here only forced a pure native gist (Buf/Blob/Uni)
+/// onto the interpreter for nothing.
+///
+/// The walk is cycle-guarded. Without that guard a circular container aborted
+/// the whole process on a stack overflow *here*, in the dispatch probe, before
+/// [`gist_value`] — which does detect the cycle — was ever reached.
+pub(crate) fn collection_contains_instance(value: &Value) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    if let Some(id) = container_id(value) {
+        seen.insert(id);
+    }
+    if let Some(items) = value.as_list_items() {
+        return items
+            .iter()
+            .any(|v| contains_instance_seen(v, &mut seen, 1));
+    }
+    match value.view() {
+        ValueView::Hash(map) => map
+            .values()
+            .any(|v| contains_instance_seen(v, &mut seen, 1)),
+        _ => false,
+    }
+}
+
 /// Render the `.gist` form of a Set/Bag/Mix (and their mutable `*Hash`
 /// variants): `Set(a b c)`, `Bag(a b(2))`, `Mix(a(1.5) b)`. Keys are sorted
 /// for deterministic output. Returns `None` for any other value. Shared by
@@ -81,23 +230,48 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
 }
 
 pub(crate) fn gist_value(value: &Value) -> String {
-    // Cycle detection for recursive data structures (shared hash/array Arcs).
+    // Cycle detection for recursive data structures (shared hash/array Gcs).
+    //
+    // Rakudo renders a cycle the way `Mu.gistseen` does: the node the walk
+    // loops back to is named after its type and address, and *that* node — not
+    // the top-level one — carries a `(\Name = ...)` binding preamble:
+    //
+    //     my @c; @c = 42, @c;              # (\Array_140… = [42 Array_140…])
+    //     my @a; my @b; @b = 1, @b; @a = 0, @b;
+    //                                      # [0 (\Array_140… = [1 Array_140…])]
+    //
+    // The visited set is therefore *ancestor*-scoped (pushed on entry, popped
+    // on exit), not walk-global: a plain DAG — the same array reachable by two
+    // non-nested paths — is rendered in full both times by Rakudo, with no
+    // back-reference. Each entry carries a "was looped back to" flag that the
+    // revisit sets and the exit reads.
     thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
+        static SEEN_PTRS: std::cell::RefCell<Vec<(usize, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
     }
-    fn check_and_push(ptrs: &std::cell::RefCell<Vec<usize>>, ptr: usize) -> bool {
+    /// Mark `ptr` as being rendered. Returns true when `ptr` is already an
+    /// ancestor — a cycle — flagging that ancestor so its exit emits the
+    /// binding preamble.
+    fn check_and_push(ptrs: &std::cell::RefCell<Vec<(usize, bool)>>, ptr: usize) -> bool {
         let mut s = ptrs.borrow_mut();
-        if s.contains(&ptr) {
+        if let Some(entry) = s.iter_mut().rev().find(|(p, _)| *p == ptr) {
+            entry.1 = true;
             return true; // cycle detected
         }
-        s.push(ptr);
+        s.push((ptr, false));
         false
     }
-    fn pop_ptr(ptrs: &std::cell::RefCell<Vec<usize>>, ptr: usize) {
+    /// Pop `ptr`, reporting whether the walk under it looped back to it.
+    fn pop_ptr(ptrs: &std::cell::RefCell<Vec<(usize, bool)>>, ptr: usize) -> bool {
         let mut s = ptrs.borrow_mut();
-        if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
-            s.remove(pos);
+        match s.iter().rposition(|(p, _)| *p == ptr) {
+            Some(pos) => s.remove(pos).1,
+            None => false,
         }
+    }
+    /// `(\Array_140… = [42 Array_140…])` — the binding preamble Rakudo emits on
+    /// the node a cycle loops back to.
+    fn cycle_binding(name: &str, ptr: usize, rendered: &str) -> String {
+        format!("(\\{}_{} = {})", name, ptr, rendered)
     }
     match value.view() {
         // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>, not as
@@ -116,8 +290,15 @@ pub(crate) fn gist_value(value: &Value) -> String {
             format!("{}:0x<{}>", form, cps.join(" "))
         }
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
-        // value so a bound element gists like a plain one (Phase 5 leak).
-        ValueView::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),
+        // value so a bound element gists like a plain one (Phase 5 leak). The
+        // contents are cloned out and the guard dropped before recursing: a
+        // cycle can close through a cell (`my @e; @e.push(@e)`), and holding the
+        // lock across the recursion would deadlock instead of reaching the cycle
+        // detection above.
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            gist_value(&inner)
+        }
         // Promise has no custom gist, so it gists in the default `.raku` form.
         ValueView::Promise(p) => {
             crate::builtins::methods_0arg::raku_repr::promise_raku_repr(&p.status())
@@ -140,14 +321,14 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         ValueView::Array(items, kind) => {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
+            // The `$id` Rakudo's `gistseen` names the node with is its type.
+            let cycle_name = match kind {
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => "List",
+                _ => "Array",
+            };
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
-                return match kind {
-                    crate::value::ArrayKind::Array | crate::value::ArrayKind::Shaped => {
-                        "[...]".to_string()
-                    }
-                    _ => "(...)".to_string(),
-                };
+                return format!("{}_{}", cycle_name, ptr);
             }
             // A real array's (`@`-sigiled) elements are Scalar containers, so a
             // cell can never hold `Nil` -- ADR-0049 decays a stored `Nil` to
@@ -171,8 +352,8 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 " "
             };
             let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(sep);
-            SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
-            match kind {
+            let looped = SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
+            let rendered = match kind {
                 crate::value::ArrayKind::Array
                 | crate::value::ArrayKind::Shaped
                 | crate::value::ArrayKind::Lazy
@@ -183,13 +364,23 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => {
                     format!("({})", inner)
                 }
+            };
+            if looped {
+                cycle_binding(cycle_name, ptr, &rendered)
+            } else {
+                rendered
             }
         }
         ValueView::Hash(items) => {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
+            let cycle_name = if items.declared_type.as_deref() == Some("Map") {
+                "Map"
+            } else {
+                "Hash"
+            };
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
-                return "{...}".to_string();
+                return format!("{}_{}", cycle_name, ptr);
             }
             let mut sorted_keys: Vec<&String> = items.keys().collect();
             sorted_keys.sort();
@@ -207,14 +398,20 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     format!("{} => {}", key_gist, gist_value(&items[*k]))
                 })
                 .collect();
-            SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
+            let looped = SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             // An immutable Map gists as `Map.new((k => v, ...))`, not `{...}`
             // (matching raku and the `.raku` renderer). `Foo.enums`, `%h.Map`,
             // and `Map.new(...)` all carry the `Map` declared-type tag.
-            if items.declared_type.as_deref() == Some("Map") {
-                return format!("Map.new(({}))", parts.join(", "));
+            let rendered = if items.declared_type.as_deref() == Some("Map") {
+                format!("Map.new(({}))", parts.join(", "))
+            } else {
+                format!("{{{}}}", parts.join(", "))
+            };
+            if looped {
+                cycle_binding(cycle_name, ptr, &rendered)
+            } else {
+                rendered
             }
-            format!("{{{}}}", parts.join(", "))
         }
         ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
             // Set/Bag/Mix gist shows the type-name wrapper, e.g. `Set(a b c)`;

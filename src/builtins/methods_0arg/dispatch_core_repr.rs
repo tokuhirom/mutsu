@@ -49,28 +49,128 @@ fn leaf_gist(v: &Value) -> String {
     v.to_string_value()
 }
 
-/// A collection whose gist embeds an element's gist must defer to the runtime
-/// slow path when any element may carry a user-defined `method gist` (an
-/// instance, custom type, or type object). The pure fast path here cannot
-/// dispatch user methods, so it would render the default form. (Mixin is
-/// excluded: a Mixin wrapping a List/Array renders via its inner value, so the
-/// pure path is correct and dispatching `.gist` would add a spurious paren.)
-fn gist_needs_method_dispatch(v: &Value) -> bool {
-    match v.view() {
-        ValueView::Instance { .. }
-        | ValueView::CustomType(..)
-        | ValueView::CustomTypeInstance(_)
-        | ValueView::Package(..) => true,
-        ValueView::Array(items, _) => items.iter().any(gist_needs_method_dispatch),
-        ValueView::Seq(items) => items.iter().any(gist_needs_method_dispatch),
-        ValueView::Slip(items) => items.iter().any(gist_needs_method_dispatch),
-        ValueView::Hash(map) => map.values().any(gist_needs_method_dispatch),
-        ValueView::Pair(_, val) => gist_needs_method_dispatch(val),
-        ValueView::ValuePair(k, val) => {
-            gist_needs_method_dispatch(k) || gist_needs_method_dispatch(val)
+/// How a collection's `.gist` must be rendered, decided by one walk of it.
+enum GistRoute {
+    /// The pure per-type renderers below can do it.
+    Native,
+    /// Some element may carry a user-defined `method gist` (an instance, custom
+    /// type, or type object), which the pure path here cannot dispatch — it
+    /// would render the default form. Defer to the runtime slow path. (Mixin is
+    /// excluded: a Mixin wrapping a List/Array renders via its inner value, so
+    /// the pure path is correct and dispatching `.gist` would add a spurious
+    /// paren.)
+    Dispatch,
+    /// The receiver reaches itself. The per-type renderers below are plain
+    /// recursions with no cycle handling, so they would run until the process
+    /// aborted on a stack overflow; `gist_value` is the one gist renderer that
+    /// carries the cycle rule (Rakudo's `(\Array_… = …)` back-reference).
+    ///
+    /// TODO: an element with a user-defined `method gist` inside a *cyclic*
+    /// structure renders with its default gist, because `gist_value` is pure and
+    /// cannot dispatch. Fixing that needs the interpreter-side walk to carry the
+    /// same visited-set discipline; a crash-free default gist is the better
+    /// trade until then.
+    Cyclic,
+}
+
+/// Decide a collection's gist route in a single walk.
+///
+/// Both questions are answered together on purpose: `.gist` renders at most
+/// `GIST_ELEM_CAP` elements, but a probe walks the whole structure, so a probe
+/// pass costs more than the rendering it guards on a large receiver. Adding a
+/// second, separate cycle pass would have made every `say @big-array` walk it
+/// twice.
+///
+/// A cycle needs an *ancestor* to repeat, not merely a container to be seen
+/// twice — Rakudo renders a shared-but-not-nested container in full at each
+/// occurrence — so `active` is the ancestor chain while `done` memoizes subtrees
+/// already walked, which keeps a diamond-shaped graph from being re-walked once
+/// per path. The depth cap is the backstop for a pathologically deep acyclic
+/// structure.
+fn gist_route(v: &Value) -> GistRoute {
+    /// A `:=`-bound element holds a `ContainerRef` cell, and a cycle can close
+    /// through one (`my @e; @e.push(@e)` stores a cell whose contents reach the
+    /// array again), so cells are cycle participants with an identity of their
+    /// own — not merely something to look through.
+    fn container_id(v: &Value) -> Option<usize> {
+        match v.view() {
+            ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+            ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+            ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+            _ => None,
         }
-        _ => false,
     }
+    /// `None` = nothing found under `v`; `Some(route)` stops the walk. A
+    /// `Dispatch` answer may hide a cycle deeper in, but the runtime path it
+    /// routes to re-checks for one, so both orders end in the same renderer.
+    fn walk(
+        v: &Value,
+        active: &mut Vec<usize>,
+        done: &mut std::collections::HashSet<usize>,
+        depth: usize,
+    ) -> Option<GistRoute> {
+        const MAX_DEPTH: usize = 256;
+        if depth > MAX_DEPTH {
+            return None;
+        }
+        if matches!(
+            v.view(),
+            ValueView::Instance { .. }
+                | ValueView::CustomType(..)
+                | ValueView::CustomTypeInstance(_)
+                | ValueView::Package(..)
+        ) {
+            return Some(GistRoute::Dispatch);
+        }
+        let id = container_id(v);
+        if let Some(id) = id {
+            if active.contains(&id) {
+                return Some(GistRoute::Cyclic);
+            }
+            if done.contains(&id) {
+                return None;
+            }
+            active.push(id);
+        }
+        let mut found = None;
+        {
+            let mut visit = |e: &Value| {
+                if found.is_none() {
+                    found = walk(e, active, done, depth + 1);
+                }
+            };
+            match v.view() {
+                ValueView::Array(items, _) => items.iter().for_each(&mut visit),
+                ValueView::Seq(items) => items.iter().for_each(&mut visit),
+                ValueView::Slip(items) => items.iter().for_each(&mut visit),
+                ValueView::Hash(map) => map.values().for_each(&mut visit),
+                ValueView::Pair(_, val) => visit(val),
+                ValueView::ValuePair(k, val) => {
+                    visit(k);
+                    visit(val);
+                }
+                // Clone the cell's contents out and drop the guard before
+                // descending: the renderers below hold this very lock across
+                // their recursion, so a cell reached twice would deadlock rather
+                // than recurse (which is exactly the shape this probe exists to
+                // divert).
+                ValueView::ContainerRef(cell) => {
+                    let inner = cell.lock().unwrap().clone();
+                    visit(&inner);
+                }
+                ValueView::Scalar(inner) => visit(inner),
+                _ => {}
+            }
+        }
+        if let Some(id) = id {
+            active.pop();
+            if found.is_none() {
+                done.insert(id);
+            }
+        }
+        found
+    }
+    walk(v, &mut Vec::new(), &mut std::collections::HashSet::new(), 0).unwrap_or(GistRoute::Native)
 }
 
 pub(super) fn dispatch(
@@ -80,9 +180,10 @@ pub(super) fn dispatch(
     if !matches!(method, "gist" | "raku" | "perl") {
         return None;
     }
-    // Defer collection gist to the runtime slow path when an element may have a
-    // custom `method gist`, so per-element gist dispatch is honored. `Match`
-    // instances are excluded: their list gist is handled purely below.
+    // Route a collection gist: to the runtime slow path when an element may
+    // have a custom `method gist` (so per-element gist dispatch is honored), or
+    // to `gist_value` when the receiver is circular. `Match` instances are
+    // excluded: their list gist is handled purely below.
     if method == "gist"
         && matches!(
             target.view(),
@@ -93,9 +194,16 @@ pub(super) fn dispatch(
                 | ValueView::Pair(..)
                 | ValueView::ValuePair(..)
         )
-        && gist_needs_method_dispatch(target)
     {
-        return Some(None);
+        match gist_route(target) {
+            GistRoute::Dispatch => return Some(None),
+            GistRoute::Cyclic => {
+                return Some(Some(Ok(Value::str(crate::runtime::utils::gist_value(
+                    target,
+                )))));
+            }
+            GistRoute::Native => {}
+        }
     }
     Some(match target.view() {
         // A parameterized role type object: raku is the bare name
@@ -479,7 +587,14 @@ pub(super) fn dispatch(
             fn gist_item(v: &Value) -> String {
                 match v.view() {
                     ValueView::Nil => "Nil".to_string(),
-                    ValueView::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    // Clone the contents out and drop the guard before
+                    // recursing: a cycle can close through a cell
+                    // (`my @e; @e.push(@e)`), and holding the lock across
+                    // the recursion deadlocks instead of recursing.
+                    ValueView::ContainerRef(cell) => {
+                        let inner = cell.lock().unwrap().clone();
+                        gist_item(&inner)
+                    }
                     // `$(...)` itemized element: `.gist` drops the itemization
                     // sigil, so it gists like its inner value.
                     ValueView::Scalar(inner) => gist_item(inner),
@@ -620,7 +735,14 @@ pub(super) fn dispatch(
             fn gist_item(v: &Value) -> String {
                 match v.view() {
                     ValueView::Nil => "Nil".to_string(),
-                    ValueView::ContainerRef(cell) => gist_item(&cell.lock().unwrap()),
+                    // Clone the contents out and drop the guard before
+                    // recursing: a cycle can close through a cell
+                    // (`my @e; @e.push(@e)`), and holding the lock across
+                    // the recursion deadlocks instead of recursing.
+                    ValueView::ContainerRef(cell) => {
+                        let inner = cell.lock().unwrap().clone();
+                        gist_item(&inner)
+                    }
                     // `$(...)` itemized element: `.gist` drops the itemization
                     // sigil, so it gists like its inner value.
                     ValueView::Scalar(inner) => gist_item(inner),

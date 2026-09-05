@@ -765,8 +765,21 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (result, _) = self.eval_grep_over_items_with_mutated(func, list_items)?;
+        let (result, _, _) = self.eval_grep_over_items_with_mutated(func, list_items)?;
         Ok(result)
+    }
+
+    /// [`eval_grep_over_items`] plus the source index each matched value came
+    /// from, for the `:k`/`:kv`/`:p` adverbs. `None` when the grep consumed the
+    /// source in multi-element chunks (see
+    /// [`Self::eval_grep_over_items_with_mutated`]).
+    pub(super) fn eval_grep_over_items_indexed(
+        &mut self,
+        func: Option<Value>,
+        list_items: Vec<Value>,
+    ) -> Result<(Value, Option<Vec<usize>>), RuntimeError> {
+        let (result, _, indices) = self.eval_grep_over_items_with_mutated(func, list_items)?;
+        Ok((result, indices))
     }
 
     pub(super) fn find_first_match_over_items(

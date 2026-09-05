@@ -41,33 +41,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        fn collection_contains_instance(value: &Value) -> bool {
-            // Recursive: does any element (transitively) carry an Instance whose
-            // `.gist` may need interpreter dispatch?
-            fn contains_instance(value: &Value) -> bool {
-                match value.view() {
-                    ValueView::Instance { .. } => true,
-                    _ if value.as_list_items().is_some() => {
-                        value.as_list_items().unwrap().iter().any(contains_instance)
-                    }
-                    ValueView::Hash(map) => map.values().any(contains_instance),
-                    _ => false,
-                }
-            }
-            // Only a *collection* receiver triggers the gist bypass. A bare
-            // instance (e.g. a `Buf`, whose gist `native_method_0arg` renders
-            // purely via `dispatch_core_repr`) is dispatched normally — the
-            // builtins layer itself defers a collection whose elements may have a
-            // user `method gist`, so bypassing a bare instance here only forced a
-            // pure native gist (Buf/Blob/Uni) onto the interpreter for nothing.
-            match value.view() {
-                _ if value.as_list_items().is_some() => {
-                    value.as_list_items().unwrap().iter().any(contains_instance)
-                }
-                ValueView::Hash(map) => map.values().any(contains_instance),
-                _ => false,
-            }
-        }
+        use crate::runtime::utils::collection_contains_instance;
         let method_name = method_sym.resolve();
         // `X::Promise::Broken` (composed into a broken promise's cause by
         // `Promise.result`) overrides `gist` alone. The role carries no method
