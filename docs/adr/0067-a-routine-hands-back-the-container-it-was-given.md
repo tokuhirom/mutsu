@@ -1,10 +1,10 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1, 2, 3a and 4 implemented 2026-09-05; Slice 3 was
+- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05; Slice 3 was
   re-scoped into 3a/3b on the same day after measurement, and 3a's E6 row split
   off again into the rw-attribute-accessor producer; Slice 4 absorbed two of
-  Slice 5's three acceptance rows, again after measurement; Slices 3b, 5 and the
-  E6 producer open)
+  Slice 5's three acceptance rows, again after measurement; Slices 3b and the E6
+  producer open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -13,8 +13,10 @@
   [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (Track B is no longer
   GC-coupled), [ADR-0064](0064-var-descriptor-carries-the-contained-value.md)
   (`.VAR` descriptors)
-- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`,
-  `todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md`
+- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`;
+  `todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` (closed by
+  Slices 4 and 5, now
+  `news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`)
 
 ## Context
 
@@ -742,6 +744,71 @@ Part 5, method-rooted half: compile
 **Acceptance:** B1 (the ticket's headline), B4 (depth 1), B6 (the `:=`-bound
 alias spelling), with
 `t/method-rooted-lvalue-subscript-chain.t` as the regression gate.
+
+#### Slice 5 — IMPLEMENTED 2026-09-05
+
+**The prescription above is wrong, and measurement is what showed it.** Nothing
+had to be compiled in container mode. `--dump-bytecode` on B1 shows the chain
+root already reaching the walker as a *value* the walker can step through:
+
+```
+GetLocal(0); CallMethodMut{name_idx:3 "query"}; SetGlobal(4 "__mutsu_lvroot_%query#4")
+LoadConst 99; LoadConst 0; LoadConst "foo"; IndexAssignExprNested{name_idx:4}
+```
+
+The temp holds the `Q` **object**, and slice 4 taught the walkers to step
+through an object. So B1 and B6 needed no slice-5 code at all — they went green
+with slice 4 and are pinned there. What was actually left was two sites that
+refuse or ignore an object root:
+
+- **`lvalue_root_temp_not_a_container`** (the loud
+  "it returned Q, not an Array or Hash container") accepted only `Array`/`Hash`.
+  It now also accepts a root that supplies `AT-KEY`/`AT-POS`, since that *is* a
+  location the walk can step through. This is what B8 —
+  `$u.query<foo><bar>[0] = 99`, the depth-3 method-rooted chain, which the deep
+  op refuses before walking — needed.
+- **`builtin_index_assign_method_lvalue`** (`__mutsu_index_assign_method_lvalue`,
+  the depth-1 method-rooted store — a *different function* from either walker)
+  dispatched `ASSIGN-KEY`/`ASSIGN-POS` on an object accessor result and, when
+  the class had neither, fell into plain-container handling and dropped the
+  write. It now calls the object's own `AT-KEY`/`AT-POS` and hands the returned
+  location to **`assign_lvalue_container`** — ADR-0059's consumer, unchanged, as
+  part 4 of this ADR promised. B4, B9 (autovivifying a key the object does not
+  have) and B10 (the `AT-POS` twin).
+
+That last site is gated on **rw-capability** (`method_is_rw_capable`, slice 2's
+oracle) rather than on the shape of what came back, because reaching the shape
+means *calling* the accessor: a non-rw accessor is one raku refuses to assign
+through anyway, so calling it would add a side effect for nothing. The walkers
+can afford the opposite policy (shape, not declaration) because they were
+already calling the accessor.
+
+**Also shipped, from re-reading slice 4's own diff rather than from a repro.**
+The deep op's object step calls user code while `current` is a raw pointer into
+`self.env`'s value slot; an `env` insert from inside the accessor can rehash the
+map and dangle it. The success path already continued from an owned
+`Box<Value>`, but the "produced no location" path fell through to the generic
+`&mut *current` arms with the pre-call pointer. Both paths now continue from an
+owned value — and for the failing one that is also the better answer, since the
+generic arms then overwrite a local binding instead of the real element.
+
+**The whole repro set of the originating ticket now matches raku**, so
+`todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` is closed to
+`news/2026-09/`.
+
+**Pinned by** `t/method-rooted-lvalue-subscript-through-object.t` (12 tests,
+byte-identical under `mutsu` and `raku`): B4/B9/B10 at depth 1, B1/B8/B6 deeper,
+and six regression rows — an inner `ASSIGN-KEY` object still winning, plain
+hash/array attributes at depth 1 and 2, and a genuinely non-location root
+(`method thing { 42 }`) still refusing loudly.
+`t/method-rooted-lvalue-subscript-chain.t` is unchanged and still green.
+
+**One residual, measured:** `$w.p<a> = 1` where `Plain` supplies **no**
+subscript accessor at all reports success and drops the write (raku: "Type Plain
+does not support associative indexing"). The depth->=2 spelling of the same
+shape already refuses loudly; only the depth-1 store is silent, and gating the
+new branch on having an accessor leaves it exactly as it was rather than making
+it newly wrong.
 
 ## Alternatives considered
 

@@ -145,13 +145,13 @@ impl Interpreter {
             } else {
                 None
             };
+            let idx_arg = match index.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
+                _ => index.clone(),
+            };
             if let Some(m) = m {
-                let idx_arg = match index.view() {
-                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
-                    ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
-                    ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
-                    _ => index.clone(),
-                };
                 // A Pair VALUE must arrive as a positional argument, not be
                 // eaten as a named arg.
                 let val_arg = match value.view() {
@@ -160,6 +160,30 @@ impl Interpreter {
                 };
                 self.call_method_with_values(current.clone(), m, vec![idx_arg, val_arg])?;
                 return Ok(value);
+            }
+            // ADR-0067 slice 5: no `ASSIGN-KEY`/`ASSIGN-POS`, so raku serves the
+            // subscript with the object's own `AT-KEY`/`AT-POS` in lvalue mode
+            // (`$u.query<foo> = 99` where `.query` is a subscriptable object).
+            // The accessor hands back a LOCATION and ADR-0059's consumer writes
+            // through it; without this the write fell out to the plain
+            // container handling below and was silently dropped.
+            //
+            // Gated on rw-capability rather than on the returned shape, because
+            // reaching the shape means *calling* the accessor — and a non-rw
+            // accessor is one raku refuses to assign through anyway, so calling
+            // it here would add a side effect for nothing.
+            if let Some(accessor) =
+                self.object_subscript_accessor(&current, matches!(index.view(), ValueView::Int(_)))
+                && self
+                    .resolve_method(&cn, accessor, std::slice::from_ref(&idx_arg))
+                    .is_some_and(|def| Self::method_is_rw_capable(&def))
+            {
+                let returned =
+                    self.call_method_with_values(current.clone(), accessor, vec![idx_arg])?;
+                if let Some(result) = self.assign_lvalue_container(&returned, value.clone()) {
+                    result?;
+                    return Ok(value);
+                }
             }
         }
 

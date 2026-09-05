@@ -2,9 +2,9 @@
 
 **Designed: [ADR-0067](../../docs/adr/0067-a-routine-hands-back-the-container-it-was-given.md)**
 (2026-09-05). Slice 1 of that ADR has landed; this file now tracks Slices 2-3,
-which own this repro. The ticket
-`todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` is the same
-design's Slices 4-5 — read the ADR, not the two files, for the mechanism.
+which own this repro. The same design's Slices 4-5 have landed
+(`news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`) — read the
+ADR, not the two files, for the mechanism.
 
 Split off from `news/2026-08/snitch-method-unimplemented.md`, where the five
 other documented `snitch` examples were fixed and this one was not.
