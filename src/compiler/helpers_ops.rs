@@ -126,6 +126,14 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         // `EVAL(Q[my $x = 1; ++$x; say $x].AST)` silently printed 1.
         "++" => TokenKind::PlusPlus,
         "--" => TokenKind::MinusMinus,
+        // The `andthen` family: raku renders these as a *list* infix, but
+        // mutsu's internal AST keeps them as ordinary left-nested `Binary`
+        // nodes with their own token kinds. Without these rows they fell to the
+        // `Ident` catch-all below, which is a different (and unhandled)
+        // operator to the compiler.
+        "andthen" => TokenKind::AndThen,
+        "orelse" => TokenKind::OrElse,
+        "notandthen" => TokenKind::NotAndThen,
         // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
         // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
         // represents with a generic `Ident` token (the inverse of

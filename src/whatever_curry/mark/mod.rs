@@ -56,6 +56,21 @@ fn mark_value_leaf(expr: &mut Expr) {
     expr::mark_expr(expr);
 }
 
+/// A routine's parameters. Only the two expression-valued fields can hold a
+/// `*`: a default (`$x = *`) and a `where` constraint (`$x where * > 0`).
+///
+/// The walk used to stop at a routine's body, so a `*` in either position kept
+/// the value-leaf classification it was parsed with. That was invisible while
+/// the converter refused a where-constrained parameter outright; now that it
+/// renders one, a mis-classified leaf would show up as a `Term::Whatever` where
+/// raku has a `WhateverCode::Argument`.
+pub(super) fn mark_param_defs(param_defs: &mut [crate::ast::ParamDef]) {
+    for pd in param_defs {
+        mark_opt_value_leaf(&mut pd.default);
+        mark_opt_box_expr(&mut pd.where_constraint);
+    }
+}
+
 fn mark_opt_expr(expr: &mut Option<Expr>) {
     if let Some(e) = expr {
         expr::mark_expr(e);

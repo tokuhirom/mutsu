@@ -77,6 +77,18 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Where-constrained parameters (read direction).* `sub f($x where * > 0)`
+  renders its `where` field — the shape `RakuAST::Parameter.new(:where)` already
+  built and `EVAL` already lowered and enforced. Fixing it also made the
+  ADR-0033 leaf classifier walk a routine's `param_defs`, so a `*` in a
+  signature is a `WhateverCode::Argument` rather than a `Term::Whatever`. Pinned
+  by `t/rakuast-where-parameter.t`; see
+  [the news entry](../../news/2026-09/rakuast-where-constrained-parameter.md).
+- *`andthen` / `orelse` / `notandthen` lowering.* raku models these as list
+  infixes, so they render as `ApplyListInfix` — the node a comma list uses — and
+  only `,` lowered. They now fold back into mutsu's left-nested `Expr::Binary`
+  shape. Pinned by `t/rakuast-eval-andthen.t`; see
+  [the news entry](../../news/2026-09/rakuast-andthen-family-lowering.md).
 - *Reduction and arity-0 pointy-block lowering.* `EVAL` lowers
   `RakuAST::Term::Reduce` (`[+] @a` and the triangle `[\+] @a`, whose marker
   mutsu keeps inside the operator string) and a zero-parameter
@@ -179,7 +191,10 @@ Advanced parameter construction remains:
 - sub-signatures
 - type captures
 - array shapes
-- signature constraints
+
+Signature constraints (`where`) are closed as of 2026-09-05: `.new(:where)`
+already built the node and `EVAL` already enforced it, and the read direction
+now renders it too.
 
 These must validate, render, expose through introspection, and lower through
 `EVAL` consistently with the already-supported parameter forms.

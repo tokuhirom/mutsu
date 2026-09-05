@@ -1558,7 +1558,7 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
         fields: vec![RakuAstField {
             name: Some("parameters"),
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(simple_parameter(
-                "$", param, None, None, false,
+                "$", param, None, None, false, None,
             )?))]),
         }],
     };
@@ -1682,7 +1682,6 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     if pd.onearg
         || pd.literal_value.is_some()
         || pd.sub_signature.is_some()
-        || pd.where_constraint.is_some()
         || !pd.traits.is_empty()
         || pd.optional_marker
         || pd.is_invocant
@@ -1694,15 +1693,15 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     let (sigil, desigil) = split_sigil(&pd.name);
     if pd.slurpy || pd.double_slurpy {
-        // A typed slurpy carries richer shape; defer for now.
-        if pd.type_constraint.is_some() {
+        // A typed or where-constrained slurpy carries richer shape; defer.
+        if pd.type_constraint.is_some() || pd.where_constraint.is_some() {
             return Err(unsupported("typed slurpy parameter"));
         }
         return slurpy_parameter(sigil, desigil, pd.double_slurpy);
     }
     if pd.named {
-        // A typed/defaulted named param carries richer shape; defer for now.
-        if pd.type_constraint.is_some() || pd.default.is_some() {
+        // A typed/defaulted/where-constrained named param carries richer shape.
+        if pd.type_constraint.is_some() || pd.default.is_some() || pd.where_constraint.is_some() {
             return Err(unsupported("typed/defaulted named parameter"));
         }
         return named_parameter(sigil, desigil, type_setting);
@@ -1713,6 +1712,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         pd.type_constraint.as_deref(),
         pd.default.as_ref(),
         type_setting,
+        pd.where_constraint.as_deref(),
     )
 }
 
@@ -1796,6 +1796,7 @@ fn simple_parameter(
     type_constraint: Option<&str>,
     default: Option<&Expr>,
     type_setting: bool,
+    where_constraint: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
         class: RakuAstClass::ParameterTargetVar,
@@ -1819,6 +1820,12 @@ fn simple_parameter(
             name: Some("optional"),
             value: RakuAstFieldValue::Node(Value::truth(false)),
         }),
+    }
+    // `$x where EXPR` — the same `where` field `RakuAST::Parameter.new(:where)`
+    // builds and `EVAL` already lowers and enforces. It follows `optional` /
+    // `default` in the model's canonical accessor order.
+    if let Some(w) = where_constraint {
+        fields.push(node_field(Some("where"), convert_expr(w)?));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,

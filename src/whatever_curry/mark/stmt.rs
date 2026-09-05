@@ -143,14 +143,26 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         | Stmt::Control(body)
         | Stmt::Phaser { body, .. }
         | Stmt::Package { body, .. }
-        | Stmt::SubDecl { body, .. }
         | Stmt::TokenDecl { body, .. }
         | Stmt::RuleDecl { body, .. }
-        | Stmt::MethodDecl { body, .. }
         | Stmt::RoleDecl { body, .. }
         | Stmt::ClassDecl { body, .. }
-        | Stmt::AugmentClass { body, .. }
-        | Stmt::ProtoDecl { body, .. } => mark_stmts(body),
+        | Stmt::AugmentClass { body, .. } => mark_stmts(body),
+        // A routine also carries expressions in its *signature* — a parameter
+        // default and a `where` constraint — so those are marked alongside the
+        // body.
+        Stmt::SubDecl {
+            body, param_defs, ..
+        }
+        | Stmt::MethodDecl {
+            body, param_defs, ..
+        }
+        | Stmt::ProtoDecl {
+            body, param_defs, ..
+        } => {
+            super::mark_param_defs(param_defs);
+            mark_stmts(body);
+        }
         // Declarations/markers/control-flow with no expression payload
         // relevant to Whatever-priming (or genuinely rare enough that a
         // missed leaf here is only a cosmetic `.AST` gap, never a runtime
