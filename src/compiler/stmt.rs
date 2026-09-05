@@ -2639,6 +2639,7 @@ impl Compiler {
                             body: body.clone(),
                             is_rw: *rw_block,
                             is_whatever_code: false,
+                            is_sub: false,
                         }
                     };
                     self.compile_expr(&closure);

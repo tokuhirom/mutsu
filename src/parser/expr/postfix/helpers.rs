@@ -148,6 +148,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
             mut body,
             is_rw,
             is_whatever_code,
+            is_sub,
         } => {
             wrap_last_stmt_with_unary(&mut body, op.clone());
             Expr::AnonSubParams {
@@ -157,6 +158,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
                 body,
                 is_rw,
                 is_whatever_code,
+                is_sub,
             }
         }
         other => Expr::Unary {

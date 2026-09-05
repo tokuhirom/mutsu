@@ -1047,6 +1047,9 @@ impl Compiler {
                 body,
                 is_rw,
                 is_whatever_code,
+                // `is_sub` records only the source spelling for the RakuAST
+                // converter; both spellings compile identically.
+                is_sub: _,
             } => {
                 self.compile_expr_anon_sub_params(
                     params,

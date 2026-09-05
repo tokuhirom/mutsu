@@ -75,17 +75,26 @@ the parser/internal AST, not guessing during RakuAST conversion.
   `MetaInfix::Hyper(FunctionInfix(Var::Lexical))` with the measured DWIM fields,
   and lowers back through the existing `Expr::HyperFuncOp` execution path.
 
-**Closed 2026-09-05** (read direction, pinned by
-`t/rakuast-method-return-type.t`; see
-[the news entry](../../news/2026-09/rakuast-method-return-types.md)):
+**Closed 2026-09-05**:
 
+- *Anonymous subs with explicit signatures.* `sub ($x) { }` renders as a
+  nameless `RakuAST::Sub` (its parameters carrying the implicit
+  `Type::Setting(Any)` a pointy block's do not) and lowers back through `EVAL`;
+  `-> $a, $b { }` still renders as a `PointyBlock`. `Expr::AnonSubParams`
+  carries an `is_sub` flag set only by the `sub` declarator; it has no
+  execution meaning. Pinned by `t/rakuast-anon-sub-signature.t`; see
+  [the news entry](../../news/2026-09/rakuast-anonymous-sub-signature.md). The
+  same change made `EVAL` accept a nameless `RakuAST::Sub` at all, which it
+  previously refused.
 - *Signature return types on methods.* `method m(--> Int)`,
   `method m() returns Int`, and `method m() of Int` render the same three node
   shapes a `sub` does. The parser now keeps its `__return_via_*` spelling
   markers in `MethodDecl.custom_traits` (method trait application skips
   `__`-prefixed entries), so the converter reads the spelling instead of
-  guessing. The write direction is unaffected: `RakuAST::Method` has no `EVAL`
-  lowering yet at all, which is its own slice.
+  guessing. Pinned by `t/rakuast-method-return-type.t`; see
+  [the news entry](../../news/2026-09/rakuast-method-return-types.md). The write
+  direction is unaffected: `RakuAST::Method` has no `EVAL` lowering yet at all,
+  which is its own slice.
 
 Still open:
 
@@ -101,9 +110,6 @@ Still open:
   `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`, desugared to a
   hyper `AT-POS` method call), and `@a<<.abs` (which mutsu's parser currently
   reads as a quote-words subscript).
-- Anonymous subs with explicit signatures. `sub ($x) { }` and `-> $a, $b { }` are
-  both `Expr::AnonSubParams`, so the former renders as a `PointyBlock`. Needs a
-  distinguishing flag on that node (~73 construction sites).
 - `with` / `without`. Desugared at parse time into a `__with_tmp_N` temp var plus
   an `if` on `.defined`, so there is no statement to map to
   `Statement::With` / `Statement::Without`.

@@ -97,6 +97,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 body,
                 is_rw: false,
                 is_whatever_code: false,
+                is_sub: false,
             },
         ));
     }
@@ -116,6 +117,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 body,
                 is_rw: false,
                 is_whatever_code: false,
+                is_sub: false,
             },
         ));
     }
@@ -164,6 +166,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 body,
                 is_rw: false,
                 is_whatever_code: false,
+                is_sub: false,
             },
         ));
     }
@@ -220,6 +223,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                 body,
                 is_rw: false,
                 is_whatever_code: false,
+                is_sub: false,
             },
         ))
     } else {
@@ -291,6 +295,7 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
                     body,
                     is_rw: false,
                     is_whatever_code: false,
+                    is_sub: false,
                 },
             ))
         }

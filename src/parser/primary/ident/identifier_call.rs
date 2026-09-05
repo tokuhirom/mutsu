@@ -831,6 +831,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 body,
                                 is_rw: false,
                                 is_whatever_code: false,
+                                is_sub: false,
                             },
                         ));
                     }
@@ -968,6 +969,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         body: body.clone(),
                         is_rw,
                         is_whatever_code: false,
+                        is_sub: false,
                     };
                     return Ok((
                         r2,

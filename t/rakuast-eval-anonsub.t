@@ -3,10 +3,11 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-# RakuAST slice 37 (ADR-0011): multi-parameter closures (`sub ($a, $b) { … }` and
-# `-> $a, $b { … }`, which both render as a multi-parameter `PointyBlock`) lower
-# to `Expr::AnonSubParams`, extending slice 36's single-parameter case. Verified
-# against Rakudo; passes under BOTH mutsu and raku.
+# RakuAST slice 37 (ADR-0011): multi-parameter closures lower to
+# `Expr::AnonSubParams`, extending slice 36's single-parameter case. A pointy
+# block (`-> $a, $b { … }`) renders as a `PointyBlock` and an anonymous sub
+# (`sub ($a, $b) { … }`) as a nameless `RakuAST::Sub`; both lower back here.
+# Verified against Rakudo; passes under BOTH mutsu and raku.
 #
 # Note: zero-parameter blocks stay the coverage boundary.
 

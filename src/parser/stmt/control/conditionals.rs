@@ -173,6 +173,7 @@ fn lower_if_clause_binding(
             body: then_branch,
             is_rw: false,
             is_whatever_code: false,
+            is_sub: false,
         }),
         args,
     };
@@ -232,6 +233,7 @@ fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt
             body: else_clause.body,
             is_rw: false,
             is_whatever_code: false,
+            is_sub: false,
         }),
         args: vec![Expr::Unary {
             op: TokenKind::Pipe,

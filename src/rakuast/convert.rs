@@ -1272,10 +1272,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // A bare `{ ... }` block.
                 block_node(body)
             } else {
-                // An anonymous, parameter-less `sub { ... }`. (`sub ($x) { }`
-                // parses to `AnonSubParams`, which mutsu cannot distinguish from
-                // a multi-param pointy block, so those still render as
-                // `PointyBlock` — a documented divergence.)
+                // An anonymous, parameter-less `sub { ... }`.
                 Ok(RakuAstNode {
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
@@ -1303,6 +1300,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw,
             is_whatever_code,
             return_type,
+            is_sub,
             ..
         } => {
             if *is_whatever_code {
@@ -1310,6 +1308,13 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if *is_rw {
                 return Err(unsupported("`is rw` pointy block"));
+            }
+            if *is_sub {
+                // `sub ($x) { }` — an anonymous *routine*, not a block. raku
+                // renders it as a nameless `RakuAST::Sub` whose parameters
+                // carry the implicit `type => Type::Setting(Any)` that every
+                // sub/method signature has, where a pointy block's do not.
+                return anon_routine_node(param_defs, body, return_type.as_deref());
             }
             pointy_block(param_defs, body, return_type.as_deref())
         }
@@ -1494,6 +1499,31 @@ fn pointy_block(
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
         class: RakuAstClass::PointyBlock,
+        fields,
+    })
+}
+
+/// An anonymous routine (`sub ($x) { }`) — a nameless `RakuAST::Sub`. Same
+/// shape as [`routine_node`] minus the `name` field, so its parameters carry
+/// the implicit `type => Type::Setting(Any)` a sub signature has (a pointy
+/// block's parameters do not). Only the `-->` return spelling can reach here:
+/// an anonymous sub's node keeps no `custom_traits`, so there is no
+/// `returns`/`of` marker to read.
+fn anon_routine_node(
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+    returns: Option<&str>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = Vec::new();
+    if !param_defs.is_empty() || returns.is_some() {
+        fields.push(node_field(
+            Some("signature"),
+            signature(param_defs, true, returns)?,
+        ));
+    }
+    fields.push(node_field(Some("body"), blockoid(body)?));
+    Ok(RakuAstNode {
+        class: RakuAstClass::Sub,
         fields,
     })
 }
