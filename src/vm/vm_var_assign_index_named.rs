@@ -3486,6 +3486,13 @@ impl Interpreter {
         if matches!(root.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return None;
         }
+        // ADR-0067 slice 5: an object that serves subscripts through its own
+        // `AT-KEY`/`AT-POS` IS a location the walk can step through (slice 4
+        // taught both walkers how), so it is not something to refuse. Either
+        // accessor qualifies -- the walk picks the one matching each step.
+        if self.object_subscript_accessor(&root, true).is_some() {
+            return None;
+        }
         let got = crate::value::types::what_type_name(&root);
         drop(root);
         Some(RuntimeError::new(format!(
