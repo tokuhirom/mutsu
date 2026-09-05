@@ -1,4 +1,5 @@
 use super::*;
+use crate::opcode::WhenMatcherKind;
 
 impl Interpreter {
     pub(super) fn exec_given_op(
@@ -375,6 +376,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         statement_modifier: bool,
+        matcher_kind: WhenMatcherKind,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -430,6 +432,14 @@ impl Interpreter {
         };
         if matches {
             let mut did_proceed = false;
+            // ADR-0052 §2.1: the clause's value lives in exactly one place. The
+            // body's own stack range starts here, so the value is taken (not
+            // peeked) from above this base and the range is drained — a body
+            // whose tail statement produced nothing must NOT hand the enclosing
+            // frame's stack top out as the clause's value, which the old
+            // `stack.last()` peek did (`say "A: ", (given 2 { when 2 { my $x =
+            // 5 } })` answered `"A: "`).
+            let stack_base = self.stack.len();
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => {}
                 // A postfix `STMT when COND` is not a `when` clause (Rakudo
@@ -459,28 +469,64 @@ impl Interpreter {
             }
             if !did_proceed {
                 loan_env!(self, set_when_matched(true));
-                let last = self.stack.last().cloned().unwrap_or(Value::NIL);
+                let last = if self.stack.len() > stack_base {
+                    self.stack.pop().unwrap_or(Value::NIL)
+                } else {
+                    Value::NIL
+                };
+                self.stack.truncate(stack_base);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
                 sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
                 return Err(sig);
             }
+            // `proceed`: the clause did not produce a value, so fall through to
+            // the next statement without one. The barrier that catches the
+            // ensuing control flow already truncates, but drain here too so the
+            // ordinary (non-`proceed`) path stays the only one that pushes.
+            self.stack.truncate(stack_base);
+            self.stack.push(Value::NIL);
         } else {
             // A failed `when` evaluates to the falsy result of its test
             // (control.rakudoc: "the block is not abandoned since the
-            // comparison is false"). Rakudo boxes a type-object matcher's
-            // nqp::istype result as Int 0; everything else is Bool::False.
-            // Nothing is pushed (stack discipline unchanged); the inline
-            // map/grep/first fast paths read this to distinguish "tail
-            // when matched nothing" from "no value produced".
-            self.when_nonmatch_value = Some(if cond_val.is_package_value() {
-                Value::int(0)
+            // comparison is false"), and that value travels on the ordinary
+            // value stack like every other statement's (ADR-0052 §2.1).
+            //
+            // Except for the postfix `STMT when COND` spelling, which is not a
+            // `when` clause at all: Rakudo lowers it to a plain conditional, so
+            // a false one yields `Empty` (measured: `("a" when 0).raku` is
+            // `Empty`, a `Slip`), not the clause falsy value.
+            let v = if statement_modifier {
+                Value::slip(Vec::new())
             } else {
-                Value::FALSE
-            });
+                Self::when_falsy_value(matcher_kind, &cond_val, self.env().get("_"))
+            };
+            self.stack.push(v);
         }
         *ip = end;
         Ok(())
+    }
+
+    /// The value a *non-matching* `when` clause evaluates to. Rakudo's answer
+    /// is an artifact of the lowering it picked for the matcher's *syntax*, not
+    /// of the comparison's runtime result — see [`WhenMatcherKind`] for the
+    /// measured table this reproduces.
+    fn when_falsy_value(
+        matcher_kind: WhenMatcherKind,
+        matcher: &Value,
+        topic: Option<&Value>,
+    ) -> Value {
+        let is_type_object = |v: &Value| !crate::runtime::types::value_is_defined(v);
+        let zero = match matcher_kind {
+            // `when Str` / `when Foo`: a type-object matcher lowers to an
+            // `nqp::istype` test whose native-int 0 boxes as `Int`. A bare name
+            // that resolved to a *value* (a named `constant`) does not.
+            WhenMatcherKind::BareName => is_type_object(matcher),
+            // `when 2`: the same boxing happens when the topic is undefined.
+            WhenMatcherKind::Literal => is_type_object(matcher) || topic.is_none_or(is_type_object),
+            WhenMatcherKind::Computed => false,
+        };
+        if zero { Value::int(0) } else { Value::FALSE }
     }
 
     pub(super) fn exec_default_op(
@@ -492,6 +538,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let end = body_end as usize;
+        // See `exec_when_op`: the body's value is taken from its own stack
+        // range, never peeked off whatever the enclosing frame left below it.
+        let stack_base = self.stack.len();
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {}
             // `proceed` inside a `default` falls through WITHOUT the default
@@ -500,6 +549,8 @@ impl Interpreter {
             // ends normally and execution resumes after it. Mirrors the
             // `is_proceed` handling in `exec_when_op`.
             Err(e) if e.is_proceed() => {
+                self.stack.truncate(stack_base);
+                self.stack.push(Value::NIL);
                 *ip = end;
                 return Ok(());
             }
@@ -510,7 +561,12 @@ impl Interpreter {
             Err(e) => return Err(e),
         }
         loan_env!(self, set_when_matched(true));
-        let last = self.stack.last().cloned().unwrap_or(Value::NIL);
+        let last = if self.stack.len() > stack_base {
+            self.stack.pop().unwrap_or(Value::NIL)
+        } else {
+            Value::NIL
+        };
+        self.stack.truncate(stack_base);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
         sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));

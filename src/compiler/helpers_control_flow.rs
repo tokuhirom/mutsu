@@ -84,13 +84,16 @@ impl Compiler {
                             self.emit_nil_value();
                         }
                     }
-                    // A `given` in branch-final position must yield its value
-                    // (the Given statement leaves it on the stack), just like in
-                    // a `do {}` block (see `compile_block_inline`). This keeps
-                    // `if $c { given $v { ... } }` and statement-form `with $v {
-                    // ... }` (lowered to `if { given }`) value-producing instead
-                    // of falling through to Nil.
-                    Stmt::Given { .. } => {
+                    // A `given`/`when`/`default` in branch-final position must
+                    // yield its value (the statement leaves it on the stack —
+                    // ADR-0052), just like in a `do {}` block (see
+                    // `compile_block_inline`). This keeps `if $c { given $v {
+                    // ... } }` and statement-form `with $v { ... }` (lowered to
+                    // `if { given }`) value-producing instead of falling through
+                    // to Nil, and makes a value-collecting `for` body whose tail
+                    // is a when-chain collect the clause's value per iteration
+                    // (`do for 1..3 { when 2 { "hit" } }`).
+                    s if Self::stmt_nets_a_stack_value(s) => {
                         self.compile_stmt(stmt);
                     }
                     // A bare assignment (`$s += $_`, desugared to `Stmt::Assign`)
@@ -144,7 +147,7 @@ impl Compiler {
                 // A non-final statement `given` nets one stack value that would
                 // shadow the block's real tail value — pop it (the final one is
                 // the block value and is kept, see the `Stmt::Given` arm above).
-                if matches!(stmt, Stmt::Given { .. }) {
+                if Self::stmt_nets_a_stack_value(stmt) {
                     self.code.emit(OpCode::Pop);
                 }
             }
@@ -584,6 +587,36 @@ impl Compiler {
         stmts.iter().any(Self::stmt_reaches_when)
     }
 
+    /// ADR-0052: a `given`/`when`/`default` statement nets exactly one value on
+    /// the VM stack, on every branch it can take. Every statement-sequence
+    /// compiler therefore has to agree about it: pop it when the statement is
+    /// not the sequence's value, keep it (and append nothing over it) when it
+    /// is. Before ADR-0052 only `Given` did this and the three sequence
+    /// compilers disagreed about `When`/`Default`.
+    pub(super) fn stmt_nets_a_stack_value(stmt: &Stmt) -> bool {
+        matches!(
+            stmt,
+            Stmt::Given { .. } | Stmt::When { .. } | Stmt::Default(_)
+        )
+    }
+
+    /// Classify a `when` matcher by how it was *written*, which is what selects
+    /// the falsy value a non-matching clause pushes — see [`WhenMatcherKind`]
+    /// for the measured Rakudo table and why the runtime value cannot carry
+    /// this on its own.
+    pub(super) fn when_matcher_kind(cond: &Expr) -> WhenMatcherKind {
+        match cond {
+            // A `/.../` literal is a Regex *object* the source still has to
+            // build, and Rakudo treats it as computed: `given Any { when /x/ }`
+            // is `Bool::False`, unlike `given Any { when 2 }`.
+            Expr::Literal(v) if !matches!(v.view(), crate::value::ValueView::Regex(_)) => {
+                WhenMatcherKind::Literal
+            }
+            Expr::BareWord(_) => WhenMatcherKind::BareName,
+            _ => WhenMatcherKind::Computed,
+        }
+    }
+
     fn stmt_reaches_when(stmt: &Stmt) -> bool {
         match stmt {
             Stmt::When { .. } | Stmt::Default(_) => true,
@@ -728,7 +761,7 @@ impl Compiler {
                 // `if .defined { given ... }`) leaks its block value past the
                 // `if`, shadowing the enclosing block's real tail value on the
                 // `eval_block_value` (stack.last()) call path.
-                if matches!(s, Stmt::Given { .. }) {
+                if Self::stmt_nets_a_stack_value(s) {
                     self.code.emit(OpCode::Pop);
                 }
             }
@@ -896,8 +929,19 @@ impl Compiler {
                         main_leaves_value = true;
                         continue;
                     }
+                    // A tail `given`/`when`/`default` leaves its value on the
+                    // stack (ADR-0052) and IS the region's value.
+                    if Self::stmt_nets_a_stack_value(stmt) {
+                        self.compile_stmt(stmt);
+                        main_leaves_value = true;
+                        continue;
+                    }
                 }
                 self.compile_stmt(stmt);
+                // A non-tail one must be popped, or it shadows the real tail.
+                if Self::stmt_nets_a_stack_value(stmt) {
+                    self.code.emit(OpCode::Pop);
+                }
             }
         }
         if !main_leaves_value {

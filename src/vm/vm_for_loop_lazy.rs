@@ -164,7 +164,18 @@ impl Interpreter {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        // A matched `when` abandons the body mid-range: the
+                        // clause's value IS this iteration's value (ADR-0052),
+                        // so a collecting loop must take it from the signal —
+                        // `do for 1..3 { when 2 { "hit" }; "plain" }` is
+                        // ("plain", "hit", "plain") in raku. Drop the abandoned
+                        // body's own stack residue first.
                         self.stack.truncate(stack_base);
+                        if let Some(ref mut coll) = collected
+                            && let Some(v) = e.return_value
+                        {
+                            Self::collect_loop_value(coll, v);
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
@@ -413,7 +424,18 @@ impl Interpreter {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        // A matched `when` abandons the body mid-range: the
+                        // clause's value IS this iteration's value (ADR-0052),
+                        // so a collecting loop must take it from the signal —
+                        // `do for 1..3 { when 2 { "hit" }; "plain" }` is
+                        // ("plain", "hit", "plain") in raku. Drop the abandoned
+                        // body's own stack residue first.
                         self.stack.truncate(stack_base);
+                        if let Some(ref mut coll) = collected
+                            && let Some(v) = e.return_value
+                        {
+                            Self::collect_loop_value(coll, v);
+                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {

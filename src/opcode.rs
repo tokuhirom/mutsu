@@ -619,6 +619,39 @@ pub(crate) struct RuntimeHasDeclSpec {
 /// name has no local slot in the creating frame and must be read from `env`.
 pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
 
+/// How a `when` clause's matcher was *written* at the call site.
+///
+/// A non-matching `when` evaluates to its failed comparison's falsy result
+/// (`raku-doc/doc/Language/control.rakudoc`), and Rakudo's answer there is an
+/// artifact of the *lowering* it chose for that particular matcher syntax, not
+/// of the comparison's runtime result — `(Any ~~ 2)` written as an ordinary
+/// expression is `Bool::False`, yet `given Any { when 2 {…} }` is `Int 0`.
+/// Measured against Rakudo v2026.06 (ADR-0052 §2.4):
+///
+/// | matcher syntax | topic | Rakudo |
+/// |---|---|---|
+/// | literal type object (`when Str`, `when Nil`) | anything | `0` |
+/// | literal constant (`when 2`, `when "y"`) | type object | `0` |
+/// | literal constant | defined | `Bool::False` |
+/// | anything else (`when $m`, `when /x/`, `when 1..2`, `when {…}`, `when CONSTANT`) | anything | `Bool::False` |
+///
+/// So the clause needs to know how its matcher was spelled; the runtime value
+/// alone cannot tell `when Str` from `when $mt` (both are the `Str` type
+/// object) nor `when 2` from `when C2` (both are `Int 2`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WhenMatcherKind {
+    /// A literal token (`when 2`, `when "y"`, `when Nil`): `Int 0` when either
+    /// the matcher or the topic is a type object, `Bool::False` otherwise.
+    Literal,
+    /// A bare name (`when Str`, `when Foo`, `when C2`): `Int 0` only when the
+    /// name resolved to a type object. A named `constant` reaches here too and
+    /// is `Bool::False`, which is why this is not merged with `Literal`.
+    BareName,
+    /// Anything the source had to evaluate (a variable, a call, a regex, a
+    /// range, a block): always `Bool::False`.
+    Computed,
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -1853,17 +1886,13 @@ pub(crate) enum OpCode {
         /// raised inside it must keep unwinding to the nearest real `when`
         /// clause instead of being consumed here. See `Stmt::When`'s field.
         statement_modifier: bool,
+        /// How the matcher was *written* — which selects the falsy value a
+        /// non-matching clause pushes (ADR-0052 §2.4). See [`WhenMatcherKind`].
+        matcher_kind: WhenMatcherKind,
     },
     Default {
         body_end: u32,
     },
-    /// Push the value a *non-matching* `when` clause evaluates to when the
-    /// clause is used as a TERM (`say (when 42 { 43 })`). A matching clause
-    /// never reaches this op — it unwinds via `succeed` carrying its own value.
-    /// Raku boxes a type-object matcher's `nqp::istype` result as `Int 0` and
-    /// everything else as `Bool::False`; `exec_when_op` already records which,
-    /// so this consumes that one-shot record (defaulting to `False`).
-    PushWhenNonmatch,
 
     // -- Repeat loop (compound opcode) --
     RepeatLoop {

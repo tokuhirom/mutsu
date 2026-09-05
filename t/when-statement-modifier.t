@@ -16,7 +16,11 @@ nok ('abc' ~~ ('xyz' ~~ /b/)), 'smartmatch against a failed match is false';
 # `when` chains with a following `given`, which topicalizes first.
 my $castle = 'phantom';
 is ('Boo!' when /phantom/ given $castle), 'Boo!', 'when ... given ... chains';
-is ('Boo!' when /ghost/ given $castle), Nil, 'a non-matching when yields Nil';
+# A false statement-modifier `when` is NOT a `when` clause -- Rakudo lowers it
+# to a plain conditional, so it yields `Empty` rather than the clause's falsy
+# smartmatch value (ADR-0052).
+is-deeply ('Boo!' when /ghost/ given $castle), Empty,
+    'a non-matching when modifier yields Empty';
 
 # The topic set by an enclosing `given` block is visible to a `when` modifier.
 my $found;

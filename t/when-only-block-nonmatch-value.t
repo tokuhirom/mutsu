@@ -43,7 +43,9 @@ is (2, 3).map({ when 2 { "two" }; "after" }).join(","), "two,after",
     is @a.join(","), "10,20,30", 'rw .=map with a matching when still writes back';
 }
 
-todo "direct block call goes through the closure-call fallback, not the map/grep fast path; needs the general exec_when_op fix (see todo/tickets/when-nonmatch-value-outside-map-grep.md)";
+# ADR-0052: the clause pushes its falsy value on the ordinary VM stack, so
+# every consumer of a block value sees it -- not only the four inlined
+# map/grep/first fast paths.
 is-deeply { when 2 { "two" } }(3), False,
     'direct call: non-matching when-only block evaluates to False';
 

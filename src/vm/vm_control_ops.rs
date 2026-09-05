@@ -545,8 +545,14 @@ impl Interpreter {
                     }
                     Err(e) if e.is_succeed() => {
                         // A matched `when` abandons the body mid-range; drop what
-                        // it had pushed (ADR-0052 Slice 1).
+                        // it had pushed (ADR-0052 Slice 1). The clause's value
+                        // travels in the signal and IS this iteration's value.
                         self.stack.truncate(stack_base);
+                        if let Some(ref mut coll) = collected
+                            && let Some(v) = e.return_value.clone()
+                        {
+                            Self::collect_loop_value(coll, v);
+                        }
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);

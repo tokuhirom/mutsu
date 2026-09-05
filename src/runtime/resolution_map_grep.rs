@@ -164,20 +164,6 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
     }
 }
 
-/// Whether the body's last non-`SetLine` statement is a `when`/`default` —
-/// i.e. the block is a bare when-chain in tail position. When such a block
-/// matches NO branch, it evaluates to the failed test's falsy value
-/// (`Interpreter::when_nonmatch_value`), NOT to the topic: the topic
-/// fallback exists only to reflect a possibly-mutated `$_` for rw semantics
-/// and must not fire for a when-tail block.
-pub(super) fn tail_is_when_chain(body: &[crate::ast::Stmt]) -> bool {
-    use crate::ast::Stmt;
-    body.iter()
-        .rev()
-        .find(|s| !matches!(s, Stmt::SetLine(_)))
-        .is_some_and(|s| matches!(s, Stmt::When { .. } | Stmt::Default(_)))
-}
-
 /// The inline map/grep/first paths run the block's body directly in the
 /// enclosing frame's env, so the block's own `my` declarations write a
 /// bare-name entry there. When an enclosing lexical of the same name is
@@ -474,7 +460,6 @@ impl Interpreter {
             // the result would wrongly fall back to the topic. Normalize such a
             // tail into `Stmt::Expr(Expr::Call)` so its value is preserved.
             let normalized_body = normalize_tail_stmt_for_value(&data.body);
-            let tail_is_when = tail_is_when_chain(&normalized_body);
             let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
             let underscore = "_".to_string();
@@ -603,7 +588,6 @@ impl Interpreter {
                         }
                     }
                     let saved_when_matched = vm.when_matched();
-                    vm.when_nonmatch_value = None;
                     // This loop binds the block's params directly into `env`
                     // (above) instead of going through the normal call
                     // machinery (`bind_function_args_values`/`push_call_frame`),
@@ -624,11 +608,6 @@ impl Interpreter {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| {
-                                    tail_is_when.then(|| {
-                                        vm.when_nonmatch_value.take().unwrap_or(Value::FALSE)
-                                    })
-                                })
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
                             // A callback that returns a finite lazy `.map`/`.grep`
@@ -829,7 +808,6 @@ impl Interpreter {
         // expression lands on the stack as the predicate value), reusing a
         // cached compile across repeated calls to this same closure literal.
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
-        let tail_is_when = tail_is_when_chain(&normalized_body);
         let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
         let underscore = "_".to_string();
@@ -899,17 +877,11 @@ impl Interpreter {
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
                     let saved_when_matched = vm.when_matched();
-                    vm.when_nonmatch_value = None;
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let pred = vm
                                 .last_stack_value()
                                 .cloned()
-                                .or_else(|| {
-                                    tail_is_when.then(|| {
-                                        vm.when_nonmatch_value.take().unwrap_or(Value::FALSE)
-                                    })
-                                })
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
                             if pred.truthy() {

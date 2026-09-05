@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{ArgSupply, AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
-use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode};
+use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode, WhenMatcherKind};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -3664,12 +3664,7 @@ impl Compiler {
                 // above rely on that leaked value being the block result. A
                 // *non-last* one must have it popped, or it would shadow the
                 // block's real tail value (the stack top wins over the topic).
-                if !is_last
-                    && matches!(
-                        stmt,
-                        Stmt::Given { .. } | Stmt::When { .. } | Stmt::Default(_)
-                    )
-                {
+                if !is_last && Self::stmt_nets_a_stack_value(stmt) {
                     self.code.emit(OpCode::Pop);
                 }
             }
@@ -3833,6 +3828,12 @@ impl Compiler {
                     }
                 } else {
                     self.compile_stmt(s);
+                    // ADR-0052: a non-tail `given`/`when`/`default` statement
+                    // nets one stack value; drop it so it cannot shadow the
+                    // block's real tail value.
+                    if Self::stmt_nets_a_stack_value(s) {
+                        self.code.emit(OpCode::Pop);
+                    }
                 }
             }
             // A phaser-only block (no value-producing statement) still needs a

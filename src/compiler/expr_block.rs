@@ -750,12 +750,11 @@ impl Compiler {
             // A `when`/`default` clause used as a TERM. A clause that MATCHES
             // never falls through to the next op: it raises `succeed` carrying
             // its own block value, which unwinds to the enclosing topicalizer.
-            // Only the non-matching `when` continues, and Raku says it
-            // evaluates to the falsy result of its own smartmatch test, so
-            // push that rather than the generic `Nil` the fallback arm emits.
+            // Only the non-matching `when` continues, and it leaves the falsy
+            // result of its own smartmatch test on the stack like any other
+            // value-producing statement (ADR-0052), so nothing else is needed.
             Stmt::When { .. } | Stmt::Default(_) => {
                 self.compile_stmt(stmt);
-                self.code.emit(OpCode::PushWhenNonmatch);
             }
             Stmt::Block(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);
