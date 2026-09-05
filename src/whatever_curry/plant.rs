@@ -106,6 +106,63 @@ fn materialise_scope(slot: &mut Expr) {
     }
 }
 
+thread_local! {
+    /// Whether the walk currently running is planting *every* priming scope
+    /// (ADR-0033 Phase 3) rather than only the barrier ones.
+    ///
+    /// The parser plants its own scopes at ~29 grammar positions and then runs
+    /// [`super::mark`] purely to classify leaves and split barriers, so for a
+    /// parsed program this stays `false` and nothing about that path changes.
+    /// A tree lowered from RakuAST has no parser behind it and therefore no
+    /// scopes at all, so `rakuast::lower` runs the same walk with this set —
+    /// see [`plant_all_scopes`].
+    static PLANT_ALL_SCOPES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `body` with every-expression scope planting enabled, restoring the
+/// previous setting afterwards (including on an unwind).
+pub(crate) fn with_all_scopes<R>(body: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PLANT_ALL_SCOPES.with(|f| f.set(self.0));
+        }
+    }
+    let _restore = Restore(PLANT_ALL_SCOPES.with(|f| f.replace(true)));
+    body()
+}
+
+/// The Phase 3 half of the scope authority: materialise a scope around **this**
+/// expression when it primes at all.
+///
+/// [`super::mark`]'s walk reaches every expression slot top-down and calls this
+/// before recursing, so the *first* (outermost) node that primes gets the
+/// marker — which is what makes the scope maximal, exactly as the parser's own
+/// planting sites make it. Wrapping bottom-up instead would give `*.abs + 1`
+/// two nested markers (an inner closure added to `1`) rather than one.
+///
+/// It is deliberately not universal: `should_wrap_whatevercode` is the parser's
+/// own predicate, and `contains_whatever` under it stops at a call/method
+/// argument, a barrier, and the other non-currying positions. That is why
+/// `@a.first(* > 1)` plants one scope around the *argument* and none around the
+/// method call.
+fn plant_all_scopes(expr: &mut Expr) {
+    if !PLANT_ALL_SCOPES.with(|f| f.get()) {
+        return;
+    }
+    // An invocation is never itself a scope: `(* + 1)(4)` curries the *target*
+    // and then calls it, so the scope belongs on the target and the recursion
+    // below plants it there. `should_wrap_whatevercode` says `true` here only
+    // because the parser never asks it about an invocation — it wraps the
+    // target at its own dedicated grammar site instead — and wrapping the whole
+    // `CallOn` would make the program evaluate to the closure rather than call
+    // it.
+    if matches!(expr, Expr::CallOn { .. }) {
+        return;
+    }
+    materialise_scope(expr);
+}
+
 /// The scope authority, applied to one expression node.
 ///
 /// Invoked from [`super::mark`]'s post-parse walk (which already visits every
@@ -113,6 +170,15 @@ fn materialise_scope(slot: &mut Expr) {
 /// into the node's children, so the recursion sees — and classifies the leaves
 /// of — whatever markers this planted.
 pub(crate) fn plant_here(expr: &mut Expr) {
+    plant_all_scopes(expr);
+    plant_barriers_here(expr);
+}
+
+/// The barrier half alone, for a node that is already known to sit *directly*
+/// inside a scope marker: its enclosing scope exists, so planting another one
+/// around it would wrap the same expression forever, but each barrier operand
+/// under it is still a scope of its own.
+pub(crate) fn plant_barriers_here(expr: &mut Expr) {
     if !is_thunk_barrier(expr) {
         return;
     }

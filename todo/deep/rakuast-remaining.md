@@ -203,10 +203,6 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1` — **Phases 1, 2 and 4 shipped: `Q[* + 1].AST` works, and
-  priming now stops at thunk barriers. Only Phase 3 (RakuAST write / `EVAL`) is left, and
-  it has no roast or correctness payoff of its own — see
-  [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
 
@@ -214,7 +210,7 @@ Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
 
-### Phases 1, 2 and 4 shipped; only Phase 3 remains: WhateverCode (ADR-0033)
+### WhateverCode (ADR-0033) — all four phases shipped
 
 `* + 1` was picked first because it is the highest-frequency construct on the list
 (`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
@@ -264,10 +260,18 @@ RakuAST rendering fidelity) shipped 2026-08-26 and retired `ChainAnd` in the pro
 See the ADR's "Phase 4 outcome" section for the full account of the original prerequisite,
 including the `xor` / `^^` re-measurement and a latent de-duplication bug it flushed out.
 
-**Phase 3 (RakuAST write / `EVAL` of a hand-constructed `WhateverCode::Argument` tree) is
-the only part of ADR-0033 still open.** It remains designed only at the ADR's outline
-level and has no roast/correctness payoff of its own (RakuAST has zero roast dependents,
-ADR-0011 ANALYSIS §7-9), so it is a low-priority pick relative to the rest of this file.
+Phase 3 — the RakuAST write direction — shipped 2026-09-05, completing the ADR.
+`RakuAST::WhateverCode::Argument` lowers to `Expr::WhateverArg`, and the priming *scope*
+a lowered tree has no parser to plant is now derived by the same authority: the
+`whatever_curry::mark` walk runs in a mode that materialises a scope at the first
+(outermost) expression that primes, which is what makes the scope maximal. Two
+corrections came out of differential testing rather than reading — a marker's own body
+must not be re-planted (it recursed until the stack overflowed), and an invocation is
+never itself a scope (`(* + 1)(4)` evaluated to the closure instead of calling it). The
+oracle is mutsu against itself: running `S` must equal `EVAL(Q{S}.AST)`. Pinned by
+`t/rakuast-eval-whatever-code.t`; see
+[the news entry](../../news/2026-09/rakuast-whatever-code-eval.md) and the ADR's
+"Phase 3 outcome" section.
 
 The remaining items on both lists above are still undesigned.
 

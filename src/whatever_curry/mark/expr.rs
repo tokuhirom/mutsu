@@ -30,6 +30,19 @@ pub(super) fn mark_expr(expr: &mut Expr) {
     // the recursion below then classifies the leaves inside the new marker
     // exactly as it would have classified them in place.
     crate::whatever_curry::plant_here(expr);
+    mark_expr_after_plant(expr);
+}
+
+/// The body of an `Expr::WhateverCurry` marker. It is already *inside* a scope,
+/// so the every-expression planting of ADR-0033 Phase 3 must not run on it —
+/// re-wrapping the same expression would recurse forever. Barrier splitting
+/// still applies: an operand of a `&&` under the marker is its own scope.
+fn mark_curry_body(expr: &mut Expr) {
+    crate::whatever_curry::plant_barriers_here(expr);
+    mark_expr_after_plant(expr);
+}
+
+fn mark_expr_after_plant(expr: &mut Expr) {
     match expr {
         Expr::Whatever => *expr = Expr::WhateverArg,
         // Already classified (re-running mark_expr should never happen in
@@ -37,7 +50,7 @@ pub(super) fn mark_expr(expr: &mut Expr) {
         Expr::WhateverArg | Expr::HyperWhatever => {}
         // A marker's un-curried body is exactly the "argument" role: recurse
         // straight through, no wrapper of its own.
-        Expr::WhateverCurry(inner) => mark_expr(inner),
+        Expr::WhateverCurry(inner) => mark_curry_body(inner),
         Expr::Grouped(inner) => mark_expr(inner),
         // Comma-list positions: `1, *, 2`, `[*]`, `\(*, 1)`.
         Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) | Expr::CaptureLiteral(items) => {
