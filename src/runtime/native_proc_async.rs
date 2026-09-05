@@ -67,14 +67,23 @@ impl ChunkSinks {
 /// supply, matching Rakudo ("stdout/stderr Supply quit on encoding error", roast
 /// S17-procasync/encoding.t).
 ///
-/// ## The final grapheme is held back
+/// ## An EXTENDABLE final grapheme is held back
 ///
 /// A decoder cannot know the last grapheme it decoded is finished: the next
 /// `read()` could start with a combining mark that extends it into a different
-/// grapheme. Rakudo's decoder therefore never hands out the trailing grapheme of
-/// a chunk; it flushes it alone once the stream ends. That is observable at chunk
-/// boundaries — `printf "abc"; sleep 1; printf "def"` yields `"ab"`, `"cde"`,
-/// `"f"`, not `"abc"`, `"def"` — so mutsu holds it back too.
+/// grapheme. Rakudo's decoder therefore does not hand out such a trailing
+/// grapheme; it flushes it alone once the stream ends. That is observable at
+/// chunk boundaries — `printf "abc"; sleep 1; printf "def"` yields `"ab"`,
+/// `"cde"`, `"f"`, not `"abc"`, `"def"` — so mutsu holds it back too.
+///
+/// It is held back only when something *could* extend it
+/// ([`final_grapheme_is_unextendable`]). UAX #29 GB4 breaks after LF and after
+/// any Control unconditionally, so a chunk ending in a newline is delivered
+/// whole — which is what keeps line-oriented output streaming: a `.lines`
+/// consumer sees `Started\n` the moment the child writes it, instead of waiting
+/// for a read that may never come because the child is blocked waiting for the
+/// reply (`roast/S17-procasync/kill.t`). CR is the exception that stays held,
+/// since the next read may start with the LF that joins it.
 ///
 /// This subsumes the narrower `\r` holdback that used to live here: `\r\n` is a
 /// single grapheme (UAX #29), so a trailing `\r` is held back as the final
@@ -117,9 +126,9 @@ fn feed_utf8_incremental(
     false
 }
 
-/// Append `s` to the held-back text and emit everything except its final
-/// grapheme (see [`feed_utf8_incremental`]), applying the `\r\n` -> `\n`
-/// translation when `translate_crlf` is set.
+/// Append `s` to the held-back text and emit it, less a final grapheme that a
+/// later read could still extend (see [`feed_utf8_incremental`]), applying the
+/// `\r\n` -> `\n` translation when `translate_crlf` is set.
 fn emit_decoded_chunk(
     s: &str,
     sinks: &ChunkSinks,
@@ -131,7 +140,11 @@ fn emit_decoded_chunk(
     if held.is_empty() {
         return;
     }
-    let split = crate::builtins::string_pos::last_grapheme_start(held);
+    let split = if crate::builtins::string_pos::final_grapheme_is_unextendable(held) {
+        held.len()
+    } else {
+        crate::builtins::string_pos::last_grapheme_start(held)
+    };
     if split == 0 {
         return;
     }

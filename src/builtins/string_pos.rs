@@ -95,6 +95,30 @@ pub(crate) fn last_grapheme_start(s: &str) -> usize {
         .unwrap_or(0)
 }
 
+/// Whether nothing that can follow `s` could merge with its final grapheme, so
+/// an incremental decoder may release that grapheme instead of holding it back.
+///
+/// UAX #29 GB4 breaks after LF and after any `Control`, whatever comes next, so
+/// those two are safe to hand out immediately. `CR` is the one exception — GB3
+/// joins `CR × LF` — and every other grapheme can still be extended by a
+/// following `Extend`/`ZWJ`/`SpacingMark`/jamo/`Regional_Indicator`, while a
+/// trailing `Prepend` attaches to whatever follows it. All of those stay held.
+///
+/// This is what keeps line-oriented output streaming: a chunk ending in a
+/// newline is delivered whole, so a `.lines` consumer sees the line as the child
+/// writes it rather than waiting for the next read (see
+/// `feed_utf8_incremental` in `src/runtime/native_proc_async.rs`).
+pub(crate) fn final_grapheme_is_unextendable(s: &str) -> bool {
+    match s.chars().next_back() {
+        // The overwhelmingly common case, answered without a property lookup.
+        Some('\n') => true,
+        // Every ASCII control except CR is gc=Cc, hence GCB=Control.
+        Some(c) if c.is_ascii() => c.is_ascii_control() && c != '\r',
+        Some(c) => crate::builtins::uniprop::unicode_grapheme_cluster_break(c) == "Control",
+        None => false,
+    }
+}
+
 /// The number of graphemes in `s` — the length `index`/`substr` positions are
 /// measured against, and what `.chars` reports.
 pub(crate) fn grapheme_len(s: &str) -> usize {
@@ -134,6 +158,20 @@ mod tests {
         // its mark, which is the whole point of the holdback.
         let s = "ab\u{65}\u{301}";
         assert_eq!(&s[last_grapheme_start(s)..], "\u{65}\u{301}");
+    }
+
+    #[test]
+    fn only_lf_and_controls_are_unextendable() {
+        // A newline can never be extended, so it is released with its line.
+        assert!(final_grapheme_is_unextendable("Started\n"));
+        assert!(final_grapheme_is_unextendable("a\r\n"));
+        assert!(final_grapheme_is_unextendable("x\t"));
+        // CR is held: the next read may start with the LF that joins it.
+        assert!(!final_grapheme_is_unextendable("a\r"));
+        // An ordinary character may be extended by a combining mark.
+        assert!(!final_grapheme_is_unextendable("abc"));
+        assert!(!final_grapheme_is_unextendable("e\u{301}"));
+        assert!(!final_grapheme_is_unextendable(""));
     }
 
     #[test]

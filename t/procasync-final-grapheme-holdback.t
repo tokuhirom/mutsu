@@ -11,7 +11,7 @@ use Test;
 # the ticket. The children are all bounded (`sh` exits on its own) and every
 # start Promise is awaited, so nothing here depends on a timeout or a port.
 
-plan 9;
+plan 12;
 
 # Collect the chunks one stream delivers, in order.
 sub chunks-of($proc, $supply) {
@@ -29,6 +29,35 @@ sub chunks-of($proc, $supply) {
     my $proc = Proc::Async.new('sh', '-c', 'printf "abc"; sleep 1; printf "def"');
     is chunks-of($proc, $proc.stdout), ("ab", "cde", "f"),
         'stdout holds each chunk\'s final grapheme back and flushes it at end of stream';
+}
+
+# 1b. Only an EXTENDABLE grapheme is held. UAX #29 GB4 breaks after LF and after
+#     any Control unconditionally, so a chunk ending in a newline goes out whole
+#     -- which is what keeps line-oriented output streaming. Holding the newline
+#     back deadlocks any consumer that replies to a line before the child writes
+#     again (`roast/S17-procasync/kill.t`: the child prints "Started" and then
+#     blocks reading, so a held-back newline means `.lines` never fires and the
+#     kill never happens).
+{
+    my $proc = Proc::Async.new('sh', '-c', 'printf "Started\n"; sleep 1; printf "more"');
+    my @chunks = chunks-of($proc, $proc.stdout);
+    is @chunks[0], "Started\n", 'a chunk ending in a newline is delivered whole';
+
+    # The line is visible while the child is still running, not only at exit.
+    my $p2 = Proc::Async.new('sh', '-c', 'printf "Started\n"; sleep 30');
+    my $seen = '';
+    react {
+        whenever $p2.stdout.lines { $seen = $_; done }
+        whenever $p2.start { }
+    }
+    is $seen, 'Started', '.lines sees a line as soon as the child writes it';
+    $p2.kill('KILL');
+
+    # CR is the exception: the next read may start with the LF that joins it
+    # into one grapheme, so it stays held.
+    my $p3 = Proc::Async.new('sh', '-c', 'printf "a\r"; sleep 1; printf "b"');
+    is chunks-of($p3, $p3.stdout).List.raku, ("a", "\r", "b").raku,
+        'a trailing CR is still held back, since LF may follow';
 }
 
 # 2. stderr behaves identically — and, crucially, still flushes what it held, so

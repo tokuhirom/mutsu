@@ -15,13 +15,7 @@ plan 3;
     $p.stdout.tap(-> $c { @chunks.push($c); @times.push(now - $t0) });
     await $p.start;
 
-    # Not `== 2`: the decoder holds each chunk's final grapheme back until the
-    # next read proves nothing extends it (see
-    # `news/2026-09/procasync-holds-back-the-final-grapheme.md`), so EARLY's
-    # trailing "\n" rides along with LATE and the very last "\n" is flushed on
-    # its own. What this file is about is *when* the chunks arrive, not where
-    # they are cut.
-    is @chunks.join(''), "EARLY\nLATE\n", 'the whole output arrived';
+    is @chunks.elems, 2, 'EARLY and LATE arrived as two separate chunks';
     ok @times[1] - @times[0] > 0.5,
         'the second chunk arrived measurably later than the first (streamed, not batched)';
 }
