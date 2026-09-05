@@ -2410,13 +2410,16 @@ fn call_name(
     } else {
         RakuAstClass::CallName
     };
-    Ok(RakuAstNode {
-        class,
-        fields: vec![
-            node_field(Some("name"), name_node),
-            node_field(Some("args"), arg_list),
-        ],
-    })
+    let mut fields = vec![node_field(Some("name"), name_node)];
+    // raku omits `args` entirely for an argument-less call, the same way
+    // `control_call` below already does for a bare `return`/`last`/`next`. This
+    // matters more than it looks: mutsu injects a `__mutsu_test_callsite_line`
+    // named argument into listop calls, so filtering that out in `arg_list` can
+    // leave an *empty* list where the source had no arguments at all.
+    if !arg_list.fields.is_empty() {
+        fields.push(node_field(Some("args"), arg_list));
+    }
+    Ok(RakuAstNode { class, fields })
 }
 
 /// A control-flow listop (`return`/`last`/`next`) — a `Call::Name` in
@@ -2509,10 +2512,42 @@ fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
 fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::with_capacity(args.len());
     for a in args {
+        // mutsu's parser attaches a `__mutsu_test_callsite_line => N` named
+        // argument to every listop call so a failing `Test` assertion can report
+        // the caller's line. It is instrumentation, not something the source
+        // wrote, and raku's tree has no such argument — rendering it produced a
+        // node that cannot exist upstream, on calls as ordinary as `f()`.
+        if is_injected_named_arg(a) {
+            continue;
+        }
         fields.push(node_field(None, convert_expr(a)?));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::ArgList,
         fields,
     })
+}
+
+/// Whether a call argument is one of mutsu's own injected named arguments
+/// (`__`-prefixed key), rather than one the source wrote.
+fn is_injected_named_arg(arg: &Expr) -> bool {
+    let pair = match arg {
+        Expr::PositionalPair(inner) => inner.as_ref(),
+        other => other,
+    };
+    let Expr::Binary {
+        left,
+        op: crate::token_kind::TokenKind::FatArrow,
+        ..
+    } = pair
+    else {
+        return false;
+    };
+    match left.as_ref() {
+        Expr::Literal(v) | Expr::LiteralSrc(v, _) => match v.view() {
+            ValueView::Str(s) => is_desugar_marker(&s),
+            _ => false,
+        },
+        _ => false,
+    }
 }
