@@ -1007,6 +1007,14 @@ pub(crate) enum OpCode {
         left_name_idx: u32,
         right_name_idx: u32,
     },
+    /// Container identity (`=:=`) when one operand is a `.self` call and the
+    /// other is a named variable.  `.self` hands back the invocant's *value*,
+    /// never its container, so the two are the same container only when the
+    /// named side has no container of its own either (a `:=` binding).
+    /// `name_idx` names the *other* (non-`.self`) operand.
+    ContainerEqDeconted {
+        name_idx: u32,
+    },
     /// Container identity (`=:=`) when one or both operands are array/hash
     /// index expressions.  Carries encoded source names (e.g. "@a\0idx\01")
     /// for both sides.  The VM checks if one side has a binding sentinel

@@ -2371,6 +2371,10 @@ impl Interpreter {
                 self.exec_container_eq_named_op(code, *left_name_idx, *right_name_idx);
                 *ip += 1;
             }
+            OpCode::ContainerEqDeconted { name_idx } => {
+                self.exec_container_eq_deconted_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::ContainerEqIndexed {
                 left_name_idx,
                 right_name_idx,

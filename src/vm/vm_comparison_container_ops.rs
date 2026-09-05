@@ -117,6 +117,77 @@ impl Interpreter {
         self.stack.push(Value::truth(result));
     }
 
+    /// Container identity (`=:=`) when one operand is `EXPR.self` and the
+    /// other is a named variable.
+    ///
+    /// `.self` decontainerizes: it hands back the invocant's value, so its
+    /// result never *is* a Scalar container. The named side therefore matches
+    /// only when it has no container of its own — a `:=` binding
+    /// (`my $i := 42; $i.self =:= $i` is True) — whereas an assigned
+    /// `my $a = 42` denotes a Scalar the value can never be identical to
+    /// (`$a.self =:= $a` is False, even though both sides read as `42`).
+    ///
+    /// `@`/`%` names never reach here: `@a` denotes the Array itself, which is
+    /// exactly what `.self` hands back, so `@a.self =:= @a` stays True via the
+    /// generic value compare.
+    pub(super) fn exec_container_eq_deconted_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let name = Self::const_str(code, name_idx);
+        let result = if self.name_denotes_scalar_container(name) {
+            false
+        } else {
+            crate::runtime::values_identical(&left, &right)
+        };
+        self.stack.push(Value::truth(result));
+    }
+
+    /// Whether the variable `name` denotes a **Scalar container** — the thing
+    /// `=:=` compares — rather than a direct binding to a value.
+    ///
+    /// An ordinary `my $x = ...` owns a Scalar. A `:=` binding does not: the
+    /// name *is* the bound thing, which is why `my $i := 42; $i.VAR.^name` is
+    /// `Int` and not `Scalar`. mutsu records the three binding spellings
+    /// separately — a literal RHS as [`ReadonlyKind::Immutable`], another
+    /// variable in the `__mutsu_sigilless_alias::` chain — so all of them are
+    /// consulted here. A readonly *alias* that does own a container (a
+    /// non-`is rw` parameter, a `for @a -> $v` alias) is deliberately NOT
+    /// excluded: rakudo reports `Scalar` for those.
+    ///
+    /// `@`/`%`/`&` names answer `false`: an aggregate is its own container, so
+    /// `@a.self =:= @a` is True.
+    pub(crate) fn name_denotes_scalar_container(&self, name: &str) -> bool {
+        if name.starts_with(['@', '%', '&']) {
+            return false;
+        }
+        // `my $b := @x` / `:= %h` aliases the aggregate, which is its own
+        // container — no Scalar. `my $b := $a` aliases `$a`'s Scalar, so the
+        // question becomes "does the ROOT own one", answered by recursing.
+        let root = self.resolve_alias_root(name);
+        if root != name {
+            return self.name_denotes_scalar_container(&root);
+        }
+        // `my $i := 42` (recorded readonly-immutable by the parser) and
+        // `my $o := C.new` (recorded by the store) both bind straight to a
+        // value. A readonly *alias* with a container behind it — a non-`is rw`
+        // parameter, a `for @a -> $v` alias — is deliberately not excluded:
+        // rakudo reports `Scalar` for those.
+        !self.scalar_name_has_no_container(name)
+            && !self
+                .env()
+                .contains_key(&Self::scalar_bind_no_container_key(name))
+    }
+
+    /// Env key recording that a `$` name was `:=`-bound straight to a value and
+    /// so owns no Scalar container. Written at the declaration's store; see
+    /// `bind_marks_no_container` in `vm_var_assign_set_local.rs`.
+    pub(crate) fn scalar_bind_no_container_key(name: &str) -> String {
+        format!(
+            "__mutsu_scalar_bind_no_container::{}",
+            name.trim_start_matches('$')
+        )
+    }
+
     /// Walk the `__mutsu_sigilless_alias::` chain to find the ultimate
     /// binding root for a variable name.
     pub(crate) fn resolve_alias_root(&self, name: &str) -> String {

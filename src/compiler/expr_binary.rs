@@ -613,6 +613,26 @@ impl Compiler {
                 self.code.emit(OpCode::ContainerEq(0));
                 return;
             }
+            // `EXPR.self` hands back the invocant's *value*, never its
+            // container, so pairing it with a named variable is decided by
+            // whether that name has a container at all — a runtime fact (`:=`
+            // vs `=`), so it goes to `ContainerEqDeconted` rather than being
+            // folded here. Checked before the both-named case below, which a
+            // method call can never satisfy anyway.
+            let self_decont_name = if Self::expr_is_self_decontainerizing(left) {
+                Self::resolve_container_var_name(right)
+            } else if Self::expr_is_self_decontainerizing(right) {
+                Self::resolve_container_var_name(left)
+            } else {
+                None
+            };
+            if let Some(name) = self_decont_name {
+                self.compile_expr(left);
+                self.compile_expr(right);
+                let name_idx = self.code.add_constant(Value::str(name));
+                self.code.emit(OpCode::ContainerEqDeconted { name_idx });
+                return;
+            }
             // Resolve variable names from both sides, including through
             // list-indexing patterns like ($foo, "x")[0] which preserves
             // the container of $foo.
