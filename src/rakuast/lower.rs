@@ -74,7 +74,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_until: false,
         }),
         RakuAstClass::StatementFor => lower_for(node),
-        RakuAstClass::Sub => lower_sub(node),
+        // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
+        // `sub { … }`) is a closure *value*, so it lowers through the expression
+        // path instead.
+        RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => lower_sub(node),
         // `given`/`when`/`default` — a `when`/`default` sits directly (not
         // Statement::Expression-wrapped) in the enclosing `given` block, so it
         // reaches this dispatch unwrapped.
@@ -707,8 +710,39 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             is_rw: false,
             is_block: true,
         }),
-        // A pointy block / anonymous sub in expression position (`-> $x { … }`,
-        // `sub ($a, $b) { … }` — both render as a `PointyBlock`) is a closure. A
+        // A nameless `RakuAST::Sub` in expression position is an anonymous
+        // routine (`sub { … }`, `sub ($a, $b) { … }`). Unlike a pointy block it
+        // keeps its `sub` spelling on the way back, so a re-read of the lowered
+        // tree renders the same node.
+        RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
+            let (params, param_defs) = signature_positional_params(node)?;
+            let (return_type, custom_traits) = routine_return_type(node)?;
+            if !custom_traits.is_empty() {
+                // Only the `-->` spelling survives an anonymous sub's internal
+                // node (it keeps no `custom_traits`), so a `returns`/`of` trait
+                // would be silently dropped. Refuse instead.
+                return Err(unsupported(node));
+            }
+            // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
+            let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+            if params.is_empty() && return_type.is_none() {
+                return Ok(Expr::AnonSub {
+                    body,
+                    is_rw: false,
+                    is_block: false,
+                });
+            }
+            Ok(Expr::AnonSubParams {
+                params,
+                param_defs,
+                return_type,
+                body,
+                is_rw: false,
+                is_whatever_code: false,
+                is_sub: true,
+            })
+        }
+        // A pointy block in expression position (`-> $x { … }`) is a closure. A
         // single parameter lowers to `Expr::Lambda`; several to `AnonSubParams`. A
         // zero-parameter block stays the boundary.
         RakuAstClass::PointyBlock => {
@@ -729,6 +763,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     body,
                     is_rw: false,
                     is_whatever_code: false,
+                    is_sub: false,
                 }),
             }
         }

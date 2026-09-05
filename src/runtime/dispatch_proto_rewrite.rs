@@ -328,6 +328,7 @@ impl Interpreter {
                 body,
                 is_rw,
                 is_whatever_code,
+                is_sub,
             } => Expr::AnonSubParams {
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -335,6 +336,7 @@ impl Interpreter {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
                 is_whatever_code: *is_whatever_code,
+                is_sub: *is_sub,
             },
             other => other.clone(),
         }

@@ -89,6 +89,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             })],
             is_rw: false,
             is_whatever_code: true,
+            is_sub: false,
         };
     }
 
@@ -117,6 +118,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
             is_whatever_code: true,
+            is_sub: false,
         }
     } else {
         // Multi-arg: use AnonSubParams with numbered params
@@ -130,6 +132,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
             is_whatever_code: true,
+            is_sub: false,
         }
     }
 }

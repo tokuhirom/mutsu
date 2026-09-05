@@ -6,10 +6,8 @@ use Test;
 # `name` field. Expected gists captured verbatim from Rakudo; this file passes
 # under BOTH mutsu and raku.
 #
-# Note: `sub ($x) { }` parses to the same internal node as a multi-param pointy
-# block, which mutsu cannot distinguish, so a parameterised anonymous sub still
-# renders as a PointyBlock (a documented divergence, ADR-0011) and is not
-# pinned here.
+# The parameterised form (`sub ($x) { }`) is pinned separately in
+# t/rakuast-anon-sub-signature.t.
 
 plan 2;
 
