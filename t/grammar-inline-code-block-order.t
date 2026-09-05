@@ -8,7 +8,7 @@ use Test;
 #
 # Every expectation below was verified against `raku`.
 
-plan 14;
+plan 17;
 
 # --- The headline case: the grammar_tutorial.rakudoc line-679 example. --------
 
@@ -111,4 +111,27 @@ plan 14;
     }
     is D.parse('a,b').<part>.map(*.ast).join('|'), 'set|decl',
         'a dynamic-variable block still sees its own match binding';
+}
+
+# --- A `make` in a LATER `||` branch is still produced when that branch is the
+# --- one the overall match needs. mutsu evaluates every branch of an ordered
+# --- alternation eagerly, and skips a later branch's side-effect-only block
+# --- because raku's cursor may never reach it; a value-producing block cannot be
+# --- skipped that way. This is YAMLish's `Schema::JSON` TOP shape, which is what
+# --- resolves a plain YAML scalar.
+{
+    grammar S {
+        regex TOP {
+            [ <element> <.ws> || <plain> ]
+            { make $/.values[0].ast; }
+        }
+        proto token element { * }
+        token element:<int> { <[0..9]>+ <|w> { make $/.Str.Int } }
+        token plain { \N+ { make ~$/ } }
+        token ws { \s* }
+    }
+    is S.parse('458').ast, 458, 'the first branch produces its value';
+    is S.parse('458 x').ast, '458 x',
+        'the second branch produces its value when the first cannot cover the input';
+    is S.parse('aaa x').ast, 'aaa x', 'the second branch alone still produces its value';
 }

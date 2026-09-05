@@ -433,6 +433,52 @@ pub(crate) fn code_block_defers_to_reduce(code: &str) -> bool {
     code_block_uses_dynamic_var(code)
 }
 
+/// Does this block produce a **value** (`make`) rather than only side effects?
+///
+/// Used for exactly one decision: whether a block may be skipped while a later
+/// `||` branch is being evaluated speculatively (`SPECULATIVE_ALT_BRANCH`).
+/// mutsu evaluates every branch of an ordered alternation eagerly to learn its
+/// candidate ends, so a branch raku's cursor may never reach still runs here;
+/// skipping a pure side-effect block keeps those ends unchanged while not firing
+/// the effect. A `make` is not skippable that way — the branch is still a live
+/// candidate, and an atom after the alternation can read the value back
+/// (`$/.values[0].ast`) while the match is still running.
+///
+/// The scan matches the bare identifier `make` (which also covers the
+/// `$/.make(…)` method form via the trailing `.`) but not a longer identifier
+/// containing it (`maker`, `remake`) nor a variable named `$make`. It is
+/// deliberately conservative: a false positive only means a speculative branch's
+/// block runs, which is what mutsu did before `SPECULATIVE_ALT_BRANCH` existed.
+pub(crate) fn code_block_produces_value(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    let mut idx = 0;
+    while let Some(rel) = code[idx..].find("make") {
+        let start = idx + rel;
+        let end = start + 4;
+        let prev_ok = match start.checked_sub(1).map(|i| bytes[i]) {
+            None => true,
+            Some(c) => {
+                !(c.is_ascii_alphanumeric()
+                    || c == b'_'
+                    || c == b'$'
+                    || c == b'@'
+                    || c == b'%'
+                    || c == b'&'
+                    || c == b'-')
+            }
+        };
+        let next_ok = match bytes.get(end).copied() {
+            None => true,
+            Some(c) => !(c.is_ascii_alphanumeric() || c == b'_' || c == b'-'),
+        };
+        if prev_ok && next_ok {
+            return true;
+        }
+        idx = end;
+    }
+    false
+}
+
 /// Does the block mention a dynamic variable (`$*x`, `@*x`, `%*x`)?
 fn code_block_uses_dynamic_var(code: &str) -> bool {
     let bytes = code.as_bytes();

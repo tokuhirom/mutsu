@@ -73,6 +73,34 @@ Because the inline path already has the rule's live dynamic scope, only the
 `code_block_defers_to_reduce` is now exactly `code_block_uses_dynamic_var`. A
 block whose *string literal* merely contained the word `make` no longer defers.
 
+## One follow-on: ordered alternation stopped skipping value-producing blocks
+
+mutsu evaluates every branch of an ordered alternation (`||`) eagerly, because a
+later branch's candidate ends are what let an enclosing pattern backtrack into
+it. Since a branch after one that already matched is one raku's cursor may never
+reach, `SPECULATIVE_ALT_BRANCH` skips its `{ … }` blocks so their side effects do
+not fire (`t/ordered-alternation-loser-code-block.t`; the shape that motivated it
+is `Config::TOML`'s `\\ [ <escape> || . { die "bad escape sequence" } ]`).
+
+While `make` deferred, that skip was harmless: the block was recorded on the
+node either way and the reduce walk ran it if the branch turned out to be the
+one that matched. Once the block runs inline, skipping it also throws away the
+*value*, and an atom after the alternation reads that value back while the match
+is still running — which is exactly YAMLish's plain-scalar resolver
+(`Schema::JSON`'s `regex TOP { [ <element> <.ws> || <plain> ] { make
+$/.values[0].ast } }`). A YAML block scalar whose first line began with a digit
+came back as `Any`, because `<element>` matched the leading integer, the overall
+parse then needed the `<plain>` branch, and `<plain>`'s `{ make ~$/ }` had been
+skipped. The battery gate caught it (`YAMLish test-harness.rakutest`).
+
+So the skip is now narrowed by `code_block_produces_value`: a pure side-effect
+block in a speculative branch is still skipped (it always succeeds, so the
+branch's candidate ends are unchanged), while a `make`-bearing one runs. The
+`make` text scan therefore survives, but for this one decision only, and a false
+positive merely means such a block runs — which is what mutsu did before
+`SPECULATIVE_ALT_BRANCH` existed at all. Pinned by the last three assertions of
+`t/grammar-inline-code-block-order.t`.
+
 ## Verified
 
 The headline repro and all three of the ticket's isolating variants now match
@@ -100,3 +128,9 @@ and `t/grammar-reduce-time-dynvar.t`.
   out of order relative to an inline sibling. Moving that half inline needs the
   per-match `:my $*x` value to be recorded at match end instead of re-derived at
   reduce time; recorded as `todo/deep/grammar-dynvar-code-block-still-defers.md`.
+- A *side-effect-only* block in a later `||` branch still does not run when that
+  branch turns out to be the one the overall match needed — the pre-existing
+  eager-alternation approximation described above. The real fix is to evaluate a
+  later branch lazily (or re-evaluate it for real once the engine commits to it)
+  rather than to classify its blocks by text; recorded as
+  `todo/deep/ordered-alternation-branches-evaluated-eagerly.md`.
