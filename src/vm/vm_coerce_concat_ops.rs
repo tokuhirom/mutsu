@@ -225,11 +225,13 @@ impl Interpreter {
         // is `x5`, not `xProxy`. Every other value context already FETCHed
         // (arithmetic via `eval_binary_with_junctions`, `say`/`print`/`note`,
         // method dispatch, coercion); `~` and the string comparators were the
-        // hole. Top-level only — a `Proxy` nested inside a rendered container
-        // is `todo/tickets/list-element-proxy-not-rendered-through-fetch.md`,
-        // which needs a decision about the pure-`Value` renderers first.
-        // Tag-probed: this coercion runs on every `~`/`eq` operand, so the
+        // hole. Tag-probed: this coercion runs on every `~`/`eq` operand, so the
         // common non-`Proxy` case must not even clone the value.
+        //
+        // Top-level only, deliberately: a `Proxy` nested inside a rendered
+        // container is resolved further down, by the same
+        // `list_str_needs_interpreter` scan that already runs here for an
+        // `Instance` element (ADR-0040 §9.2), so it costs no second traversal.
         let v = if v.is_proxy_value() {
             self.auto_fetch_proxy(&v)?
         } else {

@@ -1138,6 +1138,93 @@ above the element-assign dispatch in the same "one hook, not dozens of
 `items_mut()[i] =` sites" shape slice 1 used for itemization. Pinned by
 `t/proxy-binds-container-not-value.t` (24 rows, dual-oracled).
 
+### 9.2 The render side of the same boundary (added 2026-09-05)
+
+§9 settled what happens when a `Proxy` *enters* a container, and §9.1 what
+happens when it is *bound* into one. The remaining question is what happens
+when a container holding one is **rendered**, and the answer is the same rule
+read from the other end.
+
+A `List`'s elements are not containers, so §9's store FETCH deliberately does
+not apply to them: `my $l = (1, $p, 3)` keeps its `Proxy`, live, and re-FETCHes
+on every read. §9.1's element bind puts one into an `Array`/`Hash` the same way.
+Rendering such a container was mutsu's last surface that showed the container
+instead of its value — `say $l` printed `(1 Proxy 3)` where Rakudo prints
+`(1 9 3)`, and `.gist`, `.raku`, `.join`, `"$l"` and `~$l` all agreed with the
+wrong answer (`todo/tickets/list-element-proxy-not-rendered-through-fetch.md`).
+
+**Decision: a renderer resolves its receiver's `Proxy` elements before
+rendering.**
+
+The rule is not a new one; it is Rakudo's ordinary decont, made explicit.
+Rakudo renders a container by calling `.gist`/`.Str`/`.raku` **on each
+element**, and a method call deconts its invocant — so a `Proxy` element renders
+as its FETCHed value, at render time, with the container still holding the
+Proxy afterwards. mutsu's renderers are pure `Value` walkers that format
+elements inline, with no per-element dispatch to do that deconting, so the FETCH
+is hoisted to the renderer's own entry point, where `&mut Interpreter` is still
+in hand. The resolved value then goes to the same pure renderer, unchanged.
+
+This is not a new mechanism either: it is exactly what
+`runtime/list_element_stringify.rs` already did for an `Instance` element with a
+user-defined `.Str` ("resolve the elements in place, then hand the list to the
+same pure renderer"). A `Proxy` element resolves by FETCH rather than by
+dispatching `.Str`, and the two compose — a Proxy that hands back an `Instance`
+still gets that class's `.Str`.
+
+#### Which methods are renderers
+
+`Interpreter::renders_receiver_elements` names them: `gist`, `Str`, `Stringy`,
+`raku`, `perl`, `join`, `fmt`, `say`, `put`, `note`. This is a *closed
+enumeration of mutsu's own native renderers* — the natives that inline a
+per-element method call instead of dispatching one — and not a heuristic about
+user code, which is what makes it an acceptable name list where ADR-0021/0054
+rejected one. A method that hands an element to **user** code rather than
+rendering it — `map`, `grep`, `sort`, `for` — is deliberately absent: it binds
+the element container, `Proxy` included (ADR-0045), and resolving would destroy
+the very thing it exists to pass along.
+
+#### Where the hook goes, and why there is more than one
+
+Five sites, each already the place its spelling's receiver is decided:
+
+| Site | Spelling it catches |
+| --- | --- |
+| `exec_say_op` / `put` / `print` / `note` (`vm_data_io_ops.rs`) | `say $l` — these already FETCHed a *top-level* Proxy; the change is depth |
+| `exec_call_method_op_impl` (`vm_call_method_ops.rs`) | `(1, $p, 3).gist` — a literal receiver |
+| `exec_call_method_mut_op_impl` (`vm_call_method_mut_ops.rs`) | `$l.gist`, `@a.raku` — a *variable* receiver compiles to `CallMethodMut` |
+| `call_method_with_values_inner` (`methods_call_dispatch.rs`) | `$l."$m"()`, and every interpreter-internal render |
+| `join_needs_interpreter` (`builtins/functions/flat.rs`) | `"@a[]"`, which compiles to `join(" ", @a)` and reaches no method dispatch at all |
+
+The duplication is the same one `delegates_to_array_storage` carries, for the
+same reason and documented at each site: mutsu has several dispatch entries and
+a receiver decision has to be made at each. The `~`/`eq` operand path needs no
+new site — `coerce_stringy_operand` already runs the
+`list_str_needs_interpreter` scan for the `Instance` case, so teaching that scan
+about `Proxy` costs no second traversal.
+
+#### Cost
+
+Each hook tests the method name first (a `matches!` over a `&str`) and only then
+scans; `value_has_proxy` is allocation-free and stops at the first Proxy. So the
+scan runs only for a call that is about to walk every element anyway, and the
+`say` path already ran a scan of exactly this shape (`needs_method_dispatch`).
+
+#### What deliberately did not change
+
+The container keeps its `Proxy`. `$l[1] = 7` still reaches the `STORE`, `$l`
+still re-FETCHes after the backing lexical changes, and `@a[0].VAR.^name` is
+still `Proxy` — resolving builds a fresh value for the renderer and never writes
+back. FETCHing at *construction* time was measured and ruled out for exactly
+this reason (the ticket records the oracle).
+
+`value_has_proxy` / `resolve_proxies_in_value` now look through a
+`ContainerRef`/`ContainerView` to reach a Proxy bound behind an element cell
+(§9.1's spelling). The cell is dropped from the *resolved copy*, which is what a
+value-context read does anyway, and only ever when there is a Proxy inside.
+
+Pinned by `t/proxy-renders-through-fetch.t`.
+
 ---
 
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*

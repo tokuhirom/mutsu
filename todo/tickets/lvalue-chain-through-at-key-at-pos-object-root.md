@@ -44,3 +44,14 @@ and it should be designed with it rather than special-cased here.
 
 Do NOT fix this by reintroducing an accessor-keyed slow path: the deleted one
 is exactly what dropped the writes this ticket's neighbours were about.
+
+## Re-verified 2026-09-05
+
+Still reproduces on `main` at `e4994a3`, with the same loud error
+("Cannot subscript-assign through %!query: it returned Q, not an Array or Hash
+container"). The dependency named above has also not moved: the
+2026-08-31 deep-triage note on
+`todo/deep/native-method-cannot-return-an-lvalue-container.md` says a bounded
+design campaign for universal container-reference propagation has to happen
+before an implementation slice can be selected, and no such campaign has
+started. So this ticket is still blocked on that design, not on effort.

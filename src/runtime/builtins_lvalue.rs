@@ -64,17 +64,98 @@ impl Interpreter {
 
     /// Whether a value is (or contains, one container level deep per recursion
     /// step) a `Proxy` element that a value-context read must FETCH.
-    fn value_has_proxy(value: &Value) -> bool {
+    pub(crate) fn value_has_proxy(value: &Value) -> bool {
+        Self::value_has_proxy_seen(value, &mut Vec::new())
+    }
+
+    /// The body of [`Self::value_has_proxy`], carrying the set of aggregate
+    /// nodes already on the walk.
+    ///
+    /// Raku lets a container hold itself (`my @a; @a = 42, @a;`), and this scan
+    /// now runs on user data at every render (ADR-0040 §9.2), so an unguarded
+    /// walk overflows the stack on the first circular array it meets —
+    /// `@a.raku` and `t/nested-instance-raku.t`'s circular rows aborted the
+    /// process. Re-entering a node cannot reveal a Proxy the first visit missed,
+    /// so stopping there costs no accuracy. Identity is the `Gc` node pointer,
+    /// the same handle the `.raku` renderer's own cycle detection uses.
+    fn value_has_proxy_seen(value: &Value, seen: &mut Vec<usize>) -> bool {
+        // A cheap guard on the way in: only aggregates can close a cycle, and
+        // `seen` is short (cycle depth, not element count), so the linear scan
+        // is cheaper than a set.
+        macro_rules! enter {
+            ($node:expr) => {{
+                let ptr = crate::gc::Gc::as_ptr(&$node) as usize;
+                if seen.contains(&ptr) {
+                    return false;
+                }
+                seen.push(ptr);
+                ptr
+            }};
+        }
         match value.view() {
             ValueView::Proxy { .. } => true,
-            ValueView::Array(items, _) => items.iter().any(Self::value_has_proxy),
-            ValueView::Seq(items) => items.iter().any(Self::value_has_proxy),
-            ValueView::Slip(items) => items.iter().any(Self::value_has_proxy),
-            ValueView::Hash(map) => map.values().any(Self::value_has_proxy),
-            ValueView::Pair(_, v) => Self::value_has_proxy(v),
-            ValueView::ValuePair(k, v) => Self::value_has_proxy(k) || Self::value_has_proxy(v),
+            // An element bound with `@a[0] := $p` holds the `Proxy` behind the
+            // element's own container cell (ADR-0040 §9.1), so the scan has to
+            // look through one — otherwise the whole array reads as Proxy-free
+            // and nothing below ever runs.
+            //
+            // EXACTLY one level, and no recursion past the cell: the bind puts
+            // the Proxy DIRECTLY behind it, while a self-reference is a cell
+            // pointing back at the structure being scanned. Recursing through
+            // cells walks that cycle forever (`my @a; @a = 42, @a; @a.raku`
+            // overflowed the stack), and the cell is also where this scan used
+            // to stop before the look-through was added.
+            ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
+                value.deref_container().is_proxy_value()
+            }
+            ValueView::Array(items, _) => {
+                enter!(items);
+                let found = items.iter().any(|v| Self::value_has_proxy_seen(v, seen));
+                seen.pop();
+                found
+            }
+            ValueView::Seq(items) => items.iter().any(|v| Self::value_has_proxy_seen(v, seen)),
+            ValueView::Slip(items) => items.iter().any(|v| Self::value_has_proxy_seen(v, seen)),
+            ValueView::Hash(map) => {
+                enter!(map);
+                let found = map.values().any(|v| Self::value_has_proxy_seen(v, seen));
+                seen.pop();
+                found
+            }
+            ValueView::Pair(_, v) => Self::value_has_proxy_seen(v, seen),
+            ValueView::ValuePair(k, v) => {
+                Self::value_has_proxy_seen(k, seen) || Self::value_has_proxy_seen(v, seen)
+            }
             _ => false,
         }
+    }
+
+    /// The native methods that RENDER their receiver's elements — the ones that
+    /// stand in for the per-element `.gist`/`.Str`/`.raku` call Rakudo would
+    /// make, and so owe that call's decont (ADR-0040 §9.2).
+    ///
+    /// This is not a heuristic about user code: it enumerates mutsu's own native
+    /// renderers, the natives that inline a per-element method call instead of
+    /// dispatching one. A method that hands an element to *user* code instead of
+    /// rendering it — `map`, `grep`, `sort`, `for` — is deliberately absent: it
+    /// binds the element container, Proxy included (ADR-0045), and resolving
+    /// would destroy exactly what it is supposed to pass along.
+    pub(crate) fn renders_receiver_elements(method: &str) -> bool {
+        matches!(
+            method,
+            "gist" | "Str" | "Stringy" | "raku" | "perl" | "join" | "fmt" | "say" | "put" | "note"
+        )
+    }
+
+    /// Whether `value` is a *container* holding a `Proxy` somewhere inside it,
+    /// as opposed to being a `Proxy` itself.
+    ///
+    /// This is the gate for ADR-0040 §9.2: rendering a container has to resolve
+    /// the Proxies among its elements, while a `Proxy` receiver in its own right
+    /// is already deconted by ordinary method dispatch and must keep taking that
+    /// path.
+    pub(crate) fn holds_nested_proxy(value: &Value) -> bool {
+        !value.is_proxy_value() && Self::value_has_proxy(value)
     }
 
     /// Deep-resolve `Proxy` values for a value-context read: every Proxy —
@@ -96,6 +177,21 @@ impl Interpreter {
                 let fetched = self.auto_fetch_proxy(value)?;
                 // A FETCH may itself return a Proxy-bearing structure.
                 self.resolve_proxies_in_value(&fetched)
+            }
+            // Read through the element's own container cell to reach a `Proxy`
+            // bound into it. The cell is dropped from the result, which is what
+            // a value-context read does anyway — and only ever happens when
+            // there IS a Proxy inside, because `value_has_proxy` above returns
+            // the value untouched otherwise. Bounded to one level for the same
+            // reason `value_has_proxy` is: a cell holding anything but a Proxy
+            // may be a self-reference.
+            ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
+                let inner = value.deref_container();
+                if inner.is_proxy_value() {
+                    self.resolve_proxies_in_value(&inner)
+                } else {
+                    Ok(value.clone())
+                }
             }
             ValueView::Array(items, kind) => {
                 let resolved: Result<Vec<Value>, RuntimeError> = items

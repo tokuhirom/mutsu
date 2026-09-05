@@ -11,6 +11,13 @@
 //! the elements are resolved *in place* — each `Instance` replaced by the
 //! `Str` its class dispatches — and the resulting list handed to the same
 //! pure renderer.
+//!
+//! A `Proxy` element resolves the same way and for the same reason (ADR-0040
+//! §9.2): Rakudo renders it by calling `.Str` on it, a method call deconts its
+//! invocant, and deconting a `Proxy` runs its FETCH. So it is replaced by its
+//! FETCHed value, which then takes the ordinary element path — the two cases
+//! compose, and a Proxy handing back an `Instance` still gets that class's
+//! `.Str`.
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -43,7 +50,7 @@ impl crate::Interpreter {
         let item = item.deref_container();
         matches!(
             item.view(),
-            ValueView::Instance { .. } | ValueView::Mixin(..)
+            ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. }
         ) || Self::list_str_needs_interpreter(&item)
     }
 
@@ -89,6 +96,15 @@ impl crate::Interpreter {
             // grep rw alias) so a cell-wrapped Instance still gets its
             // user-defined `.Str` -- the same decont `.join` does.
             let item = item.deref_container();
+            // A `Proxy` element is a container too, and deconting one means
+            // running its FETCH (ADR-0040 §9.2). The FETCHed value then takes
+            // the ordinary element path below, so a Proxy that hands back an
+            // Instance still gets that class's `.Str`.
+            let item = if item.is_proxy_value() {
+                self.resolve_proxies_in_value(&item)?
+            } else {
+                item
+            };
             if matches!(
                 item.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)

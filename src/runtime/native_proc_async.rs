@@ -59,93 +59,129 @@ impl ChunkSinks {
     }
 }
 
-/// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded valid
-/// prefix through the supply channels, retains an INCOMPLETE trailing sequence in
-/// `pending` (so a multibyte character split across two reads is not mis-flagged),
-/// and returns `true` when a genuinely malformed byte is hit — the caller then
-/// quits the supply, matching Rakudo ("stdout/stderr Supply quit on encoding
-/// error", roast S17-procasync/encoding.t).
+/// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded
+/// text through the supply channels, retains an INCOMPLETE trailing byte
+/// sequence in `pending` (so a multibyte character split across two reads is not
+/// mis-flagged) and the trailing *grapheme* in `held` (see below), and returns
+/// `true` when a genuinely malformed byte is hit — the caller then quits the
+/// supply, matching Rakudo ("stdout/stderr Supply quit on encoding error", roast
+/// S17-procasync/encoding.t).
 ///
-/// `translate_crlf`/`held_cr` mirror the whole-run `\r\n` -> `\n` translation
-/// the replayed (post-exit) path applies to `collected_stdout` (mutsu-specific,
-/// stdout only — see the caller): a lone trailing `\r` is held back rather than
-/// emitted, in case the very next read starts with `\n` (a `\r\n` split across
-/// two `read()`s), and flushed as-is once the stream ends with no `\n` to pair.
+/// ## An EXTENDABLE final grapheme is held back
+///
+/// A decoder cannot know the last grapheme it decoded is finished: the next
+/// `read()` could start with a combining mark that extends it into a different
+/// grapheme. Rakudo's decoder therefore does not hand out such a trailing
+/// grapheme; it flushes it alone once the stream ends. That is observable at
+/// chunk boundaries — `printf "abc"; sleep 1; printf "def"` yields `"ab"`,
+/// `"cde"`, `"f"`, not `"abc"`, `"def"` — so mutsu holds it back too.
+///
+/// It is held back only when something *could* extend it
+/// ([`final_grapheme_is_unextendable`]). UAX #29 GB4 breaks after LF and after
+/// any Control unconditionally, so a chunk ending in a newline is delivered
+/// whole — which is what keeps line-oriented output streaming: a `.lines`
+/// consumer sees `Started\n` the moment the child writes it, instead of waiting
+/// for a read that may never come because the child is blocked waiting for the
+/// reply (`roast/S17-procasync/kill.t`). CR is the exception that stays held,
+/// since the next read may start with the LF that joins it.
+///
+/// This subsumes the narrower `\r` holdback that used to live here: `\r\n` is a
+/// single grapheme (UAX #29), so a trailing `\r` is held back as the final
+/// grapheme and is only ever emitted together with the `\n` that may follow it.
+/// That keeps the `translate_crlf` rewrite (whole-run `\r\n` -> `\n`, applied to
+/// stdout only — see the caller) from ever seeing a pair split across two chunks.
+///
+/// ## On a malformed byte, the read delivers nothing
+///
+/// Rakudo discards the whole pending decode when the stream goes bad, rather
+/// than flushing the valid prefix first: `printf "ok-"` then `printf "\377\377"`
+/// gives `"ok"` (the held-back `-` dies with the stream), and with both writes in
+/// one `read()` it gives `""`. So a malformed byte emits nothing at all from the
+/// current read and drops whatever is held.
 fn feed_utf8_incremental(
     pending: &mut Vec<u8>,
     new: &[u8],
     sinks: &ChunkSinks,
     collected: &mut String,
     translate_crlf: bool,
-    held_cr: &mut bool,
+    held: &mut String,
 ) -> bool {
     pending.extend_from_slice(new);
-    match std::str::from_utf8(pending) {
-        Ok(s) => {
-            emit_decoded_chunk(s, sinks, collected, translate_crlf, held_cr);
-            pending.clear();
-            false
-        }
-        Err(e) => {
-            let valid = e.valid_up_to();
-            if valid > 0 {
-                let s = std::str::from_utf8(&pending[..valid]).unwrap_or("");
-                emit_decoded_chunk(s, sinks, collected, translate_crlf, held_cr);
+    let decoded_len = match std::str::from_utf8(pending) {
+        Ok(_) => pending.len(),
+        Err(e) => match e.error_len() {
+            // Incomplete trailing sequence: keep the tail for the next read.
+            None => e.valid_up_to(),
+            // A genuinely invalid byte: this read delivers nothing, and the
+            // held-back grapheme dies with the stream.
+            Some(_) => {
+                held.clear();
+                return true;
             }
-            match e.error_len() {
-                // Incomplete trailing sequence: keep the tail for the next read.
-                None => {
-                    pending.drain(..valid);
-                    false
-                }
-                // A genuinely invalid byte: signal the encoding error.
-                Some(_) => true,
-            }
-        }
-    }
+        },
+    };
+    let decoded = std::str::from_utf8(&pending[..decoded_len]).unwrap_or("");
+    emit_decoded_chunk(decoded, sinks, collected, translate_crlf, held);
+    pending.drain(..decoded_len);
+    false
 }
 
-/// Send one decoded chunk (see [`feed_utf8_incremental`]), applying the
-/// held-back-`\r` CRLF translation when `translate_crlf` is set.
+/// Append `s` to the held-back text and emit it, less a final grapheme that a
+/// later read could still extend (see [`feed_utf8_incremental`]), applying the
+/// `\r\n` -> `\n` translation when `translate_crlf` is set.
 fn emit_decoded_chunk(
     s: &str,
     sinks: &ChunkSinks,
     collected: &mut String,
     translate_crlf: bool,
-    held_cr: &mut bool,
+    held: &mut String,
 ) {
-    if s.is_empty() && !*held_cr {
+    held.push_str(s);
+    if held.is_empty() {
         return;
     }
-    let mut text = String::with_capacity(s.len() + 1);
-    if std::mem::take(held_cr) {
-        text.push('\r');
+    let split = if crate::builtins::string_pos::final_grapheme_is_unextendable(held) {
+        held.len()
+    } else {
+        crate::builtins::string_pos::last_grapheme_start(held)
+    };
+    if split == 0 {
+        return;
     }
-    text.push_str(s);
-    if translate_crlf {
-        if let Some(stripped) = text.strip_suffix('\r') {
-            *held_cr = true;
-            text.truncate(stripped.len());
-        }
-        if text.contains('\r') {
-            text = text.replace("\r\n", "\n");
-        }
+    let text: String = held[..split].to_string();
+    held.drain(..split);
+    send_chunk(text, sinks, collected, translate_crlf);
+}
+
+/// Flush a [`feed_utf8_incremental`] run's held-back final grapheme once the
+/// stream has genuinely ended, so nothing extends it any more. Not called when
+/// the stream quit on an encoding error — there the held text is discarded.
+fn flush_held(held: &str, sinks: &ChunkSinks, collected: &mut String, translate_crlf: bool) {
+    if held.is_empty() {
+        return;
+    }
+    send_chunk(held.to_string(), sinks, collected, translate_crlf);
+}
+
+/// Deliver one decoded chunk to the supplies and to the whole-run `collected`
+/// string the post-exit replay reads back.
+///
+/// NFC-normalized, for the reason `news/2026-08/decoded-strings-are-nfc.md`
+/// gives: a Raku `Str` is NFG, so text decoded from bytes must compare equal to
+/// the same text written as a literal. Chunk-at-a-time normalization is only
+/// sound *because* of the final-grapheme holdback — no grapheme spans two
+/// chunks, so normalizing each one gives the same answer as normalizing the
+/// whole stream. (`is_nfc_quick` inside makes this free for ASCII output.)
+fn send_chunk(mut text: String, sinks: &ChunkSinks, collected: &mut String, translate_crlf: bool) {
+    if translate_crlf && text.contains('\r') {
+        text = text.replace("\r\n", "\n");
     }
     if text.is_empty() {
         return;
     }
+    let text = crate::builtins::nfc(text);
     sinks.emit(Value::str(text.clone()));
     collected.push_str(&text);
-}
-
-/// Flush a [`feed_utf8_incremental`] run's held-back lone `\r` (see its doc
-/// comment) once the stream has genuinely ended with no following `\n` to
-/// pair it with.
-fn flush_held_cr(held_cr: bool, sinks: &ChunkSinks, collected: &mut String) {
-    if held_cr {
-        sinks.emit(Value::str("\r".to_string()));
-        collected.push('\r');
-    }
 }
 
 /// Build a thrown `X::Proc::Async::*` error.
@@ -717,7 +753,7 @@ impl Interpreter {
                                 let mut raw: Vec<u8> = Vec::new();
                                 let mut buf = [0u8; 4096];
                                 let mut pending: Vec<u8> = Vec::new();
-                                let mut held_cr = false;
+                                let mut held = String::new();
                                 let mut quit = false;
                                 loop {
                                     match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
@@ -734,7 +770,7 @@ impl Interpreter {
                                                 &sinks,
                                                 &mut collected,
                                                 true,
-                                                &mut held_cr,
+                                                &mut held,
                                             ) {
                                                 sinks.quit(
                                                     malformed_utf8_quit_value(),
@@ -748,7 +784,7 @@ impl Interpreter {
                                     }
                                 }
                                 if !quit {
-                                    flush_held_cr(held_cr, &sinks, &mut collected);
+                                    flush_held(&held, &sinks, &mut collected, true);
                                     sinks.stream_done();
                                 }
                                 // Retain the raw bytes so the await-time replay can
@@ -780,7 +816,7 @@ impl Interpreter {
                                 let mut raw: Vec<u8> = Vec::new();
                                 let mut buf = [0u8; 4096];
                                 let mut pending: Vec<u8> = Vec::new();
-                                let mut held_cr = false;
+                                let mut held = String::new();
                                 let mut quit = false;
                                 loop {
                                     match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
@@ -797,7 +833,7 @@ impl Interpreter {
                                                 &sinks,
                                                 &mut collected,
                                                 false,
-                                                &mut held_cr,
+                                                &mut held,
                                             ) {
                                                 sinks.quit(
                                                     malformed_utf8_quit_value(),
@@ -811,6 +847,7 @@ impl Interpreter {
                                     }
                                 }
                                 if !quit {
+                                    flush_held(&held, &sinks, &mut collected, false);
                                     sinks.stream_done();
                                 }
                                 if let Some(sid) = sid {

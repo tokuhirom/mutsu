@@ -696,6 +696,20 @@ impl Interpreter {
         } else {
             target
         };
+        // ADR-0040 §9.2: a renderer resolves its receiver's `Proxy` elements
+        // first — the third entry that needs this guard, alongside the
+        // `CallMethod` opcode and `call_method_with_values_inner`. A method call
+        // on a *variable* compiles to `CallMethodMut` (see
+        // `compile_expr_method_on_var`), so `@a.gist` and `$l.raku` arrive here
+        // and nowhere else. Placed with the other receiver-deciding steps above,
+        // and after them, so it sees the receiver they settled on.
+        let target = if Self::renders_receiver_elements(method.as_str())
+            && Self::holds_nested_proxy(&target)
+        {
+            loan_env!(self, resolve_proxies_in_value(&target))?
+        } else {
+            target
+        };
         if method == "value"
             && args.is_empty()
             && let Some(weight) = self.quanthash_weight_pair_value(target.unwrap_varref())

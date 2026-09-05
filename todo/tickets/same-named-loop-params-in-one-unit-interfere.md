@@ -120,6 +120,14 @@ section correctly named `captured_mutated_locals` / `needs_cell_locals` while
 attributing the fix to the wrong campaign phase (§1.4's shadow-slot gate, which
 was measured to make no difference).
 
+## Re-verified 2026-09-05
+
+Still reproduces byte-for-byte on `main` at `e4994a3`: the four-line repro prints
+`[30 30]` where raku prints `[10 30]`. Nothing in this file has drifted — the two
+rejected candidate fixes and the §1.3 placement above stand as written, and the
+work still needs its own session on the slot campaign rather than a slice
+alongside unrelated tickets.
+
 ## Reproduce
 
 The four-line repro at the top, no fixtures. Two more that isolate the residues:

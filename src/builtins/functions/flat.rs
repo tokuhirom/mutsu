@@ -187,14 +187,27 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
 
 /// Does joining `v` need the interpreter, because some element it contributes
 /// may carry a *user-defined* `.Str` (a class instance, or a `but`/`does`
-/// role-mixed value)? [`join_flat`] can only call `to_str_context`, so those
-/// must be routed to `Interpreter::builtin_join`, which dispatches the method
-/// first. Without this gate the pure two-argument `join(sep, $obj)` fast path
-/// answered before the interpreter ever saw the call, so a role mixin's `Str`
-/// was skipped for `join` while `print` on the same value honoured it.
+/// role-mixed value), or is a `Proxy` whose FETCH has to run? [`join_flat`] can
+/// only call `to_str_context`, so those must be routed to
+/// `Interpreter::builtin_join`, which dispatches the method first. Without this
+/// gate the pure two-argument `join(sep, $obj)` fast path answered before the
+/// interpreter ever saw the call, so a role mixin's `Str` was skipped for `join`
+/// while `print` on the same value honoured it.
+///
+/// The `Proxy` arms are ADR-0040 §9.2, and `"@a[]"` interpolation is why they
+/// matter beyond a literal `join` call: it compiles to `join(" ", @a)`, so this
+/// gate is the only thing standing between an interpolated array and a rendered
+/// `Proxy`. An element bound with `@a[0] := $p` holds its Proxy behind the
+/// element's own container cell (§9.1), so the scan looks through one.
 pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
     match v.view() {
-        ValueView::Instance { .. } | ValueView::Mixin(..) => true,
+        ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. } => true,
+        // Exactly one level, no recursion past the cell: the bind puts the
+        // Proxy directly behind it, whereas a cell holding a structure may be a
+        // self-reference and following it walks the cycle forever.
+        ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
+            v.deref_container().is_proxy_value()
+        }
         ValueView::Array(items, kind) if !kind.is_itemized() => {
             items.iter().any(join_needs_interpreter)
         }

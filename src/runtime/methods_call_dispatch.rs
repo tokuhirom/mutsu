@@ -205,6 +205,31 @@ impl Interpreter {
         if let Some(result) = self.try_var_meta_delegate(&target, method, &args) {
             return result;
         }
+        // ADR-0040 §9.2: a renderer resolves its receiver's `Proxy` elements
+        // first. Rakudo renders a container by calling `.gist`/`.Str`/`.raku`
+        // ON EACH ELEMENT, and a method call deconts its invocant, so a `Proxy`
+        // element renders as its FETCHed value. mutsu's renderers are pure
+        // `Value` walkers that format elements inline, with no per-element
+        // dispatch to do the deconting — so the FETCH happens here, at the
+        // dispatch boundary where the interpreter is still in hand, and the
+        // resolved value goes on to the same pure renderer unchanged.
+        //
+        // This is the mechanism `resolve_list_element_stringifiers` already
+        // established for an `Instance` element with a user-defined `.Str`
+        // ("resolve the elements in place, then hand the list to the same pure
+        // renderer"); a `Proxy` element resolves by FETCH rather than by
+        // dispatching `.Str`. Placed with the other "decide the receiver first"
+        // guards for the same reason they are: several by-name interceptors
+        // below answer for the receiver as it stands.
+        //
+        // Cost: `value_has_proxy` is an allocation-free scan that stops at the
+        // first Proxy, and the render path already runs a scan of exactly this
+        // shape (`needs_method_dispatch`) on every `say`.
+        if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target) {
+            let resolved = self.resolve_proxies_in_value(&target)?;
+            return self.call_method_with_values_inner(resolved, method, args, reify_seq);
+        }
+
         // Array-subclass instance delegation, the interpreter-entry twin of the
         // one in `vm_call_method_ops.rs`. An `is Array`/`is List` subclass keeps
         // its elements in a backing `__mutsu_array_storage` attribute; without
