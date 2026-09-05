@@ -62,7 +62,7 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
             }
             _ => {
-                let cell_name = Self::return_rw_container_name(arg);
+                let cell_name = self.return_rw_container_name(arg);
                 self.compile_expr(arg);
                 if let Some(name) = cell_name {
                     self.emit_wrap_var_ref(&name);
@@ -79,16 +79,39 @@ impl Compiler {
     /// and an inline `my $x = ...` declaration, whose slot is live by the time
     /// the operand's value reaches the stack.
     ///
+    /// A **sigilless** lexical (`sub f(\x) is raw { x }`, `my \y := ...`) names
+    /// the same kind of storage location a `$`-sigiled one does, but the parser
+    /// gives it `Expr::BareWord` rather than `Expr::Var` — a bareword is also
+    /// how a type name, an enum value and a listop-less call are spelled, so it
+    /// is only a container reference when it actually resolves to a local slot
+    /// of the frame being compiled. That is exactly what `local_map` records, so
+    /// consult it rather than guessing from the spelling.
+    ///
+    /// Scoped to the `return-rw` / rw-tail site (`return_rw_container_name`) and
+    /// deliberately NOT folded into `scalar_container_alias_name`, whose other
+    /// callers (List literal elements, fat-arrow Pair values) see barewords that
+    /// are type names in ordinary code.
+    fn sigilless_local_container_name(&self, arg: &Expr) -> Option<String> {
+        let Expr::BareWord(name) = arg else {
+            return None;
+        };
+        (Self::is_plain_lexical_name(name) && self.local_map.contains_key(name))
+            .then(|| name.clone())
+    }
+
     /// Deliberately narrow. `@`/`%`/`&`-sigiled names, twigils, attributes and
     /// package-qualified names are excluded: their containers are reached by
     /// their own machinery, and boxing them into a scalar cell here would leak a
     /// `ContainerRef` past the consumers that only decontainerize at the scalar
     /// chokepoints.
-    fn return_rw_container_name(arg: &Expr) -> Option<String> {
+    fn return_rw_container_name(&self, arg: &Expr) -> Option<String> {
         if let Some(name) = Self::scalar_container_alias_name(arg)
             && Self::is_plain_lexical_name(name)
         {
             return Some(name.to_string());
+        }
+        if let Some(name) = self.sigilless_local_container_name(arg) {
+            return Some(name);
         }
         if let Expr::DoStmt(stmt) = arg
             && let Stmt::VarDecl { name, .. } = stmt.as_ref()
