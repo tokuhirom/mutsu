@@ -214,11 +214,32 @@ pub(crate) fn read_bracketed(
 /// Nested occurrences of `open_str` and `close_str` are tracked for proper balancing.
 /// When `allow_escape` is true, `\x` consumes both chars so escaped delimiters
 /// do not affect nesting.
+/// Read the content of a delimiter repeated `n` times (`q[[ … ]]`,
+/// `qq{{ … }}`). For an *interpolating* quote (`is_qq`) the scan steps over a
+/// whole interpolation atom rather than over its individual characters.
+///
+/// mutsu finds a quote's closing delimiter with a purely textual scan and only
+/// then hands the extracted text to `interpolate_string_content`. With a
+/// repeated delimiter that split gets `qq[[@a[0]]]` wrong: the text after the
+/// `[[` opener is `@a[0]]]`, whose first `]]` sits immediately after the `0`, so
+/// the scan stops there and yields the unterminated `@a[0`.
+///
+/// Rakudo has no such split — its quote grammar parses `@a[0]` as one atom,
+/// subscript included, and only then looks for the close. Note this is NOT
+/// single-bracket nesting: `qq[[a[b]]]` is a syntax error in rakudo too (no
+/// sigil, so nothing consumes the `[b]`), which counting bare brackets would
+/// wrongly accept.
+///
+/// The atom is measured by calling `try_interpolate_var` — the very function
+/// that will later consume it — so the two cannot disagree about where the
+/// interpolation ends. It is only consulted for a repeated delimiter, which is
+/// where the phase split is observable.
 pub(crate) fn read_multi_bracketed<'a>(
     input: &'a str,
     open_str: &str,
     close_str: &str,
     allow_escape: bool,
+    is_qq: bool,
 ) -> PResult<'a, &'a str> {
     if !input.starts_with(open_str) {
         return Err(PError::expected(&format!("'{}'", open_str)));
@@ -234,6 +255,13 @@ pub(crate) fn read_multi_bracketed<'a>(
             // Skip escape sequence (backslash + next char)
             let next_ch = rest[1..].chars().next().unwrap();
             rest = &rest[1 + next_ch.len_utf8()..];
+            continue;
+        }
+        if is_qq
+            && rest.starts_with(['$', '@', '%', '&'])
+            && let Some(after) = interpolation_atom_end(rest)
+        {
+            rest = after;
             continue;
         }
         if rest.starts_with(open_str) {
@@ -255,6 +283,22 @@ pub(crate) fn read_multi_bracketed<'a>(
     }
 }
 
+/// The input remaining after the interpolation atom at the start of `input`, or
+/// `None` when there is no interpolation there (a bare `$` or `@`, a sigil
+/// followed by punctuation, ...).
+///
+/// Delegates to the real interpolator so the answer is by construction the same
+/// span `interpolate_string_content` will later consume — including its
+/// subscript rules (`@a[0]` scans to the FIRST `]`, `%h<k>` to the first `>`,
+/// `%h{...}` balanced) and its refusal to cross whitespace before a postfix.
+fn interpolation_atom_end(input: &str) -> Option<&str> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let after = super::interp_var::try_interpolate_var(input, &mut parts, &mut current)?;
+    // A zero-width match would spin the scan loop forever.
+    (after.len() < input.len()).then_some(after)
+}
+
 /// Count how many times the given bracket char is repeated at the start of `input`.
 pub(crate) fn count_repeated_bracket(input: &str, ch: char) -> usize {
     let mut count = 0;
@@ -272,6 +316,16 @@ pub(crate) fn count_repeated_bracket(input: &str, ch: char) -> usize {
 pub(crate) fn read_delimited_content<'a>(
     input: &'a str,
     escape_backslash: bool,
+) -> PResult<'a, &'a str> {
+    read_delimited_content_interpolating(input, escape_backslash, false)
+}
+
+/// As [`read_delimited_content`], but tells the repeated-delimiter scan whether
+/// the quote interpolates — see [`read_multi_bracketed`].
+pub(crate) fn read_delimited_content_interpolating<'a>(
+    input: &'a str,
+    escape_backslash: bool,
+    is_qq: bool,
 ) -> PResult<'a, &'a str> {
     let rest = input.trim_start();
     let delim_char = rest
@@ -293,7 +347,7 @@ pub(crate) fn read_delimited_content<'a>(
         if repeat_count > 1 {
             let open_str: String = std::iter::repeat_n(delim_char, repeat_count).collect();
             let close_str: String = std::iter::repeat_n(close_char, repeat_count).collect();
-            return read_multi_bracketed(rest, &open_str, &close_str, escape_backslash);
+            return read_multi_bracketed(rest, &open_str, &close_str, escape_backslash, is_qq);
         }
         return read_bracketed(rest, delim_char, close_char, escape_backslash);
     }
