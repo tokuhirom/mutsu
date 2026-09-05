@@ -978,6 +978,27 @@ impl Interpreter {
             self.auto_fetch_proxy_args(args)?
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
+        // `nqp::` ops are compiler-known primitives in a RESERVED namespace: no
+        // user routine can be declared there, so none of the resolution that
+        // follows — the proto/multi candidate scans, the native-function tables,
+        // and finally the interpreter's builtin fallback chain — can ever answer
+        // differently than the op table does. Walking it anyway cost three
+        // by-name `resolve_function_with_types` calls plus two full O(registry)
+        // `has_multi_candidates` scans per op, which is most of why the vendored
+        // `Test.rakumod` was ~40x slower per assertion than rakudo's: `proclaim`
+        // runs four `nqp::join`/`nqp::split` calls for every single assertion
+        // (todo/deep/vendor-real-test-module.md).
+        //
+        // Placed after the argument normalization above, not before it, so the
+        // ops still see exactly the arguments they saw when they were reached
+        // through `call_function` — `nqp::eqaddr(Int, Int)` depends on the
+        // `VarRef` unwrapping that `normalize_call_args_for_target` applies to
+        // an unregistered name.
+        if let Some(op) = name.strip_prefix("nqp::") {
+            let result = self.dispatch_nqp_op(op, &args)?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // A lexically-bound `&callsame`/`&callwith`/`&nextsame`/`&nextwith`/
         // `&samewith` (`my &callwith := -> ... { ... }`) shadows the built-in
         // dispatcher routine of the same name (roast advent2013-day21.t pointy

@@ -1113,14 +1113,12 @@ impl Interpreter {
         // not find symbol '&index' in 'GLOBAL::Foo::Bar'" — is the same shape but
         // a wider blast radius; see todo/tickets/nqp-op-aliasing-and-sha1.md.)
         if let Some(op) = name.strip_prefix("nqp::") {
-            // The supported VALUE-op table (runtime/nqp_ops.rs) — anything it
-            // does not know keeps the loud unsupported error below.
-            if let Some(result) = self.call_nqp_op(op, args) {
-                return result;
-            }
-            return Err(RuntimeError::new(format!(
-                "Unsupported nqp:: op: nqp::{op}"
-            )));
+            // `dispatch_nqp_op` is the single entry point (runtime/nqp_ops_builtin.rs):
+            // the interpreter-coupled ops first, then the value table, then the
+            // loud unsupported-op error. Reaching here at all means some caller
+            // bypassed the earlier short-circuits in `call_function` and the VM's
+            // call opcode; the answer must still be the same one.
+            return self.dispatch_nqp_op(op, args);
         }
 
         // A qualified call retries under its short name (`Main::foo` -> `foo`) —

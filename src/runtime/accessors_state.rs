@@ -763,7 +763,17 @@ impl Interpreter {
                 }
             }
         }
-        let cacheable = candidates.len() >= 2 && !value_dependent;
+        // A SINGLE candidate counts. The gate used to require two, on the
+        // reasoning that one candidate is what the name-keyed light-call caches
+        // already handle — but a lone `multi sub` is registered only under its
+        // arity key (`GLOBAL::ok/2`), so the resolver's exact-name lookup misses
+        // and every call pays the full candidate walk. That is the shape of
+        // rakudo's own `Test.rakumod` (`multi sub ok(Mu $cond, $desc = '')`),
+        // where it was the single largest per-assertion cost
+        // (todo/deep/vendor-real-test-module.md). The value-dependency analysis
+        // above is what makes a cached winner sound, and it does not care how
+        // many candidates there are.
+        let cacheable = !candidates.is_empty() && !value_dependent;
         self.func_multi_type_cacheable
             .insert((pkg_sym, name_sym), cacheable);
         cacheable

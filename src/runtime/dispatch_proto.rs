@@ -25,11 +25,15 @@ impl Interpreter {
             .collect();
         let mut seen_fps = Vec::new();
         for prefix in &prefixes {
+            // `as_str` (a `&'static str` out of the interner) rather than
+            // `resolve()`: the filter runs over every registry key on every
+            // multi call (`push_multi_dispatch_frame`), and `resolve()` copied
+            // each one into a fresh `String` just to test a prefix.
             let candidates: Vec<(String, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
-                .filter(|(k, _)| k.resolve().starts_with(prefix.as_str()))
+                .filter(|(k, _)| k.as_str().starts_with(prefix.as_str()))
                 .map(|(k, def)| (k.resolve(), def.clone()))
                 .collect();
             for (key, def) in candidates {
