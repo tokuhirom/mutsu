@@ -77,6 +77,19 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Interpolated code blocks.* `"a{ $x }b"` renders its `{ ... }` segment as a
+  plain `Block` (mutsu's `DoStmt` wrapper has no RakuAST counterpart) and lowers
+  back to that wrapper — without which the segment became a closure and the
+  interpolated value was silently lost. Pinned by
+  `t/rakuast-interp-code-block.t`; see
+  [the news entry](../../news/2026-09/rakuast-interpolated-code-block.md).
+- *A bareword naming something the unit declared, and `.^name`.* A declared
+  type renders as `Type::Simple` and a declared constant as `Term::Name`, so a
+  program can finally use a class or constant it declares — which is what forced
+  the earlier declaration slices to inspect the `EVAL`'d value from outside.
+  `.^name` also moved from a `Call::Method` with a `.^` dispatch field to raku's
+  own `Call::MetaMethod`. Pinned by `t/rakuast-declared-name.t`; see
+  [the news entry](../../news/2026-09/rakuast-declared-name-and-metamethod.md).
 - *Class traits, `multi`, and `constant`.* `class C is P`, `class C does R`,
   `class C is rw`, `is repr(...)`, `multi sub`, and `constant X = 5` all render
   (byte-identical to rakudo 2026.07) and lower back. Pinned by
@@ -147,8 +160,14 @@ the parser/internal AST, not guessing during RakuAST conversion.
 Still open:
 
 - `.=` and Whatever compound autoprime. `$x .= Str` desugars to a plain `=` over
-  a method call (raku: `ApplyDottyInfix` + `DottyInfix::CallAssign`) and still
-  needs the parser to retain its dotty-infix form. Core compound assignment is
+  a method call and still needs the parser to retain its dotty-infix form.
+  **Measured 2026-09-05 against rakudo 2026.07:** `ApplyDottyInfix(left =>
+  Var::Lexical, infix => DottyInfix::CallAssign.new, right => Call::Method(...))`.
+  The blocker is confirmed by construction: `$x .= Str` and `$x = $x.Str` parse
+  to *byte-identical* internal ASTs (`Stmt::Assign` over a `MethodCall` on the
+  same variable), so the converter cannot tell them apart. `AssignOp` is the
+  natural place for a marker, but it is matched at ~294 sites, so this is a
+  parser/AST slice rather than a converter one. Core compound assignment is
   now closed: `+=`, `-=`, `*=`, `~=`, `//=`, `||=`, `&&=`, indexed lvalues, and
   `AT-POS` lvalues preserve `MetaInfix::Assign(Infix(...))` for `.AST`, while
   `EVAL` reuses the existing execution expansion. The `* += 1` Whatever
@@ -165,22 +184,10 @@ Still open:
 - `with` / `without`. Desugared at parse time into a `__with_tmp_N` temp var plus
   an `if` on `.defined`, so there is no statement to map to
   `Statement::With` / `Statement::Without`. It is an explicit boundary (the temp
-  var's internal name is refused), not a wrong rendering.
-- A reference to a user-declared type or constant by bare name.
-  `class C { }; C.new` reads `C` as `Expr::BareWord`, and only *builtin* type
-  names (`is_known_type_constraint`) convert to `Type::Simple`, so any program
-  that declares a class or a constant and then uses it is a `.AST` boundary.
-  This is what keeps `t/rakuast-eval-class.t` and
-  `t/rakuast-class-traits-multi-constant.t` calling into the `EVAL`'d value from
-  the outside instead of using the name inside the lowered program. **Measured
-  2026-09-05 against rakudo 2026.07:** a type bareword renders
-  `RakuAST::Type::Simple(Name)` (identical to a builtin type) and a constant
-  bareword renders `RakuAST::Term::Name(Name)`; an undeclared bareword is a
-  compile error in raku. So the shapes are known — what is missing is for the
-  converter to know which names the same compilation unit declared, which the
-  read side does not currently track. This is now the single highest-leverage
-  remaining read gap, because it is what blocks testing every other
-  declaration slice from *inside* the lowered program.
+  var's internal name is refused), not a wrong rendering. **Measured 2026-09-05
+  against rakudo 2026.07:** `Statement::With(condition => <expr>, then =>
+  Block(implicit-topic => True, required-topic => 1, body => Blockoid(...)))` —
+  note the two topic fields on the block, which no other block form carries.
 - Grammar declarations. `grammar G { }` is a `Stmt::ClassDecl` with
   `parents = ["Grammar"]`; class inheritance itself is closed now, so what
   remains is producing `RakuAST::Grammar` + `TokenDeclaration` + the regex node
@@ -237,11 +244,13 @@ an explicit design:
 
 - placeholder blocks such as `{ $^a }`
 - `with` / `without`
-- list assignment
+- list assignment. **Measured 2026-09-05 against rakudo 2026.07:**
+  `my ($a, $b) = 1, 2` is a `VarDeclaration::Signature(signature => Signature(...),
+  initializer => ...)`, i.e. raku models the declaration as a *signature bind*,
+  not as the temp-var destructuring mutsu desugars it into.
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- code-block interpolation
 - regexes
 
 Pick these deliberately by user impact rather than treating them as another
