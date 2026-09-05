@@ -89,6 +89,20 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_until: false,
         }),
         RakuAstClass::StatementFor => lower_for(node),
+        // `INIT { … }` / `LEAVE { … }` / … -> `Stmt::Phaser`, one class per kind.
+        // `BEGIN` is absent deliberately — see `lower_phaser`.
+        RakuAstClass::StatementPrefixPhaserCheck
+        | RakuAstClass::StatementPrefixPhaserInit
+        | RakuAstClass::StatementPrefixPhaserEnd
+        | RakuAstClass::StatementPrefixPhaserEnter
+        | RakuAstClass::StatementPrefixPhaserLeave
+        | RakuAstClass::StatementPrefixPhaserKeep
+        | RakuAstClass::StatementPrefixPhaserUndo
+        | RakuAstClass::StatementPrefixPhaserFirst
+        | RakuAstClass::StatementPrefixPhaserNext
+        | RakuAstClass::StatementPrefixPhaserLast
+        | RakuAstClass::StatementPrefixPhaserQuit
+        | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
         RakuAstClass::Class => lower_class(node),
         RakuAstClass::Role => lower_role(node),
         RakuAstClass::Method => lower_method(node),
@@ -254,6 +268,46 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_test_assertion: false,
         supersede: false,
         custom_traits,
+    })
+}
+
+/// A `StatementPrefix::Phaser::<Kind>` -> `Stmt::Phaser`.
+///
+/// Two kinds are deliberately absent:
+///
+/// * `PRE`/`POST` — rakudo wraps their block in a call (the phaser's child is
+///   an `ApplyPostfix`, not a `Block`), and mutsu also keeps a source-text
+///   condition for the `X::Phaser::PrePost` message, so the converter refuses
+///   them and nothing lowered can be one.
+/// * `BEGIN` — it runs at *compile* time, and mutsu hoists it during
+///   compilation of a program rather than in `reorder_phasers`, so the
+///   re-entrant carrier this lowering feeds runs it in statement position
+///   instead. `EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST)` would answer 1
+///   where raku and mutsu's own direct execution both answer 0. Refusing is the
+///   honest boundary until the carrier gains a BEGIN pass — see
+///   `todo/tickets/rakuast-eval-begin-phaser.md`. `CHECK` and `INIT` are fine:
+///   `reorder_phasers_for_eval` handles both.
+fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    use crate::ast::PhaserKind;
+    let kind = match node.class {
+        RakuAstClass::StatementPrefixPhaserCheck => PhaserKind::Check,
+        RakuAstClass::StatementPrefixPhaserInit => PhaserKind::Init,
+        RakuAstClass::StatementPrefixPhaserEnd => PhaserKind::End,
+        RakuAstClass::StatementPrefixPhaserEnter => PhaserKind::Enter,
+        RakuAstClass::StatementPrefixPhaserLeave => PhaserKind::Leave,
+        RakuAstClass::StatementPrefixPhaserKeep => PhaserKind::Keep,
+        RakuAstClass::StatementPrefixPhaserUndo => PhaserKind::Undo,
+        RakuAstClass::StatementPrefixPhaserFirst => PhaserKind::First,
+        RakuAstClass::StatementPrefixPhaserNext => PhaserKind::Next,
+        RakuAstClass::StatementPrefixPhaserLast => PhaserKind::Last,
+        RakuAstClass::StatementPrefixPhaserQuit => PhaserKind::Quit,
+        RakuAstClass::StatementPrefixPhaserClose => PhaserKind::Close,
+        _ => return Err(unsupported(node)),
+    };
+    Ok(Stmt::Phaser {
+        kind,
+        body: lower_block(named_child_or_positional(node)?)?,
+        condition: None,
     })
 }
 

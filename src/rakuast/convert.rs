@@ -131,6 +131,30 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
+        // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
+        // `StatementPrefix::Phaser::<Kind>` wrapping the block positionally.
+        // raku has one class per kind, which mutsu's single `PhaserKind` maps
+        // onto 1:1. `PRE`/`POST` are the exception: rakudo desugars them into a
+        // call around the block (an `ApplyPostfix` operand), and mutsu also
+        // keeps a source-text `condition` for their exception message, so they
+        // stay the boundary.
+        Stmt::Phaser {
+            kind,
+            body,
+            condition,
+        } => {
+            if condition.is_some() {
+                return Err(unsupported("PRE/POST phaser condition"));
+            }
+            let class = match phaser_class(kind) {
+                Some(c) => c,
+                None => return Err(unsupported("PRE/POST phaser")),
+            };
+            Ok(Some(statement_expression(RakuAstNode {
+                class,
+                fields: vec![node_field(None, block_node(body)?)],
+            })))
+        }
         Stmt::If {
             cond,
             then_branch,
@@ -1568,6 +1592,29 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
             node_field(Some("signature"), sig),
             node_field(Some("body"), blockoid(body)?),
         ],
+    })
+}
+
+/// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.
+/// `PRE`/`POST` have no plain mapping — rakudo wraps their block in a call —
+/// so they answer `None` and stay a coverage boundary.
+fn phaser_class(kind: &crate::ast::PhaserKind) -> Option<RakuAstClass> {
+    use crate::ast::PhaserKind::*;
+    Some(match kind {
+        Begin => RakuAstClass::StatementPrefixPhaserBegin,
+        Check => RakuAstClass::StatementPrefixPhaserCheck,
+        Init => RakuAstClass::StatementPrefixPhaserInit,
+        End => RakuAstClass::StatementPrefixPhaserEnd,
+        Enter => RakuAstClass::StatementPrefixPhaserEnter,
+        Leave => RakuAstClass::StatementPrefixPhaserLeave,
+        Keep => RakuAstClass::StatementPrefixPhaserKeep,
+        Undo => RakuAstClass::StatementPrefixPhaserUndo,
+        First => RakuAstClass::StatementPrefixPhaserFirst,
+        Next => RakuAstClass::StatementPrefixPhaserNext,
+        Last => RakuAstClass::StatementPrefixPhaserLast,
+        Quit => RakuAstClass::StatementPrefixPhaserQuit,
+        Close => RakuAstClass::StatementPrefixPhaserClose,
+        Pre | Post => return None,
     })
 }
 

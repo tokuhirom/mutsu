@@ -303,7 +303,13 @@ impl Interpreter {
         if let Some(first_arg) = Self::positional_value(args, 0)
             && let ValueView::RakuAst(node) = first_arg.view()
         {
-            let stmts = crate::rakuast::lower(node)?;
+            let mut stmts = crate::rakuast::lower(node)?;
+            // A lowered tree is an EVAL'd compilation unit, so its phasers need
+            // the same reordering the string-EVAL path applies: BEGIN/CHECK/INIT
+            // run *before* the mainline, not in statement position. Without it
+            // `EVAL(Q{my $x = 0; INIT { $x = 1 }; $x}.AST)` answered 1 where
+            // both raku and mutsu's own direct execution answer 0.
+            crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
             return self.eval_block_value(&stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks

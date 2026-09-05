@@ -77,6 +77,16 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Phasers.* `BEGIN` / `CHECK` / `INIT` / `END` / `ENTER` / `LEAVE` / `KEEP` /
+  `UNDO` / `FIRST` / `NEXT` / `LAST` / `QUIT` / `CLOSE` render as
+  `RakuAST::StatementPrefix::Phaser::<Kind>` (byte-identical to rakudo 2026.07)
+  and all but `BEGIN` lower back. `PRE`/`POST` stay a boundary on both sides
+  (rakudo wraps their block in a call, and mutsu keeps a source-text condition).
+  Fixing the write direction also made the `EVAL` carrier apply
+  `reorder_phasers_for_eval`, so `INIT`/`CHECK` run before the mainline as they
+  must; `BEGIN` needs a compile-time hoist the carrier lacks and is refused —
+  `todo/tickets/rakuast-eval-begin-phaser.md`. Pinned by `t/rakuast-phaser.t`;
+  see [the news entry](../../news/2026-09/rakuast-phasers.md).
 - *Where-constrained parameters (read direction).* `sub f($x where * > 0)`
   renders its `where` field — the shape `RakuAST::Parameter.new(:where)` already
   built and `EVAL` already lowered and enforced. Fixing it also made the
