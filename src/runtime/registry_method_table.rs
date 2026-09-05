@@ -112,6 +112,19 @@ impl Registry {
     #[cfg(not(debug_assertions))]
     pub(super) fn debug_verify_owner_method_names_index(&self) {}
 
+    /// Raise [`Registry::any_raw_invocant_method`] if any of `defs` declares a
+    /// raw invocant (ADR-0067 slice 3a). Set-only: see that field's doc for why
+    /// the flag is never lowered.
+    fn note_raw_invocant_methods(&mut self, defs: &[MethodDef]) {
+        if !self.any_raw_invocant_method
+            && defs
+                .iter()
+                .any(crate::runtime::raw_invocant::method_def_has_raw_invocant)
+        {
+            self.any_raw_invocant_method = true;
+        }
+    }
+
     /// Adds or removes `name` from `owner`'s slot in the reverse index to
     /// match `live` (whether `(owner, name)`'s `user_candidates` is
     /// currently non-empty). Internal -- every mutator below calls this
@@ -138,6 +151,7 @@ impl Registry {
     /// entirely once no column keeps it alive (ADR-0019 F4c design note
     /// (3)).
     pub(crate) fn set_user_methods(&mut self, owner: Symbol, name: Symbol, defs: Vec<MethodDef>) {
+        self.note_raw_invocant_methods(&defs);
         let live = !defs.is_empty();
         let key = MethodEntryKey { owner, name };
         let entry = self.method_entries.entry(key).or_default();
@@ -154,6 +168,7 @@ impl Registry {
     /// `multi` declaration case, where a later declaration adds a candidate
     /// rather than replacing the row.
     pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) {
+        self.note_raw_invocant_methods(std::slice::from_ref(&def));
         let key = MethodEntryKey { owner, name };
         self.method_entries
             .entry(key)

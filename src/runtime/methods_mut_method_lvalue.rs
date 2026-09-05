@@ -194,6 +194,27 @@ impl Interpreter {
         {
             return Ok(assigned);
         }
+        // ADR-0067 slice 3a: the invocant arrived as a *container* because the
+        // callee binds parameter zero raw (`.snitch`, `method m(\S:) is raw`).
+        // Run it and write through the container it hands back. The VM's gate
+        // (`box_raw_lvalue_invocant`) boxed the invocant using this same
+        // declaration oracle, so this is the branch that consumes it.
+        if let Some(assigned) =
+            self.try_raw_invocant_container_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
+        // The invocant was boxed for the gate above but no raw-invocant write
+        // happened (the callee handed back a plain value, or a user method
+        // declined). Every path below matches on `Instance`/`Array`/`Hash`
+        // directly and would silently skip a `ContainerRef`, so decontainerize
+        // here — the single chokepoint that keeps the boxing invisible to the
+        // rest of this function.
+        let target = if target.is_container_ref() {
+            target.deref_container()
+        } else {
+            target
+        };
         // An `is repr('CStruct')` handle keeps no Raku attributes: its fields
         // live in the C struct its `address` points at, so an assignment has to
         // write native memory (`$bind.buffer = $addr`). Without this the write

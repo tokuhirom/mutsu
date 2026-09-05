@@ -1077,6 +1077,18 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // ADR-0067 slice 3a: a routine hands back the container it was given,
+        // and the invocant is parameter zero. When the callee binds its invocant
+        // raw (`.snitch`, `method m(\S:) is raw`), box the caller's location into
+        // a container here — this is the only site where the frame's `code`
+        // (needed for slot resolution) and the invocant value are both in hand.
+        let args = if name == "__mutsu_assign_method_lvalue" {
+            let mut args = args;
+            self.box_raw_lvalue_invocant(code, &mut args);
+            args
+        } else {
+            args
+        };
         // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
         // lvalue-method writeback builtins (`$p.value = X` / `.value--`,
         // `@a.head = v`, `%h.AT-KEY(k) = v`, `@a.first(...) = v`, ...) mutate

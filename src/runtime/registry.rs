@@ -82,6 +82,24 @@ pub(crate) struct Registry {
     pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
+    /// ADR-0067 slice 3a: has any user method with a **raw invocant**
+    /// (`method m(\S:)`, `method m($s is raw:)`) ever been registered?
+    ///
+    /// A negative pre-filter for `Interpreter::method_returns_raw_invocant`,
+    /// which the VM consults on every `__mutsu_assign_method_lvalue` call
+    /// (i.e. on every `$obj.attr = v`). Resolving the callee there costs an MRO
+    /// walk plus a `MethodDef` clone; a raw invocant is rare enough that
+    /// virtually every program answers `false` here and skips it.
+    ///
+    /// **Set-only, never cleared** — deliberately. A stale `true` only costs
+    /// the resolve that would have happened anyway, while a spurious `false`
+    /// would silently turn the feature off, so the monotone direction is the
+    /// safe one. Maintained by the `user_candidates` mutators in
+    /// `registry_method_table.rs`, which are documented as the only writers of
+    /// that column; a `debug_assert` in the oracle re-derives the slow answer
+    /// whenever the filter says `false`, so a missed write fails the debug
+    /// `t/` suite rather than degrading silently.
+    pub(crate) any_raw_invocant_method: bool,
     /// Reverse index (ADR-0019 F4c-1): owner -> every `name` for which
     /// `(owner, name)` currently has a non-empty `user_candidates` row in
     /// [`method_entries`](Self::method_entries), i.e. exactly the names

@@ -556,6 +556,7 @@ mod methods_trans;
 mod methods_type_coerce;
 mod methods_walk;
 mod native_io;
+pub(crate) mod raw_invocant;
 mod uncaught_render;
 pub(crate) use native_io::{path_is_executable, path_is_readable, path_is_writable};
 mod native_io_special;
