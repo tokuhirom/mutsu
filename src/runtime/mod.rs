@@ -427,6 +427,7 @@ mod class_dispatch;
 mod class_introspection;
 mod ctor_phase_plan;
 mod nqp_ops;
+mod nqp_ops_builtin;
 mod nqp_ops_process;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
@@ -3108,14 +3109,20 @@ pub struct Interpreter {
     /// per call.
     pub(crate) multi_fn_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
     pub(crate) multi_fn_cache_gen: u64,
-    /// Per-name memo of "does ANY registry function key carry this base name?"
-    /// (`fn_base_name_registered`). `false` lets `resolve_function_with_types`
-    /// return `None` without scanning the whole functions map — the common case
-    /// for interpreter-native builtins like `make` / `prefix:<~>`, which
-    /// otherwise pay a full failed candidate walk on every call. Guarded by
-    /// `fn_resolve_gen` like `multi_candidates_cache`.
-    pub(crate) fn_base_name_cache: rustc_hash::FxHashMap<Symbol, bool>,
-    pub(crate) fn_base_name_cache_gen: u64,
+    /// Registry function keys grouped by their BASE name — the index behind
+    /// [`Interpreter::fn_keys_for_base`].
+    ///
+    /// Every candidate key a name-keyed dispatch can match (`Pkg::name`,
+    /// `Pkg::name/<arity>`, `Pkg::name/<arity>:<types>`, `…__m<n>`) reduces to
+    /// the same base name, so a candidate gather that used to iterate the whole
+    /// functions map — several times per call, formatting a prefix `String` per
+    /// package and resolving every key back to a `&str` — iterates a handful of
+    /// keys instead. Filled lazily per base name and invalidated by
+    /// `fn_resolve_gen`, like the other generation-guarded caches (and audited
+    /// against a fresh scan in debug builds, so a registry mutation that misses
+    /// its generation bump fails CI rather than silently mis-dispatching).
+    pub(crate) fn_keys_by_base: rustc_hash::FxHashMap<Symbol, std::sync::Arc<[Symbol]>>,
+    pub(crate) fn_keys_by_base_gen: u64,
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
     pub(crate) light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), (Symbol, u64)>,

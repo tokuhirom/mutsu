@@ -69,44 +69,80 @@ impl Interpreter {
     /// cheap negative gate for [`Self::resolve_function_with_types`]. When
     /// this is `false`, no lookup pattern in the resolver (qualified, typed,
     /// arity-keyed, flexible-arity, package-searched) can possibly match, so
-    /// the resolver returns `None` without walking the registry. Memoized per
-    /// name in `fn_base_name_cache`, invalidated by `fn_resolve_gen` (bumped
-    /// on every function registration/removal).
+    /// the resolver returns `None` without walking the registry. Answered from
+    /// the [`Self::fn_keys_for_base`] index, invalidated by `fn_resolve_gen`
+    /// (bumped on every function registration/removal).
     pub(crate) fn fn_base_name_registered(&mut self, name: &str) -> bool {
-        if self.fn_base_name_cache_gen != self.fn_resolve_gen {
-            self.fn_base_name_cache.clear();
-            self.fn_base_name_cache_gen = self.fn_resolve_gen;
+        let keys = self.fn_keys_for_base(name);
+        // Debug-only staleness audit, placed HERE rather than inside
+        // `fn_keys_for_base`: the resolver asks this negative gate exactly once
+        // per resolution but reaches the index several times, so auditing at
+        // the gate keeps the debug `prove t/` cost at the one full scan it
+        // already paid before the index existed, while checking strictly more
+        // (the whole key list, not just whether the base is present). A
+        // functions-map mutation that missed its `fn_resolve_gen` bump then
+        // fails CI with a located panic instead of surfacing as a silent wrong
+        // "Unknown function" — or a silently missing multi candidate.
+        #[cfg(debug_assertions)]
+        {
+            let base = function_key_base_name(name);
+            let fresh = self.collect_fn_keys_for_base(base);
+            let mut a: Vec<&str> = fresh.iter().map(|k| k.as_str()).collect();
+            let mut b: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
+            a.sort_unstable();
+            b.sort_unstable();
+            assert_eq!(
+                a, b,
+                "stale fn_keys_by_base entry for {name:?} (base {base:?}): \
+                 a registry functions-map mutation missed its fn_resolve_gen \
+                 bump — see fn_keys_for_base in dispatch_resolve.rs"
+            );
+        }
+        !keys.is_empty()
+    }
+
+    /// Every registry function key whose BASE name is `name`'s base name.
+    ///
+    /// The order is the functions map's own iteration order, captured once per
+    /// generation — so a gather sees a *stable* candidate order within a
+    /// generation rather than a fresh hash order each call. Ranking still
+    /// happens in `sort_candidates_by_specificity`, whose tie-breakers
+    /// (declaration stamp, then key string) are what actually decide.
+    ///
+    /// This is the index every name-keyed candidate gather runs on. The
+    /// resolver's lookup patterns — the exact key `Pkg::name`, the arity keys
+    /// `Pkg::name/<arity>`, the typed keys `Pkg::name/<arity>:<types>`, and the
+    /// `__m<n>` multi suffixes — all reduce to the same base name under
+    /// [`function_key_base_name`], so a gather can iterate this handful of keys
+    /// instead of the whole functions map. An empty slice is also the negative
+    /// gate [`Self::fn_base_name_registered`] answers with.
+    ///
+    /// Filled lazily per base name and dropped wholesale when `fn_resolve_gen`
+    /// moves, which every function registration/removal bumps.
+    pub(crate) fn fn_keys_for_base(&mut self, name: &str) -> std::sync::Arc<[Symbol]> {
+        if self.fn_keys_by_base_gen != self.fn_resolve_gen {
+            self.fn_keys_by_base.clear();
+            self.fn_keys_by_base_gen = self.fn_resolve_gen;
         }
         let base = function_key_base_name(name);
         let base_sym = Symbol::intern(base);
-        if let Some(&cached) = self.fn_base_name_cache.get(&base_sym) {
-            // Debug-only staleness audit: recompute and compare, so a
-            // functions-map mutation that missed its `fn_resolve_gen` bump
-            // fails CI's debug `prove t/` with a located panic instead of
-            // surfacing as a silent wrong "Unknown function" in release.
-            #[cfg(debug_assertions)]
-            {
-                let fresh = self
-                    .registry()
-                    .functions
-                    .keys()
-                    .any(|k| function_key_base_name(&k.resolve()) == base);
-                assert_eq!(
-                    fresh, cached,
-                    "stale fn_base_name_cache entry for {name:?} (base {base:?}): \
-                     a registry functions-map mutation missed its fn_resolve_gen \
-                     bump — see fn_base_name_registered in dispatch_resolve.rs"
-                );
-            }
-            return cached;
+        if let Some(cached) = self.fn_keys_by_base.get(&base_sym) {
+            // Staleness is audited once per resolution in
+            // `fn_base_name_registered`, not here — see the note there.
+            return cached.clone();
         }
-        let found = self
-            .registry()
+        let keys = self.collect_fn_keys_for_base(base);
+        self.fn_keys_by_base.insert(base_sym, keys.clone());
+        keys
+    }
+
+    fn collect_fn_keys_for_base(&self, base: &str) -> std::sync::Arc<[Symbol]> {
+        self.registry()
             .functions
             .keys()
-            .any(|k| function_key_base_name(&k.resolve()) == base);
-        self.fn_base_name_cache.insert(base_sym, found);
-        found
+            .filter(|k| function_key_base_name(k.as_str()) == base)
+            .copied()
+            .collect()
     }
 
     pub(super) fn sort_candidates_by_specificity(
@@ -133,7 +169,13 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<Arc<FunctionDef>> {
         self.clear_pending_dispatch_error();
-        if let Some(def) = self.resolve_function_with_types(name, arg_values) {
+        // Consult the sound multi-resolution cache (`func_multi_resolve_cache`)
+        // rather than resolving from scratch: for a type+arity-deterministic
+        // name it answers what `resolve_function_with_types` would, without the
+        // per-call candidate gather + match + rank + dedup. Un-keyable
+        // arguments, value-dependent candidates and ambiguity all resolve fresh
+        // inside it, so this is behaviour-preserving.
+        if let Some(def) = self.resolve_function_multi_cached(name, arg_values) {
             return Some(def);
         }
         if self.pending_dispatch_error.is_some() {
@@ -163,22 +205,24 @@ impl Interpreter {
     /// `multi cannon-name(Str $l, Version $v = Version)` even though the
     /// identical bare call resolved fine.
     pub(super) fn qualified_flexible_arity_candidates(
-        &self,
+        &mut self,
         name: &str,
     ) -> Vec<(String, Arc<FunctionDef>)> {
         let prefix = format!("{}/", name);
-        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
+        let base_keys = self.fn_keys_for_base(name);
+        let registry = self.registry();
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = base_keys
             .iter()
-            .filter(|(k, def)| {
-                k.resolve().starts_with(&prefix)
+            .filter_map(|k| registry.functions.get(k).map(|def| (k.as_str(), def)))
+            .filter(|(ks, def)| {
+                ks.starts_with(&prefix)
                     && def.param_defs.iter().any(|p| {
                         !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
                     })
             })
-            .map(|(k, def)| (k.resolve(), def.clone()))
+            .map(|(ks, def)| (ks.to_string(), def.clone()))
             .collect();
+        drop(registry);
         self.sort_candidates_by_specificity(&mut candidates);
         candidates
     }
@@ -285,18 +329,21 @@ impl Interpreter {
             let untyped_key = format!("{}/{}", name, arity);
             let untyped_key_sym = Symbol::intern(&untyped_key);
             let untyped_m_prefix = format!("{}__m", untyped_key);
-            let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(key, _)| {
-                    let ks = key.resolve();
-                    ks.starts_with(&prefix)
-                        || **key == untyped_key_sym
-                        || ks.starts_with(&untyped_m_prefix)
-                })
-                .map(|(key, def)| (key.resolve(), def.clone()))
-                .collect();
+            let base_keys = self.fn_keys_for_base(name);
+            let mut candidates: Vec<(String, Arc<FunctionDef>)> = {
+                let registry = self.registry();
+                base_keys
+                    .iter()
+                    .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
+                    .filter(|(key, _)| {
+                        let ks = key.as_str();
+                        ks.starts_with(&prefix)
+                            || **key == untyped_key_sym
+                            || ks.starts_with(&untyped_m_prefix)
+                    })
+                    .map(|(key, def)| (key.resolve(), def.clone()))
+                    .collect()
+            };
             self.sort_candidates_by_specificity(&mut candidates);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
                 return Some(def);
@@ -307,16 +354,18 @@ impl Interpreter {
             // not found by the arity-keyed lookup above, so collect them
             // separately (across all arities under `name/`) and dispatch on them.
             let subsig_prefix = format!("{}/", name);
-            let mut subsig_candidates: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(key, def)| {
-                    key.resolve().starts_with(&subsig_prefix)
-                        && def.param_defs.iter().any(|p| p.is_capture_subsignature())
-                })
-                .map(|(key, def)| (key.resolve(), def.clone()))
-                .collect();
+            let mut subsig_candidates: Vec<(String, Arc<FunctionDef>)> = {
+                let registry = self.registry();
+                base_keys
+                    .iter()
+                    .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
+                    .filter(|(key, def)| {
+                        key.as_str().starts_with(&subsig_prefix)
+                            && def.param_defs.iter().any(|p| p.is_capture_subsignature())
+                    })
+                    .map(|(key, def)| (key.resolve(), def.clone()))
+                    .collect()
+            };
             if !subsig_candidates.is_empty() {
                 self.sort_candidates_by_specificity(&mut subsig_candidates);
                 if let Some(def) =
@@ -373,18 +422,21 @@ impl Interpreter {
                     let q_untyped_key = format!("{qualified}/{}", arity);
                     let q_untyped_key_sym = Symbol::intern(&q_untyped_key);
                     let q_untyped_m_prefix = format!("{}__m", q_untyped_key);
-                    let mut q_candidates: Vec<(String, Arc<FunctionDef>)> = self
-                        .registry()
-                        .functions
-                        .iter()
-                        .filter(|(key, _)| {
-                            let ks = key.resolve();
-                            ks.starts_with(&q_prefix)
-                                || **key == q_untyped_key_sym
-                                || ks.starts_with(&q_untyped_m_prefix)
-                        })
-                        .map(|(key, def)| (key.resolve(), def.clone()))
-                        .collect();
+                    let q_base_keys = self.fn_keys_for_base(&qualified);
+                    let mut q_candidates: Vec<(String, Arc<FunctionDef>)> = {
+                        let registry = self.registry();
+                        q_base_keys
+                            .iter()
+                            .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
+                            .filter(|(key, _)| {
+                                let ks = key.as_str();
+                                ks.starts_with(&q_prefix)
+                                    || **key == q_untyped_key_sym
+                                    || ks.starts_with(&q_untyped_m_prefix)
+                            })
+                            .map(|(key, def)| (key.resolve(), def.clone()))
+                            .collect()
+                    };
                     self.sort_candidates_by_specificity(&mut q_candidates);
                     if let Some(def) =
                         self.choose_best_matching_candidate(&qualified, arg_values, q_candidates)
@@ -419,26 +471,31 @@ impl Interpreter {
             .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
             .collect();
         let mut found_multi_candidates = false;
-        let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(key, _)| {
-                let ks = key.resolve();
-                typed_prefixes.iter().any(|p| ks.starts_with(p))
-            })
-            .map(|(key, def)| (key.resolve(), def.clone()))
-            .collect();
+        let base_keys = self.fn_keys_for_base(name);
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = {
+            let registry = self.registry();
+            base_keys
+                .iter()
+                .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
+                .filter(|(key, _)| {
+                    let ks = key.as_str();
+                    typed_prefixes.iter().any(|p| ks.starts_with(p))
+                })
+                .map(|(key, def)| (key.resolve(), def.clone()))
+                .collect()
+        };
         for key in &generic_keys {
             let key_sym = Symbol::intern(key);
             let m_prefix = format!("{}__m", key);
-            let more: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(k, _)| **k == key_sym || k.resolve().starts_with(&m_prefix))
-                .map(|(k, def)| (k.resolve(), def.clone()))
-                .collect();
+            let more: Vec<(String, Arc<FunctionDef>)> = {
+                let registry = self.registry();
+                base_keys
+                    .iter()
+                    .filter_map(|k| registry.functions.get(k).map(|def| (k, def)))
+                    .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
+                    .map(|(k, def)| (k.resolve(), def.clone()))
+                    .collect()
+            };
             if !more.is_empty() {
                 found_multi_candidates = true;
             }

@@ -427,7 +427,7 @@ impl Interpreter {
                 }
             }
             // Function set changed: invalidate the name-keyed resolution caches
-            // (multi_candidates_cache / fn_base_name_cache).
+            // (multi_candidates_cache / fn_keys_by_base).
             self.fn_resolve_gen += 1;
 
             let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self

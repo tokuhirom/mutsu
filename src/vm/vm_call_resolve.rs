@@ -55,7 +55,13 @@ impl Interpreter {
             self.fn_resolve_cache.clear();
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
-        let resolved_def = loan_env!(self, resolve_function_with_types(name, args));
+        // Same sound multi-resolution cache the interpreter's dispatch uses:
+        // `use_cache` above deliberately withholds the *compiled-key* cache from
+        // a multi name (its winner depends on argument types), but the
+        // resolution itself is still cacheable whenever the candidates are
+        // type+arity deterministic, and for a `multi` this call was otherwise a
+        // full candidate walk on every single dispatch.
+        let resolved_def = loan_env!(self, resolve_function_multi_cached(name, args));
         let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.

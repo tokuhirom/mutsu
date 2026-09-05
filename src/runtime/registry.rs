@@ -1196,7 +1196,7 @@ impl Registry {
             .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
         self.functions.keys().any(|k| {
-            let ks = k.resolve();
+            let ks = k.as_str();
             prefixes.iter().any(|p| ks.starts_with(p))
         })
     }
@@ -1221,7 +1221,7 @@ impl Registry {
             .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
         self.functions.keys().any(|k| {
-            let ks = k.resolve();
+            let ks = k.as_str();
             prefixes.iter().any(|p| ks.starts_with(p))
         })
     }

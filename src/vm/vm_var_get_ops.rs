@@ -40,6 +40,18 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // A no-paren 0-arg `nqp::`-op term (`my $t = nqp::time;`, written that
+        // way all over rakudo's own Test.rakumod) dispatches straight to the op
+        // table. The `nqp::` namespace is reserved, so none of the bareword
+        // resolution below — env probes that format a `&name` key, the type and
+        // enum lookups, and an O(registry) `has_multi_function` scan — can ever
+        // claim the name; running them anyway was a full registry walk twice per
+        // assertion under the vendored `Test`.
+        if let Some(op) = name.strip_prefix("nqp::") {
+            let result = self.dispatch_nqp_op(op, &[])?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // A bare `_` term is never a declared name in raku (the topic is `$_`);
         // rakudo reports it as X::Undeclared::Symbols at compile time.
         if name == "_" {
@@ -362,15 +374,6 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
-        } else if name.starts_with("nqp::") {
-            // A no-paren 0-arg `nqp::`-op term dispatches through the builtin nqp
-            // compat layer, not the qualified symbol lookup below (which would
-            // raise "Could not find symbol '&gethostname' in 'nqp'"). This holds
-            // for the whole reserved `nqp::` namespace, not just the one op that
-            // first needed it: `nqp::time` is written without parentheses all
-            // over rakudo's own `Test.rakumod`. An op mutsu does not implement
-            // still fails loudly in the unsupported-op guard.
-            self.call_function(name, Vec::new())?
         } else if name.contains("::") {
             // Check if this is an access to a non-existent enum variant
             if let Some((pkg, sym)) = name.rsplit_once("::")
