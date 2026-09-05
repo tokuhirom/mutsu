@@ -1518,6 +1518,15 @@ fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![leaf_field(None, v.clone())],
             })
         }
+        // An interpolated code block (`"a{ $x }b"`) is a segment like any other,
+        // and raku renders it as a plain `Block`. mutsu wraps the block in a
+        // `DoStmt` (that is how the parser makes it an expression), which has no
+        // RakuAST counterpart, so unwrap it here rather than rendering the
+        // wrapper. Measured against rakudo 2026.07.
+        Expr::DoStmt(inner) => match inner.as_ref() {
+            Stmt::Block(body) => block_node(body),
+            _ => convert_expr(expr),
+        },
         other => convert_expr(other),
     }
 }

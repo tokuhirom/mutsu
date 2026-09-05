@@ -1017,6 +1017,15 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 let ValueView::RakuAst(seg) = s.view() else {
                     return Err(unsupported(node));
                 };
+                // An interpolated code block (`"a{ $x }b"`) is a `Block`
+                // segment, but as a *segment* it is evaluated, not a closure
+                // value. mutsu spells that `DoStmt(Block)`; lowering it through
+                // the ordinary expression path would build a closure and
+                // interpolate its stringification instead of its result.
+                if seg.class == RakuAstClass::Block {
+                    parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(seg)?))));
+                    continue;
+                }
                 parts.push(lower_expr(seg)?);
             }
             Ok(Expr::StringInterpolation(parts))
