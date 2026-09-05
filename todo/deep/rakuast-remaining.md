@@ -77,6 +77,13 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Two internal leaks.* An injected `__mutsu_test_callsite_line` named argument
+  rendered as a real argument on every listop call (and filtering it out exposed
+  raku's omission of an empty `args` field), and the exclusive range operators
+  had no row in `token_kind_to_op_name`, so `1..^3` rendered
+  `Infix.new("DotDotCaret")` — a Rust variant name. Pinned by
+  `t/rakuast-internal-arg-and-range-ops.t`; see
+  [the news entry](../../news/2026-09/rakuast-internal-arg-and-range-op-leaks.md).
 - *`until` / `repeat … until`.* Both were rendered *wrongly* (as a `While` over a
   negated condition) rather than refused; `Stmt::While`/`Stmt::Loop` already kept
   an `is_until` flag the converter did not read. Found by a gist-comparison sweep

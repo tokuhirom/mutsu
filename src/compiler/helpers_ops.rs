@@ -81,6 +81,17 @@ pub(crate) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::SetStrictSuperset => "(>)".to_string(),
         TokenKind::PlusPlus => "++".to_string(),
         TokenKind::MinusMinus => "--".to_string(),
+        // The exclusive range family. Without these rows they fell to the
+        // `{:?}` fallback below, so `.AST` rendered `Infix.new("DotDotCaret")`
+        // — a Rust variant name, not an operator anyone wrote.
+        TokenKind::DotDotCaret => "..^".to_string(),
+        TokenKind::CaretDotDot => "^..".to_string(),
+        TokenKind::CaretDotDotCaret => "^..^".to_string(),
+        TokenKind::DotDotDotCaret => "...^".to_string(),
+        // A `TokenKind` with no spelling here renders its Rust variant name.
+        // That is fine for runtime dispatch (the lookup simply misses), but it
+        // is how an internal name leaks into `.AST` — see the range rows above.
+        // Add a row rather than relying on this.
         _ => format!("{:?}", op),
     }
 }
