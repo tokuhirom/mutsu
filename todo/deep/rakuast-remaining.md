@@ -75,6 +75,18 @@ the parser/internal AST, not guessing during RakuAST conversion.
   `MetaInfix::Hyper(FunctionInfix(Var::Lexical))` with the measured DWIM fields,
   and lowers back through the existing `Expr::HyperFuncOp` execution path.
 
+**Closed 2026-09-05** (read direction, pinned by
+`t/rakuast-method-return-type.t`; see
+[the news entry](../../news/2026-09/rakuast-method-return-types.md)):
+
+- *Signature return types on methods.* `method m(--> Int)`,
+  `method m() returns Int`, and `method m() of Int` render the same three node
+  shapes a `sub` does. The parser now keeps its `__return_via_*` spelling
+  markers in `MethodDecl.custom_traits` (method trait application skips
+  `__`-prefixed entries), so the converter reads the spelling instead of
+  guessing. The write direction is unaffected: `RakuAST::Method` has no `EVAL`
+  lowering yet at all, which is its own slice.
+
 Still open:
 
 - `.=` and Whatever compound autoprime. `$x .= Str` desugars to a plain `=` over
@@ -85,12 +97,6 @@ Still open:
   `EVAL` reuses the existing execution expansion. The `* += 1` Whatever
   autoprime path remains a separate boundary because it still builds its
   closure before conversion; ADR-0033 §2.5 tracks that case.
-- Signature return types **on methods**. `method m(--> Int)` is still deferred:
-  `src/parser/stmt/sub_param/method_decl.rs` filters every `__`-prefixed marker
-  out of `MethodDecl.custom_traits`, so `-->` and `returns` are indistinguishable
-  there. Fixing it means either plumbing the spelling through a dedicated
-  `MethodDecl` field or keeping the marker and teaching the method trait-application
-  loop (`registration_class_body_method.rs`) to skip `__`-prefixed names.
 - The remaining hyper forms: hyper *prefix* (`-<<@a`, desugared to a
   `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`, desugared to a
   hyper `AT-POS` method call), and `@a<<.abs` (which mutsu's parser currently
