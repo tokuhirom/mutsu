@@ -74,6 +74,9 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             is_until: false,
         }),
         RakuAstClass::StatementFor => lower_for(node),
+        RakuAstClass::Class => lower_class(node),
+        RakuAstClass::Role => lower_role(node),
+        RakuAstClass::Method => lower_method(node),
         // A named `sub f { … }` is a declaration; a nameless one (`sub ($x) { … }`,
         // `sub { … }`) is a closure *value*, so it lowers through the expression
         // path instead.
@@ -236,6 +239,92 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_test_assertion: false,
         supersede: false,
         custom_traits,
+    })
+}
+
+/// `class NAME { … }` -> `Stmt::ClassDecl`. The body is a `Block` whose
+/// statements are the class body (methods, attributes, …), lowered by the same
+/// statement dispatch. Only the plain form round-trips: the converter refuses
+/// to *read* a class with inheritance, scope, a repr, or traits, so nothing
+/// lowered here can carry them either.
+fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let body = lower_block(named_child(node, "body")?)?;
+    Ok(Stmt::ClassDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        name_expr: None,
+        parents: Vec::new(),
+        class_is_rw: false,
+        is_hidden: false,
+        is_lexical: false,
+        hidden_parents: Vec::new(),
+        does_parents: Vec::new(),
+        repr: None,
+        body,
+        language_version: crate::parser::current_language_version(),
+        custom_traits: Vec::new(),
+        is_unit: false,
+        // A hand-built or lowered declaration has no parse-time site, which is
+        // exactly what `decl_id: 0` means.
+        decl_id: 0,
+        parent_args: Vec::new(),
+    })
+}
+
+/// `role NAME { … }` -> `Stmt::RoleDecl`. A role's body is a `RoleBody` (not a
+/// plain `Block`) wrapping the `Blockoid`, matching what the converter renders.
+/// Parameterised roles, export, `is rw`, and traits are refused on the read
+/// side, so nothing lowered here carries them.
+fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let role_body = named_child(node, "body")?;
+    if role_body.class != RakuAstClass::RoleBody {
+        return Err(unsupported(node));
+    }
+    let body = lower(named_child_or_positional(named_child(role_body, "body")?)?)?;
+    Ok(Stmt::RoleDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        type_params: Vec::new(),
+        type_param_defs: Vec::new(),
+        is_export: false,
+        export_tags: Vec::new(),
+        body,
+        is_rw: false,
+        language_version: crate::parser::current_language_version(),
+        custom_traits: Vec::new(),
+    })
+}
+
+/// `method NAME (…) { … }` -> `Stmt::MethodDecl`, the `Method` counterpart of
+/// [`lower_sub`]. The return type comes back through the same
+/// `signature.returns` / `Trait::Returns` / `Trait::Of` reading `lower_sub`
+/// uses, so all three spellings the converter renders lower back.
+fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let (params, param_defs) = signature_positional_params(node)?;
+    let (return_type, custom_traits) = routine_return_type(node)?;
+    let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+    Ok(Stmt::MethodDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        name_expr: None,
+        params,
+        param_defs,
+        body,
+        multi: false,
+        is_rw: false,
+        is_raw: false,
+        is_private: false,
+        is_our: false,
+        is_my: false,
+        is_submethod: false,
+        our_variable_form: false,
+        return_type,
+        is_default_candidate: false,
+        deprecated_message: None,
+        handles: Vec::new(),
+        custom_traits,
+        is_export: false,
+        export_tags: Vec::new(),
     })
 }
 
@@ -604,6 +693,11 @@ fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
 fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `scope => "has"` is an attribute declaration, not a variable one; it is
+    // the only scope that lowers (the converter renders no other).
+    if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
+        return lower_attribute(node);
+    }
     if node.fields.iter().any(|f| {
         matches!(
             f.name,
@@ -648,6 +742,65 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: Vec::new(),
         custom_traits,
         where_constraint: None,
+    })
+}
+
+/// `has [Type] $.x` -> `Stmt::HasDecl`. The converter renders an attribute as a
+/// `VarDeclaration::Simple` with `scope => "has"` and a `twigil` (`.` public /
+/// `!` private); everything richer (traits, smileys, `required`, `where`,
+/// aliases, `my`/`our` attributes) is refused on the read side, so nothing that
+/// reaches here can carry it. An explicit `= EXPR` default is a
+/// `Trait::WillBuild` in raku, which the converter also refuses, so an
+/// `initializer` here would be a shape it never produced.
+fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node
+        .fields
+        .iter()
+        .any(|f| matches!(f.name, Some("traits") | Some("initializer")))
+    {
+        return Err(unsupported(node));
+    }
+    let sigil = leaf_str(node, "sigil")?;
+    let mut chars = sigil.chars();
+    let (Some(sigil_char), None) = (chars.next(), chars.next()) else {
+        return Err(unsupported(node));
+    };
+    let is_public = match leaf_str(node, "twigil")?.as_str() {
+        "." => true,
+        "!" => false,
+        _ => return Err(unsupported(node)),
+    };
+    let desigil = match positional_leaf(named_child(node, "desigilname")?)?.view() {
+        ValueView::Str(s) => s.to_string(),
+        _ => return Err(unsupported(node)),
+    };
+    let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
+        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        None => None,
+    };
+    Ok(Stmt::HasDecl {
+        name: crate::symbol::Symbol::intern(&desigil),
+        is_public,
+        // A typed attribute carries an implicit `BareWord(<TypeName>)` default
+        // in the internal AST; the parser plants it, and the converter skips it
+        // on the way out, so re-plant it here to keep the two sides symmetric.
+        default: type_constraint.as_ref().map(|t| Expr::BareWord(t.clone())),
+        handles: Vec::new(),
+        is_rw: false,
+        is_readonly: false,
+        type_constraint,
+        type_smiley: None,
+        is_required: None,
+        sigil: sigil_char,
+        where_constraint: None,
+        is_alias: false,
+        is_our: false,
+        is_my: false,
+        is_default: None,
+        is_type: None,
+        deprecated_message: None,
+        is_built: None,
+        unknown_traits: Vec::new(),
     })
 }
 

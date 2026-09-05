@@ -395,6 +395,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             multi,
             is_rw,
+            is_raw,
             is_private,
             is_our,
             is_my,
@@ -417,6 +418,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if name_expr.is_some()
                 || *multi
                 || *is_rw
+                || *is_raw
                 || *is_private
                 || *is_our
                 || *is_my
