@@ -1353,6 +1353,11 @@ pub(crate) enum Stmt {
         body: Vec<Stmt>,
         multi: bool,
         is_rw: bool,
+        /// `is raw` trait. Together with `is_rw` and a `return-rw` in the body
+        /// this forms the one rw-capability oracle a method is asked about
+        /// (`Interpreter::method_is_rw_capable`, ADR-0067 slice 2) — the same
+        /// rule `FunctionDef` already states for a `sub`.
+        is_raw: bool,
         is_private: bool,
         is_our: bool,
         is_my: bool,

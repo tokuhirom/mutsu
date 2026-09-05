@@ -95,6 +95,7 @@ impl Interpreter {
                         param_defs: proto.param_defs.clone(),
                         body: std::sync::Arc::new(proto.body.clone()),
                         is_rw: false,
+                        is_raw: false,
                         is_private: false,
                         is_multi: false,
                         is_my: false,

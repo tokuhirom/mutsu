@@ -51,7 +51,10 @@ impl Interpreter {
             &method_params,
             &def.param_defs,
             &def.body,
-            def.is_rw,
+            // The rw tail is the container the routine hands back, and that is
+            // declared by `is rw` OR `is raw` (ADR-0067 slice 2) — mirroring
+            // the main-pass `compile_method_body` call and the `sub` path.
+            def.is_rw || def.is_raw,
         );
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();

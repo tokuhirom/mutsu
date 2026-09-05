@@ -159,6 +159,7 @@ fn method_decl_body_with_my(
             body,
             multi,
             is_rw: traits.is_rw,
+            is_raw: traits.is_raw,
             is_private,
             is_our,
             is_my,
