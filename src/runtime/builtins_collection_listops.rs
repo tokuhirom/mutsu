@@ -106,11 +106,22 @@ impl Interpreter {
         // over. Without this, `join(">", @a but role { method Str {...} })`
         // rendered the base list while `print` on the same value rendered the
         // role's `Str`.
+        //
+        // A `Proxy` element is the same shape of problem for the same reason
+        // (ADR-0040 §9.2): rendering one means running its FETCH, which a pure
+        // helper cannot do. `"@a[]"` interpolation compiles to this very
+        // `join(" ", @a)` call, so this is where that spelling gets its FETCH —
+        // the three method-dispatch guards never see it.
         let mut rendered = Vec::with_capacity(rest.len());
         for v in &rest {
-            match self.join_prerender_user_stringifier(v)? {
+            let v = if Self::holds_nested_proxy(v) {
+                self.resolve_proxies_in_value(v)?
+            } else {
+                v.clone()
+            };
+            match self.join_prerender_user_stringifier(&v)? {
                 Some(replacement) => rendered.push(replacement),
-                None => rendered.push(v.clone()),
+                None => rendered.push(v),
             }
         }
         Ok(Value::str(

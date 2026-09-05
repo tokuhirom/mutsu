@@ -159,7 +159,10 @@ impl Interpreter {
         let caller_code = self.current_code;
         let mut parts = Vec::new();
         for v in &values {
-            let v = loan_env!(self, auto_fetch_proxy(v))?;
+            // ADR-0040 §9.2: `say` renders its argument, so a `Proxy` anywhere
+            // inside it FETCHes — not just a top-level one, which is all this
+            // used to do (`say (1, $p, 3)` printed `(1 Proxy 3)`).
+            let v = loan_env!(self, resolve_proxies_in_value(v))?;
             check_rat_divide_by_zero(&v)?;
             check_unhandled_failure(&v)?;
             // Resolve bound-element sentinels inside arrays before gist
@@ -187,10 +190,12 @@ impl Interpreter {
             let caller_code = self.current_code;
             let mut parts = Vec::new();
             for v in &values {
-                if needs_method_dispatch(v) {
-                    parts.push(loan_env!(self, render_gist_value(v))?);
+                // `note` renders exactly as `say` does (ADR-0040 §9.2).
+                let v = loan_env!(self, resolve_proxies_in_value(v))?;
+                if needs_method_dispatch(&v) {
+                    parts.push(loan_env!(self, render_gist_value(&v))?);
                 } else {
-                    parts.push(runtime::gist_value(v));
+                    parts.push(runtime::gist_value(&v));
                 }
             }
             self.reconcile_caller_after_internal_dispatch(caller_code);
@@ -224,7 +229,8 @@ impl Interpreter {
         let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
-            let v = loan_env!(self, auto_fetch_proxy(v))?;
+            // Deep, for the reason `say` is — see ADR-0040 §9.2.
+            let v = loan_env!(self, resolve_proxies_in_value(v))?;
             check_rat_divide_by_zero(&v)?;
             if needs_method_dispatch(&v) {
                 content.push_str(&loan_env!(self, render_str_value(&v)));
@@ -245,9 +251,11 @@ impl Interpreter {
         let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
-            check_rat_divide_by_zero(v)?;
+            // `print` renders exactly as `put` does (ADR-0040 §9.2).
+            let v = loan_env!(self, resolve_proxies_in_value(v))?;
+            check_rat_divide_by_zero(&v)?;
             // For Junctions, thread: call .Str on each element recursively
-            self.collect_str_threaded(v, &mut content)?;
+            self.collect_str_threaded(&v, &mut content)?;
         }
         self.reconcile_caller_after_internal_dispatch(caller_code);
         loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;

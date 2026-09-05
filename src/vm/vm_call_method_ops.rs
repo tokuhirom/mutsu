@@ -713,6 +713,23 @@ impl Interpreter {
         } else {
             target
         };
+        // ADR-0040 §9.2: a renderer resolves its receiver's `Proxy` elements
+        // before rendering, because Rakudo renders a container by calling
+        // `.gist`/`.Str`/`.raku` on each element and a method call deconts its
+        // invocant. The interpreter-entry twin of this guard lives in
+        // `call_method_with_values_inner`; both are needed for the same reason
+        // `delegates_to_array_storage` is duplicated — a `.gist` spelled as a
+        // literal method call never reaches the interpreter entry.
+        //
+        // The name test comes first and is a `matches!` over a `&str`, so the
+        // element scan only runs for a call that is about to walk every element
+        // anyway.
+        let target = if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target)
+        {
+            loan_env!(self, resolve_proxies_in_value(&target))?
+        } else {
+            target
+        };
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Checked here rather than after
         // ordinary resolution because a class's methods are compiled to bytecode
