@@ -77,6 +77,13 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Class / role / method / attribute lowering.* `EVAL` accepts
+  `RakuAST::Class`, `RakuAST::Role`, `RakuAST::Method`, and the attribute form
+  of `VarDeclaration::Simple` (`scope => "has"`), lowering them to
+  `Stmt::ClassDecl` / `RoleDecl` / `MethodDecl` / `HasDecl`. The declaration
+  cluster had been readable since Phase 2 slice 13 but not round-trippable.
+  Pinned by `t/rakuast-eval-class.t`; see
+  [the news entry](../../news/2026-09/rakuast-class-role-method-lowering.md).
 - *Anonymous subs with explicit signatures.* `sub ($x) { }` renders as a
   nameless `RakuAST::Sub` (its parameters carrying the implicit
   `Type::Setting(Any)` a pointy block's do not) and lowers back through `EVAL`;
@@ -113,6 +120,14 @@ Still open:
 - `with` / `without`. Desugared at parse time into a `__with_tmp_N` temp var plus
   an `if` on `.defined`, so there is no statement to map to
   `Statement::With` / `Statement::Without`.
+- A reference to a user-declared type by bare name. `class C { }; C.new` reads
+  `C` as `Expr::BareWord`, and only *builtin* type names
+  (`is_known_type_constraint`) convert to `Type::Simple`, so any program that
+  declares a class and then uses it is a `.AST` boundary. This is what keeps
+  `t/rakuast-eval-class.t` calling into the `EVAL`'d type object from the
+  outside instead of using the class inside the lowered program. Closing it
+  needs the converter to know which names the same compilation unit declared,
+  which the read side does not currently track.
 - Grammar declarations. `grammar G { }` is a `Stmt::ClassDecl` with
   `parents = ["Grammar"]`, so it hits the class-inheritance boundary instead of
   producing `RakuAST::Grammar` + `TokenDeclaration` + the regex node tree.
