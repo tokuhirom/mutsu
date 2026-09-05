@@ -77,6 +77,11 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *`andthen` / `orelse` / `notandthen` lowering.* raku models these as list
+  infixes, so they render as `ApplyListInfix` — the node a comma list uses — and
+  only `,` lowered. They now fold back into mutsu's left-nested `Expr::Binary`
+  shape. Pinned by `t/rakuast-eval-andthen.t`; see
+  [the news entry](../../news/2026-09/rakuast-andthen-family-lowering.md).
 - *Reduction and arity-0 pointy-block lowering.* `EVAL` lowers
   `RakuAST::Term::Reduce` (`[+] @a` and the triangle `[\+] @a`, whose marker
   mutsu keeps inside the operator string) and a zero-parameter

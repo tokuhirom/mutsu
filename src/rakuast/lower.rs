@@ -1131,13 +1131,17 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             args: arg_exprs(node)?,
         }),
         // A comma list `1, 2, 3` (or parenthesised `(1, 2, 3)`) -> ApplyListInfix
-        // with a `,` infix. Other list infixes (`Z`/`X`/...) are deferred.
+        // with a `,` infix. `andthen` / `orelse` / `notandthen` are list infixes
+        // in raku too, but mutsu keeps them as ordinary left-nested `Binary`
+        // nodes, so they fold back into that shape. Other list infixes
+        // (`Z`/`X`/...) are deferred.
         RakuAstClass::ApplyListInfix => {
             let infix = named_child(node, "infix")?;
-            match positional_leaf(infix)?.view() {
-                ValueView::Str(s) if s.as_str() == "," => {}
-                _ => return Err(unsupported(node)),
-            }
+            let infix_value = positional_leaf(infix)?;
+            let ValueView::Str(op) = infix_value.view() else {
+                return Err(unsupported(node));
+            };
+            let op = op.to_string();
             let mut items = Vec::new();
             for v in list_field(node, "operands")? {
                 let ValueView::RakuAst(child) = v.view() else {
@@ -1145,7 +1149,26 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 };
                 items.push(lower_expr(child)?);
             }
-            Ok(Expr::ArrayLiteral(items))
+            if op == "," {
+                return Ok(Expr::ArrayLiteral(items));
+            }
+            let token = match op.as_str() {
+                "andthen" => crate::token_kind::TokenKind::AndThen,
+                "orelse" => crate::token_kind::TokenKind::OrElse,
+                "notandthen" => crate::token_kind::TokenKind::NotAndThen,
+                _ => return Err(unsupported(node)),
+            };
+            // These chain left-associatively: `a andthen b andthen c` is
+            // `(a andthen b) andthen c`, which is how the parser builds it.
+            let mut items = items.into_iter();
+            let Some(first) = items.next() else {
+                return Err(unsupported(node));
+            };
+            Ok(items.fold(first, |left, right| Expr::Binary {
+                left: Box::new(left),
+                op: token.clone(),
+                right: Box::new(right),
+            }))
         }
         // A postfix method call (`$x.abs`, `$x.?abs`, `$x."abs"()`), a hyper
         // method call (`@a>>.abs`), a postfix operator (`$x++`), or a positional
