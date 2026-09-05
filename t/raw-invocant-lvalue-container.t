@@ -11,7 +11,7 @@ use Test;
 # Dropping either half must keep refusing, which is what the regression
 # controls below pin. Verified byte-identical under `mutsu` and `raku`.
 
-plan 21;
+plan 29;
 
 my @mutsu-raw-seen;
 
@@ -30,6 +30,8 @@ augment class Any {
     method mutsuRawButConst(\S:) is raw { 99 }
     # a raw-invocant routine that also READS its invocant before handing it back.
     method mutsuPeek(\S:) is raw { @mutsu-raw-seen.push(S); S }
+    # a raw-invocant candidate selected by multi dispatch on a real argument.
+    multi method mutsuMulti(\S: Int $i) is raw { S }
 }
 
 # --- the three rw-capable spellings, over a scalar --------------------------
@@ -138,6 +140,58 @@ augment class Any {
     my $e = MutsuRawE.new(v => 1);
     $e.v = 7;
     is $e.v, 7, 'an ordinary is rw attribute accessor still assigns normally';
+}
+
+# --- the location the name denotes, in every frame shape --------------------
+#
+# A name that ALREADY denotes a location must hand out that location, never a
+# freshly minted one. The `is rw` loop parameter below is the row that proves
+# it: it aliases the source element's own container, and minting a new cell
+# instead silently dropped the write.
+
+{
+    sub mutsu-raw-in-a-sub() { my $x = 1; $x.mutsuRawInv = 5; $x }
+    is mutsu-raw-in-a-sub(), 5, 'a plain local of a sub frame';
+}
+{
+    my $outer = 1;
+    my $closure = { $outer.mutsuRawInv = 7 };
+    $closure();
+    is $outer, 7, 'a captured-outer scalar written from inside a closure';
+}
+{
+    my @a = 1, 2;
+    for @a -> $e is rw { $e.mutsuRawInv = 3 }
+    is-deeply @a, [3, 3], 'an is rw loop parameter aliases the source element';
+}
+{
+    my @a = 1, 2;
+    for @a <-> $e { $e.mutsuRawInv = 4 }
+    is-deeply @a, [4, 4], 'and so does the <-> spelling';
+}
+{
+    my $n = 'mutsuRawInv';
+    my $a = 1;
+    $a."$n"() = 9;
+    is $a, 9, 'a runtime method name resolves the same declaration';
+}
+{
+    my $a = 1;
+    $a.mutsuMulti(2) = 4;
+    is $a, 4, 'a multi candidate selected by a real argument';
+}
+
+# --- invocant types other than Int ------------------------------------------
+
+{
+    my $s = "str";
+    $s.mutsuRawInv = "x";
+    is $s, "x", 'a Str invocant';
+}
+{
+    my $u;
+    $u.mutsuRawInv = 5;
+    is $u, 5, 'an uninitialized scalar (a type object) is still a location';
 }
 
 done-testing;

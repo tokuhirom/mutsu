@@ -1,7 +1,9 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1-2 implemented 2026-09-05; Slice 3 re-scoped into
-  3a/3b on the same day after measurement; Slices 3a, 3b, 4 and 5 open)
+- Status: Proposed (Slices 1, 2 and 3a implemented 2026-09-05; Slice 3 was
+  re-scoped into 3a/3b on the same day after measurement, and 3a's E6 row split
+  off again into the rw-attribute-accessor producer; Slices 3b, 4, 5 and the E6
+  producer open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -528,21 +530,35 @@ still held.
   exactly as given, container and all.
 
 **The global-temp decision: a global-name container route, not local promotion.**
-`capture_lvalue_invocant_cell` tries three routes in order — (1)
-`capture_var_cell` for a frame local, (2) a direct slot box for a `$`-scalar
-local whose value is *reference*-shaped, (3) a cell stored in **env under the
-name**. Route 3 is what serves E4/E5. Promoting the temps to locals was rejected
-on blast radius: `__mutsu_tmp_assign_method_target_N` is read back by the
-copy-out tail through `GetGlobal` and by `IndexAssignExprNamed`, so promoting it
-would touch the whole temp protocol for every lvalue method call, whereas the
-env cell is transparent — `GetGlobal` already dereferences a `ContainerRef`, so
-the tail reads the written value and `IndexAssignExprNamed` puts it back into
-`@a[0]` / `%h<a>` with no per-shape code, exactly as this ADR predicted. Route 3
-is restricted to scalar-shaped values (mirroring `capture_var_cell_inner`'s own
+`capture_lvalue_invocant_cell` tries four routes in order — (1) `capture_var_cell`
+for a frame local, (2) an existing container already sitting in **env** under
+that name, (3) a direct slot box for a `$`-scalar local whose value is
+*reference*-shaped, (4) a freshly minted cell stored in **env under the name**.
+Route 4 is what serves E4/E5. Promoting the temps to locals was rejected on
+blast radius: `__mutsu_tmp_assign_method_target_N` is read back by the copy-out
+tail through `GetGlobal` and by `IndexAssignExprNamed`, so promoting it would
+touch the whole temp protocol for every lvalue method call, whereas the env cell
+is transparent — `GetGlobal` already dereferences a `ContainerRef`, so the tail
+reads the written value and `IndexAssignExprNamed` puts it back into `@a[0]` /
+`%h<a>` with no per-shape code, exactly as this ADR predicted. Route 4 is
+restricted to scalar-shaped values (mirroring `capture_var_cell_inner`'s own
 `is_reference` guard) so an `Array`/`Hash` env entry is never given a cell that
 disagrees with its identity-shared storage.
 
-**Route 2 was added after measurement, and closes a silent wrong answer.**
+**Route 2 exists because the first ordering shipped a silent wrong answer, and
+the rule it encodes generalises: reusing an existing location must always come
+before minting one.** With routes 1/3/4 only, `for @a -> $e is rw
+{ $e.m = 3 }` left `@a` untouched (raku: `[3 3]`) — where before the slice it
+had refused loudly. The loop parameter binds the *element's own promoted cell*
+(`vm_for_loop_body.rs`'s `aliased` path, which then suppresses the end-of-
+iteration writeback precisely because the alias carries the write), and that
+cell lives in env rather than in a frame slot, so the env route minted a second,
+disconnected cell over the top of it. Route 2 is the env-side twin of the check
+`capture_var_cell_inner` already applies to a local slot
+(`is_lvalue_container_value`). It is pinned by the `is rw` and `<->` loop-
+parameter rows, so the ordering cannot silently regress.
+
+**Route 3 was added after measurement, and closes a silent wrong answer.**
 `class C { method m(\S:) is raw { S } }; my $c = C.new; $c.m = 5` is `5` in raku
 (the raw invocant is the *variable's* container, so the write replaces its whole
 contents); mutsu reported success and dropped the write. `capture_var_cell_inner`
@@ -559,6 +575,34 @@ slice 1 had already made the sigil-less `BareWord` tail (`{ S }`) denote its
 container. 3a only had to make the *invocant* arrive as one. The three slices
 compose exactly as the ADR's "one rule, four mechanical parts" claimed.
 
+**A cost that was measured, and paid down.** The VM gate runs on every
+`__mutsu_assign_method_lvalue` call — i.e. on every `$obj.attr = v` — and the
+first version cost **+13%** on a tight `$p.x = $i` loop (same-binary env-switch
+A/B on a release build, the only reliable way to compare: median 1.92s with the
+gate against 1.70s with it skipped). So the slice carries a pre-filter:
+`Registry::any_raw_invocant_method`, a **set-only** flag raised at registration
+by `note_raw_invocant_methods` whenever a `MethodDef` with a raw invocant enters
+`user_candidates`. Set-only is the safe direction — a stale `true` costs only
+the resolve that would have happened anyway, while a spurious `false` would
+silently switch the feature off.
+
+Two things about it are load-bearing. First, **it sits in the VM gate, ahead of
+every allocation, not inside the oracle.** Placing it inside
+`method_returns_raw_invocant` recovered almost nothing (~1.6%), which located
+the real cost: most of the 13% was the *argument extraction* the gate does
+before it can even ask — two `to_string_value()` allocations and a
+`method_args` vector — not `resolve_method` at all. The shipped gate asks the
+flag against a **borrowed** method name (`Value::as_str`) and returns before
+allocating anything. Second, the filter and the oracle read the **same**
+`method_def_has_raw_invocant` predicate, so they cannot disagree by
+construction; a `debug_assert` re-derives the slow answer whenever the filter
+declines, turning any future registration path that bypasses `Registry`'s
+mutators into a deterministic failure of the debug `t/` suite rather than a
+feature that silently stops working.
+
+With the filter, the min-of-14 under load is 2.38s against 2.65s for the
+un-filtered gate — the regression is recovered.
+
 **One guard the boxing required.** Every path below the new branch in
 `assign_method_lvalue_with_values` matches `Instance`/`Array`/`Hash` directly and
 would silently skip a `ContainerRef`, so the target is decontainerized at a
@@ -566,14 +610,17 @@ single chokepoint right after the branch declines. That is what keeps the boxing
 invisible to the other ~40 branches — the specific hazard this slice's re-scoping
 identified.
 
-**Pinned by** `t/raw-invocant-lvalue-container.t` (21 tests) and
+**Pinned by** `t/raw-invocant-lvalue-container.t` (29 tests) and
 `t/snitch-lvalue-raw-invocant.t` (12 tests), both byte-identical under `mutsu`
 and `raku`. Between them they cover the three rw-capable spellings, both sigiled
 raw-invocant spellings, the array-element / hash-element invocants, the
 instance-valued scalar, the observing body, the unchanged rvalue call
-(`$a.snitch =:= $a`), and the three regression controls: not rw-capable, not a
-raw invocant, and a raw-invocant routine that returns a value rather than a
-location.
+(`$a.snitch =:= $a`), a `Str` and an uninitialized (type-object) invocant, the
+runtime method-name spelling, a `multi` candidate selected by a real argument,
+each frame shape the four routes serve (a sub's own local, a captured-outer
+scalar written from a closure, an `is rw` loop parameter and its `<->` twin),
+and the three regression controls: not rw-capable, not a raw invocant, and a
+raw-invocant routine that returns a value rather than a location.
 
 **E6 does not belong to 3a — measured, and it is not reachable from this
 mechanism.** `class C { has $.v is rw }; $c.v.snitch = 9` compiles with **no
@@ -590,9 +637,10 @@ produces a container for a `:=` bind but not in argument position
 
 **Also still refusing after 3a, all loudly (not silently wrong), all out of
 scope:** `@a.snitch = (7,8)` and `%h.snitch = (b=>2)` (aggregate invocants —
-route 3's scalar restriction declines them), `$a.list = 5` (list assignment, see
-above), `$a.snitch.snitch = 5` (a chained lvalue invocant), and `42.snitch = 5`
-(raku also dies, with a different message).
+route 4's scalar restriction declines them), `$a.list = 5` (list assignment, see
+above), `$a.snitch.snitch = 5` (a chained lvalue invocant),
+`@n[0][1].mutsuRawInv = 8` (a depth-2 subscript invocant, which is slice 4's
+walker), and `42.snitch = 5` (raku also dies, with a different message).
 
 ### Slice 4 — the chain walk steps through an object
 

@@ -59,6 +59,34 @@ to locals: the temp is read back by two separate opcodes, so promoting it would
 touch the whole temp protocol for every lvalue method call, while an env cell is
 transparent to both.
 
+## The ordering rule the first attempt got wrong
+
+The lookup that finds the invocant's container tries four routes, and the rule
+that orders them was learned the hard way: **reusing an existing location must
+always come before minting one.** The first ordering minted an env cell whenever
+the name had no frame slot to box — which silently broke
+`for @a -> $e is rw { $e.mRaw = 3 }`, a shape that had *refused loudly* before
+the slice. An `is rw` loop parameter binds the source element's own promoted
+cell, and the loop then suppresses its end-of-iteration writeback precisely
+because that alias carries the write; minting a second cell over the top of it
+dropped the write on the floor. The fix is the env-side twin of a check the
+local-slot path already had, and both loop spellings (`-> $e is rw` and
+`<-> $e`) are now pinned, so the ordering cannot regress unnoticed.
+
+## Paying for the gate
+
+The gate runs on every `$obj.attr = v`, and measuring it (a same-binary
+env-switch A/B on a release build) put the first version at **+13%** on a tight
+attribute-assignment loop. The fix is a set-only `any_raw_invocant_method` flag
+the registry raises when a method with a raw invocant is declared, checked in
+the VM gate *ahead of every allocation* against a borrowed method name. That
+placement matters: putting the same flag inside the oracle recovered almost
+nothing, which located the real cost — most of the 13% was the argument
+extraction the gate did before it could even ask, not the method resolution
+everyone would have blamed. The flag and the oracle read the same predicate, and
+a `debug_assert` re-derives the slow answer whenever the flag declines, so the
+two cannot drift apart unnoticed.
+
 ## Two things the measurement changed
 
 The ADR proposed a native raw-invocant table of `.snitch`, `.item` and `.list`.
@@ -88,6 +116,6 @@ Aggregate invocants (`@a.snitch = (7,8)`) and chained ones
 (`$a.snitch.snitch = 5`) likewise still refuse — loudly, which is the status quo,
 not a new regression.
 
-Pinned by `t/raw-invocant-lvalue-container.t` (21 tests) and
+Pinned by `t/raw-invocant-lvalue-container.t` (29 tests) and
 `t/snitch-lvalue-raw-invocant.t` (12 tests), both byte-identical under `mutsu`
 and `raku`.

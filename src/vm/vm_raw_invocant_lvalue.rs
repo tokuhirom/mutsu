@@ -34,6 +34,26 @@ impl Interpreter {
         if args.len() < 4 {
             return;
         }
+        // The cheapest possible gate, first: this runs on EVERY `$obj.attr = v`,
+        // and everything below it allocates (two `to_string_value()`s, a
+        // `method_args` vector, an MRO walk plus a `MethodDef` clone). A raw
+        // invocant is rare, so ask the registry's set-only flag and the native
+        // table — both against a *borrowed* method name — before paying for any
+        // of it. Measured: doing the extraction unconditionally costs ~13% on a
+        // tight `$p.x = $i` loop.
+        match args[1].as_str() {
+            Some(name)
+                if self.registry().any_raw_invocant_method
+                    || crate::runtime::raw_invocant::native_method_returns_raw_invocant(name) => {}
+            // A non-`Str` method name cannot happen from the compiler, but a
+            // dynamic spelling could in principle; fall back to the full oracle
+            // rather than silently declining.
+            None => {}
+            _ => {
+                self.debug_verify_raw_invocant_filter(args);
+                return;
+            }
+        }
         let target = args[0].clone();
         if target.is_container_ref() {
             return;
@@ -60,11 +80,7 @@ impl Interpreter {
             source_name
         };
         let method = args[1].to_string_value();
-        let method_args: Vec<Value> = match args[2].view() {
-            ValueView::Array(items, ..) => items.to_vec(),
-            ValueView::Nil => Vec::new(),
-            _ => vec![args[2].clone()],
-        };
+        let method_args = Self::lvalue_method_args(&args[2]);
         if !self.method_returns_raw_invocant(&inner, &method, &method_args) {
             return;
         }
@@ -73,26 +89,75 @@ impl Interpreter {
         }
     }
 
+    /// Debug-only: re-derive the slow answer whenever the cheap pre-filter
+    /// declined, and blow up if they disagree.
+    ///
+    /// The filter is a necessary condition maintained at *registration* time
+    /// (`Registry::note_raw_invocant_methods`), so it can only go wrong if some
+    /// path writes `method_entries`' `user_candidates` column without going
+    /// through the documented mutators. This turns that into a deterministic
+    /// failure of the debug `t/` suite instead of a feature that silently stops
+    /// working.
+    #[cfg(debug_assertions)]
+    fn debug_verify_raw_invocant_filter(&mut self, args: &[Value]) {
+        let method = args[1].to_string_value();
+        let method_args: Vec<Value> = Self::lvalue_method_args(&args[2]);
+        // Derive the invocant exactly as the live path does, or the resolve
+        // would run against `VarRef` instead of the value it wraps.
+        let inner = match args[0].as_varref() {
+            Some((_, value, _)) => value.clone(),
+            None => args[0].clone(),
+        };
+        assert!(
+            !self.method_returns_raw_invocant(&inner, &method, &method_args),
+            "the any_raw_invocant_method pre-filter declined, but the oracle says \
+             .{method} takes a raw invocant -- a registration path wrote \
+             user_candidates without going through Registry's mutators"
+        );
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn debug_verify_raw_invocant_filter(&mut self, _args: &[Value]) {}
+
+    /// The method's own argument list, as `__mutsu_assign_method_lvalue`
+    /// packs it into argument 2.
+    fn lvalue_method_args(packed: &Value) -> Vec<Value> {
+        match packed.view() {
+            ValueView::Array(items, ..) => items.to_vec(),
+            ValueView::Nil => Vec::new(),
+            _ => vec![packed.clone()],
+        }
+    }
+
     /// The container for the named lvalue invocant, or `None` when there is no
     /// storage location to hand out (in which case the assignment keeps its
     /// existing loud refusal rather than silently writing a disconnected cell).
     ///
-    /// Three routes, in order:
+    /// Four routes, in order. **Reusing an existing container always comes
+    /// before minting one** — a name that already denotes a location must hand
+    /// out *that* location, or the write lands in a disconnected cell and is
+    /// silently lost. (Measured: `for @a -> $e is rw { $e.m = 3 }` binds `$e` to
+    /// the element's own promoted cell, and minting a fresh one dropped the
+    /// write.)
     ///
     /// 1. **A local of this frame** — `capture_var_cell` boxes the slot into a
     ///    shared cell and mirrors it into env, which is the same cell a
-    ///    `return-rw` tail or a `\($a)` capture would produce. This is `$a.m = v`.
-    /// 2. **A `$`-scalar local that route 1 declined** because its value is
+    ///    `return-rw` tail or a `\($a)` capture would produce. It already
+    ///    returns an existing cell untouched when the slot holds one. This is
+    ///    `$a.m = v`.
+    /// 2. **A name whose env entry is already a container** — an `is rw` /
+    ///    `<->` loop parameter aliasing the source element, a `:=`-bound name,
+    ///    a captured-outer scalar that was boxed elsewhere. Hand out that cell.
+    /// 3. **A `$`-scalar local that route 1 declined** because its value is
     ///    reference-shaped (an `Instance`). See the comment on the branch.
-    /// 3. **A name that only lives in env** — the compiler temp the element
-    ///    spellings route through (`__mutsu_tmp_assign_method_target_N`), and a
-    ///    captured-outer scalar. `capture_var_cell_inner` returns such a value
-    ///    unchanged (it has no slot to box), so box it into a cell stored in env
-    ///    under that name. The copy-out tail reads the name back through
-    ///    `GetGlobal`, which dereferences the cell, so the write reaches
-    ///    `@a[0]` / `%h<a>`.
+    /// 4. **A name that only lives in env** — the compiler temp the element
+    ///    spellings route through (`__mutsu_tmp_assign_method_target_N`).
+    ///    `capture_var_cell_inner` returns such a value unchanged (it has no
+    ///    slot to box), so box it into a cell stored in env under that name.
+    ///    The copy-out tail reads the name back through `GetGlobal`, which
+    ///    dereferences the cell, so the write reaches `@a[0]` / `%h<a>`.
     ///
-    /// Route 3 is deliberately restricted to *scalar-shaped* values, mirroring
+    /// Route 4 is deliberately restricted to *scalar-shaped* values, mirroring
     /// `capture_var_cell_inner`'s own `is_reference` guard: boxing an
     /// `Array`/`Hash`/`Instance` env entry would produce a cell that disagrees
     /// with the aggregate's own identity-shared storage.
@@ -104,8 +169,12 @@ impl Interpreter {
         slot_hint: Option<u32>,
     ) -> Option<Value> {
         let boxed = self.capture_var_cell(code, name, inner.clone(), slot_hint);
-        if boxed.is_container_ref() || matches!(boxed.view(), ValueView::HashEntryRef { .. }) {
+        if Self::is_lvalue_location(&boxed) {
             return Some(boxed);
+        }
+        let existing = self.env().get(name).cloned();
+        if let Some(existing) = existing.as_ref().filter(|v| Self::is_lvalue_location(v)) {
+            return Some(existing.clone());
         }
         // A `$`-scalar local holding a *reference* (an `Instance`): the general
         // capture paths deliberately refuse to re-containerize one, but a raw
@@ -123,13 +192,20 @@ impl Interpreter {
             self.set_env_with_main_alias_sym(name, sym, cell.clone());
             return Some(cell);
         }
+        existing?;
         if !Self::raw_invocant_boxable_in_env(&inner) {
             return None;
         }
-        self.env().get(name)?;
         let cell = inner.into_container_ref();
         self.set_env_with_main_alias_sym(name, None, cell.clone());
         Some(cell)
+    }
+
+    /// Whether a value already IS a storage location, so it must be handed out
+    /// rather than boxed into a fresh cell. Mirrors
+    /// `capture_var_cell_inner`'s `is_lvalue_container_value`.
+    fn is_lvalue_location(value: &Value) -> bool {
+        value.is_container_ref() || matches!(value.view(), ValueView::HashEntryRef { .. })
     }
 
     /// Whether `name` (as it appears in `code.locals`) is a plain `$`-scalar
