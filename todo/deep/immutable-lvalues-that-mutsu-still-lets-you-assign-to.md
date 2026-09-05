@@ -6,15 +6,100 @@ exception a rejected assignment throws; this ticket collects the cases where
 mutsu does not reject the assignment at all, which the same survey surfaced.
 Every row was probed against `raku` v2026.06.
 
-## Deep-triage note (2026-09-01)
+## Status (2026-09-05): only the closure-topic rows are left
 
-Moved from `todo/tickets/` because the remaining rows do not share a bounded
-implementation surface. Immutable List/Seq element stores and `:=` bindings
-need the live element-container semantics owned by ADR-0036 (whose producer
-and compensator work remains open), while implicit closure topics additionally
-need their direct-call and native map/grep writeback paths separated. Keep this
-survey here until those prerequisites make a focused slice independently
-verifiable.
+The element-store and `:=`-bind halves of this survey are **closed** — see
+`news/2026-09/immutable-element-store-and-bind.md`. `(1,2,3)[0] = 9`,
+`(1..3)[0] = 9`, `my $s = (1,2,3).Seq; $s[0] = 5`, `my $x := (1,2,3); $x = 5`
+and `my $x := (5,6)[0]; $x = 10` all answer exactly what rakudo answers now,
+messages included, pinned by `t/immutable-element-store-and-bind.t`. The
+prerequisite that note recorded (ADR-0036's element-container semantics) was
+not the blocker: the fix was a source-derived writability verdict for the
+`$`-sigil declaration bind plus an element-keyed refusal on the `Seq` store.
+
+What remains here is the **closure-topic family only**, which is a genuinely
+different mechanism (see the "Why `-> $v { $v = 1 }` was fixable" section
+below), plus three neighbours found while closing the rest:
+
+```raku
+p "map literal topic",{ (1,2).map({ $_ = 5 }).eager };   # raku: X::AdHoc
+p "grep topic",       { (1,2).grep({ $_ = 5 }).eager };  # raku: X::AdHoc
+p "block arg topic",  { my $s = { $_ = 5 }; $s(7) };     # raku: X::AdHoc
+```
+
+### Neighbour 1: a `gather` sequence's element store
+
+```
+my $s = (gather { take 1; take 2 }); $s[0] = 5
+    # raku: X::Assignment::RO, "Cannot modify an immutable Int (1)"
+    # mutsu: silently succeeds
+```
+
+The `.Seq` twin of this row was fixed by teaching
+`try_seq_element_cell_assign` to refuse a materialized non-container element.
+A `gather` result is a `ValueView::LazyList` in mutsu, not a `Seq`, and it
+shares that representation with the lazy `@`-array whose element assignment is
+*legitimate* (`my @a = 1,2,4...Inf; @a[2] = 99` is real raku, and
+`restore_lazy_array_slot` exists to support it). So the refusal cannot simply
+be extended to `LazyList`: it needs the `array_context` / `list_context`
+distinction to be the oracle, which is a separate piece of work.
+
+### Neighbour 2: an associative subscript of a `Seq`
+
+```
+my $s = (1,2,3).Seq; $s<a> = 5
+    # raku: X::AdHoc, "Type Seq does not support associative indexing."
+    # mutsu: silently succeeds
+```
+
+rakudo refuses the *subscript*, not the store, so this is not an immutability
+row at all — it belongs with whatever enforces the Positional/Associative
+protocol per type.
+
+### Neighbour 3: an inline declaration inside a list literal
+
+```
+my $a = 1; (my $x = $a, 6)[0] = 10
+    # raku:  x=10 a=1  (an inline declaration in a list literal denotes the
+    #        freshly-declared variable's container, so the store writes it)
+    # mutsu: X::Assignment::RO, "Cannot modify an immutable List ((1 6))"
+    #        (before the 2026-09-05 List-literal store fix the write was
+    #        silently dropped instead; both answers diverge)
+```
+
+Extending `scalar_container_alias_name` to cover `Expr::DoStmt(VarDecl)` was
+tried and did not reach it, so the inline declaration does not arrive in that
+shape at this position; finding what it *does* arrive as is the next step.
+
+### Neighbour 4: a `$` bind of a MUTABLE container is still assignable
+
+Measured 2026-09-05 while closing the immutable-container rows. rakudo's rule
+is sharper than "immutable": `$x = v` needs `$x` bound to a **Scalar**
+container, and *no* other container qualifies — a real `Array`, a `Hash`, a
+`Map` and a `Pair` all refuse it too, even though each is perfectly mutable
+through its own interface.
+
+```
+my @a = 1,2,3; my $x := @a;        $x = 5     # raku: X::AdHoc; mutsu: OK, @a becomes 5
+my $x := [1,2,3];                  $x = 5     # raku: X::AdHoc; mutsu: OK
+my @a := (1,2,3); my $x := @a;     $x = 5     # raku: X::AdHoc; mutsu: OK
+my $x := {a=>1};                   $x = 5     # raku: X::AdHoc; mutsu: OK
+my $x := Map.new((a=>1));          $x = 5     # raku: X::AdHoc; mutsu: OK
+my $x := (a => 1);                 $x = 5     # raku: X::AdHoc; mutsu: OK
+```
+
+Deliberately left out of the 2026-09-05 fix, which extended
+`bind_source_has_no_container`'s allowlist only to immutable Positionals. Two
+of these rows (`my $x := @a`, `my $x := %h`) do not even reach that decision —
+a bind whose RHS is a simple variable carries a NAMED source and is excluded
+from the marking outright — so closing this family means deciding what a named
+`@`/`%` source should imply for a `$` target, not just widening a match arm.
+The `$x.push(...)` aliasing those binds exist for must keep working; only the
+whole-value `=` is refused.
+
+One near-miss in the same family: `my $x := $(1,2,3); $x = 5` throws
+`X::AdHoc` in both, but rakudo words it "Cannot assign to a readonly variable
+or a value" where mutsu says "Cannot assign to an immutable value".
 
 ## Status update (2026-08-27)
 
@@ -26,22 +111,20 @@ bare `Nil` term, a builtin type object (`Int = 5`), or an enum value (`enum Fo
 `@`-var bound to an immutable List (`my @a := (1,2,3); @a.push(4)`); and
 postfix/prefix `++`/`--` on a sigilless bind (`my \G = 5; G++`).
 
-The remaining probe harness (unchanged rows only):
+The probe harness (see the 2026-09-05 status section above for what still
+diverges):
 
 ```raku
 sub p($l, &c) { my $r = try { c() }; say $l, " => ", ($! ?? $!.^name ~ " | " ~ $!.Str !! "OK") }
 
-p "list elem",        { (1,2,3)[0] = 9 };            # raku: X::Assignment::RO, Cannot modify an immutable List ((1 2 3))
-p "range elem",       { (1..3)[0] = 9 };             # raku: X::Assignment::RO, Cannot modify an immutable Range (1..3)
-p "Seq elem",         { my $s = (1,2,3).Seq; $s[0] = 5 };   # raku: X::Assignment::RO, immutable Int (1)
 p "map literal topic",{ (1,2).map({ $_ = 5 }).eager };          # raku: X::AdHoc
 p "grep topic",       { (1,2).grep({ $_ = 5 }).eager };         # raku: X::AdHoc
 p "block arg topic",  { my $s = { $_ = 5 }; $s(7) };            # raku: X::AdHoc
-p "bind list assign", { my $x := (1,2,3); $x = 5 };  # raku: X::AdHoc, Cannot assign to an immutable value
 ```
 
 (The four topic rows fixed 2026-08-26 -- `for 1,2`, `for (1,2)`, `for <a b>`,
-`for %h.keys` -- and the seven fixed 2026-08-27 above are no longer listed.)
+`for %h.keys` -- the seven fixed 2026-08-27 above, and the five element-store /
+`:=`-bind rows fixed 2026-09-05 are no longer listed.)
 
 ## Why `-> $v { $v = 1 }` was fixable but `{ $_ = 5 }` (block-argument topic) is not
 
@@ -217,20 +300,17 @@ correctly; applying the same test on the eager path would additionally mark
 have. **These rows are therefore blocked on ADR-0040's store-side element
 itemization, not on the topic-marking code.**
 
-## Still blocked: `my $x := (1,2,3); $x = 5`
+## FIXED 2026-09-05: `my $x := (1,2,3); $x = 5` and the element stores
 
-The deliberate conservatism in `src/vm/vm_var_assign_set_local.rs`: the
-`:=`-to-literal readonly marking fires only for scalar-shaped values
-(`Int`/`Str`/`Num`/`Rat`/`Bool`/`Complex`), because anything container-like or
-written-through (`ContainerRef`, `Proxy`, `HashEntryRef`, `is raw`) must stay
-writable and an overlooked kind becomes a hard error. Widening it needs the
-container/no-container distinction to be a property of the *value*, not a
-whitelist of view kinds.
-
-## Still blocked: element assignment (`(1,2,3)[0] = 9`, `Range`, `Seq`)
-
-Need the subscript store path to know its target is an immutable container —
-the same underlying container/no-container information ADR-0040 would supply.
+Both sections that stood here — "Still blocked: `my $x := (1,2,3); $x = 5`" and
+"Still blocked: element assignment (`(1,2,3)[0] = 9`, `Range`, `Seq`)" — are
+closed. See `news/2026-09/immutable-element-store-and-bind.md`. The predicted
+prerequisite ("the container/no-container distinction has to be a property of
+the *value*") turned out not to be needed: an immutable Positional is a
+container, just not a **Scalar** container, and rakudo's scalar assignment needs
+one — so the existing `bind_marks_immutable` allowlist could simply grow the
+immutable Positional kinds, and the `Seq` store reused the element-keyed rule
+the `List` store already applied.
 
 ## Status update (2026-08-27): ADR-0040 slices 1-2 landed and did NOT unblock these rows
 
@@ -265,7 +345,10 @@ These already throw the right class; only the rendered value differs:
 - `my constant @A = 1,2,3; @A = 5` — raku names the *element*
   ("Cannot modify an immutable Int (1)", because a list assignment writes into
   the immutable List's elements); mutsu names the container
-  ("Cannot modify an immutable List (1 2 3)"). Same for `my @a is List`.
+  ("Cannot modify an immutable List ((1 2 3))" since 2026-09-05, when the
+  rendering was corrected to rakudo's type-plus-gist shape; the *choice* of
+  container-over-element is the part that still differs). Same for
+  `my @a is List`.
 - `my constant %C = (a=>1); %C = (b=>2)` — raku "Cannot modify an immutable Pair
   (a => 1)"; mutsu renders the pair with a tab instead of `=>`.
 - `my %m := mix <a b>; %m = (c=>1)` — raku "immutable Mix (Mix(a b))", mutsu
@@ -291,6 +374,10 @@ an immutable value (1 2 3)` where raku says `... immutable Range (1..3)`, so it
 belongs in the "close but not exact" section rather than the live harness.
 Blocker attribution (ADR-0036, not ADR-0040) unchanged.
 
+(Superseded 2026-09-05: every row named here except the three closure-topic
+ones now matches rakudo, rendering included — see the status section at the
+top.)
+
 ## Status update (2026-09-01): ADR-0036 slice 4 landed and did NOT move these rows either
 
 Slice 4 (the `env`-scan compensator deletion, plus element type constraints on
@@ -304,9 +391,12 @@ is about what a *pair producer* hands out; every row here is about what the
 of those is a pair producer. Concretely:
 
 - `(1,2,3)[0] = 9` / the `Seq` element never build a Pair at all — they need the
-  element **store** to know its container is immutable. `array_slot_ref` already
-  declines `ArrayKind::List`/`ItemList`, so the information exists; nothing on the
-  store path consults it.
+  element **store** to know its container is immutable. (This bullet also
+  claimed `array_slot_ref` "already declines `ArrayKind::List`/`ItemList`". It
+  does not, and never did — re-measured 2026-09-05: it promotes every scalar
+  leaf regardless of kind, and the declining lives in
+  `exec_index_autovivify_lazy_op_decl_bind`'s `decl_bind` arm. Both rows are
+  fixed now; the correction is recorded so the claim is not reused.)
 - the four topic rows are the closure-call readonly marking this ticket's own
   "Why `-> $v { $v = 1 }` was fixable" section describes, unchanged.
 - `my $x := (1,2,3); $x = 5` is the bind-side whitelist in
@@ -317,3 +407,8 @@ rows are still open. The remaining work is two independent, and individually
 small, surfaces: an immutable-container check on the element store, and
 separating the direct-call and native-map callers of
 `call_compiled_closure_with_topic`.
+
+That call was right, and the first of the two landed on 2026-09-05
+(`news/2026-09/immutable-element-store-and-bind.md`). **The only remaining
+surface for this survey is the second one**: separating the direct-call and
+native-map callers of `call_compiled_closure_with_topic`.

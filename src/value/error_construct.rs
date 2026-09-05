@@ -383,13 +383,24 @@ impl RuntimeError {
         Self::typed("X::Assignment::RO", attrs)
     }
 
-    /// X::Assignment::RO with the immutable value retained for exception
-    /// matching (for example, an immutable Range used as a Positional target).
+    /// X::Assignment::RO for a store refused because the thing it would have
+    /// written is immutable, rendered the way rakudo renders it: the refused
+    /// value's TYPE and its `.gist` — "Cannot modify an immutable List
+    /// ((1 2 3))", "... Range (1..3)", "... Int (1)". `Nil` takes rakudo's own
+    /// dedicated wording, which names no value.
+    ///
+    /// The value itself is retained in the `value` attribute for exception
+    /// matching (`X::Assignment::RO.value`).
     pub(crate) fn assignment_ro_value(value: Value) -> Self {
-        let message = format!(
-            "Cannot modify an immutable value ({})",
-            value.to_string_value()
-        );
+        let message = if matches!(value.view(), super::ValueView::Nil) {
+            "Cannot modify an immutable Nil value".to_string()
+        } else {
+            format!(
+                "Cannot modify an immutable {} ({})",
+                crate::runtime::utils::value_type_name(&value),
+                crate::runtime::utils::gist_value(&value)
+            )
+        };
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str(message));
         attrs.insert("value".to_string(), value);
