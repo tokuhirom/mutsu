@@ -63,6 +63,10 @@ pub(super) enum Undo {
     CaptureStart(Option<usize>),
     CaptureEnd(Option<usize>),
     Sym(Option<String>),
+    /// Restore the node's `make` value (None = it had none). An inline
+    /// `{ make … }` runs on paths the engine later abandons, so the write is
+    /// trailed like any other capture-store mutation.
+    Ast(Option<Value>),
 }
 
 /// The engine's single mutable capture store + undo trail.
@@ -157,6 +161,7 @@ impl CapStore {
                 Undo::CaptureStart(prev) => caps.capture_start = prev,
                 Undo::CaptureEnd(prev) => caps.capture_end = prev,
                 Undo::Sym(prev) => caps.sym = prev,
+                Undo::Ast(prev) => caps.ast = prev,
             }
         }
     }
@@ -236,6 +241,13 @@ impl CapStore {
         if delta.sym.is_some() {
             self.trail.push(Undo::Sym(self.caps.sym.take()));
             self.caps.sym = delta.sym;
+        }
+        // An inline `{ make … }` in this pattern (or in a `[ … ]` group / `|`
+        // branch of it, whose captures merge into this level) sets the value of
+        // the rule node being matched. Last write wins, as in raku.
+        if delta.ast.is_some() {
+            self.trail.push(Undo::Ast(self.caps.ast.take()));
+            self.caps.ast = delta.ast;
         }
     }
 
