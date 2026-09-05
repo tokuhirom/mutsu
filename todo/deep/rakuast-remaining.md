@@ -165,6 +165,13 @@ The RakuAST type registry supports the common hierarchy, method, attribute, and
 `.^can` operations. Audit and implement the remaining metaobject operations from
 the same model metadata. Do not expose Rakudo compiler-private `IMPL-*` details.
 
+**Closed 2026-09-05:** `.^methods` (with no adverb) and `.^lookup` answered `()`
+and `(Mu)` for a method `.^methods(:local)`, `.^can` and `.^method_table` could
+all see. All four now read the model metadata through one MRO-walking helper,
+with the three `.^methods` adverb cases following
+`Type/Metamodel/MethodContainer.rakudoc`. Pinned by `t/rakuast-type-lookup.t`;
+see [the news entry](../../news/2026-09/rakuast-type-object-lookup-and-methods.md).
+
 ## Construction
 
 Advanced parameter construction remains:
