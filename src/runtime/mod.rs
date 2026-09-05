@@ -1707,6 +1707,14 @@ pub struct Interpreter {
     /// `X::Attribute::NoPackage`.
     pub(crate) defining_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
+    /// Every positional argument of the value-call currently being dispatched
+    /// (`$b(7)` / `&b(7)` — `OpCode::CallOnValue`/`CallOnCodeVar`'s `bare_args`)
+    /// is a syntactically container-less expression, so a bare block's implicit
+    /// `$_` aliases a value with no container and raku refuses `$_ = ...`
+    /// inside it. Read (and cleared) by `call_compiled_closure_with_topic`
+    /// BEFORE it pushes its call frame; `push_call_frame` clears it too, so the
+    /// flag can never leak past one call boundary into an unrelated block.
+    pub(crate) pending_call_topic_bare: bool,
     /// Set while `require` resolves a module: a missing `Test::`-namespace
     /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
     /// instead of the silent no-op `use Test::Util` relies on.

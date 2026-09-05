@@ -126,6 +126,19 @@ impl Interpreter {
         } else {
             None
         };
+        // ...and that fresh `$_` is WRITABLE, whatever the caller's topic was:
+        // `readonly_vars` is keyed by bare name, so a caller that marked its own
+        // topic immutable (`for 1, 2 { f() }`, `(1, 2).map({ f() })`) would
+        // otherwise leave the mark in force inside the routine and reject its
+        // `$_ = ...`. The other call paths get this from
+        // `unmark_readonly_topic` under a journaled readonly frame; this fast
+        // path deliberately opens no frame, so save the kind and put it back on
+        // the way out (every error arm above `break`s to that same tail).
+        let saved_topic_readonly = cf.code.is_routine.then(|| {
+            let kind = self.readonly_kind("_");
+            self.unmark_readonly_topic();
+            kind
+        });
 
         // Reuse a pooled locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
@@ -359,6 +372,11 @@ impl Interpreter {
                     self.env_mut().remove_sym(crate::symbol::wk::topic());
                 }
             }
+        }
+        // The readonly marking is not env-scoped, so it is restored on both the
+        // scoped and the clone path.
+        if let Some(kind) = saved_topic_readonly {
+            self.restore_topic_readonly(kind);
         }
 
         // Slice F (env<->locals coherence): record the captured-outer variables

@@ -290,6 +290,7 @@ impl Compiler {
             && !quoted
             && args.len() == 2
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
+        let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
         for (i, arg) in args.iter().enumerate() {
             // Only the closure literal itself is escaping (see
             // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
@@ -297,9 +298,11 @@ impl Compiler {
             let arg_esc = esc
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
+            self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
             self.with_thread_escape(thread_esc, |s| {
                 s.compile_method_arg_with_escape(arg, arg_esc)
             });
+            self.pending_immutable_topic_block = false;
             if pair_value_capture
                 && i == 1
                 && let Expr::Var(n) = arg
@@ -523,6 +526,25 @@ impl Compiler {
         self.compile_expr_method_on_index(&final_target, name, args, modifier, quoted);
     }
 
+    /// Does a `.map`/`.grep` written directly against `target` bind its
+    /// callback's implicit `$_` to an item with no container of its own?
+    ///
+    /// Reuses the `for`-loop oracle
+    /// ([`Compiler::for_iterable_yields_bare_items`]): `(1, 2).map({ $_ = 5 })`
+    /// and `for 1, 2 { $_ = 5 }` are the same rejection in raku, for the same
+    /// reason. Conservative — a variable/derived receiver answers `false`, so
+    /// `@a.map({ $_ = 5 })` and every shape mutsu cannot prove bare keep
+    /// today's writable topic. See [`crate::opcode::CompiledCode::immutable_topic`].
+    pub(super) fn method_binds_immutable_topic(target: &Expr, mname: &str) -> bool {
+        matches!(mname, "map" | "grep") && Self::for_iterable_yields_bare_items(target)
+    }
+
+    /// A directly-written bare block argument (`{ ... }`), the only shape whose
+    /// implicit topic this call site can speak for.
+    pub(super) fn is_bare_block_arg(arg: &Expr) -> bool {
+        matches!(arg, Expr::AnonSub { is_block: true, .. })
+    }
+
     /// Compile method call on non-variable target (no writeback needed).
     pub(super) fn compile_expr_method_generic(
         &mut self,
@@ -692,14 +714,17 @@ impl Compiler {
         let esc = Self::method_escapes_closure_args(&mname);
         // `Thread.start` / `Promise.start` hand the block to a thread.
         let thread_esc = mname == "start";
+        let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
         for arg in args {
             // See the sibling loop in `compile_expr_method_call`.
             let arg_esc = esc
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
+            self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
             self.with_thread_escape(thread_esc, |s| {
                 s.compile_method_arg_with_escape(arg, arg_esc)
             });
+            self.pending_immutable_topic_block = false;
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));

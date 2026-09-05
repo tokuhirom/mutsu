@@ -231,6 +231,12 @@ impl Interpreter {
             // NOT an alias for the element either, so it must not write back.
             let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
+            // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
+            let immutable_topic = !keeps_outer_topic
+                && data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|cc| cc.immutable_topic);
 
             // CP-3 collapse: run the rw map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -342,6 +348,7 @@ impl Interpreter {
                     // same isolation `call_compiled_closure_with_topic` does.
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
@@ -540,6 +547,12 @@ impl Interpreter {
 
             let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
+            // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
+            let immutable_topic = !keeps_outer_topic
+                && data
+                    .compiled_code
+                    .as_ref()
+                    .is_some_and(|cc| cc.immutable_topic);
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -619,6 +632,15 @@ impl Interpreter {
                             (arity == 1 && !keeps_outer_topic).then_some(topic_source_key.clone()),
                         );
                         let saved_when_matched = vm.when_matched();
+                        // Same per-iteration readonly scope the two map loops
+                        // open: this loop also binds the block's params by a
+                        // direct `env.insert` and runs the body through
+                        // `run_reuse`, without `push_call_frame`, so a mark made
+                        // inside it would otherwise skip the undo journal and
+                        // leak permanently (see `mark_readonly_sym_with`).
+                        let _readonly_guard =
+                            crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                        super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
                         match vm.run_reuse(&code, &compiled_fns) {
                             Ok(()) => {
                                 let pred = vm

@@ -969,6 +969,12 @@ impl Compiler {
             }
             return;
         }
+        // A bare block invoked with only syntactically container-less arguments
+        // binds its implicit `$_` to a value with no container behind it, which
+        // raku refuses to assign to (`{ $_ = 5 }(7)`). Decided here, from the
+        // call site's own syntax, because the block is compiled elsewhere and
+        // the same block is writable when called with an lvalue.
+        let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
         if let Expr::CodeVar(name) = target {
             let arg_sources_idx = self.add_arg_sources_constant(args);
             for arg in args {
@@ -991,6 +997,7 @@ impl Compiler {
                 name_idx,
                 arity: args.len() as u32,
                 arg_sources_idx,
+                bare_args,
             });
         } else {
             self.compile_expr(target);
@@ -1008,6 +1015,7 @@ impl Compiler {
             self.code.emit(OpCode::CallOnValue {
                 arity: args.len() as u32,
                 arg_sources_idx,
+                bare_args,
             });
         }
     }

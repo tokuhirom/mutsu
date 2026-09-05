@@ -1686,6 +1686,14 @@ impl Compiler {
                 // and the synthetic callsite-line marker must remain an
                 // in-band pair for `peek_callsite_line`.
                 let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
+                // The listop form of the same rule the method form gets in
+                // `expr_method.rs`: `map { $_ = 5 }, 1, 2` binds the callback's
+                // implicit topic to a bare item, which raku refuses to assign
+                // to. See `CompiledCode::immutable_topic`.
+                let immutable_topic_cb = args.len() >= 2
+                    && matches!(name.resolve().as_str(), "map" | "grep")
+                    && Self::is_bare_block_arg(&args[0])
+                    && args[1..].iter().all(Self::for_iterable_yields_bare_items);
                 let wb_base = self.index_rw_writeback_base();
                 for (i, arg) in args.iter().enumerate() {
                     // `start` keeps marking EVERY argument escaping, exactly as
@@ -1717,9 +1725,11 @@ impl Compiler {
                             })
                         });
                     } else {
+                        self.pending_immutable_topic_block = immutable_topic_cb && i == 0;
                         self.with_thread_escape(thread_escaping, |s| {
                             s.compile_call_arg_with_escape(arg, escaping_args)
                         });
+                        self.pending_immutable_topic_block = false;
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
