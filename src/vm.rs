@@ -197,6 +197,7 @@ mod vm_jit_tier_b_metaop;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
+mod vm_lvalue_object_subscript;
 pub(crate) mod vm_meta_ops;
 mod vm_meta_ops_zip;
 pub(crate) mod vm_method_dispatch;

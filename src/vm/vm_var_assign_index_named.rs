@@ -2965,26 +2965,15 @@ impl Interpreter {
         // inner collection via AT-KEY/AT-POS; a Proxy element routes the write
         // through its STORE (URI's read-only lists throw X::Assignment::RO
         // from there).
-        if let Some(target) = self.env().get(&var_name).cloned()
-            && let ValueView::Instance { class_name, .. } = target.view()
-        {
-            let cn = class_name.resolve();
-            let (p, s) = if inner_positional {
-                ("AT-POS", "AT-KEY")
-            } else {
-                ("AT-KEY", "AT-POS")
-            };
-            let at = if self.has_user_method(&cn, p) {
-                Some(p)
-            } else if self.has_user_method(&cn, s) {
-                Some(s)
-            } else {
-                None
-            };
+        if let Some(target) = self.index_assign_root_object(&var_name) {
+            let at = self.object_subscript_accessor(&target, inner_positional);
             if let Some(at) = at {
-                let inner = self
-                    .call_method_with_values(target, at, vec![inner_idx.clone()])?
-                    .deref_container();
+                // ADR-0067 slice 4: the accessor is called exactly ONCE here and
+                // BOTH its container and its value are kept. The old code
+                // discarded the container on this line, which is why an `is rw`
+                // accessor's location was never written through.
+                let returned = self.call_method_with_values(target, at, vec![inner_idx.clone()])?;
+                let inner = returned.deref_container();
                 // The inner collection is itself a user-defined instance: route
                 // the outermost write through its ASSIGN-POS/ASSIGN-KEY
                 // (`$obj<support><source> = v` with both levels custom
@@ -3025,6 +3014,28 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro(None));
                     }
                     self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()], true)?;
+                    self.stack.push(val);
+                    return Ok(());
+                }
+                // ADR-0067 slice 4: an `is rw` accessor handed back the element's
+                // LOCATION. Descend into it and store there, instead of falling
+                // through to the generic Hash/Array walk — whose root is this
+                // object, not a container, so the write was dropped.
+                if let Some(mut container) =
+                    Self::lvalue_object_step_container(&returned, outer_positional)
+                {
+                    // A `*-1`-style subscript resolves against the container it
+                    // indexes, which is only known now the step produced it.
+                    let outer_idx = if matches!(outer_idx.view(), ValueView::Sub(_)) {
+                        self.resolve_whatever_index_for_target(outer_idx.clone(), Some(&container))
+                    } else {
+                        outer_idx.clone()
+                    };
+                    Self::assign_into_nested_container(
+                        &mut container,
+                        &outer_idx.to_string_value(),
+                        val.clone(),
+                    )?;
                     self.stack.push(val);
                     return Ok(());
                 }
@@ -3333,7 +3344,7 @@ impl Interpreter {
     /// its `ArrayKind` tag (a `Hash`, a bool on the repr), so the shared
     /// backing `Gc` — and therefore the `&mut` the caller takes into the slot
     /// to keep descending — is untouched.
-    fn fresh_autoviv_container(positional: bool) -> Value {
+    pub(crate) fn fresh_autoviv_container(positional: bool) -> Value {
         let fresh = if positional {
             Value::real_array(Vec::new())
         } else {
@@ -3342,7 +3353,7 @@ impl Interpreter {
         fresh.itemize_for_element_store()
     }
 
-    pub(super) fn assign_into_nested_container(
+    pub(crate) fn assign_into_nested_container(
         target: &mut Value,
         outer_key: &str,
         val: Value,
@@ -3706,6 +3717,10 @@ impl Interpreter {
         let root: *mut Value = self.env_mut().get_mut(&var_name).unwrap() as *mut Value;
 
         let mut current: *mut Value = root;
+        // Containers produced by an object step below. `Box` keeps each address
+        // stable as the vector grows, and holding the `Value` keeps the `Gc`
+        // node `current` points into alive for the rest of the walk.
+        let mut object_step_containers: Vec<Box<Value>> = Vec::new();
 
         // Walk through indices[0..depth-1], autovivifying intermediate containers
         for level in 0..depth {
@@ -3715,6 +3730,44 @@ impl Interpreter {
             // Descend through any `:=`-bound container cell at this level so the
             // traversal/assignment reaches the shared, held container.
             current = unsafe { Self::descend_container_ref(current) };
+
+            // ADR-0067 slice 4: this level is a user-defined object, so the step
+            // through it is its own `AT-KEY`/`AT-POS` — called in lvalue mode,
+            // and descended into. Without this the walk fell into the
+            // "autovivify the root itself" arm below and REPLACED the object
+            // with a fresh Hash (`$q<foo><bar>[0] = 99` reported
+            // "No such method 'd' for invocant of type 'Hash'").
+            // The `Instance` probe is spelled here, ahead of the clone, so an
+            // ordinary `%h<a><b><c> = v` walk pays only a discriminant test per
+            // level.
+            if level < depth - 1
+                && matches!(unsafe { (*current).view() }, ValueView::Instance { .. })
+            {
+                let cur_val = unsafe { (*current).clone() };
+                if let Some(accessor) = self.object_subscript_accessor(&cur_val, is_positional) {
+                    let next_positional = positional_flags[level + 1];
+                    let stepped = self.lvalue_object_subscript_container(
+                        cur_val.clone(),
+                        accessor,
+                        &indices_val[level],
+                        next_positional,
+                    )?;
+                    // The accessor ran user code, which may have reallocated
+                    // whatever `current` pointed into, so the walk must not go
+                    // back to that pointer. Continue from an OWNED value either
+                    // way: the container the step produced, or -- when it
+                    // produced none -- the object itself, so the generic arms
+                    // below overwrite this local binding rather than the real
+                    // element (which is what used to replace the object with a
+                    // fresh Hash).
+                    let produced = stepped.is_some();
+                    object_step_containers.push(Box::new(stepped.unwrap_or(cur_val)));
+                    current = &mut **object_step_containers.last_mut().unwrap() as *mut Value;
+                    if produced {
+                        continue;
+                    }
+                }
+            }
 
             if level < depth - 1 {
                 // Intermediate level: autovivify and descend
@@ -4142,6 +4195,20 @@ impl Interpreter {
             ValueView::HashEntryRef { .. } => {
                 // Resolve the HashEntryRef and assign into the resolved container.
                 let resolved = target.hash_entry_read();
+                self.stack.push(resolved);
+                self.stack.push(idx);
+                self.stack.push(val);
+                return self.exec_index_assign_generic_op(code, is_positional);
+            }
+            // ADR-0067 slice 4: a stack-computed target that is a `ContainerRef`
+            // LOCATION — what an `is rw` routine hands back, reached by the
+            // explicit accessor spelling `$q.AT-KEY("foo")[0] = 99`. Descend to
+            // the container the cell holds (vivifying one when the cell is still
+            // an empty hole), exactly as the `HashEntryRef` arm above resolves a
+            // deferred entry, instead of dropping the write in the catch-all.
+            ValueView::ContainerRef(_) => {
+                let resolved = Self::lvalue_object_step_container(&target, is_positional)
+                    .unwrap_or_else(|| target.deref_container());
                 self.stack.push(resolved);
                 self.stack.push(idx);
                 self.stack.push(val);
