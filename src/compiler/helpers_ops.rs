@@ -145,6 +145,12 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "andthen" => TokenKind::AndThen,
         "orelse" => TokenKind::OrElse,
         "notandthen" => TokenKind::NotAndThen,
+        // The junction constructors. Like the `andthen` family these are list
+        // infixes in raku, so the RakuAST lowerer has to map them back to a
+        // real token rather than the `Ident` catch-all below.
+        "|" => TokenKind::Pipe,
+        "&" => TokenKind::Ampersand,
+        "^" => TokenKind::Caret,
         // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
         // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
         // represents with a generic `Ident` token (the inverse of

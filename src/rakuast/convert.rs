@@ -2312,8 +2312,16 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
     use crate::token_kind::TokenKind;
     matches!(
         op,
-        TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
-    )
+        TokenKind::AndThen
+            | TokenKind::OrElse
+            | TokenKind::NotAndThen
+            // The junction constructors and `min`/`max`. Measured against
+            // rakudo 2026.07: each renders one flat `ApplyListInfix` with every
+            // operand of the chain, where mutsu nests them left-associatively.
+            | TokenKind::Pipe
+            | TokenKind::Ampersand
+            | TokenKind::Caret
+    ) || matches!(op, TokenKind::Ident(name) if name == "min" || name == "max")
 }
 
 /// Flatten a left-nested same-operator chain (`a op b op c` parsed as

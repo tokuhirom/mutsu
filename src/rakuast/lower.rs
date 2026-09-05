@@ -1345,11 +1345,12 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if op == "," {
                 return Ok(Expr::ArrayLiteral(items));
             }
-            let token = match op.as_str() {
-                "andthen" => crate::token_kind::TokenKind::AndThen,
-                "orelse" => crate::token_kind::TokenKind::OrElse,
-                "notandthen" => crate::token_kind::TokenKind::NotAndThen,
-                _ => return Err(unsupported(node)),
+            // Every other list infix mutsu renders — the `andthen` family, the
+            // junction constructors, `min`/`max` — is an ordinary left-nested
+            // `Expr::Binary` internally, so the operator name maps straight back
+            // to its token.
+            let Some(token) = crate::compiler::helpers_ops::op_name_to_token_kind(&op) else {
+                return Err(unsupported(node));
             };
             // These chain left-associatively: `a andthen b andthen c` is
             // `(a andthen b) andthen c`, which is how the parser builds it.
