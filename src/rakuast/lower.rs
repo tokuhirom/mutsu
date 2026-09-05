@@ -137,7 +137,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementFor => lower_for(node),
         // `INIT { … }` / `LEAVE { … }` / … -> `Stmt::Phaser`, one class per kind.
         // `BEGIN` is absent deliberately — see `lower_phaser`.
-        RakuAstClass::StatementPrefixPhaserCheck
+        RakuAstClass::StatementPrefixPhaserBegin
+        | RakuAstClass::StatementPrefixPhaserCheck
         | RakuAstClass::StatementPrefixPhaserInit
         | RakuAstClass::StatementPrefixPhaserEnd
         | RakuAstClass::StatementPrefixPhaserEnter
@@ -413,23 +414,23 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// A `StatementPrefix::Phaser::<Kind>` -> `Stmt::Phaser`.
 ///
-/// Two kinds are deliberately absent:
+/// One kind is deliberately absent: `PRE`/`POST` — rakudo wraps their block in
+/// a call (the phaser's child is an `ApplyPostfix`, not a `Block`), and mutsu
+/// also keeps a source-text condition for the `X::Phaser::PrePost` message, so
+/// the converter refuses them and nothing lowered can be one.
 ///
-/// * `PRE`/`POST` — rakudo wraps their block in a call (the phaser's child is
-///   an `ApplyPostfix`, not a `Block`), and mutsu also keeps a source-text
-///   condition for the `X::Phaser::PrePost` message, so the converter refuses
-///   them and nothing lowered can be one.
-/// * `BEGIN` — it runs at *compile* time, and mutsu hoists it during
-///   compilation of a program rather than in `reorder_phasers`, so the
-///   re-entrant carrier this lowering feeds runs it in statement position
-///   instead. `EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST)` would answer 1
-///   where raku and mutsu's own direct execution both answer 0. Refusing is the
-///   honest boundary until the carrier gains a BEGIN pass — see
-///   `todo/tickets/rakuast-eval-begin-phaser.md`. `CHECK` and `INIT` are fine:
-///   `reorder_phasers_for_eval` handles both.
+/// `BEGIN` runs at *compile* time, which the re-entrant carrier this lowering
+/// feeds did not do — it ran the phaser in statement position, so
+/// `EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST)` answered 1 where raku and
+/// mutsu's own direct execution both answer 0, and lowering it was refused
+/// outright. Both EVAL carriers now run `run_toplevel_begin_phasers` — the same
+/// compile-time pass the mainline pipeline uses — before
+/// `reorder_phasers_for_eval` handles `CHECK`/`INIT`, so `BEGIN` lowers like any
+/// other kind.
 fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     use crate::ast::PhaserKind;
     let kind = match node.class {
+        RakuAstClass::StatementPrefixPhaserBegin => PhaserKind::Begin,
         RakuAstClass::StatementPrefixPhaserCheck => PhaserKind::Check,
         RakuAstClass::StatementPrefixPhaserInit => PhaserKind::Init,
         RakuAstClass::StatementPrefixPhaserEnd => PhaserKind::End,

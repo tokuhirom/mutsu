@@ -119,8 +119,16 @@ impl Interpreter {
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
                 let mut stmts = self.inject_eval_methods_into_class(stmts);
-                // Reorder phasers so BEGIN/CHECK run at compile time and INIT
-                // runs once before the main body, matching the top-level pipeline.
+                // Run a hoistable top-level BEGIN at *compile* time, before the
+                // EVAL'd mainline, so a read textually preceding it sees its
+                // side effects and a later declaration still clobbers it:
+                // `EVAL 'my $x = 0; BEGIN { $x = 1 }; $x'` is 0 in raku, and was
+                // 1 here. Same pass and same order as `run.rs`'s -- before the
+                // reorder, so the hoisted BEGINs are gone before that pass
+                // buckets declarations.
+                self.run_toplevel_begin_phasers(&mut stmts);
+                // Reorder the rest so CHECK runs at compile time and INIT runs
+                // once before the main body, matching the top-level pipeline.
                 // Use the EVAL-specific variant that also lifts BEGIN from
                 // closure bodies in the EVAL'd code.
                 crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);

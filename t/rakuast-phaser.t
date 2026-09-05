@@ -16,16 +16,13 @@ use Test;
 # `ApplyPostfix`, not a `Block`), and mutsu additionally keeps the condition's
 # source text for the `X::Phaser::PrePost` message.
 #
-# `BEGIN` reads fine but does not *lower*: it runs at compile time, and mutsu
-# hoists it during compilation of a program rather than in `reorder_phasers`, so
-# the re-entrant carrier this lowering feeds would run it in statement position
-# and answer 1 for the `INIT` test below's shape where raku answers 0. It is
-# refused rather than lowered wrong — see
-# todo/tickets/rakuast-eval-begin-phaser.md.
+# `BEGIN` lowers like the rest since both EVAL carriers gained the mainline's
+# own compile-time BEGIN pass — see t/eval-begin-phaser.t, which pins that
+# behaviour for both the string and the RakuAST spelling.
 #
 # Passes under BOTH mutsu and raku.
 
-plan 15;
+plan 16;
 
 sub phaser-class($src) {
     $src.AST.statements[0].expression.^name
@@ -62,3 +59,5 @@ is EVAL(Q{my $x = 0; INIT { $x = 1 }; $x}.AST), 0,
     'a lowered INIT runs before the mainline, not in statement position';
 is EVAL(Q{my $x = 0; CHECK { $x = 1 }; $x}.AST), 0,
     'a lowered CHECK runs before the mainline too';
+is EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST), 0,
+    'a lowered BEGIN runs at compile time, not in statement position';
