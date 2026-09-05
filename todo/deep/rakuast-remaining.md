@@ -77,6 +77,13 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Postfix lowering.* `EVAL` lowers the rest of the `ApplyPostfix` cluster:
+  `Postfix` (`$x++`/`$x--`), `MetaPostfix::Hyper` (`@a>>.abs`), a
+  `Call::Method`'s `.?`/`.+`/`.*` dispatch modifier, and `Call::QuotedMethod`.
+  It also fixed a silent no-op: `op_name_to_token_kind` had no `++`/`--` row, so
+  the already-lowering *prefix* `++$x` became `Unary { op: Ident("++") }` and did
+  not increment. Pinned by `t/rakuast-eval-postfix.t`; see
+  [the news entry](../../news/2026-09/rakuast-postfix-lowering.md).
 - *Class / role / method / attribute lowering.* `EVAL` accepts
   `RakuAST::Class`, `RakuAST::Role`, `RakuAST::Method`, and the attribute form
   of `VarDeclaration::Simple` (`scope => "has"`), lowering them to
@@ -116,10 +123,15 @@ Still open:
 - The remaining hyper forms: hyper *prefix* (`-<<@a`, desugared to a
   `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`, desugared to a
   hyper `AT-POS` method call), and `@a<<.abs` (which mutsu's parser currently
-  reads as a quote-words subscript).
+  reads as a quote-words subscript). Since 2026-09-05 the desugared *call* forms
+  are an explicit `.AST` boundary rather than a node naming a mutsu internal —
+  see [the news entry](../../news/2026-09/rakuast-desugar-marker-boundary.md).
+  The `@a>>[1]` case still renders a hyper `AT-POS` `Call::Method`, which is a
+  wrong node rather than an internal name, so it needs its own measured slice.
 - `with` / `without`. Desugared at parse time into a `__with_tmp_N` temp var plus
   an `if` on `.defined`, so there is no statement to map to
-  `Statement::With` / `Statement::Without`.
+  `Statement::With` / `Statement::Without`. It is an explicit boundary (the temp
+  var's internal name is refused), not a wrong rendering.
 - A reference to a user-declared type by bare name. `class C { }; C.new` reads
   `C` as `Expr::BareWord`, and only *builtin* type names
   (`is_known_type_constraint`) convert to `Type::Simple`, so any program that
