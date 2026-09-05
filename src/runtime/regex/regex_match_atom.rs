@@ -113,6 +113,7 @@ impl Interpreter {
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                     (end, new_caps)
                 })
                 .collect();
@@ -312,6 +313,7 @@ impl Interpreter {
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                     group.push((next, new_caps));
                 }
                 group.reverse(); // now LOWEST FIRST within this alt's group
@@ -367,6 +369,7 @@ impl Interpreter {
                 }
                 new_caps.positional.append(&mut inner_caps.positional);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                 // A `<(` / `)>` capture marker inside the group sets the match
                 // boundaries for the whole pattern; propagate it out of the group.
                 if inner_caps.capture_start.is_some() {
@@ -442,6 +445,7 @@ impl Interpreter {
                 // only in `positional_subcaps` below and are intentionally NOT
                 // merged into the parent `named` / `named_subcaps` maps.
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                 // Store inner captures as subcaptures of this group
                 let mut subcap = inner_caps;
                 subcap.from = pos;
@@ -475,6 +479,7 @@ impl Interpreter {
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                     out.push((end, new_caps));
                 }
             }
@@ -1081,6 +1086,7 @@ impl Interpreter {
                 // in a parse for no benefit.
                 let mut inner_caps = inner_caps;
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
             }
             out.push((end, new_caps));
         }

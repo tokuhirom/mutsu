@@ -266,6 +266,7 @@ impl Interpreter {
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
@@ -320,6 +321,7 @@ impl Interpreter {
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                        super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         return Some((next, new_caps));
                     }
@@ -450,35 +452,45 @@ impl Interpreter {
                     // (ADR-0009 part B). It is therefore NOT recorded as a code block
                     // for `execute_regex_code_blocks` to replay on the winning path —
                     // that replay would run it a second time.
-                    let (value, writes) =
+                    let outcome =
                         self.eval_regex_inline_code(code, current_caps, &matched_so_far, false);
-                    let result = value.map(|v| v.truthy()).unwrap_or(false);
+                    let result = outcome.value.map(|v| v.truthy()).unwrap_or(false);
                     let pass = if *negated { !result } else { result };
                     if pass {
                         let mut new_caps = RegexCaptures::default();
-                        new_caps.regex_vars.extend(writes);
+                        new_caps.regex_vars.extend(outcome.writes);
+                        new_caps.ast = outcome.made;
                         return Some((pos, new_caps));
                     } else {
                         return None;
                     }
                 }
                 let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
-                // A plain `{ … }` block that needs nothing from the reduce-time
-                // walk is a pure side-effect block: raku runs it inline,
-                // left-to-right, during matching, so a write to an in-regex `:my`
-                // lexical is visible to the atoms that follow it (YAMLish's
-                // `root-block` computes its indent this way). Run it here instead
-                // of recording it for the reduce-time replay — recording it as
-                // well would execute it twice.
+                // raku runs a plain `{ … }` block inline, left-to-right, during
+                // matching: a write to an in-regex `:my` lexical is visible to the
+                // atoms that follow it (YAMLish's `root-block` computes its indent
+                // this way), a `make` is visible to a later block in the same rule
+                // as `$/.made`, and a subrule's `make` has already landed on the
+                // child node by the time the parent's next block reads
+                // `$<child>.made`. Run it here instead of recording it for the
+                // reduce-time replay — recording it as well would execute it twice.
+                // An earlier branch of the enclosing `||` already matched, so raku's
+                // cursor may never reach this block, and mutsu is only evaluating
+                // this branch to learn its candidate ends — see
+                // `SPECULATIVE_ALT_BRANCH`. A pure side-effect block is skipped: it
+                // always succeeds, so skipping it leaves those ends unchanged. A
+                // block that produces a value is NOT skippable: the branch is still
+                // a live candidate, and an atom that follows the alternation reads
+                // the value back (`$/.values[0].ast`, as YAMLish's `Schema::JSON`
+                // TOP does) while the match is still running. See the residue note
+                // in `news/2026-09/grammar-inline-code-block-order.md`.
+                if super::regex_helpers::SPECULATIVE_ALT_BRANCH.with(std::cell::Cell::get)
+                    && !super::regex_helpers::code_block_produces_value(code)
+                {
+                    return Some((pos, RegexCaptures::default()));
+                }
                 if !super::regex_helpers::code_block_defers_to_reduce(code) {
-                    // An earlier branch of the enclosing `||` already matched, so
-                    // raku's cursor never reaches this block. It always succeeds,
-                    // so skipping it leaves the branch's candidate ends unchanged
-                    // — see `SPECULATIVE_ALT_BRANCH`.
-                    if super::regex_helpers::SPECULATIVE_ALT_BRANCH.with(std::cell::Cell::get) {
-                        return Some((pos, RegexCaptures::default()));
-                    }
-                    let (_value, writes) =
+                    let outcome =
                         self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
                     // The block `die`d: fail the match so the engine unwinds; the
                     // parked pending error is re-raised at the match entry point.
@@ -487,11 +499,16 @@ impl Interpreter {
                         return None;
                     }
                     let mut new_caps = RegexCaptures::default();
-                    new_caps.regex_vars.extend(writes);
+                    new_caps.regex_vars.extend(outcome.writes);
+                    // The `make` belongs to the rule node being matched: it rides
+                    // the capture delta so the trail undoes it if this branch is
+                    // abandoned, and `build_named_candidates_from_inner` commits it
+                    // to the subrule's own node rather than the parent's.
+                    new_caps.ast = outcome.made;
                     return Some((pos, new_caps));
                 }
-                // A `make`- or dynamic-variable-bearing block needs the ordering
-                // the bottom-up reduce walk provides, so it stays on that path.
+                // A dynamic-variable-bearing block needs the ordering the bottom-up
+                // reduce walk provides, so it stays on that path.
                 let mut new_caps = RegexCaptures::default();
                 let ctx = CodeBlockContext {
                     code: code.clone(),

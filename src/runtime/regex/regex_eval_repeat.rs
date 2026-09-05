@@ -518,6 +518,13 @@ impl Interpreter {
             // what its binding holds — its action still reads it, and a sibling
             // that DOES have a block would otherwise decide the value.
             self.record_rule_dynvars(caps, &declared_keys);
+            // An inline `{ make … }` already committed this node's value during
+            // matching. Republish it where the call sites read the whole match's
+            // `.made` from (`Grammar.parse`, smartmatch); with no deferred blocks
+            // nothing else will.
+            if let Some(v) = caps.ast.clone() {
+                self.env.insert("made".to_string(), v);
+            }
             return;
         }
         // Build this node's Match so `$<name>` can carry the children's asts. The
@@ -533,7 +540,8 @@ impl Interpreter {
         );
         let blocks = std::mem::take(&mut caps.code_blocks);
         let base_vars = Self::block_base_vars(&caps.regex_vars, &declared_keys);
-        caps.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars);
+        let seed = caps.ast.take();
+        caps.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars, seed);
         self.record_rule_dynvars(caps, &declared_keys);
     }
 
@@ -577,7 +585,8 @@ impl Interpreter {
         );
         let blocks = std::mem::take(&mut kids.code_blocks);
         let base_vars = Self::block_base_vars(&kids.regex_vars, &declared_keys);
-        node.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars);
+        let seed = node.ast.take();
+        node.ast = self.reduce_run_code_blocks(blocks, node_match, &base_vars, seed);
         self.record_cap_node_dynvars(node, &declared_keys);
     }
 
@@ -640,6 +649,7 @@ impl Interpreter {
         blocks: Vec<CodeBlockContext>,
         node_match: Value,
         base_vars: &HashMap<String, Value>,
+        seed: Option<Value>,
     ) -> Option<Value> {
         // Named captures carrying a child `.made` (from the recursion above).
         let named_v = node_match.match_named();
@@ -651,8 +661,19 @@ impl Interpreter {
             _ => Vec::new(),
         };
         let saved_match = self.env.get("/").cloned();
-        // Fresh `make` slot for this node (do not inherit a sibling's value).
-        self.env.remove("made");
+        // Fresh `make` slot for this node (do not inherit a sibling's value),
+        // seeded with whatever an inline `{ make … }` of the SAME node already
+        // committed during matching — a rule can mix inline and deferred blocks
+        // (only a `$*`-mentioning one defers), and the deferred half must not
+        // erase the inline half's value.
+        match seed {
+            Some(v) => {
+                self.env.insert("made".to_string(), v);
+            }
+            None => {
+                self.env.remove("made");
+            }
+        }
         // Reduce-time writes to the regex's own `:my`/`:let` lexicals, threaded
         // from one deferred block to the next (see `install_ctx_regex_vars`).
         let mut live_regex_vars: HashMap<String, Value> = HashMap::new();

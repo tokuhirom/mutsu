@@ -414,28 +414,42 @@ impl Drop for ReducedSubruleGuard {
 /// Must this regex `{ … }` block stay on the **reduce-time** path rather than
 /// running inline during the match?
 ///
-/// Two constructs need the post-match bottom-up walk
-/// (`reduce_regex_captures_made`) and cannot be answered while matching:
+/// One construct still needs the post-match bottom-up walk
+/// (`reduce_regex_captures_made`) and cannot be answered while matching: a
+/// **dynamic** variable (`$*x`), because a rule's `:my $*x` is one binding per
+/// match, installed and read back around each node's reduce step
+/// (`install_fresh_rule_dynvars` / `record_rule_dynvars`) so the node's action
+/// method sees its own match's value, and because the bindings a rule's `$*`
+/// parameters established travel with the block in `CodeBlockContext.dyn_params`.
 ///
-/// - `make`, because a node's AST is built from its already-reduced children —
-///   that ordering is what lets `make $<child>.made` work;
-/// - a **dynamic** variable (`$*x`), because a rule's `:my $*x` is one binding
-///   per match, installed and read back around each node's reduce step
-///   (`install_fresh_rule_dynvars` / `record_rule_dynvars`) so the node's action
-///   method sees its own match's value.
-///
-/// Everything else is a pure side-effect block and runs inline, as raku does, so
-/// its writes are visible to the atoms that follow it in the same match.
-///
-/// The scan is deliberately conservative — anything that *might* be one of the
-/// two keeps the established deferred behaviour. `make` matches the bare
-/// identifier (which also covers the `$/.make(…)` method form via the trailing
-/// `.`) but not a longer identifier containing it (`maker`, `remake`) nor a
-/// variable named `$make`.
+/// Everything else — `make` included — runs inline, as raku does, so its writes
+/// are visible to the atoms that follow it in the same match. `make` used to
+/// defer as well, on the theory that a node's AST is built from its
+/// already-reduced children; measuring raku showed the opposite ordering: the
+/// child's `make` has run by the time the parent's cursor passes the subrule, so
+/// running the parent's block inline is what makes `make $<child>.made` work.
+/// See `news/2026-09/grammar-inline-code-block-order.md`.
 pub(crate) fn code_block_defers_to_reduce(code: &str) -> bool {
-    if code_block_uses_dynamic_var(code) {
-        return true;
-    }
+    code_block_uses_dynamic_var(code)
+}
+
+/// Does this block produce a **value** (`make`) rather than only side effects?
+///
+/// Used for exactly one decision: whether a block may be skipped while a later
+/// `||` branch is being evaluated speculatively (`SPECULATIVE_ALT_BRANCH`).
+/// mutsu evaluates every branch of an ordered alternation eagerly to learn its
+/// candidate ends, so a branch raku's cursor may never reach still runs here;
+/// skipping a pure side-effect block keeps those ends unchanged while not firing
+/// the effect. A `make` is not skippable that way — the branch is still a live
+/// candidate, and an atom after the alternation can read the value back
+/// (`$/.values[0].ast`) while the match is still running.
+///
+/// The scan matches the bare identifier `make` (which also covers the
+/// `$/.make(…)` method form via the trailing `.`) but not a longer identifier
+/// containing it (`maker`, `remake`) nor a variable named `$make`. It is
+/// deliberately conservative: a false positive only means a speculative branch's
+/// block runs, which is what mutsu did before `SPECULATIVE_ALT_BRANCH` existed.
+pub(crate) fn code_block_produces_value(code: &str) -> bool {
     let bytes = code.as_bytes();
     let mut idx = 0;
     while let Some(rel) = code[idx..].find("make") {
@@ -1094,7 +1108,19 @@ pub(super) fn merge_regex_captures(
     if src.capture_end.is_some() {
         dst.capture_end = src.capture_end;
     }
+    adopt_inline_ast(&mut dst, &mut src);
     dst
+}
+
+/// Carry an inline `{ make … }` value from a sub-pattern's captures up to the
+/// level they are being folded into. A `make` belongs to the enclosing *rule*
+/// node, so it travels with the sub-pattern's code blocks — wherever a caller
+/// keeps `src`'s blocks on their own capture node instead (a subrule match),
+/// the value stays there too and must NOT be adopted.
+pub(super) fn adopt_inline_ast(dst: &mut RegexCaptures, src: &mut RegexCaptures) {
+    if src.ast.is_some() {
+        dst.ast = src.ast.take();
+    }
 }
 
 /// Count how many positional capture groups the given atom will produce.

@@ -190,6 +190,7 @@ impl Interpreter {
                 }
                 new_caps.positional.append(&mut inner_caps.positional);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                 out.push((end, new_caps));
             }
         }
@@ -436,6 +437,7 @@ impl Interpreter {
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
                     new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                     best = (end, new_caps);
                 }
             }

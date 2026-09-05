@@ -1,5 +1,18 @@
 use super::super::*;
 
+/// What one inline regex `{ … }` / `<?{ … }>` evaluation produced.
+pub(super) struct InlineCodeOutcome {
+    /// The body's value (`None` when the code failed to parse or threw).
+    pub(super) value: Option<Value>,
+    /// Writes the body made to the regex's own `:my`/`:let` lexicals.
+    pub(super) writes: HashMap<String, Value>,
+    /// The value the body's `make` produced, if it ran one. Raku executes
+    /// `make` inline, where the cursor is, and it belongs to the rule node
+    /// currently being matched — the caller threads it onto that node through
+    /// `RegexCaptures::ast`, where the match trail can undo it on backtracking.
+    pub(super) made: Option<Value>,
+}
+
 impl Interpreter {
     /// Parse a main-slang code string embedded in a regex (`{ … }` block,
     /// `<?{ … }>` assertion, `<{ … }>` interpolation, `** {code}` quantifier,
@@ -196,10 +209,12 @@ impl Interpreter {
     /// scoped: they are saved and restored around the body. Every other write is a
     /// genuine side effect and is left in place — that is the whole point.
     ///
-    /// Returns the body's value (`None` if the code failed to parse or threw) and
-    /// the writes it made to the in-regex lexicals. Those are regex-scoped, so they
-    /// must not stay in `self.env`; the caller threads them back through
-    /// `RegexCaptures::regex_vars`, where the match trail can undo them on
+    /// Returns the body's value (`None` if the code failed to parse or threw),
+    /// the writes it made to the in-regex lexicals, and the value its `make`
+    /// produced. All three are regex-scoped, so none of them may stay in
+    /// `self.env`; the caller threads the lexical writes back through
+    /// `RegexCaptures::regex_vars` and the `make` value through
+    /// `RegexCaptures::ast`, where the match trail can undo them on
     /// backtracking.
     ///
     /// `writes_back_to_caller` selects how a write to an *outer* lexical is
@@ -215,9 +230,13 @@ impl Interpreter {
         caps: &RegexCaptures,
         matched_so_far: &str,
         writes_back_to_caller: bool,
-    ) -> (Option<Value>, HashMap<String, Value>) {
+    ) -> InlineCodeOutcome {
         let Some(stmts) = self.parse_regex_code_cached(code) else {
-            return (None, HashMap::new());
+            return InlineCodeOutcome {
+                value: None,
+                writes: HashMap::new(),
+                made: None,
+            };
         };
         // The bindings to install for the body, and to restore afterwards.
         let mut env: Vec<(String, Value)> = Vec::new();
@@ -252,6 +271,15 @@ impl Interpreter {
             &caps.named,
             live_target.clone(),
         );
+        // What an EARLIER `{ make … }` of this same rule already produced. raku
+        // runs `make` inline, so a later block reads it back through `$/.made`
+        // (`/ a { make 7 } b { say $/.made } /` prints 7).
+        let cursor = match caps.ast.as_ref() {
+            Some(ast) => cursor
+                .match_with_attrs(vec![("ast", ast.clone())])
+                .unwrap_or(cursor),
+            None => cursor,
+        };
         // `$¢` is the current match state at this point in the pattern — the same
         // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
         // `.pos`, roast/S05-capture/match-object.t). The reduce-time replay always
@@ -317,6 +345,12 @@ impl Interpreter {
         for (k, v) in env {
             self.env.insert(k, v);
         }
+        // `make` writes `env["made"]`. Running the block inline means that slot
+        // is shared with every other rule being matched right now, so it is
+        // cleared for the body and restored afterwards; what the body left in it
+        // is returned as `made` and travels on the capture delta instead.
+        let saved_made = self.env.get("made").cloned();
+        self.env.remove("made");
         // Marks the body as embedded regex code so a bare free variable's
         // auto-package-qualified write (`$x` inside `grammar G { … }` compiles to
         // `SetGlobal("G::x")`) is redirected back onto the lexical in `env` —
@@ -327,16 +361,15 @@ impl Interpreter {
             let body_result = self.eval_regex_code_block_body(&stmts);
             // The regex's own `:my`/`:let` lexicals are not caller lexicals — they
             // are harvested into `regex_vars` below and must not be written into
-            // the caller's slots as well.
-            if !caps.regex_vars.is_empty() {
-                let kept: Vec<(String, Value)> = self
-                    .pending_local_updates
-                    .split_off(before)
-                    .into_iter()
-                    .filter(|(name, _)| !caps.regex_vars.contains_key(name))
-                    .collect();
-                self.pending_local_updates.extend(kept);
-            }
+            // the caller's slots as well. Neither is the `make` slot, which is
+            // engine state, not a variable the caller can declare.
+            let kept: Vec<(String, Value)> = self
+                .pending_local_updates
+                .split_off(before)
+                .into_iter()
+                .filter(|(name, _)| name != "made" && !caps.regex_vars.contains_key(name))
+                .collect();
+            self.pending_local_updates.extend(kept);
             body_result.map(|_| Value::NIL)
         } else {
             let saved_in_block = self.in_regex_code_block;
@@ -355,6 +388,15 @@ impl Interpreter {
                 && caps.regex_vars.get(k) != Some(now)
             {
                 writes.insert(k.clone(), now.clone());
+            }
+        }
+        let made = self.env.get("made").cloned();
+        match saved_made {
+            Some(v) => {
+                self.env.insert("made".to_string(), v);
+            }
+            None => {
+                self.env.remove("made");
             }
         }
         for (k, orig) in saved {
@@ -381,7 +423,11 @@ impl Interpreter {
                 None
             }
         };
-        (value, writes)
+        InlineCodeOutcome {
+            value,
+            writes,
+            made,
+        }
     }
 
     /// Build the positional (`$0`, `$1`, …), named-capture, and `$/` / `$¢`
