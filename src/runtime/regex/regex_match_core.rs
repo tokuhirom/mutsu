@@ -10,8 +10,8 @@
 
 use super::super::*;
 use super::regex_helpers::{
-    atom_contains_alternation, count_capture_groups, is_named_atom_no_args, is_silent_named_atom,
-    is_simple_atom,
+    alternation_capture_slots, atom_contains_alternation, count_capture_groups,
+    is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
 };
 use super::regex_trail::CapStore;
 use std::collections::HashSet;
@@ -22,6 +22,11 @@ struct WalkCtx<'a> {
     chars: &'a [char],
     pkg: &'a str,
     first_only: bool,
+    /// Stop the walk as soon as a match covers the WHOLE subject, while still
+    /// collecting the shorter prefix matches found on the way (`Grammar.parse`
+    /// needs the best prefix for its action dispatch when the parse fails).
+    /// Set only by the `.parse` entry point — nested walks never inherit it.
+    stop_at_full: bool,
 }
 
 /// Node budget for the full-backtracking quantifier expansion over a
@@ -154,7 +159,7 @@ impl Interpreter {
         // Only the first (highest-priority / greedy) complete match is needed
         // here, and the depth-first walk discovers it first, so stop as soon as
         // one is found instead of exploring the whole backtracking tree.
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, true)
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, true, false)
             .into_iter()
             .next()
     }
@@ -166,7 +171,24 @@ impl Interpreter {
         start: usize,
         pkg: &str,
     ) -> Vec<(usize, RegexCaptures)> {
-        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false)
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, false)
+    }
+
+    /// Like `regex_match_ends_from_caps_in_pkg`, but stops as soon as a match
+    /// covers the whole subject. `Grammar.parse` wants exactly one such match
+    /// and the depth-first walk finds the highest-priority one first, so there
+    /// is nothing to gain from exploring the rest of the backtracking tree —
+    /// and something to lose: an ordered alternation would keep entering later
+    /// branches (running their `{ ... }` blocks) after the parse had already
+    /// succeeded through an earlier one.
+    pub(in crate::runtime) fn regex_match_ends_stop_at_full(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: &str,
+    ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_ends_from_caps_in_pkg_impl(pattern, chars, start, pkg, false, true)
     }
 
     /// Backtracking match returning the complete-match end positions (with
@@ -179,6 +201,7 @@ impl Interpreter {
         start: usize,
         pkg: &str,
         first_only: bool,
+        stop_at_full: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         // When :m (ignoremark) is set on the pattern, strip combining marks
         // from both text and pattern, match on the stripped versions, then
@@ -194,6 +217,7 @@ impl Interpreter {
                 0,
                 pkg,
                 first_only,
+                stop_at_full,
             );
             let orig_len = text_slice.len();
             for (end, caps) in &mut results {
@@ -229,6 +253,7 @@ impl Interpreter {
             chars,
             pkg,
             first_only,
+            stop_at_full,
         };
         self.walk_tokens(&ctx, 0, start, &mut store, &mut matches);
         for m in &mut matches {
@@ -471,7 +496,7 @@ impl Interpreter {
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
                 matches.push((pos, store.snapshot()));
-                if ctx.first_only {
+                if ctx.first_only || (ctx.stop_at_full && pos == ctx.chars.len()) {
                     return true;
                 }
             }
@@ -524,6 +549,17 @@ impl Interpreter {
                 }
             }
             return false;
+        }
+        // Ordered alternation (`||`) is driven from here, against the real
+        // continuation of this pattern — see `walk_seq_alternation`. The eager
+        // atom producer still handles it under a list quantifier and in the
+        // LTM declarative-prefix measurement, which has its own epsilon-bypass
+        // rule (`ltm_seqalt_candidates`).
+        if let RegexAtom::SequentialAlternation(alternatives) = &token.atom
+            && matches!(token.quant, RegexQuant::One | RegexQuant::ZeroOrOne)
+            && !super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+        {
+            return self.walk_seq_alternation(ctx, idx, pos, alternatives, store, matches);
         }
         match token.quant {
             RegexQuant::One => {
@@ -714,6 +750,143 @@ impl Interpreter {
                 self.walk_quant_chain(ctx, idx, pos, min, max, false, store, matches)
             }
         }
+    }
+
+    /// Try the zero-width arm of a `[ A || B ]?` token: reserve the group's
+    /// positional slots as Nil, render the nested list-quantified names as
+    /// empty lists, and descend to the next token.
+    #[allow(clippy::too_many_arguments)]
+    fn walk_seqalt_zero(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        pos: usize,
+        zo_stride: usize,
+        zo_list_names: &HashSet<String>,
+        pos_base: usize,
+        store: &mut CapStore,
+        matches: &mut Vec<(usize, RegexCaptures)>,
+    ) -> bool {
+        let token = &ctx.pattern.tokens[idx];
+        let m = store.mark();
+        store.reserve_nil(zo_stride);
+        // The atom is an alternation, never a CaptureGroup, so a name attached
+        // to this token renders as a zero-width Match (see the `ZeroOrOne` arm).
+        Self::store_apply_named_capture(store, token, pos, pos, pos_base);
+        for n in zo_list_names {
+            store.insert_named_quantified(n.clone());
+        }
+        let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
+        store.rewind(m);
+        stop
+    }
+
+    /// Ordered alternation (`||`) driven against the REAL continuation.
+    ///
+    /// raku enters branch *k+1* only after branch *k* has been entered and the
+    /// rest of the pattern has rejected every way it could match. mutsu's atom
+    /// producer measured every branch up front instead, so an embedded
+    /// `{ ... }` block in a later branch fired on paths raku never takes — and
+    /// the `SPECULATIVE_ALT_BRANCH` suppression that hid that made the mirror
+    /// bug, a block that never fired even when its branch was the one the match
+    /// needed (`regex TOP { 'a' [ 'bc' || 'b' { ... } ] 'cd' }` on "abcd").
+    ///
+    /// Evaluating branch *k* here, one branch at a time, with `walk_tokens`
+    /// driving the continuation between branches, restores raku's order: a
+    /// branch's blocks run exactly when its cursor reaches it, including on
+    /// backtracking (raku re-runs them too).
+    fn walk_seq_alternation(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        pos: usize,
+        alternatives: &[RegexPattern],
+        store: &mut CapStore,
+        matches: &mut Vec<(usize, RegexCaptures)>,
+    ) -> bool {
+        let token = &ctx.pattern.tokens[idx];
+        let pos_base = store.caps().positional.len();
+        let capture_slots = alternation_capture_slots(alternatives);
+        let zero_or_one = matches!(token.quant, RegexQuant::ZeroOrOne);
+        let zo_stride = if zero_or_one {
+            count_capture_groups(&token.atom)
+        } else {
+            0
+        };
+        let mut zo_list_names = HashSet::new();
+        if zero_or_one {
+            Self::collect_nested_list_quantified_names(&token.atom, &mut zo_list_names);
+        }
+        // Frugal `??`: the zero-width arm is preferred, so it goes first.
+        let zero_first = zero_or_one && token.frugal && !token.ratchet;
+        if zero_first
+            && self.walk_seqalt_zero(
+                ctx,
+                idx,
+                pos,
+                zo_stride,
+                &zo_list_names,
+                pos_base,
+                store,
+                matches,
+            )
+        {
+            return true;
+        }
+        let mut any_branch_matched = false;
+        for alt in alternatives {
+            // A `||` shares the enclosing capture scope, so a backreference
+            // inside a branch reads through to what this level has already
+            // captured, and the branch inherits the enclosing `:my`/`:let`
+            // lexicals. The eager producer armed that seed for the whole atom;
+            // arm it here around the branch's own walk, and let it fall before
+            // the continuation descends.
+            let mut candidates = {
+                let _seed = Self::arm_inline_vars_seed(&token.atom, store.caps());
+                self.seqalt_branch_candidates(alt, capture_slots, ctx.chars, pos, ctx.pkg)
+            };
+            if candidates.is_empty() {
+                continue;
+            }
+            any_branch_matched = true;
+            if token.ratchet {
+                // `:ratchet` commits to this branch's highest-priority match and
+                // forbids backtracking into the alternation — which is also why
+                // no later branch is evaluated at all (the `token`/`rule`
+                // declarators are ratcheted, so this is the common grammar case
+                // and the reason a losing branch's `die` never fires).
+                candidates.drain(..candidates.len() - 1);
+            }
+            for (next, delta) in candidates.into_iter().rev() {
+                let m = store.mark();
+                store.merge_delta(delta);
+                Self::store_apply_named_capture(store, token, pos, next, pos_base);
+                Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
+                let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
+                store.rewind(m);
+                if stop {
+                    return true;
+                }
+            }
+            if token.ratchet {
+                break;
+            }
+        }
+        // Greedy `?`: the zero-width arm is tried last. A ratcheted `?` takes it
+        // only when no branch matched at all.
+        if zero_or_one && !zero_first && !(token.ratchet && any_branch_matched) {
+            return self.walk_seqalt_zero(
+                ctx,
+                idx,
+                pos,
+                zo_stride,
+                &zo_list_names,
+                pos_base,
+                store,
+                matches,
+            );
+        }
+        false
     }
 
     /// The three ratcheted `*`/`+` fast paths (simple atom / silent Named /

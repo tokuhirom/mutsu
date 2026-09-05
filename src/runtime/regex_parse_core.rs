@@ -842,6 +842,14 @@ impl Interpreter {
                 if sigspace {
                     alt_pat = format!(":s {}", alt_pat);
                 }
+                if ratchet {
+                    // `:ratchet` is scoped to the whole regex, so it must reach a
+                    // top-level `|` / `||` alternative too — `token TOP { 'z' |
+                    // \d+ \d }` is as possessive as `token TOP { \d+ \d }`.
+                    // Losing it here also let an ordered alternation inside such
+                    // an alternative backtrack into its later branches.
+                    alt_pat = format!(":ratchet {}", alt_pat);
+                }
                 if let Some(p) = self.parse_regex_with_mode(&alt_pat, mode) {
                     alt_patterns.push(p);
                 }
@@ -861,7 +869,10 @@ impl Interpreter {
                         hash_capture: None,
                         secondary_named_capture: None,
                         force_list_capture: false,
-                        ratchet: false,
+                        // A whole-pattern alternation in a ratcheted regex is
+                        // itself ratcheted: `token TOP { || "a" || { die } }`
+                        // commits to `"a"` and never enters the die arm.
+                        ratchet,
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,

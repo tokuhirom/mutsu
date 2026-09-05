@@ -474,21 +474,10 @@ impl Interpreter {
                 // child node by the time the parent's next block reads
                 // `$<child>.made`. Run it here instead of recording it for the
                 // reduce-time replay — recording it as well would execute it twice.
-                // An earlier branch of the enclosing `||` already matched, so raku's
-                // cursor may never reach this block, and mutsu is only evaluating
-                // this branch to learn its candidate ends — see
-                // `SPECULATIVE_ALT_BRANCH`. A pure side-effect block is skipped: it
-                // always succeeds, so skipping it leaves those ends unchanged. A
-                // block that produces a value is NOT skippable: the branch is still
-                // a live candidate, and an atom that follows the alternation reads
-                // the value back (`$/.values[0].ast`, as YAMLish's `Schema::JSON`
-                // TOP does) while the match is still running. See the residue note
-                // in `news/2026-09/grammar-inline-code-block-order.md`.
-                if super::regex_helpers::SPECULATIVE_ALT_BRANCH.with(std::cell::Cell::get)
-                    && !super::regex_helpers::code_block_produces_value(code)
-                {
-                    return Some((pos, RegexCaptures::default()));
-                }
+                // A block inside a later `||` branch is no longer a special case:
+                // `walk_seq_alternation` only evaluates that branch once raku's
+                // cursor would enter it, so reaching this point means the block
+                // really is on the cursor's path.
                 if !super::regex_helpers::code_block_defers_to_reduce(code) {
                     let outcome =
                         self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
