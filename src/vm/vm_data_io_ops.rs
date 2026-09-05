@@ -34,41 +34,92 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.
-        ValueView::Array(items, _) => items.iter().any(element_needs_method_dispatch),
-        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-            items.iter().any(element_needs_method_dispatch)
-        }
-        ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
-        ValueView::Hash(map) => map.values().any(element_needs_method_dispatch),
-        ValueView::Pair(_, val) => element_needs_method_dispatch(val),
-        ValueView::ValuePair(k, val) => {
-            element_needs_method_dispatch(k) || element_needs_method_dispatch(val)
+        ValueView::Array(..)
+        | ValueView::Seq(..)
+        | ValueView::HyperSeq(..)
+        | ValueView::RaceSeq(..)
+        | ValueView::Slip(..)
+        | ValueView::Hash(..)
+        | ValueView::Pair(..)
+        | ValueView::ValuePair(..) => {
+            // One visited set for the whole walk (see
+            // `element_needs_method_dispatch_seen`): the receiver itself is not
+            // an element, so start below it at depth 0.
+            let mut seen = std::collections::HashSet::new();
+            if let Some(id) = match v.view() {
+                ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+                ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+                _ => None,
+            } {
+                seen.insert(id);
+            }
+            let mut probe = |e: &Value| element_needs_method_dispatch_seen(e, &mut seen, 0);
+            match v.view() {
+                ValueView::Array(items, _) => items.iter().any(&mut probe),
+                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+                    items.iter().any(&mut probe)
+                }
+                ValueView::Slip(items) => items.iter().any(&mut probe),
+                ValueView::Hash(map) => map.values().any(&mut probe),
+                ValueView::Pair(_, val) => probe(val),
+                ValueView::ValuePair(k, val) => probe(k) || probe(val),
+                _ => false,
+            }
         }
         _ => false,
     }
 }
 
 /// Whether a *collection element* must be rendered via method dispatch.
-fn element_needs_method_dispatch(v: &Value) -> bool {
-    match v.view() {
+///
+/// `seen` holds every `Gc`-backed container already walked — not just the
+/// ancestors — so a circular structure (`my @c; @c = 42, @c`) terminates and a
+/// graph with two cyclic edges is not re-walked once per path reaching it.
+/// Without it `say @c` recursed here, in the probe, until the process aborted on
+/// a stack overflow. Same discipline as the `.raku` twin,
+/// `contains_dispatch_leaf_seen` in `runtime::methods_raku_dispatch`.
+fn element_needs_method_dispatch_seen(
+    v: &Value,
+    seen: &mut std::collections::HashSet<usize>,
+    depth: usize,
+) -> bool {
+    const MAX_DEPTH: usize = 256;
+    if depth > MAX_DEPTH {
+        return false;
+    }
+    if matches!(
+        v.view(),
         ValueView::Instance { .. }
-        | ValueView::CustomType { .. }
-        | ValueView::CustomTypeInstance(_)
-        | ValueView::Mixin(..)
-        | ValueView::Package(..)
-        | ValueView::Sub(..)
-        | ValueView::WeakSub(..)
-        | ValueView::Routine { .. } => true,
-        ValueView::Array(items, _) => items.iter().any(element_needs_method_dispatch),
+            | ValueView::CustomType { .. }
+            | ValueView::CustomTypeInstance(_)
+            | ValueView::Mixin(..)
+            | ValueView::Package(..)
+            | ValueView::Sub(..)
+            | ValueView::WeakSub(..)
+            | ValueView::Routine { .. }
+    ) {
+        return true;
+    }
+    let id = match v.view() {
+        ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+        ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+        _ => None,
+    };
+    if let Some(id) = id
+        && !seen.insert(id)
+    {
+        return false;
+    }
+    let mut probe = |e: &Value| element_needs_method_dispatch_seen(e, seen, depth + 1);
+    match v.view() {
+        ValueView::Array(items, _) => items.iter().any(&mut probe),
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-            items.iter().any(element_needs_method_dispatch)
+            items.iter().any(&mut probe)
         }
-        ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
-        ValueView::Hash(map) => map.values().any(element_needs_method_dispatch),
-        ValueView::Pair(_, val) => element_needs_method_dispatch(val),
-        ValueView::ValuePair(k, val) => {
-            element_needs_method_dispatch(k) || element_needs_method_dispatch(val)
-        }
+        ValueView::Slip(items) => items.iter().any(&mut probe),
+        ValueView::Hash(map) => map.values().any(&mut probe),
+        ValueView::Pair(_, val) => probe(val),
+        ValueView::ValuePair(k, val) => probe(k) || probe(val),
         _ => false,
     }
 }

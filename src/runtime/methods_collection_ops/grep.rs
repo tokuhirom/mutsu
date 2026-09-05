@@ -304,24 +304,19 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             ValueView::Array(items, arr_kind) => {
-                let (filtered, mutated_items) =
+                let (filtered, mutated_items, matched_indices) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
-                // Determine which source positions matched (identity scan against
-                // the post-grep source), so the matched slots can be shared with
-                // the result as first-class element containers.
-                let mut indices = Vec::new();
-                if let ValueView::Array(filtered_items, ..) = filtered.view() {
-                    let mut scan_from = 0usize;
-                    for needle in filtered_items.iter() {
-                        if let Some(rel) = mutated_items[scan_from..].iter().position(|candidate| {
-                            crate::runtime::utils::values_identical(candidate, needle)
-                        }) {
-                            let absolute = scan_from + rel;
-                            indices.push(absolute);
-                            scan_from = absolute.saturating_add(1);
-                        }
-                    }
-                }
+                // Which source positions matched, so those slots can be shared
+                // with the result as first-class element containers. The grep
+                // loop reports them; they used to be re-derived here by scanning
+                // the source for a value `===` to each result element, which
+                // could not find a `Proxy` slot (the result holds the FETCHed
+                // value, the slot holds the Proxy). The miss then truncated the
+                // result below, because it is rebuilt from the located slots.
+                //
+                // `None` is a chunked grep (`grep -> $a, $b {...}`): no
+                // one-to-one element/slot mapping, so nothing is aliased.
+                let indices = matched_indices.unwrap_or_default();
                 // Promote each matched source slot to a shared `ContainerRef`
                 // cell and reference the SAME cells from the grep result. A
                 // writeback loop (`for @a.grep(...) { $_++ }` / `@a.grep(...)>>++`)
@@ -366,12 +361,26 @@ impl Interpreter {
                 // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
                 // `transform_result` from `indices`, which drops the aliasing (a
                 // keys/pairs copy owns its values).
+                //
+                // The cells replace the result's items wholesale, so there must
+                // be exactly one per matched element or the result would be
+                // silently truncated -- which is what the old identity scan did
+                // whenever it failed to locate a slot.
                 let filtered = if !indices.is_empty()
                     && let ValueView::Array(filtered_items, fkind) = filtered.view()
                 {
-                    let mut data = (**filtered_items).clone();
-                    *data.items_mut() = shared_cells;
-                    Value::array_with_kind(crate::gc::Gc::new(data), fkind)
+                    debug_assert_eq!(
+                        shared_cells.len(),
+                        filtered_items.len(),
+                        "grep aliasing must cover every matched element"
+                    );
+                    if shared_cells.len() != filtered_items.len() {
+                        Value::array_with_kind(filtered_items.clone(), fkind)
+                    } else {
+                        let mut data = (**filtered_items).clone();
+                        *data.items_mut() = shared_cells;
+                        Value::array_with_kind(crate::gc::Gc::new(data), fkind)
+                    }
                 } else {
                     filtered
                 };
@@ -507,11 +516,18 @@ impl Interpreter {
         adverb: &GrepAdverb,
     ) -> Result<Value, RuntimeError> {
         let original_items = items.clone();
-        let filtered = self.eval_grep_over_items(func, items)?;
+        let (filtered, matched_indices) = self.eval_grep_over_items_indexed(func, items)?;
         if matches!(adverb, GrepAdverb::V) {
             return Ok(filtered);
         }
-        let indices = compute_grep_indices(&original_items, &filtered);
+        // Prefer the indices the grep loop reported: re-deriving them by
+        // scanning the source for a value `===` to each result element cannot
+        // find a `Proxy` slot, which shifts every key after it. The scan remains
+        // the fallback for a chunked grep, which has no one-to-one mapping.
+        let indices = match matched_indices {
+            Some(indices) => indices,
+            None => compute_grep_indices(&original_items, &filtered),
+        };
         adverb.transform_result(filtered, &indices)
     }
 }

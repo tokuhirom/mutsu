@@ -2627,28 +2627,67 @@ impl Interpreter {
         }
         // .gist with Instance-containing collections
         if method == "gist" && args.is_empty() {
-            fn collection_contains_instance(value: &Value) -> bool {
-                match value.view() {
+            // Cycle-guarded: a circular container (`my @c; @c = 42, @c`) would
+            // otherwise recurse until the process aborted on a stack overflow.
+            // Only the `Gc`-backed containers can form a cycle, so they are the
+            // only ones with an identity to track; `seen` holds every container
+            // already walked, not just the ancestors, so a graph with two cyclic
+            // edges is not re-walked once per path reaching it.
+            fn collection_contains_instance_seen(
+                value: &Value,
+                seen: &mut std::collections::HashSet<usize>,
+                depth: usize,
+            ) -> bool {
+                const MAX_DEPTH: usize = 256;
+                if depth > MAX_DEPTH {
+                    return false;
+                }
+                if matches!(
+                    value.view(),
                     // Values that may carry a user-defined `method gist` or
                     // `method Str` must be rendered via method dispatch rather
                     // than the pure `gist_value` fast path.
                     ValueView::Instance { .. }
-                    | ValueView::CustomType(_)
-                    | ValueView::CustomTypeInstance(_)
-                    | ValueView::Mixin(..)
-                    | ValueView::Package(..) => true,
-                    _ if value.as_list_items().is_some() => value
-                        .as_list_items()
-                        .unwrap()
+                        | ValueView::CustomType(_)
+                        | ValueView::CustomTypeInstance(_)
+                        | ValueView::Mixin(..)
+                        | ValueView::Package(..)
+                ) {
+                    return true;
+                }
+                let id = match value.view() {
+                    ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+                    ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+                    _ => None,
+                };
+                if let Some(id) = id
+                    && !seen.insert(id)
+                {
+                    return false;
+                }
+                if let Some(items) = value.as_list_items() {
+                    let items = items.to_vec();
+                    return items
                         .iter()
-                        .any(collection_contains_instance),
-                    ValueView::Hash(map) => map.values().any(collection_contains_instance),
-                    ValueView::Pair(_, v) => collection_contains_instance(v),
+                        .any(|v| collection_contains_instance_seen(v, seen, depth + 1));
+                }
+                match value.view() {
+                    ValueView::Hash(map) => {
+                        let values: Vec<Value> = map.values().cloned().collect();
+                        values
+                            .iter()
+                            .any(|v| collection_contains_instance_seen(v, seen, depth + 1))
+                    }
+                    ValueView::Pair(_, v) => collection_contains_instance_seen(v, seen, depth + 1),
                     ValueView::ValuePair(k, v) => {
-                        collection_contains_instance(k) || collection_contains_instance(v)
+                        collection_contains_instance_seen(k, seen, depth + 1)
+                            || collection_contains_instance_seen(v, seen, depth + 1)
                     }
                     _ => false,
                 }
+            }
+            fn collection_contains_instance(value: &Value) -> bool {
+                collection_contains_instance_seen(value, &mut std::collections::HashSet::new(), 0)
             }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 use crate::value::ArrayKind;
@@ -2741,6 +2780,14 @@ impl Interpreter {
                     | ValueView::ValuePair(..)
             ) && collection_contains_instance(&target)
             {
+                // `gist_item` is a plain recursion: a circular container would
+                // run it until the process aborted on a stack overflow. Render
+                // such a target with `gist_value`, the one gist renderer that
+                // carries the cycle rule (see the twin guard in
+                // `builtins::methods_0arg::dispatch_core_repr`).
+                if crate::runtime::utils::contains_cycle(&target) {
+                    return Ok(Value::str(crate::runtime::gist_value(&target)));
+                }
                 return Ok(Value::str(gist_item(self, &target)));
             }
         }

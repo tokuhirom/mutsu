@@ -2,6 +2,14 @@ use super::*;
 use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::ValueView;
 
+/// What a grep over a list of items produced: the matched values, the source
+/// items after any `$_` write-backs, and — when the grep consumed one element
+/// per iteration — the source index each matched value came from.
+///
+/// See [`Interpreter::eval_grep_over_items_with_mutated`] for why the indices
+/// are reported by the loop rather than re-derived by the caller.
+pub(crate) type GrepOutcome = (Value, Vec<Value>, Option<Vec<usize>>);
+
 impl Interpreter {
     /// Returns the mapped result and whether any element of `list_items` was
     /// actually written back (Raku's rw binding of `$_` / an `is rw` param).
@@ -410,11 +418,27 @@ impl Interpreter {
             .map(|v| (v, false))
     }
 
+    /// Run `func` over `list_items`, returning the matched values, the
+    /// (possibly `$_`-mutated) source items, and — when the grep consumed one
+    /// element per iteration — the source index each matched value came from.
+    ///
+    /// The indices are reported by the loop itself rather than re-derived by the
+    /// caller. Recovering them afterwards by scanning the source for a value
+    /// `===` to each result element is only correct when a matched element is
+    /// still recognisable in the source: a `Proxy` element reaches the result as
+    /// its FETCHed value while the source slot still holds the `Proxy`, so the
+    /// scan skipped it — which silently *dropped* the element from the result
+    /// (the caller rebuilds the result from the located slots) and shifted every
+    /// `:k`/`:kv`/`:p` key after it.
+    ///
+    /// `None` means there is no one-to-one element/slot mapping to report: a
+    /// multi-parameter block (`grep -> $a, $b { ... }`) consumes the source in
+    /// chunks, so a matched value corresponds to a *range* of source slots.
     pub(super) fn eval_grep_over_items_with_mutated(
         &mut self,
         func: Option<Value>,
         mut list_items: Vec<Value>,
-    ) -> Result<(Value, Vec<Value>), RuntimeError> {
+    ) -> Result<GrepOutcome, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -432,6 +456,10 @@ impl Interpreter {
         {
             let data = data.clone();
             let mut result = Vec::new();
+            // Source index of each matched element, recorded by the loop (see
+            // the doc comment): only meaningful for a one-element-per-iteration
+            // grep, so it is discarded below when `arity > 1`.
+            let mut matched: Vec<usize> = Vec::new();
             // A destructuring sub-signature (`grep -> [ \a, \u, \v ] { u %% v }`) has to go
             // through the real binder. The fast path below inserts each parameter into the
             // env *by name*, which cannot take an element apart, so the inner names stayed
@@ -445,7 +473,8 @@ impl Interpreter {
                 // would evaluate an empty predicate; run the real call path.
                 || (data.body.is_empty() && data.compiled_routine.is_some());
             if needs_full_binding {
-                for item in &list_items {
+                let mut matched = Vec::new();
+                for (i, item) in list_items.iter().enumerate() {
                     let pred = self.call_sub_value(
                         Value::sub_value(data.clone()),
                         vec![item.clone()],
@@ -453,9 +482,10 @@ impl Interpreter {
                     )?;
                     if pred.truthy() {
                         result.push(item.clone());
+                        matched.push(i);
                     }
                 }
-                return Ok((Value::array(result), list_items));
+                return Ok((Value::array(result), list_items, Some(matched)));
             }
             let arity = if !data.params.is_empty() {
                 let effective = data
@@ -470,6 +500,7 @@ impl Interpreter {
             // dispatcher) — delegate to call_sub_value which resolves the markers.
             if super::resolution_map_grep::sub_is_call_carrier(&data) {
                 let mut i = 0usize;
+                let mut matched = Vec::new();
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
                         break;
@@ -487,10 +518,13 @@ impl Interpreter {
                         } else {
                             result.push(Value::array(chunk));
                         }
+                        matched.push(i);
                     }
                     i += arity;
                 }
-                return Ok((Value::array(result), list_items));
+                // A chunked grep has no one-to-one element/slot mapping.
+                let matched = (arity == 1).then_some(matched);
+                return Ok((Value::array(result), list_items, matched));
             }
 
             // Compile once, reuse VM for every iteration (and reuse a cached
@@ -665,6 +699,7 @@ impl Interpreter {
                                     } else {
                                         result.push(Value::array(chunk));
                                     }
+                                    matched.push(i);
                                 }
                                 break 'body_redo;
                             }
@@ -697,6 +732,7 @@ impl Interpreter {
                                     } else {
                                         result.push(Value::array(chunk));
                                     }
+                                    matched.push(i);
                                 }
                                 break 'body_redo;
                             }
@@ -727,30 +763,37 @@ impl Interpreter {
                 self.record_eager_block_free_var_writeback(&code, &data.params);
             }
             loop_result?;
-            return Ok((Value::array(result), list_items));
+            // A chunked grep has no one-to-one element/slot mapping.
+            let matched = (arity == 1).then_some(matched);
+            return Ok((Value::array(result), list_items, matched));
         }
         if let Some(pattern) = func {
             if matches!(pattern.view(), ValueView::Bool(_)) {
                 return Err(RuntimeError::new("X::Match::Bool"));
             }
             let mut result = Vec::new();
-            for item in &list_items {
+            let mut matched = Vec::new();
+            for (i, item) in list_items.iter().enumerate() {
                 if self.smart_match(item, &pattern) {
                     result.push(item.clone());
+                    matched.push(i);
                 }
             }
-            return Ok((Value::array(result), list_items));
+            return Ok((Value::array(result), list_items, Some(matched)));
         }
         if let Some(func) = func {
             let mut result = Vec::new();
-            for item in &list_items {
+            let mut matched = Vec::new();
+            for (i, item) in list_items.iter().enumerate() {
                 let pred = self.call_sub_value(func.clone(), vec![item.clone()], false)?;
                 if pred.truthy() {
                     result.push(item.clone());
+                    matched.push(i);
                 }
             }
-            return Ok((Value::array(result), list_items));
+            return Ok((Value::array(result), list_items, Some(matched)));
         }
-        Ok((Value::array(list_items.clone()), list_items))
+        let all = (0..list_items.len()).collect();
+        Ok((Value::array(list_items.clone()), list_items, Some(all)))
     }
 }
