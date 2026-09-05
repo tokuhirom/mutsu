@@ -172,6 +172,9 @@ pub enum RakuAstClass {
     TermName,
     // `.^name` — a metamethod call, distinct from `.?`/`.+`/`.*` dispatch.
     CallMetaMethod,
+    // `until` / `repeat … until` — raku's own classes, not a negated `while`.
+    StatementLoopUntil,
+    StatementLoopRepeatUntil,
     // Class/role declaration traits (`is Parent`, `does Role`, `is rw`).
     TraitIs,
     TraitDoes,
@@ -280,6 +283,8 @@ impl RakuAstClass {
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
             TermName => "RakuAST::Term::Name",
             CallMetaMethod => "RakuAST::Call::MetaMethod",
+            StatementLoopUntil => "RakuAST::Statement::Loop::Until",
+            StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
             TraitIs => "RakuAST::Trait::Is",
             TraitDoes => "RakuAST::Trait::Does",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
@@ -579,6 +584,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::VarDeclarationConstant,
     RakuAstClass::TermName,
     RakuAstClass::CallMetaMethod,
+    RakuAstClass::StatementLoopUntil,
+    RakuAstClass::StatementLoopRepeatUntil,
     RakuAstClass::TraitIs,
     RakuAstClass::TraitDoes,
     RakuAstClass::StatementPrefixPhaserBegin,

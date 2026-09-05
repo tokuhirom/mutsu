@@ -76,19 +76,26 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::StatementIf => lower_if(node),
-        RakuAstClass::StatementLoopWhile => lower_while(node),
+        RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
         // `repeat { … } while/until C` runs the body once before testing the
         // condition (`until` desugars to `while !C`, handled by the prefix `!`).
-        RakuAstClass::StatementLoopRepeatWhile => Ok(Stmt::Loop {
-            init: None,
-            cond: Some(lower_expr(named_child(node, "condition")?)?),
-            step: None,
-            body: lower_block(named_child(node, "body")?)?,
-            repeat: true,
-            label: None,
-            is_until: false,
-        }),
+        // `repeat { … } while/until C`. mutsu stores an `until` as a negated
+        // condition plus the flag, which is what the converter reads back, so
+        // the lowerer has to re-plant both.
+        RakuAstClass::StatementLoopRepeatWhile | RakuAstClass::StatementLoopRepeatUntil => {
+            let is_until = node.class == RakuAstClass::StatementLoopRepeatUntil;
+            let cond = lower_expr(named_child(node, "condition")?)?;
+            Ok(Stmt::Loop {
+                init: None,
+                cond: Some(negate_if(cond, is_until)),
+                step: None,
+                body: lower_block(named_child(node, "body")?)?,
+                repeat: true,
+                label: None,
+                is_until,
+            })
+        }
         RakuAstClass::StatementFor => lower_for(node),
         // `INIT { … }` / `LEAVE { … }` / … -> `Stmt::Phaser`, one class per kind.
         // `BEGIN` is absent deliberately — see `lower_phaser`.
@@ -723,15 +730,30 @@ fn pointy_single_param(pointy: &RakuAstNode) -> Result<Option<String>, RuntimeEr
 
 /// Lower `while COND { … }` to `Stmt::While`.
 fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let is_until = node.class == RakuAstClass::StatementLoopUntil;
     let cond = lower_expr(named_child(node, "condition")?)?;
     let body = lower_block(named_child(node, "body")?)?;
     Ok(Stmt::While {
-        cond,
+        cond: negate_if(cond, is_until),
         body,
         label: None,
         is_statement_modifier: false,
-        is_until: false,
+        is_until,
     })
+}
+
+/// mutsu stores an `until` loop as a `while` over a negated condition *plus* an
+/// `is_until` flag; raku keeps the condition undecorated and puts the keyword in
+/// the class name. Re-plant the negation the parser would have added.
+fn negate_if(cond: Expr, is_until: bool) -> Expr {
+    if is_until {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr: Box::new(cond),
+        }
+    } else {
+        cond
+    }
 }
 
 /// Lower a C-style `loop (SETUP; COND; STEP) { … }` to `Stmt::Loop`. Each of the
