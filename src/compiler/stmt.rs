@@ -1654,12 +1654,27 @@ impl Compiler {
                     // only emit WrapVarRef when the RHS is a simple variable.
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
-                    self.sigilless_bind_terminal = sigilless_bind_vardecl;
+                    // A DECLARATION bind settles the new name's writability
+                    // from what the RHS denotes, so an immutable `List`
+                    // element must not be promoted to a private cell — for the
+                    // sigilless spelling (`my \a := (5, 6)[0]`) and for the
+                    // `$`-sigil one (`my $x := (5, 6)[0]`) alike.
+                    //
+                    // The signal is `scalar_bind_decont`, i.e. the parser's
+                    // `__scalar_bind` tag, NOT `bind_vardecl`: a multi-
+                    // parameter loop chunk is desugared into the very same
+                    // `SyntheticBlock([MarkBind, VarDecl])` shape (see
+                    // `build_for_bind_stmts`) and DOES depend on the promotion
+                    // to refresh its parameter each iteration. Only a
+                    // declaration the parser itself tagged is a declaration
+                    // bind. (`@`/`%` targets never carry the tag; they alias
+                    // the whole container and keep the promotion too.)
+                    self.decl_bind_terminal = sigilless_bind_vardecl || scalar_bind_decont;
                     self.bind_target_direct = true;
                     self.compile_call_arg(expr);
                     self.scalar_bind_autovivify = false;
                     self.bind_terminal = false;
-                    self.sigilless_bind_terminal = false;
+                    self.decl_bind_terminal = false;
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
                         || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))

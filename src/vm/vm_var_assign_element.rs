@@ -454,15 +454,22 @@ impl Interpreter {
         }
     }
 
-    /// A positional subscript of an element-producing `Seq` (`@a.values`,
-    /// `@a.kv`, `@a.pairs`) keeps the producer's element cells alive, so the
-    /// assignment writes THROUGH the cell to the source container. Neither the
-    /// named nor the generic element-assign machinery knows how to store into a
-    /// `Seq`, so without this the write is silently discarded.
+    /// A positional element store into a `Seq`, which rakudo decides per
+    /// ELEMENT — a `Seq` is not an assignable container of its own.
     ///
-    /// Returns `None` when the target is not such a `Seq` (the caller falls
-    /// through to its ordinary paths), otherwise the value to push as the
-    /// assignment's result.
+    /// An element-producing `Seq` (`@a.values`, `@a.kv`, `@a.pairs`) keeps the
+    /// producer's element cells alive, so the assignment writes THROUGH the
+    /// cell to the source container. Every other element is a plain value with
+    /// no slot to replace, and the store is refused naming that element:
+    /// `my $s = (1, 2, 3).Seq; $s[0] = 5` is "Cannot modify an immutable Int
+    /// (1)", while `my $x = 1; my $s = ($x, 2).Seq; $s[0] = 5` sets `$x` — the
+    /// same element-keyed rule the immutable `List` store already applies.
+    /// Neither the named nor the generic element-assign machinery knows how to
+    /// store into a `Seq`, so without this the write is silently discarded.
+    ///
+    /// Returns `None` when the target is not a `Seq` this can decide on (the
+    /// caller falls through to its ordinary paths), otherwise the outcome of
+    /// the store.
     ///
     /// Shared by [`Self::exec_index_assign_generic_op`] (the computed-target
     /// spelling, `(@a.values)[0] = "x"`) and the named-receiver one
@@ -481,7 +488,11 @@ impl Interpreter {
         let ValueView::Seq(body) = target.view() else {
             return None;
         };
-        if !body.has_element_containers() {
+        // A body that still has a producer to pull from is left alone: forcing
+        // it merely to refuse the store would consume a one-shot iterator (and
+        // could run forever on an unbounded one). Only an already-materialized
+        // sequence is decided here.
+        if !body.has_element_containers() && body.has_deferred_source() {
             return None;
         }
         let indices: Vec<usize> = match idx.view() {
@@ -506,8 +517,11 @@ impl Interpreter {
             Err(e) => return Some(Err(e)),
         };
         for (value_index, element_index) in indices.iter().copied().enumerate() {
+            // Past the end there is nothing at all to write: rakudo's `AT-POS`
+            // hands back `Nil` and refuses the store on it ("Cannot modify an
+            // immutable Nil value").
             let Some(slot) = body.get(element_index).cloned() else {
-                continue;
+                return Some(Err(RuntimeError::assignment_ro_value(Value::NIL)));
             };
             let ValueView::ContainerRef(cell) = slot.view() else {
                 return Some(Err(RuntimeError::assignment_ro_value(
@@ -736,12 +750,15 @@ impl Interpreter {
                 self.stack[stack_len - 2] = old.into_deref().itemize_for_element_store();
             }
         }
-        // A named receiver that holds an element-producing `Seq`
+        // A named receiver that holds a `Seq` is decided per ELEMENT by
+        // `try_seq_element_cell_assign`: an element-producing `Seq`
         // (`my \s = @a.values; s[0] = "x"`) writes THROUGH the producer's
         // element cells, exactly as the computed-target spelling
-        // (`(@a.values)[0] = "x"`) already did. Nothing below knows how to
-        // store into a `Seq`, so without this the write was silently dropped.
-        // Checked before the fast paths, which all assume an Array/Hash target.
+        // (`(@a.values)[0] = "x"`) already did, and any other materialized
+        // element is refused ("Cannot modify an immutable Int (1)"). Nothing
+        // below knows how to store into a `Seq`, so without this the write was
+        // silently dropped. Checked before the fast paths, which all assume an
+        // Array/Hash target.
         //
         // The `Proxy` destination check below shares this one target lookup, so
         // the pair costs the hot element-assign path a single resolve, not two.
@@ -750,7 +767,9 @@ impl Interpreter {
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
                 .or_else(|| self.env().get(Self::const_str(code, name_idx)).cloned())
         {
-            if matches!(target.view(), ValueView::Seq(body) if body.has_element_containers()) {
+            if matches!(target.view(), ValueView::Seq(body)
+                if body.has_element_containers() || !body.has_deferred_source())
+            {
                 let idx = self.stack.pop().unwrap_or(Value::NIL);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if let Some(res) =

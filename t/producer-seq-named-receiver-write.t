@@ -93,14 +93,15 @@ plan 13;
 }
 
 {
-    # A Seq with no element containers (an ordinary lazy map) must not be
-    # captured by the producer path. mutsu accepts the assignment and rewrites
-    # the Seq in place instead of dying -- a PRE-EXISTING divergence (identical
-    # on main), recorded here as the bound this fix must not widen: whatever it
-    # does, it must not reach the source array.
+    # A Seq with no element containers (an ordinary lazy map) is refused, and
+    # the refusal names the ELEMENT the store addressed -- rakudo's
+    # "Cannot modify an immutable Int (2)". (This was a `todo` until the
+    # element-keyed `Seq` store landed; see
+    # news/2026-09/immutable-element-store-and-bind.md.)
     my @a = 1, 2, 3;
     my $s = @a.map(* + 1);
-    todo 'a non-producer Seq subscript assignment is accepted (pre-existing)', 1;
-    dies-ok { $s[0] = 99 }, 'a non-producer Seq subscript assignment still dies';
+    throws-like { $s[0] = 99 }, X::Assignment::RO,
+        message => /'Cannot modify an immutable Int (2)'/,
+        'a non-producer Seq subscript assignment dies, naming the element';
     is-deeply @a, [1, 2, 3], '... and in any case never reaches the source array';
 }

@@ -11,6 +11,48 @@ impl Interpreter {
         runtime::bound_array_slice_key(name)
     }
 
+    /// True when a `$`-sigil `:=` bind SOURCE has no assignable container
+    /// behind it, so a later `$x = v` through the bound name is rakudo's
+    /// X::AdHoc "Cannot assign to an immutable value".
+    ///
+    /// Deliberately an ALLOWLIST, and the conservative direction is to mark
+    /// LESS: anything container-like or written-through (`ContainerRef`,
+    /// `Proxy` STORE, a deferred `HashEntryRef` bind, an `is raw` result, a
+    /// real `Array`/`Hash`, an instance with rw attributes) must stay writable,
+    /// and an overlooked kind here turns into a hard runtime error.
+    ///
+    /// Two families qualify. A pure immutable SCALAR is bound to the value
+    /// itself (`my $r := $obj.ro-attr`, `my $x := 5`). An immutable
+    /// POSITIONAL — a `List`/`ItemList` literal, a `Range`, a `Seq`, a lazy
+    /// list, a `Slip` — is a container, but not a *Scalar* container, and
+    /// rakudo's scalar assignment needs one: `my $x := (1, 2, 3); $x = 5` dies
+    /// exactly like `my $x := 5` does. (`@`/`%` targets never reach here; they
+    /// alias the whole container and `@a = ...` is a STORE, not an assignment
+    /// into a Scalar.)
+    fn bind_source_has_no_container(v: &Value) -> bool {
+        match v.view() {
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::Complex(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+            | ValueView::Seq(_)
+            | ValueView::HyperSeq(_)
+            | ValueView::RaceSeq(_)
+            | ValueView::LazyList(_)
+            | ValueView::Slip(_) => true,
+            ValueView::Array(_, kind) => kind.is_immutable_list(),
+            _ => false,
+        }
+    }
+
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
     /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
     /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
@@ -527,18 +569,20 @@ impl Interpreter {
         // AFTER the declaration bookkeeping below, which now unconditionally
         // clears any stale readonly marking left by an earlier same-named
         // binding (see the `unmark_readonly` call in the `is_vardecl` block).
+        //
+        // A `__mutsu_bind_index_ref_N` wrapper (`compile_call_arg`'s per-site
+        // tag for `my $x := <subscript>`) is NOT a named source: it denotes
+        // nothing of its own, so the value under it is the oracle — the same
+        // rule `OpCode::MarkSigillessBindSource` states for the sigilless
+        // spelling. Without this, an immutable `List` element
+        // (`my $x := (5, 6)[0]`, whose promotion `IndexAutovivifyLazyTerminal
+        // { decl_bind: true }` now declines) would look like a named bind.
+        let synthetic_index_source = bind_source
+            .as_deref()
+            .is_some_and(|n| n.starts_with("__mutsu_bind_index_ref_"));
         let bind_marks_immutable = scalar_bind
-            && bind_source.is_none()
-            && matches!(
-                raw_popped.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Rat(..)
-                    | ValueView::Complex(..)
-            );
+            && (bind_source.is_none() || synthetic_index_source)
+            && Self::bind_source_has_no_container(&raw_popped);
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the

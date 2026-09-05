@@ -998,21 +998,7 @@ impl Interpreter {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let type_name = match target_val.view() {
-                    ValueView::Array(..) => "List",
-                    _ => "Range",
-                };
-                let display = target_val.to_string_value();
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!(
-                        "Cannot modify an immutable {} ({})",
-                        type_name, display
-                    )),
-                );
-                attrs.insert("value".to_string(), target_val.clone());
-                return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+                return Err(RuntimeError::assignment_ro_value(target_val.clone()));
             }
         }
         // Buf/Blob element and slice assignment (`$b[i] = v` / `$b[i,j] = v,w`):
@@ -3931,14 +3917,9 @@ impl Interpreter {
                 Some(ValueView::Scalar(_) | ValueView::ContainerRef(_))
             )
         {
-            let display = target.descalarize().to_string_value();
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!("Cannot modify an immutable List ({display})")),
-            );
-            attrs.insert("value".to_string(), target.descalarize().clone());
-            return Err(RuntimeError::typed("X::Assignment::RO", attrs));
+            return Err(RuntimeError::assignment_ro_value(
+                target.descalarize().clone(),
+            ));
         }
         let key = idx.to_string_value();
         // A single scalar index names one element, so the assignment's rvalue is

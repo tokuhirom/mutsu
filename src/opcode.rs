@@ -1510,26 +1510,27 @@ pub(crate) enum OpCode {
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
     /// `ContainerRef` cell — not kept as a traversal back-reference.
     ///
-    /// `sigilless` marks the bind target as a SIGILLESS term (`my \a := (5,
-    /// 6)[0]`, and each sigilless target of a list-destructuring bind). A
-    /// sigilless term IS whatever it is bound to, so rakudo settles its
-    /// mutability from the bound thing: an `Array` element is a container and
-    /// writes through, while a `List` element is a plain value and `a = 10`
-    /// dies with "Cannot modify an immutable Int". Promoting a `List`'s scalar
-    /// leaf to a fresh cell would make the second case look writable, so this
-    /// flag suppresses the promotion for an immutable `List` — an element that
-    /// already IS a container (a captured source cell from `($x, $y)`, a nested
-    /// `Array`/`Hash`) is handed back unchanged and stays writable.
+    /// `decl_bind` marks this terminal subscript as the source of a `:=`
+    /// DECLARATION — `my \a := (5, 6)[0]` (including each sigilless target of a
+    /// list-destructuring bind) and `my $x := (5, 6)[0]`. Such a name is bound
+    /// to whatever the element denotes, so rakudo settles its mutability from
+    /// the bound thing: an `Array` element is a container and writes through,
+    /// while a `List` element is a plain value and a later `a = 10` / `$x = 10`
+    /// dies. Promoting a `List`'s scalar leaf to a fresh cell would make the
+    /// second case look writable, so this flag suppresses the promotion for an
+    /// immutable `List` — an element that already IS a container (a captured
+    /// source cell from `($x, $y)`, a nested `Array`/`Hash`) is handed back
+    /// unchanged and stays writable.
     ///
-    /// The flag is deliberately narrow. The same over-promotion makes
-    /// `my $x := (5, 6)[0]; $x = 10` and a `List`-element loop parameter
-    /// wrongly writable, but suppressing it there breaks consumers that lean on
-    /// the promotion (a chunked `for @flat -> \a, \b` binding, `.kv` on a
-    /// mutable QuantHash or a `Pair`); see
-    /// `todo/deep/immutable-list-element-bind-is-writable.md`.
+    /// The flag is deliberately restricted to a declaration bind. The same
+    /// over-promotion also makes a `List`-element loop parameter wrongly
+    /// writable, but suppressing it there breaks consumers that lean on the
+    /// promotion (a chunked `for @flat -> \a, \b` binding, `.kv` on a mutable
+    /// QuantHash or a `Pair`); see
+    /// `news/2026-09/immutable-element-store-and-bind.md`.
     IndexAutovivifyLazyTerminal {
         is_positional: bool,
-        sigilless: bool,
+        decl_bind: bool,
     },
     /// `%h<k>:delete` / `@a[i]:delete`. First field is the container variable's
     /// name (const-pool index); the optional second is its compile-time-resolved

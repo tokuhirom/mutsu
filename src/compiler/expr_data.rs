@@ -425,15 +425,15 @@ impl Compiler {
         let lazy_op = if is_terminal {
             OpCode::IndexAutovivifyLazyTerminal {
                 is_positional,
-                sigilless: self.sigilless_bind_terminal,
+                decl_bind: self.decl_bind_terminal,
             }
         } else {
             OpCode::IndexAutovivifyLazy { is_positional }
         };
         let saved_terminal = self.bind_terminal;
         self.bind_terminal = false; // inner `target` indices are intermediate
-        let saved_sigilless_terminal = self.sigilless_bind_terminal;
-        self.sigilless_bind_terminal = false;
+        let saved_decl_bind_terminal = self.decl_bind_terminal;
+        self.decl_bind_terminal = false;
 
         // Special case: CALLERS::<$*x> stash-subscript access — the "any caller
         // scope" twin below. It carries the twigil case (roast `CALLERS::<$*foo>`)
@@ -454,7 +454,7 @@ impl Compiler {
             if depth == 1 && self.in_immediate_block() {
                 self.emit_outers_var_access(bare);
                 self.bind_terminal = saved_terminal;
-                self.sigilless_bind_terminal = saved_sigilless_terminal;
+                self.decl_bind_terminal = saved_decl_bind_terminal;
                 return;
             }
             let cascade = Self::callers_name_cascades(&bare);
@@ -465,7 +465,7 @@ impl Compiler {
                 cascade,
             });
             self.bind_terminal = saved_terminal;
-            self.sigilless_bind_terminal = saved_sigilless_terminal;
+            self.decl_bind_terminal = saved_decl_bind_terminal;
             return;
         }
 
@@ -488,7 +488,7 @@ impl Compiler {
             if depth == 1 && self.in_immediate_block() {
                 self.emit_caller_outer_var_access(bare, 1);
                 self.bind_terminal = saved_terminal;
-                self.sigilless_bind_terminal = saved_sigilless_terminal;
+                self.decl_bind_terminal = saved_decl_bind_terminal;
                 return;
             }
             let name_idx = self.code.add_constant(Value::str(bare));
@@ -497,7 +497,7 @@ impl Compiler {
                 depth: depth as u32,
             });
             self.bind_terminal = saved_terminal;
-            self.sigilless_bind_terminal = saved_sigilless_terminal;
+            self.decl_bind_terminal = saved_decl_bind_terminal;
             return;
         }
 
@@ -523,7 +523,7 @@ impl Compiler {
                 OuterStash::Any => self.emit_outers_var_access(bare),
             }
             self.bind_terminal = saved_terminal;
-            self.sigilless_bind_terminal = saved_sigilless_terminal;
+            self.decl_bind_terminal = saved_decl_bind_terminal;
             return;
         }
 
@@ -565,7 +565,7 @@ impl Compiler {
             }
         }
         self.bind_terminal = saved_terminal;
-        self.sigilless_bind_terminal = saved_sigilless_terminal;
+        self.decl_bind_terminal = saved_decl_bind_terminal;
     }
 
     /// Compile the *index* half of a subscript. The index selects which element
@@ -579,12 +579,12 @@ impl Compiler {
         let saved_terminal = self.bind_terminal;
         self.scalar_bind_autovivify = false;
         self.bind_terminal = false;
-        let saved_sigilless = self.sigilless_bind_terminal;
-        self.sigilless_bind_terminal = false;
+        let saved_decl_bind = self.decl_bind_terminal;
+        self.decl_bind_terminal = false;
         self.compile_expr(index);
         self.scalar_bind_autovivify = saved_av;
         self.bind_terminal = saved_terminal;
-        self.sigilless_bind_terminal = saved_sigilless;
+        self.decl_bind_terminal = saved_decl_bind;
     }
 
     /// In a container-producing (bind / `return-rw`) subscript chain, read a
