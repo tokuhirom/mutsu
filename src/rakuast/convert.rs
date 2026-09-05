@@ -873,9 +873,17 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
+            if is_desugar_marker(name.as_str()) {
+                return Err(desugared(name.as_str()));
+            }
             Ok(call_name(name.as_str(), args, false)?)
         }
-        Expr::Var(name) => Ok(var_lexical("$", name)),
+        Expr::Var(name) => {
+            if is_desugar_marker(name) {
+                return Err(desugared(name));
+            }
+            Ok(var_lexical("$", name))
+        }
         // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
         Expr::CallOn { target, args } => {
             let call_term = RakuAstNode {
@@ -990,8 +998,18 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::CompoundAssign {
             target, op, rhs, ..
         } => compound_assignment_infix(target, op, rhs),
-        Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
-        Expr::HashVar(name) => Ok(var_lexical("%", name)),
+        Expr::ArrayVar(name) => {
+            if is_desugar_marker(name) {
+                return Err(desugared(name));
+            }
+            Ok(var_lexical("@", name))
+        }
+        Expr::HashVar(name) => {
+            if is_desugar_marker(name) {
+                return Err(desugared(name));
+            }
+            Ok(var_lexical("%", name))
+        }
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),
         // `todo/tickets/chained-compare-ast-node.md`: rakudo has no AST-level
         // `&&` for a chained comparison — `Q[1 < 2 < 3].AST` is a left-nested
@@ -1867,6 +1885,24 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
         class: RakuAstClass::CallQuotedMethod,
         fields,
     })
+}
+
+/// Whether a routine or variable name is one of mutsu's internal desugaring
+/// markers (`__mutsu_hyper_prefix`, `__with_tmp_0`, `__destructure_tmp__`, …)
+/// rather than something the source wrote. raku keeps these constructs as
+/// dedicated nodes and never has such a name, so rendering one would emit a
+/// node that cannot exist in a real RakuAST tree. Refusing is the same rule the
+/// rest of the converter follows: an erased distinction is a boundary, never a
+/// guess. The underlying constructs are tracked as read-direction gaps in
+/// `todo/deep/rakuast-remaining.md`.
+fn is_desugar_marker(name: &str) -> bool {
+    name.starts_with("__") || name.starts_with("@__") || name.starts_with("%__")
+}
+
+/// The coverage-boundary error for a construct that reached conversion already
+/// desugared into an internal marker.
+fn desugared(name: &str) -> RuntimeError {
+    unsupported(&format!("desugared construct (internal name `{name}`)"))
 }
 
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
