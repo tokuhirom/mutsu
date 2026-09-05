@@ -109,6 +109,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if *is_dynamic || where_constraint.is_some() {
                 return Err(unsupported("dynamic / where-constrained declaration"));
             }
+            // `constant X = 5` is a distinct raku node, not a scoped `my`.
+            // mutsu marks it with a `__constant` pseudo-trait (plus a
+            // `__constant_sigil` recording the declared sigil) and sets
+            // `is_our` for the package-scoped default spelling.
+            if custom_traits.iter().any(|(n, _)| n == "__constant") {
+                return constant_declaration(name, expr, custom_traits, type_constraint, *is_our);
+            }
             if custom_traits.iter().any(|(n, _)| n != "__has_initializer") {
                 return Err(unsupported("declaration with traits"));
             }
@@ -386,7 +393,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || associativity.is_some()
                 || precedence_trait.is_some()
                 || !signature_alternates.is_empty()
-                || *multi
                 || *is_rw
                 || *is_raw
                 || *is_export
@@ -404,13 +410,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 // parser inconsistency; refuse rather than render a wrong node.
                 return Err(unsupported("sub with a return trait but no return type"));
             }
-            Ok(Some(statement_expression(routine_node(
+            let mut node = routine_node(
                 RakuAstClass::Sub,
                 &name.resolve(),
                 param_defs,
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
-            )?)))
+            )?;
+            if *multi {
+                // `multiness` precedes `name` in raku's field order.
+                node.fields
+                    .insert(0, leaf_field(Some("multiness"), Value::str_from("multi")));
+            }
+            Ok(Some(statement_expression(node)))
         }
         Stmt::MethodDecl {
             name,
@@ -487,16 +499,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             is_unit,
             ..
         } => {
-            // Plain `class NAME { body }`. Inheritance (`is`/`does`), `my`/unit
-            // scope, reprs, `rw`, and traits carry extra RakuAST shape, deferred.
+            // `class NAME [is P] [does R] [is rw] [is repr(R)] { body }`.
+            // Inheritance and `rw` are `traits`, the repr is its own leaf field.
+            // `my`/unit scope, `hides`, computed names and user traits carry
+            // extra RakuAST shape, deferred.
             if name_expr.is_some()
-                || !parents.is_empty()
-                || *class_is_rw
                 || *is_hidden
                 || *is_lexical
                 || !hidden_parents.is_empty()
-                || !does_parents.is_empty()
-                || repr.is_some()
                 || !custom_traits.is_empty()
                 || *is_unit
             {
@@ -504,12 +514,25 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "class with inheritance / scope / repr / traits",
                 ));
             }
+            let mut fields = vec![node_field(
+                Some("name"),
+                name_from_identifier(&name.resolve()),
+            )];
+            // Field order matches raku: scope, name, repr, traits, body.
+            if let Some(r) = repr {
+                fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
+            }
+            let traits = class_traits(parents, does_parents, *class_is_rw)?;
+            if !traits.is_empty() {
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(traits),
+                });
+            }
+            fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(statement_expression(RakuAstNode {
                 class: RakuAstClass::Class,
-                fields: vec![
-                    node_field(Some("name"), name_from_identifier(&name.resolve())),
-                    node_field(Some("body"), block_node(body)?),
-                ],
+                fields,
             })))
         }
         Stmt::RoleDecl {
@@ -1593,6 +1616,103 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
             node_field(Some("body"), blockoid(body)?),
         ],
     })
+}
+
+/// `constant X = 5` -> `VarDeclaration::Constant(name => "X", initializer =>
+/// Initializer::Assign(...))`. Measured against rakudo 2026.07: the `name` is a
+/// plain string (not a `Name` node), the package-scoped default spelling emits
+/// no `scope`, and `my constant Y = 7` emits `scope => "my"`.
+///
+/// A sigilled constant (`constant @a = 1, 2`) or a typed one carries shape this
+/// does not model yet, so both stay a boundary.
+fn constant_declaration(
+    name: &str,
+    expr: &Expr,
+    custom_traits: &[(String, Option<Expr>)],
+    type_constraint: &Option<String>,
+    is_our: bool,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    if type_constraint.is_some() {
+        return Err(unsupported("typed constant"));
+    }
+    // `__constant_sigil` carries the declared sigil; only the sigilless form
+    // (a plain `constant X`) maps onto the measured node shape.
+    let sigil = custom_traits.iter().find_map(|(n, arg)| {
+        (n == "__constant_sigil").then(|| match arg {
+            Some(Expr::Literal(v)) => match v.view() {
+                ValueView::Str(s) => s.to_string(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        })
+    });
+    if sigil.is_some_and(|s| !s.is_empty()) {
+        return Err(unsupported("sigilled constant"));
+    }
+    if custom_traits
+        .iter()
+        .any(|(n, _)| n != "__constant" && n != "__constant_sigil" && n != "__has_initializer")
+    {
+        return Err(unsupported("constant with traits"));
+    }
+    let mut fields = Vec::new();
+    // The package-scoped default (`constant X`) prints no scope; `my constant`
+    // does. mutsu records the default as `is_our`.
+    if !is_our {
+        fields.push(leaf_field(Some("scope"), Value::str_from("my")));
+    }
+    fields.push(leaf_field(Some("name"), Value::str(name.to_string())));
+    fields.push(node_field(
+        Some("initializer"),
+        RakuAstNode {
+            class: RakuAstClass::InitializerAssign,
+            fields: vec![node_field(None, convert_expr(expr)?)],
+        },
+    ));
+    Ok(Some(statement_expression(RakuAstNode {
+        class: RakuAstClass::VarDeclarationConstant,
+        fields,
+    })))
+}
+
+/// A class declaration's `traits` list, in source order: `is P` inheritance
+/// first, then `does R` role composition, then a bare `is rw`.
+///
+/// raku spells the three differently, all measured against rakudo 2026.07:
+/// `is Int` is `Trait::Is(type => Type::Simple)` (a NAMED `type`), `does R` is
+/// `Trait::Does(Type::Simple)` (POSITIONAL), and `is rw` is
+/// `Trait::Is(name => Name)` — a trait *name*, not a type.
+fn class_traits(
+    parents: &[String],
+    does_parents: &[String],
+    is_rw: bool,
+) -> Result<Vec<Value>, RuntimeError> {
+    let mut traits = Vec::new();
+    for parent in parents {
+        // A `does R` role is recorded in BOTH lists (`parents` is the general
+        // composed-type list the dispatcher reads), so skip the ones that are
+        // really role composition or they would render twice.
+        if does_parents.iter().any(|r| r == parent) {
+            continue;
+        }
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitIs,
+            fields: vec![node_field(Some("type"), build_type_node(parent)?)],
+        })));
+    }
+    for role in does_parents {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitDoes,
+            fields: vec![node_field(None, build_type_node(role)?)],
+        })));
+    }
+    if is_rw {
+        traits.push(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::TraitIs,
+            fields: vec![node_field(Some("name"), name_from_identifier("rw"))],
+        })));
+    }
+    Ok(traits)
 }
 
 /// The `RakuAST::StatementPrefix::Phaser::<Kind>` class for a phaser kind.

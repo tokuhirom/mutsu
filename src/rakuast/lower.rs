@@ -74,6 +74,7 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::StatementIf => lower_if(node),
         RakuAstClass::StatementLoopWhile => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
@@ -248,6 +249,15 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let (return_type, custom_traits) = routine_return_type(node)?;
+    // `multiness => "multi"`. A `proto` carries a `{*}` body shape mutsu keeps
+    // in a separate `Stmt::ProtoDecl`, so it stays the boundary.
+    let multi = match node.fields.iter().find(|f| f.name == Some("multiness")) {
+        None => false,
+        Some(_) => match leaf_str(node, "multiness")?.as_str() {
+            "multi" => true,
+            _ => return Err(unsupported(node)),
+        },
+    };
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
@@ -260,7 +270,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         precedence_trait: None,
         signature_alternates: Vec::new(),
         body,
-        multi: false,
+        multi,
         is_rw: false,
         is_raw: false,
         is_export: false,
@@ -268,6 +278,89 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_test_assertion: false,
         supersede: false,
         custom_traits,
+    })
+}
+
+/// A class declaration's `traits` list, back into mutsu's three fields:
+/// `Trait::Is(type => …)` is inheritance, `Trait::Does(…)` is role composition
+/// (which mutsu records in BOTH `parents` and `does_parents`), and
+/// `Trait::Is(name => "rw")` is the `rw` flag.
+#[allow(clippy::type_complexity)]
+fn class_traits(node: &RakuAstNode) -> Result<(Vec<String>, Vec<String>, bool), RuntimeError> {
+    let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) else {
+        return Ok((Vec::new(), Vec::new(), false));
+    };
+    let RakuAstFieldValue::List(items) = &f.value else {
+        return Err(unsupported(node));
+    };
+    let mut parents = Vec::new();
+    let mut does_parents = Vec::new();
+    let mut is_rw = false;
+    for item in items {
+        let ValueView::RakuAst(t) = item.view() else {
+            return Err(unsupported(node));
+        };
+        match t.class {
+            RakuAstClass::TraitIs => {
+                if let Ok(type_node) = named_child(t, "type") {
+                    parents.push(simple_type_name(node, type_node)?);
+                } else if let Ok(name_node) = named_child(t, "name") {
+                    match positional_leaf(name_node)?.view() {
+                        ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
+                        _ => return Err(unsupported(node)),
+                    }
+                } else {
+                    return Err(unsupported(node));
+                }
+            }
+            RakuAstClass::TraitDoes => {
+                let role = simple_type_name(node, named_child_or_positional(t)?)?;
+                // mutsu's dispatcher reads `parents`, so a composed role has to
+                // appear there too — exactly what the parser records.
+                parents.push(role.clone());
+                does_parents.push(role);
+            }
+            _ => return Err(unsupported(node)),
+        }
+    }
+    Ok((parents, does_parents, is_rw))
+}
+
+/// `constant X = 5` -> a `Stmt::VarDecl` carrying mutsu's `__constant` marker
+/// pair. The package-scoped default spelling is `is_our`; `scope => "my"` is the
+/// lexical one. Only the sigilless form round-trips, matching what the
+/// converter renders.
+fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = leaf_str(node, "name")?;
+    let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => true,
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => false,
+            _ => return Err(unsupported(node)),
+        },
+    };
+    let init = named_child(node, "initializer")?;
+    if init.class != RakuAstClass::InitializerAssign {
+        return Err(unsupported(node));
+    }
+    let expr = lower_expr(named_child_or_positional(init)?)?;
+    Ok(Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint: None,
+        is_state: false,
+        is_our,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: vec![
+            ("__constant".to_string(), None),
+            (
+                "__constant_sigil".to_string(),
+                Some(Expr::Literal(Value::str_from(""))),
+            ),
+        ],
+        where_constraint: None,
     })
 }
 
@@ -319,16 +412,21 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let body = lower_block(named_child(node, "body")?)?;
+    let (parents, does_parents, class_is_rw) = class_traits(node)?;
+    let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
+        Some(_) => Some(leaf_str(node, "repr")?),
+        None => None,
+    };
     Ok(Stmt::ClassDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
-        parents: Vec::new(),
-        class_is_rw: false,
+        parents,
+        class_is_rw,
         is_hidden: false,
         is_lexical: false,
         hidden_parents: Vec::new(),
-        does_parents: Vec::new(),
-        repr: None,
+        does_parents,
+        repr,
         body,
         language_version: crate::parser::current_language_version(),
         custom_traits: Vec::new(),

@@ -165,6 +165,11 @@ pub enum RakuAstClass {
     // Phasers (`BEGIN`, `INIT`, `LEAVE`, ...). raku models each kind as its own
     // `RakuAST::StatementPrefix::Phaser::<Kind>` class wrapping a positional
     // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
+    // `constant X = 5` — a declaration of its own, not a scoped `my`.
+    VarDeclarationConstant,
+    // Class/role declaration traits (`is Parent`, `does Role`, `is rw`).
+    TraitIs,
+    TraitDoes,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
     StatementPrefixPhaserInit,
@@ -267,6 +272,9 @@ impl RakuAstClass {
             StatementPrefixTry => "RakuAST::StatementPrefix::Try",
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
+            VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            TraitIs => "RakuAST::Trait::Is",
+            TraitDoes => "RakuAST::Trait::Does",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
             StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
@@ -561,6 +569,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixTry,
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
+    RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::TraitIs,
+    RakuAstClass::TraitDoes,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,
     RakuAstClass::StatementPrefixPhaserInit,
