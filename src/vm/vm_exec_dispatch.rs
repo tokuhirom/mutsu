@@ -4699,10 +4699,14 @@ impl Interpreter {
             OpCode::CheckPhaserStart { .. } => {
                 self.sync_source_line(code, *ip);
                 self.check_phaser_depth += 1;
+                // ADR-0041 §9: a name reference evaluated at BEGIN time sees
+                // only declarations the program has textually reached.
+                self.begin_time_enter();
                 *ip += 1;
             }
             OpCode::CheckPhaserEnd => {
                 self.check_phaser_depth = self.check_phaser_depth.saturating_sub(1);
+                self.begin_time_leave();
                 *ip += 1;
             }
 

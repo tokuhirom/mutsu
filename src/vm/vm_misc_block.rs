@@ -256,7 +256,16 @@ impl Interpreter {
                 let body_start = *ip + 1;
                 let end = body_end as usize;
                 let stack_base = self.stack.len();
-                match self.run_range(code, body_start, end, compiled_fns) {
+                // ADR-0041 §9: a value-position `BEGIN` is as much BEGIN time
+                // as the statement form, so its body sees only the sub
+                // declarations the program has textually reached. (Unlike
+                // `CheckPhaserStart` this does NOT raise `check_phaser_depth`:
+                // whether a throw here should surface as `X::Comp::BeginTime`
+                // is a separate question this opcode has always answered "no".)
+                self.begin_time_enter();
+                let ran = self.run_range(code, body_start, end, compiled_fns);
+                self.begin_time_leave();
+                match ran {
                     Ok(()) => {
                         let value = if self.stack.len() > stack_base {
                             self.stack.pop().unwrap_or(Value::NIL)

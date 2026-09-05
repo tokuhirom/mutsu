@@ -1,6 +1,6 @@
 # ADR-0041: A sub's *callability* is hoisted for the whole scope, but its *bareword-reference visibility* at `constant`/`BEGIN` time must follow textual order — these are two different questions the current single hoisted registry conflates
 
-- Status: Proposed (investigation only; no implementation plan chosen)
+- Status: Accepted (implemented 2026-09-05 - see SS9)
 - Date: 2026-08-20
 - Related: ADR-0024 (mainline lexicals for named subs), ADR-0039 (`@`/`%`
   lexicals must resolve lexically — the container-side analog of this same
@@ -406,3 +406,107 @@ initializer references are the only two shapes that diverge, ordinary runtime
 references agree with rakudo in every position, and the divergence is `inner`
 where rakudo says `outer` (a block-nested redeclaration) or an accepted program
 where rakudo refuses to compile (a forward reference).
+
+## 9. Closed 2026-09-05: the "reached" signal is the `RegisterDecl` execution, not a registry write
+
+All four rows of §6.3's table now agree with rakudo. The mechanism is §8's —
+"record what a hoist-pass registration displaced, and roll it back while a
+BEGIN-time region is open" — with the one thing §8 was missing: a usable
+answer to *has this declaration been reached?*
+
+### 9.1 Archaeology: where a plain mainline `sub`'s callable identity lives
+
+§8 left an explicit prerequisite for the next attempt: "Where a plain mainline
+sub's callable identity actually lives, and why `GLOBAL::foo` is absent there,
+is the archaeology the next attempt has to do first." It was done first, with
+`rust-gdb -batch` breakpoints and no instrumented build, and the answer is that
+**the premise does not reproduce**.
+
+For `sub foo(){"outer"}` at file scope, `registration_sub.rs`'s single-candidate
+install (`self.registry_mut().functions.insert(fq_sym, arc)`, the `else` arm of
+the `multi` split) executes and `fq` reads `GLOBAL::foo`. Breaking on that
+insert for §8's own repro shows it fire exactly twice — once for the mainline
+hoist of `foo`, once for the inner block's hoist — with `name="foo"` and
+`custom_traits` of size 1 (`__hoisted`) and size 2 (`__hoisted`,
+`__lexical_hoist`) respectively. So the registry entry a displacement record
+needs is there, under the obvious key, at the moment the hoist registers. §8's
+finding 2 was an artifact of its instrumentation, not a property of the
+registry; the campaign it blocked was blocked for no reason.
+
+§8's finding 1, by contrast, reproduces exactly and is the real constraint: the
+in-sequence registration of a declaration whose hoisted twin is byte-identical
+returns `SubRegisterOutcome::Unchanged` and writes nothing, so those same two
+inserts are the *only* registry writes the four `RegisterDecl` ops produce.
+
+### 9.2 The fix
+
+"Has this declaration been reached?" is not derivable from registry writes — but
+it never had to be. `exec_register_sub_op` already computes `is_hoisted_pass`
+(the `__hoisted` marker the hoist pre-pass stamps on its copy) *before* it
+registers anything, and that flag is independent of the registration's outcome.
+The in-sequence copy of a declaration therefore announces itself on every
+execution, `Unchanged` or not. That is the signal, and it needs no source
+positions on `CompiledSubDeclPlan` after all — §8's closing recommendation to
+carry a `source_line` is superseded.
+
+`src/runtime/hoist_visibility.rs` holds the whole mechanism:
+
+- a hoist-pass `RegisterDecl` records, per `Pkg::name`, the registry entries it
+  touched — what it left installed and what it displaced;
+- an in-sequence `RegisterDecl` drops that record, because the program has now
+  genuinely reached the declaration;
+- entering a BEGIN-time region rolls every still-recorded declaration back to
+  what it displaced (removing the key outright when it displaced nothing), and
+  leaving the region puts it back.
+
+This answers §6.4's objection that "suppressing the not-yet-reached declaration
+does not by itself reveal what raku would have found": the displaced def is what
+raku would have found, and the hoist registration is exactly the event that can
+see it. No lexical scope is added to the registry — consistent with §7's lesson
+that "the registry needs lexical scope" was too big a diagnosis for this family.
+
+Two details keep it honest. A record is only acted on when the live entry is
+still the exact `Arc` the hoist installed (`Arc::ptr_eq`), so a record left
+stale by an early return or a scope restore is skipped rather than trusted. And
+the value-position `BEGIN` (`OpCode::BeginOnceExpr`, which unlike
+`CheckPhaserStart` never raised `check_phaser_depth`) opens the same region, so
+`my $x = BEGIN foo()` and `BEGIN say foo()` agree; the BEGIN-time frames are
+therefore unwound by their own entry depth, not by `check_phaser_depth`.
+
+### 9.3 Result
+
+| source | raku | mutsu before | mutsu now |
+|---|---|---|---|
+| `sub foo(){"outer"}; { my constant &old = &foo; say old(); sub foo(){"inner"} }` | `outer` | `inner` | `outer` |
+| `sub foo(){"outer"}; { my $old = &foo; say $old(); sub foo(){"inner"} }` | `inner` | `inner` | `inner` |
+| `say f(); constant X = 1; sub f(){42}` | works | works | works |
+| `constant X = f(); sub f(){42}; say X` | compile error | `42` | compile error |
+
+Row 4's failure is a BEGIN-time throw (`An exception occurred while evaluating a
+CHECK` wrapping `Unknown function: f`) where rakudo reports its CHECK-time
+undeclared-symbol diagnostic (`Undeclared routine: f used at line 1`). Both
+refuse to compile the program; mutsu has no `X::Undeclared::Symbols` collection
+pass to phrase it rakudo's way, and adding one is a separate concern.
+
+Pinned in `t/begin-time-sub-visibility.t`, which carries rows 2 and 3 as
+explicit regression controls — they are the rows §6.3 rejected Option B over,
+and any future rework of this area must keep them green.
+
+### 9.4 What is still open
+
+- The record is keyed by `Pkg::name` and holds one entry per name, so when two
+  nested blocks both hoist the same name and *neither* has been reached, the
+  inner hoist's record replaces the outer's. The BEGIN-time view then shows the
+  outer block's declaration rather than refusing the name. Reaching either
+  declaration clears the record, so this only affects a doubly-unreached name.
+- A non-`multi` hoist tracks only the single `Pkg::name` key (a `multi` family
+  additionally tracks its candidate keys). A plain `sub` that lexically shadows
+  a `multi` family therefore restores the single key but not the candidate keys
+  it retained away.
+- The record is keyed by the package current at registration time, so a
+  declaration whose hoist and in-sequence copies run under different packages
+  (`hoist_nested_our_subs` lifts an `our sub` out of a nested block to the
+  compunit head) never clears. The `Arc::ptr_eq` guard keeps a stale record
+  from acting on a key it no longer owns.
+- §6.2's `proto`/`multi` lexical-shadowing defect is untouched here; `proto`
+  declarations are not part of the hoist pre-pass at all.

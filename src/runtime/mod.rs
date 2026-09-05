@@ -450,6 +450,7 @@ mod handle_io;
 mod handle_open;
 mod handle_read;
 mod handle_read_chars;
+pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
 mod io;
 mod io_doc;
@@ -3390,6 +3391,17 @@ pub struct Interpreter {
         rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
+    /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
+    /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time
+    /// region (`constant` initializer, `BEGIN`/`CHECK` body) rolls these back
+    /// so a name reference evaluated there sees only what the program has
+    /// textually reached, as rakudo's compile-time pad install does.
+    pub(crate) hoisted_unreached_decls:
+        rustc_hash::FxHashMap<Symbol, crate::runtime::hoist_visibility::HoistedDeclRecord>,
+    /// One frame per open BEGIN-time region: the registry entries that region
+    /// hid, and the defs to put back when it closes. Depth-aligned with
+    /// `check_phaser_depth`.
+    pub(crate) begin_time_hidden: Vec<Vec<(Symbol, Option<Arc<FunctionDef>>)>>,
     /// Depth of `with_nested_registers` re-entry (nested VM runs: closure
     /// bodies dispatched from native code, EVAL, dies-ok blocks, ...). The
     /// uncaught-CX::Return -> X::ControlFlow::Return conversion in `run_inner`

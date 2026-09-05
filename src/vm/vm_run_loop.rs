@@ -137,6 +137,11 @@ impl Interpreter {
         // X::Comp::BeginTime too. Snapshot the entry depth so every error
         // exit below can restore it after deciding whether to wrap.
         let entry_check_phaser_depth = self.check_phaser_depth;
+        // ADR-0041 §9: the BEGIN-time visibility frames are pushed by
+        // `CheckPhaserStart` AND by the value-position `BEGIN` opcode (which
+        // does not raise `check_phaser_depth`), so unwind them by their own
+        // entry depth rather than by the phaser depth.
+        let entry_begin_time_depth = self.begin_time_hidden.len() as u32;
         let mut ip = 0;
         while ip < code.ops.len() {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
@@ -186,17 +191,21 @@ impl Interpreter {
                     if self.check_phaser_depth > 0 {
                         let wrapped = Self::wrap_in_begin_time(inner_err);
                         self.check_phaser_depth = entry_check_phaser_depth;
+                        self.begin_time_unwind_to(entry_begin_time_depth);
                         return Err(wrapped);
                     }
                     self.check_phaser_depth = entry_check_phaser_depth;
+                    self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(inner_err);
                 }
                 if self.check_phaser_depth > 0 {
                     let wrapped = Self::wrap_in_begin_time(e);
                     self.check_phaser_depth = entry_check_phaser_depth;
+                    self.begin_time_unwind_to(entry_begin_time_depth);
                     return Err(wrapped);
                 }
                 self.check_phaser_depth = entry_check_phaser_depth;
+                self.begin_time_unwind_to(entry_begin_time_depth);
                 return Err(e);
             }
             if self.is_halted() {
@@ -205,6 +214,10 @@ impl Interpreter {
         }
         self.sync_state_locals(code);
         self.pop_once_scope();
+        // ADR-0041 §9 safety net: a BEGIN-time region whose closing opcode was
+        // skipped (a caught throw, a `halt`) would otherwise keep sub
+        // declarations rolled out of the registry for the rest of the program.
+        self.begin_time_unwind_to(entry_begin_time_depth);
         // Sync local variables back to the interpreter's env so that
         // callers (e.g. eval_block_value) can observe side effects.
         self.sync_env_from_locals(code);
