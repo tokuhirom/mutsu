@@ -77,6 +77,12 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *List infixes.* The junction constructors (`|` / `&` / `^`) and `min` / `max`
+  are list-associative in raku — one flat `ApplyListInfix` per chain — and were
+  rendering as nested `ApplyInfix`. Measured the full list-associative set
+  against rakudo 2026.07 (`,`, the `andthen` family, the junctions, `min`/`max`;
+  everything else ordinary). Pinned by `t/rakuast-list-infix.t`; see
+  [the news entry](../../news/2026-09/rakuast-list-infixes.md).
 - *Two internal leaks.* An injected `__mutsu_test_callsite_line` named argument
   rendered as a real argument on every listop call (and filtering it out exposed
   raku's omission of an empty `args` field), and the exclusive range operators
