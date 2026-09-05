@@ -838,9 +838,9 @@ it newly wrong.
 - `$a.VAR = 5` stays a refusal (it is one in raku).
 - Hyper method calls (`>>.`) keep decontainerizing.
 - `.self` is *not* in the raw-invocant family in raku (`$a.self =:= $a` is
-  `False`, and `$a.self = 5` is refused) while mutsu answers `True`. That is a
-  separate divergence, recorded here so it is not swept into the table by
-  mistake.
+  `False`, and `$a.self = 5` is refused). It is deliberately outside this ADR's
+  table; the divergence it once carried was fixed separately, see
+  `news/2026-09/self-method-decontainerizes.md`.
 - `sub f(\x) is raw { x }; my $c = C.new(v=>1); f($c.v) = 9` (a raw *argument*
   over an attribute accessor) still copies. It is the argument twin of Slice 3
   and is expected to fall out of it; if it does not, it earns its own ticket.

@@ -583,6 +583,17 @@ impl Interpreter {
         let bind_marks_immutable = scalar_bind
             && (bind_source.is_none() || synthetic_index_source)
             && Self::bind_source_has_no_container(&raw_popped);
+        // The same "a `:=` bind to a VALUE, not to another name" test as
+        // `bind_marks_immutable`, minus the immutability allowlist: `my $o :=
+        // C.new` binds `$o` straight to the object, so `$o` owns no Scalar
+        // container of its own even though the object it holds is mutable.
+        // Recorded separately because it is not a writability fact (mutsu still
+        // lets `$o = 5` through, unlike raku) — it is only the container-identity
+        // fact `=:=` needs, so `$o.self =:= $o` stays True as in raku.
+        // Scoped to a declaration: a parameter bind reaches this store too, and
+        // a non-`is rw` parameter DOES own a container (rakudo reports `Scalar`).
+        let bind_marks_no_container =
+            is_vardecl && scalar_bind && (bind_source.is_none() || synthetic_index_source);
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -764,6 +775,17 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
+        }
+        // The container-identity half of the same decision (see
+        // `bind_marks_no_container`). Set/cleared per declaration so a later
+        // `my $o = 5` of the same name goes back to owning a Scalar.
+        if is_vardecl && !code.locals[idx].starts_with(['@', '%', '&']) {
+            let key = Self::scalar_bind_no_container_key(&code.locals[idx]);
+            if bind_marks_no_container {
+                self.env_mut().insert(key, Value::TRUE);
+            } else {
+                self.env_mut().remove(&key);
+            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.

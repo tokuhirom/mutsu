@@ -374,6 +374,21 @@ impl Compiler {
         }
     }
 
+    /// True for a `.self` call — the one method in the raw-invocant family
+    /// (`.self`, `.item`, `.snitch`) that *decontainerizes*. Rakudo's `.item`
+    /// hands the invocant's container back (`$a.item =:= $a` is True) while
+    /// `.self` hands back the value it holds (`$a.self =:= $a` is False), so
+    /// only `.self` belongs here. A chain (`$a.self.self`) matches at the top,
+    /// which is all `=:=` needs.
+    pub(super) fn expr_is_self_decontainerizing(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::MethodCall {
+                name, args, modifier: None, ..
+            } if name.resolve() == "self" && args.is_empty()
+        )
+    }
+
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that

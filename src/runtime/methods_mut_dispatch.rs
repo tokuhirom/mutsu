@@ -191,15 +191,7 @@ impl Interpreter {
             // and the cache is keyed by name alone. `for @a { .VAR }` followed
             // by `for 1,2 { .VAR }` shares the key `_`, so a cached `Scalar`
             // meta from the first loop answered the second one.
-            if !target_var.starts_with(['@', '%', '&'])
-                && matches!(
-                    self.readonly_kind(target_var.trim_start_matches('$')),
-                    Some(
-                        crate::ast::ReadonlyKind::Immutable
-                            | crate::ast::ReadonlyKind::ImmutableValue
-                    )
-                )
-            {
+            if self.scalar_name_has_no_container(target_var) {
                 return Ok(target);
             }
             if let Some(existing) = self.var_meta_value(target_var) {
