@@ -407,8 +407,13 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             custom_traits,
             ..
         } => {
-            // Plain `method NAME (params) { body }`. Private/submethod/multi/our/
-            // my forms, traits, delegation, and return types carry extra shape.
+            // Plain `method NAME (params) { body }`, with return types in all
+            // three spellings (`-->` via `Signature.returns`, `returns`/`of`
+            // via `Trait::Returns`/`Trait::Of`) — a `RakuAST::Method` is a
+            // `RakuAST::Routine` just like `RakuAST::Sub`, so it carries the
+            // same `signature` / `traits` shape. Private/submethod/multi/our/
+            // my forms, user traits, and delegation carry extra shape.
+            let spelling = return_type_spelling(custom_traits)?;
             if name_expr.is_some()
                 || *multi
                 || *is_rw
@@ -417,22 +422,28 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || *is_my
                 || *is_submethod
                 || *our_variable_form
-                || return_type.is_some()
                 || *is_default_candidate
                 || deprecated_message.is_some()
                 || !handles.is_empty()
-                || !custom_traits.is_empty()
+                || custom_traits
+                    .iter()
+                    .any(|(t, _)| !is_return_spelling_marker(t))
             {
                 return Err(unsupported(
                     "method with traits / private / multi / submethod",
                 ));
+            }
+            if return_type.is_none() && spelling != ReturnSpelling::Arrow {
+                // A `__return_via_*` marker without a return type would be a
+                // parser inconsistency; refuse rather than render a wrong node.
+                return Err(unsupported("method with a return trait but no return type"));
             }
             Ok(Some(statement_expression(routine_node(
                 RakuAstClass::Method,
                 &name.resolve(),
                 param_defs,
                 body,
-                None,
+                return_type.as_deref().map(|t| (t, spelling)),
             )?)))
         }
         Stmt::ClassDecl {

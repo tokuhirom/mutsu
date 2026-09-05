@@ -9,6 +9,14 @@ use super::*;
 use crate::ast::HandleSpec;
 use crate::symbol::Symbol;
 
+/// Whether a `custom_traits` entry is an internal parser marker rather than a
+/// user trait. The parser records the return-type spelling (`returns` vs `of`)
+/// as a `__`-prefixed pseudo-trait so the RakuAST converter can tell the two
+/// apart; nothing in trait application should ever see it.
+fn is_parser_marker(trait_name: &str) -> bool {
+    trait_name.starts_with("__")
+}
+
 impl Interpreter {
     /// The `method` arm of the class-body walk: validate the declaration,
     /// build its `MethodDef`, install it in the method table, and register
@@ -282,12 +290,19 @@ impl Interpreter {
                 &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
             )?;
         }
-        // Apply custom trait_mod:<is> for each non-builtin trait on methods
-        if !decl.custom_traits.is_empty() {
+        // Apply custom trait_mod:<is> for each non-builtin trait on methods.
+        // `__`-prefixed entries are internal parser markers (the
+        // `__return_via_trait` / `__return_via_of` return-type spelling the
+        // RakuAST converter reads), never user traits, so they never reach a
+        // user `trait_mod:<is>` candidate.
+        if decl.custom_traits.iter().any(|(t, _)| !is_parser_marker(t)) {
             let has_trait_mod =
                 self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
             if has_trait_mod {
                 for (trait_name, trait_arg) in &decl.custom_traits {
+                    if is_parser_marker(trait_name) {
+                        continue;
+                    }
                     let mut trait_env = self.env.clone();
                     // Add method lookup markers so .wrap stores in
                     // method_wrap_chains (keyed by class+method).

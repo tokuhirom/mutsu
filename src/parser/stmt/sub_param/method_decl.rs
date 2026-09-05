@@ -174,14 +174,17 @@ fn method_decl_body_with_my(
                 }
             }),
             handles: traits.handles.clone(),
+            // `__`-prefixed entries are internal parser markers, not user
+            // traits: `__return_via_trait` / `__return_via_of` record which
+            // spelling a return type used (`returns` vs `of`), which RakuAST
+            // models with different nodes. They are kept here so the
+            // distinction survives to the converter; every consumer of
+            // `MethodDecl.custom_traits` that applies user traits skips them.
             custom_traits: traits
                 .custom_traits
                 .iter()
                 .filter(|(t, _)| {
-                    t != "default"
-                        && t != "DEPRECATED"
-                        && !t.starts_with("DEPRECATED:")
-                        && !t.starts_with("__")
+                    t != "default" && t != "DEPRECATED" && !t.starts_with("DEPRECATED:")
                 })
                 .cloned()
                 .collect(),
