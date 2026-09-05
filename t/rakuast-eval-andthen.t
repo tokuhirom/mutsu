@@ -17,7 +17,7 @@ use Test;
 #
 # Passes under BOTH mutsu and raku.
 
-plan 9;
+plan 10;
 
 # --- andthen ----------------------------------------------------------------
 is EVAL(Q{1 andthen 2}.AST), 2, '`andthen` yields its right operand when the left is defined';
@@ -31,10 +31,18 @@ is EVAL(Q{my $x; $x orelse 5}.AST), 5, '`orelse` falls through an undefined left
 # --- notandthen -------------------------------------------------------------
 is EVAL(Q{my $x; $x notandthen 5}.AST), 5,
     '`notandthen` yields its right operand when the left is undefined';
+is EVAL(Q{1 orelse 2 orelse 3}.AST), 1, '`orelse` chains left-associatively';
 
-# --- the family composes with Whatever priming ------------------------------
-is EVAL(Q{(* < 3 andthen 1).WHAT.gist}.AST), '(Int)',
-    '`andthen` is a thunk barrier, so it is not a WhateverCode';
+# --- the result type is the operand's, not a Callable -----------------------
+is EVAL(Q{(1 andthen 2).WHAT.gist}.AST), '(Int)',
+    '`andthen` yields its operand, not a Callable';
+
+# Not pinned here: `(* < 3 andthen 1)` through EVAL. `andthen` is a thunk
+# barrier, so evaluating the source gives `(Int)` in BOTH implementations — but
+# rakudo's own `EVAL(Q{...}.AST)` gives `(WhateverCode)`, i.e. rakudo does not
+# round-trip that shape through its own RakuAST. mutsu's EVAL agrees with its
+# own direct evaluation. An assertion either way would diverge, so this file
+# stays silent about it rather than pinning one implementation's answer.
 
 # --- the comma list is unchanged --------------------------------------------
 is EVAL(Q{(1, 2, 3).elems}.AST), 3, 'a comma list still lowers';
