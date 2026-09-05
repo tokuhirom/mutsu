@@ -4,6 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpreter called **mutsu**.
 
+## Skills (`.agents/skills/`)
+
+This file holds the rules that apply to *every* session. Self-contained **procedures** live as
+skills instead, so they are read only when the task calls for them. Read the relevant `SKILL.md`
+before starting one of these tasks:
+
+| Skill | Read it when |
+| --- | --- |
+| [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
+| [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
+| [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
+| [`test-util-workout`](.agents/skills/test-util-workout/SKILL.md) | A "Test::Util workout" request |
+| [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
+| [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo/tickets/` items end-to-end through merge |
+| [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast*.t`) |
+
 ## Build & run
 
 - Build: `cargo build`
@@ -135,19 +151,9 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 
 ## Cutting a release
 
-Releases are cut by **one manual trigger** — the `tag-release.yml` workflow (`.github/workflows/tag-release.yml`). tagpr was removed (2026-07-25); there is no release PR, no `CHANGELOG.md`, and no `minor`/`major` version-bump label to apply on ordinary PRs. To release:
+Releases are cut by **one manual trigger** — `gh workflow run tag-release.yml -f version=X.Y.Z` (no `v` prefix). tagpr was removed (2026-07-25): there is no release PR, no `CHANGELOG.md`, and no version-bump label on ordinary PRs. **Keep the `type:` / `type(scope):` PR title convention** — it drives the auto-applied category label and hence the release-note section.
 
-```
-gh workflow run tag-release.yml -f version=0.18.0
-```
-
-(or the Actions tab → "Tag release" → Run workflow → enter the version, no `v` prefix). That one run: bumps `Cargo.toml` + the `mutsu` `Cargo.lock` entry to the given version, commits it straight to `main` (via a GitHub App token that is a bypass actor on the `main` ruleset), and pushes the `vX.Y.Z` tag. The tag push fires `release.yml`, which builds all four target tarballs (Linux x64/arm64, macOS x64/arm64), runs the batteries gate, publishes the browser/WASM package to npm through OIDC trusted publishing, and publishes the GitHub Release with **auto-generated notes** (`generate_release_notes: true`, from the merged PRs since the previous tag). npm automatically records provenance for the OIDC publish; do not add a long-lived npm token.
-
-- **Pick the version by hand** using semver judgment over what merged since the last tag: patch for fixes/roast/docs, minor for a new user-visible feature, major for a breaking change. There is no label-driven *version* automation anymore.
-- The release notes are **grouped into sections** (Features / Bug Fixes / Performance / Documentation / Dependencies / Maintenance / Other) by `.github/release.yml`. PRs are sorted by label, and `.github/workflows/label-pr.yml` auto-applies the category label (`feat`/`fix`/`perf`/`docs`/`maintenance`, or `dependencies` for `*(deps):`) from each PR's conventional-commit title prefix — so **keep the `type:` / `type(scope):` title convention**; it is what drives both the label and the release-note section. Dependabot labels its own PRs `dependencies`.
-- `mutsu --version` reports `env!("CARGO_PKG_VERSION")`, so the `Cargo.toml` version the workflow writes is the shipped version — keep them coherent (the workflow does this for you).
-- **Prerequisite (infra, one-time):** the release GitHub App must remain a bypass actor on the `main` branch ruleset, or the workflow's push to `main` is rejected by `required_status_checks`.
-- **npm bootstrap (one-time):** npm only allows trusted publishers to be configured for an existing package. Publish the first `@tokuhirom/mutsu` version interactively with 2FA (`npm publish --access public <tarball>`), then configure its GitHub Actions trusted publisher as user `tokuhirom`, repository `mutsu`, workflow `release.yml`, allowed action `npm publish`. Every later tag publishes without a token.
+Full procedure — version choice, what the two workflows do, how to verify the tarballs/npm/Release actually landed, and the one-time infra prerequisites — is in **`.agents/skills/cut-release/SKILL.md`**. Read it before releasing.
 
 ## mzef package manager and distribution
 
@@ -174,15 +180,16 @@ gh workflow run tag-release.yml -f version=0.18.0
 
 - `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
 - **If `raku` is missing** (a fresh remote/ephemeral container often has no
-  rakudo, and Ubuntu's `apt` package is 2022.12 — far too old for RakuAST),
-  install an upstream prebuilt instead of doing without an oracle. `curl -sS
-  https://rakudo.org/dl/rakudo` returns a JSON index; pick the newest entry with
-  `backend: moar`, `type: archive`, `platform: linux` and your arch, untar it,
-  and symlink its `bin/raku` onto `PATH`. It is a self-contained tree, needs no
-  build, and takes about a minute. Without it, any work that has to *measure*
-  rakudo's behavior (RakuAST node shapes above all) is blocked — see
-  `docs/rakuast/README.md`, whose whole slice checklist starts with "measure the
-  Rakudo `.AST` shape".
+  rakudo, and Ubuntu's `apt` package is 2022.12 — far too old for RakuAST), run
+  `.agents/skills/install-raku/install-raku.sh` (the `install-raku` skill)
+  instead of doing without an oracle. It picks the newest `backend: moar`,
+  `type: archive` prebuilt for this platform out of the `https://rakudo.org/dl/rakudo`
+  JSON index, verifies its SHA256, unpacks it to `~/.local/rakudo/` and symlinks
+  `bin/*` into `~/.local/bin/`. It is a self-contained tree, needs no build, and
+  takes a few seconds; rerunning it when `raku` already works is a no-op.
+  Without it, any work that has to *measure* rakudo's behavior (RakuAST node
+  shapes above all) is blocked — see `docs/rakuast/README.md`, whose whole slice
+  checklist starts with "measure the Rakudo `.AST` shape".
 - When investigating a roast test, always run it with `raku` first to see the expected output before comparing with mutsu.
 - Design docs: `./old-design-docs/`
 - Raku language documentation: `./raku-doc/` — consult these docs when the language spec or behavior is unclear. See the section below for a detailed guide to the most useful files.
@@ -279,22 +286,7 @@ Per-type method documentation — consult when implementing methods on specific 
 
 ## Roast test prioritization
 
-**Primary: PLAN.md → BLOCKERS.md → then individual tests.**
-
-The project is in its final stretch. Work should be driven by strategic priorities, not random test selection:
-
-1. **PLAN.md priorities first.** Check the current quarter's section for high-impact tasks (e.g., exception types, performance, module compatibility). These are chosen because they unblock many tests or advance project goals.
-2. **BLOCKERS.md for roast work.** When working on roast, consult `TODO_roast/BLOCKERS.md` which groups failing tests by the missing feature. Implement features that unblock the most tests (e.g., "Exception Types" blocks 22 tests, "Threading" blocks 31).
-3. **Roast diagnostic tools** (for status tracking, not task selection):
-   - Run `./scripts/roast-history.sh` to generate per-file category lists under `tmp/`:
-     - `tmp/roast-panic.txt` — Rust panics (highest priority to fix)
-     - `tmp/roast-timeout.txt` — timeouts
-     - `tmp/roast-error.txt` — no valid TAP plan
-     - `tmp/roast-fail.txt` — some subtests failing
-     - `tmp/roast-pass.txt` — fully passing
-   - After making changes, run `roast-history.sh` to check for newly passing tests.
-
-- Do NOT cherry-pick easy tests to game the pass count. The goal is implementing missing features that have broad impact. (See "Working on complex features" — don't skip a task because it looks hard.)
+**Primary: PLAN.md → BLOCKERS.md → then individual tests.** Work is driven by strategic priorities, not random test selection, and **not** by cherry-picking easy tests to game the pass count. The task-selection procedure, the `scripts/roast-history.sh` diagnostic categories, and the order in which to investigate one failing test are in **`.agents/skills/roast-triage/SKILL.md`**.
 
 ## Trust the main branch
 
@@ -379,6 +371,9 @@ Running the entire roast suite locally is wasteful and slow — **let CI run the
 - Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
 - CI does not invoke `make test`; its `test` job runs the steps individually and runs the **TAP suite (`prove t/`) on the `debug` binary** (`MUTSU_BIN=target/debug/mutsu`), reserving the **release build** (`cargo build --release`, `MUTSU_BIN=target/release/mutsu`) for **`make roast`**. Local `make test` matches this — it runs `t/` on debug too (see `docs/adr/0014-make-test-runs-tap-on-debug-binary.md`); only roast uses release. Debug builds are much slower at runtime, so a local *roast* timeout on a heavy test does not necessarily indicate a real failure — confirm with a release build (`target/release/mutsu`) before assuming a regression, and otherwise trust CI's verdict.
 - Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
+- To pick roast work, or to investigate why one file fails, read `.agents/skills/roast-triage/SKILL.md`.
+
+## Build profiles and benchmark numbers
 
 ### Use the DEBUG build to iterate on `MUTSU_VM_STATS` counters — release is for wall-clock only
 
@@ -412,81 +407,9 @@ timeout 30 target/debug/mutsu -e '<code>'
 timeout 30 target/debug/mutsu --dump-ast <file>
 ```
 
-## Investigating a failing roast test
+## Disk cleanup (worktrees and build caches)
 
-Before writing any code, always investigate the test in this order:
-
-1. **Run with `raku`** to see the expected output: `raku <roast-test-path>`
-2. **Dump AST with `raku`** (if needed): `raku --target=ast -e '<relevant code>'`
-3. **Dump AST with `mutsu`**: `timeout 30 target/debug/mutsu --dump-ast <roast-test-path>`
-4. **Run with `mutsu`**: `timeout 30 target/debug/mutsu <roast-test-path>`
-5. Compare outputs to identify what mutsu is doing wrong, then fix the interpreter.
-
-## Worktree cleanup
-
-When using `isolation: "worktree"` agents, stale worktrees accumulate under `.claude/worktrees/` and can consume hundreds of GB. **Clean up worktrees at least once per hour** during long sessions:
-
-```bash
-# Remove all agent worktrees except currently active ones
-cd .claude/worktrees/
-for d in agent-*; do
-  git -C <repo-root> worktree remove --force ".claude/worktrees/$d" 2>/dev/null
-done
-git worktree prune
-```
-
-Before cleanup, check which agents are still running and exclude their worktrees. After cleanup, verify disk usage with `du -sh .claude/worktrees/`.
-
-## Build cache cleanup (reclaiming disk)
-
-`target/` grows without bound and is usually the top disk consumer — a single
-checkout can reach 100 GB+, and with several checkouts on one machine it easily
-passes 300 GB. **The dominant offender is `target/debug/incremental/`**: every
-branch switch and profile change spawns a new incremental session and cargo does
-not GC old ones aggressively, so it balloons to tens of GB per checkout. These
-caches are disposable — deleting them only costs a one-time non-incremental
-rebuild (cheap when dependencies are already cached).
-
-Reclaim disk in two passes (safe: neither touches source or built binaries in
-`target/*/deps`, only regenerable caches). **First check nothing is building
-(`pgrep -a cargo rustc`)**, then:
-
-```bash
-# 1. Time-based sweep: remove artifacts not touched in 14 days (cargo-sweep).
-#    cargo install cargo-sweep   # once
-cargo sweep --time 14                 # add --dry-run first to preview
-
-# 2. Nuke incremental caches (the big win). Regenerated on next build.
-rm -rf target/*/incremental
-```
-
-On a machine with multiple checkouts, run both in each. In one cleanup this took
-the root FS from 84% to 58% (~230 GB freed), ~199 GB of it from
-`target/debug/incremental`. Consider doing this monthly, or set
-`CARGO_INCREMENTAL=0` for checkouts you only build in occasionally so they never
-accumulate incremental sessions.
-
-### Optional: faster, shared local builds (mold + sccache)
-
-Not required, but recommended when you keep several checkouts on one machine
-(their build caches are otherwise unshared). Configure once in
-`~/.cargo/config.toml`:
-
-```toml
-[build]
-rustc-wrapper = "sccache"   # shares compiled dependencies across all checkouts
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]   # much faster linking
-```
-
-Requires `mold` (apt) and `sccache` (`cargo install sccache`; bump its cache
-with a `~/.config/sccache/config` `[cache.disk] size` line). sccache passes the
-*incremental* dev build of the local crate straight through (so edit->build
-stays incremental-fast) while caching the non-incremental dependency and release
-builds — which is exactly what is shared across checkouts. CI links with mold and
-caches dependencies via `Swatinem/rust-cache`; the release profile is
-`debug = false` (build `--profile profiling` when you need `perf` symbols).
+Agent worktrees under `.claude/worktrees/` and cargo caches under `target/` are the two disk hogs; both are disposable. **Clean up worktrees at least once per hour** during long sessions and between agent batches. The commands — worktree removal, `cargo sweep`, nuking `target/*/incremental` (the dominant offender), and the optional mold + sccache setup — are in **`.agents/skills/reclaim-disk/SKILL.md`**.
 
 ## LXC container environment
 
@@ -494,22 +417,7 @@ This development environment runs inside a dedicated mutsu LXC container. The co
 
 ## Test::Util function workout
 
-When the user says **"Test::Util workout"** (or similar), execute this workflow:
-
-1. Check `roast/packages/Test-Helpers/lib/Test/Util.rakumod` for the list of exported functions.
-2. Check `t/` for existing `test-util-*.t` and `is-run.t` etc. to see which functions already have tests.
-3. Pick **one** unimplemented or undertested function. Once chosen, do NOT switch to a different one.
-4. Write a test file `t/<function-name>.t` exercising the function with multiple cases (basic usage, edge cases, combined checks).
-5. Run the test with `timeout 30 target/debug/mutsu t/<function-name>.t` to see what fails.
-6. Fix the interpreter to make the test pass. When the spec is unclear, check behavior with `raku -e '<code>'` and consult `raku-doc/`.
-7. Run `make test` and `make roast` to ensure no regressions.
-8. Create a feature branch, commit, push, and open a PR (follow PR workflow above).
-9. Enable auto-merge: `gh pr merge --auto --merge <pr-number>` (see the PR workflow above — `--squash` is rejected by this repository).
-
-Key rules:
-- The function implementation lives in `src/runtime/test_functions.rs` (not as a builtin).
-- If fixing the function requires adding a new language feature (e.g., `exit_code` support), implement it properly — no stubs or hacks.
-- Test::Util functions are defined in `roast/packages/Test-Helpers/lib/Test/Util.rakumod`. Always read the source to understand the expected behavior before implementing.
+When the user says **"Test::Util workout"** (or similar), follow **`.agents/skills/test-util-workout/SKILL.md`**: pick one function from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, write `t/<function-name>.t`, fix the interpreter (in `src/runtime/test_functions.rs`, never as a core builtin) until it passes, and land it as a PR.
 
 ## Debugging guidelines
 
@@ -604,7 +512,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 ## Agent workflow
 
 - **Sub-agents are allowed (policy updated 2026-06-15).** Use them where they help — read-only fan-out searches (Explore), independent non-conflicting implementation slices, or sweeping across many files where you only need the conclusion. Be deliberate, not reflexive: Rust builds are expensive and each parallel worktree agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees, so reach for a sub-agent when the task genuinely fans out, not for trivial single-file work you can do inline. Read-only Explore/research agents are cheap; worktree-isolated build agents are not.
-- **Keep at most 3 concurrent agents that build** (user decision, 2026-08-22, tightening the previous cap of 4). This caps agents actually *doing work*, not agents idling on a CI run: an agent whose PR is open and waiting on GitHub Actions uses no local CPU, so it is fine to launch a fresh agent past the nominal cap while others are purely CI-pending (user-confirmed 2026-08-20). **Even so, never exceed 10 agents in total (working + CI-idle combined)** (user-confirmed 2026-08-20) — check `ListAgents` before launching a new one when the count is already high. Read-only Explore/research agents do not count against the build cap. Clean up worktrees per the "Worktree cleanup" section.
+- **Keep at most 3 concurrent agents that build** (user decision, 2026-08-22, tightening the previous cap of 4). This caps agents actually *doing work*, not agents idling on a CI run: an agent whose PR is open and waiting on GitHub Actions uses no local CPU, so it is fine to launch a fresh agent past the nominal cap while others are purely CI-pending (user-confirmed 2026-08-20). **Even so, never exceed 10 agents in total (working + CI-idle combined)** (user-confirmed 2026-08-20) — check `ListAgents` before launching a new one when the count is already high. Read-only Explore/research agents do not count against the build cap. Clean up worktrees per the "Disk cleanup" section.
   - **Why 3 and not more:** on this 12-core box, five worktree agents drove the load average to 70 with 17 concurrent `rustc` processes, and builds stopped completing. That does not merely slow the batch down — it makes agents *unable to verify their own work*: the `residual-try-cell-eager-seq-reification-divergences` agent had to revert a measured prototype and downgrade to a `Proposed` ADR because its from-scratch `cargo build` never finished under load. Over-parallelising costs correctness, not just wall-clock. When in doubt, check `uptime` and `pgrep -c -x rustc` before launching (a two-digit `rustc` count on 12 cores is already oversubscribed).
 - **Task selection order:**
   1. PLAN.md current quarter priorities
