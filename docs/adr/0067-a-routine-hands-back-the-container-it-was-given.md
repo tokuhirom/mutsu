@@ -1,6 +1,7 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slice 1 implemented 2026-09-05; Slices 2-5 open)
+- Status: Proposed (Slices 1-2 implemented 2026-09-05; Slice 3 re-scoped into
+  3a/3b on the same day after measurement; Slices 3a, 3b, 4 and 5 open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -208,6 +209,9 @@ consequence:
 | K2 | the same with `is raw` | `5` | `X::Assignment::RO: method 'm' is not rw` |
 | K4 | `method m(\x) { return-rw x }` | `5` | the same error |
 
+(K1/K2/K4 re-verified against raku v2026.07 on 2026-09-05 before Slice 2 was
+written; all three now answer `5` in mutsu.)
+
 So: plumb `is_raw` onto `MethodDecl`/`MethodDef` and route the method gate
 through `routine_is_rw_capable`. One oracle, two callers — not two rules.
 
@@ -336,7 +340,7 @@ output under `mutsu` and `raku`), which includes the three non-regression rows
 that constrain the gate: `my @a = (Int, Str)`, `my $p = (a => Int)`, and
 `sub f() is raw { my \w = 5; w }`.
 
-### Slice 2 — one rw-capability oracle for methods
+### Slice 2 — one rw-capability oracle for methods (IMPLEMENTED 2026-09-05)
 
 Part 1's user half: add `is_raw` to `Stmt::MethodDecl` and `MethodDef` (~18
 construction sites), parse the trait, and replace
@@ -344,6 +348,55 @@ construction sites), parse the trait, and replace
 `routine_is_rw_capable`. Mechanical and wide; no design left in it.
 
 **Acceptance:** K2 and K4 above.
+
+**What actually shipped.** `is_raw` is now carried on `Stmt::MethodDecl`
+(`src/ast.rs`), `CompiledMethodDecl` (`src/opcode.rs`) and `MethodDef`
+(`src/runtime/decl_types.rs`); the parser already produced `traits.is_raw` and
+only had to stop discarding it. The oracle is
+`Interpreter::method_is_rw_capable` (`src/runtime/builtins_lvalue.rs`) —
+`is_rw || is_raw || body_uses_return_rw(body)`, the `MethodDef`-shaped twin of
+`routine_is_rw_capable` — and it now backs all three method gates:
+`methods_mut_method_lvalue.rs`'s unqualified and `Class::method` refusals, and
+`method_lvalue_returns_container` (`lvalue_container_return.rs`), which is what
+also blocks the legacy setter convention from pre-empting the lvalue return.
+
+**One thing the slice description got wrong, measured.** Routing the *runtime*
+gate through the oracle is necessary but not sufficient: with only that change,
+K4 (`return-rw`) passed and K2 (`is raw`) still failed with
+`X::Assignment::RO: rw method 'm' does not expose an assignable attribute` —
+the gate now admitted the call, but the method body's tail had been compiled as
+a plain value read, so there was no container to write through. The **compile**
+side keys the rw tail off the same declaration and had the identical `is_rw`-only
+narrowness, in two places: `decl_plan.rs`'s main-pass `compile_method_body` call
+and `accessors_resolve.rs`'s registration-time
+`compile_method_def_in_place_with_dist`. Both now pass `is_rw || is_raw`,
+mirroring `compile_sub_body`'s long-standing `sub_compiler.rw_tail = is_rw ||
+is_raw`. The lesson generalises to slices 3-5: *a capability that is gated at
+runtime is usually also gated at compile time, and the two must move together.*
+
+Beyond K2/K4 this also fixed the **type-object** invocant twins, which were
+worse than a refusal: `class C { method m(\x) is raw { x } }; C.m($a) = 5`
+silently reported success and dropped the write (measured `42` where raku says
+`5`), because `try_rw_method_container_lvalue` declined and the legacy setter
+convention swallowed the assignment.
+
+Pinned by `t/method-rw-capability-oracle.t` (22 tests, byte-identical output
+under `mutsu` and `raku`): the three rw-capable spellings over instance and
+type-object invocants, over scalar / array-element / hash-element containers,
+through `multi`, role composition and `augment`; plus the non-rw-capable
+regression controls and the `is rw` attribute-accessor shapes the oracle must
+not have disturbed.
+
+**Adjacent divergence found and deliberately not fixed here.** For a
+**type-object** invocant whose method is *not* rw-capable, mutsu still reports
+success and drops the write (raku dies), because the legacy
+`$obj.name($value)` setter convention catches it — and for a sigilless
+parameter it calls the method with the *invocant* as its argument. The
+instance twin already refuses correctly. It is a different mechanism with no
+declaration-level oracle to gate on, and retiring or gating it needs its own
+corpus measurement, so it is recorded as
+`todo/tickets/type-object-lvalue-falls-into-setter-convention.md` rather than
+folded in.
 
 ### Slice 3 — the invocant arrives as a container
 
@@ -354,6 +407,86 @@ not to deref it, and have the raw-invocant natives return it unchanged.
 **Acceptance:** A3/A6 (`$a.snitch = 5` -> `42` then `5`; the `augment` twin),
 I1/I3 (mutation *through* a raw invocant reaches the caller), and E4/E5/E6 (the
 element and attribute invocant spellings). E1/E2 must keep refusing.
+
+#### Re-scoped 2026-09-05, after Slice 2 landed: this is two slices, not one
+
+Every row above was re-measured against raku v2026.07 and a debug `mutsu` built
+from `main` at `ec80a6c82` + Slice 2. All of the ADR's original numbers still
+hold — Slice 2 moved none of them, and `E1`/`E2` still refuse. What the
+re-measurement *did* change is the estimate of where the work is. **"Emit
+`CaptureVarCell` at the lvalue call site" is not one edit, because the invocant
+is not an ordinary argument in mutsu**, and the two acceptance families reach
+the invocant through entirely disjoint machinery:
+
+**3a — the lvalue half (A3/A6/E4/E5/E6), `$a.snitch = 5`.** The call site is
+`__mutsu_assign_method_lvalue`, and the invocant *is* already tagged:
+`GetLocal(0); ContainerizePair; WrapVarRef{name_idx:0, slot:0}` (confirmed with
+`--dump-bytecode`). The missing box is `CaptureVarCell`, exactly as this ADR
+said — but it cannot be emitted unconditionally at that site. Rawness is not
+statically known (`$a.snitch`'s callee depends on `$a`'s runtime type and on a
+runtime method-name string), and boxing every lvalue invocant would hand a
+`ContainerRef` to the ~40 `target.view()` branches of
+`assign_method_lvalue_with_values` that today match `Instance`/`Array`/`Hash`
+directly, silently skipping all of them. It also cannot be boxed inside that
+function: `capture_var_cell_inner` needs the frame's `&CompiledCode` for its
+slot resolution, which the runtime entry does not have. The viable shape is a
+**runtime-gated box in the VM**, where both the frame's `code` and the resolved
+callee are in hand — around `dispatch_func_call_inner`'s
+`__mutsu_assign_method_lvalue` arm — plus the native raw-invocant declaration
+table (`.snitch`, `.item`, `.list`) part 1 calls for, plus making
+`dispatch_snitch` log `deref_container()` while returning the container it was
+handed.
+
+The **element and attribute spellings do fall out**, as the ADR predicted, but
+for a different reason than "container mode handles them": `@a[0].snitch = 9`
+already compiles to a copy-in/copy-out protocol
+(`SetGlobal(tmp); …lvalue call…; GetGlobal(tmp); IndexAssignExprNamed`, see
+`expr_call.rs`'s `__mutsu_assign_method_lvalue` + `Expr::Index` arm), so a write
+through the *temp's* container is written back into `@a[0]` by the existing
+tail. E4/E5/E6 therefore need no per-shape code — they need the temp to be the
+thing that gets boxed.
+
+**3b — the arrival half (I1/I3), `$a.mut` where `method mut(\S:) { S = 7 }`.**
+This shares no code with 3a. It is an ordinary `CallMethodMut`, and the invocant
+travels as a bare `target: Value` from the opcode to the binder, losing every
+trace of where it came from. Measured under `rust-gdb` on I1
+(`break vm_method_dispatch.rs:1512`):
+
+```
+call_compiled_method_fast(receiver_class_name="Int", method_name="mut", base=…)
+  <- call_compiled_method                (vm_method_dispatch.rs:298)
+  <- dispatch_compiled_method            (vm_call_method_compiled_cache.rs:393)
+  <- try_dispatch_compiled_method_direct_as (vm_call_method_compiled_direct.rs:98)
+param_name = "S"    ->    param_values.push((param_name, base.clone()))
+```
+
+So the invocant parameter is bound to the invocant **value** at
+`vm_method_dispatch.rs:1512`, and there is a **second, independent** binding of
+the same parameter in the slow binder at `:581`
+(`env_mut().insert(param_name, base.clone())`) — which of the two runs is
+decided by the `fast_method_cache` eligibility gate
+(`vm_call_method_compiled_cache.rs`). Both would have to learn the container,
+and something upstream would have to produce one: `CallMethodMut` does carry
+`target_name_idx` (the source name `"a"` is in the opcode), but neither
+`dispatch_compiled_method` nor `call_compiled_method` takes an argument-source
+channel today, so 3b is a signature change across that whole chain plus a new
+gate in a hot dispatch path. That is a materially different, higher-blast-radius
+change than 3a, and pairing them in one PR would make a red CI unattributable.
+
+**Decision: split.** 3a and 3b ship separately, 3a first (it is the half the two
+originating findings actually asked for, and its acceptance rows A3/A6/E4/E5/E6
+are self-contained). I1/I3 move to 3b. E1/E2 stay regression controls for both:
+raku needs the invocant raw **and** the routine `is raw`/`is rw`, and dropping
+either must keep refusing.
+
+One more thing 3a has to settle that the original text did not anticipate:
+`capture_var_cell_inner` boxes a **frame local**, and returns the value
+unchanged when the name is not one (`vm_data_ops.rs`'s `let Some(idx) = idx
+else { … return inner }`). `$a.snitch` boxes a local fine, but the E4/E5
+spellings hand the lvalue call a *global temp*
+(`__mutsu_tmp_assign_method_target_N`), which that helper cannot box. So 3a
+needs either a global-name container route or the temps promoted to locals —
+a choice worth making explicitly rather than discovering mid-slice.
 
 ### Slice 4 — the chain walk steps through an object
 

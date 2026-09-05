@@ -739,7 +739,7 @@ impl Interpreter {
         {
             // First try explicit method resolution
             if let Some(method_def) = self.resolve_method(qualifier, actual_method, &method_args) {
-                if !method_def.is_rw {
+                if !Self::method_is_rw_capable(&method_def) {
                     return Err(RuntimeError::new(format!(
                         "X::Assignment::RO: method '{}' is not rw",
                         actual_method
@@ -1360,7 +1360,7 @@ impl Interpreter {
                     .iter()
                     .any(Self::stmt_contains_return_rw_call)
         });
-        if !method_def.is_rw && !returns_rw_attr {
+        if !Self::method_is_rw_capable(&method_def) && !returns_rw_attr {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
                 method

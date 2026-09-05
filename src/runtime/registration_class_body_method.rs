@@ -163,6 +163,7 @@ impl Interpreter {
                 decl.body.clone()
             }),
             is_rw: decl.is_rw,
+            is_raw: decl.is_raw,
             is_private: decl.is_private,
             is_multi: decl.multi,
             // Use is_submethod for the MethodDef is_my flag, which
@@ -404,7 +405,7 @@ impl Interpreter {
                 body: decl.body.clone(),
                 is_test_assertion: false,
                 is_rw: decl.is_rw,
-                is_raw: false,
+                is_raw: decl.is_raw,
                 is_method: true,
                 empty_sig: false,
                 is_stub: Self::is_stub_routine_body(&decl.body),
@@ -439,7 +440,7 @@ impl Interpreter {
                 body: decl.body.clone(),
                 is_test_assertion: false,
                 is_rw: decl.is_rw,
-                is_raw: false,
+                is_raw: decl.is_raw,
                 is_method: true,
                 empty_sig: false,
                 is_stub: Self::is_stub_routine_body(&decl.body),

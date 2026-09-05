@@ -101,6 +101,11 @@ pub(crate) struct MethodDef {
     /// the body is never mutated after construction and can be large.
     pub(crate) body: std::sync::Arc<Vec<Stmt>>,
     pub(crate) is_rw: bool,
+    /// `is raw` trait. Read together with `is_rw` and a `return-rw` anywhere in
+    /// the body by `Interpreter::method_is_rw_capable` — the method half of the
+    /// one rw-capability oracle `routine_is_rw_capable` states for a `sub`
+    /// (ADR-0067 slice 2).
+    pub(crate) is_raw: bool,
     pub(crate) is_private: bool,
     pub(crate) is_multi: bool,
     pub(crate) is_my: bool,

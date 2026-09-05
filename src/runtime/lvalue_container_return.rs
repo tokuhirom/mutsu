@@ -60,7 +60,7 @@ impl Interpreter {
     /// applied to `$obj.m(args) = value`, because the lvalue-return path owns
     /// this shape and has not been attempted yet.
     ///
-    /// An `is rw` method is an lvalue accessor, never a setter: calling it with
+    /// An rw-capable method is an lvalue accessor, never a setter: calling it with
     /// the assigned value as its only argument binds that value into the
     /// method's first parameter and produces nonsense (`I.in(%h, "a") = 1`
     /// called `in(1)`, whose `\c` then received `1`). So the setter convention
@@ -93,8 +93,10 @@ impl Interpreter {
         self.method_lvalue_returns_container(&target, method, method_args)
     }
 
-    /// Whether `m` is an `is rw` method that *computes* the location it returns,
-    /// rather than naming an attribute — the shape the lvalue return owns.
+    /// Whether `m` is an rw-capable method (`is rw` / `is raw` / `return-rw` —
+    /// `method_is_rw_capable`, ADR-0067 slice 2) that *computes* the location it
+    /// returns, rather than naming an attribute — the shape the lvalue return
+    /// owns.
     fn method_lvalue_returns_container(
         &mut self,
         target: &Value,
@@ -107,7 +109,7 @@ impl Interpreter {
         let Some(def) = self.resolve_method(&class_name, method, method_args) else {
             return false;
         };
-        def.is_rw && Self::rw_method_attribute_target(&def.body).is_none()
+        Self::method_is_rw_capable(&def) && Self::rw_method_attribute_target(&def.body).is_none()
     }
 
     /// The method-call half of the lvalue return: `$obj.m(args) = value` where

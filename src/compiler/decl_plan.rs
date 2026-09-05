@@ -407,6 +407,7 @@ impl Compiler {
                 param_defs,
                 body,
                 is_rw,
+                is_raw,
                 return_type,
                 ..
             } = stmt
@@ -421,7 +422,10 @@ impl Compiler {
                     body,
                     is_hidden,
                     apply_auto_positional_slurpy,
-                    *is_rw,
+                    // The rw-tail compile keys off the whole rw-capability
+                    // declaration, not the `is rw` trait alone — same rule the
+                    // `sub` path states (`compile_sub_body`'s `is_rw || is_raw`).
+                    *is_rw || *is_raw,
                     return_type.as_ref(),
                     decl_line,
                 ),

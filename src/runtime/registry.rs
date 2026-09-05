@@ -1406,6 +1406,7 @@ mod tests {
             param_defs: Vec::new(),
             body: std::sync::Arc::new(Vec::new()),
             is_rw: false,
+            is_raw: false,
             is_private: false,
             is_multi: false,
             is_my: false,

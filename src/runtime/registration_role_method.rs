@@ -237,6 +237,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: std::sync::Arc::new(decl.body.clone()),
             is_rw: decl.is_rw,
+            is_raw: decl.is_raw,
             is_private: decl.is_private,
             is_multi: decl.multi,
             is_my: decl.is_submethod,

@@ -252,6 +252,20 @@ impl Interpreter {
         def.is_rw || def.is_raw || Self::routine_body_facts(def).uses_return_rw
     }
 
+    /// The method half of `routine_is_rw_capable` — the *same* rule, asked of a
+    /// [`MethodDef`] instead of a `FunctionDef` (ADR-0067 slice 2).
+    ///
+    /// The method lvalue path used to test `is_rw` alone, so `method m(\x) is
+    /// raw { x }` and `method m(\x) { return-rw x }` were refused with
+    /// `X::Assignment::RO` while the byte-identical `sub` spellings wrote
+    /// through — two rules for one declaration property. Rakudo has one:
+    /// `is rw`, `is raw`, and an explicit `return-rw` all make a routine hand
+    /// its caller a container, and a method is just a routine whose parameter
+    /// zero is the invocant.
+    pub(crate) fn method_is_rw_capable(def: &crate::runtime::decl_types::MethodDef) -> bool {
+        def.is_rw || def.is_raw || crate::opcode::body_uses_return_rw(&def.body)
+    }
+
     /// The write half of `f() = value` once the routine has run: the routine
     /// handed back a container (ADR-0059) and `value` is stored through it, or
     /// it handed back a plain value and the assignment is `X::Assignment::RO`
