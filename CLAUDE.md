@@ -173,6 +173,16 @@ gh workflow run tag-release.yml -f version=0.18.0
 ## Reference implementation
 
 - `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
+- **If `raku` is missing** (a fresh remote/ephemeral container often has no
+  rakudo, and Ubuntu's `apt` package is 2022.12 — far too old for RakuAST),
+  install an upstream prebuilt instead of doing without an oracle. `curl -sS
+  https://rakudo.org/dl/rakudo` returns a JSON index; pick the newest entry with
+  `backend: moar`, `type: archive`, `platform: linux` and your arch, untar it,
+  and symlink its `bin/raku` onto `PATH`. It is a self-contained tree, needs no
+  build, and takes about a minute. Without it, any work that has to *measure*
+  rakudo's behavior (RakuAST node shapes above all) is blocked — see
+  `docs/rakuast/README.md`, whose whole slice checklist starts with "measure the
+  Rakudo `.AST` shape".
 - When investigating a roast test, always run it with `raku` first to see the expected output before comparing with mutsu.
 - Design docs: `./old-design-docs/`
 - Raku language documentation: `./raku-doc/` — consult these docs when the language spec or behavior is unclear. See the section below for a detailed guide to the most useful files.
