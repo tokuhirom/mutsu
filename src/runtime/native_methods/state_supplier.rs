@@ -240,6 +240,20 @@ pub(in crate::runtime) fn set_supplier_serialize_group(trigger_supplier_id: u64,
     }
 }
 
+/// Record a serialize group for `trigger_supplier_id` only if it does not
+/// already have one, so a supply block's own grouping (set by
+/// `set_supplier_serialize_group` above, and the stronger of the two — it spans
+/// every `whenever` of one block) always wins over the weaker per-supplier
+/// grouping `Supply.act` asks for.
+pub(in crate::runtime) fn set_supplier_serialize_group_if_absent(
+    trigger_supplier_id: u64,
+    group: u64,
+) {
+    if let Ok(mut map) = supplier_serialize_groups().lock() {
+        map.entry(trigger_supplier_id).or_insert(group);
+    }
+}
+
 /// Look up the serialize group for `whenever` taps on `trigger_supplier_id`.
 pub(in crate::runtime) fn supplier_serialize_group(trigger_supplier_id: u64) -> Option<u64> {
     supplier_serialize_groups()

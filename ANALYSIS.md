@@ -348,9 +348,15 @@ be silent.
 - **Deep recursion** — the interpreter runs on a 256 MB-stack thread (`main.rs:147`) and the
   pure-recursion integration tests pass. Pathologically deep recursion can still overflow; a
   larger fixed stack is a blunt instrument, not heap frames.
-- **`Proc::Async` stress segfault** (`todo/deep/procasync-stress-segv.md`) —
-  `roast/S17-procasync/stress.t` segfaults rarely, CI-only so far. A segfault is categorically
-  worse than a failing assertion and should not sit in a `todo/` file indefinitely.
+- **(2026-09-05: root-caused, largely resolved)** The `Proc::Async` / Supply crash cluster
+  (was `todo/deep/procasync-stress-segv.md`) was `Supply.act` failing to enforce its
+  "executed by only one thread at a time" guarantee: concurrent emitters ran act callbacks
+  simultaneously and their writes to one `Gc`-aliased container raced through
+  `gc_contents_mut`, whose `Vec::resize` then reallocated from two threads at once — the
+  corrupted-chunk abort in `__libc_free`. Fixed by serializing act tap dispatch
+  (`news/2026-09/supply-act-serialization-and-the-concurrency-crash-cluster.md`). What remains
+  is the general hazard: 149 `gc_contents_mut` call sites, none synchronized against another VM
+  thread (`todo/deep/gc-contents-mut-cross-thread-aliased-writes.md`, ADR-0001 layer 3c).
 - **(rev13: resolved, removed)** The WASM `start`/`Channel` trap
   (`todo/deep/wasm-start-and-channel-trap.md`) was fixed 2026-08-14 (`62ea1e3e4`) by a
   cooperative single-thread scheduler (`wasm_sched.rs`, `thread_compat.rs`, PR #5317); the
