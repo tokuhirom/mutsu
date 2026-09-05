@@ -7,8 +7,8 @@
   `todo/tickets/chained-compare-ast-node.md` **shipped 2026-08-26** (see `news/2026-08/
   chained-compare-ast-node.md`): `TokenKind::ChainAnd` is retired now that a real AST node
   exists, and `.AST` renders a chain as rakudo's left-nested `ApplyInfix` instead of the
-  expanded `&&`/`DoBlock` shape. Phase 3 (RakuAST write / `EVAL`) not started; it has no
-  roast or correctness payoff of its own and was deliberately left until after Phase 4.
+  expanded `&&`/`DoBlock` shape. **Phase 3 shipped 2026-09-05 (see "Phase 3 outcome"
+  below)**, so every phase of this ADR is now complete.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -643,6 +643,62 @@ unit tests plus every integration binary) green; `cargo clippy -- -D warnings` c
 whitelisted `roast/S02-*`, `roast/S03-*` and `roast/S04-*` sweep (345 files) green, with
 `roast/S02-types/{whatever,hyperwhatever}.t`, `roast/S03-operators/composition.t`,
 `short-circuit.t` and `ternary.t` checked individually first.
+
+## Phase 3 outcome (2026-09-05)
+
+`EVAL` of a `WhateverCode` tree works. `RakuAST::WhateverCode::Argument` lowers to
+`Expr::WhateverArg`, and — the part that made this more than a missing match arm — the
+priming *scope* is now planted for a lowered tree by the same authority that plants it
+for a parsed one.
+
+### The asymmetry section 6 predicted, and what closing it actually took
+
+Section 6 called it exactly: the converter *refused* a WhateverCode while the lowerer
+emitted a bare leaf and never re-ran the currying transform, so a round trip would have
+come back uncurried. What section 6 did not say is *how* to re-derive the scope, and
+that turned out to be the whole of the work.
+
+The parser plants its scopes at ~29 grammar positions. Those positions carry context
+`should_wrap_whatevercode` alone does not have, so neither of the two obvious
+reimplementations works:
+
+- **Bottom-up** (wrap each qualifying subexpression as `lower_expr` returns it) gives
+  *minimal* scopes. `*.abs + 1` becomes `WhateverCurry(WhateverCurry(*.abs) + 1)` — an
+  inner closure added to `1` — where the parser produces one scope over the whole sum.
+- **Top-down over `should_wrap_whatevercode` alone** gives maximal scopes correctly
+  almost everywhere, because `contains_whatever` is deliberately *not* transparent
+  through a call argument, a method-call argument, or a thunk barrier. That is what makes
+  `@a.first(* > 1)` plant one scope around the argument and none around the method call,
+  with no special case needed.
+
+So the implementation is the second, run as a mode of the walk that already exists.
+`whatever_curry::mark`'s post-parse walk reaches every expression slot top-down and
+already calls `plant_here` before recursing; in the new mode `plant_here` also
+materialises a scope around the node itself, so the *first* node that primes gets the
+marker. `rakuast::lower` turns the mode on for its single `mark_program` call; the parser
+path never sets it and is unchanged by construction.
+
+Two adjustments were needed, both found by differential testing rather than by reading:
+
+- **A marker's body must not be re-planted.** `mark_expr` recurses into a
+  `WhateverCurry`'s body, which is still an expression that primes, so it was wrapped
+  again — and again. `plant_here` split into a scope half and a barrier half, and the
+  marker-body recursion now runs only the barrier half.
+- **An invocation is never itself a scope.** `should_wrap_whatevercode` answers `true`
+  for a `CallOn` with a compound target only because the parser never asks it — it wraps
+  the *target* at a dedicated site instead. Wrapping the whole `CallOn` made
+  `(* + 1)(4)` evaluate to the closure instead of calling it. `plant_all_scopes` skips
+  `CallOn`, and the recursion plants the target.
+
+### Validation
+
+The oracle for this phase is mutsu against itself: for a snippet `S`, running `S`
+directly must produce exactly what `EVAL(Q{S}.AST)` produces. That comparison found both
+adjustments above and now agrees across the priming corpus — the canonical `.map(* + 1)`
+/ `.grep(* > 3)` / `@a[* - 1]` forms, maximal-scope compounds, immediate invocation,
+multi-`*` arity, the Phase 4 barrier cases, and the value-position `*` forms that must
+NOT curry. `t/rakuast-eval-whatever-code.t` (18 assertions) pins that corpus and passes
+verbatim under both mutsu and raku.
 
 ## Phase 2 detailed design (added 2026-08-20)
 

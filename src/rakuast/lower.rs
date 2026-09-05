@@ -21,6 +21,21 @@ fn unsupported(node: &RakuAstNode) -> RuntimeError {
 /// (e.g. `EVAL(RakuAST::IntLiteral.new(42))`) becomes a single expression
 /// statement.
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    let mut stmts = lower_stmts(node)?;
+    // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
+    // priming *scopes*: those are planted by the parser at its own grammar
+    // positions, and there is no parser here. Run the same scope authority the
+    // parser's output goes through, in the mode that plants every scope rather
+    // than only the thunk-barrier ones, so a `WhateverCode::Argument` tree —
+    // hand-built or read back from `.AST` — becomes the same closure the
+    // equivalent source does.
+    crate::whatever_curry::with_all_scopes(|| {
+        crate::whatever_curry::mark::mark_program(&mut stmts)
+    });
+    Ok(stmts)
+}
+
+fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
@@ -220,7 +235,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (params, param_defs) = signature_positional_params(node)?;
     let (return_type, custom_traits) = routine_return_type(node)?;
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -281,7 +296,7 @@ fn lower_role(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if role_body.class != RakuAstClass::RoleBody {
         return Err(unsupported(node));
     }
-    let body = lower(named_child_or_positional(named_child(role_body, "body")?)?)?;
+    let body = lower_stmts(named_child_or_positional(named_child(role_body, "body")?)?)?;
     Ok(Stmt::RoleDecl {
         name: crate::symbol::Symbol::intern(&name),
         type_params: Vec::new(),
@@ -303,7 +318,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let (return_type, custom_traits) = routine_return_type(node)?;
-    let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -598,7 +613,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// statement list.
 fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     let blockoid = named_child(block, "body")?;
-    lower(named_child_or_positional(blockoid)?)
+    lower_stmts(named_child_or_positional(blockoid)?)
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
@@ -877,7 +892,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             }
             // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-            let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+            let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
             if params.is_empty() && return_type.is_none() {
                 return Ok(Expr::AnonSub {
                     body,
@@ -967,8 +982,12 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 expr: Box::new(lower_expr(child_node(&only.value)?)?),
             })
         }
-        // The `*` whatever term.
+        // The `*` whatever term — the *value* leaf (`1..*`, `@a[*]`).
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
+        // The `*` priming-argument leaf (`* + 1`, `* > 3`). ADR-0033 splits the
+        // two leaf roles; the enclosing priming *scope* is planted afterwards by
+        // `whatever_curry`, not here — see `lower`'s entry point.
+        RakuAstClass::WhateverCodeArgument => Ok(Expr::WhateverArg),
         // `do { … }` -> a do-block expression over the lowered block body.
         RakuAstClass::StatementPrefixDo => {
             let block = named_child_or_positional(node)?;

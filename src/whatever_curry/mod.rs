@@ -30,4 +30,4 @@ mod plant;
 mod replace;
 
 pub(crate) use build::{build_closure, make_wc_param};
-pub(crate) use plant::{is_thunk_barrier, plant_here};
+pub(crate) use plant::{is_thunk_barrier, plant_barriers_here, plant_here, with_all_scopes};
