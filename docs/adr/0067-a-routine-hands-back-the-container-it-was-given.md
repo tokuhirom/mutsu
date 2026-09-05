@@ -1,9 +1,10 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1, 2 and 3a implemented 2026-09-05; Slice 3 was
+- Status: Proposed (Slices 1, 2, 3a and 4 implemented 2026-09-05; Slice 3 was
   re-scoped into 3a/3b on the same day after measurement, and 3a's E6 row split
-  off again into the rw-attribute-accessor producer; Slices 3b, 4, 5 and the E6
-  producer open)
+  off again into the rw-attribute-accessor producer; Slice 4 absorbed two of
+  Slice 5's three acceptance rows, again after measurement; Slices 3b, 5 and the
+  E6 producer open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -651,6 +652,87 @@ lvalue-mode call, and descend into the returned container.
 **Acceptance:** C3/H1, C4 (must stay correct), H2, H5 (depth 3 — must stop
 replacing the instance with a Hash), and C2 (the `AT-POS` twin). H3/H4 are
 regression rows.
+
+#### Slice 4 — IMPLEMENTED 2026-09-05
+
+Every row in the Correction-3 table was re-measured against raku v2026.07 and a
+debug `mutsu` built from `main` at `895d8abc3` before any code was written. All
+of them still held exactly as written, loud refusal and silent drops alike.
+
+**What shipped**, all in the new `src/vm/vm_lvalue_object_subscript.rs`
+plus three call sites in `vm_var_assign_index_named.rs`:
+
+- **`object_subscript_accessor`** — the accessor an object serves a step with,
+  extracted verbatim from the two-level walker's own `AT-POS`/`AT-KEY`
+  primary/secondary probe so both walkers ask the same question.
+- **`lvalue_object_step_container`** — the container a deeper subscript must
+  walk, given whatever the accessor returned. A `ContainerRef` cell or a
+  `HashEntryRef` token holding a container hands that container back (it shares
+  its `Gc` node with the object's own storage, so a write through it reaches the
+  object with no write-back); an *empty* location autovivifies a container of
+  the kind the **next** step addresses and installs it there, which is what
+  makes `$q<new>[0] = 9` grow `{new => [9]}` and `$p[2][0] = 9` grow the array.
+- **The two-level op** now calls the accessor **once** and keeps both its
+  container and its value. The `ASSIGN-POS`/`ASSIGN-KEY` and `Proxy`-element
+  branches are unchanged and still run first; only when both decline does the
+  walk store through the returned location instead of falling out to the generic
+  Hash/Array walk against a root that is not a container.
+- **The deep (3+ level) op** takes the same step at every intermediate level,
+  keeping each produced container in a `Vec<Box<Value>>` so the raw-pointer walk
+  has a stable, kept-alive address to descend into. This is what stops H5
+  replacing the object with a fresh Hash.
+- **The generic (stack-computed target) op** gained a `ContainerRef` arm that
+  resolves the cell exactly as its existing `HashEntryRef` arm resolves a
+  deferred entry. That is H2, `$q.AT-KEY("foo")[0] = 99`: an explicit accessor
+  call is not rewritten into a chain-root temp, so its container arrived here and
+  was dropped by the catch-all arm.
+
+**The discriminator is the shape of what the accessor returned, not a
+declaration probe.** No `routine_is_rw_capable` call was needed: a rw-capable
+`AT-KEY` body is already compiled with an rw tail (slice 2 widened that to
+`is_rw || is_raw`, slice 1 made a sigil-less tail denote its container), so the
+call already hands back a location. That is precisely why the `:=`-bound
+spelling H3 has always worked — the producer existed and simply was not
+consulted. An accessor that is *not* rw-capable returns a plain value and every
+caller keeps its previous behaviour.
+
+**One row was measured that the ADR's table did not contain, and it is fixed
+too.** `class R { has %.d; method AT-KEY($k) { %!d{$k} } }; $r<foo>[0] = 9` is
+`{foo => [9 2]}` in raku even though the accessor is **not** rw: raku mutates
+the returned `Array` *object* in place, and mutsu's method return shares its
+`Gc` node, so the same is true here. `lvalue_object_step_container` therefore
+also accepts a bare `Array`/`Hash` return. Without that row the fix would have
+read as "rw accessors only", which is not what raku does.
+
+**Slice 5 shrank as a result, measured.** B1 (the ticket's headline) and B6 turn
+out to be *variable*-rooted once the compiler has run: `--dump-bytecode` shows
+`$u.query<foo>[0] = 99` compiling to `SetGlobal(__mutsu_lvroot_%query#4)`
+followed by `IndexAssignExprNested`, i.e. the two-level walker with the object
+sitting in a chain-root temp — and the walker's new branch returns before
+`lvalue_root_temp_not_a_container`'s refusal is ever reached. Both are green
+after slice 4 and are pinned here. What is left for slice 5 is B4
+(`$u.query<foo> = 99`, depth 1), which is a different function entirely
+(`__mutsu_index_assign_method_lvalue` in `builtins_multidim_assign.rs`, arity 5),
+and the deep op's own root-temp refusal for a depth-3 method-rooted chain.
+
+**Pinned by** `t/lvalue-subscript-chain-through-object.t` (16 tests,
+byte-identical output under `mutsu` and `raku`): the five acceptance rows, the
+two `:=`-rooted spellings, the three autovivification shapes (missing hash key,
+out-of-range `AT-POS`, hash-valued element), the non-rw accessor, and five
+regression rows — H3, H4, an inner `ASSIGN-KEY` object still winning the
+outermost write, a plain `Hash` root, and plain deep autovivification.
+
+**Two residual divergences, both measured, both left alone deliberately:**
+
+- `my $q = Q.new(d => {foo => 1}); $q<foo>[0] = 9` — raku dies with "Cannot
+  modify an immutable Int (1)"; mutsu silently does nothing, exactly as before.
+  `lvalue_object_step_container` answers `None` for a location holding a defined
+  non-container rather than vivifying over real data, so this row is unchanged
+  rather than newly wrong.
+- `$a<zz> = 5` on a class supplying `ASSIGN-KEY` — raku calls `ASSIGN-KEY`
+  (`zz => A:5`), mutsu stores `5` directly. That is the **single-level** named
+  store, not a chain, so it is a different site from anything this slice
+  touches.
 
 ### Slice 5 — the method-rooted chain root
 
