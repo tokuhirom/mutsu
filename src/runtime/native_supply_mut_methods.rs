@@ -90,8 +90,9 @@ impl Interpreter {
                     // holds the group across its whole tap-dispatch loop. That
                     // is what `.act` is for, and it is what stops concurrent act
                     // callbacks from mutating one shared container at once --
-                    // an unsynchronized aliased write that corrupted the heap
-                    // (todo/deep/procasync-stress-segv.md).
+                    // an unsynchronized aliased write that corrupted the heap.
+                    // See news/2026-09/
+                    // supply-act-serialization-and-the-concurrency-crash-cluster.md.
                     //
                     // Serializing the dispatch rather than the individual
                     // callback is deliberate: mutsu runs all of a supplier's

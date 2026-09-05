@@ -6,7 +6,8 @@ use Test;
 # whichever thread emitted, so concurrent `start` blocks emitting into one
 # Supplier used to run the act callbacks at the same time -- letting two
 # threads mutate one captured container simultaneously, which lost updates and
-# (todo/deep/procasync-stress-segv.md) corrupted the heap.
+# corrupted the heap. See
+# news/2026-09/supply-act-serialization-and-the-concurrency-crash-cluster.md.
 
 plan 3;
 
