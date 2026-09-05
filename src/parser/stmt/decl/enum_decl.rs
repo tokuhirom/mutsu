@@ -232,8 +232,11 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
         Expr::Literal(lit) if lit.as_str().is_some() => {
             Some((lit.as_str().unwrap().to_string(), None))
         }
-        // A single pair is wrapped as a positional pair by the term parser.
-        Expr::PositionalPair(inner) => enum_variant_from_expr(*inner),
+        // A single pair is wrapped as a positional pair by the term parser, and
+        // the parenthesisation it was written with rides along as an inner
+        // `Grouped` (the paren parser's marker — see `paren.rs`). Both are
+        // transparent here: the pair underneath is what names the variant.
+        Expr::PositionalPair(inner) | Expr::Grouped(inner) => enum_variant_from_expr(*inner),
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,

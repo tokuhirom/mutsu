@@ -213,14 +213,23 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         // reaches this arm via `PositionalPair`; a plain quoted-key pair is
         // already planted in a `WhateverCurry` by the parser and recurses
         // via the generic `Expr::WhateverCurry` arm instead).
-        Expr::PositionalPair(inner) => match inner.as_mut() {
-            Expr::Binary {
-                op: TokenKind::FatArrow,
-                right,
-                ..
-            } => mark_value_leaf(right),
-            other => mark_expr(other),
-        },
+        Expr::PositionalPair(inner) => {
+            // The bareword-key form arrives parenthesized, so its pair sits
+            // inside a `Grouped` (the paren parser's marker for "the parens
+            // were written"); look through it.
+            let inner = match inner.as_mut() {
+                Expr::Grouped(g) => g.as_mut(),
+                other => other,
+            };
+            match inner {
+                Expr::Binary {
+                    op: TokenKind::FatArrow,
+                    right,
+                    ..
+                } => mark_value_leaf(right),
+                other => mark_expr(other),
+            }
+        }
         Expr::InfixFunc {
             name, left, right, ..
         } => {

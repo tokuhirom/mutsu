@@ -852,8 +852,13 @@ fn first_element_has_toplevel_fatarrow(input: &str) -> bool {
         },
         other => other,
     };
+    // A parenthesized pair carries BOTH markers: `PositionalPair` on the
+    // outside and the paren parser's `Grouped` within (see `paren.rs`).
     let first = match first {
-        Expr::PositionalPair(inner) => inner.as_ref(),
+        Expr::PositionalPair(inner) | Expr::Grouped(inner) => match inner.as_ref() {
+            Expr::Grouped(g) | Expr::PositionalPair(g) => g.as_ref(),
+            other => other,
+        },
         other => other,
     };
     matches!(

@@ -1243,15 +1243,19 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let block = named_child_or_positional(node)?;
             Ok(Expr::Gather(lower_block(block)?))
         }
-        // A fat-arrow pair `a => 1` -> a positional pair over a `FatArrow` binop.
+        // A `FatArrow` is raku's node for a BAREWORD key (`a => 1`), which is a
+        // *named* argument -- mutsu spells that as a bare `Binary{FatArrow}`.
+        // The quoted/computed spelling arrives as an `ApplyInfix` over `=>`
+        // instead and lowers, below, to the `PositionalPair` that marks it
+        // positional.
         RakuAstClass::FatArrow => {
             let key = leaf_str(node, "key")?;
             let value = lower_expr(named_child(node, "value")?)?;
-            Ok(Expr::PositionalPair(Box::new(Expr::Binary {
+            Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
-            })))
+            })
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
         // bareword term, which mutsu evaluates to the type object.
@@ -1338,11 +1342,25 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
             let op = infix_token(named_child(node, "infix")?)?;
-            Ok(Expr::Binary {
+            let binary = Expr::Binary {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-            })
+            };
+            // `=>` as an ordinary infix is raku's node for a non-bareword key
+            // (`"a" => 1`, `$k => 1`), which is a POSITIONAL pair rather than a
+            // named argument. mutsu marks that with `PositionalPair`; the
+            // bareword spelling is a `FatArrow` node and lowers bare, above.
+            if matches!(
+                &binary,
+                Expr::Binary {
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                }
+            ) {
+                return Ok(Expr::PositionalPair(Box::new(binary)));
+            }
+            Ok(binary)
         }
         RakuAstClass::ApplyPrefix => {
             let operand = lower_expr(named_child(node, "operand")?)?;
