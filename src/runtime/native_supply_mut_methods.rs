@@ -78,6 +78,34 @@ impl Interpreter {
 
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
+                    // `Supply.act` is `Supply.tap` plus one guarantee: "the given
+                    // code is guaranteed to be executed by only one thread at a
+                    // time" (S17 / Type/Supply.rakudoc). mutsu delivers a tap
+                    // synchronously on whichever thread emitted, so two `start`
+                    // blocks emitting into the same Supplier ran the act
+                    // callbacks concurrently and nothing enforced the guarantee.
+                    //
+                    // Reuse the supply-block serialize group machinery, keyed on
+                    // the supplier itself: every emit into this supplier then
+                    // holds the group across its whole tap-dispatch loop. That
+                    // is what `.act` is for, and it is what stops concurrent act
+                    // callbacks from mutating one shared container at once --
+                    // an unsynchronized aliased write that corrupted the heap
+                    // (todo/deep/procasync-stress-segv.md).
+                    //
+                    // Serializing the dispatch rather than the individual
+                    // callback is deliberate: mutsu runs all of a supplier's
+                    // taps in one loop, so the dispatch is the unit that can be
+                    // locked, and doing so is strictly stronger than the spec
+                    // asks. The lock is re-entrant per thread, so a callback
+                    // that synchronously re-emits into its own supplier does
+                    // not self-deadlock.
+                    if method == "act" {
+                        crate::runtime::native_methods::set_supplier_serialize_group_if_absent(
+                            supplier_id as u64,
+                            supplier_id as u64,
+                        );
+                    }
                     let has_unique = matches!(
                         attrs.get("unique_filter").map(Value::view),
                         Some(ValueView::Bool(true))

@@ -115,8 +115,19 @@ sub chunks-of($proc, $supply) {
 
 # 7. With both writes landing in one read(), the whole pending decode is dropped,
 #    not just the held grapheme. (rakudo: got="")
+#
+#    ONE printf, not two. Two `printf` builtins are two write(2) calls, and
+#    whether the reader coalesces them into a single read() is a scheduling
+#    race, not something the test can assert: if the reader reaches the pipe
+#    between the writes it sees "ok-" first, emits "ok", and the case degrades
+#    into case 6 above (got="ok"). That is exactly how this file failed once
+#    under parallel `make test` load (3/36 concurrent runs reproduced it,
+#    `got: 'ok/quit'`). A single printf is one write of 5 bytes -- far under
+#    PIPE_BUF -- so the malformed bytes are guaranteed to be in the same read()
+#    as the "ok-", which is the condition this case exists to test. Verified
+#    against rakudo 2026.06: still "/quit".
 {
-    my $proc = Proc::Async.new('sh', '-c', 'printf "ok-"; printf "\377\377"');
+    my $proc = Proc::Async.new('sh', '-c', 'printf "ok-\377\377"');
     my ($got, $quit) = ('', '');
     react {
         whenever $proc.stdout { $got ~= $_; QUIT { $quit = 'quit'; done } }
