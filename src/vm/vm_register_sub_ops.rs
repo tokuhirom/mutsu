@@ -271,10 +271,22 @@ impl Interpreter {
             let is_hoisted_pass = custom_traits.iter().any(|(t, _)| t == "__hoisted");
             if !is_hoisted_pass {
                 self.check_param_custom_traits(param_defs)?;
+                // ADR-0041 §9: the program has now textually reached this
+                // declaration, so a later BEGIN-time reference legitimately
+                // sees it. Recorded here rather than off a registry write:
+                // an in-sequence registration whose hoisted twin is
+                // byte-identical takes the idempotent `Unchanged` path and
+                // writes nothing at all (ADR-0041 §8).
+                self.mark_hoisted_decl_reached(&resolved_name);
             }
             if preregistered {
                 return Ok(());
             }
+            // ADR-0041 §9: remember what this hoist-pass registration is about
+            // to displace, so a BEGIN-time region opening before the
+            // declaration's own in-sequence registration can roll it back.
+            let pre_hoist_defs =
+                is_hoisted_pass.then(|| self.capture_pre_hoist_defs(&resolved_name, *multi));
             // ADR-0019 C6e-3c: a plan-derived def always registers with an
             // EMPTY body — its identity and dispatch run entirely from the
             // plan-recorded fingerprints/facts (C6e-3a) and the attached
@@ -323,6 +335,9 @@ impl Interpreter {
                     primary_compiled,
                 )
             })?;
+            if let Some(before) = pre_hoist_defs {
+                self.note_hoisted_decl(&resolved_name, *multi, before);
+            }
             // An idempotent re-registration of an already-installed identical sub
             // leaves the registry untouched, so none of the install bookkeeping
             // below (cache invalidation, `&`-param shadow tracking, export, native

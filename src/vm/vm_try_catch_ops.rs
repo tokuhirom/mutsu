@@ -50,6 +50,12 @@ impl Interpreter {
         if traps {
             self.fatal_mode = true;
         }
+        // ADR-0041 §9: a BEGIN-time region opened inside the protected body
+        // (`constant X = die ...`, `BEGIN { die }`) never reaches its closing
+        // opcode when the body throws. Unlike `check_phaser_depth`, a leaked
+        // region keeps sub declarations rolled out of the registry, so close
+        // any it left open before the handler resumes ordinary execution.
+        let begin_time_base = self.begin_time_hidden.len() as u32;
         let result = self.exec_try_catch_op_inner(
             code,
             catch_start,
@@ -62,6 +68,7 @@ impl Interpreter {
             ip,
             compiled_fns,
         );
+        self.begin_time_unwind_to(begin_time_base);
         if traps {
             self.fatal_mode = saved_fatal_mode;
         }
