@@ -3746,14 +3746,24 @@ impl Interpreter {
                 let cur_val = unsafe { (*current).clone() };
                 if let Some(accessor) = self.object_subscript_accessor(&cur_val, is_positional) {
                     let next_positional = positional_flags[level + 1];
-                    if let Some(container) = self.lvalue_object_subscript_container(
-                        cur_val,
+                    let stepped = self.lvalue_object_subscript_container(
+                        cur_val.clone(),
                         accessor,
                         &indices_val[level],
                         next_positional,
-                    )? {
-                        object_step_containers.push(Box::new(container));
-                        current = &mut **object_step_containers.last_mut().unwrap() as *mut Value;
+                    )?;
+                    // The accessor ran user code, which may have reallocated
+                    // whatever `current` pointed into, so the walk must not go
+                    // back to that pointer. Continue from an OWNED value either
+                    // way: the container the step produced, or -- when it
+                    // produced none -- the object itself, so the generic arms
+                    // below overwrite this local binding rather than the real
+                    // element (which is what used to replace the object with a
+                    // fresh Hash).
+                    let produced = stepped.is_some();
+                    object_step_containers.push(Box::new(stepped.unwrap_or(cur_val)));
+                    current = &mut **object_step_containers.last_mut().unwrap() as *mut Value;
+                    if produced {
                         continue;
                     }
                 }
