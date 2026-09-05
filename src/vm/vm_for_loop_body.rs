@@ -338,28 +338,20 @@ impl Interpreter {
         // vow `$v` is a cell (Instance boxing, ADR-0025 slice 1), and
         // `for %kvs.kv -> $k, $v` wrote each config Str into that cell, so
         // `$v.keep(%result)` after the loop called .keep on a Str and the
-        // returned promise never resolved. Sever a scalar cell binding up
-        // front: the save above keeps the cell itself for the post-loop
-        // restore, so only the loop-duration binding becomes a plain fresh
-        // value. `@`/`%`/`&` keep their container-cell aliasing (see the
-        // slot-restore comment below).
-        for (i, name) in spec.multi_param_names.iter().enumerate() {
-            if name.is_empty() || name.starts_with(['@', '%', '&']) {
-                continue;
-            }
-            if matches!(
-                self.env().get(name).map(Value::view),
-                Some(ValueView::ContainerRef(_))
-            ) {
-                self.env_mut().remove(name);
-            }
-            if let Some(slot) = spec.multi_param_locals.get(i).copied().flatten() {
-                let slot = slot as usize;
-                if self.locals[slot].is_container_ref() {
-                    self.locals[slot] = Value::NIL;
-                }
-            }
-        }
+        // returned promise never resolved.
+        //
+        // The names worth severing are fixed for the loop, so decide them once
+        // (`@`/`%`/`&` keep their container-cell aliasing — see the slot-restore
+        // comment below) and re-sever before every iteration, not just at entry:
+        // a cell can be minted DURING the loop as well as before it. See
+        // `sever_multi_param_cells`.
+        let severable_multi_params: Vec<(usize, &String)> = spec
+            .multi_param_names
+            .iter()
+            .enumerate()
+            .filter(|(_, name)| !name.is_empty() && !name.starts_with(['@', '%', '&']))
+            .collect();
+        self.sever_multi_param_cells(spec, &severable_multi_params);
         // A multi-parameter loop (`-> $k, $v`) binds its parameters with plain
         // assignments emitted into the body prefix (`build_for_bind_stmts`), and
         // `SetLocal` type-checks an assignment against the *name-keyed* constraint
@@ -814,6 +806,14 @@ impl Interpreter {
                 .filter(|n| n.starts_with('%'))
                 .cloned()
                 .collect();
+            // Re-sever before THIS iteration binds (see the loop-entry call).
+            // A closure created in the body captures the parameter's local by
+            // boxing that slot into a shared cell, so iteration 1's closure
+            // leaves a cell behind that iteration 2's bind would write through
+            // — and every closure would then observe the last iteration's
+            // value. Severing per iteration is what makes each iteration's
+            // binding actually fresh.
+            self.sever_multi_param_cells(spec, &severable_multi_params);
             // Temporarily clear readonly flags for multi-param names
             // so the bind stmts (Stmt::Assign) at the start of the body can
             // re-bind variables that may be readonly from an outer scope.
@@ -1346,5 +1346,45 @@ impl Interpreter {
             self.stack.push(Value::array(coll));
         }
         Ok(completed_all)
+    }
+
+    /// Break a multi-parameter loop variable's binding away from any shared
+    /// `ContainerRef` cell, so the bind that follows installs a FRESH value
+    /// instead of writing through the cell.
+    ///
+    /// A multi-param binds via a plain `Stmt::Assign` (`build_for_bind_stmts`),
+    /// and `SetLocal` writes THROUGH a cell when the slot holds one. Two things
+    /// put a cell there: an outer lexical of the same name that was boxed
+    /// before the loop, and — the reason this runs per iteration rather than
+    /// once — a closure created in the body, which boxes the parameter's own
+    /// slot at capture time. Without the per-iteration sever every closure the
+    /// loop makes ends up sharing one cell and reading the last iteration's
+    /// value (`for @a -> $x, $y { @c.push(-> { $x }) }` gave `[30 30]` where
+    /// raku gives `[10 30]`).
+    ///
+    /// The cell itself is not destroyed — the caller's `saved_multi_params`
+    /// snapshot holds it for the post-loop restore, and any closure that
+    /// captured it keeps reading it. Only this name's *binding* to it is cut.
+    /// `@`/`%`/`&` parameters are excluded by the caller: they bind the
+    /// container itself, and that aliasing is the point.
+    fn sever_multi_param_cells(
+        &mut self,
+        spec: &crate::opcode::ForLoopSpec,
+        severable: &[(usize, &String)],
+    ) {
+        for (i, name) in severable {
+            if matches!(
+                self.env().get(name).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            ) {
+                self.env_mut().remove(name);
+            }
+            if let Some(slot) = spec.multi_param_locals.get(*i).copied().flatten() {
+                let slot = slot as usize;
+                if self.locals[slot].is_container_ref() {
+                    self.locals[slot] = Value::NIL;
+                }
+            }
+        }
     }
 }
