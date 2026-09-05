@@ -260,10 +260,17 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         | Expr::Block(body)
         | Expr::AnonSub { body, .. }
         | Expr::Gather(body)
-        | Expr::AnonSubParams { body, .. }
         | Expr::Lambda { body, .. }
         | Expr::PhaserExpr { body, .. }
         | Expr::Once { body } => mark_stmts(body),
+        // A closure with an explicit signature carries expressions there too —
+        // a parameter default and a `where` constraint.
+        Expr::AnonSubParams {
+            body, param_defs, ..
+        } => {
+            super::mark_param_defs(param_defs);
+            mark_stmts(body);
+        }
         Expr::Try { body, catch } => {
             mark_stmts(body);
             if let Some(catch) = catch {
