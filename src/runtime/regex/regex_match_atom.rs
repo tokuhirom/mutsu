@@ -42,6 +42,46 @@ impl Interpreter {
     /// for its side effects, so evaluating it eagerly during candidate
     /// collection fires those effects on paths raku never executes — it must
     /// only run when no other alternative matched.
+    /// Candidate ends for ONE branch of a `||` (sequential alternation),
+    /// packaged as a capture delta in the alternation's own positional slot
+    /// space. Returned LOWEST-PRIORITY FIRST, matching the atom-producer
+    /// convention.
+    ///
+    /// Evaluating a branch runs its embedded `{ ... }` blocks for real, so the
+    /// caller decides *when* a branch is evaluated: `walk_seq_alternation`
+    /// only reaches branch *k+1* after branch *k*'s candidates have all been
+    /// rejected by the rest of the pattern, which is exactly when raku's
+    /// cursor would enter it.
+    pub(super) fn seqalt_branch_candidates(
+        &mut self,
+        alt: &RegexPattern,
+        capture_slots: usize,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+    ) -> Vec<(usize, RegexCaptures)> {
+        // HIGHEST FIRST from the walk; reverse to LOWEST FIRST below.
+        let inner_matches = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+        let mut group = Vec::with_capacity(inner_matches.len());
+        for (next, mut inner_caps) in inner_matches {
+            if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
+                inner_caps
+                    .positional
+                    .resize(capture_slots, PosSlot::alternation_padding());
+            }
+            let mut new_caps = RegexCaptures::default();
+            for (k, v) in inner_caps.named.drain() {
+                new_caps.named.entry(k).or_default().merge(v);
+            }
+            new_caps.positional.append(&mut inner_caps.positional);
+            new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+            super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+            group.push((next, new_caps));
+        }
+        group.reverse();
+        group
+    }
+
     fn is_pure_code_block_alt(alt: &RegexPattern) -> bool {
         alt.tokens.len() == 1
             && matches!(alt.tokens[0].quant, RegexQuant::One)
@@ -279,45 +319,16 @@ impl Interpreter {
                 let earlier_matched = groups.iter().any(|g| !g.is_empty());
                 // Defer a side-effect-only alternative (`|| { die ... }`): once
                 // an earlier alternative matched, raku never reaches it, so
-                // running it here would fire its side effects spuriously.
+                // running it here would fire its side effects spuriously. This
+                // residual guard only applies to the *eager* producer; when the
+                // token walk drives the alternation itself
+                // (`walk_seq_alternation`) a later branch is never reached at
+                // all unless raku's cursor would reach it.
                 if Self::is_pure_code_block_alt(alt) && earlier_matched {
                     groups.push(Vec::new());
                     continue;
                 }
-                // Same reasoning for a branch that merely *contains* a plain
-                // block (`|| . { die ... }`): its candidates are still needed for
-                // enclosing backtracking, but raku's cursor never reaches it, so
-                // its side effects must not fire. See `SPECULATIVE_ALT_BRANCH`.
-                let inner_matches = if earlier_matched {
-                    let flag = &super::regex_helpers::SPECULATIVE_ALT_BRANCH;
-                    let prev = flag.with(std::cell::Cell::get);
-                    flag.with(|f| f.set(true));
-                    let r = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
-                    flag.with(|f| f.set(prev));
-                    r
-                } else {
-                    self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg)
-                };
-                // inner_matches is in HIGHEST FIRST order (per regex_match_ends_from_caps_in_pkg
-                // convention). Reverse to LOWEST FIRST for our return convention.
-                let mut group = Vec::new();
-                for (next, mut inner_caps) in inner_matches {
-                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-                        inner_caps
-                            .positional
-                            .resize(capture_slots, PosSlot::alternation_padding());
-                    }
-                    let mut new_caps = RegexCaptures::default();
-                    for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
-                    }
-                    new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
-                    super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                    group.push((next, new_caps));
-                }
-                group.reverse(); // now LOWEST FIRST within this alt's group
-                groups.push(group);
+                groups.push(self.seqalt_branch_candidates(alt, capture_slots, chars, pos, pkg));
             }
             // groups[0] = alt0 (highest priority), groups[N] = altN (lowest priority).
             // We want lower-priority alts first in the output (pushed first = bottom of LIFO).

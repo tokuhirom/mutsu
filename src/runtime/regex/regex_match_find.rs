@@ -44,7 +44,7 @@ impl Interpreter {
             let stripped_parsed = strip_marks_pattern(&parsed);
             let orig_len = orig_chars.len();
             let mut matches =
-                self.regex_match_ends_from_caps_in_pkg(&stripped_parsed, &stripped_chars, 0, &pkg);
+                self.regex_match_ends_stop_at_full(&stripped_parsed, &stripped_chars, 0, &pkg);
             if matches.is_empty() {
                 return None;
             }
@@ -65,7 +65,7 @@ impl Interpreter {
             return Some(caps);
         }
 
-        let mut matches = self.regex_match_ends_from_caps_in_pkg(&parsed, orig_chars, 0, &pkg);
+        let mut matches = self.regex_match_ends_stop_at_full(&parsed, orig_chars, 0, &pkg);
         if matches.is_empty() {
             return None;
         }

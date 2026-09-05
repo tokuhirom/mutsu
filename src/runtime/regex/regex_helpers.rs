@@ -57,26 +57,6 @@ thread_local! {
     /// probe wants the longest prefix the pattern's declarative skeleton accepts, so
     /// both kinds of code atom simply become no-ops.
     pub(crate) static CODE_ATOMS_INERT: Cell<bool> = const { Cell::new(false) };
-    /// A `||` branch is being evaluated only for the backtracking candidates it
-    /// *might* contribute: an earlier branch of the same ordered alternation
-    /// already matched, so rakudo's cursor never reaches this one.
-    ///
-    /// The matcher evaluates every branch of a `SequentialAlternation` eagerly —
-    /// it has to, because a later branch's candidate ends are what let an
-    /// enclosing pattern backtrack (`regex r { <?> || x <r> }` needs alt1's
-    /// candidates even though alt0's zero-width match always succeeds). But a
-    /// plain `{ … }` block is run inline, left-to-right, as the matcher reaches
-    /// it, so that eager evaluation fired the side effects of branches raku
-    /// never enters: `[ 'b' || . { die … } ]` died on input that `'b'` matched
-    /// (`Config::TOML`'s escape-sequence token, whose losing branch is exactly a
-    /// `die`).
-    ///
-    /// While set, a plain side-effect block becomes a zero-width no-op. Skipping
-    /// it cannot change whether the branch matches — such a block always
-    /// succeeds — so the candidate set is unchanged. `<?{ … }>` / `<!{ … }>`
-    /// assertions still run: their result decides whether the branch matches at
-    /// all, so suppressing them would silently change the candidates.
-    pub(crate) static SPECULATIVE_ALT_BRANCH: Cell<bool> = const { Cell::new(false) };
     /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
     /// action methods that run at *reduce time* (during matching). The regex
     /// match engine is `&self`, so an action's dyn-var write (e.g.
@@ -431,52 +411,6 @@ impl Drop for ReducedSubruleGuard {
 /// See `news/2026-09/grammar-inline-code-block-order.md`.
 pub(crate) fn code_block_defers_to_reduce(code: &str) -> bool {
     code_block_uses_dynamic_var(code)
-}
-
-/// Does this block produce a **value** (`make`) rather than only side effects?
-///
-/// Used for exactly one decision: whether a block may be skipped while a later
-/// `||` branch is being evaluated speculatively (`SPECULATIVE_ALT_BRANCH`).
-/// mutsu evaluates every branch of an ordered alternation eagerly to learn its
-/// candidate ends, so a branch raku's cursor may never reach still runs here;
-/// skipping a pure side-effect block keeps those ends unchanged while not firing
-/// the effect. A `make` is not skippable that way — the branch is still a live
-/// candidate, and an atom after the alternation can read the value back
-/// (`$/.values[0].ast`) while the match is still running.
-///
-/// The scan matches the bare identifier `make` (which also covers the
-/// `$/.make(…)` method form via the trailing `.`) but not a longer identifier
-/// containing it (`maker`, `remake`) nor a variable named `$make`. It is
-/// deliberately conservative: a false positive only means a speculative branch's
-/// block runs, which is what mutsu did before `SPECULATIVE_ALT_BRANCH` existed.
-pub(crate) fn code_block_produces_value(code: &str) -> bool {
-    let bytes = code.as_bytes();
-    let mut idx = 0;
-    while let Some(rel) = code[idx..].find("make") {
-        let start = idx + rel;
-        let end = start + 4;
-        let prev_ok = match start.checked_sub(1).map(|i| bytes[i]) {
-            None => true,
-            Some(c) => {
-                !(c.is_ascii_alphanumeric()
-                    || c == b'_'
-                    || c == b'$'
-                    || c == b'@'
-                    || c == b'%'
-                    || c == b'&'
-                    || c == b'-')
-            }
-        };
-        let next_ok = match bytes.get(end).copied() {
-            None => true,
-            Some(c) => !(c.is_ascii_alphanumeric() || c == b'_' || c == b'-'),
-        };
-        if prev_ok && next_ok {
-            return true;
-        }
-        idx = end;
-    }
-    false
 }
 
 /// Does the block mention a dynamic variable (`$*x`, `@*x`, `%*x`)?
