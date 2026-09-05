@@ -73,7 +73,13 @@ plan 17;
 }
 
 # 3. Both pipes are merged. Their interleaving is a race between two independent
-#    reader threads, so assert on the content, never on the order.
+#    reader threads, so assert on the content, never on the order — and not even
+#    on line integrity: each reader holds its chunk's final grapheme back until
+#    the next read (see
+#    `news/2026-09/procasync-holds-back-the-final-grapheme.md`), so a line's
+#    trailing "\n" can be flushed *after* the other stream's chunk lands and the
+#    concatenation splits that line. The order-free invariant is the multiset of
+#    characters: every byte of both pipes arrives exactly once.
 {
     my $proc = Proc::Async.new('sh', '-c', 'echo out1; echo out2; echo err1 >&2');
     my $got = '';
@@ -81,7 +87,8 @@ plan 17;
         whenever $proc { $got ~= $_ }
         whenever $proc.start { }
     }
-    is $got.lines.sort.join(','), 'err1,out1,out2', 'stdout and stderr are both merged in';
+    is $got.comb.sort.join, "out1\nout2\nerr1\n".comb.sort.join,
+        'stdout and stderr are both merged in';
 }
 
 # 4. A process that writes nothing still ends the merged Supply cleanly.
@@ -121,7 +128,9 @@ plan 17;
         whenever $proc { $got ~= $_; done }
         whenever $proc.start { }
     }
-    is $got, "first\n", 'done in a merged whenever body ends the react immediately';
+    # "first", not "first\n": the trailing newline is the chunk's final grapheme
+    # and is still held back when `done` ends the react.
+    is $got, "first", 'done in a merged whenever body ends the react immediately';
     $proc.kill('KILL');
 }
 
