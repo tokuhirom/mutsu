@@ -1,6 +1,6 @@
 # ADR-0052: A `when`/`default` clause produces its value on the stack, in both branches — retiring the succeed-signal and side-channel value paths
 
-- Status: Accepted (Slice 1 implemented; Slices 2-4 open — see §7)
+- Status: Accepted — implemented (all four slices; see §7)
 - Date: 2026-08-20
 - Origin: `todo/deep/when-nonmatch-value-outside-map-grep.md` (re-verified
   reproducing on `main` @ `4c58b5f59`, 2026-08-20). The investigation for this
@@ -129,6 +129,13 @@ not maintainable.
 
 ### 1.2 Why this is not a point fix — three compilers, three different answers
 
+> **Corrected by §7:** there are **eight** statement-sequence compilers that
+> had to agree, not three. The three tabulated below are the ones the survey
+> found; `compile_block_inline`, `compile_try_region`,
+> `compile_body_with_implicit_try_inner`, `compile_stmts_value` and
+> `compile_phaser_block_scope` were missed, and two of those had no `Pop` even
+> for `Given`.
+
 The obvious repair is "make `exec_when_op` push the falsy value on non-match".
 It cannot be done alone, because the three statement-sequence compilers
 already disagree about whether a `when` pushes anything:
@@ -205,6 +212,12 @@ the end of **every** iteration, not only when collecting. This is what makes
   balanced by construction, which a floor check would merely hide.
 
 ### 2.4 The falsy value is observed, not reconstructed
+
+> **Superseded by §7.** The premise is wrong: the `Int 0` vs `Bool::False`
+> split is not observable from the comparison at all — `(Any ~~ 2)` is
+> `Bool::False` as an expression and `Int 0` as a `when` — so a value-returning
+> `vm_smart_match` cannot produce it. It is decided by the matcher's *syntax*,
+> and is now carried as a compile-time `WhenMatcherKind` on `OpCode::When`.
 
 `vm_smart_match` gains a value-returning form so `exec_when_op` pushes what the
 comparison actually produced. mutsu's smartmatch is not Rakudo's QAST lowering,
@@ -394,6 +407,91 @@ a matching iteration's value, because the succeed handlers still ignore it —
 mutsu. Slice 1 changes neither the count nor the values here; it only makes the
 abandoned iteration's stack residue go away.
 
-### Slices 2-4 — open
+### Slices 2-4 — shipped (2026-09-05)
 
-Unchanged from §5.
+Landed together in one PR, because Slice 3's push and Slice 2's `Pop`s are two
+halves of the same invariant and only the pair is stack-balanced.
+
+**Slice 3 — the clause pushes.** `exec_when_op`'s non-match branch pushes the
+falsy value instead of writing `Interpreter::when_nonmatch_value`, which is
+deleted along with its two initializers, `tail_is_when_chain`, the four fast
+paths' `tail_is_when` plumbing, and `OpCode::PushWhenNonmatch` (the term-form
+`do when …` op that existed only to read the side channel back out). All three
+origin probes and the `sub h { when 99 {…}; when 1 {…} }` row now agree with
+Rakudo.
+
+**Slice 2 — the compilers agree.** The `matches!(stmt, Stmt::Given { .. })`
+test that guarded the statement-position `Pop` became one shared predicate,
+`Compiler::stmt_nets_a_stack_value` (`Given | When | Default`), and every
+statement-sequence compiler now uses it: `compile_unit`, both loops in
+`compile_routine_body_stmts`, both in the closure-body compiler,
+`compile_stmts_value`, `compile_body_with_implicit_try_inner`,
+`compile_block_inline` (which had *no* `Pop` even for `Given`),
+`compile_phaser_block_scope`, and `compile_try_region` (also `Given`-blind).
+The tail arms were widened the same way, so a tail `when` is the sequence's
+value in `compile_stmts_value`, `compile_block_inline` (whose trailing
+`LoadNil` would otherwise bury it), `compile_try_region`, and
+`compile_tail_stmt_value`. There are **eight** such sequence compilers, not the
+three §1.2 counted.
+
+**Slice 4 — the falsy value.** §2.4's premise was wrong and is superseded: a
+value-returning `vm_smart_match` *cannot* reproduce Rakudo's table, because the
+`Int 0` vs `Bool::False` split is not a property of the comparison at all.
+Measured against Rakudo v2026.06, `(Any ~~ 2)` written as an ordinary
+expression is `Bool::False` while `given Any { when 2 {…} }` is `Int 0` — same
+topic, same matcher, same runtime result, different answer. The split is
+decided by the matcher's **syntax**, which is what selects Rakudo's lowering:
+
+| matcher syntax | topic | Rakudo |
+|---|---|---|
+| literal type object (`when Str`, `when Nil`) | anything | `0` |
+| literal constant (`when 2`, `when "y"`) | type object | `0` |
+| literal constant | defined | `Bool::False` |
+| a variable (`when $m`), even one holding `Str` | anything | `Bool::False` |
+| a named `constant` (`when C2`) | anything | `Bool::False` |
+| regex / range / list / block matcher | anything | `Bool::False` |
+
+So `OpCode::When` carries a compile-time `WhenMatcherKind`
+(`Literal` / `BareName` / `Computed`; a `/…/` literal is `Computed`, since it
+is a Regex object the source still builds), and `exec_when_op` picks `Int 0`
+when a `BareName` resolved to a type object, or when a `Literal` matcher meets
+an undefined topic. Every row of the table above is pinned in
+`t/when-clause-value-on-stack.t` and verified identical under `raku`.
+
+**Two further defects surfaced and were fixed.**
+
+- **The match branch peeked below its own stack range.** `stack.last()` had no
+  base, so when a matching body's tail statement produced nothing the clause
+  handed out the *enclosing frame's* stack top:
+  `say "A: ", (given 2 { when 2 { my $x = 5 } })` printed `A: ` for the value.
+  Both `exec_when_op` and `exec_default_op` now own a `stack_base`, take the
+  value from above it, and truncate — so the value exists in exactly one place,
+  which is what §2.1 was after. (§2.1's literal "drop `return_value`" is *not*
+  achievable: `succeed EXPR` legitimately produces a value from arbitrary
+  nesting depth, where the stack top is not it. The signal keeps carrying the
+  value; what changed is that it is no longer *also* on the stack.) The missing
+  tail-`VarDecl` arm this exposed was added to `compile_when_tail_stmt`, so
+  `given 2 { when 2 { my $x = 5 } }` is `5` as in Rakudo.
+- **A collecting loop dropped a matching iteration's value** — the known-open
+  item from Slice 1. The `is_succeed` arms of the eager `for`, the lazy `for`
+  (both variants), the `while` loop and the C-style/`repeat` loop now collect
+  the signal's value, so `do for 1..3 { when 2 { "hit" }; "plain" }` has three
+  elements as in Rakudo instead of two.
+
+**One behaviour deliberately kept off the clause rule.** The postfix
+`STMT when COND` spelling is not a `when` clause — Rakudo lowers it to a plain
+conditional — and a false one is `Empty`, not the clause's falsy value
+(measured). `exec_when_op` already receives `statement_modifier`, so it pushes
+`Empty` there. `t/when-statement-modifier.t`'s assertion was tightened from
+`is …, Nil` (which only passed because both stringify empty) to
+`is-deeply …, Empty`.
+
+**Pins.** `t/when-clause-value-on-stack.t` (25 assertions: the three origin
+probes, the whole §2.4 matcher table, the peek-below-the-base case, the
+non-last-clause `Pop` cases, the collecting-loop rows, and the modifier row) —
+all 25 pass unchanged under real `raku`. `t/when-only-block-nonmatch-value.t`
+test 11 flipped from `todo` to a plain assertion. Targeted roast: the 62
+whitelisted files containing a statement-initial `when`/`default`/`given`/
+`succeed`/`proceed` all pass (3532 assertions).
+
+With this, `todo/deep/when-nonmatch-value-outside-map-grep.md` is retired.

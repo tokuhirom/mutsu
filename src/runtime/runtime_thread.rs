@@ -602,7 +602,6 @@ impl Interpreter {
             why_object_cache: HashMap::new(),
             type_metadata: self.type_metadata.clone(),
             when_matched: Box::new(std::cell::Cell::new(false)),
-            when_nonmatch_value: None,
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: self.block_scope_depth,

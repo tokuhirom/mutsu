@@ -1771,13 +1771,6 @@ pub struct Interpreter {
     /// (see that module's doc comment for why a bare `Cell` field is not
     /// enough).
     pub(crate) when_matched: Box<Cell<bool>>,
-    /// The falsy value the most recent non-matching `when` evaluated to:
-    /// rakudo yields Int 0 for a type-object matcher (nqp::istype boxing)
-    /// and Bool::False otherwise. Consumed (and cleared) only by the
-    /// inline map/grep/first fast paths, gated on the block's tail
-    /// statement being a `when`/`default` chain — see
-    /// `resolution_map_grep::tail_is_when_chain`.
-    pub(crate) when_nonmatch_value: Option<Value>,
     gather_items: Vec<Vec<Value>>,
     gather_take_limits: Vec<Option<usize>>,
     block_scope_depth: usize,

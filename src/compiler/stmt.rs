@@ -3573,6 +3573,7 @@ impl Compiler {
                 let when_idx = self.code.emit(OpCode::When {
                     body_end: 0,
                     statement_modifier: *is_statement_modifier,
+                    matcher_kind: Self::when_matcher_kind(cond),
                 });
                 let block_local_idx = Self::branch_declares_block_local(body).then(|| {
                     self.code.emit(OpCode::BlockLocalScope {
@@ -4914,9 +4915,9 @@ impl Compiler {
                     *is_statement_modifier,
                 );
             }
-            // A statement `given` nets exactly one stack value (see
-            // `exec_given_op`), which IS the block value here.
-            Stmt::Given { .. } => self.compile_stmt(stmt),
+            // A `given`/`when`/`default` statement nets exactly one stack
+            // value (ADR-0052), which IS the block value here.
+            s if Self::stmt_nets_a_stack_value(s) => self.compile_stmt(stmt),
             Stmt::Block(body) => {
                 self.compile_block_inline(body);
             }

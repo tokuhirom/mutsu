@@ -947,8 +947,15 @@ impl Interpreter {
                     Err(e) if e.is_succeed() => {
                         // A matched `when` abandons the body mid-range, so drop
                         // whatever it had already pushed (ADR-0052 Slice 1); the
-                        // clause's value travels in the signal, not here.
+                        // clause's value travels in the signal, and it IS this
+                        // iteration's value — `do for 1..3 { when 2 { "hit" };
+                        // "plain" }` is ("plain", "hit", "plain") in raku.
                         self.stack.truncate(stack_base);
+                        if let Some(ref mut coll) = collected
+                            && let Some(v) = e.return_value.clone()
+                        {
+                            Self::collect_loop_value(coll, v);
+                        }
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,

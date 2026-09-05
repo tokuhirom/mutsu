@@ -4292,18 +4292,21 @@ impl Interpreter {
             OpCode::When {
                 body_end,
                 statement_modifier,
+                matcher_kind,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_when_op(code, *body_end, *statement_modifier, ip, compiled_fns)?;
+                self.exec_when_op(
+                    code,
+                    *body_end,
+                    *statement_modifier,
+                    *matcher_kind,
+                    ip,
+                    compiled_fns,
+                )?;
             }
             OpCode::Default { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_default_op(code, *body_end, ip, compiled_fns)?;
-            }
-            OpCode::PushWhenNonmatch => {
-                let v = self.when_nonmatch_value.take().unwrap_or(Value::FALSE);
-                self.stack.push(v);
-                *ip += 1;
             }
 
             // -- Repeat loop --

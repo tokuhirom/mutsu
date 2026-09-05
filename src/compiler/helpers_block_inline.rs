@@ -95,6 +95,20 @@ impl Compiler {
                 self.emit_set_named_var(name);
                 true
             }
+            // `my $x = expr` at the tail of a `given`/`when` block is the
+            // block's value (`given 2 { when 2 { my $x = 5 } }` yields 5), the
+            // declaration twin of the `Stmt::Assign` arm above and of
+            // `compile_block_inline`'s own block-final `VarDecl` handling.
+            // Until ADR-0052 this shape looked correct only by accident: the
+            // clause left nothing on the stack and `exec_when_op` peeked the
+            // ENCLOSING frame's stack top instead.
+            Stmt::VarDecl { name, .. } => {
+                let var_name = name.clone();
+                self.compile_stmt(stmt);
+                let slot = self.alloc_local(&var_name);
+                self.code.emit(OpCode::GetLocal(slot));
+                true
+            }
             // A bare call the parser resolved to a *statement* call (chosen when
             // the name is a known routine — e.g. a sub imported by an
             // already-parsed `use`) must still yield its return value: it is the
@@ -221,8 +235,10 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Given { .. } => {
-                        // given block pushes succeed value onto stack
+                    s if Self::stmt_nets_a_stack_value(s) => {
+                        // A `given`/`when`/`default` statement leaves its value
+                        // on the stack (ADR-0052) — that IS the block's value,
+                        // so return before the trailing `LoadNil` buries it.
                         self.compile_stmt(stmt);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
@@ -424,6 +440,14 @@ impl Compiler {
                 self.bind_vardecl = true;
             }
             self.compile_stmt(stmt);
+            // ADR-0052: a `given`/`when`/`default` statement nets one stack
+            // value. A non-last one must be popped, or it would shadow the
+            // block's real tail value (the stack top wins). The last one is
+            // handled by the `stmt_nets_a_stack_value` arm above, which returns
+            // before the trailing `LoadNil`.
+            if !is_last && Self::stmt_nets_a_stack_value(stmt) {
+                self.code.emit(OpCode::Pop);
+            }
         }
         // If last statement wasn't an expression, push Nil
         self.code.emit(OpCode::LoadNil);
