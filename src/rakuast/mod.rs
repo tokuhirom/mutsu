@@ -162,6 +162,29 @@ pub enum RakuAstClass {
     StatementPrefixGather,
     // Phase 2 slice 39: calling a term (`$f(…)`).
     CallTerm,
+    // Phasers (`BEGIN`, `INIT`, `LEAVE`, ...). raku models each kind as its own
+    // `RakuAST::StatementPrefix::Phaser::<Kind>` class wrapping a positional
+    // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
+    // `constant X = 5` — a declaration of its own, not a scoped `my`.
+    VarDeclarationConstant,
+    // Class/role declaration traits (`is Parent`, `does Role`, `is rw`).
+    TraitIs,
+    TraitDoes,
+    StatementPrefixPhaserBegin,
+    StatementPrefixPhaserCheck,
+    StatementPrefixPhaserInit,
+    StatementPrefixPhaserEnd,
+    StatementPrefixPhaserEnter,
+    StatementPrefixPhaserLeave,
+    StatementPrefixPhaserKeep,
+    StatementPrefixPhaserUndo,
+    StatementPrefixPhaserFirst,
+    StatementPrefixPhaserNext,
+    StatementPrefixPhaserLast,
+    StatementPrefixPhaserPre,
+    StatementPrefixPhaserPost,
+    StatementPrefixPhaserQuit,
+    StatementPrefixPhaserClose,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +272,24 @@ impl RakuAstClass {
             StatementPrefixTry => "RakuAST::StatementPrefix::Try",
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
+            VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            TraitIs => "RakuAST::Trait::Is",
+            TraitDoes => "RakuAST::Trait::Does",
+            StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
+            StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
+            StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
+            StatementPrefixPhaserEnd => "RakuAST::StatementPrefix::Phaser::End",
+            StatementPrefixPhaserEnter => "RakuAST::StatementPrefix::Phaser::Enter",
+            StatementPrefixPhaserLeave => "RakuAST::StatementPrefix::Phaser::Leave",
+            StatementPrefixPhaserKeep => "RakuAST::StatementPrefix::Phaser::Keep",
+            StatementPrefixPhaserUndo => "RakuAST::StatementPrefix::Phaser::Undo",
+            StatementPrefixPhaserFirst => "RakuAST::StatementPrefix::Phaser::First",
+            StatementPrefixPhaserNext => "RakuAST::StatementPrefix::Phaser::Next",
+            StatementPrefixPhaserLast => "RakuAST::StatementPrefix::Phaser::Last",
+            StatementPrefixPhaserPre => "RakuAST::StatementPrefix::Phaser::Pre",
+            StatementPrefixPhaserPost => "RakuAST::StatementPrefix::Phaser::Post",
+            StatementPrefixPhaserQuit => "RakuAST::StatementPrefix::Phaser::Quit",
+            StatementPrefixPhaserClose => "RakuAST::StatementPrefix::Phaser::Close",
         }
     }
 
@@ -528,6 +569,24 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixTry,
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
+    RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::TraitIs,
+    RakuAstClass::TraitDoes,
+    RakuAstClass::StatementPrefixPhaserBegin,
+    RakuAstClass::StatementPrefixPhaserCheck,
+    RakuAstClass::StatementPrefixPhaserInit,
+    RakuAstClass::StatementPrefixPhaserEnd,
+    RakuAstClass::StatementPrefixPhaserEnter,
+    RakuAstClass::StatementPrefixPhaserLeave,
+    RakuAstClass::StatementPrefixPhaserKeep,
+    RakuAstClass::StatementPrefixPhaserUndo,
+    RakuAstClass::StatementPrefixPhaserFirst,
+    RakuAstClass::StatementPrefixPhaserNext,
+    RakuAstClass::StatementPrefixPhaserLast,
+    RakuAstClass::StatementPrefixPhaserPre,
+    RakuAstClass::StatementPrefixPhaserPost,
+    RakuAstClass::StatementPrefixPhaserQuit,
+    RakuAstClass::StatementPrefixPhaserClose,
 ];
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.

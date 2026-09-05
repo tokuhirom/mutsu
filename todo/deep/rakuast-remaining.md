@@ -77,6 +77,21 @@ the parser/internal AST, not guessing during RakuAST conversion.
 
 **Closed 2026-09-05**:
 
+- *Class traits, `multi`, and `constant`.* `class C is P`, `class C does R`,
+  `class C is rw`, `is repr(...)`, `multi sub`, and `constant X = 5` all render
+  (byte-identical to rakudo 2026.07) and lower back. Pinned by
+  `t/rakuast-class-traits-multi-constant.t`; see
+  [the news entry](../../news/2026-09/rakuast-class-traits-multi-constant.md).
+- *Phasers.* `BEGIN` / `CHECK` / `INIT` / `END` / `ENTER` / `LEAVE` / `KEEP` /
+  `UNDO` / `FIRST` / `NEXT` / `LAST` / `QUIT` / `CLOSE` render as
+  `RakuAST::StatementPrefix::Phaser::<Kind>` (byte-identical to rakudo 2026.07)
+  and all but `BEGIN` lower back. `PRE`/`POST` stay a boundary on both sides
+  (rakudo wraps their block in a call, and mutsu keeps a source-text condition).
+  Fixing the write direction also made the `EVAL` carrier apply
+  `reorder_phasers_for_eval`, so `INIT`/`CHECK` run before the mainline as they
+  must; `BEGIN` needs a compile-time hoist the carrier lacks and is refused —
+  `todo/tickets/rakuast-eval-begin-phaser.md`. Pinned by `t/rakuast-phaser.t`;
+  see [the news entry](../../news/2026-09/rakuast-phasers.md).
 - *Where-constrained parameters (read direction).* `sub f($x where * > 0)`
   renders its `where` field — the shape `RakuAST::Parameter.new(:where)` already
   built and `EVAL` already lowered and enforced. Fixing it also made the
@@ -151,17 +166,25 @@ Still open:
   an `if` on `.defined`, so there is no statement to map to
   `Statement::With` / `Statement::Without`. It is an explicit boundary (the temp
   var's internal name is refused), not a wrong rendering.
-- A reference to a user-declared type by bare name. `class C { }; C.new` reads
-  `C` as `Expr::BareWord`, and only *builtin* type names
-  (`is_known_type_constraint`) convert to `Type::Simple`, so any program that
-  declares a class and then uses it is a `.AST` boundary. This is what keeps
-  `t/rakuast-eval-class.t` calling into the `EVAL`'d type object from the
-  outside instead of using the class inside the lowered program. Closing it
-  needs the converter to know which names the same compilation unit declared,
-  which the read side does not currently track.
+- A reference to a user-declared type or constant by bare name.
+  `class C { }; C.new` reads `C` as `Expr::BareWord`, and only *builtin* type
+  names (`is_known_type_constraint`) convert to `Type::Simple`, so any program
+  that declares a class or a constant and then uses it is a `.AST` boundary.
+  This is what keeps `t/rakuast-eval-class.t` and
+  `t/rakuast-class-traits-multi-constant.t` calling into the `EVAL`'d value from
+  the outside instead of using the name inside the lowered program. **Measured
+  2026-09-05 against rakudo 2026.07:** a type bareword renders
+  `RakuAST::Type::Simple(Name)` (identical to a builtin type) and a constant
+  bareword renders `RakuAST::Term::Name(Name)`; an undeclared bareword is a
+  compile error in raku. So the shapes are known — what is missing is for the
+  converter to know which names the same compilation unit declared, which the
+  read side does not currently track. This is now the single highest-leverage
+  remaining read gap, because it is what blocks testing every other
+  declaration slice from *inside* the lowered program.
 - Grammar declarations. `grammar G { }` is a `Stmt::ClassDecl` with
-  `parents = ["Grammar"]`, so it hits the class-inheritance boundary instead of
-  producing `RakuAST::Grammar` + `TokenDeclaration` + the regex node tree.
+  `parents = ["Grammar"]`; class inheritance itself is closed now, so what
+  remains is producing `RakuAST::Grammar` + `TokenDeclaration` + the regex node
+  tree rather than a `Class` with a `Grammar` parent.
 - Associative `%h{...}` versus `%h<...>` subscripts. Both are
   `Expr::Index { is_positional: false }` with a `Literal(Str)` index, so the read
   side cannot choose raku's `Postcircumfix::LiteralHashIndex` (a word-quoted
