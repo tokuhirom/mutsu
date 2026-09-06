@@ -1903,7 +1903,20 @@ pub(crate) enum OpCode {
     },
 
     // -- Assignment as expression --
-    AssignExpr(u32),
+    /// Assignment as expression to a NAMED (env) variable. The constant index
+    /// names the target; the value is on the stack and stays there as the
+    /// expression's result.
+    ///
+    /// The flag marks a `$.attr` **read-modify-write** (`$.x *= 2`), which raku
+    /// resolves differently from the simple `$.x = v` this same op carries: `$.`
+    /// is `self.attr` *itemized*, and for a non-`rw` scalar accessor the
+    /// itemization is a throwaway `Scalar`, so the write lands in the throwaway
+    /// -- the attribute is unchanged and NOTHING is thrown, while the simple
+    /// assignment (compiled without the itemize wrapper) dies
+    /// `X::Assignment::RO`. Only the runtime knows the invocant's class, so the
+    /// compiler ships the operator's identity here and
+    /// `check_dot_twigil_accessor_writable` decides.
+    AssignExpr(u32, bool),
     /// `.=` metaop on the topic `$_` (`$_ = $_.meth`). Like `AssignExpr` of `_`,
     /// but bypasses the read-only mark a whole-container topic (`given @a`) puts
     /// on `$_` and, for such a topic, writes the reassigned value straight through
@@ -5067,7 +5080,7 @@ impl CompiledCode {
                 | OpCode::PreDecrement(idx, _)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
-                | OpCode::AssignExpr(idx)
+                | OpCode::AssignExpr(idx, _)
                 | OpCode::TopicDotAssign(idx)
                 | OpCode::IndexAssignExprNested { name_idx: idx, .. }
                 | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
@@ -5357,7 +5370,7 @@ impl CompiledCode {
                 | OpCode::PreDecrement(idx, _)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx) => Some(*idx),
-                OpCode::AssignExpr(idx) | OpCode::TopicDotAssign(idx) => Some(*idx),
+                OpCode::AssignExpr(idx, _) | OpCode::TopicDotAssign(idx) => Some(*idx),
                 _ => None,
             };
             if let Some(idx) = name_idx
@@ -5726,7 +5739,7 @@ impl CompiledCode {
                 | OpCode::PreDecrement(idx, _)
                 | OpCode::GetArrayVar(idx)
                 | OpCode::GetHashVar(idx)
-                | OpCode::AssignExpr(idx)
+                | OpCode::AssignExpr(idx, _)
                 | OpCode::TopicDotAssign(idx)
                 | OpCode::IndexAssignExprNested { name_idx: idx, .. }
                 | OpCode::IndexAssignDeepNested { name_idx: idx, .. }
@@ -6089,7 +6102,7 @@ impl CompiledCode {
             | OpCode::PreDecrement(idx, _)
             | OpCode::GetArrayVar(idx)
             | OpCode::GetHashVar(idx)
-            | OpCode::AssignExpr(idx)
+            | OpCode::AssignExpr(idx, _)
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. }
             | OpCode::IndexAssignExprNamed { name_idx: idx, .. }
@@ -6162,7 +6175,7 @@ impl CompiledCode {
             | OpCode::PostDecrement(idx, _)
             | OpCode::PreIncrement(idx, _)
             | OpCode::PreDecrement(idx, _)
-            | OpCode::AssignExpr(idx)
+            | OpCode::AssignExpr(idx, _)
             | OpCode::TopicDotAssign(idx)
             | OpCode::AtomicCompoundVar { name_idx: idx, .. } => Some(*idx),
             // `$obj<key> = value` may copy-on-write a user-class instance,
@@ -7416,7 +7429,7 @@ impl CompiledCode {
                     | OpCode::SmartMatchExpr { .. }
                     | OpCode::SetGlobal(_)
                     | OpCode::SetGlobalRaw(_)
-                    | OpCode::AssignExpr(_)
+                    | OpCode::AssignExpr(..)
                     | OpCode::TopicDotAssign(_)
                     | OpCode::AssignExprLocal(_)
                     | OpCode::AtomicCompoundVar { .. }

@@ -967,7 +967,7 @@ impl Compiler {
                         if let Expr::Var(name) = &elements[i] {
                             self.compile_expr(value);
                             let name_idx = self.code.add_constant(Value::str(name.clone()));
-                            self.code.emit(OpCode::AssignExpr(name_idx));
+                            self.code.emit(OpCode::AssignExpr(name_idx, false));
                         } else {
                             // Assigning to a literal element — emit code
                             // that throws X::Assignment::RO at runtime.
@@ -1131,7 +1131,7 @@ impl Compiler {
                         is_positional: true,
                     });
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::AssignExpr(name_idx));
+                    self.code.emit(OpCode::AssignExpr(name_idx, false));
                     self.code.emit(OpCode::Pop);
                 }
             }

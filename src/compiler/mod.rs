@@ -1529,6 +1529,12 @@ pub(crate) struct Compiler {
     /// non-escaping (immediately-invoked) classification, so call arguments and
     /// control-construct blocks never over-box (the #2746 perf guard).
     escaping_position: bool,
+    /// Set by the `Expr::CompoundAssign` arm when the target is a `$.attr`
+    /// twigil, and consumed by the very next `compile_expr_assign`. A `$.attr`
+    /// read-modify-write writes into an itemized copy of the accessor result,
+    /// which for a non-`rw` scalar accessor is a throwaway -- see
+    /// `OpCode::AssignExpr`'s flag, which this becomes.
+    dot_twigil_rmw_assign: bool,
     /// True while compiling the body of an `our`-scoped named sub. An `our sub` is
     /// installed into the package registry and stays callable after its declaring
     /// block exits, so the lexicals it reads/writes must be boxed into shared cells
@@ -1671,6 +1677,7 @@ impl Compiler {
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
+            dot_twigil_rmw_assign: false,
             compiling_our_sub: false,
             is_mainline: false,
             suppress_pair_capture: false,

@@ -3,8 +3,24 @@ use crate::compiler::helpers_dynamic::OuterStash;
 use crate::value::ValueView;
 
 impl Compiler {
+    /// A `$.attr` twigil naming a SCALAR attribute -- the only sigil whose
+    /// public non-`rw` accessor hands back a bare value rather than a container,
+    /// and therefore the only one whose read-modify-write raku sends to a
+    /// throwaway itemization. Measured against raku v2026.07: `@.a`/`%.h` accept
+    /// both `=` and `OP=` on a non-`rw` attribute, because assigning into a
+    /// container is `STORE`. Mirrors
+    /// `Interpreter::check_dot_twigil_accessor_writable`'s own sigil test.
+    pub(super) fn is_dot_twigil_scalar(name: &str) -> bool {
+        name.strip_prefix('.')
+            .is_some_and(|attr| !attr.is_empty() && !attr.starts_with(['@', '%', '&']))
+    }
+
     /// Compile AssignExpr: assignment as expression.
     pub(super) fn compile_expr_assign(&mut self, name: &str, expr: &Expr, is_bind: bool) {
+        // Consume the `$.attr OP= v` marker the `Expr::CompoundAssign` arm set for
+        // exactly this assignment. Taken (not read) so a nested assignment inside
+        // the right-hand side compiles as an ordinary one.
+        let dot_twigil_rmw = std::mem::take(&mut self.dot_twigil_rmw_assign);
         // When `is_bind` is true, this is a `:=` rebind in expression context
         // (e.g., `if $_ := $c { }`). We compile it like `Stmt::Assign { op: Bind }`
         // so the old alias is broken and a new one is set up.
@@ -76,7 +92,7 @@ impl Compiler {
             self.code.emit(OpCode::AssignExprLocal(slot));
         } else {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
-            self.code.emit(OpCode::AssignExpr(name_idx));
+            self.code.emit(OpCode::AssignExpr(name_idx, dot_twigil_rmw));
         }
         // Preserve lvalue container identity for expression-context consumers
         // (e.g. collected postfix `for` results).

@@ -1080,6 +1080,20 @@ impl Interpreter {
                     // @ and % attributes are containers whose elements are always writable
                     // through indexing, even without `is rw`.
                     if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
+                        // `$.attr OP= v` reaches this path with the bare-`$`
+                        // invocant carrier as its target variable -- the one
+                        // place a `$.` twigil stays distinguishable from
+                        // `self.attr` after lowering. `$.` is `self.attr`
+                        // ITEMIZED, and for a non-`rw` scalar accessor the
+                        // itemization is a throwaway `Scalar`, so the write
+                        // lands there: the attribute is unchanged, nothing is
+                        // thrown, and the computed value is still the result.
+                        // `self.attr OP= v` has no itemization and does die.
+                        // Measured against raku v2026.07; the simple `$.attr = v`
+                        // takes the `AssignExpr` path and dies there.
+                        if target_var == Some("__ANON_STATE__") {
+                            return Ok(value);
+                        }
                         return Err(RuntimeError::new(format!(
                             "X::Assignment::RO: method '{}' is not rw",
                             method

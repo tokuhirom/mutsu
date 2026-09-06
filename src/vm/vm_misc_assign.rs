@@ -71,19 +71,33 @@ impl Interpreter {
     /// `%.h<k> = 99` all SUCCEED, because those accessors hand back the container
     /// itself and assigning into a container is a `STORE`, not a modification of
     /// an immutable value. Only the scalar case refuses.
-    fn check_dot_twigil_accessor_writable(&mut self, name: &str) -> Result<(), RuntimeError> {
+    ///
+    /// `rmw` splits raku's two answers apart. `$.attr` is `self.attr`
+    /// **itemized**, and for a non-`rw` scalar accessor the itemization is a
+    /// *fresh throwaway `Scalar`*. A read-modify-write (`$.x *= 2`, `$.x++`,
+    /// `$.x //= 9`) assigns into that throwaway: the expression still evaluates
+    /// to the computed value, the attribute is unchanged, and nothing is thrown.
+    /// A simple `$.x = v` is compiled without the itemize wrapper (it would
+    /// defeat the assignment), so it hits the raw accessor return and dies.
+    /// Returns `true` when the caller must SKIP its store and leave the computed
+    /// value alone.
+    pub(crate) fn check_dot_twigil_accessor_writable(
+        &mut self,
+        name: &str,
+        rmw: bool,
+    ) -> Result<bool, RuntimeError> {
         let Some(attr) = name.strip_prefix('.') else {
-            return Ok(());
+            return Ok(false);
         };
         if attr.is_empty() || attr.starts_with(['@', '%', '&']) {
-            return Ok(());
+            return Ok(false);
         }
         let Some(self_val) = self.get_env_with_main_alias("self") else {
-            return Ok(());
+            return Ok(false);
         };
         let self_val = self_val.deref_container();
         let ValueView::Instance { class_name, .. } = self_val.view() else {
-            return Ok(());
+            return Ok(false);
         };
         let class_name = class_name.resolve();
         let is_readonly_public_scalar = self
@@ -92,7 +106,10 @@ impl Interpreter {
             .find(|a| a.name == attr)
             .is_some_and(|a| a.is_public && !a.is_rw && a.sigil == '$');
         if !is_readonly_public_scalar {
-            return Ok(());
+            return Ok(false);
+        }
+        if rmw {
+            return Ok(true);
         }
         let current = match self_val.view() {
             ValueView::Instance { attributes, .. } => {
@@ -113,13 +130,18 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        dot_twigil_rmw: bool,
     ) -> Result<(), RuntimeError> {
         let name = match code.constants[name_idx as usize].view() {
             ValueView::Str(s) => s.to_string(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.check_readonly_for_modify(&name)?;
-        self.check_dot_twigil_accessor_writable(&name)?;
+        if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw)? {
+            // The write went to the throwaway itemization; the computed value is
+            // already the stack top, which is this expression's result.
+            return Ok(());
+        }
         // ADR-0058: assigning a Seq to an `@`/`%` target reifies it (raku list
         // semantics) — the same rule `exec_set_local_op_inner` /
         // `exec_assign_expr_local_op_inner` apply. This is the by-name

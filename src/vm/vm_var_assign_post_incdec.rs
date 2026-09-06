@@ -179,9 +179,18 @@ impl Interpreter {
                 self.decrement_value_smart(&val)?
             };
             self.check_incdec_type_constraint(name, &new_val)?;
-            self.write_self_attr_cell(name, new_val.clone());
-            // Keep env coherent for a later same-frame read of the accessor name.
-            self.set_env_with_main_alias(name, new_val.clone());
+            // `$.x++` is a read-modify-write through the PUBLIC accessor, and
+            // `$.` is `self.x` itemized: for a non-`rw` scalar accessor the
+            // itemization is a throwaway `Scalar`, so the increment lands there
+            // and the attribute keeps its value. The expression still yields the
+            // pre/post value, so only the two stores are skipped. Measured
+            // against raku v2026.07 (`$.x++; $.x++` leaves a `has $.x = 5` at 5).
+            // The private `$!x++` form never reaches this branch with a `.` name.
+            if !self.check_dot_twigil_accessor_writable(name, true)? {
+                self.write_self_attr_cell(name, new_val.clone());
+                // Keep env coherent for a later same-frame read of the accessor name.
+                self.set_env_with_main_alias(name, new_val.clone());
+            }
             self.stack.push(if is_pre { new_val } else { val });
             Ok(())
         })();

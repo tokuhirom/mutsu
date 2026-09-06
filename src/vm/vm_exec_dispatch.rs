@@ -4310,8 +4310,8 @@ impl Interpreter {
             }
 
             // -- Assignment as expression --
-            OpCode::AssignExpr(name_idx) => {
-                self.exec_assign_expr_op(code, *name_idx)?;
+            OpCode::AssignExpr(name_idx, dot_twigil_rmw) => {
+                self.exec_assign_expr_op(code, *name_idx, *dot_twigil_rmw)?;
                 *ip += 1;
             }
             OpCode::TopicDotAssign(name_idx) => {
