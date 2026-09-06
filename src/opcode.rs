@@ -4038,6 +4038,17 @@ pub(crate) struct CompiledCode {
     /// record it (e.g. hand-built `CompiledCode::new()` chunks), in which case
     /// precompute falls back to the by-name search.
     pub(crate) param_local_slots: Vec<u32>,
+    /// Every name this code declares as a SIGNATURE PARAMETER (routine, method,
+    /// or pointy block), interned. Unlike [`Self::param_local_slots`] this covers
+    /// named and destructured sub-signature parameters too, and it is keyed on
+    /// the name rather than the slot, because its one consumer asks a name
+    /// question: is this own local a binding the *caller* creates fresh on every
+    /// invocation? Populated by `Compiler::declare_param`, the single entry point
+    /// for parameter declaration. Empty for hand-built chunks.
+    ///
+    /// Consumer: `needs_cell_unvouched_locals` (ADR-0055) must not give a
+    /// parameter a shared cell — see that field's doc comment.
+    pub(crate) param_locals: rustc_hash::FxHashSet<Symbol>,
     /// Out-of-band lexical scope chains for `SymbolicDeref` sites (indexed by the
     /// op's `scopes_idx`). `$::($name)::x` can only be recognised as an `OUTER::`
     /// lookup once the name string exists, by which time the compile-time scope
@@ -4411,6 +4422,32 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Own locals captured by an ESCAPING child closure that the creating frame
+    /// cannot vouch for (ADR-0055 §7.3 / ADR-0025 slice 2). The invariant every
+    /// closure-call merge policy needs is: *an escaping-captured plain scalar is
+    /// either **authoritative** (a by-value snapshot is provably exact) or a
+    /// shared `ContainerRef` **cell***. `needs_cell_locals` only covers captures
+    /// the frame reassigns BY NAME, and the vouch behind
+    /// `authoritative_free_vars` additionally refuses two shapes it cannot prove
+    /// safe — an in-place container write (`own_container_writes`), and a name
+    /// handed to a call where an `is rw` parameter could write it back
+    /// (`own_call_arg_sources`). A capture in either shape had NEITHER defence,
+    /// which is exactly ADR-0055 §1.2(b): a read-only capture loses to an
+    /// unrelated same-named lexical in whatever frame happens to be calling.
+    ///
+    /// This set is the exact complement of the vouch within the
+    /// escaping-captured own set, so the dichotomy becomes exhaustive by
+    /// construction. It is a SEPARATE trigger in `box_captured_lexicals`: unlike
+    /// `needs_cell_locals` it does NOT require `captured_mutated_locals`
+    /// membership (the whole point is the mutation analysis never saw the write).
+    ///
+    /// Excludes this frame's own PARAMETERS (`param_locals`): a parameter is a
+    /// fresh binding the caller creates per invocation, and the `is rw`
+    /// writeback the vouch refusal guards against applies to a local the frame
+    /// declares and hands onward, not to the frame's own parameter. Boxing one
+    /// leaked state between two invocations of the same routine — see
+    /// `news/2026-09/adr0055-unvouched-escaping-captures-get-a-cell.md`.
+    pub(crate) needs_cell_unvouched_locals: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
     /// literal loaded via `OpCode::LoadRegexClosure` closes over its defining
@@ -4945,6 +4982,7 @@ impl CompiledCode {
             param_bind_names: Vec::new(),
             scalar_bind_locals: Vec::new(),
             param_local_slots: Vec::new(),
+            param_locals: rustc_hash::FxHashSet::default(),
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
             compiled_fns: None,
@@ -4993,6 +5031,7 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            needs_cell_unvouched_locals: Vec::new(),
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             thread_escaping: false,
@@ -6603,6 +6642,11 @@ impl CompiledCode {
         // this frame's NON-escaping closures — see `needs_cell_free_vars`).
         let mut needs_cell_free: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        // Every own local an ESCAPING child closure captures, mutated or not.
+        // The vouch computed at the end of this function is subtracted from it to
+        // produce `needs_cell_unvouched_locals` — see that field's doc comment.
+        let mut escaping_captured_own: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
             for sym in &nested.free_var_syms {
@@ -6625,6 +6669,9 @@ impl CompiledCode {
                     continue;
                 }
                 let is_own = sym.with_str(|s| own.contains(s));
+                if is_own && escapes {
+                    escaping_captured_own.insert(*sym);
+                }
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
                     if escapes {
@@ -6822,6 +6869,29 @@ impl CompiledCode {
                     // the callee's `$path`). See `scalar_bind_locals`.
                     && (!own_call_arg_sources.contains(sym)
                         || self.scalar_bind_locals.contains(sym))
+            })
+            .collect();
+        // ADR-0055 §7.3 / ADR-0025 slice 2: the dichotomy "an escaping-captured
+        // plain scalar is either authoritative or a shared cell" is only
+        // exhaustive if the complement of the vouch also gets a cell. Compute it
+        // here, where `vouched` is known.
+        //
+        // `param_locals` is excluded: a parameter is a fresh binding created by
+        // the caller per invocation, so the `is rw`-writeback hazard the
+        // `own_call_arg_sources` refusal guards against does not apply to it,
+        // and giving one a cell makes two invocations of the same routine share
+        // a binding (the Cro::HTTP::Client request-path accumulation).
+        self.needs_cell_unvouched_locals = escaping_captured_own
+            .into_iter()
+            .filter(|sym| !vouched.contains(sym))
+            .filter(|sym| !self.param_locals.contains(sym))
+            .filter(|sym| {
+                sym.with_str(|s| {
+                    // `box_captured_lexicals` only boxes `$` scalars; an
+                    // `@`/`%`/`&` lexical is reference-shared already and takes
+                    // the decl-site container-cell path instead (ADR-0039).
+                    crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%', '&'])
+                })
             })
             .collect();
         for nested in &mut self.closure_compiled_codes {

@@ -1,5 +1,39 @@
 # `call_compiled_closure` has no `merge_all`-equivalent knob, and its per-instance state lives in a different store than the tree-walk branch's — both block a general `call_sub_value` → `call_compiled_closure` fork
 
+## Status (2026-09-06): the headline defect is FIXED; both structural gaps remain
+
+Re-measured on `main` @ `bbdebb108`. **The six-line repro below now prints
+`OUTER`**, on every invocation path measured (`.()`, `.map($f)`, `.classify($f)`,
+a native `sort` comparator, and invocation inside a callee) — see
+`news/2026-09/adr0055-unvouched-escaping-captures-get-a-cell.md` and ADR-0055
+§7.6. It is pinned by `t/closure-capture-cell-dichotomy.t` (17 assertions,
+byte-identical under `mutsu` and `raku`). Do NOT re-open the "gap 1 is
+observably wrong" framing below: the *policy* is unchanged (`entry_or_insert_sym`
+is still the compiled merge's default), but the population it can misresolve is
+now empty for plain scalars, because every escaping capture the creating frame
+cannot vouch for is a shared `ContainerRef` cell and a cell force-overwrites in
+every merge.
+
+Two corrections the 2026-09-06 measurement made to what is written below:
+
+* **There are THREE closure-env merges, not two.** `eval_map_over_items`' inline
+  fast path (`resolution_map_grep.rs`) has its own pre-insert loop, and it was
+  the only one with no `ContainerRef` exception. Fixed in the same change. Any
+  future slice that "unifies the two merge policies" must count this one.
+* **Two residues remain, both narrower than the original headline**, and both
+  have their own tickets:
+  `todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md`
+  (a capture of the frame's own parameter that was handed to a call) and
+  `todo/tickets/container-lexical-capture-loses-to-same-named-caller-array.md`
+  (the `@`/`%` half, unrelated machinery — ADR-0039).
+
+**What this file still tracks:** gaps 1 and 2 as *structural* facts. There is
+still no `merge_all` equivalent in `call_compiled_closure` (ADR-0055 slice 3
+retires the parameter instead of adding one), and the two per-closure-instance
+state stores are still disjoint (slice 5 deletes both). Neither is now producing
+a wrong answer that has been measured; they remain obstacles to the
+`call_sub_value` → `call_compiled_closure` fork (slice 4).
+
 ## Status (2026-08-20): re-verified on `main` (`b1a9bb8a5`), and REFRAMED — design now lives in ADR-0055
 
 Both gaps below are structurally intact on `main`. But a re-investigation
