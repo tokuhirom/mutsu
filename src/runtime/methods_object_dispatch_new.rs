@@ -1893,29 +1893,35 @@ impl Interpreter {
                                 {
                                     value = self.coerce_value_for_constraint(tc, value);
                                 }
-                                let coerced =
-                                    Self::coerce_provided_attr_value_by_sigil(value, sigil);
-                                // A `%`-sigil attribute bound to a non-Hash object
-                                // list-contextualizes it (Raku's Hash.STORE): an
-                                // object with a custom `.iterator`/`.list` (e.g.
-                                // `handles`) contributes its pairs.
-                                let coerced = if sigil == '%'
-                                    && matches!(coerced.view(), ValueView::Instance { .. })
-                                {
-                                    self.coerce_object_to_hash(coerced)
-                                } else {
-                                    coerced
-                                };
                                 // An `is Type` container attribute (`has @.a is
-                                // Buf`) coerces its provided value to the declared
-                                // container type (Buf, BagHash, Array[T], ...).
-                                let coerced = if matches!(sigil, '@' | '%')
-                                    && let Some(type_name) =
-                                        self.attribute_is_type_in_mro(class_key, k)
-                                {
-                                    self.coerce_value_to_is_type(&type_name, sigil, coerced)?
+                                // Buf`) is owned by its DECLARED container type,
+                                // which coerces the provided value itself (Buf,
+                                // BagHash, Array[T], ...). It must see the value
+                                // as supplied: running the generic sigil
+                                // coercion first list-assigns an already-correct
+                                // `Buf` into a one-element array (`my @a = $buf`
+                                // is `[Buf]` in raku too), and the declared type
+                                // was then rebuilt from that wrapper.
+                                let is_type = matches!(sigil, '@' | '%')
+                                    .then(|| self.attribute_is_type_in_mro(class_key, k))
+                                    .flatten();
+                                let coerced = if let Some(type_name) = is_type {
+                                    self.coerce_value_to_is_type(&type_name, sigil, value)?
                                 } else {
-                                    coerced
+                                    let coerced =
+                                        Self::coerce_provided_attr_value_by_sigil(value, sigil);
+                                    // A `%`-sigil attribute bound to a non-Hash
+                                    // object list-contextualizes it (Raku's
+                                    // Hash.STORE): an object with a custom
+                                    // `.iterator`/`.list` (e.g. `handles`)
+                                    // contributes its pairs.
+                                    if sigil == '%'
+                                        && matches!(coerced.view(), ValueView::Instance { .. })
+                                    {
+                                        self.coerce_object_to_hash(coerced)
+                                    } else {
+                                        coerced
+                                    }
                                 };
                                 attrs.insert(k.clone(), coerced);
                             }

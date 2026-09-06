@@ -931,32 +931,21 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    if sigil == b'@' {
-        if let Some(dims) = shape_dims {
-            // Shaped array attribute: has @.a[3, 3]
-            if let Some(data_expr) = default.take() {
-                default = Some(shaped_array_new_with_data_expr(dims, data_expr));
-            } else {
-                default = Some(shaped_array_new_expr(dims));
-            }
-        } else if let Some(expr) = default.take() {
-            // `has @.x = (1, 2, 3)` is a list default, not a one-element list
-            // holding a list: ask the shape through the parenthesization marker
-            // the parser records for every `(...)`.
-            let is_list_shaped = matches!(
-                expr.peel_parens(),
-                Expr::ArrayLiteral(_)
-                    | Expr::BracketArray(..)
-                    | Expr::ArrayVar(_)
-                    | Expr::Var(_)
-                    | Expr::Index { .. }
-            );
-            default = Some(if is_list_shaped {
-                expr
-            } else {
-                Expr::ArrayLiteral(vec![expr])
-            });
-        }
+    // A shaped array attribute (`has @.a[3, 3]`) still builds its container at
+    // parse time. The UNSHAPED case deliberately does nothing: `has @.x = EXPR`
+    // is a list assignment, exactly as `my @x = EXPR` is, and only the runtime
+    // knows whether EXPR produces a list. Wrapping a non-array-*shaped*
+    // expression in `Expr::ArrayLiteral(vec![expr])` here turned a `Range`,
+    // `Seq`, `List`, `Hash` or list-returning call into a single element
+    // (`has @.w = 1..3` stored `[1..3,]`); `coerce_attr_value_by_sigil` applies
+    // the real rule to the evaluated value instead.
+    if sigil == b'@'
+        && let Some(dims) = shape_dims
+    {
+        default = Some(match default.take() {
+            Some(data_expr) => shaped_array_new_with_data_expr(dims, data_expr),
+            None => shaped_array_new_expr(dims),
+        });
     }
     let pre_ws_rest = rest;
     let (rest, _) = ws(rest)?;

@@ -1094,28 +1094,9 @@ impl Interpreter {
                 // Check type constraint on the attribute before assignment.
                 // For @ and % attributes, the type constraint applies to elements/values,
                 // not to the container itself, so skip the container-level check.
-                // Skip the check when Nil is assigned and the attribute has `is default(...)`
-                // because Nil will be replaced by the default value.
-                let nil_has_default = value.is_nil()
-                    && self
-                        .class_attribute_default_with_role_fallback(&class_name.resolve(), method)
-                        .is_some();
-                // Nil assigned to a typed attribute restores the type object default
-                let nil_restores_type = value.is_nil() && !nil_has_default;
-                if attr_sigil == '$'
-                    && !nil_has_default
-                    && !nil_restores_type
-                    && let Some(type_constraint) =
-                        self.get_attr_type_constraint(&class_name.resolve(), method)
-                    && !self.type_matches_value(&type_constraint, &value)
-                    && !self.is_container_subclass(&type_constraint)
-                {
-                    return Err(RuntimeError::typecheck_assignment(
-                        &type_constraint,
-                        &value,
-                        Some(&format!("$!{}", method)),
-                    ));
-                }
+                // `Nil` is exempt: the store below replaces it with the
+                // declaration's default or its type object.
+                self.check_attr_store_type(&class_name.resolve(), method, attr_sigil, &value)?;
                 // Element-level type check for @ attributes (e.g. `has @.a of int`)
                 if attr_sigil == '@'
                     && let Some(type_constraint) =
@@ -1202,22 +1183,15 @@ impl Interpreter {
                 // `Nil`: decay each `Nil` the assignment stored to the
                 // container's own default (ADR-0049).
                 assigned_value = self.decay_nil_container_elements(assigned_value);
-                // When Nil is assigned to an attribute with `is default(...)`,
-                // restore the default value instead of setting Nil.
-                if assigned_value.is_nil()
-                    && let Some(def) = self
-                        .class_attribute_default_with_role_fallback(&class_name.resolve(), method)
-                {
-                    assigned_value = def;
-                }
-                // When Nil is assigned to a typed attribute without `is default`,
-                // restore the type object (e.g., Nil -> Int for `has Int $.a`).
-                if assigned_value.is_nil()
-                    && attr_sigil == '$'
-                    && let Some(tc) = self.get_attr_type_constraint(&class_name.resolve(), method)
-                {
-                    assigned_value = Value::package(crate::symbol::Symbol::intern(&tc));
-                }
+                // `Nil` restores the container's default: `is default(...)`, else
+                // the declared type object, else `Any` (the shared rule the
+                // `is rw` method store below applies too).
+                assigned_value = self.attr_store_nil_default(
+                    &class_name.resolve(),
+                    method,
+                    attr_sigil,
+                    assigned_value,
+                );
                 // Embed the attribute's declared element type into the stored
                 // container so it survives later reads (`$o.h.of`, `.push` type
                 // enforcement). Hash metadata lives in `HashData`; without this
@@ -1396,6 +1370,10 @@ impl Interpreter {
             )));
         }
         if let Some((attr_name, attr_sigil)) = rw_attr_target {
+            // An `is rw` method whose body is a bare `$!attr` IS that
+            // attribute's accessor, so its store obeys the same type constraint
+            // the generated accessor enforces.
+            self.check_attr_store_type(&class_name.resolve(), &attr_name, attr_sigil, &value)?;
             let mut updated = attributes.to_map();
             let force_hash_context = attr_sigil == '%'
                 || self
@@ -1426,14 +1404,15 @@ impl Interpreter {
             // decay each `Nil` the assignment stored to the container's own
             // default (ADR-0049).
             assigned_value = self.decay_nil_container_elements(assigned_value);
-            // When Nil is assigned to an attribute with `is default(...)`,
-            // restore the default value instead of setting Nil.
-            if assigned_value.is_nil()
-                && let Some(def) = self
-                    .class_attribute_default_with_role_fallback(&class_name.resolve(), &attr_name)
-            {
-                assigned_value = def;
-            }
+            // `Nil` restores the container's default, exactly as it does through
+            // the generated accessor: `is default(...)`, else the declared type
+            // object, else `Any`.
+            assigned_value = self.attr_store_nil_default(
+                &class_name.resolve(),
+                &attr_name,
+                attr_sigil,
+                assigned_value,
+            );
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
                 self.env.insert_through(

@@ -412,6 +412,28 @@ impl Interpreter {
         self.check_readonly_for_incdec(name, "postfix:<++>")
     }
 
+    /// Whether `name` denotes a readonly binding, asking BOTH mechanisms that
+    /// record one: the `readonly_vars` registry (a non-`is rw` parameter, a
+    /// `for` alias, a `constant`) and the separate
+    /// `__mutsu_sigilless_readonly::NAME` env marker a sigilless bind or
+    /// parameter uses (`my \G = 5`, `sub f(\x) {...}` called with an rvalue).
+    ///
+    /// The two mechanisms answer the same question, so every consumer must ask
+    /// both — `++`/`--` (below) and the rw-return container capture
+    /// (`exec_capture_var_cell_op`) each regressed by consulting only one.
+    pub(crate) fn name_is_readonly_binding(&self, name: &str) -> bool {
+        if self.is_readonly(name) {
+            return true;
+        }
+        crate::env::closure_meta_keys_possible()
+            && matches!(
+                self.env()
+                    .get(&crate::runtime::utils::sigilless_readonly_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+    }
+
     /// Reject an in-place increment/decrement of a read-only variable (a
     /// non-`is rw`/`is copy` parameter). `op` is the display operator
     /// (`prefix:<++>`, `postfix:<-->`, ...). Raku models `++`/`--` as multi
@@ -431,14 +453,7 @@ impl Interpreter {
         // where Raku's postfix:<++> dispatch rejects it (X::Multi::NoMatch,
         // "requires mutable arguments") the same way it rejects a readonly
         // sub parameter's `++$n`.
-        let sigilless_readonly = crate::env::closure_meta_keys_possible()
-            && matches!(
-                self.env()
-                    .get(&format!("__mutsu_sigilless_readonly::{}", name))
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            );
-        if self.is_readonly(name) || sigilless_readonly {
+        if self.name_is_readonly_binding(name) {
             let msg = format!(
                 "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
                 name

@@ -275,8 +275,32 @@ impl Interpreter {
         result: Value,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Some(assigned) = self.assign_lvalue_container(&result, value) {
+        if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
             return assigned;
+        }
+        // A real `Array`/`Hash` IS a container, so `f(@a) = (7, 8)` for
+        // `sub f(\x) is raw { x }` is a *list assignment into it* — the same
+        // rule `@a = (7, 8)` follows — not a rebinding of the routine's result.
+        // Replacing the contents in place keeps every other share of the
+        // container (the caller's `@a`) pointing at the new elements. An
+        // immutable `List`/`ItemList` is deliberately excluded: Rakudo refuses
+        // `f((1, 2)) = 3` with "Cannot modify an immutable List".
+        match result.view() {
+            ValueView::Array(_, kind)
+                if kind.is_real_array() || kind == crate::value::ArrayKind::Shaped =>
+            {
+                let coerced = crate::runtime::utils::coerce_to_array(value);
+                if result.replace_container_contents(&coerced) {
+                    return Ok(result);
+                }
+            }
+            ValueView::Hash(_) => {
+                let coerced = self.coerce_object_to_hash(value);
+                if result.replace_container_contents(&coerced) {
+                    return Ok(result);
+                }
+            }
+            _ => {}
         }
         let typename = crate::runtime::utils::value_type_name(&result);
         let repr = result.to_string_value();

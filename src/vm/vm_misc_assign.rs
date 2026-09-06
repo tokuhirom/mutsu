@@ -682,6 +682,20 @@ impl Interpreter {
         };
         let source_name = name.resolve();
         let inner = inner.clone();
+        // A readonly binding is NOT a container the caller may write through.
+        // `sub f(\x) is raw { x }` hands back whatever `x` aliases: the caller's
+        // container when the argument had one, and the *immutable value itself*
+        // when it did not (`f(42)`, `f($obj.readonly-accessor)`), which is
+        // exactly what the readonly registry already records for the binding
+        // (`CheckReadOnly` refuses `x = 5` inside the body for the same reason).
+        // Boxing such a name into a fresh cell minted a container nobody else
+        // shares, so `f(42) = 9` reported success and dropped the write.
+        // Handing the plain value back instead lets `assign_through_rw_result`
+        // refuse with `X::Assignment::RO`, the way Rakudo does.
+        if self.name_is_readonly_binding(&source_name) {
+            self.stack.push(inner.into_deref());
+            return;
+        }
         let slot_hint = val.varref_slot();
         let captured =
             self.capture_var_cell_inner(code, &source_name, inner.clone(), true, slot_hint);

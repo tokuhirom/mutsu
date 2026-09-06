@@ -57,60 +57,25 @@ impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
+            // Raku assigns to an `@`-sigil attribute exactly the way `my @a = …`
+            // assigns, so this arm asks the ONE list-assignment rule
+            // (`coerce_to_array`) rather than re-deriving a partial copy of it:
+            // `Positional`/iterable values flatten, a `Hash` flattens to its
+            // pairs, `Nil` becomes `[Any]`, and a plain scalar or type object
+            // becomes a one-element `Array`. The hand-written arms this replaces
+            // covered `Array`/`Range`/`Seq` but fell through with `val.clone()`
+            // for everything else, so `C.new(a => 5)` stored a bare `Int` in an
+            // `@` attribute and `has @.w = 1..3` (whose parse-time wrap this
+            // change also drops) stored the Range as one element.
             '@' => match val.view() {
-                // @-sigiled attributes always produce Array (not List)
-                // Preserve Shaped kind for shaped array attributes
-                ValueView::Array(items, ArrayKind::Shaped) => {
-                    Value::array_with_kind(items.clone(), ArrayKind::Shaped)
-                }
-                // Itemized arrays/lists ($[...] or $(...)) follow the one-arg rule:
-                // they are treated as a single item when assigned to an @-sigiled attribute.
-                ValueView::Array(items, kind) if kind.is_itemized() => {
-                    Value::real_array(vec![Value::array_with_kind(items.clone(), kind)])
-                }
-                ValueView::Array(items, kind) if kind.is_real_array() => {
-                    Value::array_with_kind(items.clone(), ArrayKind::Array)
-                }
-                ValueView::Array(items, _) => {
-                    Value::array_with_kind(items.clone(), ArrayKind::Array)
-                }
-                ValueView::Range(start, end) => {
-                    let items: Vec<Value> = (start..=end).map(Value::int).collect();
-                    Value::real_array(items)
-                }
-                ValueView::RangeExcl(start, end) => {
-                    let items: Vec<Value> = (start..end).map(Value::int).collect();
-                    Value::real_array(items)
-                }
-                // A Seq assigned to an `@`-sigiled attribute (`has Pair
-                // @.parameters` populated via `Foo.bless(parameters =>
-                // <Seq>)`) must materialize into a real, freely-re-readable
-                // Array — exactly like `my @a = <Seq>` already does — NOT
-                // keep the raw Seq as the attribute's stored value. Without
-                // this, every later read of the attribute (`@!parameters`
-                // inside a method, `.parameters` from outside) touches the
-                // SAME single-use Seq body: the first read (ADR-0034's
-                // `seq_method_consumes`, e.g. `.List`) correctly steals it,
-                // and every later read throws `X::Seq::Consumed` on what
-                // looks like a perfectly ordinary attribute access
-                // (surfaced by Cro::Core's `mediatype.rakutest`: `.parameters`
-                // read via `.List` in one test, then read again inside
-                // `.Str`'s `@!parameters.map(...)`).
-                //
-                // This function has no `&mut Interpreter` to force a
-                // genuinely deferred source (`Seq.new($iterator)`,
-                // `IO::Handle.lines`) with, so it only materializes an
-                // ALREADY-available body (`Value::seq(vec)`-shaped, or one a
-                // prior touch already reified/took) — `.to_vec()` reads
-                // `SeqBody`'s current elements via `Deref`, correct for
-                // those. A body still deferred passes through unmaterialized
-                // (today's behavior, not made worse): the first read still
-                // consumes it correctly, only a repeat read stays wrong,
-                // same as before this fix.
-                ValueView::Seq(items) if !items.has_deferred_source() => {
-                    Value::real_array(items.to_vec())
-                }
-                _ => val.clone(),
+                // A genuinely deferred `Seq` (`Seq.new($iterator)`,
+                // `IO::Handle.lines`, `(1..Inf).map(…)`) passes through
+                // unmaterialized: this function has no `&mut Interpreter` to
+                // force one with, and an infinite source must not be reified
+                // here. The first read still consumes it correctly; only a
+                // repeat read stays wrong, exactly as before.
+                ValueView::Seq(items) if items.has_deferred_source() => val.clone(),
+                _ => crate::runtime::utils::coerce_to_array(val),
             },
             '%' => match val.view() {
                 ValueView::Hash(_) => val.clone(),
