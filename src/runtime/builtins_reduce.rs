@@ -504,7 +504,12 @@ impl Interpreter {
             .collect();
         let combiner = with_fn.ok_or_else(|| RuntimeError::new("zip: missing :with argument"))?;
         if lists.is_empty() {
-            return Ok(Value::array(vec![]));
+            // `zip` returns a Seq, with or without `:with` -- `zip().raku` and
+            // `zip(with => &infix:<+>).raku` are both `().Seq` in raku. The
+            // no-`:with` path already did; this one handed back a List, which
+            // is how a chained `Zop` (`(1,2) Z+ (3,4) Z+ (5,6)`, lowered to this
+            // multi-way call) answered `(9, 12)` where raku says `(9, 12).Seq`.
+            return Ok(Value::seq(vec![]));
         }
         // Determine associativity from the operator name
         let assoc = Self::op_associativity(&combiner);
@@ -579,7 +584,7 @@ impl Interpreter {
                 crate::value::LazyList::new_cached_infinite(result),
             )))
         } else {
-            Ok(Value::array(result))
+            Ok(Value::seq(result))
         }
     }
 

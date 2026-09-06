@@ -129,7 +129,18 @@ fn finalize_list(items: Vec<Expr>) -> Expr {
 /// element as a seed (`0, 1, *+* ... *`), and a list infix meta-op only its adjacent
 /// element as an operand (`[0, |@p Z+ |@p, 0]`).
 pub(in crate::parser) fn normalize_comma_list_items(items: Vec<Expr>) -> Vec<Expr> {
-    merge_sequence_seeds(lift_meta_ops_in_list(items))
+    // `lift_list_infix_in_arg_list` is the CHAIN-AWARE lift the parenthesised
+    // spelling already used. This site used to carry its own one-level copy
+    // (`lift_meta_ops_in_list`), which merged the preceding items with the
+    // metaop's own `left` and stopped -- so a chain `1, 2 Z <a b> Z <c d>`,
+    // whose outer metaop's `left` is another metaop, became
+    // `(1, (2 Z <a b>)) Z <c d>` and answered `[(1, "c"), (((2, "a"),).Seq, "d")]`
+    // where raku says `[(1, "a", "c"), (2, "b", "d")]`. The shared lift walks
+    // the left-nested same-op chain and collects each `right` as a column, so
+    // the bracket/assign spellings now agree with the parenthesised one by
+    // construction. It also brings the `minmax` lift with it, which this site
+    // never had (`my @m = 1, 2 minmax 3, 4` is `1..4`, not `1, 2..3, 4`).
+    merge_sequence_seeds(crate::parser::primary::lift_list_infix_in_arg_list(items))
 }
 
 /// In a comma-separated list, if the last item is a sequence expression
@@ -182,39 +193,4 @@ fn merge_seeds_into_sequence(last: &Expr, seeds: &[Expr]) -> Option<Expr> {
         }
         _ => None,
     }
-}
-
-/// In a comma-separated list, if an item is a MetaOp (X+, Z-, etc.), merge
-/// all preceding items into its left operand. This gives meta-ops effective
-/// list-infix precedence: `1, 2 X+ 10` → `MetaOp(X, +, [1,2], 10)`.
-///
-/// The array composer needs this for `[0, |@p Z+ |@p, 0]`, which is
-/// `(0, |@p) Z+ (|@p, 0)` in Raku.
-fn lift_meta_ops_in_list(items: Vec<Expr>) -> Vec<Expr> {
-    // Find the first MetaOp in the list
-    let meta_idx = items.iter().position(|e| matches!(e, Expr::MetaOp { .. }));
-    if let Some(idx) = meta_idx
-        && idx > 0
-        && let Expr::MetaOp {
-            meta,
-            op,
-            left,
-            right,
-        } = &items[idx]
-    {
-        // Merge preceding items + meta's original left into a single list
-        let mut seeds: Vec<Expr> = items[..idx].to_vec();
-        seeds.push(*left.clone());
-        let new_left = Expr::ArrayLiteral(seeds);
-        let new_meta = Expr::MetaOp {
-            meta: meta.clone(),
-            op: op.clone(),
-            left: Box::new(new_left),
-            right: right.clone(),
-        };
-        let mut result = vec![new_meta];
-        result.extend(items[idx + 1..].to_vec());
-        return result;
-    }
-    items
 }
