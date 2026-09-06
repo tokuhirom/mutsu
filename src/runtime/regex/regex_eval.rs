@@ -49,40 +49,21 @@ impl Interpreter {
         Some(stmts)
     }
 
-    /// Copy the declaration registry (functions / proto_functions / token_defs)
-    /// from `self` into a freshly-built sub-interpreter used for regex/grammar
-    /// evaluation. `self` and `target` have distinct registry `Arc`s, so this is
-    /// a snapshot copy (matches the prior per-field clone in the struct literal).
+    /// Install `self`'s declaration registry into a freshly-built
+    /// sub-interpreter used for regex/grammar evaluation.
+    ///
+    /// This used to copy four fields (`functions` / `proto_functions` /
+    /// `token_defs` / `enum_types`) into the registry the sub-interpreter built
+    /// for itself, leaving it on its own built-in `classes`/`method_entries`.
+    /// Sharing the parent's whole registry instead (the copy-on-write
+    /// `Arc<Registry>`, see [`Self::copy_full_registry_into`]) is both a strict
+    /// superset of that data — the parent's registry carries every built-in the
+    /// sub-interpreter used to build for itself, plus the user declarations it
+    /// could not see before — and O(1) instead of four map clones plus a
+    /// registry write. It is also what lets `Interpreter::new` skip building the
+    /// built-in registry for a scratch interpreter altogether.
     pub(crate) fn copy_decl_registry_into(&self, target: &mut Interpreter) {
-        // During a `Grammar.parse(:actions(...))`, a sub-interpreter spawned for
-        // subrule/proto-regex matching may evaluate a `<?{ $<x>.made ... }>`
-        // assertion, which has to dispatch the action class's methods (in
-        // `Registry::classes`). Copy the *full* registry in that case so those
-        // methods are reachable; otherwise keep the lean three-field copy that the
-        // common (action-less) regex/closure eval path relies on.
-        if self.current_grammar_actions.is_some() {
-            self.copy_full_registry_into(target);
-        } else {
-            let (functions, proto_functions, token_defs, enum_types) = {
-                let src = self.registry();
-                (
-                    src.functions.clone(),
-                    src.proto_functions.clone(),
-                    src.token_defs.clone(),
-                    src.enum_types.clone(),
-                )
-            };
-            let mut dst = target.registry_mut();
-            dst.functions = functions;
-            dst.proto_functions = proto_functions;
-            dst.token_defs = token_defs;
-            // Inherit the parent's enum types (built-in Order/Signal/... plus any
-            // user-declared enums). The scratch interpreter is built via
-            // `new_regex_scratch`, which skips seeding the built-in enums into its
-            // own registry, so copy them from the parent here — this also makes a
-            // regex closure see user-defined enums it previously could not.
-            dst.enum_types = enum_types;
-        }
+        self.copy_full_registry_into(target);
         // Propagate the in-progress `Grammar.parse(:actions(...))` object so the
         // assertion's sub-interpreter can still run the action method mid-parse.
         // None outside a parse, so this is a no-op there.
