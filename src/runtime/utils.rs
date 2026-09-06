@@ -226,6 +226,22 @@ pub(crate) fn bigint_to_f64_sat(n: &BigInt) -> f64 {
     })
 }
 
+/// Whether `v` is an *itemized* aggregate, i.e. a `Scalar` container.
+///
+/// Itemization has three spellings in mutsu and this covers all of them: a
+/// `ValueView::Scalar` wrapper; an itemized `List`/`Array` (`$(1, 2)` / `$[1, 2]`
+/// share their backing storage with the plain form and carry the itemization in
+/// the `ArrayKind`); and a `Hash` carrying an itemization flag on its repr. A
+/// check for the wrapper alone misses the other two.
+pub(crate) fn value_is_itemized_container(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Scalar(_) => true,
+        ValueView::Array(_, kind) => kind.is_itemized(),
+        ValueView::Hash(_) => v.hash_is_itemized(),
+        _ => false,
+    }
+}
+
 /// A Bag weight read out of a `Value`, at full precision.
 ///
 /// Bag weights are `Int` in raku -- `(a => 2.7).Bag` is `("a"=>2).Bag` -- so a
