@@ -197,38 +197,40 @@ impl Interpreter {
                 }
             },
             "chmod" => {
-                let mode_value = args
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
-                let mode_int = match mode_value.view() {
-                    ValueView::Int(i) => i as u32,
-                    // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
-                    // already-evaluated integer in the inner value; coerce through it.
-                    ValueView::Mixin(..) | ValueView::BigInt(_) => {
-                        crate::runtime::to_int(&mode_value) as u32
-                    }
-                    ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                    _ => {
-                        return Err(RuntimeError::new(format!(
-                            "Invalid mode: {}",
-                            mode_value.to_string_value()
-                        )));
-                    }
-                };
+                // Permission bits are a unix concept; everything below the gate
+                // compiles only where it can run (wasm32 is not unix).
+                #[cfg(not(unix))]
+                {
+                    let _ = args;
+                    Err(RuntimeError::new("chmod not supported on this platform"))
+                }
                 #[cfg(unix)]
                 {
+                    let mode_value = args
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
+                    let mode_int = match mode_value.view() {
+                        ValueView::Int(i) => i as u32,
+                        // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
+                        // already-evaluated integer in the inner value; coerce through it.
+                        ValueView::Mixin(..) | ValueView::BigInt(_) => {
+                            crate::runtime::to_int(&mode_value) as u32
+                        }
+                        ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
+                        _ => {
+                            return Err(RuntimeError::new(format!(
+                                "Invalid mode: {}",
+                                mode_value.to_string_value()
+                            )));
+                        }
+                    };
                     let perms = PermissionsExt::from_mode(mode_int);
                     fs::set_permissions(&path_buf, perms).map_err(|err| {
                         RuntimeError::new(format!("Failed to chmod '{}': {}", p, err))
                     })?;
+                    Ok(Value::TRUE)
                 }
-                #[cfg(not(unix))]
-                {
-                    let _ = mode_int;
-                    return Err(RuntimeError::new("chmod not supported on this platform"));
-                }
-                Ok(Value::TRUE)
             }
             _ => unreachable!("io_path_fs_mutate called with non-mutation method"),
         }
@@ -347,45 +349,51 @@ impl Interpreter {
                 Ok(Value::TRUE)
             }
             "symlink" => {
-                // IO::Path.symlink($name, :$absolute = True)
-                // Creates a symlink named $name pointing to self (the target).
-                let link_name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
-                // :absolute defaults to True; :!absolute uses the original path string.
-                let absolute = Self::named_value(args, "absolute")
-                    .map(|v| v.truthy())
-                    .unwrap_or(true);
-                let link_buf = self.resolve_path(&link_name);
-                let target_for_symlink = if absolute {
-                    path_buf.clone()
-                } else {
-                    std::path::PathBuf::from(&p)
-                };
-                #[cfg(unix)]
-                {
-                    match unix_fs::symlink(&target_for_symlink, &link_buf) {
-                        Ok(()) => Ok(Value::TRUE),
-                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                    }
-                }
-                #[cfg(windows)]
-                {
-                    let metadata = fs::metadata(&target_for_symlink);
-                    let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                        windows_fs::symlink_dir(&target_for_symlink, &link_buf)
-                    } else {
-                        windows_fs::symlink_file(&target_for_symlink, &link_buf)
-                    };
-                    match result {
-                        Ok(()) => Ok(Value::TRUE),
-                        Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
-                    }
-                }
+                // Platforms with no symlink syscall refuse before touching the
+                // args, so the rest of the arm compiles only where it can run.
                 #[cfg(not(any(unix, windows)))]
                 {
+                    let _ = args;
                     Err(RuntimeError::new("symlink not supported on this platform"))
+                }
+                #[cfg(any(unix, windows))]
+                {
+                    // IO::Path.symlink($name, :$absolute = True)
+                    // Creates a symlink named $name pointing to self (the target).
+                    let link_name = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
+                    // :absolute defaults to True; :!absolute uses the original path string.
+                    let absolute = Self::named_value(args, "absolute")
+                        .map(|v| v.truthy())
+                        .unwrap_or(true);
+                    let link_buf = self.resolve_path(&link_name);
+                    let target_for_symlink = if absolute {
+                        path_buf.clone()
+                    } else {
+                        std::path::PathBuf::from(&p)
+                    };
+                    #[cfg(unix)]
+                    {
+                        match unix_fs::symlink(&target_for_symlink, &link_buf) {
+                            Ok(()) => Ok(Value::TRUE),
+                            Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                        }
+                    }
+                    #[cfg(windows)]
+                    {
+                        let metadata = fs::metadata(&target_for_symlink);
+                        let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                            windows_fs::symlink_dir(&target_for_symlink, &link_buf)
+                        } else {
+                            windows_fs::symlink_file(&target_for_symlink, &link_buf)
+                        };
+                        match result {
+                            Ok(()) => Ok(Value::TRUE),
+                            Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
+                        }
+                    }
                 }
             }
             "link" => {

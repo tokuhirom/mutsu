@@ -13,6 +13,22 @@ thread_local! {
     static BUILDING_SCRATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// The OS environment, as the backing map of `%*ENV`.
+///
+/// wasm32 has no process environment to sweep, so the browser build starts
+/// with an empty `%*ENV` that scripts can still write to.
+#[cfg(not(target_family = "wasm"))]
+fn os_env_hash() -> HashMap<String, Value> {
+    std::env::vars()
+        .map(|(key, value)| (key, builtins_collection::builtin_val(&[Value::str(value)])))
+        .collect()
+}
+
+#[cfg(target_family = "wasm")]
+fn os_env_hash() -> HashMap<String, Value> {
+    HashMap::new()
+}
+
 impl Interpreter {
     /// Whether the current `new()` call is building a lightweight scratch
     /// interpreter (see `BUILDING_SCRATCH`).
@@ -52,11 +68,7 @@ impl Interpreter {
         // interpreter inherits the caller's env (which already carries %*ENV), so
         // skip the OS-env sweep there.
         if !Self::is_building_scratch() {
-            let mut env_hash = HashMap::new();
-            #[cfg(not(target_family = "wasm"))]
-            for (key, value) in std::env::vars() {
-                env_hash.insert(key, builtins_collection::builtin_val(&[Value::str(value)]));
-            }
+            let env_hash = os_env_hash();
             env.insert(
                 "%*ENV".to_string(),
                 Value::hash_with_data(Value::hash_arc(env_hash)),
@@ -3038,6 +3050,7 @@ impl Interpreter {
             method_dispatch_pure: false,
             in_regex_code_block: false,
             resume_ip: None,
+            #[cfg(feature = "jit")]
             jit_error: None,
             bind_context: Box::new(std::cell::Cell::new(false)),
             scalar_bind_context: Box::new(std::cell::Cell::new(false)),

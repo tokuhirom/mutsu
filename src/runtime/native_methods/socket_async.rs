@@ -458,7 +458,10 @@ impl Interpreter {
                     }
                     // Free the port *before* acknowledging, so a `Tap.close`
                     // that waits on this flag can rely on the listener being
-                    // gone once it returns.
+                    // gone once it returns. On wasm32 `TcpListener` is an
+                    // unsupported stub with no `Drop`, so clippy is right that
+                    // the call does nothing there -- and wrong that it can go.
+                    #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
                     drop(tcp_listener);
                     stopped_flag.store(true, Ordering::SeqCst);
                 });

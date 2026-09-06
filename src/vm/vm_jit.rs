@@ -21,8 +21,11 @@ use super::*;
 /// shim's `extern "C"` edge (unwinding through it would abort the process)
 /// with its payload parked in [`PARKED_PANIC`] — the entry wrapper resumes
 /// the unwind on the Rust side of the native frame.
+#[cfg(feature = "jit")]
 pub(crate) const JIT_STATUS_OK: u32 = 0;
+#[cfg(feature = "jit")]
 pub(crate) const JIT_STATUS_ERR: u32 = 1;
+#[cfg(feature = "jit")]
 pub(crate) const JIT_STATUS_HALT: u32 = 2;
 #[cfg(feature = "jit")]
 pub(crate) const JIT_STATUS_PANIC: u32 = 3;
@@ -59,6 +62,7 @@ fn resume_parked_panic() -> ! {
 /// `CompiledCode::jit.entry` sentinel: the chunk was scanned and rejected
 /// (contains an unsupported opcode); never retry. `0` means cold/counting;
 /// any other value is the native entry pointer.
+#[cfg(feature = "jit")]
 pub(crate) const JIT_ENTRY_BAILOUT: u64 = 1;
 
 /// Process-wide, monotonic count of user-declared infix operator

@@ -242,6 +242,10 @@ static POOL_TASKS: AtomicU64 = AtomicU64::new(0);
 static POOL_SPAWNS: AtomicU64 = AtomicU64::new(0);
 
 /// Record one task submitted to the ADR-0020 worker pool.
+///
+/// wasm32 has no pool (`worker_pool` delegates to the cooperative scheduler),
+/// so the recorder does not exist there.
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 pub(crate) fn record_pool_task() {
     if enabled() {
@@ -250,6 +254,7 @@ pub(crate) fn record_pool_task() {
 }
 
 /// Record one pool growth (a task found no idle worker and spawned one).
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 pub(crate) fn record_pool_spawn() {
     if enabled() {
@@ -273,6 +278,7 @@ fn jit_bailout_by_opcode() -> &'static Mutex<HashMap<String, u64>> {
 }
 
 /// Record one chunk compiled to native code by the JIT.
+#[cfg(feature = "jit")]
 #[inline]
 pub(crate) fn record_jit_compile() {
     if enabled() {
@@ -281,6 +287,7 @@ pub(crate) fn record_jit_compile() {
 }
 
 /// Record one body execution entering JIT-compiled native code.
+#[cfg(feature = "jit")]
 #[inline]
 pub(crate) fn record_jit_entry() {
     if enabled() {
@@ -290,6 +297,7 @@ pub(crate) fn record_jit_entry() {
 
 /// Record a chunk rejected by the JIT because it contains `op` (the first
 /// unsupported opcode encountered during the static scan).
+#[cfg(feature = "jit")]
 #[inline]
 pub(crate) fn record_jit_bailout(op: &crate::opcode::OpCode) {
     if enabled() {

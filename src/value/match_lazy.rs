@@ -389,9 +389,11 @@ mod tests {
     use crate::runtime::RegexCaptures;
 
     fn leaf_cap(from: usize, to: usize) -> Arc<CapNode> {
-        let mut caps = RegexCaptures::default();
-        caps.from = from;
-        caps.to = to;
+        let caps = RegexCaptures {
+            from,
+            to,
+            ..Default::default()
+        };
         Arc::new(caps.into_cap_node())
     }
 
@@ -433,9 +435,11 @@ mod tests {
     fn lazy_match_children_stay_lazy_one_level() {
         // parent { named: x => child }, child a leaf with a span.
         let child = leaf_cap(1, 2);
-        let mut caps = RegexCaptures::default();
-        caps.from = 0;
-        caps.to = 2;
+        let mut caps = RegexCaptures {
+            from: 0,
+            to: 2,
+            ..Default::default()
+        };
         caps.named.insert(
             Symbol::intern("x"),
             crate::runtime::NamedSlot {

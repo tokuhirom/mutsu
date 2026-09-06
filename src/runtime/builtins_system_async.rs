@@ -1,6 +1,18 @@
 use super::*;
 use crate::value::ValueView;
 
+/// This process's id, for the `%*ENV`-less fallback in `syscall(0)`. wasm32 has
+/// no process to ask, and reports 0.
+#[cfg(not(target_arch = "wasm32"))]
+fn current_pid() -> i64 {
+    std::process::id() as i64
+}
+
+#[cfg(target_arch = "wasm32")]
+fn current_pid() -> i64 {
+    0
+}
+
 impl Interpreter {
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let signal = args.first().map(super::to_int).unwrap_or(15);
@@ -27,16 +39,7 @@ impl Interpreter {
                 .env
                 .get("*PID")
                 .and_then(|v| v.as_int())
-                .unwrap_or_else(|| {
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        std::process::id() as i64
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        0
-                    }
-                });
+                .unwrap_or_else(current_pid);
             return Ok(Value::int(pid));
         }
         Ok(Value::int(-1))

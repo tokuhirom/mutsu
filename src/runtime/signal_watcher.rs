@@ -2,6 +2,8 @@
 ///
 /// Uses a self-pipe pattern: signal handlers write the signal number to a pipe,
 /// and a reader thread picks it up and sends it through the Supply channel.
+// Only the `unix` self-pipe implementation emits Supply events.
+#[cfg(unix)]
 use crate::runtime::native_methods::SupplyEvent;
 use crate::value::Value;
 

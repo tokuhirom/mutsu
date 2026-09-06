@@ -89,7 +89,7 @@ mod tests {
         let l = super::layout().expect("Vec<Value> layout probe failed");
         let offs = [l.vec_ptr, l.vec_len, l.vec_cap];
         for o in offs {
-            assert!(o >= 0 && o <= 16 && o % 8 == 0, "weird offset {o}");
+            assert!((0..=16).contains(&o) && o % 8 == 0, "weird offset {o}");
         }
         assert_ne!(l.vec_ptr, l.vec_len);
         assert_ne!(l.vec_len, l.vec_cap);
