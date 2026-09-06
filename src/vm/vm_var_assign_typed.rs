@@ -677,6 +677,17 @@ impl Interpreter {
             } else {
                 v
             };
+            // A container is transparent to interpolation: `"{ $x }"` renders
+            // what it holds. Without this the user-`Str` dispatch below never
+            // saw the `Instance` inside a `ContainerRef` and rendered the pure
+            // `TypeName()` placeholder, exactly as prefix `~` and `say` did.
+            // Tag-probed like the `Proxy` fetch above: an unconditional
+            // `deref_container` would `view()` every interpolated lazy Match.
+            let v = if v.is_container_ref() {
+                v.deref_container()
+            } else {
+                v
+            };
             // Interpolating an unhandled Failure into a string throws its underlying
             // exception (Raku: a Failure is an "unthrown exception" that explodes on
             // use as a value). Mirrors the prefix:<~> stringify path; without this,

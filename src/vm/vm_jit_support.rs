@@ -108,6 +108,8 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::TagContainerRefReversed(..)
             | OpCode::MarkAccessorRefContext
             | OpCode::MarkLvalueInvocantRefContext(..)
+            | OpCode::AttrContainerRef(..)
+            | OpCode::MarkRwArgRefContext { .. }
             // List / hash construction, indexing and coercion
             | OpCode::MakeArray(_)
             | OpCode::MakeRealArray(_)

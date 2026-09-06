@@ -175,7 +175,7 @@ impl Interpreter {
                 let arg_idx = positional_indices.get(p).copied();
                 let is_capture_param = pd.name == "_capture" || (pd.slurpy && pd.sigilless);
                 let is_subsig_capture = pd.is_capture_subsignature();
-                let mut arg_for_checks: Option<Value> = if pd.is_variadic() || is_capture_param {
+                let arg_for_checks: Option<Value> = if pd.is_variadic() || is_capture_param {
                     if is_capture_param {
                         // |c capture params preserve both positional and named parts.
                         let mut positional = Vec::new();
@@ -235,6 +235,17 @@ impl Interpreter {
                 } else {
                     arg_idx.and_then(|idx| args.get(idx).cloned().map(unwrap_varref_value))
                 };
+                // A `ContainerRef` argument type-checks by its CONTENTS. Raku
+                // constrains the value a container holds, never the container:
+                // `multi mm(Int $y is rw)` matches `mm($c.v)` for an `is rw`
+                // attribute accessor, and equally an argument that is some other
+                // routine's returned location (`mm(f($a))` for
+                // `sub f(\x) is raw { x }`). Without this the candidate scan
+                // rejected every typed signature and reported
+                // "Cannot resolve caller mm(Int:D)" — naming the very type it
+                // had just refused to match, because the *message* derefs and
+                // the matcher did not.
+                let mut arg_for_checks = arg_for_checks.map(|v| v.deref_container());
                 // Whether an actual argument was passed for this param (vs. an
                 // unsupplied optional filled with its type object below). An
                 // unsupplied optional's `where` must NOT reject the candidate
@@ -271,7 +282,16 @@ impl Interpreter {
                             .and_then(|name| name.as_ref())
                             .is_some()
                     });
-                    if !is_varref && !has_arg_source {
+                    // A bare `ContainerRef` IS a writable lvalue even without a
+                    // source name — the binder says exactly that
+                    // (`binding_signature.rs`'s "A bare `ContainerRef` cell ...
+                    // IS a writable lvalue even without a source variable
+                    // name") — so the dispatch gate must agree, or a candidate
+                    // the binder would happily bind is never reached.
+                    let is_container = raw_arg
+                        .map(|a| unwrap_varref_value(a.clone()).is_container_ref())
+                        .unwrap_or(false);
+                    if !is_varref && !has_arg_source && !is_container {
                         return false;
                     }
                 }

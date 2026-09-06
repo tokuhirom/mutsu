@@ -239,7 +239,18 @@ impl Interpreter {
         {
             let map = attributes.as_map();
             if let Some(key) = self.attr_key_in_map(bare, is_private, &map) {
-                return map.get(key).cloned();
+                // An attribute slot promoted to a shared `ContainerRef` cell
+                // (`promote_attr_to_container`, reached by a `:=` bind to the
+                // accessor, ADR-0067's E6 producer, or an `is rw` method whose
+                // tail is the bare attribute) is a *container*: reading `$!x`
+                // yields what it holds, exactly as the accessor read does. The
+                // undereferenced cell was indistinguishable from a defined
+                // value, so `with $!x { ... }` entered on an attribute holding
+                // a type object and the topic was the cell rather than the
+                // object (URI's `multi method authority(--> Authority) is rw`
+                // promoted the slot; `with $!authority` then took the wrong
+                // branch and died assigning through the topic).
+                return map.get(key).map(|v| v.deref_container());
             }
         }
         self.read_class_level_attr_cell(bare, is_private)
@@ -402,7 +413,14 @@ impl Interpreter {
             };
             if let Some(key) = key {
                 self.record_build_attr_write(&attributes, key);
-                attributes.insert(key, val);
+                // Write *through* a promoted `ContainerRef` slot rather than
+                // replacing it: the cell is the attribute's Scalar, so
+                // `$!x = v` must be visible to every alias handed out of it
+                // (a `:=`-bound name, an `is rw` method result, an `is rw`
+                // argument). Replacing the slot would disconnect all of them at
+                // the first internal write. See the matching deref in
+                // `read_attr_cell_by_key`.
+                attributes.store_through_container(key, val);
                 return;
             }
         }

@@ -1361,6 +1361,18 @@ pub(crate) struct Compiler {
     /// the `is rw` anonymous-sub paths; a nested closure gets its own
     /// compiler with the flag off.
     rw_tail: bool,
+    /// ADR-0067's argument producer, relayed through an `Expr::ArrayLiteral`.
+    ///
+    /// `f($c.v) = 9` and `++f($c.v)` are rewritten by the parser into
+    /// `__mutsu_assign_named_sub_lvalue("f", [ARGS], value)` — the real callee
+    /// is a string *argument* and its arguments live inside a list literal, so
+    /// the generic call-argument loop sees neither. This carries the real
+    /// callee's name down to the list-literal element loop, which marks each
+    /// accessor-shaped element with that callee and the element's own
+    /// positional index. Read and cleared by `Expr::ArrayLiteral` at entry, so
+    /// a nested list inside one of those arguments is not mistaken for the
+    /// argument list.
+    pending_rw_arg_list_callee: Option<String>,
     /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
     /// `:=` bind/rebind target (`my $x := @a[$i]`), not a genuine function-call
     /// argument. `compile_call_arg` reads this once at entry and clears it
@@ -1643,6 +1655,7 @@ impl Compiler {
             bind_terminal: false,
             rw_return_operand: false,
             rw_tail: false,
+            pending_rw_arg_list_callee: None,
             bind_target_direct: false,
             mint_named_pair: false,
             pending_immutable_topic_block: false,

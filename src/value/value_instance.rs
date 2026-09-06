@@ -188,6 +188,30 @@ impl InstanceAttrs {
         write_attrs(&self.attributes).entry(key).or_insert(value);
     }
 
+    /// Store `value` at `key`, writing *through* a promoted `ContainerRef` cell
+    /// when the slot holds one instead of replacing it.
+    ///
+    /// A slot promoted by [`Self::promote_attr_to_container`] is the attribute's
+    /// Scalar: `$!x = v` assigns into it, so every alias handed out
+    /// (a `:=`-bound name, an `is rw` method result, an `is rw` argument) keeps
+    /// observing the attribute. Replacing the slot instead would silently
+    /// disconnect every one of them at the first internal write.
+    pub(crate) fn store_through_container<K: AttrKey + Copy>(&self, key: K, value: Value) {
+        let mut guard = write_attrs(&self.attributes);
+        match guard.get_mut(key) {
+            Some(slot) => {
+                if let ValueView::ContainerRef(cell) = slot.view() {
+                    *cell.lock().unwrap() = value;
+                } else {
+                    *slot = value;
+                }
+            }
+            None => {
+                guard.insert(key, value);
+            }
+        }
+    }
+
     /// Promote the attribute at `key` to a shared `ContainerRef` cell (in place,
     /// under a single write lock) and return the cell value. If the slot already
     /// holds a `ContainerRef`, the existing cell is returned — repeated `:=`

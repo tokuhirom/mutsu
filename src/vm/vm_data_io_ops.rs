@@ -8,6 +8,12 @@ use crate::value::RuntimeError;
 /// we can use the fast `gist_value()` / `to_string_value()` paths directly.
 fn needs_method_dispatch(v: &Value) -> bool {
     match v.view() {
+        // A `ContainerRef` is a container, not a type: what it holds decides
+        // how the value renders. Rendering asks the pure `gist_value` path
+        // otherwise, which prints an `Instance` as the bare `TypeName()`
+        // placeholder and never reaches the user's `method gist`/`method Str`
+        // (`sub f(\x) is raw { x }; say f($obj)` printed `Thing()`).
+        ValueView::ContainerRef(_) | ValueView::ContainerView(_) => true,
         ValueView::Instance { .. }
         | ValueView::CustomType { .. }
         | ValueView::CustomTypeInstance(_)

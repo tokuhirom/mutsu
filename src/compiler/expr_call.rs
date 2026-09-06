@@ -117,6 +117,36 @@ impl Compiler {
         })
     }
 
+    /// The real callee whose argument list is the list literal about to be
+    /// compiled as argument `i`, for ADR-0067's argument producer.
+    ///
+    /// `f($c.v) = 9` and `++f($c.v)` are not compiled as calls to `f` at all:
+    /// the parser rewrites them into `__mutsu_assign_named_sub_lvalue("f",
+    /// [ARGS], value)` / `__mutsu_incdec_named_sub_lvalue("f", [ARGS], label)`,
+    /// which resolve `f` at run time (it may be declared after its use site).
+    /// So the generic argument loop sees the helper's own signature, and the
+    /// arguments that must produce containers sit one level down inside a list
+    /// literal. Both helpers put the routine name at argument 0 and the
+    /// argument list at argument 1.
+    fn relayed_rw_arg_callee(name: Symbol, args: &[Expr], i: usize) -> Option<String> {
+        if i != 1
+            || args.len() < 3
+            || !matches!(
+                name.resolve().as_str(),
+                "__mutsu_assign_named_sub_lvalue" | "__mutsu_incdec_named_sub_lvalue"
+            )
+        {
+            return None;
+        }
+        if !matches!(&args[1], Expr::ArrayLiteral(_)) {
+            return None;
+        }
+        match &args[0] {
+            Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
+            _ => None,
+        }
+    }
+
     pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
@@ -1794,9 +1824,16 @@ impl Compiler {
                         });
                     } else {
                         self.pending_immutable_topic_block = immutable_topic_cb && i == 0;
+                        // ADR-0067's argument producer for the parser-rewritten
+                        // lvalue/incdec spellings, whose real callee is argument
+                        // 0 (a literal name) and whose real arguments are the
+                        // list literal at argument 1.
+                        self.pending_rw_arg_list_callee =
+                            Self::relayed_rw_arg_callee(*name, args, i);
                         self.with_thread_escape(thread_escaping, |s| {
                             s.compile_call_arg_with_escape(arg, escaping_args)
                         });
+                        self.pending_rw_arg_list_callee = None;
                         self.pending_immutable_topic_block = false;
                         if i == 0
                             && let Some(outer_method) = accessor_ref_invocant.as_ref()
@@ -1804,6 +1841,17 @@ impl Compiler {
                             self.mark_trailing_method_call_as_lvalue_invocant_ref(
                                 outer_method.as_deref(),
                             );
+                        } else if accessor_ref_invocant.is_none()
+                            && Self::is_accessor_shaped_arg(arg)
+                        {
+                            // ADR-0067's argument producer. Skipped entirely for
+                            // an lvalue *invocant* call, whose argument 0 the E6
+                            // producer above already marks and whose remaining
+                            // arguments belong to the inner method, not to this
+                            // synthetic helper's signature. The shape test is
+                            // repeated here so the common argument pays no
+                            // `Symbol::resolve` allocation.
+                            self.mark_arg_as_rw_container_candidate(&name.resolve(), i as u32, arg);
                         }
                     }
                 }

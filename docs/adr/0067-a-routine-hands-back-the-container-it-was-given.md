@@ -1,7 +1,8 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05, Slice 3b
-  and the E6 rw-attribute-accessor producer 2026-09-06; Slice 3 was re-scoped
+- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05, Slice 3b,
+  the E6 rw-attribute-accessor producer and the returned-container consumers
+  2026-09-06; Slice 3 was re-scoped
   into 3a/3b on 2026-09-05 after measurement, and 3a's E6 row split off again
   into that producer; Slice 4 absorbed two of Slice 5's three acceptance rows,
   again after measurement; Slice 3b shipped the *named-receiver* half of the
@@ -18,7 +19,11 @@
 - Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`;
   `todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` (closed by
   Slices 4 and 5, now
-  `news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`)
+  `news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`);
+  `todo/tickets/rw-method-result-is-not-a-container-for-bind-or-invocant.md` and
+  `todo/tickets/attribute-accessor-container-lost-in-argument-position.md`
+  (closed by the returned-container-consumers slice, now
+  `news/2026-09/rw-result-container-consumers.md`)
 
 ## Context
 
@@ -637,18 +642,20 @@ before an lvalue invocant is an *unconditional compile-side* change (rawness is
 not statically known), so it must be paired with the decontainerize-at-the-chokepoint
 guard above and re-measured across every `$obj.acc.m = v` shape. That is its own
 slice. The mutation discriminator, not `.VAR`, is what settled this: `$c.v`
-produces a container for a `:=` bind but not in argument position
-(`sub g($y is rw) {...}; g($c.v)` dies with "expects a writable container").
+produces a container for a `:=` bind but not in argument position, where
+**mutsu** died with "expects a writable container" (raku answers `9`).
 
-> **Correction (2026-09-06, from the E6 producer's own re-measurement).** That
-> last parenthesis attributes **mutsu's** diagnostic to raku. raku answers `9`
-> for `sub g($y is rw) { $y = 9 }; g($c.v)`; it is mutsu that dies with
-> "expects a writable container". The conclusion the row was cited for — that
-> E6 is a producer question and `.VAR` is not the discriminator — is unaffected,
-> but argument position is a *third* consumer that is still broken, and its
-> `is raw` twin (`sub f(\x) is raw { x }; f($c.v) = 9`) is **silently wrong**
-> (`42` where raku says `9`), not merely a copy as the non-goals section says.
-> Recorded as `todo/tickets/attribute-accessor-container-lost-in-argument-position.md`.
+> **Correction (2026-09-06, from the E6 producer's own re-measurement).** The
+> sentence above originally read "(`sub g($y is rw) {...}; g($c.v)` dies with
+> 'expects a writable container')" as a statement about **raku**. It is mutsu's
+> diagnostic; raku answers `9`. The text is corrected in place above, and the
+> conclusion the row was cited for — that E6 is a producer question and `.VAR`
+> is not the discriminator — is unaffected. But argument position was a *third*
+> consumer that was still broken, and its `is raw` twin
+> (`sub f(\x) is raw { x }; f($c.v) = 9`) was **silently wrong** (`42` where
+> raku says `9`), not merely a copy as the non-goals section said. Both are
+> closed by the returned-container-consumers slice below, which re-verified the
+> misattribution against raku v2026.07 before touching any code.
 
 **Also still refusing after 3a, all loudly (not silently wrong), all out of
 scope:** `@a.snitch = (7,8)` and `%h.snitch = (b=>2)` (aggregate invocants —
@@ -965,6 +972,236 @@ non-rw attribute store (and the object still rendering as itself, since the
 producer promotes attribute slots to shared cells), array- and hash-valued
 attribute element stores, and an argument-carrying rw accessor invocant.
 
+#### The returned-container consumers — IMPLEMENTED 2026-09-06
+
+The E6 producer closed with two rows recorded rather than fixed — an `is rw`
+*method* (not an attribute accessor) as an lvalue invocant, and argument
+position as a third consumer — and filed them as
+`todo/tickets/rw-method-result-is-not-a-container-for-bind-or-invocant.md` and
+`todo/tickets/attribute-accessor-container-lost-in-argument-position.md`. Every
+row of both was re-measured against raku v2026.07 and a debug `mutsu` built from
+`main` at `1e946f7c8` before any code was written, along with a survey of the
+*other* rw-tail shapes that both tickets took for granted. All six broken rows
+still held exactly as filed. **Both tickets' diagnoses of where the work was did not.**
+
+| # | Program (`class C { has $.v is rw; method acc is rw { $!v } }`) | raku | mutsu (before) |
+|---|---|---|---|
+| T1 | `$c.acc = 9` | `9` | `9` |
+| T2 | `my $x := $c.acc; $x = 9` | `9` | dies, `Cannot assign to an immutable value` |
+| T3 | `sub g($y is rw) {...}; g($c.acc)` | `9` | dies, `expects a writable container` |
+| T4 | `$c.acc.snitch = 9` | `42` / `9` | dies, `X::Assignment::RO: … on non-instance` |
+| T5 | the same through `method !p is rw { $!v }` and `self!p` | `42` / `9` | the same refusal |
+| U1 | `my $x := $c.v; $x = 9` (plain accessor) | `9` | `9` |
+| U2 | `$c.v.snitch = 9` (the E6 row) | `42` / `9` | `42` / `9` |
+| U3 | `sub g($y is rw) {...}; g($c.v)` | `9` | dies, `expects a writable container` |
+| U4 | `sub f(\x) is raw { x }; f($c.v) = 9` | `9` | **`42` — silent, exit 0** |
+
+**Correction 1 — the `is rw` method rows are not a producer question at all,
+and the ticket's prescription would have built machinery that is not needed.**
+The ticket proposed "a producer that *runs* the rw method for a plain read and
+hands its container back when the read is in a container-wanting context",
+gated on `method_is_rw_capable`, with the `:=` row as "the cheapest entry
+point". Measuring the method's *other* tail shapes says the container-wanting
+context has nothing to do with it:
+
+| # | Program | raku | mutsu (before) |
+|---|---|---|---|
+| S3 | `class D { method m(\x) is rw { x } }; $d.m($a).VAR.^name` | `Scalar` | `Scalar` |
+| S4 | `my $y := $d.m($a); $y = 7` | `7` | `7` |
+| S5 | `sub g($p is rw) {...}; g($d.m($a))` | `8` | `8` |
+| S7 | `class E { has @.l is rw; method at($i) is rw { @!l[$i] } }; my $z := $e.at(1); $z = 5` | `[1 5]` | `[1 5]` |
+| S2 | `$c.acc.VAR.^name` for the `{ $!v }` tail | `Scalar` | **`Int`** |
+
+An `is rw` method already hands back a location for a sigil-less `\x` tail
+(slice 1's `CaptureVarCell`) and for an `@!l[$i]` tail (the subscript's own
+container-mode compile), and every consumer — `:=`, an `is rw` argument, an
+lvalue invocant — already accepts it. **Exactly one tail shape was left out:
+the bare `$!v`.** Not a call-site producer, a hole in the *callee's* compile.
+
+The reason it was left out is structural rather than accidental. A method frame
+does not read the attribute out of the instance; dispatch **seeds a local slot**
+named `!v` with a copy, and the tail compiles to `GetLocal(<that slot>)`. So
+`CaptureVarCell` — which boxes a frame slot — would have minted a cell
+disconnected from the instance, and writes through it would have evaporated
+silently. That is why the shape needs an op of its own rather than the existing
+capture.
+
+**Correction 2 — argument position needed no new absorbing chokepoint, and the
+one place that did not absorb a container was a pre-existing hole reachable
+without this change.** The ticket's stated blocker was that "unlike the invocant
+case there is no decontainerize chokepoint downstream to absorb a `ContainerRef`
+that nobody consumes — so this needs its own measurement of where such a
+container would flow before any code is written". Measured, the binder already
+absorbs it: `binding_signature.rs` has an explicit arm saying "a bare
+`ContainerRef` cell … IS a writable lvalue even without a source variable name",
+and a read-only / `is copy` parameter decontainerizes on its way in. The single
+consumer that did **not** was multi-*dispatch* candidate matching — and it was
+already broken for every other container producer:
+
+| # | Program | raku | mutsu (before) |
+|---|---|---|---|
+| X1 | `multi mm(Int $y is rw) {…}; multi mm(Str $y) {…}; mm($d.acc($a))` | `5` | dies, `Cannot resolve caller mm(Int:D)` |
+| X2 | the same over `mm(relay($b))` for `sub relay(\x) is raw { x }` | `5` | the same |
+
+X1/X2 need no accessor and no part of this slice to reproduce; they are the
+argument twin of the "single chokepoint that is not single" lesson E6 recorded.
+Fixing them is what keeps this slice from trading a working `g($c.v)` for a
+broken `mm($c.v)`.
+
+**What shipped.**
+
+- **`OpCode::AttrContainerRef(name_idx)`** and `src/vm/vm_rw_attr_container.rs`.
+  Emitted by `compile_return_rw_arg` for an `Expr::Var("!attr")` rw tail, it
+  reaches past the seeded slot to `self`'s own attribute cell and calls
+  `promote_attr_to_container` — character-for-character the promotion
+  `try_fast_accessor_read`'s `want_ref` branch makes for a public accessor.
+  Sharing the promotion rather than minting a second cell is what makes
+  `my $x := $c.v` and `my $x := $c.acc` name **one** container when `acc`
+  exposes `v` (pinned: `$c.acc =:= $c.acc` is `True`). A private-only
+  `has $!priv` is reached under its `priv!` storage key, and the declared type
+  travels with the cell through a dedicated MRO walk rather than through
+  `rw_accessor_type_constraint`, which requires a *public* `is rw` accessor and
+  so would have dropped the constraint for exactly the private case an `is rw`
+  method exists to expose.
+- **`OpCode::MarkRwArgRefContext { callee_idx, positional }`** and
+  `src/runtime/rw_arg_container.rs`. The E6 producer's marker, emitted before a
+  positional *argument* that is an argument-less, unmodified, unquoted method
+  call, and runtime-gated on whether any registered candidate of the named
+  callee declares a container-binding parameter at that index
+  (`ParamDef::binds_caller_container`, the *same* predicate the binder uses to
+  decide whether to install the shared cell). It sets the same
+  `accessor_ref_pending` flag as the other two producers, deliberately: the
+  consumer must stay one code path.
+- **The parser-rewritten lvalue spellings are relayed, not special-cased.**
+  `f($c.v) = 9` and `++f($c.v)` are not compiled as calls to `f` at all — the
+  parser rewrites them to `__mutsu_assign_named_sub_lvalue("f", [ARGS], value)`
+  / `__mutsu_incdec_named_sub_lvalue(…)`, whose real callee is a *string
+  argument* and whose real arguments sit inside a list literal. One compiler
+  field (`pending_rw_arg_list_callee`) carries the real callee's name down to
+  the list-literal element loop, which marks each element with that callee and
+  its own positional index. Both helpers resolve their routine at run time for
+  the same reason this gate does — a routine may be declared after its use site.
+- **Multi dispatch type-checks a container by its contents.**
+  `args_match_param_types` now derefs a `ContainerRef` argument before the type
+  constraint runs, and its `is rw` dispatch gate accepts a bare `ContainerRef`
+  as the writable lvalue the binder already says it is. Before this the matcher
+  rejected every typed signature and reported `Cannot resolve caller mm(Int:D)`
+  — naming the very type it had just refused to match, because the *message*
+  deref'd and the matcher did not.
+- **No new consumer, again.** `assign_lvalue_container` (ADR-0059), the binder's
+  bare-`ContainerRef` arm, and slice 3a's `try_raw_invocant_container_lvalue`
+  all consume these containers unchanged. Part 4 of this ADR now stands at five
+  producers and the same consumers.
+
+**The battery gate found what `make test` and roast both missed, twice — and
+both leaks were pre-existing holes this slice merely made reachable.** The
+`is rw` method producer makes an `$!attr`-tailed method genuinely return a
+container, which is what raku does (`$c.acc.VAR.^name` is `Scalar`). Four
+whitelisted `URI` files then regressed, and reducing them exposed two distinct
+places where a `ContainerRef` was NOT transparent. Both reproduce on `main`
+through the *existing* producers, with no part of this slice involved:
+
+| # | Program | raku | mutsu (before) |
+|---|---|---|---|
+| G1 | `class U { has A $.a is rw; method m { with $!a {...} } }` after the slot is promoted | takes the `else` branch | entered `with` on the *cell*, then died assigning through the topic |
+| G2 | `class T { method Str {'s'} }; sub f(\x) is raw { x }; ~f($t)` | `s` | `T()` |
+| G3 | the same under `say f($t)`, `"{ f($t) }"`, and `is f($t), 's'` | `s` | `T()` |
+
+**G1 — an attribute slot promoted to a cell must still read and write as an
+attribute.** `promote_attr_to_container` replaces the slot with a
+`ContainerRef`, and the method body's cell-direct `$!x` read
+(`read_attr_cell_by_key`, `vm_var_assign_computed_attr.rs`) handed that cell
+back undereferenced — indistinguishable from a defined value, so
+`with $!authority { ... }` entered on an attribute holding a type object and
+made the topic the cell rather than the object. The write side had the mirror
+bug: `write_attr_cell_by_key` *replaced* the slot, which would disconnect every
+alias already handed out of it at the first internal `$!x = v`. Both are fixed
+at the primitive: the read derefs, and the write goes through
+`InstanceAttrs::store_through_container`, which stores into the cell when the
+slot holds one. This is the same rule ADR-0013 states for a container generally
+— the cell IS the attribute's Scalar — and it was simply not applied to the
+cell-direct path, because before this slice a promoted attribute was rare
+enough (only a `:=` bind to an accessor) that no bundled library hit it.
+
+**G2/G3 — a `ContainerRef` was transparent to `Value::to_string_value` but not
+to the four *user-method-aware* renderers.** `~`, `say`/`note`,
+string interpolation and the `Test` assertions each decide between a pure
+stringifier and a `.Str`/`.gist` dispatch by matching the value's shape, and
+none of them looked through a container — so an `Instance` inside one rendered
+as the pure `TypeName()` placeholder and the user's `method Str` never ran.
+Fixed at each of the four (`exec_str_coerce_op`, `needs_method_dispatch` +
+`render_gist_value` / `render_str_value`, `exec_string_concat_op`, and
+`unwrap_test_arg_value`, which already unwrapped the sibling `VarRef` wrapper
+for exactly this reason). These are four named chokepoints, not a campaign:
+each is the single place its spelling decides how to render.
+
+**The lesson E6 recorded holds again, in a wider form.** E6 found one
+`Instance`-matching branch sitting above slice 3a's decontainerize chokepoint.
+Here the same shape appears five more times, in code that has nothing to do with
+lvalues — every site that *dispatches on a value's shape* is a place a container
+can be mistaken for the thing it holds. The gate is what surfaced them: `make
+test` and the 326-file targeted roast sweep were both green while all five were
+broken.
+
+**Cost: the gate is compiled out of every program that does not use the shape.**
+`AttrContainerRef` exists only inside an `is rw`/`is raw` method body whose tail
+is a bare `$!attr`, so it cannot appear on a path that did not already declare
+one. `MarkRwArgRefContext` is emitted only for an argument-less method-call
+argument, which is why **every file in `benchmarks/` compiles to bytecode
+containing neither op** (checked with `--dump-bytecode` across all 23). There is
+therefore no A/B to report and none is claimed: on this box a byte-identical
+control drifted +6.3% during the E6 measurement, so anything under ~7% would be
+unreadable anyway — the honest statement is that the benchmark programs are
+byte-identical, not that a difference was measured and found small.
+
+**Two argument spellings are still not covered, both refusing loudly, both
+measured and deliberately out of scope.** A *method*-call argument
+(`$s.take($c.v)` for `method take($y is rw)`) and a call through a code
+variable (`my $r = &g; $r($c.v)`) both die with "expects a writable container"
+where raku answers `9`. Neither has a callee name the gate can key on: the
+method case would need a **name-only** index over the registry's
+`(owner, name)`-keyed method table, because the invocant's class is not knowable
+at compile time, and the code-variable case has no name at all. The available
+cheap over-approximation for the method half (a program-wide set-only "any user
+method declares a container-binding parameter" flag, slice 3a's
+`any_raw_invocant_method` pattern) would produce a container for *every*
+accessor-shaped method argument in any program that declares one such method
+anywhere — a far wider behaviour change than this slice's callee-keyed gate, and
+one that wants its own measurement. Note the direction: both keep refusing, so
+neither is a silent wrong answer. Recorded as
+`todo/tickets/rw-argument-producer-needs-a-nameless-callee-gate.md`.
+
+**Still refusing, all loudly, all measured:** a non-rw attribute accessor as an
+`is rw` argument (`g($p.v)` for `has $.v`), a non-rw-capable method result
+(`g($c.plain)`), an rw-capable method that returns a value rather than a
+location (`g($c.value)`), a literal (`g(42)`), and assigning to a non-rw method
+result (`$c.plain = 1`) — the five controls the pin asserts, with unchanged
+messages. An `@`/`%`-sigiled rw tail (`method aggregate is rw { @!l }`) is
+deliberately untouched: an aggregate attribute value is already a shared
+container reached by its own accessor path, and wrapping it in a scalar cell
+would disagree with that storage — the same restriction slice 3a's route 4 and
+`try_fast_accessor_read` both apply.
+
+**Two residuals, measured, and NOT caused by this slice.** Assigning `Nil`
+through an `is rw` method (`$u.auth = Nil` for `method auth is rw { $!a }` on a
+typed `has A $.a`) leaves the attribute holding `Nil` where raku restores the
+declared type object — the accessor store does it right, the rw-method store
+writes the value straight into the attribute map and skips the reset. Recorded
+as `todo/tickets/rw-method-lvalue-store-skips-typed-attribute-nil-reset.md`. And
+`sub f(\x) is raw { x }; f(<non-location>) = 9` reports success and drops the
+write where raku dies — `f(42) = 9` reproduces it with no accessor anywhere, so
+it is the assignment path failing to refuse a routine that handed back a value,
+not an argument-producer gap. Unchanged by this slice and recorded as
+`todo/tickets/raw-sub-lvalue-assign-does-not-refuse-a-value-result.md`.
+
+**Pinned by** `t/rw-result-container-consumers.t` (36 tests, byte-identical
+output under `mutsu` and `raku`): every row of both tickets, the four `is rw`
+method consumers over scalar / typed / private-only / defaulting-body
+attributes, the container identity (`=:=`) that proves the accessor and the
+method name one cell, the aggregate tail, both multi-dispatch rows, the
+`is copy` / read-only argument shapes that must keep copying, repeated argument
+binding through the same accessor, and the five refusal controls.
+
 ### Slice 4 — the chain walk steps through an object
 
 Part 5, variable-rooted half: replace
@@ -1161,6 +1398,10 @@ it newly wrong.
   `False`, and `$a.self = 5` is refused). It is deliberately outside this ADR's
   table; the divergence it once carried was fixed separately, see
   `news/2026-09/self-method-decontainerizes.md`.
-- `sub f(\x) is raw { x }; my $c = C.new(v=>1); f($c.v) = 9` (a raw *argument*
+- ~~`sub f(\x) is raw { x }; my $c = C.new(v=>1); f($c.v) = 9` (a raw *argument*
   over an attribute accessor) still copies. It is the argument twin of Slice 3
-  and is expected to fall out of it; if it does not, it earns its own ticket.
+  and is expected to fall out of it; if it does not, it earns its own ticket.~~
+  **Resolved 2026-09-06** by the returned-container-consumers slice above. Two
+  things this bullet said were wrong, both measured: it did not "copy", it
+  reported success and dropped the write; and it did *not* fall out of slice 3,
+  it earned its ticket and its own argument-position producer.

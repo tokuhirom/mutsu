@@ -132,6 +132,17 @@ impl Interpreter {
     pub(crate) fn unwrap_test_arg_value(value: &Value) -> Value {
         match value.view() {
             ValueView::VarRef { value, .. } => value.clone(),
+            // A `ContainerRef` is the same kind of transparent wrapper: a Test
+            // assertion compares and renders what a container HOLDS, exactly as
+            // binding it to a read-only `$` parameter would. Reachable whenever
+            // an argument is some routine's returned location -- `is
+            // $u.authority, '...'` for URI's `multi method authority(--> Authority)
+            // is rw`, or `is f($obj), '...'` for `sub f(\x) is raw { x }` --
+            // where the undereferenced cell rendered as the pure `TypeName()`
+            // placeholder instead of the object's own `.Str`.
+            ValueView::ContainerRef(_) | ValueView::ContainerView(_) => {
+                Self::unwrap_test_arg_value(&value.deref_container())
+            }
             ValueView::Pair(key, val) => Value::pair(key.clone(), Self::unwrap_test_arg_value(val)),
             _ => value.clone(),
         }
