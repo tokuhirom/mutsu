@@ -90,8 +90,13 @@ pub(crate) fn install_thread_alt_stack() -> Option<handler::AltStack> {
 }
 
 /// No-op stand-in for the builds with no signal handling (wasm, non-unix).
+///
+/// Returns `Option<()>` rather than `()` so the caller's `let _alt_stack = ...`
+/// guard binding reads the same on every platform (a unit binding is a lint).
 #[cfg(not(all(unix, feature = "native")))]
-pub(crate) fn install_thread_alt_stack() {}
+pub(crate) fn install_thread_alt_stack() -> Option<()> {
+    None
+}
 
 /// Deliberately crash when `MUTSU_CRASH_SELFTEST` asks for it, so the report
 /// pipeline itself can be tested end to end (`tests/crash_report.rs`).

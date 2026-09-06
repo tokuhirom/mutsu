@@ -388,7 +388,7 @@ pub(crate) fn try_stop_the_world(timeout: Duration) -> Option<StwGuard> {
     #[cfg(target_arch = "wasm32")]
     {
         let _ = timeout;
-        return Some(StwGuard { _private: () });
+        Some(StwGuard { _private: () })
     }
     #[cfg(not(target_arch = "wasm32"))]
     {

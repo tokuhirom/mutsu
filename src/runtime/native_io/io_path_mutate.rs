@@ -202,7 +202,7 @@ impl Interpreter {
                 #[cfg(not(unix))]
                 {
                     let _ = args;
-                    return Err(RuntimeError::new("chmod not supported on this platform"));
+                    Err(RuntimeError::new("chmod not supported on this platform"))
                 }
                 #[cfg(unix)]
                 {
@@ -354,7 +354,7 @@ impl Interpreter {
                 #[cfg(not(any(unix, windows)))]
                 {
                     let _ = args;
-                    return Err(RuntimeError::new("symlink not supported on this platform"));
+                    Err(RuntimeError::new("symlink not supported on this platform"))
                 }
                 #[cfg(any(unix, windows))]
                 {

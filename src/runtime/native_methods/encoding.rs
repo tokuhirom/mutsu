@@ -495,23 +495,35 @@ impl Interpreter {
         'outer: loop {
             let received = match &close_flag {
                 None => rx.recv().map_err(|_| ()),
-                Some((_, flag)) => loop {
-                    if flag.load(Ordering::Acquire) {
-                        break Err(()); // closed: exit like a disconnect
-                    }
-                    // The 250 ms cap is a safety net, not a latency bound: a
-                    // close racing the wait is honoured at most 250 ms late.
-                    #[cfg(not(target_arch = "wasm32"))]
-                    match rx.recv_timeout(std::time::Duration::from_millis(250)) {
-                        Ok(ev) => break Ok(ev),
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Err(()),
-                    }
-                    // wasm: the pool runs on the cooperative scheduler, where a
-                    // timeout poll loop would spin the only thread.
+                // wasm: the pool runs on the cooperative scheduler, where a
+                // timeout poll loop would spin the only thread, so there is
+                // nothing to loop over -- one close check, then a plain
+                // blocking receive.
+                Some((_, flag)) => {
                     #[cfg(target_arch = "wasm32")]
-                    break rx.recv().map_err(|_| ());
-                },
+                    {
+                        if flag.load(Ordering::Acquire) {
+                            Err(()) // closed: exit like a disconnect
+                        } else {
+                            rx.recv().map_err(|_| ())
+                        }
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    loop {
+                        if flag.load(Ordering::Acquire) {
+                            break Err(()); // closed: exit like a disconnect
+                        }
+                        // The 250 ms cap is a safety net, not a latency bound: a
+                        // close racing the wait is honoured at most 250 ms late.
+                        match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                            Ok(ev) => break Ok(ev),
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                                break Err(());
+                            }
+                        }
+                    }
+                }
             };
             // Re-check after a successful receive: once `close` returns no new
             // body dispatch may start (the pin test t/supply-tap-close-interval.t

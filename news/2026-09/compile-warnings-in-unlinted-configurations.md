@@ -49,6 +49,27 @@ paths, the worker pool and PCRE2 all compile out. Three shapes of rot:
 `%*ENV`'s OS sweep also moved into an `os_env_hash()` helper with a wasm
 counterpart, replacing a `let mut` that nothing mutated in the browser build.
 
+## What the new wasm clippy pass then found
+
+Turning the wasm lint on is not the same as compiling wasm: five clippy
+findings existed on that target that `cargo check` never reported, because
+nothing had ever run clippy against `wasm32-unknown-unknown`. Four are the
+platform-gate shape itself — a `#[cfg(...)] { ... }` block pair reads as a
+needless `return` on whichever side ends up last — and they are gone now that
+each gate's refusal is the block's value rather than an early return, which
+`try_stop_the_world` in the collector had been doing since it was written. The
+fifth is real: the Supply tap's receive loop polls `recv_timeout` every 250 ms
+natively, but on wasm it breaks out on its first iteration, so it was a loop
+that never loops. It is now an `if`/`else` on the wasm side and the polling
+loop only where there is something to poll — same behaviour, and the close
+guarantee `t/supply-tap-close-interval.t` pins still holds.
+
+Two smaller ones came with them: the crash-report alt-stack no-op returns
+`Option<()>` so the caller's guard binding is not a unit `let` on a platform
+with no signal handling, and `syscall(0)`'s pid fallback moved from a closure
+with a `#[cfg]` body into a `current_pid()` helper with one definition per
+platform.
+
 ## Keeping it closed
 
 Three changes, so the next warning is caught by a check rather than by a

@@ -289,7 +289,7 @@ impl Interpreter {
         #[cfg(not(any(unix, windows)))]
         {
             let _ = args;
-            return Err(RuntimeError::new("symlink not supported on this platform"));
+            Err(RuntimeError::new("symlink not supported on this platform"))
         }
         #[cfg(any(unix, windows))]
         {

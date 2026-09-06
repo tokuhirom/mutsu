@@ -229,7 +229,7 @@ impl Interpreter {
         #[cfg(not(unix))]
         {
             let _ = args;
-            return Err(RuntimeError::new("chmod not supported on this platform"));
+            Err(RuntimeError::new("chmod not supported on this platform"))
         }
         #[cfg(unix)]
         {
