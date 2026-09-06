@@ -94,3 +94,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0066](0066-call-dispatch-inline-cache.md) | Call dispatch resolves through a per-callsite inline cache, not a name-keyed hash map | Proposed (design only; no implementation) |
 | [0067](0067-a-routine-hands-back-the-container-it-was-given.md) | A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object | Accepted (all slices implemented 2026-09-05/06) |
 | [0068](0068-cross-thread-container-writes-need-a-synchronized-store.md) | A cross-thread aliased container write needs a synchronized store, not a name-keyed lane | Proposed |
+| [0069](0069-a-definiteness-constrained-type-object-is-a-named-type-object.md) | A definiteness-constrained type object is a named type object, not a new value kind | Accepted (implemented) |

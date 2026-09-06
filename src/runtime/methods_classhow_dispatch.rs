@@ -184,6 +184,10 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // `Metamodel::DefiniteHOW`'s own two metamethods (ADR-0069).
+        if let Some(result) = self.dispatch_definitehow_method(method, &args) {
+            return result;
+        }
         match method {
             "mixin" if args.len() >= 2 => {
                 // `.^mixin(Role)` on a slang-activation handle (ADR-0026):

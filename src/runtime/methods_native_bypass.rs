@@ -19,6 +19,8 @@ impl Interpreter {
             // introspection methods.
             || cn == "Perl6::Metamodel::ParametricRoleHOW"
             || cn == "Perl6::Metamodel::CoercionHOW"
+            // A definiteness-constrained type object's metaclass (ADR-0069).
+            || cn == "Perl6::Metamodel::DefiniteHOW"
     }
 
     /// Build the argument list for a HOW method called on a metaobject
@@ -121,6 +123,12 @@ impl Interpreter {
                 | "pretending_to_be"
                 | "mro"
                 | "mro_unhidden"
+                // `Metamodel::DefiniteHOW`-only (ADR-0069). Listed here so the
+                // dispatcher is reached at all; the arm itself throws
+                // X::Method::NotFound for an unconstrained type, matching
+                // Rakudo, where neither method exists on `ClassHOW`.
+                | "base_type"
+                | "definite"
                 | "methods"
                 | "attributes"
                 | "parents"
