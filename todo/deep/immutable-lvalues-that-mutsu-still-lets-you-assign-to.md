@@ -93,6 +93,52 @@ a bare value, not a cell, so the write has nowhere to land. Note that mutsu
 *does* hand out cells for `@a.values` and `%h.values` (those rows write through
 correctly today), so the gap is per-producer, not universal.
 
+#### Re-measured 2026-09-06: all seven rows stand, and they are FOUR producers, not one
+
+Every row above still reproduces exactly. Widening the probe around them splits
+the family into four independent producers, which is what a fix should be scoped
+to — not "section B":
+
+1. **`.list` feeding `map` specifically.** Measured across the cross-product:
+
+   | receiver | `.map({$_=5})` | `.grep({$_=5})` |
+   |---|---|---|
+   | `@a` | writes through | writes through |
+   | `@a.values` | writes through | writes through |
+   | `@a.list` | **lost** | writes through |
+
+   So `.list.map` is a ONE-path difference inside `map`, not a `.list` problem:
+   three of the four cells already work, and `grep` handles the same receiver
+   correctly. This is the cheapest row in the section, and the likely mechanism
+   is `overwrite_array_bindings_by_identity` (`runtime/methods_mut.rs`), which
+   matches an env variable by `Gc::ptr_eq` on the backing `ArrayData` — a
+   detached `.list` node never matches.
+
+2. **A SLICE hands out bare values.** `for @a[0..1] { $_ = 5 }` and
+   `for @a[0,1] { $_ = 5 }` both lose the write, while `for @a { $_ = 5 }` and
+   `for $v { $_ = 9 }` both work. The plain-array `for` writes back by SOURCE
+   NAME (`vm_loop_writeback.rs`), which a slice has no equivalent of; closing
+   this means carrying the source name *and the index list* to the writeback.
+   `@a[0..1].map(...)` is the same producer reached through `map`.
+
+3. **A block called with an argument does not alias `$_` to it.**
+   `my $b = {$_=9}; $b($v)` leaves `$v` at 1 (raku: 9), and the same with
+   `$b(@a[0])`. `for $v { $_ = 9 }` works, so the topic machinery can alias — the
+   gap is the block-CALL path (`call_compiled_closure_with_topic`), not the
+   topic.
+
+4. **`.first`** never reaches the topic marking at all (already recorded above).
+
+One row that is NOT in this section but shares producer 2, and gives it a loud
+witness: `my $b = -> $x is rw { $x = 9 }; $b(@a[0])` dies with
+`Parameter '$x' expects a writable container (variable) as an argument, but got
+'1' (Int) as a value without a container` — the same missing element-container
+producer, refusing instead of losing the write. That one is tracked as
+`todo/tickets/subscript-argument-container-producer.md` (ADR-0067 residue: the
+producer for an `Expr::Index` argument is wired into `CallFunc` only). Fixing
+that producer is likely to close producer 2's `map`/`for` rows as a side effect,
+so do it first.
+
 ### How the surviving rows differ from what was fixed (measured, do not skip)
 
 The tempting rule for section A is the runtime one the lazy `for` path already
