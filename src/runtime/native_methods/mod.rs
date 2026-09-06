@@ -352,6 +352,17 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0070 at the native-INSTANCE dispatch entry. The per-class handlers
+        // below read `args` positionally just as the arity cascade does, so an
+        // adverb the method does not declare was consumed as data:
+        // `"/tmp".IO.sibling(:zzz)` built `IO::Path.new("/zzz\tTrue")` where raku
+        // swallows the adverb into `%_`. Reached only when the receiver's class
+        // has a NATIVE method of this name and no user method shadowing it (the
+        // `is_native_method && !has_user_method` gate in
+        // `dispatch_instance_and_fallback`), so a user class's own named
+        // parameter is never at risk here.
+        let stripped = crate::builtins::strip_undeclared_nameds(method, &args);
+        let args = stripped.unwrap_or(args);
         let dispatch_class = if matches!(
             class_name,
             "IO::Path"

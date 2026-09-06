@@ -50,6 +50,14 @@ pub(crate) fn apply_baghash_mutator(
     method: &str,
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
+    // This helper is a pre-dispatch interceptor: it runs *before* the builtin
+    // arity cascade, so ADR-0070's declaration has to be honoured here too or
+    // the arity check below counts an adverb as a positional. Rakudo's
+    // `method add(BagHash:D: \to-add, *%_)` accepts no named at all, so
+    // `BagHash.new(1,2,2).add(1, :zzz)` is `Nil` there, where mutsu died with
+    // "Too many positionals passed; expected 2 arguments but got 3".
+    let stripped = crate::builtins::strip_undeclared_nameds(method, args);
+    let args: &[Value] = stripped.as_deref().unwrap_or(args);
     if args.len() != 1 {
         let word = if args.is_empty() { "few" } else { "many" };
         return Err(RuntimeError::new(format!(

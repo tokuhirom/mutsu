@@ -1,79 +1,85 @@
 # Native methods still without a declared set of accepted named arguments
 
-**Narrowed 2026-09-07.** The mechanism this file asked for now exists:
-[ADR-0070](../../docs/adr/0070-native-methods-declare-the-named-arguments-they-accept.md),
-`src/builtins/accepted_nameds.rs`, `scripts/native-method-adverb-survey.raku`
-and `t/native-method-accepted-nameds.t`. Every row of the original measured
-table is fixed. What is left is the residue of the same survey, which needs no
-new design — only more rows.
+**Narrowed again 2026-09-07 (slice 2).** The mechanism is
+[ADR-0070](../../docs/adr/0070-native-methods-declare-the-named-arguments-they-accept.md);
+slice 1 built it and slice 2 drained the measured residue. See
+`news/2026-09/native-method-accepted-nameds-slice-2.md`. What is left is a
+short, *measured* list, none of which is a straightforward "add a row".
 
-## What shipped
+## The measurement
 
-`native_method_accepted_nameds(method) -> Option<&'static [&'static str]>` is
-consulted at the three places the builtin dispatch layer is entered
-(`try_native_method_raw`'s arity cascade, its interpreter-side twin, and
-`dispatch_method_by_name_1/2/3`). A named argument outside a *declared*
-method's set is dropped before an arity is chosen; a method the table does not
-mention is untouched. 29 methods are declared, from a Rakudo signature survey.
-`first` gained the `X::Adverb` validation Rakudo does instead (mirroring the
-`grep` handler), in both the method and the sub form.
+`scripts/native-method-adverb-sweep.raku` is the progress metric: 1 422
+(receiver, method, argument-shape) probes derived from
+`src/builtins/native_method_row_table.rs`, each comparing `R.M(A)` against
+`R.M(A, :qqzz9)`. Run it under the interpreter you want to measure.
 
-A 2 600-probe sweep over `native_method_row_table.rs` went from 754
-not-named-blind probes to 422, with no probe losing named-blindness.
+| | not named-blind, of 1 422 |
+|---|---|
+| mutsu before slice 2 | 78 |
+| mutsu after slice 2 | **18** |
+| `raku` baseline (calls Rakudo itself rejects) | 23 |
+
+`comm`-ing the two `-v` listings is the useful view: only **9** of mutsu's 18
+are mutsu-specific.
 
 ## What is left
 
-### 1. Methods still undeclared, with a measured wrong answer
+### 1. `subst` and `trans` — a real `%_`-read set, not a signature
 
-- **`add` / `remove` on the mutable QuantHashes.** `BagHash.new(1,2,2).add(1,
-  :zzz)` dies with "Too many positionals passed; expected 2 arguments but got 3"
-  where raku answers `Nil`. Rakudo's survey says these accept no named at all,
-  so the row itself is trivial — but the failure does *not* come from either
-  arity cascade or from `dispatch_method_by_name_*`, so adding the row alone
-  does not fix it. Find the handler that raises that arity error (it looks like
-  a class-registered native method with a declared signature) and route it
-  through the same declaration. `grab` is in the same family.
-- **`base(:no-trailing-zeroes)`** is declared, and correctly so, but not
-  implemented: `0.5.base(10, 5, :no-trailing-zeroes)` answers `"0.50000"` where
-  raku answers `"0.5"`. Purely a missing feature now; the adverb reaches the
-  implementation.
+Both read adverbs out of a slurpy, so the Rakudo *signature* survey is only a
+lower bound for them and they are deliberately undeclared:
 
-### 2. Methods whose accepted set Rakudo answers only through `%_`
+- `subst` declares `*%options` (the survey now names the slurpy, so this case is
+  visible rather than silent).
+- `trans` declares nothing but the implicit `*%_` **and still reads `:d`, `:s`
+  and `:c` out of it** — measured, and the reason "the only slurpy is `%_`"
+  cannot be used as a rule.
 
-`scripts/native-method-adverb-survey.raku` reports `**SLURPY**` and nothing else
-for a routine that reads its adverbs out of `%_` rather than declaring
-parameters — `grep`, `first`, `subst`, `trans`, `reduce`, `produce`, `keys`,
-`values`, `kv`, `pairs`, `list`, `Array`. For those the survey is a *lower
-bound*, so they are deliberately absent from the table. Each needs its accepted
-set confirmed by hand against `raku-doc/doc/Type/` before it can be declared.
-(Measured 2026-09-07: none of them currently answers a `:zzz` probe wrongly, so
-this is hardening, not a live bug.)
+Declaring either needs its full adverb set established by hand (roughly
+`match`'s set for `subst`: `:g/:global`, `:x`, `:nth`/`:st`/`:nd`/`:rd`/`:th`,
+`:i`, `:m`, `:s`, `:ov`, `:ex`, `:c`, `:p`, plus `:samecase`/`:samespace`/
+`:samemark` and `:squash`/`:complement`/`:delete` for `trans`). Neither
+currently answers a `:qqzz9` probe wrongly, so this is hardening, not a live
+bug — but it is the one place where getting the row wrong would break a real,
+widely used adverb, so it wants its own slice.
 
-### 3. Unrelated divergences the sweep surfaced
+### 2. Constructors (`new`) are deliberately undeclared
 
-Not named-argument bugs — the *plain* call already differs from raku — but worth
-their own tickets if anyone picks them up:
+`Blob.new(1,2,3).new(:qqzz9)` answers `Blob.new(0)` where raku answers
+`Blob.new()`. A row for `new` would be wrong in general: a constructor takes
+arbitrary nameds (`Foo.new(:a(1))`), and the declaration is consulted at
+entries that a native `new` shares with those. Fixing this needs the `new`
+handlers themselves to distinguish an attribute-initialising named from a
+positional, not a table row.
 
-- `4.roots(2)` answers `(2e0, -2e0)` where raku answers the two complex roots
-  `(<2+0i>, <-2+2.4e-16i>)`.
+### 3. Plain-call divergences the sweep surfaces (not named-argument bugs)
+
+These show up in the sweep only because mutsu's *plain* answer already differs
+from raku, so the `:qqzz9` arm cannot agree with it either:
+
+- `(1,2,3).grep()` / `Any.grep()` / `Any.first(1)` — raku dies "Cannot resolve
+  caller grep(List:D: )"; mutsu answers the receiver (and then reports
+  `X::Adverb` for the adverb arm, which is right for a resolvable call).
+- `Any.values(:qqzz9)` answers `().Seq` where the plain call answers `$()`.
+- `"/tmp".IO.link()` — raku dies "Too few positionals passed"; mutsu has no
+  arity check on the native `IO::Path` arms. The same gap makes
+  `"/tmp".IO.sibling()` answer `"/".IO` instead of dying.
+- `{ $_ }.returns(:qqzz9)` — raku rejects the adverb on `Code.returns`
+  (no `%_` at all); mutsu answers `Mu`. In the "too lax" direction, and the same
+  is true of `of`, `WHAT`, `HOW`, `DEFINITE` and `clone`, which raku also
+  rejects. mutsu implements none of those rejections.
+- `4.roots(2)` answers `(2e0, -2e0)` where raku answers the two complex roots.
 - `(1,2,3).rotor("b")` answers `().Seq` where raku dies "cannot unbox to a
   native integer"; `(1,2,3).AT-POS("b")` answers `Nil` where raku dies.
 - `(1,2,3).splice(1, 1)` reports `X::Immutable` where raku reports
   "Cannot resolve caller".
 
-## Repro for the residue
-
-```
-raku -e 'say BagHash.new(1,2,2).add(1, :zzz).raku; say 0.5.base(10, 5, :no-trailing-zeroes)'
-# Nil / 0.5
-./target/debug/mutsu -e 'say BagHash.new(1,2,2).add(1, :zzz).raku; say 0.5.base(10, 5, :no-trailing-zeroes)'
-# dies / 0.50000
-```
-
 ## Affected files
 
-- `src/builtins/accepted_nameds.rs` (the table — add rows here)
-- `scripts/native-method-adverb-survey.raku` (regenerates the evidence)
-- `t/native-method-accepted-nameds.t` (pins every declared row, and passes
-  under `raku` unmodified)
-- whichever handler raises the `add`/`remove` arity error (not yet located)
+- `src/builtins/accepted_nameds.rs` (the table)
+- `scripts/native-method-adverb-survey.raku` (accepted-name evidence; now
+  reports each named slurpy BY NAME, which is what separates the implicit `*%_`
+  from a declared, read `*%options`)
+- `scripts/native-method-adverb-sweep.raku` (the progress metric)
+- `t/native-method-accepted-nameds.t` (123 assertions; passes under `raku`
+  unmodified)

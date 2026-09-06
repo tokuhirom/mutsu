@@ -40,6 +40,12 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // ADR-0070: this is the single `IO::Path` native funnel, reached from
+        // three dispatch entries, and the arms below read `args` positionally.
+        // `"/tmp".IO.sibling(:zzz)` built `IO::Path.new("/zzz\tTrue")` where
+        // raku's implicit `*%_` swallows the adverb.
+        let stripped = crate::builtins::strip_undeclared_nameds(method, args);
+        let args: &[Value] = stripped.as_deref().unwrap_or(args);
         let io_path_class = Symbol::intern(class_name);
         let p = attributes
             .get("path")

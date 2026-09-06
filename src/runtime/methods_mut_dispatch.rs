@@ -38,6 +38,21 @@ impl Interpreter {
         {
             return self.call_method_with_values(target, method, args);
         }
+        // ADR-0070 at the mutable dispatch entry -- the fourth place the builtin
+        // layer is entered. The native array/hash mutator arms below run in
+        // FRONT of the arity cascade and read `args` positionally, so a named
+        // argument none of them accepts was appended as an ELEMENT
+        // (`@a.push(:zzz)` stored the `Pair` where raku ignores it and leaves
+        // the array alone) or counted as a positional (`@a.pop(:zzz)` died
+        // "Too many positionals passed" where raku pops). Restricted to a
+        // native container receiver: an `Instance`/`Package` may be a user class
+        // whose own `push` genuinely declares a named parameter, and a `Mixin`
+        // may carry a role method, so neither is touched here.
+        let args = if matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+            crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args)
+        } else {
+            args
+        };
         // Track B/Track C: an aggregate that lives in a shared `ContainerRef`
         // cell (a `state @a`/`state %h` under an active thread context — see
         // `exec_state_var_init_op`). Dispatch on the cell's CONTENT, then fold

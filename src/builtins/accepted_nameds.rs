@@ -50,10 +50,31 @@ pub(crate) fn native_method_accepted_nameds(method: &str) -> Option<&'static [&'
         | "expmod" | "fmt" | "indent" | "int-bounds" | "join" | "permutations" | "polymod"
         | "roots" | "samecase" | "samemark" | "skip" | "sprintf" | "subbuf" | "subbuf-rw"
         | "tail" | "unimatch" | "uniprops" => &[],
+        // Slice 2 of the same survey. `add`/`remove`/`grab` are the mutable
+        // QuantHash mutators (`BagHash.add(1, :zzz)` counted the adverb as a
+        // second positional and died with an arity error); the rest are the
+        // "answers its adverb set only through `%_`" family the survey could
+        // previously only report as a lower bound, each confirmed by hand
+        // against `raku-doc/doc/Type/` and by probing Rakudo.
+        "Array" | "Bool" | "FatRat" | "Int" | "Rat" | "WHICH" | "abs" | "add" | "append"
+        | "arity" | "atan2" | "count" | "dd-mm-yyyy" | "gist" | "grab" | "keys" | "kv" | "lazy"
+        | "link" | "list" | "mm-dd-yyyy" | "of" | "pairs" | "pop" | "prepend" | "produce"
+        | "push" | "reduce" | "remove" | "shift" | "sibling" | "signature" | "splice" | "tree"
+        | "unshift" | "values" | "yyyy-mm-dd" => &[],
         "base" => &["no-trailing-zeroes"],
         "minmax" => &["by"],
         "rotor" => &["partial"],
         "classify" | "categorize" => &["as", "into"],
+        "classify-list" | "categorize-list" => &["as"],
+        "raku" => &["arglist"],
+        "Numeric" => &["fail-or-nil"],
+        "Str" => &["subscript", "superscript"],
+        "unique" => &["as", "expires", "with"],
+        // `Any.map` declares these six; `HyperSeq`/`RaceSeq` read `:batch` and
+        // `:degree` out of their own `*%options` slurpy.
+        "map" => &[
+            "batch", "deep", "degree", "duck", "flat", "item", "label", "node",
+        ],
         _ => return None,
     })
 }
