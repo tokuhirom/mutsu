@@ -1709,6 +1709,13 @@ pub struct Interpreter {
     /// `X::Attribute::NoPackage`.
     pub(crate) defining_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
+    /// ADR-0067 slice 3b: the caller's container for the invocant of the method
+    /// call currently being dispatched, staged by
+    /// `Interpreter::arm_raw_invocant_arrival` and consumed by whichever of the
+    /// two compiled-method binders runs. Always `None` outside the window
+    /// between one method-call opcode's arm and its matching disarm.
+    pub(crate) pending_raw_invocant:
+        Option<Box<crate::vm::vm_raw_invocant_arrival::PendingRawInvocant>>,
     /// Every positional argument of the value-call currently being dispatched
     /// (`$b(7)` / `&b(7)` — `OpCode::CallOnValue`/`CallOnCodeVar`'s `bare_args`)
     /// is a syntactically container-less expression, so a bare block's implicit
