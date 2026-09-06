@@ -1358,6 +1358,13 @@ impl Interpreter {
             // deadlocks. (Surfaced by the MakeGather boxing path; the closure
             // creation ops share this code, so keep it lock-free for all.)
             let s = sym.resolve();
+            // `@`/`%`/`&` are never boxed here. A container's cell — including
+            // the unvouched-escaping one (`needs_cell_unvouched_containers`) —
+            // is created at its DECLARATION site instead
+            // (`box_decl_local_container_cell`, ADR-0039): a closure creation op
+            // can run orders of magnitude more often than the declaration it
+            // captures (`@o.shift xx $_` creates one thunk per repetition), so
+            // per-capture boxing is the wrong site for a per-binding decision.
             if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
                 continue;
             }

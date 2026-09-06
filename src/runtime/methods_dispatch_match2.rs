@@ -347,7 +347,20 @@ impl Interpreter {
                     self.env.remove(&key);
                 }
                 for (key, value) in meta.revert_values {
-                    self.env.insert(key, value);
+                    // A `ContainerRef`-celled `@`/`%` lexical must be reverted
+                    // THROUGH its cell: the cell is the binding every alias (the
+                    // `:as`/`:with` closures included) resolves to, so replacing
+                    // the env entry with a plain container would both leave the
+                    // eager pass's pushes standing in the cell and detach every
+                    // alias from the name. See the snapshot's twin comment in
+                    // `unique_squish.rs`.
+                    if let Some(ValueView::ContainerRef(cell)) = self.env.get(&key).map(Value::view)
+                    {
+                        let cell = cell.clone();
+                        *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
+                    } else {
+                        self.env.insert(key, value);
+                    }
                 }
                 let mut attrs = HashMap::new();
                 attrs.insert("squish_source".to_string(), Value::array(meta.source_items));
