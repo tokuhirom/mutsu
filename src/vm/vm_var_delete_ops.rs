@@ -622,7 +622,7 @@ impl Interpreter {
                 ValueView::Whatever | ValueView::Nil | ValueView::Array(..)
             ) {
             // Convert index value to a Str containing the WHICH key
-            let which = crate::runtime::utils::value_which_key(&idx);
+            let which = self.which_key(&idx);
             // Check if the hash uses WHICH keys or encoded keys
             if let Some(ValueView::Hash(map)) = self.env().get(&var_name).map(Value::view) {
                 if map.contains_key(&which) {
@@ -635,6 +635,11 @@ impl Interpreter {
                 Value::str(which)
             }
         } else if is_obj_hash_del && let ValueView::Array(keys, ..) = idx.view() {
+            // Resolve user-defined `WHICH` identities before the
+            // interpreter-free keying below (`which_identity`).
+            for k in keys.iter() {
+                self.warm_which_identity(k);
+            }
             // Convert array of keys to WHICH format
             let converted: Vec<Value> = keys
                 .iter()

@@ -134,7 +134,7 @@ impl Interpreter {
 
     /// Dispatch .Setty / .Baggy / .Mixy coercion method
     pub(super) fn dispatch_setty_baggy_mixy(
-        &self,
+        &mut self,
         target: &Value,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {

@@ -259,6 +259,18 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         ) => {
             let a_name = a_class.resolve();
             let b_name = b_class.resolve();
+            // `===` is `$a.WHICH eq $b.WHICH`. When either side's class
+            // overrides `WHICH`, that user answer decides identity — two
+            // distinct objects with the same `WHICH` are `===`. The interpreter
+            // deposits the computed string on the instance (a pure function
+            // cannot run the method); see `InstanceAttrs::which_memo`.
+            let a_which = left.user_which_memo();
+            let b_which = right.user_which_memo();
+            if a_which.is_some() || b_which.is_some() {
+                // One side overriding `WHICH` and the other not is a plain
+                // mismatch, which `Option` equality already gives us.
+                return a_which == b_which;
+            }
             if a_name == b_name
                 && (a_name == "Stash" || a_name == "Supply" || a_name == "IO::Special")
             {

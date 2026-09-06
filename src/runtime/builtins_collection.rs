@@ -223,6 +223,10 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let args = self.reify_finite_closure_args(args)?;
+        // The keying layer below is interpreter-free, so resolve any
+        // user-defined `WHICH` identities here, before the elements become
+        // store keys (see `runtime::which_identity`).
+        self.warm_which_identity_all(&args);
         // `+@a` slurps the arguments into a List, and it is that List which is
         // coerced — so a lone `Mix(@a)` still flattens `@a` (a List element
         // spills in list context) while `Mix($p)` keeps an itemized Pair whole.

@@ -826,7 +826,7 @@ impl Interpreter {
                         index.to_string_value()
                     )));
                 }
-                let which = crate::runtime::utils::value_which_key(&index);
+                let which = self.which_key(&index);
                 let v = self.resolve_hash_entry(&items, &which);
                 // Fall back to hash_key_encode format (for hashes built from lists)
                 let v = if v.is_nil() {

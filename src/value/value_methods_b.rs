@@ -756,6 +756,23 @@ impl Value {
     /// by looking it up in the global `instance_cells` registry. Sharing the
     /// `crate::gc::Gc<InstanceAttrs>` directly keeps in-place mutations visible to every
     /// existing alias and to the returned value, without the registry.
+    /// The cached user-`WHICH` identity of this value, if it is an instance of
+    /// a class that overrides `WHICH` and the interpreter has already computed
+    /// it (see `InstanceAttrs::which_memo`).
+    pub(crate) fn user_which_memo(&self) -> Option<std::sync::Arc<str>> {
+        match self.view() {
+            ValueView::Instance { attributes, .. } => attributes.which_memo(),
+            _ => None,
+        }
+    }
+
+    /// Deposit this value's user-`WHICH` identity. No-op for non-instances.
+    pub(crate) fn set_user_which_memo(&self, which: std::sync::Arc<str>) {
+        if let ValueView::Instance { attributes, .. } = self.view() {
+            attributes.set_which_memo(which);
+        }
+    }
+
     pub(crate) fn instance_sharing_cell(
         attrs: &crate::gc::Gc<InstanceAttrs>,
         class_name: Symbol,

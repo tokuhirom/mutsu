@@ -713,7 +713,7 @@ impl Interpreter {
         // receivers fall through.
         if !lever_a_blocked
             && args.is_empty()
-            && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
+            && let Some(result) = self.try_native_quanthash_coerce(&target, method)
         {
             return result;
         }

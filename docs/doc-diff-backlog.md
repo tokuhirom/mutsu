@@ -837,12 +837,6 @@ misleading about the cause:
   triangle reduce's `Seq` is not carrying whatever marks the others lazy, so the
   list assignment reifies it.
   → [todo/tickets/array-assignment-eagerly-reifies-a-triangle-reduce.md](../todo/tickets/array-assignment-eagerly-reifies-a-triangle-reduce.md)
-- `Language/operators.rakudoc:2376` — a `Set`'s own `.WHICH` ignores its
-  elements' user-defined `.WHICH`, so two structurally identical Sets differ
-  under `eqv`/`===`. The elements themselves compare equal, and object-hash keys
-  already use `value_which_key`, so the machinery exists and the Set identity
-  path is not using it.
-  → [todo/tickets/set-which-ignores-a-user-defined-element-which.md](../todo/tickets/set-which-ignores-a-user-defined-element-which.md)
 - `Language/operators.rakudoc:2507` — `$*TOLERANCE` is `(Any)` rather than
   `1e-15`, so the doc's `≅` example compares `1 ≅ 1`. `≅` itself answers
   correctly on the other rows tested, so this may be just the missing dynamic

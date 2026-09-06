@@ -119,7 +119,7 @@ impl Interpreter {
             // An object hash stores `.WHICH` keys: membership is by key
             // object identity, so `13 ∈ %objh` finds the Int key while
             // `"13"` does not.
-            let which = crate::runtime::utils::value_which_key(needle);
+            let which = self.which_key(needle);
             return hash.get(&which).is_some_and(|v| v.truthy());
         }
         if !matches!(needle.view(), ValueView::Str(_)) {
@@ -146,6 +146,9 @@ impl Interpreter {
         // Set/Bag/Mix stores are `.WHICH`-keyed: membership is element
         // identity (`===`), so `<1> ∈ (1,).Set` is False (IntStr vs Int)
         // and `"1" ∈ (1,).Set` is False (Str vs Int) — matching Rakudo.
+        // Stores are keyed by the element's `.WHICH`, so a user-defined `WHICH`
+        // decides membership — resolve it before keying (`which_identity`).
+        self.warm_which_identity(needle);
         let (key, _) = crate::runtime::utils::quanthash_elem_entry(needle);
         match container.view() {
             ValueView::Set(s, _) => s.contains(&key),

@@ -54,6 +54,7 @@ impl Interpreter {
     /// `Nil`/`Junction` receivers, leaving those rarer cases — `__baggy_data__`
     /// instances, type objects, user coercion, autothread — to the interpreter.
     pub(crate) fn try_native_quanthash_coerce(
+        &mut self,
         target: &Value,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -66,6 +67,10 @@ impl Interpreter {
         if !Self::coerce_receiver_native_eligible(target) {
             return None;
         }
+        // The keying layer below is interpreter-free, so resolve any
+        // user-defined `WHICH` identities of the elements first (see
+        // `runtime::which_identity`).
+        self.warm_which_identity(target);
         let target = target.clone();
         let result = match method {
             "Set" => crate::builtins::quanthash_coerce::to_set(target, "Set"),

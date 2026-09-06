@@ -411,6 +411,21 @@ pub(crate) struct InstanceAttrs {
     /// cell, preserving the long-standing semantics of the legacy writeback
     /// sites that do `(*attributes).clone()` to build a detached "updated" map.
     attributes: AttrCell,
+    /// Cached identity string produced by a user-defined `WHICH` method.
+    ///
+    /// Raku's object identity (`===`, `eqv`, Set/Bag/Mix element keys, object
+    /// hash keys) is `.WHICH`-based, and a class may override `WHICH` to give
+    /// its instances *value* semantics. Computing that answer means running
+    /// user Raku code, which the pure value layer (`value_which_key`,
+    /// `values_identical`) cannot do — those are plain functions with no
+    /// interpreter. So the interpreter deposits the answer here and the pure
+    /// layer reads it; `None` means "this class does not override `WHICH`",
+    /// and identity falls back to the per-object `id`.
+    ///
+    /// Shared through the same `Arc` as the attribute cell (see
+    /// `InstanceAttrs::with_class`), so a reblessed alias of the same object
+    /// sees the same identity.
+    which_memo: Arc<RwLock<Option<Arc<str>>>>,
     id: u64,
     queue_destroy: bool,
     /// Once-guard for DESTROY queueing: `Trace::finalize` (GC-on refcount
