@@ -92,15 +92,44 @@ Two further facts to constrain the search:
   than at file scope. The pinned test is deliberately flat for that reason; a
   probe written inside `{ }` measures a different surface and will mislead you.
 
+### Why the two spellings differ, from `--dump-bytecode`
+
+They compile to different opcodes for the bind itself:
+
+```
+a1 (bind is last):   GetGlobal(v); Dup; SetGlobal(t)      locals: []
+a2 (statement after): GetGlobal(v); ContainerizePair;
+                      WrapVarRef{name: v, slot: u32::MAX};
+                      MarkBindContext; MarkVarDeclContext;
+                      MarkScalarBindContext; SetLocal(0)    locals: ["t"]
+```
+
+So only `a2` runs `exec_set_local_op_inner`'s scalar-bind path
+(`vm/vm_var_assign_set_local.rs`, around lines 1899-1975). `a1` never gets there
+at all — its bind is a `SetGlobal`. That is the whole difference, and it means
+the leak is somewhere in that bind path rather than in anything about scoping.
+
+Narrowed further by a four-breakpoint gdb comparison of the two variants
+(`unit_scope_lexical_write`, `apply_pending_rw_writeback`, `flush_local_to_env`,
+`set_env_with_main_alias_inner`): the only counter that differs is
+`flush_local_to_env`, 0 in `a1` and 1 in `a2` — but its backtrace shows it
+flushing the bind's *target* slot (`t`), not the source, so it is a marker that
+the path ran rather than the writer itself. `unit_scope_lexical_write` fires 5×
+in `a1` and 3× in `a2`; `apply_pending_rw_writeback` fires twice in both.
+
+`propagate_bind_to_ancestor_frames` at the tail of that same path is already
+ruled out by the env-switch A/B above.
+
 ## Suggested next step
 
-Locate the writer, don't theorise about it. `rust-gdb` on the two-variant probe
-above is the cheap oracle — the pair differs by one statement, so a breakpoint
-that fires for `a2` and not for `a1` names the mechanism directly. Candidates
-worth breaking on first: the callee-return writeback
-(`apply_pending_rw_writeback`, `drain_and_reconcile_after_cached_call`),
-`flush_local_to_env`, and `set_env_with_main_alias_inner`'s
-`unit_scope_lexical_write` redirect.
+Locate the writer inside that bind path, don't theorise about it. The remaining
+un-eliminated writers in it are `self.env_mut().insert(resolved_source, container)`
+(the "update source in env" line), `set_env_with_main_alias(name, container)`
+just below it, and whatever pulls a name back into the caller's local slot on
+return — `f`'s `$v` lives in a compiled local slot (`locals: ["v"]`,
+`SetLocalDecl { slot: 0 }`), so for `f` to read the cell, something must write
+`self.locals[0]` in `f`'s frame or make `f`'s read go by name. Establishing
+which of those two it is, with one breakpoint each, is the next measurement.
 
 Only once the writer is named is it worth deciding whether this needs an ADR.
 On the evidence so far it does not look like an env-model change: fifteen of the
