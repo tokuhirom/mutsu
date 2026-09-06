@@ -219,6 +219,15 @@ impl Interpreter {
             if !self.container_elements_are_containers(c, source_name)
                 || (producer_seq && !matches!(element.view(), ValueView::ContainerRef(_)))
             {
+                // ... unless the ELEMENT is itself itemized. `$(...)`/`$[...]`
+                // IS a Scalar container -- itemization is exactly what makes a
+                // list count as one element -- so `.VAR` must report it even
+                // when the parent's element slots are plain values:
+                // `(1, 2, 3, $(4, 5))[3].VAR.^name` is "Scalar" in raku, while
+                // the non-itemized `(1, 2)[0].VAR.^name` stays "Int".
+                if crate::runtime::utils::value_is_itemized_container(&element) {
+                    return Ok(Value::package(crate::symbol::Symbol::intern("Scalar")));
+                }
                 return Ok(element);
             }
         }
