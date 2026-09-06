@@ -28,6 +28,21 @@ wander into an ordinary nested array that merely happens to sit in a typed
 array's element — there the element type describes the element, not the element's
 own elements.
 
+Two O(1) guards in front of the walk, both load-bearing. `tag_container_metadata`
+runs on the declared-constraint assignment chokepoint — *once per store into a
+typed container* — so anything it does per call has to be constant:
+
+- a **native** array's cells hold real zeros, never a type object, so `hole_at`
+  never consults `value_type` for one and the walk is pure cost;
+- the tagging is all-or-nothing, so if the first shaped row already carries the
+  type, the whole array was tagged on an earlier pass.
+
+The first draft had neither, and CI found it: `my int @mat[10001; 10001]` walked
+its 10001 rows on every one of its element stores, and
+`roast/integration/deep-recursion-initing-native-array.t` went from 8 seconds to
+a timeout. Worth remembering — this chokepoint looks like a declaration-time
+hook and is not one.
+
 The ticket offered two routes: thread the declared type down through
 `make_shaped_array_seeded`'s recursion, or weaken `hole_at`'s `Package` check to
 match any non-`Any` type object. Neither was needed. The rows' *cells* already
