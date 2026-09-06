@@ -264,13 +264,13 @@ impl Interpreter {
         // `.WHICH` matches a freshly-constructed one — is-deeply / eqv).
         let mut bag_originals: HashMap<String, Value> = HashMap::new();
         let mut mix_originals: HashMap<String, Value> = HashMap::new();
-        let mut bag_counts: Option<HashMap<String, i64>> =
+        let mut bag_counts: Option<HashMap<String, num_bigint::BigInt>> =
             match into_target.as_ref().map(Value::view) {
                 Some(ValueView::Bag(b, _)) => {
                     if let Some(ref orig) = b.original_keys {
                         bag_originals.extend(orig.iter().map(|(k, v)| (k.clone(), v.clone())));
                     }
-                    Some(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+                    Some(b.counts.clone())
                 }
                 _ => None,
             };
@@ -361,7 +361,7 @@ impl Interpreter {
                             &key,
                             &elem,
                         );
-                        *counts.entry(key.clone()).or_insert(0) += 1;
+                        *counts.entry(key.clone()).or_default() += 1;
                     }
                     if let Some(counts) = mix_counts.as_mut() {
                         crate::runtime::utils::record_quanthash_original(
@@ -424,7 +424,7 @@ impl Interpreter {
             if has_proxy || has_varname {
                 let mut updated: Option<Value> = None;
                 if let Some(counts) = bag_counts.clone() {
-                    updated = Some(Value::bag_typed(counts, bag_originals.clone()));
+                    updated = Some(Value::bag_typed_big(counts, bag_originals.clone()));
                 } else if let Some(counts) = mix_counts.clone() {
                     updated = Some(Value::mix_with_original_keys(counts, mix_originals.clone()));
                 } else if into_target.is_some() {
@@ -451,7 +451,7 @@ impl Interpreter {
         }
 
         if let Some(counts) = bag_counts {
-            return Ok(Value::bag_typed(counts, bag_originals));
+            return Ok(Value::bag_typed_big(counts, bag_originals));
         }
         if let Some(counts) = mix_counts {
             return Ok(Value::mix_with_original_keys(counts, mix_originals));

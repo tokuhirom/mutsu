@@ -1,4 +1,5 @@
 use super::*;
+use num_traits::{One, Signed, Zero};
 
 impl Interpreter {
     fn union_is_infinite_bound(value: &Value) -> bool {
@@ -87,7 +88,7 @@ impl Interpreter {
     fn union_bag_counts(
         value: &Value,
         originals: &mut std::collections::HashMap<String, Value>,
-    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::union_is_lazy_input(value) {
             return Err(RuntimeError::new("X::Cannot::Lazy"));
@@ -95,14 +96,14 @@ impl Interpreter {
         match value.view() {
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
-                Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+                Ok(b.counts.clone())
             }
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
                 Ok(m.iter()
                     .filter_map(|(k, w)| {
                         if *w != 0.0 {
-                            Some((k.clone(), 1))
+                            Some((k.clone(), num_bigint::BigInt::from(1)))
                         } else {
                             None
                         }
@@ -111,7 +112,10 @@ impl Interpreter {
             }
             _ => {
                 let set = Self::union_set_keys(value, originals)?;
-                Ok(set.into_iter().map(|k| (k, 1)).collect())
+                Ok(set
+                    .into_iter()
+                    .map(|k| (k, num_bigint::BigInt::from(1)))
+                    .collect())
             }
         }
     }
@@ -166,10 +170,12 @@ impl Interpreter {
             let mut l = Self::union_bag_counts(left, &mut originals)?;
             let r = Self::union_bag_counts(right, &mut originals)?;
             for (k, v) in r {
-                let e = l.entry(k).or_insert(0);
-                *e = (*e).max(v);
+                let e = l.entry(k).or_default();
+                if v > *e {
+                    *e = v;
+                }
             }
-            return Ok(Value::bag_typed(l, originals));
+            return Ok(Value::bag_typed_big(l, originals));
         }
         let mut l = Self::union_set_keys(left, &mut originals)?;
         let r = Self::union_set_keys(right, &mut originals)?;
@@ -179,10 +185,10 @@ impl Interpreter {
 
     fn set_equal_bag_counts(
         value: &Value,
-    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
         let mut scratch = std::collections::HashMap::new();
         let mut counts = Self::union_bag_counts(value, &mut scratch)?;
-        counts.retain(|_, v| *v > 0);
+        counts.retain(|_, v| v.is_positive());
         Ok(counts)
     }
 
@@ -210,14 +216,19 @@ impl Interpreter {
         Ok(Self::union_set_keys(left, &mut scratch)? == Self::union_set_keys(right, &mut scratch)?)
     }
 
-    fn multiply_pair_i64(value: &Value) -> i64 {
+    /// The `(.)` weight of a pair value, at full precision (see
+    /// `runtime::utils::bag_weight`). A non-numeric value still weighs its
+    /// truthiness.
+    fn multiply_pair_weight(value: &Value) -> num_bigint::BigInt {
         match value.view() {
-            ValueView::Int(i) => i,
-            ValueView::Num(n) => n as i64,
-            ValueView::Rat(n, d) if d != 0 => n / d,
-            ValueView::FatRat(n, d) if d != 0 => n / d,
-            ValueView::Bool(b) => i64::from(b),
-            _ => i64::from(value.truthy()),
+            ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(_, _)
+            | ValueView::FatRat(_, _)
+            | ValueView::BigRat(_, _) => value.to_bigint(),
+            ValueView::Bool(b) => num_bigint::BigInt::from(i64::from(b)),
+            _ => num_bigint::BigInt::from(i64::from(value.truthy())),
         }
     }
 
@@ -234,7 +245,7 @@ impl Interpreter {
     fn multiply_bag_counts(
         value: &Value,
         originals: &mut std::collections::HashMap<String, Value>,
-    ) -> Result<std::collections::HashMap<String, (i64, bool)>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, (num_bigint::BigInt, bool)>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
             str_elem_key,
@@ -252,21 +263,24 @@ impl Interpreter {
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
                 Ok(m.iter()
-                    .map(|(k, v)| (k.clone(), (*v as i64, false)))
+                    .map(|(k, v)| (k.clone(), (num_bigint::BigInt::from(*v as i64), false)))
                     .collect())
             }
             ValueView::Set(s, _) => {
                 extend_quanthash_originals(originals, &s.original_keys);
-                Ok(s.iter().map(|k| (k.clone(), (1, false))).collect())
+                Ok(s.iter()
+                    .map(|k| (k.clone(), (num_bigint::BigInt::from(1), false)))
+                    .collect())
             }
             ValueView::Hash(h) => Ok(h
                 .iter()
                 .filter_map(|(k, v)| {
-                    let c = Self::multiply_pair_i64(v);
-                    if c > 0 {
+                    let c = Self::multiply_pair_weight(v);
+                    if c.is_positive() {
+                        let explicit = !c.is_one();
                         Some((
                             crate::runtime::utils::hash_elem_key(&h, k, originals),
-                            (c, c != 1),
+                            (c, explicit),
                         ))
                     } else {
                         None
@@ -278,23 +292,31 @@ impl Interpreter {
                 for item in value.as_list_items().unwrap().iter() {
                     match item.view() {
                         ValueView::Pair(k, v) => {
-                            let c = Self::multiply_pair_i64(v);
-                            let entry = counts.entry(str_elem_key(k)).or_insert((0, false));
+                            let c = Self::multiply_pair_weight(v);
+                            let explicit = !c.is_one();
+                            let entry = counts
+                                .entry(str_elem_key(k))
+                                .or_insert((num_bigint::BigInt::from(0), false));
                             entry.0 += c;
-                            entry.1 |= c != 1;
+                            entry.1 |= explicit;
                         }
                         ValueView::ValuePair(k, v) => {
                             let (key, elem) = quanthash_elem_entry(k);
                             record_quanthash_original(originals, &key, &elem);
-                            let c = Self::multiply_pair_i64(v);
-                            let entry = counts.entry(key).or_insert((0, false));
+                            let c = Self::multiply_pair_weight(v);
+                            let explicit = !c.is_one();
+                            let entry = counts
+                                .entry(key)
+                                .or_insert((num_bigint::BigInt::from(0), false));
                             entry.0 += c;
-                            entry.1 |= c != 1;
+                            entry.1 |= explicit;
                         }
                         _ => {
                             let (key, elem) = quanthash_elem_entry(item);
                             record_quanthash_original(originals, &key, &elem);
-                            let entry = counts.entry(key).or_insert((0, false));
+                            let entry = counts
+                                .entry(key)
+                                .or_insert((num_bigint::BigInt::from(0), false));
                             entry.0 += 1;
                         }
                     }
@@ -306,26 +328,30 @@ impl Interpreter {
                 for item in Self::value_to_list(value) {
                     let (key, elem) = quanthash_elem_entry(&item);
                     record_quanthash_original(originals, &key, &elem);
-                    let entry = counts.entry(key).or_insert((0, false));
+                    let entry = counts
+                        .entry(key)
+                        .or_insert((num_bigint::BigInt::from(0), false));
                     entry.0 += 1;
                 }
                 Ok(counts)
             }
             ValueView::Pair(k, v) => {
                 let mut counts = std::collections::HashMap::new();
-                let c = Self::multiply_pair_i64(v);
-                if c > 0 {
-                    counts.insert(str_elem_key(k), (c, c != 1));
+                let c = Self::multiply_pair_weight(v);
+                if c.is_positive() {
+                    let explicit = !c.is_one();
+                    counts.insert(str_elem_key(k), (c, explicit));
                 }
                 Ok(counts)
             }
             ValueView::ValuePair(k, v) => {
                 let mut counts = std::collections::HashMap::new();
-                let c = Self::multiply_pair_i64(v);
-                if c > 0 {
+                let c = Self::multiply_pair_weight(v);
+                if c.is_positive() {
+                    let explicit = !c.is_one();
                     let (key, elem) = quanthash_elem_entry(k);
                     record_quanthash_original(originals, &key, &elem);
-                    counts.insert(key, (c, c != 1));
+                    counts.insert(key, (c, explicit));
                 }
                 Ok(counts)
             }
@@ -333,7 +359,7 @@ impl Interpreter {
                 let mut counts = std::collections::HashMap::new();
                 let (key, elem) = quanthash_elem_entry(value);
                 record_quanthash_original(originals, &key, &elem);
-                counts.insert(key, (1, false));
+                counts.insert(key, (num_bigint::BigInt::from(1), false));
                 Ok(counts)
             }
         }
@@ -359,7 +385,10 @@ impl Interpreter {
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
                 let resolved = crate::runtime::utils::resolve_bag_tab_keys(&b);
-                Ok(resolved.into_iter().map(|(k, v)| (k, v as f64)).collect())
+                Ok(resolved
+                    .iter()
+                    .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                    .collect())
             }
             ValueView::Set(s, _) => {
                 extend_quanthash_originals(originals, &s.original_keys);
@@ -490,16 +519,17 @@ impl Interpreter {
         }
         let l = Self::multiply_bag_counts(left, &mut originals)?;
         let r = Self::multiply_bag_counts(right, &mut originals)?;
-        let mut result: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        let mut result: std::collections::HashMap<String, num_bigint::BigInt> =
+            std::collections::HashMap::new();
         for (k, (lv, _l_explicit)) in l {
             if let Some((rv, _r_explicit)) = r.get(&k) {
-                let product = lv * *rv;
-                if product > 0 {
+                let product = lv * rv;
+                if product.is_positive() {
                     result.insert(k, product);
                 }
             }
         }
-        Ok(Value::bag_typed(result, originals))
+        Ok(Value::bag_typed_big(result, originals))
     }
 
     /// Coerce a value to bag-like count map for the (+) operator.
@@ -507,7 +537,7 @@ impl Interpreter {
     fn addition_bag_counts(
         value: &Value,
         originals: &mut std::collections::HashMap<String, Value>,
-    ) -> Result<std::collections::HashMap<String, i64>, RuntimeError> {
+    ) -> Result<std::collections::HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::{
             extend_quanthash_originals, quanthash_elem_entry, record_quanthash_original,
             str_elem_key,
@@ -518,14 +548,14 @@ impl Interpreter {
         match value.view() {
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
-                Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+                Ok(b.counts.clone())
             }
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
                 Ok(m.iter()
                     .filter_map(|(k, w)| {
                         if *w != 0.0 {
-                            Some((k.clone(), *w as i64))
+                            Some((k.clone(), num_bigint::BigInt::from(*w as i64)))
                         } else {
                             None
                         }
@@ -534,13 +564,15 @@ impl Interpreter {
             }
             ValueView::Set(s, _) => {
                 extend_quanthash_originals(originals, &s.original_keys);
-                Ok(s.iter().map(|k| (k.clone(), 1)).collect())
+                Ok(s.iter()
+                    .map(|k| (k.clone(), num_bigint::BigInt::from(1)))
+                    .collect())
             }
             ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
-                    let weight = v.to_f64() as i64;
-                    if weight != 0 {
+                    let weight = crate::runtime::utils::bag_weight(v);
+                    if !weight.is_zero() {
                         result.insert(
                             crate::runtime::utils::hash_elem_key(&map, k, originals),
                             weight,
@@ -550,35 +582,36 @@ impl Interpreter {
                 Ok(result)
             }
             _ if value.as_list_items().is_some() => {
-                let mut result = std::collections::HashMap::new();
+                let mut result: std::collections::HashMap<String, num_bigint::BigInt> =
+                    std::collections::HashMap::new();
                 for item in value.as_list_items().unwrap().iter() {
                     match item.view() {
                         ValueView::Pair(k, v) => {
-                            let weight = v.to_f64() as i64;
-                            *result.entry(str_elem_key(k)).or_insert(0) += weight;
+                            let weight = crate::runtime::utils::bag_weight(v);
+                            *result.entry(str_elem_key(k)).or_default() += weight;
                         }
                         ValueView::ValuePair(k, v) => {
-                            let weight = v.to_f64() as i64;
+                            let weight = crate::runtime::utils::bag_weight(v);
                             let (key, elem) = quanthash_elem_entry(k);
                             record_quanthash_original(originals, &key, &elem);
-                            *result.entry(key).or_insert(0) += weight;
+                            *result.entry(key).or_default() += weight;
                         }
                         _ => {
                             let (key, elem) = quanthash_elem_entry(item);
                             if !elem.to_string_value().is_empty() {
                                 record_quanthash_original(originals, &key, &elem);
-                                *result.entry(key).or_insert(0) += 1;
+                                *result.entry(key).or_default() += 1;
                             }
                         }
                     }
                 }
-                result.retain(|_, v| *v != 0);
+                result.retain(|_, v| !v.is_zero());
                 Ok(result)
             }
             ValueView::Pair(k, v) => {
                 let mut result = std::collections::HashMap::new();
-                let weight = v.to_f64() as i64;
-                if weight != 0 {
+                let weight = crate::runtime::utils::bag_weight(v);
+                if !weight.is_zero() {
                     result.insert(str_elem_key(k), weight);
                 }
                 Ok(result)
@@ -588,8 +621,8 @@ impl Interpreter {
             // identically to `str_elem_key`).
             ValueView::ValuePair(k, v) => {
                 let mut result = std::collections::HashMap::new();
-                let weight = v.to_f64() as i64;
-                if weight != 0 {
+                let weight = crate::runtime::utils::bag_weight(v);
+                if !weight.is_zero() {
                     let (key, elem) = quanthash_elem_entry(k);
                     record_quanthash_original(originals, &key, &elem);
                     result.insert(key, weight);
@@ -598,7 +631,10 @@ impl Interpreter {
             }
             _ => {
                 let set = Self::union_set_keys(value, originals)?;
-                Ok(set.into_iter().map(|k| (k, 1)).collect())
+                Ok(set
+                    .into_iter()
+                    .map(|k| (k, num_bigint::BigInt::from(1)))
+                    .collect())
             }
         }
     }
@@ -739,9 +775,8 @@ impl Interpreter {
         let mut l = Self::addition_bag_counts(left, &mut originals)?;
         let r = Self::addition_bag_counts(right, &mut originals)?;
         for (k, v) in r {
-            let e = l.entry(k).or_insert(0);
-            *e += v;
+            *l.entry(k).or_default() += v;
         }
-        Ok(Value::bag_typed(l, originals))
+        Ok(Value::bag_typed_big(l, originals))
     }
 }

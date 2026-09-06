@@ -297,7 +297,10 @@ pub(crate) fn to_mix_map(
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);
             let resolved = resolve_bag_tab_keys(&b);
-            resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
+            resolved
+                .iter()
+                .map(|(k, v)| (k.clone(), bigint_to_f64_sat(v)))
+                .collect()
         }
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
@@ -356,31 +359,38 @@ pub(crate) fn to_mix_map(
 
 /// Resolve Bag entries that use the internal "key\tweight" tab format
 /// into plain key→weight entries.
-pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<String, i64> {
-    let mut result = HashMap::new();
+///
+/// Weights stay arbitrary-precision throughout: `BagData.counts` is a `BigInt`
+/// map precisely so a weight may exceed `i64::MAX`, and saturating here (as
+/// this used to) turned `(a => 10**30).Bag` into `i64::MAX` before any operator
+/// even ran. The embedded weight in the tab format is parsed as a `BigInt` for
+/// the same reason.
+pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<String, BigInt> {
+    let mut result: HashMap<String, BigInt> = HashMap::new();
     for (k, c) in bag.iter() {
-        let c = bigint_to_i64_sat(c);
         if let Some((base, raw_weight)) = k.split_once('\t') {
             let weight = match raw_weight {
-                "True" => 1i64,
-                "False" => 0,
-                _ => raw_weight.parse::<i64>().unwrap_or(1),
+                "True" => BigInt::from(1),
+                "False" => BigInt::from(0),
+                _ => raw_weight
+                    .parse::<BigInt>()
+                    .unwrap_or_else(|_| BigInt::from(1)),
             };
-            *result.entry(base.to_string()).or_insert(0) += weight * c;
+            *result.entry(base.to_string()).or_default() += weight * c;
         } else {
-            *result.entry(k.clone()).or_insert(0) += c;
+            *result.entry(k.clone()).or_default() += c;
         }
     }
     // Remove zero/negative entries for Bag semantics
-    result.retain(|_, v| *v > 0);
+    result.retain(|_, v| v.is_positive());
     result
 }
 
-/// Convert a value to a Bag-level HashMap (key → i64 count)
+/// Convert a value to a Bag-level HashMap (key → arbitrary-precision count)
 pub(crate) fn to_bag_map(
     v: &Value,
     originals: &mut HashMap<String, Value>,
-) -> HashMap<String, i64> {
+) -> HashMap<String, BigInt> {
     match v.view() {
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);
@@ -388,7 +398,7 @@ pub(crate) fn to_bag_map(
         }
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
-            s.iter().map(|k| (k.clone(), 1i64)).collect()
+            s.iter().map(|k| (k.clone(), BigInt::from(1))).collect()
         }
         ValueView::Hash(h) => {
             let mut result = HashMap::new();
@@ -399,12 +409,11 @@ pub(crate) fn to_bag_map(
                 // element read chokepoint.
                 let v = v.deref_container();
                 let count = match v.view() {
-                    ValueView::Int(i) => i,
-                    ValueView::Num(n) => n as i64,
-                    ValueView::Bool(b) => i64::from(b),
-                    _ => i64::from(v.truthy()),
+                    ValueView::Bool(b) => BigInt::from(i64::from(b)),
+                    ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_) => v.to_bigint(),
+                    _ => BigInt::from(i64::from(v.truthy())),
                 };
-                if count > 0 {
+                if count.is_positive() {
                     let key = hash_elem_key(&h, k, originals);
                     result.insert(key, count);
                 }
@@ -414,11 +423,11 @@ pub(crate) fn to_bag_map(
         _ => {
             // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2, b: 1})
             let items = quanthash_operand_list(v);
-            let mut result = HashMap::new();
+            let mut result: HashMap<String, BigInt> = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);
                 record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_insert(0i64) += 1;
+                *result.entry(key).or_default() += 1;
             }
             result
         }
