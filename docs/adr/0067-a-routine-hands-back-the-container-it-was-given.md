@@ -1093,6 +1093,56 @@ broken `mm($c.v)`.
   all consume these containers unchanged. Part 4 of this ADR now stands at five
   producers and the same consumers.
 
+**The battery gate found what `make test` and roast both missed, twice — and
+both leaks were pre-existing holes this slice merely made reachable.** The
+`is rw` method producer makes an `$!attr`-tailed method genuinely return a
+container, which is what raku does (`$c.acc.VAR.^name` is `Scalar`). Four
+whitelisted `URI` files then regressed, and reducing them exposed two distinct
+places where a `ContainerRef` was NOT transparent. Both reproduce on `main`
+through the *existing* producers, with no part of this slice involved:
+
+| # | Program | raku | mutsu (before) |
+|---|---|---|---|
+| G1 | `class U { has A $.a is rw; method m { with $!a {...} } }` after the slot is promoted | takes the `else` branch | entered `with` on the *cell*, then died assigning through the topic |
+| G2 | `class T { method Str {'s'} }; sub f(\x) is raw { x }; ~f($t)` | `s` | `T()` |
+| G3 | the same under `say f($t)`, `"{ f($t) }"`, and `is f($t), 's'` | `s` | `T()` |
+
+**G1 — an attribute slot promoted to a cell must still read and write as an
+attribute.** `promote_attr_to_container` replaces the slot with a
+`ContainerRef`, and the method body's cell-direct `$!x` read
+(`read_attr_cell_by_key`, `vm_var_assign_computed_attr.rs`) handed that cell
+back undereferenced — indistinguishable from a defined value, so
+`with $!authority { ... }` entered on an attribute holding a type object and
+made the topic the cell rather than the object. The write side had the mirror
+bug: `write_attr_cell_by_key` *replaced* the slot, which would disconnect every
+alias already handed out of it at the first internal `$!x = v`. Both are fixed
+at the primitive: the read derefs, and the write goes through
+`InstanceAttrs::store_through_container`, which stores into the cell when the
+slot holds one. This is the same rule ADR-0013 states for a container generally
+— the cell IS the attribute's Scalar — and it was simply not applied to the
+cell-direct path, because before this slice a promoted attribute was rare
+enough (only a `:=` bind to an accessor) that no bundled library hit it.
+
+**G2/G3 — a `ContainerRef` was transparent to `Value::to_string_value` but not
+to the four *user-method-aware* renderers.** `~`, `say`/`note`,
+string interpolation and the `Test` assertions each decide between a pure
+stringifier and a `.Str`/`.gist` dispatch by matching the value's shape, and
+none of them looked through a container — so an `Instance` inside one rendered
+as the pure `TypeName()` placeholder and the user's `method Str` never ran.
+Fixed at each of the four (`exec_str_coerce_op`, `needs_method_dispatch` +
+`render_gist_value` / `render_str_value`, `exec_string_concat_op`, and
+`unwrap_test_arg_value`, which already unwrapped the sibling `VarRef` wrapper
+for exactly this reason). These are four named chokepoints, not a campaign:
+each is the single place its spelling decides how to render.
+
+**The lesson E6 recorded holds again, in a wider form.** E6 found one
+`Instance`-matching branch sitting above slice 3a's decontainerize chokepoint.
+Here the same shape appears five more times, in code that has nothing to do with
+lvalues — every site that *dispatches on a value's shape* is a place a container
+can be mistaken for the thing it holds. The gate is what surfaced them: `make
+test` and the 326-file targeted roast sweep were both green while all five were
+broken.
+
 **Cost: the gate is compiled out of every program that does not use the shape.**
 `AttrContainerRef` exists only inside an `is rw`/`is raw` method body whose tail
 is a bare `$!attr`, so it cannot appear on a path that did not already declare
@@ -1132,7 +1182,12 @@ container reached by its own accessor path, and wrapping it in a scalar cell
 would disagree with that storage — the same restriction slice 3a's route 4 and
 `try_fast_accessor_read` both apply.
 
-**One residual, measured, and NOT caused by this slice:**
+**Two residuals, measured, and NOT caused by this slice.** Assigning `Nil`
+through an `is rw` method (`$u.auth = Nil` for `method auth is rw { $!a }` on a
+typed `has A $.a`) leaves the attribute holding `Nil` where raku restores the
+declared type object — the accessor store does it right, the rw-method store
+writes the value straight into the attribute map and skips the reset. Recorded
+as `todo/tickets/rw-method-lvalue-store-skips-typed-attribute-nil-reset.md`. And
 `sub f(\x) is raw { x }; f(<non-location>) = 9` reports success and drops the
 write where raku dies — `f(42) = 9` reproduces it with no accessor anywhere, so
 it is the assignment path failing to refuse a routine that handed back a value,

@@ -135,6 +135,22 @@ impl Interpreter {
         let val = self.stack.pop().unwrap();
         // Auto-FETCH Proxy containers
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
+        // A `ContainerRef` is transparent to string coercion: `~$x` renders
+        // what the container holds. Without this the user-`Str` dispatch below
+        // never recognised the `Instance` inside and fell through to the pure
+        // stringifier's `TypeName()` placeholder -- `sub f(\x) is raw { x };
+        // ~f($obj)` printed `Thing()` where raku prints the object's `.Str`.
+        //
+        // Tag-probed, for the same reason the `Mu` and `Seq` checks around it
+        // are: `~$match` reaches this opcode once per capture in grammar-action
+        // code, and an unconditional `deref_container` would `view()` — and so
+        // materialize — every lazy Match (pinned by
+        // `tests/lazy_match_no_eager_materialization.rs`).
+        let val = if val.is_container_ref() {
+            val.deref_container()
+        } else {
+            val
+        };
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
         // Tag-probed: `~$match` lands here per capture and a `view()` would

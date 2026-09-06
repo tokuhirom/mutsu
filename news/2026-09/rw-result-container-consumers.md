@@ -79,6 +79,46 @@ dispatch gate accepts a bare `ContainerRef` as the lvalue the binder already
 says it is. Without that, this work would have traded a working `g($c.v)` for a
 broken `mm($c.v)`.
 
+## What the battery gate found that nothing else did
+
+Making an `$!attr`-tailed `is rw` method genuinely return a container is what
+raku does, and it promptly broke four whitelisted `URI` files that `make test`
+and a 326-file targeted roast sweep were both green on. Reducing them exposed
+two distinct places where a `ContainerRef` was not transparent — and **both
+reproduce on `main` through the existing producers**, with no part of this work
+involved:
+
+```raku
+# (1) a promoted attribute slot read from inside a method body
+class U { has A $.a is rw; method m { with $!a { ... } } }   # entered `with` on the CELL
+
+# (2) a container reaching a user-method-aware renderer
+class T { method Str { 's' } }
+sub f(\x) is raw { x }
+say ~f(T.new);                                               # 'T()', not 's'
+```
+
+For (1), `promote_attr_to_container` replaces the slot with a cell, and the
+method body's cell-direct `$!x` read handed that cell back undereferenced —
+indistinguishable from a defined value, so `with $!a { ... }` took the wrong
+branch and the topic was the cell rather than the object. The write side had the
+mirror bug: it *replaced* the slot, which would disconnect every alias handed out
+of it at the first internal `$!x = v`. Both are fixed at the primitive — the read
+derefs, the write goes through a new `InstanceAttrs::store_through_container`.
+
+For (2), `Value::to_string_value` already looked through a container, but the
+four *user-method-aware* renderers did not: `~`, `say`/`note`, string
+interpolation and the `Test` assertions each choose between a pure stringifier
+and a `.Str`/`.gist` dispatch by matching the value's shape, so an `Instance`
+inside a container rendered as the bare `TypeName()` placeholder and the user's
+`method Str` never ran. Each is now container-transparent, alongside the
+`VarRef` unwrapping `unwrap_test_arg_value` already did for exactly this reason.
+
+The generalisable lesson is the one ADR-0067's E6 producer recorded, in a wider
+form: **every site that dispatches on a value's shape is a place a container can
+be mistaken for the thing it holds**, and the battery gate is the only one of
+the three suites that found them.
+
 ## Cost, and what still refuses
 
 `AttrContainerRef` exists only inside an `is rw`/`is raw` method body whose tail
@@ -104,6 +144,11 @@ container to every accessor-shaped method argument in any program that declares
 one such method anywhere. That is a wider change than this slice's callee-keyed
 gate and wants its own measurement, so it is recorded as
 `todo/tickets/rw-argument-producer-needs-a-nameless-callee-gate.md`.
+
+Assigning `Nil` through an `is rw` method leaves a typed attribute holding `Nil`
+where raku restores the declared type object; the generated accessor gets this
+right and the rw-method store does not. Pre-existing, and recorded as
+`todo/tickets/rw-method-lvalue-store-skips-typed-attribute-nil-reset.md`.
 
 One further residual was measured and is **not** caused by this work:
 `sub f(\x) is raw { x }; f(42) = 9` reports success and drops the write where

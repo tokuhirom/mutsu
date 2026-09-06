@@ -387,6 +387,18 @@ impl Interpreter {
     /// dedicated re-wrap (integration/error-reporting.t test 21).
     /// TODO: `render_str_value` (put/print) still swallows these signals.
     pub(crate) fn render_gist_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
+        // A container is transparent to rendering: `say` shows what it holds.
+        // `call_method_with_values` takes the target by value and does not
+        // decontainerize (only the `CallMethod` opcode does), so a
+        // `ContainerRef` reached `.gist` as itself and rendered as the pure
+        // `TypeName()` placeholder -- `sub f(\x) is raw { x }; say f($obj)`.
+        let deref;
+        let value = if value.is_container_ref() {
+            deref = value.deref_container();
+            &deref
+        } else {
+            value
+        };
         // The pure native `.gist` fast path cannot reproduce the base method's
         // virtual `.Str` call on a role Mixin. Enter mixin dispatch directly so
         // a role-provided `gist`, or its inherited-gist/provided-Str fallback,
@@ -539,6 +551,14 @@ impl Interpreter {
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
+        // See `render_gist_value`: a container renders as what it holds.
+        let deref;
+        let value = if value.is_container_ref() {
+            deref = value.deref_container();
+            &deref
+        } else {
+            value
+        };
         // Printing a type object stringifies to "" with rakudo's
         // uninitialized-value warning suggesting .^name/.raku/.gist/.say —
         // unless its class defines a user `.Str`, which dispatches instead

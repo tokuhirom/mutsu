@@ -18,7 +18,7 @@ use Test;
 #
 # Byte-identical under `raku` and `mutsu`.
 
-plan 36;
+plan 44;
 
 augment class Any {
     method mutsuRwArgSnitch(\S:) is raw { S }
@@ -39,6 +39,18 @@ class Acc {
 }
 
 class Plain { has $.v = 42 }
+
+class Probe {
+    has $.a is rw;
+    method acc is rw { $!a }
+    method set-from-body($v) { $!a = $v }
+    method branch { with $!a { return 'with' }; 'else' }
+}
+
+class Rendered {
+    method Str  { 'THE-STR' }
+    method gist { 'THE-GIST' }
+}
 
 sub rwparam($y is rw) { $y = 9 }
 sub rawparam(\x) is raw { x }
@@ -190,6 +202,38 @@ sub roparam($x) { $x }
     is $c.v, 9, 'the accessor container survives repeated argument binding (1)';
     rwparam($c.v);
     is $c.v, 9, 'the accessor container survives repeated argument binding (2)';
+}
+
+# --- a returned container is transparent to every renderer -------------------
+#
+# Pre-existing gaps the bundled-library gate surfaced once an `is rw` method
+# started handing back a real container. Each reproduces through
+# `sub f(\x) is raw { x }` alone, with no accessor involved: the four
+# *user-method-aware* renderers chose between a pure stringifier and a
+# `.Str`/`.gist` dispatch by matching the value's shape, and none of them
+# looked through a container.
+
+{
+    my $t = Rendered.new;
+    is ~rawparam($t), 'THE-STR', 'prefix ~ renders through a returned container';
+    is "{ rawparam($t) }", 'THE-STR', 'interpolation renders through a returned container';
+    is rawparam($t), 'THE-STR', 'a Test assertion compares what a container holds';
+    is rawparam($t).gist, 'THE-GIST', 'method dispatch through a container is unchanged';
+}
+
+{
+    # The `is rw` method producer promotes the attribute slot to a shared cell;
+    # the method body's own `$!x` read must still see the attribute's VALUE, and
+    # its own write must go THROUGH that cell so an alias handed out earlier
+    # keeps tracking it.
+    my $c = Probe.new;
+    is $c.branch, 'else', 'an unset attribute takes the else branch';
+    $c.acc;
+    is $c.branch, 'else', 'and still does after the slot has been promoted';
+    my $alias := $c.acc;
+    $c.set-from-body(7);
+    is $c.branch, 'with', 'a body write is seen by the body';
+    is $alias, 7, 'and by an alias handed out before it';
 }
 
 # --- controls: these must keep refusing -------------------------------------
