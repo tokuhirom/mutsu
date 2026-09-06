@@ -26,6 +26,34 @@
 > errors" family (`if`, `whenever`, …) is a separate parser-diagnostic
 > question; ADR-0053 §4 records it as out of scope.
 
+> **Re-measured 2026-09-07.** Slice 1 landed: `do whenever` in expression
+> position now answers a real `Tap` (`$tap.WHAT.raku` is `Tap` in both), and
+> every delivery shape agrees with rakudo **as long as nothing closes the tap**:
+>
+> | probe | rakudo | mutsu |
+> |---|---|---|
+> | `do whenever` + two emits, no close | `got 1  got 2  end` | same |
+> | plain `whenever` statement + two emits | `got 1  got 2  end` | same |
+> | delivery timing inside `react` (`A B C got 1 got 2`) | deferred to the pump | same |
+> | `.tap`/`.close` OUTSIDE `react` (`A got 1 B C`) | synchronous | same |
+> | **`do whenever` + two emits + `$tap.close`** | `got 1  got 2  done` | **`done` only** |
+>
+> So the whole remaining defect is that `Tap.close` discards values that were
+> **already emitted before the close**. Inside `react` both implementations
+> defer delivery to the pump; rakudo still delivers what was queued when the
+> tap was live, mutsu drops it. `supplier_emit_callbacks`
+> (`runtime/native_methods/state_supplier.rs`) already checks `tap.closed` at
+> EMIT time, so the discard happens later, on the react pump's own queue --
+> that is where to look, not at the subscription registry.
+>
+> This now overlaps [ADR-0074](../../docs/adr/0074-channel-backed-supply-broadcasts-to-every-tap.md)
+> (2026-09-07), which reworked the channel-backed Supply into a broadcast point
+> with per-subscriber queues and **explicitly records per-subscriber
+> `Tap.close` as out of scope** ("closing one tap still stops the source for
+> all"). Reconcile the two before designing: the queued-value drop above and
+> ADR-0074's follow-up are plausibly one mechanism, and fixing them separately
+> would be two half-answers to the same question.
+
 Reclassified from `todo/tickets/whenever-target-var-binds-wrong-value-in-react.md`
 after investigation showed the root cause is a missing language feature
 (the parser does not support `whenever` as an expression term at all),
