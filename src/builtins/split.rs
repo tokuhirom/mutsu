@@ -123,8 +123,11 @@ pub(crate) struct SplitMatch {
     pub is_regex: bool,
     /// The original string being split (needed for Match object construction).
     pub orig: String,
-    /// Positional captures from regex match (for :v Match objects).
-    pub positional_captures: Vec<String>,
+    /// The fully-built separator `Match` for a regex splitter, carrying the
+    /// span-bearing positional AND named captures the engine recorded. Only the
+    /// runtime split paths hold the engine's `RegexCaptures`, so only they set
+    /// it; a string splitter leaves it `None` and reports `matched` instead.
+    pub match_obj: Option<Value>,
 }
 
 /// Split a string by a string splitter. Returns list of (segment, Option<match>).
@@ -169,7 +172,7 @@ fn split_by_string(
                     splitter_index: 0,
                     is_regex: false,
                     orig: String::new(),
-                    positional_captures: Vec::new(),
+                    match_obj: None,
                 }),
             ));
             seg_start = match_pos;
@@ -215,7 +218,7 @@ fn split_by_string(
                         splitter_index: 0,
                         is_regex: false,
                         orig: String::new(),
-                        positional_captures: Vec::new(),
+                        match_obj: None,
                     }),
                 ));
                 pos = match_pos + sep_len;
@@ -296,7 +299,7 @@ fn split_by_strings(
                         splitter_index: splitter_idx,
                         is_regex: false,
                         orig: String::new(),
-                        positional_captures: Vec::new(),
+                        match_obj: None,
                     }),
                 ));
                 pos = match_pos + match_len;
@@ -311,31 +314,12 @@ fn split_by_strings(
     }
 }
 
-/// Create a separator value: Match object for regex splits, string for string splits.
+/// Create a separator value: the engine-built Match object for regex splits,
+/// the matched text for string splits.
 fn separator_value(m: &SplitMatch) -> Value {
-    if m.is_regex {
-        use std::collections::HashMap;
-        // A separator Match's subject: the whole split subject when known,
-        // else the separator text itself (spans are then 0-based over it).
-        let target = if m.orig.is_empty() {
-            crate::runtime::MatchTarget::new(&m.matched)
-        } else {
-            crate::runtime::MatchTarget::new(&m.orig)
-        };
-        let (from, to) = if m.orig.is_empty() {
-            (0, m.matched.chars().count() as i64)
-        } else {
-            (m.from as i64, m.to as i64)
-        };
-        Value::make_match_object_with_captures(
-            from,
-            to,
-            &m.positional_captures,
-            &HashMap::new(),
-            target,
-        )
-    } else {
-        Value::str(m.matched.clone())
+    match &m.match_obj {
+        Some(obj) => obj.clone(),
+        None => Value::str(m.matched.clone()),
     }
 }
 

@@ -48,26 +48,40 @@ plain checkout of the dist with `-I lib`.
 
 | Candidate | Version | Released | License | Runtime deps | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`Template::Mustache`** | 1.2.6 | 2026-01-12 | Artistic-2.0 | **0** | **11** | 11/13² | **13/13** ⬆ |
-| `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **0/12** |
-| `Template::Jinja2` | 0.2.0 | 2026-04-29 | Artistic-2.0 | 1 (`JSON::Fast`, native) | 2 | 22/23 | **0/23** |
-| `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **0/5** |
+| **`Template::Mustache`** | 1.2.6 | 2026-01-12 | Artistic-2.0 | **0** | **11** | 11/13² | **13/13** |
+| `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **10/12** ⬆ |
+| `Template::Jinja2` | 0.2.0 | 2026-04-29 | Artistic-2.0 | 1 (`JSON::Fast`, native) | 2 | 22/23 | **3/23** ⬆ |
+| `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **4/5** |
 | `Template::Nest::Fast` | 0.3.0 | 2024-11-18 | ISC | **0** | 0 | **10/10** | **0/10** |
-| `SP6` | 0.2.1 | 2021-09-04 | Apache-2.0 | **0** | 0 | 10/11 | 6/11 |
+| `SP6` | 0.2.1 | 2021-09-04 | Apache-2.0 | **0** | 0 | 10/11 | **10/11** |
 | `Template::Classic` | 0.0.3 | 2020-04-11 | BSD-3-Clause | **0** | 1 | **1/1** | 0/1 |
-| `Template::HAML` | 0.9.5 | 2026-06-27 | Artistic-2.0 | **0** | 2 | 82/83 | 14/83⁴ |
+| `Template::HAML` | 0.9.5 | 2026-06-27 | Artistic-2.0 | **0** | 2 | 82/83 | 39/83⁴ |
 | `Template::Protone` | 0.1.4 | 2021-01-20 | Artistic-2.0 | **0** | 0 | *ships no tests* | *ships no tests* |
 | `ERK` | 1.1.4 | 2025-11-14 | Artistic-2.0 | **0** | 1 | *ships no tests* | *ships no tests* |
 
-⬆ `Template::Mustache` went **1/13 → 11/13** on 2026-07-25 when the single
+The mutsu column was **re-measured in full on 2026-09-06** (debug build). Do not
+quote a row without re-running the survey: on that re-run four of the eight rows
+had moved since the last measurement, all from unrelated work.
+
+⬆ `Template6` went **0/12 → 10/12** on 2026-09-06. Its long-standing
+"unreduced, `Use of Nil in string context`" state turned out to hide **four**
+independent general interpreter bugs, none of them the warning: a `split(/…/, :v)`
+separator `Match` carried no named captures, `.subst(…, :nth(2..*))` aborted the
+process with a Rust `capacity overflow`, an attribute default's closure was
+stamped with the *constructing* class (so it could not see its own file's subs),
+and an assignment to `$_` inside a nested block was discarded on block exit. Pins:
+`t/split-regex-separator-captures.t`, `t/subst-nth-range.t`,
+`t/attr-default-closure-package.t`, `t/topic-assign-in-nested-block.t`. Write-up:
+`news/2026-09/template6-zero-to-ten-of-twelve.md`.
+
+`Template::Mustache` itself went **1/13 → 11/13** on 2026-07-25 when the single
 interpreter bug behind it was fixed: a hyper method call (`@objs>>.made`) did not
 flatten a `Slip` returned by the method, so the parse tree came out with each
 hunk's `Slip` nested — and `.flat` then decomposed the `Hash` inside it into
-Pairs. The whole official mustache spec suite (`91-specs`, 10/10) passes now.
-Pin: `t/hyper-method-slip-result.t`. The last two files followed the same day
-(**11/13 → 13/13**) from three more general fixes: a subscript assignment through
-a `$`-sigil attribute (`$!h<k> = 1`) reaching the instance, a `for` block no
-longer leaking its topic into the enclosing `$_`, and text-mode file reads
+Pairs. Pin: `t/hyper-method-slip-result.t`. The last two files followed the same
+day (**11/13 → 13/13**) from three more general fixes: a subscript assignment
+through a `$`-sigil attribute (`$!h<k> = 1`) reaching the instance, a `for` block
+no longer leaking its topic into the enclosing `$_`, and text-mode file reads
 decoding CRLF to LF. Pins: `t/attr-subscript-assignment.t`,
 `t/for-topic-restore.t`, `t/io-crlf-translation.t`.
 
@@ -87,40 +101,50 @@ the real figure — measure release.) See
 
 ### First observed failure under mutsu
 
-Enough to start root-causing; none of these are module rot, since raku runs them.
+As of the 2026-09-06 re-measurement. None of these are module rot — raku runs
+them all.
 
 | Candidate | Symptom |
 | --- | --- |
-| `Template::Mustache` | `Use of Nil in string context` from the `TOP` grammar action (`lib/Template/Mustache.rakumod:136`), reached via `parse-template` |
-| `Template6` | same warning, from `Parser.compile` — a `q:to/RAKU/` heredoc whose `\qq[$safe-delimiter]` / `\qq[$segment]` come out empty |
-| `Template::Jinja2` | Two bugs, both reduced 2026-08-19. `01-lexer` fails on its own because a literal `{` inside `<-[{]>` makes mutsu's assertion scanner miss the class's closing `>`, swallowing the `+` and every atom after it; the other 22 files die at `Renderer.rakumod` load time on `Cannot call private method without permission`, because a qualified `$obj!Renderer::meth` inside `module Template::Jinja2::Renderer` compares the short owner name against the fully-qualified caller |
-| `Template::Mojo` | `No such method 'characters' for invocant of type 'Match'` — the grammar's `token characters` is not being resolved as a subrule (`.characters` is not a raku method either, so mutsu is falling back to method dispatch where it should be a named capture) |
-| `Template::Nest::Fast` | `Use of Nil in string context` |
-| `Template::Classic` | `X::Method::NotFound: Unknown method value dispatch (fallback dispatch)` |
-| `SP6` | 5 files fail; `Use of uninitialized value element of type Any in string context` |
+| `Template::Mustache` | none; 13/13 |
+| `Template6` | 10/12. `02-for`: an `@` argument's mutation is lost on the *second* call through a slurpy relay (`todo/tickets/array-arg-mutation-lost-on-the-second-call-through-a-slurpy-relay.md`). `05-includes`: `[% INCLUDE "x" name = "World" %]` renders `name` instead of `World` (`todo/tickets/template6-include-local-data-not-reaching-the-included-stash.md`) |
+| `Template::Jinja2` | loads now (3/23); the rest are ordinary per-feature failures. Its last load blocker — `Renderer.rakumod:114`'s `when If {` read as a call — was fixed 2026-09-06 |
+| `Template::Mojo` | `00-basic` only; `todo/tickets/template-mojo-residual-failures.md` |
+| `Template::Nest::Fast` | `with $f ~~ m:g/…/ -> @m` binds `@m` to a one-element list *containing* the match list, so `$m[0].from` is Nil. `with ("a<!--x-->b<!--yy-->c" ~~ m:g/('<!--') \s* (\w+) \s* ('-->')/) -> @m { say @m.elems }` gives 2 under raku, 1 under mutsu |
+| `Template::Classic` | `Unterminated <%` from its own grammar — the `$<part> = <rule>` capture-assignment form inside a `||` chain does not match |
+| `SP6` | at parity with raku (both 10/11, same file) |
 
-Note the warning text is a *warning* in both implementations and is not itself
-fatal (verified) — it is simply the first non-TAP line the harness captured, so
-treat it as a pointer, not the diagnosis.
+The old "`Use of Nil in string context`" entries are gone: that line was a
+*warning* in both implementations and never the diagnosis, exactly as
+`todo/deep/template-engines-blocked-on-mutsu.md` warned. Every row that was
+reduced turned out to be something else entirely.
 
-Confirmed and separately filed so far:
+Confirmed and separately filed so far (all three of the older entries here are
+now **fixed**; they are kept because each was a general bug found through this
+survey):
 
-- `todo/tickets/q-heredoc-interpolates-qq-escape.md` — `Q:to/…/` wrongly honours
-  `\qq[…]`; raku leaves it literal. Found while reducing the `Template6` failure.
-  (Fixed 2026-07-26; it was **not** the `Template6` blocker.)
-- `todo/tickets/regex-brace-paren-inside-char-class-swallows-rest-of-pattern.md`
-  — a literal `{` / `(` written inside a `<[...]>` char class makes
-  `scan_angle_assertion_body()` miss the assertion's closing `>`, so the
-  quantifier and every following atom are silently dropped. Reduced from
-  `Template::Jinja2`'s `01-lexer` (0/15 → 15/15 with the brace escaped by hand),
-  but it is a general grammar-slang bug: `<-[{]>+` ("text up to the next opening
-  delimiter") is idiomatic in template and config grammars.
-- `todo/tickets/qualified-private-method-call-uses-short-owner-name.md` — a
-  qualified private call `$obj!Renderer::meth` written inside
-  `module Template::Jinja2::Renderer` is rejected because the statically-checked
-  owner name is compared as written against the fully-qualified caller class.
-  This is what makes `Template::Jinja2` unloadable; it is **distinct** from the
-  private-method-in-closure bug fixed in #5466.
+- ~~`todo/tickets/q-heredoc-interpolates-qq-escape.md`~~ — `Q:to/…/` wrongly
+  honoured `\qq[…]`; raku leaves it literal. Fixed 2026-07-26; it was **not**
+  the `Template6` blocker.
+- ~~`todo/tickets/regex-brace-paren-inside-char-class-swallows-rest-of-pattern.md`~~
+  — a literal `{` / `(` inside a `<[...]>` char class made
+  `scan_angle_assertion_body()` miss the assertion's closing `>`. Fixed;
+  `news/2026-08/regex-char-class-literal-brace-paren.md`. Took
+  `Template::Jinja2`'s `01-lexer` from 0/15 to 15/15.
+- ~~`todo/tickets/qualified-private-method-call-uses-short-owner-name.md`~~ — a
+  qualified private call `$obj!Renderer::meth` inside
+  `module Template::Jinja2::Renderer` compared the owner name as written against
+  the fully-qualified caller class. Fixed;
+  `news/2026-08/private-method-qualified-short-owner-in-module.md`. It was
+  **not** the last Jinja2 load blocker — an imported-`is export`ed-type parse
+  bug was stacked behind it, fixed 2026-09-06 (pin
+  `t/when-imported-exported-type.t`).
+- Open, from the 2026-09-06 re-measurement:
+  `todo/tickets/array-arg-mutation-lost-on-the-second-call-through-a-slurpy-relay.md`,
+  `todo/tickets/template6-include-local-data-not-reaching-the-included-stash.md`,
+  `todo/tickets/trailing-comma-in-attribute-default-drops-the-declaration.md`,
+  `todo/tickets/template-mojo-residual-failures.md`,
+  `todo/tickets/grammar-heavy-module-load-slower-than-raku.md`.
 - `todo/deep/template-engines-blocked-on-mutsu.md` — this matrix as a work item.
 
 ## How the field was surveyed
@@ -165,13 +189,12 @@ version and its own suite run under both `raku` and `target/debug/mutsu`
   `Template::Classic` embed Raku code. For "a small web blog", logic-free plus
   the host program's own code is the safer default, and it is what most of the
   ecosystem picked.
-- **`Template::Jinja2` deserves a second look after its blockers are fixed** — it
-  is the newest of the field (2026-04-29), 22/23 under raku, and as of the
-  2026-08-19 reduction both of its mutsu blockers are **one-function interpreter
-  bugs** (a char-class scanning bug and a private-method permission check), one
-  of which kills 22 files at once. So it stays the cheapest of the field to
-  unblock. Its ecosystem standing is weak (2 dependents, both by the same
-  author).
+- **`Template::Jinja2` deserves a second look once it loads** — it is the newest
+  of the field (2026-04-29) and 22/23 under raku. Both blockers named in the
+  2026-08-19 reduction are fixed and `01-lexer` passes, but a third one (a
+  `when TYPENAME {` parse bug) still kills the remaining 22 files at load, so it
+  is still the cheapest of the field to unblock by file count. Its ecosystem
+  standing is weak (2 dependents, both by the same author).
 - **`Template::Protone` and `ERK` were never in contention**: they ship no tests
   at all, so there is nothing to gate at release time — a structural problem for
   a battery whose whole verification story is `scripts/battery-testsuite.sh`.
@@ -179,9 +202,10 @@ version and its own suite run under both `raku` and `target/debug/mutsu`
 The deciding move was that Mustache's failure turned out to be **one interpreter
 bug**, not a pile of them, so fixing it both unblocked the strongest candidate
 and improved mutsu generally. The other engines' blockers stay on the work list
-(`todo/deep/template-engines-blocked-on-mutsu.md`); `Template6` in particular is
-worth fixing so the slot has a real second option rather than a single viable
-choice.
+(`todo/deep/template-engines-blocked-on-mutsu.md`). `Template6` was fixed for
+exactly that reason — so the slot has a real second option rather than a single
+viable choice — and now runs 10 of its 12 files
+(`news/2026-09/template6-zero-to-ten-of-twelve.md`).
 
 ## Provenance and update procedure
 

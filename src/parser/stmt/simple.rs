@@ -76,8 +76,8 @@ pub(in crate::parser) use module_exports::{
 };
 pub(in crate::parser) use pragma_preseed::{
     current_attributes_pragma, is_imported_value_term, is_user_declared_enum_value,
-    is_user_declared_sub, is_user_declared_type, push_package_path, register_imported_value_term,
-    register_user_enum_value, register_user_type, register_user_type_verbatim, reset_package_path,
+    is_user_declared_sub, is_user_declared_type, push_package_path, register_imported_type,
+    register_imported_value_term, register_user_enum_value, register_user_type, reset_package_path,
     set_attributes_pragma, set_eval_imported_function_preseed, set_eval_operator_assoc_preseed,
     set_eval_operator_preseed, set_eval_user_sub_preseed, set_eval_user_type_preseed,
     set_eval_user_value_term_preseed,

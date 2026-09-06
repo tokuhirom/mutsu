@@ -424,6 +424,25 @@ impl Interpreter {
                     }
                 }
             }
+            // `1^..3` / `1^..^4`: the excluded start is simply the next index.
+            ValueView::RangeExclStart(start, end) => {
+                Self::validate_nth_value(start + 1)?;
+                let effective_end = (end as usize).min(total_matches) as i64;
+                for i in (start + 1)..=effective_end {
+                    if i > 0 {
+                        indices.push(i as usize);
+                    }
+                }
+            }
+            ValueView::RangeExclBoth(start, end) => {
+                Self::validate_nth_value(start + 1)?;
+                let effective_end = (end as usize).min(total_matches + 1) as i64;
+                for i in (start + 1)..effective_end {
+                    if i > 0 && (i as usize) <= total_matches {
+                        indices.push(i as usize);
+                    }
+                }
+            }
             ValueView::GenericRange {
                 start,
                 end,

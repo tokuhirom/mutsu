@@ -126,6 +126,32 @@ pub(crate) fn register_user_type_verbatim(name: &str) {
     });
 }
 
+/// Register a type name harvested from a `use`d module.
+///
+/// Registered in **both** the current and the outermost scope, for the same
+/// reason as an imported enum value or `constant`
+/// ([`register_user_enum_value`], [`register_imported_value_term`]): an
+/// imported type must stay visible for the rest of the importing file, not
+/// only until whatever scope happened to be innermost when the `use` was
+/// parsed is popped. Registering it innermost-only meant `when SomeImportedType
+/// { … }` was diagnosed as an undeclared bareword gobbling its block — the
+/// parse error that kept `Template::Jinja2` from loading.
+pub(crate) fn register_imported_type(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        scopes
+            .first_mut()
+            .expect("scope stack should never be empty")
+            .user_types
+            .insert(name.to_string());
+        scopes
+            .last_mut()
+            .expect("scope stack should never be empty")
+            .user_types
+            .insert(name.to_string());
+    });
+}
+
 /// Register a user-declared type name (class, role, grammar, enum).
 pub(crate) fn register_user_type(name: &str) {
     register_user_type_verbatim(name);

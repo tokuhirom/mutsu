@@ -569,6 +569,19 @@ impl Interpreter {
     /// the class for some method shapes (class-scoped subs, package lexicals, a
     /// `::`-qualified owner), so fall back to the running method's class.
     pub(crate) fn lexical_closure_package(&self) -> String {
+        // An attribute default (`has $.x = -> { helper() }`) is lowered at class
+        // declaration time but RUN inside the constructing caller's frame, so
+        // the routine walk below would see the caller's method and stamp the
+        // caller's class onto the closure — the closure then ran under the wrong
+        // package and could not see its own class's file-scoped subs (only when
+        // `.new` was called from another module, which is what made it look like
+        // a scoping mystery). `constructing_class` is set by exactly one place,
+        // `eval_attr_default_expr`, and means precisely "we are evaluating an
+        // attribute default of this class", so it is the authoritative answer
+        // here.
+        if let Some(class) = &self.constructing_class {
+            return class.clone();
+        }
         // A closure created inside a METHOD body lexically belongs to that
         // method's class, even when `current_package` still holds the CALLER's
         // package (method dispatch pushes `method_class_stack` but does not
