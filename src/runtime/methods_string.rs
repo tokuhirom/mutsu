@@ -73,6 +73,8 @@ impl Interpreter {
         )
     }
 
+    /// Only reached for values [`Self::is_deferred_nth_value`] rejected, so
+    /// every Range that gets here has a bounded, small upper end.
     fn subst_nth_indices(value: &Value) -> Vec<i64> {
         match value.view() {
             ValueView::Int(n) => vec![n],
@@ -83,6 +85,45 @@ impl Interpreter {
             ValueView::RangeExclBoth(lo, hi) => ((lo + 1)..hi).collect(),
             _ => vec![value.to_f64() as i64],
         }
+    }
+
+    /// The largest `:nth` Range endpoint still expanded eagerly by
+    /// [`Self::subst_nth_indices`]. A substitution can never have more matches
+    /// than the subject has characters, so anything past this is only ever
+    /// clamped away — and expanding it costs 8 bytes per index.
+    const NTH_EAGER_RANGE_LIMIT: i64 = 100_000;
+
+    /// Whether a `:nth` argument can only be turned into concrete indices once
+    /// the match count is known. `Whatever`/`WhateverCode` obviously can; so can
+    /// an unbounded Range: `:nth(2..*)` has an infinite upper end, and expanding
+    /// it eagerly asked for an `i64::MAX`-element `Vec` (a `capacity overflow`
+    /// abort). These go through `resolve_nth_value_indices`, which clamps every
+    /// Range flavour to the number of matches — the same resolution
+    /// `.match(:nth(...))` already uses. A small bounded Range stays on the
+    /// eager path, where its literal length also decides `result_is_list`.
+    fn is_deferred_nth_value(value: &Value) -> bool {
+        if matches!(value.view(), ValueView::Whatever) || Self::is_whatever_code_value(value) {
+            return true;
+        }
+        Self::deferred_nth_range_end(value).is_some()
+    }
+
+    /// The upper endpoint of a `:nth` Range too large to expand eagerly, or
+    /// `None` when the value is not such a Range. Also the "this spec selects a
+    /// whole span of matches, not one" signal `result_is_list` needs.
+    fn deferred_nth_range_end(value: &Value) -> Option<i64> {
+        let hi = match value.view() {
+            ValueView::Range(_, hi)
+            | ValueView::RangeExcl(_, hi)
+            | ValueView::RangeExclStart(_, hi)
+            | ValueView::RangeExclBoth(_, hi) => hi,
+            // A `GenericRange` was never expanded by `subst_nth_indices` at all
+            // (it fell through to the numify-the-whole-value arm); the deferred
+            // resolver understands it, including an `Inf`/`*` end.
+            ValueView::GenericRange { .. } => return Some(i64::MAX),
+            _ => return None,
+        };
+        (hi > Self::NTH_EAGER_RANGE_LIMIT).then_some(hi)
     }
 
     /// Build the `$/` value after a multi-match substitution. With a List-result
@@ -202,8 +243,8 @@ impl Interpreter {
         let mut positional: Vec<Value> = Vec::new();
         let mut global = false;
         let mut nth: Option<Vec<i64>> = None;
-        // `:nth(*)` / `:nth(*-1)` can only be resolved once the match count is
-        // known, so keep the raw Whatever/WhateverCode for deferred resolution.
+        // `:nth(*)` / `:nth(*-1)` / `:nth(2..*)` can only be resolved once the
+        // match count is known, so keep the raw value for deferred resolution.
         let mut nth_deferred: Vec<Value> = Vec::new();
         let mut x_count: Option<Value> = None;
         let mut pos_start: Option<usize> = None;
@@ -218,9 +259,7 @@ impl Interpreter {
                     // select 1-based match indices. The argument may be an Int, a
                     // list of Ints, or a Range (`:nth(1..3)`).
                     "nth" | "st" | "nd" | "rd" | "th" => {
-                        if matches!(value.view(), ValueView::Whatever)
-                            || Self::is_whatever_code_value(value)
-                        {
+                        if Self::is_deferred_nth_value(value) {
                             // Resolved later against the match count.
                             nth_deferred.push(value.clone());
                             nth.get_or_insert_with(Vec::new);
@@ -355,8 +394,14 @@ impl Interpreter {
                 // for `:g`/`:x`/multi-`:nth`, but a single Match for a single-index
                 // `:nth` (even when combined with `:g`, e.g. `s:2nd:g/./Z/`).
                 let nth_len = nth.as_ref().map(|v| v.len());
-                let single_nth = nth_len == Some(1);
-                let nth_is_multi = nth_len.is_some_and(|n| n > 1);
+                // A deferred Range (`:nth(2..*)`) selects a span of matches, so
+                // it is "multi" even though its indices are not known yet; a
+                // deferred `Whatever` selects exactly one and is not.
+                let deferred_nth_is_range = nth_deferred
+                    .iter()
+                    .any(|v| Self::deferred_nth_range_end(v).is_some());
+                let single_nth = nth_len == Some(1) && !deferred_nth_is_range;
+                let nth_is_multi = nth_len.is_some_and(|n| n > 1) || deferred_nth_is_range;
                 let result_is_list =
                     !single_nth && (pat_global || x_count.is_some() || nth_is_multi);
                 let empty_match_var = |me: &mut Self| {
@@ -549,6 +594,20 @@ impl Interpreter {
                     }
                     if !global && nth.is_none() && x_count.is_none() {
                         keep.truncate(1);
+                    }
+                    // Resolve any deferred `:nth(*)` / `:nth(*-1)` / `:nth(2..*)`
+                    // now that the match count is known — the literal-pattern
+                    // branch used to ignore them entirely, silently substituting
+                    // nothing.
+                    if !nth_deferred.is_empty() {
+                        let total = keep.len();
+                        let mut extra: Vec<i64> = Vec::new();
+                        for spec in &nth_deferred {
+                            let resolved = self.resolve_nth_value_indices(spec, total)?;
+                            extra.extend(resolved.into_iter().map(|i| i as i64));
+                        }
+                        extra.sort_unstable();
+                        nth.get_or_insert_with(Vec::new).extend(extra);
                     }
                     if let Some(ref nth_list) = nth {
                         Self::validate_subst_nth_list(nth_list)?;

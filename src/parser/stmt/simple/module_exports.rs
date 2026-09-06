@@ -197,7 +197,7 @@ fn apply_scan_types(scan: &ModuleScanResult) {
     for name in &scan.type_names {
         // The names are already fully composed; a `use` that appears inside
         // a package block must not compose them a second time.
-        register_user_type_verbatim(name);
+        register_imported_type(name);
     }
     // An enum's *values* travel with it. Without this a bare
     // `MYSQL_TYPE_BLOB` in the importing file is an unknown identifier, and
@@ -703,7 +703,11 @@ fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
             }
             Stmt::ClassDecl { body, .. }
             | Stmt::RoleDecl { body, .. }
-            | Stmt::Package { body, .. } => collect_module_enum_values(body, out),
+            | Stmt::Package { body, .. }
+            // A traited declarator (`enum E is export < a b >`) is wrapped in a
+            // bare block by the parser; walk into it like any other body.
+            | Stmt::Block(body)
+            | Stmt::SyntheticBlock(body) => collect_module_enum_values(body, out),
             _ => {}
         }
     }
@@ -772,6 +776,17 @@ fn collect_module_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<S
                 if *is_unit {
                     prefix = composed;
                 }
+            }
+            // A trait on a declarator (`class Foo is export { }`) makes the
+            // parser wrap the declaration in a bare `Stmt::Block`. A bare block
+            // introduces no package level, so it is walked with the SAME
+            // prefix — without this, EVERY `is export`ed class in a `use`d
+            // module was invisible to the importer's parse-time type index,
+            // and `when SomeImportedType { … }` was diagnosed as an undeclared
+            // bareword gobbling its block. (A `unit` declarator is never
+            // wrapped this way, so no prefix has to be carried back out.)
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                collect_module_type_names_under(body, &prefix, out);
             }
             _ => {}
         }

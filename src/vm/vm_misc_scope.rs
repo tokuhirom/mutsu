@@ -455,6 +455,36 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
+        // Does this block bind a topic of its own anywhere in its range? Only
+        // then is `$_` block-scoped and must not be written back on exit (see
+        // the restore loop below). Kept deliberately broad — every opcode that
+        // can leave `$_` pointing at something this block chose counts, and a
+        // `$_ := …` rebinding (`MarkRebindContext` + a store to `_`) is such a
+        // binding too, even though a plain `$_ = …` assignment is not.
+        let block_ops = &code.ops[pre_start..end];
+        let binds_own_topic = block_ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::SetTopic
+                    | OpCode::SaveTopic
+                    | OpCode::RestoreTopic
+                    | OpCode::EnterPointyTopic
+                    | OpCode::ExitPointyTopic
+                    | OpCode::ForLoop(_)
+                    | OpCode::Given { .. }
+                    | OpCode::DoGivenExpr { .. }
+                    | OpCode::When { .. }
+            )
+        }) || (block_ops
+            .iter()
+            .any(|op| matches!(op, OpCode::MarkRebindContext))
+            && block_ops.iter().any(|op| match op {
+                OpCode::SetGlobal(idx) => code
+                    .constants
+                    .get(*idx as usize)
+                    .is_some_and(|c| matches!(c.view(), ValueView::Str(s) if s.as_str() == "_")),
+                _ => false,
+            }));
         let routine_snapshot = self.snapshot_routine_registry();
         let saved_env = self.env().clone();
         // Under shadow slots (default) the block exit uses a targeted Nil-reset of
@@ -656,10 +686,17 @@ impl Interpreter {
                 continue;
             }
             if saved_env.contains_key_sym(k) {
-                // Lexical topic is block-scoped; don't write inner `$_` back
-                // to the outer scope on block exit. Also preserve the alias
-                // metadata for `$_` so that `:=` bindings survive block exit.
-                if k == "_" || k == "__mutsu_sigilless_alias::_" {
+                // A block that BINDS its own topic (a `for`/`given`/`when`
+                // body, a pointy `-> $_`) must not write that binding back to
+                // the enclosing scope on exit. A plain nested block binds
+                // nothing: inside `given $x { if COND { $_ = 'new' } ; say $_ }`
+                // the `if` body's `$_` IS the enclosing topic, so an assignment
+                // through it has to survive the block — skipping it wholesale
+                // made the write invisible to the very next statement (while
+                // still reaching `$x` through the topic's container, which is
+                // what made the symptom so confusing). The same rule applies to
+                // the `:=` alias metadata.
+                if (k == "_" || k == "__mutsu_sigilless_alias::_") && binds_own_topic {
                     continue;
                 }
                 // Variables declared with `my` inside this block should not

@@ -307,56 +307,9 @@ impl Interpreter {
         out
     }
 
-    /// Find first regex match in text, starting search from `min_pos` (char index).
-    /// Returns (from, to) as char indices in the full text.
-    /// Unlike `regex_find_first`, this preserves full-text context for zero-width assertions.
-    pub(crate) fn regex_find_first_from(
-        &mut self,
-        pattern: &str,
-        text: &str,
-        min_pos: usize,
-    ) -> Option<(usize, usize)> {
-        let parsed = self.parse_regex(pattern)?;
-        let pkg = self.current_package();
-        let orig_chars: Vec<char> = text.chars().collect();
-        if parsed.anchor_start && min_pos > 0 {
-            return None;
-        }
-        if parsed.ignore_mark {
-            let (stripped_chars, pos_map) = strip_marks_text(&orig_chars);
-            let stripped_parsed = strip_marks_pattern(&parsed);
-            let orig_len = orig_chars.len();
-            let stripped_min = pos_map
-                .iter()
-                .position(|&p| p >= min_pos)
-                .unwrap_or(stripped_chars.len());
-            let search_start = if stripped_parsed.anchor_start {
-                0
-            } else {
-                stripped_min
-            };
-            for start in search_start..=stripped_chars.len() {
-                if let Some(end) =
-                    self.regex_match_end_from_in_pkg(&stripped_parsed, &stripped_chars, start, &pkg)
-                {
-                    return Some((
-                        map_pos(start, &pos_map, orig_len),
-                        map_pos(end, &pos_map, orig_len),
-                    ));
-                }
-            }
-            return None;
-        }
-        let search_start = if parsed.anchor_start { 0 } else { min_pos };
-        for start in search_start..=orig_chars.len() {
-            if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &orig_chars, start, &pkg) {
-                return Some((start, end));
-            }
-        }
-        None
-    }
-
-    /// Like `regex_find_first_from` but also returns positional captures.
+    /// Find the first match from `min_pos`, returning its positional captures.
+    /// Unlike `regex_find_first`, this preserves full-text context for zero-width
+    /// assertions.
     pub(crate) fn regex_find_first_from_with_captures(
         &mut self,
         pattern: &str,

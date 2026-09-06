@@ -317,6 +317,19 @@ impl Interpreter {
         }
     }
 
+    /// Build the `Match` object a `:v`/`:kv`/`:p` split reports for one regex
+    /// separator. It is the same construction `~~ /…/` and `.match` use, so a
+    /// separator Match carries the engine's span-bearing positional AND named
+    /// captures (`$<name>` on a split separator used to come back `Nil`) and
+    /// their `.from`/`.to` are real offsets into the split subject.
+    fn split_separator_match(&mut self, mut caps: RegexCaptures, text: &str) -> Value {
+        let from = caps.from as i64;
+        let to = caps.to as i64;
+        let mtarget = caps.target_or_new(text);
+        self.reduce_regex_captures_made(&mut caps, Some(&mtarget));
+        Value::make_match_object_full_visible(from, to, &caps.positional, &caps.named, mtarget)
+    }
+
     /// Split by a single regex pattern.
     fn split_by_regex(
         &mut self,
@@ -354,11 +367,11 @@ impl Interpreter {
             }
 
             // Try to match regex starting from search_from, using full text for context
-            if let Some((from, to, pcaps)) =
-                self.regex_find_first_from_with_captures(pattern, text, search_from)
-            {
+            if let Some(caps) = self.regex_match_with_captures_from(pattern, text, search_from) {
+                let (from, to) = (caps.from, caps.to);
                 let segment: String = chars[pos..from].iter().collect();
                 let matched: String = chars[from..to].iter().collect();
+                let match_obj = self.split_separator_match(caps, text);
                 result.push((
                     segment,
                     Some(SplitMatch {
@@ -368,7 +381,7 @@ impl Interpreter {
                         splitter_index: 0,
                         is_regex: true,
                         orig: text.to_string(),
-                        positional_captures: pcaps,
+                        match_obj: Some(match_obj),
                     }),
                 ));
                 splits_done += 1;
@@ -426,20 +439,24 @@ impl Interpreter {
                 return Ok(result);
             }
 
-            // (abs_from, abs_to, idx, matched, is_regex) — positions in full text
-            let mut best: Option<(usize, usize, usize, String, bool)> = None;
+            // (abs_from, abs_to, idx, matched, captures) — positions in full text.
+            // `captures` is `Some` exactly when the winning splitter was a regex.
+            let mut best: Option<(usize, usize, usize, String, Option<RegexCaptures>)> = None;
 
             for (idx, splitter) in splitters.iter().enumerate() {
                 match splitter.view() {
                     ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                         let found = match splitter.view() {
-                            ValueView::Regex(p) => self.regex_find_first_from(&p, text, pos),
+                            ValueView::Regex(p) => {
+                                self.regex_match_with_captures_from(&p, text, pos)
+                            }
                             ValueView::RegexWithAdverbs(a) => {
-                                self.regex_find_first_from(&a.pattern, text, pos)
+                                self.regex_match_with_captures_from(&a.pattern, text, pos)
                             }
                             _ => unreachable!(),
                         };
-                        if let Some((from, to)) = found {
+                        if let Some(caps) = found {
+                            let (from, to) = (caps.from, caps.to);
                             let matched: String = chars[from..to].iter().collect();
                             let is_better = match &best {
                                 None => true,
@@ -448,7 +465,7 @@ impl Interpreter {
                                 }
                             };
                             if is_better {
-                                best = Some((from, to, idx, matched, true));
+                                best = Some((from, to, idx, matched, Some(caps)));
                             }
                         }
                     }
@@ -471,7 +488,7 @@ impl Interpreter {
                                             start + sep_chars.len(),
                                             idx,
                                             sep.clone(),
-                                            false,
+                                            None,
                                         ));
                                     }
                                     break;
@@ -483,8 +500,10 @@ impl Interpreter {
             }
 
             match best {
-                Some((from, to, idx, matched, is_regex)) => {
+                Some((from, to, idx, matched, caps)) => {
                     let segment: String = chars[pos..from].iter().collect();
+                    let is_regex = caps.is_some();
+                    let match_obj = caps.map(|c| self.split_separator_match(c, text));
                     result.push((
                         segment,
                         Some(SplitMatch {
@@ -494,7 +513,7 @@ impl Interpreter {
                             splitter_index: idx,
                             is_regex,
                             orig: text.to_string(),
-                            positional_captures: Vec::new(),
+                            match_obj,
                         }),
                     ));
                     pos = to;
@@ -559,7 +578,7 @@ fn split_by_string_static(
                     splitter_index: 0,
                     is_regex: false,
                     orig: String::new(),
-                    positional_captures: Vec::new(),
+                    match_obj: None,
                 }),
             ));
             seg_start = match_pos;
@@ -605,7 +624,7 @@ fn split_by_string_static(
                         splitter_index: 0,
                         is_regex: false,
                         orig: String::new(),
-                        positional_captures: Vec::new(),
+                        match_obj: None,
                     }),
                 ));
                 pos = match_pos + sep_len;
@@ -689,7 +708,7 @@ fn split_by_strings_static(
                         splitter_index: splitter_idx,
                         is_regex: false,
                         orig: String::new(),
-                        positional_captures: Vec::new(),
+                        match_obj: None,
                     }),
                 ));
                 pos = match_pos + match_len;
