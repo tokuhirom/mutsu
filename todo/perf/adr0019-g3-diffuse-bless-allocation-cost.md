@@ -212,7 +212,7 @@ spending 6.5% of the program in that function).
 
 Order-swapped min-of-9 A/B, `MUTSU_JIT=off`: `bench-ctor` -3.5%, `bench-class` -4.6%.
 
-### Next step (specified, not speculative): the implicit `*%_` slurpy
+### 2026-09-06 (same day, later): the implicit `*%_` slurpy is gated -- DONE
 
 The largest single remaining item the tool identifies is `mfast:slurpy-captures-locals` at **10.3
 allocations per method call (~10% of `bench-ctor`'s total)**, and essentially all of it is
@@ -230,6 +230,39 @@ hatches to over-approximate on are `EVAL` and dynamic-name lookup (`::('%_')`), 
 lexical without naming it in the constant pool.
 
 This is a compiler-analysis slice rather than a dispatch one, which is why it was not folded into
-the PR above. Remaining smaller items, in order: `bless:named-args` (11 allocations per bless, the
-sigil-coercion clone loop), `mfast:epilogue` (5.1/call), and the `format!("{}\0{}")` qualified
-private-attribute key built per private-attribute local per call in the fast path's locals-init loop.
+the PR above.
+
+The gate landed as described (`news/2026-09/implicit-named-slurpy-gated-at-compile-time.md`):
+`CompiledCode::may_observe_named_slurpy`, set by any `%_`-spelling string constant, by a nested
+closure whose own flag is set, and by the dynamic escape hatches (`EVAL`, symbolic deref,
+`CALLER::` ops, inner routine/subset declarations). `mfast:slurpy-captures-locals` fell from 10.3
+to 4.0 allocations per method call and the whole program from 1,541,606 to 1,444,372 allocations
+(-6.3%); order-swapped wall-clock A/B put `bench-ctor` and `bench-class` each ~5-7% faster.
+
+### Next steps (still specified, in order)
+
+The `alloc_scope!` report on `benchmarks/bench-ctor.raku` after that fix reads:
+
+| scope | allocations / entry |
+| --- | --- |
+| `mfast:body` (exclusive) | 40.7 per method call |
+| `bless:named-args` | 11.0 per bless |
+| `bless:attr-defaults` | 5.0 per bless |
+| `mfast:epilogue` | 4.9 per method call |
+| `mfast:slurpy-captures-locals` | 4.0 per method call |
+| `mfast:env-setup` | 2.7 per method call |
+| `mfast:param-bind` | 2.3 per method call |
+| `mfast:prologue` | 1.7 per method call |
+
+- **`bless:named-args`, 11 allocations per bless** (`dispatch_bless`'s override loop in
+  `runtime/methods_dispatch_new.rs`). Each supplied named argument does a linear
+  `plan.class_attrs.iter().position(...)` scan and then a `coerce_provided_attr_value_by_sigil`
+  clone. The scan is O(attrs x args) on a 20-attribute class; an index on the plan would make it
+  O(args), and the clone is worth checking for a no-op sigil case that can skip it.
+- **`mfast:epilogue`, 4.9 per method call.**
+- **The residual 4.0 in `mfast:slurpy-captures-locals`**, which is now the locals-init loop alone:
+  the `vec![Value::NIL; cc.locals.len()]` plus a `format!("{}\0{}", owner_class, attr_name)`
+  built per private-attribute local per call. The format could reuse one scratch `String` across
+  the loop.
+- Re-run the 7/31-vs-HEAD A/B from the top of this ticket, or read the bench-CI trend, to see how
+  much of the original drift these have now closed.
