@@ -269,7 +269,8 @@ callback `Value` already carries its own closure environment.
 | **0** | **Measure the read-path exposure** by flipping `dispatch_map_method`/`builtin_map` to always call `create_lazy_map_list` behind a temporary env gate, and running `t/` and the roast whitelist with it on. This is option 3's exposure without option 3's cost, and it produces the list of consumers that read a deferred sequence without forcing it. | Discard the gate afterwards; it is a measurement, not a slice. |
 | **1** | **Done (2026-08-22).** `t/map-callback-runs-at-consumption.t` — 23 rows, raku-verified 23/23, mutsu 12 passing and 11 `todo`. Un-`todo`ing the nine ADR-0058 rows is this ADR's completion signal; the other two `todo`s belong to §1.4's separate bug. | Same shape as ADR-0034 phase 1. |
 | **2** | **Done (2026-09-07).** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method` only (not `builtin_map`, not `grep`), plus the read-path consumers S8 lists. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d; the two remaining `todo`s are S1.4's separate bug. |
-| **3** | Extend to `builtin_map` (the `map &f, @xs` function form) and to both `grep` entry points. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. | |
+| **3a** | **Attempted and REVERTED (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returning the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2 is a five-line diff and was green on `make test`, but the full roast run aborted a whitelisted file. **Blocked on a step-2 hole**, see S9.1 and `todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`. | |
+| **3b** | Extend to both `grep` entry points. Measured 2026-09-07: grep is still fully eager and diverges from rakudo. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. **Its own slice, for a measured reason -- see S9.2.** | |
 | **4** | Retire the `body_contains_return` / `is_stub_routine_body` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. | The maintainability payout. |
 
 ### Verification
@@ -474,3 +475,85 @@ they still read an unpulled `MapGrep` body's empty seed. `set_contains`
 (`(elem)`/`(cont)`) is fixed but has to swallow a throwing callback for the same
 reason. No test in `t/` or the roast whitelist exercises the remaining ones;
 step 3 (which makes `grep` deferred too) should revisit them.
+
+## 9. Step 3 attempt (2026-09-07): what it found, and why it is parked
+
+### 9.1 The listop diff is trivial; the blocker is a step-2 hole
+
+`builtin_map`'s non-rw tail called `eval_map_over_items` directly, so the
+`map &f, @xs` form ran its callback at the call and answered a **`List`**:
+
+```raku
+my $s = map { $_ * 2 }, 1..3;
+say $s.^name;        # rakudo: Seq       mutsu: List
+```
+
+Returning the deferred Seq there instead fixed the type, the side-effect timing
+(`sub ee { my $s = map -> $x { say "RAN"; $x }, 1..3; say "T"; $s }` printed
+`RAN RAN RAN T` and now printed rakudo's `T RAN RAN RAN`), `for map { ... }, 1..3`,
+assignment to an `@` variable, `.elems` and the empty-source case, with the
+`source_var` rw-writeback branch left eager. `make test` was green (3757 files /
+39156 tests).
+
+The **full `make roast`** this ADR's §5 makes mandatory then aborted
+`roast/integration/99problems-21-to-30.t` with a stack overflow. Reduced:
+
+```raku
+sub g(@sizes) {
+    return "STOP" if @sizes == 0;
+    [1].map(-> $e { g(@sizes[1..*]).map(-> $x { $x }) })
+}
+say g((2,1)).raku;
+```
+
+rakudo terminates at depth 3 with `@sizes` empty; mutsu recurses forever
+reading `@sizes` as depth 1's `(2, 1)`. **This reproduces on `main` with the
+METHOD form**, so it is not step 3's bug -- step 3 only routes more programs
+onto it. A deferred `MapGrep` carries `items`, `func` and `fatal` but **no
+frame**, so `eval_map_over_items` runs the callback under whatever env is
+active at the pull; the pre-ADR-0058 `create_lazy_map_list` snapshots
+`self.env` at the `.map` call and gets the same program right.
+
+Step 3 is therefore parked behind that hole, which is recorded with its options
+(whole-env snapshot vs. capturing only `free_var_syms` vs. making the closure
+capture of a routine parameter work at deferral time) in
+`todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`. It also
+blocks step 4, which retires `create_lazy_map_list` -- the only deferral that
+currently gets the frame right.
+
+### 9.2 grep is eager too, and is its own slice regardless
+
+Measured on the same build:
+
+| probe | rakudo | mutsu |
+|---|---|---|
+| `my $s = (1..3).grep({ say "RAN"; $_ > 1 }); say "T"` | `T RAN RAN RAN` | `RAN RAN RAN T` |
+| the listop spelling of the same | `T RAN RAN RAN` | `RAN RAN RAN T` |
+| `sub ee { try { (1..3).grep({ die "boom" }) }; say "reached-tail"; 42 }` | throws, tail unreached | `reached-tail`, `42`, alive |
+| `my @a=1,2,3; grep({$_=5}, @a).eager; say @a` | `[5 5 5]` | `[1 2 3]` |
+
+Beyond the shared blocker, grep needs something `map` has no equivalent of:
+`dispatch_grep`'s `ValueView::Array` arm **promotes each matched source slot to
+a shared `ContainerRef` cell**, writes the promoted array back with
+`overwrite_array_bindings_by_identity`, and builds the result out of the same
+cells, so `for @a.grep(...) { $_++ }` mutates through into `@a`. Deferring grep
+moves that promotion and its identity-keyed writeback to pull time, in a
+different frame. That is also why
+`todo/deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md` §B finds
+`@a.list.grep({$_=5})` writing through while `@a.list.map({$_=5})` does not --
+3b and that ticket's producer 1 are one decision.
+
+`SeqSource::MapGrep`'s pull arm also runs `eval_map_over_items` unconditionally,
+so 3b needs a grep mode on the variant (or a sibling variant) before any of the
+above.
+
+### 9.3 What DID land from the attempt
+
+Pulling a deferred `MapGrep` left the deferred `MapGrep`s it *produced*
+unpulled, so the pure readers §8 exists for saw ADR-0034's empty seed one level
+down: `[1].map({ [2].map({ "STOP" }) })` rendered `(().Seq,).Seq` for `.raku`,
+`(())` for `.gist`, nothing for `.Str`, and nothing for `.flat.join`, where
+rakudo gives the nested values. The pull arm now pulls the `MapGrep`s its own
+pull produced, recursively. Pinned by `t/nested-deferred-map-seq-is-pulled.t`
+(8 rows, raku-verified);
+`news/2026-09/nested-deferred-map-seq-is-pulled.md`.
