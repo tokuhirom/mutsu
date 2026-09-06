@@ -87,13 +87,14 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
             let a = to_bag_map(left, &mut originals);
             let b = to_bag_map(effective_right, &mut originals);
             let mut result = HashMap::new();
+            let zero = BigInt::from(0);
             for (k, v) in &a {
-                let bv = b.get(k).copied().unwrap_or(0);
-                if *v > bv {
-                    result.insert(k.clone(), *v - bv);
+                let bv = b.get(k).unwrap_or(&zero);
+                if v > bv {
+                    result.insert(k.clone(), v - bv);
                 }
             }
-            Value::bag_typed(result, originals)
+            Value::bag_typed_big(result, originals)
         }
         _ => {
             // Set-level difference
@@ -134,10 +135,10 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
             let mut result = HashMap::new();
             for (k, v) in a.iter() {
                 if let Some(bv) = b.get(k) {
-                    result.insert(k.clone(), (*v).min(*bv));
+                    result.insert(k.clone(), v.min(bv).clone());
                 }
             }
-            Value::bag_typed(result, originals)
+            Value::bag_typed_big(result, originals)
         }
         _ => {
             let a = coerce_to_set(left, &mut originals);
@@ -147,8 +148,8 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
     }
 }
 
-/// Coerce a value to a Bag (HashMap<String, i64>)
-fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, i64> {
+/// Coerce a value to a Bag's arbitrary-precision weight map.
+fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, BigInt> {
     match val.view() {
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);
@@ -156,20 +157,22 @@ fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
         }
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
-            s.iter().map(|k| (k.clone(), 1)).collect()
+            s.iter().map(|k| (k.clone(), BigInt::from(1))).collect()
         }
         ValueView::Mix(m, _) => {
             extend_quanthash_originals(originals, &m.original_keys);
-            m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()
+            m.iter()
+                .map(|(k, v)| (k.clone(), BigInt::from(*v as i64)))
+                .collect()
         }
         _ => {
             // Count occurrences for list-like values
             let items = quanthash_operand_list(val);
-            let mut result = HashMap::new();
+            let mut result: HashMap<String, BigInt> = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);
                 record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_insert(0i64) += 1;
+                *result.entry(key).or_default() += 1;
             }
             result
         }
@@ -186,7 +189,10 @@ fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
         ValueView::Bag(b, _) => {
             extend_quanthash_originals(originals, &b.original_keys);
             let resolved = resolve_bag_tab_keys(&b);
-            resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
+            resolved
+                .iter()
+                .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
+                .collect()
         }
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
@@ -241,15 +247,16 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
             let mut result = HashMap::new();
             let mut all_keys: HashSet<String> = a.keys().cloned().collect();
             all_keys.extend(b.keys().cloned());
+            let zero = BigInt::from(0);
             for k in all_keys {
-                let av = a.get(&k).copied().unwrap_or(0);
-                let bv = b.get(&k).copied().unwrap_or(0);
-                let diff = (av - bv).unsigned_abs() as i64;
-                if diff > 0 {
+                let av = a.get(&k).unwrap_or(&zero);
+                let bv = b.get(&k).unwrap_or(&zero);
+                let diff = (av - bv).abs();
+                if diff.is_positive() {
                     result.insert(k, diff);
                 }
             }
-            Value::bag_typed(result, originals)
+            Value::bag_typed_big(result, originals)
         }
         _ => {
             // Set-level symmetric difference
@@ -293,25 +300,26 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
         }
         1 => {
             // Bag-level: collect all count vectors per key, then max - second_max
-            let maps: Vec<HashMap<String, i64>> =
+            let maps: Vec<HashMap<String, BigInt>> =
                 args.iter().map(|a| to_bag_map(a, &mut originals)).collect();
             let mut all_keys: HashSet<String> = HashSet::new();
             for m in &maps {
                 all_keys.extend(m.keys().cloned());
             }
             let mut result = HashMap::new();
+            let zero = BigInt::from(0);
             for k in all_keys {
-                let mut counts: Vec<i64> = maps
+                let mut counts: Vec<BigInt> = maps
                     .iter()
-                    .map(|m| m.get(&k).copied().unwrap_or(0))
+                    .map(|m| m.get(&k).unwrap_or(&zero).clone())
                     .collect();
                 counts.sort_by(|a, b| b.cmp(a));
-                let diff = counts[0] - counts.get(1).copied().unwrap_or(0);
-                if diff > 0 {
+                let diff = &counts[0] - counts.get(1).unwrap_or(&zero);
+                if diff.is_positive() {
                     result.insert(k, diff);
                 }
             }
-            Value::bag_typed(result, originals)
+            Value::bag_typed_big(result, originals)
         }
         _ => {
             // Set-level: element is in result iff it appears in exactly 1 input

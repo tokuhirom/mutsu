@@ -1,7 +1,10 @@
 //! Set arithmetic/comparison ops (intersect/multiply/diff/subset/...),
 //! Bag/Mix item coercion, and junction ops — split from `vm_set_ops` (§7-8).
 use super::*;
+use crate::runtime::utils::bag_weight;
 use crate::symbol::Symbol;
+use num_bigint::BigInt as NumBigInt;
+use num_traits::Zero;
 
 impl Interpreter {
     /// Determine the set type level, including Package type objects.
@@ -56,10 +59,10 @@ impl Interpreter {
                 let mut a = Self::coerce_to_bag(&left, &mut originals);
                 let b = Self::coerce_to_bag(&right, &mut originals);
                 for (k, v) in b {
-                    let e = a.entry(k).or_insert(0);
+                    let e = a.entry(k).or_default();
                     *e += v;
                 }
-                Value::bag_typed(a, originals)
+                Value::bag_typed_big(a, originals)
             }
         };
         let result = runtime::with_set_mutability(result, result_mutable);
@@ -117,7 +120,7 @@ impl Interpreter {
 
     /// Helper: extract bag-like weights from a list item (Pair or plain value)
     fn bag_insert_item(
-        result: &mut HashMap<String, i64>,
+        result: &mut HashMap<String, NumBigInt>,
         originals: &mut HashMap<String, Value>,
         item: &Value,
     ) {
@@ -126,20 +129,19 @@ impl Interpreter {
         };
         match item.view() {
             ValueView::Pair(k, v) => {
-                let weight = v.to_f64() as i64;
-                *result.entry(str_elem_key(k)).or_insert(0) += weight;
+                *result.entry(str_elem_key(k)).or_default() += bag_weight(v);
             }
             ValueView::ValuePair(k, v) => {
-                let weight = v.to_f64() as i64;
+                let weight = bag_weight(v);
                 let (key, elem) = quanthash_elem_entry(k);
                 record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_insert(0) += weight;
+                *result.entry(key).or_default() += weight;
             }
             _ => {
                 let (key, elem) = quanthash_elem_entry(item);
                 if !elem.to_string_value().is_empty() {
                     record_quanthash_original(originals, &key, &elem);
-                    *result.entry(key).or_insert(0) += 1;
+                    *result.entry(key).or_default() += 1;
                 }
             }
         }
@@ -177,8 +179,13 @@ impl Interpreter {
         }
     }
 
-    /// Coerce a value to a Bag (HashMap<String, i64>)
-    fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap<String, i64> {
+    /// Coerce a value to a Bag's weight map. Weights are arbitrary-precision:
+    /// `BagData.counts` is a `BigInt` map, so a bag can hold (and an operator
+    /// must be able to add) a weight above `i64::MAX`.
+    fn coerce_to_bag(
+        val: &Value,
+        originals: &mut HashMap<String, Value>,
+    ) -> HashMap<String, NumBigInt> {
         use crate::runtime::utils::{extend_quanthash_originals, str_elem_key};
         match val.view() {
             // A Bag/Set/Mix subclass instance (`class Foo is Bag`) carries its real
@@ -192,21 +199,23 @@ impl Interpreter {
             }
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
-                crate::runtime::utils::bag_counts_as_i64(&b.counts)
+                b.counts.clone()
             }
             ValueView::Set(s, _) => {
                 extend_quanthash_originals(originals, &s.original_keys);
-                s.iter().map(|k| (k.clone(), 1)).collect()
+                s.iter().map(|k| (k.clone(), NumBigInt::from(1))).collect()
             }
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
-                m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect()
+                m.iter()
+                    .map(|(k, v)| (k.clone(), NumBigInt::from(*v as i64)))
+                    .collect()
             }
             ValueView::Hash(map) => {
                 let mut result = HashMap::new();
                 for (k, v) in map.iter() {
-                    let weight = v.to_f64() as i64;
-                    if weight != 0 {
+                    let weight = bag_weight(v);
+                    if !weight.is_zero() {
                         let key = crate::runtime::utils::hash_elem_key(&map, k, originals);
                         result.insert(key, weight);
                     }
@@ -219,13 +228,13 @@ impl Interpreter {
                     Self::bag_insert_item(&mut result, originals, item);
                 }
                 // Remove entries with 0 weight
-                result.retain(|_, v| *v != 0);
+                result.retain(|_, v| !v.is_zero());
                 result
             }
             ValueView::Pair(k, v) => {
                 let mut result = HashMap::new();
-                let weight = v.to_f64() as i64;
-                if weight != 0 {
+                let weight = bag_weight(v);
+                if !weight.is_zero() {
                     result.insert(str_elem_key(k), weight);
                 }
                 result
@@ -236,8 +245,8 @@ impl Interpreter {
             ValueView::ValuePair(k, v) => {
                 use crate::runtime::utils::{quanthash_elem_entry, record_quanthash_original};
                 let mut result = HashMap::new();
-                let weight = v.to_f64() as i64;
-                if weight != 0 {
+                let weight = bag_weight(v);
+                if !weight.is_zero() {
                     let (key, elem) = quanthash_elem_entry(k);
                     record_quanthash_original(originals, &key, &elem);
                     result.insert(key, weight);
@@ -246,7 +255,7 @@ impl Interpreter {
             }
             _ => {
                 let set = runtime::coerce_to_set(val, originals);
-                set.into_iter().map(|k| (k, 1)).collect()
+                set.into_iter().map(|k| (k, NumBigInt::from(1))).collect()
             }
         }
     }
@@ -381,10 +390,10 @@ impl Interpreter {
                 let mut result = HashMap::new();
                 for (k, v) in a.iter() {
                     if let Some(bv) = b.get(k) {
-                        result.insert(k.clone(), (*v).min(*bv));
+                        result.insert(k.clone(), v.min(bv).clone());
                     }
                 }
-                Value::bag_typed(result, originals)
+                Value::bag_typed_big(result, originals)
             }
             _ => {
                 // Result is Set

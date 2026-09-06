@@ -226,13 +226,19 @@ pub(crate) fn bigint_to_f64_sat(n: &BigInt) -> f64 {
     })
 }
 
-/// Saturating clone of a Bag's BigInt count map into an i64 count map, used by
-/// the set-arithmetic helpers that operate on native i64 weights.
-pub(crate) fn bag_counts_as_i64(counts: &HashMap<String, BigInt>) -> HashMap<String, i64> {
-    counts
-        .iter()
-        .map(|(k, v)| (k.clone(), bigint_to_i64_sat(v)))
-        .collect()
+/// A Bag weight read out of a `Value`, at full precision.
+///
+/// Bag weights are `Int` in raku -- `(a => 2.7).Bag` is `("a"=>2).Bag` -- so a
+/// fractional operand truncates toward zero, exactly as `Rat.Int` does, and a
+/// `Bool` weighs 1/0. The point of going through `to_bigint` rather than
+/// `to_f64() as i64` is that `(a => 10**30)` keeps all thirty digits:
+/// `BagData.counts` is a `BigInt` map, so nothing downstream needs to
+/// saturate.
+pub(crate) fn bag_weight(v: &Value) -> BigInt {
+    match v.view() {
+        ValueView::Bool(b) => BigInt::from(i64::from(b)),
+        _ => v.to_bigint(),
+    }
 }
 
 /// Strip a leading UTF-8 BOM (U+FEFF) from a string, as Raku does when reading files.

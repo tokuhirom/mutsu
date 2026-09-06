@@ -384,7 +384,7 @@ impl Interpreter {
     fn value_to_bag_counts(
         value: &Value,
         originals: &mut HashMap<String, Value>,
-    ) -> Result<HashMap<String, i64>, RuntimeError> {
+    ) -> Result<HashMap<String, num_bigint::BigInt>, RuntimeError> {
         use crate::runtime::utils::extend_quanthash_originals;
         if Self::is_lazy_union_input(value) {
             return Err(Self::lazy_list_error());
@@ -392,14 +392,14 @@ impl Interpreter {
         match value.view() {
             ValueView::Bag(b, _) => {
                 extend_quanthash_originals(originals, &b.original_keys);
-                Ok(crate::runtime::utils::bag_counts_as_i64(&b.counts))
+                Ok(b.counts.clone())
             }
             ValueView::Mix(m, _) => {
                 extend_quanthash_originals(originals, &m.original_keys);
                 Ok(m.iter()
                     .filter_map(|(k, w)| {
                         if *w != 0.0 {
-                            Some((k.clone(), 1))
+                            Some((k.clone(), num_bigint::BigInt::from(1)))
                         } else {
                             None
                         }
@@ -408,7 +408,10 @@ impl Interpreter {
             }
             _ => {
                 let set = Self::value_to_set_keys(value, originals)?;
-                Ok(set.into_iter().map(|k| (k, 1)).collect())
+                Ok(set
+                    .into_iter()
+                    .map(|k| (k, num_bigint::BigInt::from(1)))
+                    .collect())
             }
         }
     }
@@ -528,10 +531,12 @@ impl Interpreter {
                 let mut left_bag = Self::value_to_bag_counts(&left, &mut originals)?;
                 let right_bag = Self::value_to_bag_counts(&right, &mut originals)?;
                 for (k, v) in right_bag {
-                    let e = left_bag.entry(k).or_insert(0);
-                    *e = (*e).max(v);
+                    let e = left_bag.entry(k).or_default();
+                    if v > *e {
+                        *e = v;
+                    }
                 }
-                Value::bag_typed(left_bag, originals)
+                Value::bag_typed_big(left_bag, originals)
             }
             (_, _) => {
                 let mut left_set = Self::value_to_set_keys(&left, &mut originals)?;
