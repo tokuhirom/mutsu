@@ -88,11 +88,13 @@ regression, and two captures of one name at different depths.
 
 ## What still diverges
 
-- A capture of the frame's own **parameter** that was itself handed to a call
-  (`sub outer($p) { noop($p); { $p } }`) is still hijackable — it is excluded
-  from the cell trigger and the vouch still refuses it. Recorded with its
-  measured root cause in
-  `todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md`.
+- ~~A capture of the frame's own **parameter** that was itself handed to a call
+  (`sub outer($p) { noop($p); { $p } }`) is still hijackable~~ — **closed the
+  same day.** The parameter exclusion turned out to be aimed at the wrong
+  mechanism: the Cro leak came from publishing the new cell into the name-keyed
+  cross-thread `shared_vars` lane, not from the cell. Parameters are excluded
+  there instead and get the cell like any other own local
+  (`news/2026-09/a-captured-parameter-gets-the-cell-too.md`, ADR-0055 §7.7).
 - The `@`/`%` half of the same family (`my @a; @a.push(3); my $f = -> { @a.elems }`
   read from a frame with its own `@a`) is unrelated machinery — container
   lexicals, ADR-0039 — and diverges independently of any scalar capture. Recorded

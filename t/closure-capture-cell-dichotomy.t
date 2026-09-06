@@ -17,7 +17,7 @@ use Test;
 #   * STALENESS -- the creator's post-capture mutation is invisible.
 # A cell fixes both at once; merge-order tweaks can only ever fix one.
 
-plan 17;
+plan 22;
 
 # ---------------------------------------------------------------------------
 # 1-3. The three value-kind families ADR-0025 slice 3 left unboxed, in the
@@ -203,12 +203,14 @@ plan 17;
 }
 
 # ---------------------------------------------------------------------------
-# 16. The bound that keeps the cell from becoming a leak: a PARAMETER is a fresh
-# binding the caller creates per invocation, so it must NOT be given a shared
-# cell by this trigger. Boxing one made two invocations of the same routine
-# share a binding -- every stored closure then read the last call's argument.
-# (This is what dropped six Cro::HTTP suites when the mechanism was first
-# prototyped; see the news entry.)
+# 16, 18-21. Parameter freshness. A parameter IS in the escaping-captured cell
+# population (it is an own local like any other), so these guard the property
+# that used to be delivered by excluding parameters from the trigger, and is now
+# delivered structurally: every call path installs a fresh `locals` vector, so
+# the cell a capture boxes into a parameter's slot belongs to that invocation
+# alone. If two invocations of one routine ever share a binding again, every
+# stored closure reads the last call's argument -- the shape that dropped six
+# Cro::HTTP suites when the mechanism was first prototyped.
 # ---------------------------------------------------------------------------
 {
     sub noop3($v) { 1 }
@@ -232,6 +234,71 @@ plan 17;
     sub collide-depths() { my $b = "CALLER"; my $g = { $b }; $g.(); $f1.() ~ '/' ~ $f2.() }
     is collide-depths(), 'OUTER/MID',
         'two captures of one name at different depths keep their own bindings';
+}
+
+# ---------------------------------------------------------------------------
+# 18-19. The shape the parameter exclusion traded away: a capture of the frame's
+# own PARAMETER that was itself handed to a call. `own_call_arg_sources` refuses
+# to vouch for it and the mutation analysis never saw a write, so with the
+# exclusion in place it had neither defence and a same-named lexical in whatever
+# frame happened to be calling won. Both residencies are pinned -- 18 forces the
+# colliding lexical into `env` with a decoy closure, 19 leaves it in a local
+# slot, which answered `(Any)` (the capture vanished entirely, not merely lost).
+# ---------------------------------------------------------------------------
+{
+    sub noop5($v) { 1 }
+    sub outer-param($p) { noop5($p); my $f = { $p }; return $f }
+    my $fp = outer-param("OUTER");
+
+    sub collide-param-env() { my $p = "CALLER"; my $g = { $p }; $g.(); $fp.() }
+    is collide-param-env(), 'OUTER',
+        'a captured parameter handed to a call wins over an env-resident caller lexical';
+
+    sub collide-param-slot() { my $p = "CALLER"; $fp.() }
+    is collide-param-slot(), 'OUTER',
+        '... and over a slot-resident one';
+}
+
+# ---------------------------------------------------------------------------
+# 20-22. Parameter freshness across the paths a shared cell could leak through:
+# direct recursion (the Cro::HTTP::Client redirect shape), a method whose
+# parameter is reassigned in the body, and a loop that invokes one routine
+# repeatedly. Each captured closure must report its own invocation's argument.
+# ---------------------------------------------------------------------------
+{
+    sub noop6($v) { 1 }
+    my @fs;
+    sub rec($url, $n) {
+        noop6($url);
+        @fs.push({ $url });
+        rec($url ~ "/x", $n - 1) if $n > 0;
+    }
+    rec("a", 2);
+    is @fs.map({ .() }).join(','), 'a,a/x,a/x/x',
+        'a recursive routine\'s captured parameter is per-invocation';
+}
+{
+    sub noop7($v) { 1 }
+    my @gs;
+    class Client {
+        method req($url is copy, $depth = 0) {
+            noop7($url);
+            @gs.push({ $url });
+            $url = "$url/r";
+            self.req($url, $depth + 1) if $depth < 2;
+        }
+    }
+    Client.new.req("b");
+    is @gs.map({ .() }).join(','), 'b/r,b/r/r,b/r/r/r',
+        'a recursive method\'s reassigned `is copy` parameter is per-invocation';
+}
+{
+    sub noop8($v) { 1 }
+    my @hs;
+    sub each($v) { noop8($v); @hs.push({ $v }) }
+    each($_) for <p q r>;
+    is @hs.map({ .() }).join(','), 'p,q,r',
+        'repeated invocation of one routine does not share the captured parameter';
 }
 
 done-testing;

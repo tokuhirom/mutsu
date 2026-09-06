@@ -49,7 +49,7 @@ plain checkout of the dist with `-I lib`.
 | Candidate | Version | Released | License | Runtime deps | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **`Template::Mustache`** | 1.2.6 | 2026-01-12 | Artistic-2.0 | **0** | **11** | 11/13² | **13/13** |
-| `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **11/12** ⬆ |
+| `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **12/12** ⬆ |
 | `Template::Jinja2` | 0.2.0 | 2026-04-29 | Artistic-2.0 | 1 (`JSON::Fast`, native) | 2 | 22/23 | **3/23** ⬆ |
 | `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **4/5** |
 | `Template::Nest::Fast` | 0.3.0 | 2024-11-18 | ISC | **0** | 0 | **10/10** | **0/10** |
@@ -63,7 +63,8 @@ The mutsu column was **re-measured in full on 2026-09-06** (debug build). Do not
 quote a row without re-running the survey: on that re-run four of the eight rows
 had moved since the last measurement, all from unrelated work.
 
-⬆ `Template6` went **0/12 → 10/12 → 11/12** on 2026-09-06. Its long-standing
+⬆ `Template6` went **0/12 → 10/12 → 11/12 → 12/12** on 2026-09-06 — the dist is
+complete. Its long-standing
 "unreduced, `Use of Nil in string context`" state turned out to hide **four**
 independent general interpreter bugs, none of them the warning: a `split(/…/, :v)`
 separator `Match` carried no named captures, `.subst(…, :nth(2..*))` aborted the
@@ -72,7 +73,11 @@ stamped with the *constructing* class (so it could not see its own file's subs),
 and an assignment to `$_` inside a nested block was discarded on block exit. Pins:
 `t/split-regex-separator-captures.t`, `t/subst-nth-range.t`,
 `t/attr-default-closure-package.t`, `t/topic-assign-in-nested-block.t`. Write-up:
-`news/2026-09/template6-zero-to-ten-of-twelve.md`.
+`news/2026-09/template6-zero-to-ten-of-twelve.md`. The twelfth file (`05-includes`)
+followed the same rule once more: its `[% INCLUDE "x" name = "World" %]` rendered
+`name` instead of `World` because the *no-capture* regex matcher ignored frugal
+quantifiers, so the directive tokenizer's `.comb(/ \" .*? \" | \S+ /)` returned one
+token spanning the whole statement (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`).
 
 `Template::Mustache` itself went **1/13 → 11/13** on 2026-07-25 when the single
 interpreter bug behind it was fixed: a hyper method call (`@objs>>.made`) did not
@@ -107,7 +112,7 @@ them all.
 | Candidate | Symptom |
 | --- | --- |
 | `Template::Mustache` | none; 13/13 |
-| `Template6` | 11/12. `05-includes`: `[% INCLUDE "x" name = "World" %]` renders `name` instead of `World` (`todo/tickets/template6-include-local-data-not-reaching-the-included-stash.md`). (`02-for` was fixed on 2026-09-06 — a one-parameter pointy block lost its parameter's sigil, so `-> @stack` bound the array by value; `news/2026-09/one-parameter-pointy-block-loses-its-sigil.md`.) |
+| `Template6` | none; 12/12. The last file (`05-includes`) was fixed 2026-09-06: the no-capture regex matcher matched frugal quantifiers greedily, so `.comb(/ \" .*? \" | \S+ /)` collapsed a whole `[% INCLUDE ... %]` statement into one token (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`) |
 | `Template::Jinja2` | loads now (3/23); the rest are ordinary per-feature failures. Its last load blocker — `Renderer.rakumod:114`'s `when If {` read as a call — was fixed 2026-09-06 |
 | `Template::Mojo` | `00-basic` only; `todo/tickets/template-mojo-residual-failures.md` |
 | `Template::Nest::Fast` | `with $f ~~ m:g/…/ -> @m` binds `@m` to a one-element list *containing* the match list, so `$m[0].from` is Nil. `with ("a<!--x-->b<!--yy-->c" ~~ m:g/('<!--') \s* (\w+) \s* ('-->')/) -> @m { say @m.elems }` gives 2 under raku, 1 under mutsu |
@@ -204,8 +209,9 @@ bug**, not a pile of them, so fixing it both unblocked the strongest candidate
 and improved mutsu generally. The other engines' blockers stay on the work list
 (`todo/deep/template-engines-blocked-on-mutsu.md`). `Template6` was fixed for
 exactly that reason — so the slot has a real second option rather than a single
-viable choice — and now runs 10 of its 12 files
-(`news/2026-09/template6-zero-to-ten-of-twelve.md`).
+viable choice — and now runs **all 12** of its files
+(`news/2026-09/template6-zero-to-ten-of-twelve.md`,
+`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`).
 
 ## Provenance and update procedure
 

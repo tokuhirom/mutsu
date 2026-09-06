@@ -1468,7 +1468,24 @@ impl Interpreter {
             // next await — disconnecting the parent from the shared cell.
             // `set_shared_var` only updates entries that already exist, so this
             // is a no-op when the name was never snapshotted.
-            if self.shared_vars_active {
+            //
+            // EXCEPT for this frame's own PARAMETERS. `shared_vars` is keyed by
+            // BARE NAME and is process-wide, so publishing there declares "this
+            // cell is what the name means" for every thread and every frame. A
+            // parameter is the opposite of that: a binding the caller creates
+            // fresh on each invocation, whose name collides with unrelated
+            // lexicals all over the program. Publishing one hijacked the
+            // caller's own same-named lexical — `Cro::HTTP::Client.request`'s
+            // `$url` parameter became the meaning of `$url` in the test script
+            // that called it, so the second request's path was appended to the
+            // caller's base URL and every later request 404'd on an accumulating
+            // path. The cell itself is fine (it is per-invocation, and its env
+            // mirror is a callee-local name the return merge drops); only this
+            // name-keyed publication is not. Declining costs nothing beyond the
+            // cross-thread liveness this lane provides for a *declared* lexical,
+            // which a parameter never needed: it cannot have been snapshotted by
+            // an earlier `start` before it existed.
+            if self.shared_vars_active && !code.param_locals.contains(sym) {
                 // The cell now OWNS this binding, which is exactly what the
                 // re-declaration mask was standing in for, so the mask must not
                 // block the replacement below: leaving the stale plain snapshot
