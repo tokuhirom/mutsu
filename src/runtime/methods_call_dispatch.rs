@@ -164,6 +164,21 @@ impl Interpreter {
         if method == "WHICH" && args.is_empty() {
             self.warm_which_identity(&target);
         }
+        // A user `IO::Handle` subclass that overrides `WRITE`/`READ`/`EOF` gets
+        // the high-level text methods for free by routing them through those
+        // overrides (`try_user_io_handle_method`). That hook was wired into the
+        // two OPCODE dispatch paths only, so an INTERNAL dispatch reached the
+        // native `IO::Handle` arm instead and failed for want of a real file
+        // descriptor. The visible symptom was the documented `$*OUT = $store`
+        // idiom (`Type/IO/Handle.rakudoc`, "Creating Custom Handles") printing
+        // to the real stdout and capturing nothing:
+        // `write_to_named_handle` calls `.print` on the handle through here,
+        // that call errored, and the error was swallowed by its own fallback to
+        // `emit_output`. `$store.print(...)` written directly in Raku worked all
+        // along, which is what made the two paths' disagreement invisible.
+        if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
+            return result;
+        }
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }

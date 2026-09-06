@@ -1,3 +1,20 @@
+> **Largely fixed 2026-09-06** —
+> `news/2026-09/custom-io-handle-routing-reaches-every-dispatch-entry.md`,
+> pinned by `t/custom-io-handle-write-read.t` (6 rows against raku v2026.07).
+> Both worked examples from `Type/IO/Handle.rakudoc` now route through the user's
+> `WRITE`/`READ`/`EOF`. The remaining scope is narrower than this file's, and it
+> is recorded at the bottom under "What is left".
+>
+> The routing this file says is "completely unimplemented" was in fact already
+> implemented (`try_user_io_handle_method`, `vm/vm_call_method_compiled_io.rs`)
+> and merely **wired into two of the interpreter's four method-dispatch entry
+> points**. The `$*OUT = $store` idiom goes through a third (an internal
+> `.print` dispatch from `write_to_named_handle`) and the read-side methods
+> through a fourth (the mut path), so both fell through to the native
+> `IO::Handle` arm. A third defect sat inside the routing itself: the write
+> dispatch's catch-all arm returned early, so a handle overriding BOTH `WRITE`
+> and `READ` could never reach its own read methods.
+
 # Custom `IO::Handle` subclasses overriding WRITE/READ/EOF are not honored by print/say/read
 
 Found by the doc-diff harness (`docs/doc-diff-backlog.md`, `Type/IO/Handle.rakudoc:959`
@@ -102,3 +119,39 @@ anything). That is a systemic change across `src/runtime/native_io/io_handle.rs`
   backing handle.
 - `src/runtime/handle_open.rs` — `IoHandleState`/`IoHandleTarget` may need a new target
   variant for "backed by user WRITE/READ methods, not a real fd".
+
+## What is left (measured 2026-09-06)
+
+Two things, both narrower than the original report and neither about the routing:
+
+1. **A `READ` that over-returns is not buffered.** Raku's `IO::Handle.read($n)`
+   keeps what `READ` hands back beyond `$n` and serves the next read from it —
+   which is why `Type/IO/Handle.rakudoc`'s second example, whose `READ` ignores
+   its byte count and returns the whole buffer every time, prints `one` then
+   `two` under raku. mutsu returns whatever `READ` gave, so it prints the whole
+   buffer twice. A well-behaved `READ` that honours its count and advances a
+   position works correctly today (pinned). Closing this means giving the user
+   handle a read buffer; `read_user_io_char` currently assumes `READ(1)` returns
+   exactly one byte, so it wants the same buffer.
+
+2. **A separate, pre-existing bug found while testing this, which is NOT about
+   custom handles at all**: declaring *any* class with a `print` method makes an
+   *unrelated* class's `$*OUT = $handle` redirect fall through to the real
+   stdout.
+
+   ```raku
+   class Store is IO::Handle { has @.lines = []; submethod TWEAK { self.encoding: 'utf8' }
+       method WRITE(IO::Handle:D: Blob:D \d --> Bool:D) { @!lines.push: d.decode; True } }
+   class Cap { has $.buf is rw = ""; method print(*@a) { $!buf ~= @a.join; True } }   # <-- just declaring this
+   my $store = Store.new; my $old = $*OUT;
+   $*OUT = $store; say "one"; $*OUT = $old;
+   say $store.lines;    # ["one\n"] without the Cap declaration, [] with it
+   ```
+
+   Bisected: the block passes on its own and fails as soon as a class with a
+   `print` method exists anywhere in the file. `write_to_named_handle` then takes
+   its `handle_id_from_value(...).is_some()` branch (the real-fd path) for the
+   custom handle, so the user routing is never consulted. That is the shape of a
+   name-keyed "a user overrode this native method" check that is not scoped to
+   the receiver's class — `native_lever_a_user_override` is the obvious
+   candidate. It deserves its own ticket once someone confirms the site.
