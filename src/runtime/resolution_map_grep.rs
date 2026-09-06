@@ -527,9 +527,26 @@ impl Interpreter {
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
                 .collect();
 
-            // Pre-insert closure env
+            // Pre-insert closure env.
+            //
+            // Caller-priority by default, with the two exceptions every other
+            // closure-env merge in the codebase already makes (`call_sub_value`'s
+            // tree-walk merge and `call_compiled_closure_with_topic`):
+            //
+            //  - `self` is LEXICAL — the block's captured invocant wins.
+            //  - a captured `ContainerRef` is a shared container CELL
+            //    (box-on-capture, ADR-0025/ADR-0055). It is the single source of
+            //    truth for that lexical, so it must overwrite whatever the
+            //    calling frame happens to hold under the same name; the
+            //    don't-overwrite default silently resolved the closure's own free
+            //    variable to an unrelated same-named caller lexical (ADR-0055
+            //    §1.2(b) through the `.map($f)` invocation path). A DYNAMIC
+            //    variable (`$*x`) keeps caller priority — it is dynamic-scope by
+            //    design — exactly as in the compiled merge.
             for (k, v) in &data.env {
-                if k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
+                let cell_wins = matches!(v.view(), ValueView::ContainerRef(_))
+                    && !k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
+                if cell_wins || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
                     self.env.insert_sym(*k, v.clone());
                 }
             }

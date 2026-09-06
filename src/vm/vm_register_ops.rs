@@ -1328,17 +1328,29 @@ impl Interpreter {
                             matches!(self.locals[idx].view(), ValueView::Instance { .. })
                         })
             });
-        if (code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
-            || (self.loop_local_vars.is_empty()
-                && code.needs_cell_locals.is_empty()
-                && !dup_shadow_possible
-                && !has_mutated_instance_capture)
+        // Trigger (E) is independent of `captured_mutated_locals` on purpose (see
+        // `needs_cell_unvouched_locals`), so it must bypass the early return.
+        let has_unvouched = !code.needs_cell_unvouched_locals.is_empty();
+        if !has_unvouched
+            && ((code.captured_mutated_locals.is_empty() && !has_mutated_instance_capture)
+                || (self.loop_local_vars.is_empty()
+                    && code.needs_cell_locals.is_empty()
+                    && !dup_shadow_possible
+                    && !has_mutated_instance_capture))
         {
             return;
         }
         for (fv_i, sym) in cc.free_var_syms.iter().enumerate() {
             let captured_mutated = code.captured_mutated_locals.contains(sym);
             let needs_cell = code.needs_cell_locals.contains(sym);
+            // (E) ADR-0055: an escaping capture the creating frame cannot vouch
+            // for. Neither `authoritative_free_vars` (the vouch refused it) nor
+            // `captured_mutated_locals` (the mutation analysis never saw the
+            // write) protects it, so the closure's binding is only distinguishable
+            // from a same-named caller lexical through a shared cell.
+            let unvouched_escaping = has_unvouched
+                && code.needs_cell_unvouched_locals.contains(sym)
+                && !cc.authoritative_free_vars.contains(sym);
             // Resolve to an owned String instead of `with_str`: `with_str` holds
             // the global symbol table's READ lock across its closure, and the
             // checks below (`var_type_constraint`, env access) can intern a NEW
@@ -1363,10 +1375,10 @@ impl Interpreter {
                     .is_some_and(|b| code.dup_named_locals.get(b).copied().unwrap_or(false));
             let is_instance_capture = baked_idx
                 .is_some_and(|idx| matches!(self.locals[idx].view(), ValueView::Instance { .. }));
-            if !captured_mutated {
+            if !captured_mutated && !unvouched_escaping {
                 continue;
             }
-            if !is_loop_local {
+            if !is_loop_local && !unvouched_escaping {
                 // Non-loop escaping path (B), shadow path (C), or Instance
                 // element-store path (D) only.
                 if !needs_cell && !is_dup_shadow && !is_instance_capture {

@@ -1,7 +1,9 @@
 # ADR-0055: A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores
 
-- Status: Accepted (slice 1 implemented 2026-08-28; slices 2-5 not started, and
-  §7 records two prerequisites this ADR did not originally anticipate)
+- Status: Accepted (slice 1 implemented 2026-08-28; slice 1b — the vouch's
+  complement — implemented 2026-09-06, which closes §1.2(b) for plain scalars
+  and retires the prerequisite §7.3 recorded; slices 2-5 not started. §7.6
+  records what the 2026-09-06 re-measurement corrected.)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
   0054 belongs to the argument-list-interpolation ADR)
@@ -456,6 +458,82 @@ suite. Two things were learned:
    intervening work": that close-out was correct about its *motivating
    examples*, but the mechanism it specified was never built, and the merge flip
    is what makes the difference observable.
+
+### 7.6 Slice 1b (2026-09-06): the vouch's complement shipped, and what this ADR got wrong
+
+Every premise was re-measured on `main` @ `bbdebb108` before designing anything.
+The measured table (`raku` vs `mutsu`, 21 programs; the DIVERGE rows are the ones
+that mattered):
+
+| shape | invocation path | mutsu before | mutsu after | raku |
+| --- | --- | --- | --- | --- |
+| §1.2(b) control (no `noop($b)`) | `.()` | OUTER | OUTER | OUTER |
+| §1.2(b) headline (env-resident) | `.()` | **CALLER** | OUTER | OUTER |
+| §1.2(b) slot-resident | `.()` | OUTER | OUTER | OUTER |
+| §1.2(b) | `.classify($f)` | **CALLER** | OUTER | OUTER |
+| §1.2(b) | `.map($f)` | **CALLER** | OUTER | OUTER |
+| §1.2(b) | `invoke($f)` inside a callee | **CALLER** | OUTER | OUTER |
+| §1.2(b) | after a native `sort` comparator | **CALLER** | OUTER | OUTER |
+| capture in a `for` body / `while` body | `.map` | OUTER*n* | OUTER*n* | OUTER*n* |
+| two depths (`$f1` mainline, `$f2` in a `do` block) | `.()` | OUTER/MID | OUTER/MID | OUTER/MID |
+| liveness (`$b` reassigned after capture) | `.()` | MUTATED | MUTATED | MUTATED |
+| `is rw` writeback after capture | `.()` | OUTER! | OUTER! | OUTER! |
+| capture over a **parameter**, per invocation | `.map` | A,B,C | A,B,C | A,B,C |
+| capture over a parameter **handed to a call** | `.()` | **CALLER** | **CALLER** | OUTER |
+| `@`-sigil capture vs a same-named caller `@a` | `.()` | **1** | **1** | 3 |
+
+**What the ADR got right.** §1.2(b) reproduces exactly as written, with both
+added lines load-bearing for the reasons given, and §1.3's conclusion holds: the
+fix is a cell at the binding, not a knob at the call. Nothing here needed a
+`merge_all` equivalent, and no merge *default* was flipped. §7.3's mechanism is
+the right mechanism, and its own leading hypothesis about the Cro regression was
+the fix that shipped.
+
+**What the ADR got wrong.**
+
+1. **§1.1 counts two merge policies. There are three.** `eval_map_over_items`'
+   inline fast path (`resolution_map_grep.rs`) keeps its own closure-env
+   pre-insert loop, and it was the only merge in the codebase with **no**
+   `ContainerRef` exception — so `.map($f)` still resolved the closure's free
+   variable to the calling frame even once the cell existed. It now makes the
+   same two exceptions as the other two merges (`self` is lexical; a cell wins
+   unless the name is a dynamic). Any future slice that "unifies the two merge
+   policies" must count this one.
+
+2. **§7.3's blocker is not a blocker.** It records slice 2's prerequisite list as
+   "slice 1 (done) **and** ADR-0025 slice 2's mechanism (open, blocked on the Cro
+   ticket)". The Cro regression is caused by boxing the frame's own
+   **parameters**, and excluding them costs one narrow shape rather than the fix.
+   `todo/deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md`
+   is retired; the residue is
+   `todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md`.
+
+3. **§4's "correctness" bullet is broader than what shipped.** §1.2(b) is closed
+   for plain scalars only. The `@`/`%` half of the same family (last row of the
+   table) is a different mechanism (ADR-0039 / `box_decl_local_container_cell`)
+   and diverges independently, with no scalar in the program:
+   `todo/tickets/container-lexical-capture-loses-to-same-named-caller-array.md`.
+
+**What shipped.**
+
+- `CompiledCode::needs_cell_unvouched_locals` — the exact complement of the
+  vouch within the escaping-captured own set — wired into
+  `box_captured_lexicals` as an independent trigger (E), NOT requiring
+  `captured_mutated_locals` membership.
+- `CompiledCode::param_locals`, populated by `Compiler::declare_param` (the
+  single entry point for parameter declaration, so it covers named and
+  destructured sub-signature parameters, unlike the positional-only
+  `param_local_slots`). Its one consumer is the exclusion above.
+- The `ContainerRef` exception in the map fast path's env pre-insert.
+- `t/closure-capture-cell-dichotomy.t` grew 11 → 17 assertions, byte-identical
+  under `mutsu` and `raku`.
+
+**Consequence for §3.** Slice 2's prerequisite list is now just slice 1 + 1b, and
+§7.4's nine failing `t/` files remain the real gate on flipping the merge: they
+are a single family (a capture the creator mutates later, for which the
+escape/ownership analysis produces no cell) that this slice does not address —
+`needs_cell_unvouched_locals` is keyed on the *vouch*, and those captures are
+refused a cell by the escape analysis instead, one frame further out.
 
 ### 7.5 Not addressed
 

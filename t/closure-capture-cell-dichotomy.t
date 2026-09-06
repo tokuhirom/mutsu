@@ -17,7 +17,7 @@ use Test;
 #   * STALENESS -- the creator's post-capture mutation is invisible.
 # A cell fixes both at once; merge-order tweaks can only ever fix one.
 
-plan 11;
+plan 17;
 
 # ---------------------------------------------------------------------------
 # 1-3. The three value-kind families ADR-0025 slice 3 left unboxed, in the
@@ -92,13 +92,13 @@ plan 11;
 # refuses to vouch for it (an `is rw` parameter could write it back), and it is
 # never stored by name, so the mutation analysis never saw it either.
 #
-# NOTE: only the slot-resident variant is pinned. The env-resident variant --
-# the same program with `my $g = { $b }` added to `collide`, which forces the
-# caller's colliding lexical out of its local slot and into `env` -- STILL
-# RETURNS `CALLER` and is the open half of ADR-0055 section 1.2(b). Closing it
-# needs the vouch/cell dichotomy extended to read-only call-arg-source captures,
-# which is blocked on
-# `todo/deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md`.
+# Both residency variants are pinned: tests 12-15 add the env-resident form
+# (`my $g = { $b }` in the caller forces the colliding lexical out of its local
+# slot and into `env`), across four invocation paths. That form is what
+# `needs_cell_unvouched_locals` closed; before it, the slot-resident variant
+# passed only because a compiled caller usually keeps its lexicals in slots, so
+# the merge's chain probe found nothing to collide with -- an accident of the
+# `env_dirty` dual store, not a policy that was right.
 # ---------------------------------------------------------------------------
 {
     sub noop($v) { 1 }
@@ -164,6 +164,74 @@ plan 11;
     }
     is "{$c()}/$err", '7/died',
         'a now-boxed type-constrained scalar still type-checks its assignments';
+}
+
+# ---------------------------------------------------------------------------
+# 12-15. ADR-0055 section 1.2(b), env-resident variant, across the four
+# invocation paths that reach a closure. They differ in WHICH merge runs:
+#   .()          -> `call_compiled_closure_with_topic` (the compiled merge)
+#   .map($f)     -> `eval_map_over_items`' own inline pre-insert
+#   .sort({...}) -> `call_sub_value` with merge_all: true (a native comparator)
+#   invoke($f)   -> `call_sub_value` reached from compiled bytecode
+# The capture is the same binding in all four, so all four must answer OUTER.
+# ---------------------------------------------------------------------------
+{
+    sub noop2($v) { 1 }
+    my $b = "OUTER";
+    noop2($b);
+    my $f = { $b };
+
+    sub collide-env() { my $b = "CALLER"; my $g = { $b }; $g.(); $f.() }
+    is collide-env(), 'OUTER',
+        'call-arg-sourced capture wins over an env-resident same-named caller lexical';
+
+    sub collide-map() { my $b = "CALLER"; my $g = { $b }; $g.(); (9,).map($f).join(',') }
+    is collide-map(), 'OUTER', '... and through .map($f)';
+
+    sub collide-sort() {
+        my $b = "CALLER";
+        my $g = { $b };
+        $g.();
+        (1, 2).sort({ $f.() cmp $f.() });
+        $f.();
+    }
+    is collide-sort(), 'OUTER', '... and after a native comparator ran the closure';
+
+    sub invoke(&c) { c() }
+    sub collide-arg() { my $b = "CALLER"; my $g = { $b }; $g.(); invoke($f) }
+    is collide-arg(), 'OUTER', '... and when the closure is invoked inside a callee';
+}
+
+# ---------------------------------------------------------------------------
+# 16. The bound that keeps the cell from becoming a leak: a PARAMETER is a fresh
+# binding the caller creates per invocation, so it must NOT be given a shared
+# cell by this trigger. Boxing one made two invocations of the same routine
+# share a binding -- every stored closure then read the last call's argument.
+# (This is what dropped six Cro::HTTP suites when the mechanism was first
+# prototyped; see the news entry.)
+# ---------------------------------------------------------------------------
+{
+    sub noop3($v) { 1 }
+    my @kept;
+    sub mk($p) { noop3($p); @kept.push({ $p }); }
+    mk("A"); mk("B"); mk("C");
+    is @kept.map({ $_.() }).join(','), 'A,B,C',
+        'a closure over a parameter keeps its own invocation\'s binding';
+}
+
+# ---------------------------------------------------------------------------
+# 17. Two closures over the same name at different depths, both called from a
+# frame that shadows it. Each must resolve to the binding it captured.
+# ---------------------------------------------------------------------------
+{
+    sub noop4($v) { 1 }
+    my $b = "OUTER";
+    noop4($b);
+    my $f1 = { $b };
+    my $f2 = do { my $b = "MID"; noop4($b); my $inner = { $b }; $inner };
+    sub collide-depths() { my $b = "CALLER"; my $g = { $b }; $g.(); $f1.() ~ '/' ~ $f2.() }
+    is collide-depths(), 'OUTER/MID',
+        'two captures of one name at different depths keep their own bindings';
 }
 
 done-testing;

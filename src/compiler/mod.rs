@@ -2214,6 +2214,9 @@ impl Compiler {
         if let Some(frame) = self.local_scopes.last_mut() {
             frame.entry(name.to_string()).or_insert(None);
         }
+        // Record the name as a parameter of this code object: a binding the
+        // CALLER creates fresh on every invocation. See `CompiledCode::param_locals`.
+        self.code.param_locals.insert(Symbol::intern(name));
         slot
     }
 
