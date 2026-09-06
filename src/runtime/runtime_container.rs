@@ -76,6 +76,33 @@ impl Interpreter {
     /// MUST use the returned value — store it back into the env/local slot it
     /// came from. For other container types this defers to the Arc-pointer
     /// side tables (unchanged) and returns the value untouched.
+    /// Give every SHAPED row of a multidimensional array the element type its
+    /// parent carries, recursively.
+    ///
+    /// Only shaped rows: a shaped array's rows are themselves shaped (built by
+    /// `make_shaped_array_seeded`), so this cannot wander into an ordinary
+    /// nested array that merely happens to sit in a typed array's element --
+    /// there the element type describes the element, not the element's own
+    /// elements.
+    fn tag_shaped_rows_value_type(data: &mut crate::value::ArrayData, value_type: &str) {
+        for item in data.items_mut() {
+            if !matches!(
+                item.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Shaped)
+            ) {
+                continue;
+            }
+            item.with_array_mut(|arc, _| {
+                if arc.value_type.as_deref() == Some(value_type) {
+                    return;
+                }
+                let row = crate::gc::ContainerMakeMut::container_make_mut(arc);
+                row.value_type = Some(value_type.to_string());
+                Self::tag_shaped_rows_value_type(row, value_type);
+            });
+        }
+    }
+
     pub(crate) fn tag_container_metadata(
         &mut self,
         mut value: Value,
@@ -101,8 +128,24 @@ impl Interpreter {
             }};
         }
         if value
-            .with_array_mut(|arc, _kind| {
+            .with_array_mut(|arc, kind| {
                 embed_type_info!(arc);
+                // A multidimensional SHAPED array's rows are arrays in their
+                // own right, and each one needs the element type too:
+                // `ArrayData::hole_at` recognises an unwritten typed slot as a
+                // gap by comparing the stored type object's name against the
+                // array's OWN `value_type`, so a row without it reports every
+                // untouched `Int` cell as existing. `my Int @a[2;2];
+                // @a[0;0] = 1; say @a[0;1]:exists` answered True where raku
+                // says False -- while the 1D form and the untyped 2D form were
+                // both already right, because only the top-level array is
+                // tagged here.
+                if *kind == crate::value::ArrayKind::Shaped
+                    && let Some(vt) = arc.value_type.clone()
+                {
+                    let data = crate::gc::ContainerMakeMut::container_make_mut(arc);
+                    Self::tag_shaped_rows_value_type(data, &vt);
+                }
             })
             .is_some()
         {
