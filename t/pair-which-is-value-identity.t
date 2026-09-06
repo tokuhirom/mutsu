@@ -15,7 +15,7 @@ use Test;
 # thing deliberately not asserted is the exact spelling: rakudo renders a Pair's
 # identity as an opaque digest (`Pair|58DC55B1...`), which nothing can pin.
 
-plan 18;
+plan 27;
 
 ok  (a => 1).WHICH eq (a => 1).WHICH, 'two structurally identical pairs share an identity';
 ok  (a => 1).WHICH eq (:a(1)).WHICH, 'the adverbial spelling is the same pair';
@@ -36,6 +36,32 @@ ok (1 => 2).WHICH eq (1 => 2).WHICH, 'an Int-keyed pair';
 nok (1 => 2).WHICH eq ("1" => 2).WHICH, 'an Int key is not a Str key';
 ok (a => (b => 2)).WHICH eq (a => (b => 2)).WHICH, 'a nested pair';
 nok (a => (b => 2)).WHICH eq (a => (b => 3)).WHICH, '... distinguished by its inner value';
+
+# --- a CONTAINER or reference-type value keeps OBJECT identity ------------
+#
+# rakudo makes this distinction deliberately (commit 5031dab3ac, pinned by
+# roast/S02-types/pair.t's "Clone of Pair does not share .WHICH"): a value that
+# can change under the pair cannot be summarised by a content digest, so the
+# pair falls back to its own object identity.
+
+{
+    my $v = 100;
+    my $p := foo => $v;
+    is $p.WHICH.^name, 'ObjAt', 'a container-held value gives the pair ObjAt';
+    my $clone := $p.clone;
+    isnt $clone.WHICH, $p.WHICH, 'so a clone does not share the identity';
+    $v = 200;
+    isnt $clone.WHICH, $p.WHICH, '... before or after the container is written';
+}
+
+is (foo => [1, 2]).WHICH.^name, 'ObjAt', 'an Array value gives the pair ObjAt';
+is (foo => (1, 2)).WHICH.^name, 'ObjAt', 'a List value, too';
+is (foo => {a => 1}).WHICH.^name, 'ObjAt', 'a Hash value, too';
+
+# ... while every value-identified value keeps the digest.
+is (foo => 100).WHICH.^name, 'ValueObjAt', 'an Int value keeps ValueObjAt';
+is (foo => Set.new(1)).WHICH.^name, 'ValueObjAt', 'a Set value is value-identified';
+is (foo => Any).WHICH.^name, 'ValueObjAt', 'a type object is value-identified';
 
 # --- what must NOT move: these were already correct -----------------------
 

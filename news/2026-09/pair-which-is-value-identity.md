@@ -21,9 +21,16 @@ keys, and they are what `Set`/`Bag`/`Mix` element keying has always used. The
 `"WHICH"` arm of `src/builtins/methods_0arg/dispatch_core_coerce.rs` now
 delegates to it rather than inventing a second encoding.
 
-`Pair` also joined the `is_value_type` list in the same arm, so
-`(a => 1).WHICH.^name` is `ValueObjAt` rather than `ObjAt` — a value-composed
-identity is what makes it one.
+Whether a `Pair` *is* value-identified is not a property of the `Pair` but of
+what it holds, and rakudo is explicit about it (commit 5031dab3ac, pinned by
+roast's "Clone of Pair does not share .WHICH"): `(foo => 100).WHICH` is a
+`ValueObjAt` digest, while `(foo => [1, 2]).WHICH` and `(foo => $v).WHICH` (a
+container-held value) are the object's address. A value that can change under
+the pair cannot be summarised by a content digest. A new `has_value_identity`
+helper in the same arm states that rule once — recursing through a `Pair`'s key
+and value — and decides both the encoding and the `ValueObjAt`/`ObjAt` answer.
+Measured against raku v2026.07: `Int`/`Str`/`Rat`/`Set`/`Pair`/a type object are
+value-identified; `Array`/`List`/`Hash`/a `Scalar`-held value are not.
 
 ## What did not move
 
@@ -34,8 +41,10 @@ the thing that must not regress, alongside the fixed rows: identical pairs
 matching, the adverbial (`:a(1)`) and quoted-key spellings being the same pair,
 a differing key or value being a different pair, an `Int` key not colliding with
 the `Str` `"1"`, nested pairs, a stable identity across two reads, the
-`ValueObjAt` type, an object hash keyed by a pair, and a `Set` collapsing two
-identical pairs. 18 assertions, all measured against raku v2026.07 first.
+`ValueObjAt` type, an object hash keyed by a pair, a `Set` collapsing two
+identical pairs, and the container/reference-valued pairs that must keep object
+identity (including the clone case, before and after the container is written
+to). 27 assertions, all measured against raku v2026.07 first.
 
 The one thing deliberately not pinned is the exact spelling. Rakudo renders a
 `Pair`'s identity as an opaque digest (`Pair|58DC55B1E331A3A1...`) which nothing

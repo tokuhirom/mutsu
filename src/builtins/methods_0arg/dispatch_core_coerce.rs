@@ -14,6 +14,55 @@ use super::parse_raku_int_from_str;
 /// operators use (so `"5 foo"` reports `trailing characters after number` at
 /// pos 1, not a blanket "must begin with valid digits" at pos 0), and the
 /// matching `source-indicator`.
+/// Whether `v`'s own identity is VALUE-based (`ValueObjAt`, a content digest)
+/// rather than object-based (`ObjAt`, the allocation).
+///
+/// For a `Pair` this is not a property of the Pair but of what it holds, and
+/// rakudo is explicit about it: `(foo => 100).WHICH` is a `ValueObjAt` digest,
+/// while `(foo => [1, 2]).WHICH` and `(foo => $v).WHICH` (a container-held
+/// value) are the object's address. The reason is that a reference type or a
+/// container can change under the pair, so a content digest would be a lie --
+/// which is exactly what roast's "Clone of Pair does not share .WHICH"
+/// (rakudo 5031dab3ac) pins: `$p.clone.WHICH !=== $p.WHICH` when the value is a
+/// container, both before and after the container is written to.
+///
+/// Measured against raku v2026.07: `Int`/`Str`/`Rat`/`Set`/`Pair`/a type object
+/// answer `ValueObjAt`; `Array`/`List`/`Hash`/a `Scalar`-held value answer
+/// `ObjAt`.
+fn has_value_identity(v: &Value) -> bool {
+    match v.view() {
+        // A `Pair`'s Str key is always value-identified; only the value decides.
+        ValueView::Pair(_, val) => has_value_identity(val),
+        ValueView::ValuePair(k, val) => has_value_identity(k) && has_value_identity(val),
+        _ => matches!(
+            v.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(_, _)
+                | ValueView::BigRat(_, _)
+                | ValueView::FatRat(_, _)
+                | ValueView::Complex(_, _)
+                | ValueView::Set(_, _)
+                | ValueView::Bag(_, _)
+                | ValueView::Mix(_, _)
+                | ValueView::Junction { .. }
+                | ValueView::Nil
+                | ValueView::Enum { .. }
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::Version { .. }
+                | ValueView::Package(_)
+                | ValueView::CustomType(_)
+        ),
+    }
+}
+
 fn str_numeric_exception_attrs(s: &str) -> std::collections::HashMap<String, Value> {
     let (pos, reason) = crate::runtime::str_numeric::str_numeric_failure(s).unwrap_or((
         0,
@@ -342,35 +391,7 @@ pub(super) fn dispatch(
         })))),
         "WHICH" => {
             // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
-            let is_value_type = matches!(
-                target.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Rat(_, _)
-                    | ValueView::BigRat(_, _)
-                    | ValueView::FatRat(_, _)
-                    | ValueView::Complex(_, _)
-                    | ValueView::Set(_, _)
-                    | ValueView::Bag(_, _)
-                    | ValueView::Mix(_, _)
-                    | ValueView::Junction { .. }
-                    | ValueView::Nil
-                    | ValueView::Enum { .. }
-                    | ValueView::Range(..)
-                    | ValueView::RangeExcl(..)
-                    | ValueView::RangeExclStart(..)
-                    | ValueView::RangeExclBoth(..)
-                    | ValueView::GenericRange { .. }
-                    | ValueView::Version { .. }
-                    // A Pair's identity is composed from its key's and value's
-                    // own identities, so it is a value type: raku's
-                    // `(a => 1).WHICH.^name` is `ValueObjAt`.
-                    | ValueView::Pair(_, _)
-                    | ValueView::ValuePair(_, _)
-            );
+            let is_value_type = has_value_identity(target);
             let which_str = match target.view() {
                 ValueView::Package(name) => format!(
                     "{}|U{}",
@@ -505,18 +526,23 @@ pub(super) fn dispatch(
                 ValueView::Hash(map) => {
                     format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map))
                 }
-                // A Pair is value-identified, from the key's and value's own
-                // `.WHICH` (raku: `(a => 1).WHICH eq (a => 1).WHICH`). Without
-                // this the Pair fell to the global-counter tail below and every
-                // read minted a fresh, unstable id -- so two structurally
-                // identical pairs never matched, and the string was not even
-                // stable across two reads of the SAME pair.
+                // A Pair whose contents are themselves value-identified is
+                // value-identified too, from the key's and value's own `.WHICH`
+                // (raku: `(a => 1).WHICH eq (a => 1).WHICH`). Without this the
+                // Pair fell to the global-counter tail below and every read
+                // minted a fresh, unstable id -- so two structurally identical
+                // pairs never matched, and the string was not even stable across
+                // two reads of the SAME pair.
                 //
                 // `value_which_key` already carries the correct encoding (it is
                 // what Set/Bag/Mix element keying uses, and it recurses through
                 // the key and value), so delegate rather than invent a second
                 // one.
-                ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
+                //
+                // A pair holding a CONTAINER or a reference type keeps object
+                // identity and falls through to the tail -- see
+                // `has_value_identity`.
+                ValueView::Pair(_, _) | ValueView::ValuePair(_, _) if is_value_type => {
                     runtime::utils::value_which_key(target)
                 }
                 ValueView::Promise(p) => {
