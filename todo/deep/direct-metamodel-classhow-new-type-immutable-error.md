@@ -36,6 +36,28 @@ And the code object itself is fine: calling the very same
 `my $m = my method m() { 42 }` through `$m()` returns `42`. So `add_method`
 drops the body; the producer does not.
 
+## FIXED 2026-09-06
+
+`news/2026-09/add-method-installs-a-routine-backed-code-object.md`. `add_method`
+now takes the routine's own `CompiledCode` when the Sub is routine-backed and
+carries no closure body, and `t/add-method-named-routine.t` covers 16 rows
+against raku including the parameter, named-argument, `:D`-invocant and explicit
+-`return` shapes that exercise the routine calling convention through the method
+ABI.
+
+Two things measured alongside it are NOT fixed and stay open:
+
+- **The installed method reports the name it was ADDED under**, where raku
+  reports the routine's own name (`A9.^lookup('m').name` is `m` in mutsu, `m9`
+  in raku). Pinned as a `todo` row in that file.
+- **A plain `sub` used as a method does not receive the invocant as its first
+  positional.** `B.^add_method('p', &plain)` with `sub plain($x)` answers 42 for
+  `B.p(21)` in mutsu; raku rejects the call ("Too many positionals passed;
+  expected 1 argument but got 2") because the invocant occupies the first slot.
+  Before this fix the same call answered `Nil`, so it was wrong either way.
+
+The rest of this file below is the historical record.
+
 ## Root cause
 
 `add_method` (`src/runtime/methods_classhow_dispatch.rs`, the `"add_method"` arm)

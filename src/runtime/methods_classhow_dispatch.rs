@@ -1008,6 +1008,23 @@ impl Interpreter {
                     }
                     None => (sub_data.body.clone(), sub_data.compiled_code.clone()),
                 };
+                // A Sub built from a DECLARED routine (`my method m() {...}`,
+                // `my sub a() {...}`, `&foo` -- anything read back through
+                // `GetCodeVar`) carries its bytecode in `compiled_routine`, not
+                // in `compiled_code`: ADR-0019 C6c stopped the declaration plan
+                // shipping an executable AST, and `SubData` keeps the two apart
+                // because they are invoked under different calling conventions.
+                // Without this, `add_method` registered a `MethodDef` with an
+                // empty body and no code, so the method was findable by
+                // `.^can`/`.^lookup` and answered `Nil` when called -- silently.
+                // Only the anonymous shapes (`method () {...}`, a pointy block)
+                // ever worked. See `t/add-method-named-routine.t`.
+                let method_compiled = match (&method_compiled, sub_data.compiled_routine.as_ref()) {
+                    (None, Some(routine)) if method_body.is_empty() => {
+                        Some(std::sync::Arc::new(routine.code.clone()))
+                    }
+                    _ => method_compiled,
+                };
                 // The name list has to lose the invocant too, not just
                 // `param_defs`: dispatch binds arguments positionally against
                 // `params`, so leaving `self` in it shifted every argument by one
