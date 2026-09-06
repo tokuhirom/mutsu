@@ -2272,6 +2272,18 @@ impl Interpreter {
                         base = parent_base;
                     }
                 }
+                // A role type object has no class MRO of its own — `class_mro`
+                // on a role name yields just that name, so every probe answered
+                // False. raku answers `.isa` for it from the chain the role's
+                // *pun* would have, which is exactly `Any` then `Mu`:
+                // `Associative.isa(Any)`, `Positional.isa(Mu)` and
+                // `role R {}; R.isa(Any)` are all True, while `.isa` of any
+                // other type — including a role the role itself `does`
+                // (`role B does A {}; B.isa(A)`) — is False. `.does` remains
+                // the operator that answers role composition.
+                if self.is_role_type_name(&pkg_name) {
+                    return Ok(Value::truth(target_name == "Any" || target_name == "Mu"));
+                }
                 Ok(Value::truth(
                     self.class_mro(&pkg_name)
                         .contains(&crate::symbol::Symbol::intern(&target_name)),

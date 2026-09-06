@@ -484,6 +484,17 @@ impl Interpreter {
     /// The common case — mainline code under `GLOBAL` — returns a single
     /// element, so callers pay one small `Vec` for what used to be two
     /// hard-coded `format!`s.
+    ///
+    /// NOTE: for a *compound declared name* (`class HTTP::HPACK::Decoder { ...
+    /// }` written at file scope), the `::` segments are not real lexical scopes
+    /// in raku — but this walk must still cross them, because they are also how
+    /// mutsu models a module compunit's *file-scope* lexicals: `HTTP::HPACK`'s
+    /// own `sub decode-int` is registered under `HTTP::HPACK` and reached from
+    /// `HTTP::HPACK::Decoder`'s methods only by stripping a segment. Cutting the
+    /// walk there breaks every bundled module written in that (very common)
+    /// shape. The compound-name distinction is enforced for *type* names, where
+    /// a precise registration-time record exists — see
+    /// `Registry::compound_declared_types`.
     pub(crate) fn bare_name_packages(&self) -> Vec<String> {
         let cur = self.current_package();
         let lexical = self

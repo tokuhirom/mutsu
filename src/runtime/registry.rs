@@ -214,6 +214,23 @@ pub(crate) struct Registry {
     /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
     /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
     pub(crate) lexical_classes: HashSet<String>,
+    /// Registry keys whose `::` segments come from a **compound declared name**
+    /// (`class Foo::List { ... }` written at file scope) rather than from real
+    /// lexical nesting (`unit module NL; class Searcher { ... }`).
+    ///
+    /// Both register under a `::`-joined key, so the key alone cannot tell them
+    /// apart — but raku scopes them very differently. The compound form puts
+    /// only a `Foo` package *stub* in the file's scope; `Foo`'s contents are not
+    /// visible unqualified, so a bare `List` inside `Foo::List`'s body is CORE's
+    /// `List`. The nested form really is inside `NL`, so a bare `Hash` inside
+    /// `NL::Hash` is `NL::Hash`.
+    ///
+    /// Populated at declaration time, when the enclosing package is still known
+    /// (it is not recoverable from the key afterwards), and consulted by the
+    /// outward package walk in `resolve_type_in_current_package`, which would
+    /// otherwise re-derive `Foo` as a scope and let the class resolve *itself*
+    /// under its own short name.
+    pub(crate) compound_declared_types: HashSet<String>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
@@ -788,10 +805,26 @@ impl Registry {
         // `ClassDef` for "Array" with no `is` clause of its own) instead keeps
         // its real builtin parent (`List`, not `Any`) so the rest of its
         // catalog ancestor chain (`Cool`/`Any`/`Mu`) is still reachable below.
-        let parents = if explicit_parents.is_empty() && self.classes.contains_key(class_name) {
+        //
+        // "No explicit parents" means no *class* parent: a class whose only
+        // `parents` entries are composed roles (`class K does A {}`) still
+        // inherits from Any in raku. Without this, its linearization stopped at
+        // the role and `K.isa(Any)` / `K.isa(Mu)` were False even though
+        // `K.^mro` (computed elsewhere) listed both.
+        let has_class_parent = explicit_parents.iter().any(|p| {
+            let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
+            !self.roles.contains_key(base)
+        });
+        let parents = if !has_class_parent && self.classes.contains_key(class_name) {
             match crate::builtins::builtin_type_catalog::builtin_type_info(class_name) {
-                Some(info) if info.mro.len() > 1 => vec![info.mro[1].to_string()],
-                _ => vec!["Any".to_string()],
+                Some(info) if info.mro.len() > 1 && explicit_parents.is_empty() => {
+                    vec![info.mro[1].to_string()]
+                }
+                _ => {
+                    let mut with_any = explicit_parents;
+                    with_any.push("Any".to_string());
+                    with_any
+                }
             }
         } else {
             explicit_parents
