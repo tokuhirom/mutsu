@@ -813,6 +813,42 @@ Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`f
   type-only-invocant repro (`method (List:D:) {...}`) were one ticket, now FIXED; see
   [news/2026-08/method-literal-invocant-declaration-syntax-broken.md](../news/2026-08/method-literal-invocant-declaration-syntax-broken.md).
 
+Found in the 2026-09-06 full re-sweep, triaging its highest-signal file
+(`Language/operators.rakudoc`, 4 mismatch + 2 crash). **All six blocks reproduce
+against raku v2026.07**, and each was narrowed past the doc example to a
+one-line repro before filing — in two cases the doc example was actively
+misleading about the cause:
+
+- `Language/operators.rakudoc:1795` — baggy union `(+)` adds weights as `f64`,
+  so a `Rat` weight comes back as `4.140000000000001`. Ordinary `Rat + Int` is
+  exact, so this is the operator, not the tower.
+  → [todo/tickets/baggy-union-weight-loses-rat-precision.md](../todo/tickets/baggy-union-weight-loses-rat-precision.md)
+- `Language/operators.rakudoc:1977` — `1 but R(42)` names the mixin `Int+{R[Int]}`
+  instead of `Int+{R}`: the single-attribute initialization form is being recorded
+  as a role *parameterization*. Behaviour is correct; only `.^name` is wrong.
+  → [todo/tickets/role-mixin-name-carries-a-spurious-type-parameter.md](../todo/tickets/role-mixin-name-carries-a-spurious-type-parameter.md)
+- `Language/operators.rakudoc:3157` — a **chained** `Z` whose leftmost operand is
+  a comma list fails to parse ("Two terms in a row"). The doc example's `<+ ->`
+  is a red herring: `1, 2 Z <a b c> Z <x y>` fails identically, while
+  `1 Z <a b> Z <+ ->` (single left operand) parses.
+  → [todo/tickets/zip-chain-with-a-comma-list-left-operand-fails-to-parse.md](../todo/tickets/zip-chain-with-a-comma-list-left-operand-fails-to-parse.md)
+- `Language/operators.rakudoc:602` — `my @n = [\~] 1..*` hangs, though
+  `([\~] 1..*)[^5]` and `my @n = 1..*` / `.map` / `lazy gather` all work: the
+  triangle reduce's `Seq` is not carrying whatever marks the others lazy, so the
+  list assignment reifies it.
+  → [todo/tickets/array-assignment-eagerly-reifies-a-triangle-reduce.md](../todo/tickets/array-assignment-eagerly-reifies-a-triangle-reduce.md)
+- `Language/operators.rakudoc:2376` — a `Set`'s own `.WHICH` ignores its
+  elements' user-defined `.WHICH`, so two structurally identical Sets differ
+  under `eqv`/`===`. The elements themselves compare equal, and object-hash keys
+  already use `value_which_key`, so the machinery exists and the Set identity
+  path is not using it.
+  → [todo/tickets/set-which-ignores-a-user-defined-element-which.md](../todo/tickets/set-which-ignores-a-user-defined-element-which.md)
+- `Language/operators.rakudoc:2507` — `$*TOLERANCE` is `(Any)` rather than
+  `1e-15`, so the doc's `≅` example compares `1 ≅ 1`. `≅` itself answers
+  correctly on the other rows tested, so this may be just the missing dynamic
+  variable plus wiring it into the operator.
+  → [todo/tickets/tolerance-dynamic-variable-is-undefined.md](../todo/tickets/tolerance-dynamic-variable-is-undefined.md)
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
