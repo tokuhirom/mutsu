@@ -4683,6 +4683,21 @@ pub(crate) struct CompiledCode {
     /// `todo/tickets/callsame-to-native-mu-methods-nil.md` for why an
     /// unconditional push was rejected on hot-path cost grounds.
     pub(crate) uses_dispatcher: bool,
+    /// True if this code can possibly observe the implicit `*%_` named slurpy
+    /// every method signature carries. Computed conservatively while compiling:
+    /// set by any string constant that spells `%_` (every `%_` read, index,
+    /// flatten or store names it in the constant pool), by any nested closure
+    /// body whose own flag is set, by an inner routine/subset declaration
+    /// (whose body is not in this code's constant pool), and by the dynamic
+    /// escape hatches that can reach a lexical without naming it -- `EVAL`,
+    /// symbolic deref (`::('%_')`) and the `CALLER::` ops.
+    ///
+    /// The method fast paths materialize `%_` -- a `HashMap`, a `String` per
+    /// leftover named key and a `Value` hash -- on *every* call; a body that
+    /// cannot observe it (e.g. `submethod TWEAK(:$!spec) { }`) built a hash
+    /// only to throw it away. Over-approximating is always safe: a false
+    /// positive just keeps the old behaviour.
+    pub(crate) may_observe_named_slurpy: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
@@ -5124,6 +5139,7 @@ impl CompiledCode {
             has_once: false,
             uses_callframe: false,
             uses_dispatcher: false,
+            may_observe_named_slurpy: false,
             source_line: None,
             is_pointy_block: false,
             pointy_alias_param: false,
@@ -7185,6 +7201,9 @@ impl CompiledCode {
     /// whether the closure was created in an escaping position (see
     /// `closure_escapes`); the two Vecs are kept index-aligned in lockstep.
     pub(crate) fn add_closure_code(&mut self, code: CompiledCode, escapes: bool) -> u32 {
+        // A closure nested in a method body resolves `%_` through the method's
+        // env, so its mention counts as this code's.
+        self.may_observe_named_slurpy |= code.may_observe_named_slurpy;
         let idx = self.closure_compiled_codes.len() as u32;
         self.closure_compiled_codes.push(Arc::new(code));
         self.closure_escapes.push(escapes);
@@ -7227,6 +7246,32 @@ impl CompiledCode {
                 }
                 _ => {}
             }
+        }
+        if !self.may_observe_named_slurpy {
+            // The escape hatches that reach a lexical without naming it in this
+            // code's constant pool: `EVAL`ed source, symbolic deref
+            // (`::('%_')`), the `CALLER::` pseudo-package ops, and an inner
+            // routine/subset declaration whose body lives in `decl_plans`
+            // rather than in the constants scanned by `add_constant`.
+            self.may_observe_named_slurpy = match &op {
+                OpCode::CallFunc { name_idx, .. }
+                | OpCode::CallFuncNamed { name_idx, .. }
+                | OpCode::GetBareWord(name_idx) => self
+                    .constants
+                    .get(*name_idx as usize)
+                    .is_some_and(|v| match v.view() {
+                        ValueView::Str(s) => matches!(s.as_str(), "EVAL" | "EVALFILE"),
+                        _ => false,
+                    }),
+                OpCode::SymbolicDeref { .. }
+                | OpCode::GetCallerVar { .. }
+                | OpCode::SetCallerVar { .. }
+                | OpCode::BindCallerVar { .. }
+                | OpCode::GetCallerOuterVar { .. }
+                | OpCode::RegisterDecl(..)
+                | OpCode::RegisterSubset(..) => true,
+                _ => false,
+            };
         }
         if !self.uses_dispatcher
             && let OpCode::CallFunc { name_idx, .. }
@@ -7653,6 +7698,18 @@ impl CompiledCode {
     /// Values with an observable identity (containers, Instances, Regex, ...)
     /// get no key and always take a fresh slot.
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
+        // Every `%_` reference -- a read, an index, a `|%_` flatten, a store --
+        // reaches the constant pool as a variable-name string spelling `%_`
+        // (possibly package-qualified), so one substring test over the strings
+        // this code interns is a complete, conservative detector. A source
+        // literal that merely *contains* `%_` trips it too; that is a harmless
+        // false positive.
+        if !self.may_observe_named_slurpy
+            && let ValueView::Str(s) = value.view()
+            && s.contains("%_")
+        {
+            self.may_observe_named_slurpy = true;
+        }
         let Some(key) = ConstKey::of(&value) else {
             let idx = self.constants.len() as u32;
             self.constants.push(value);

@@ -1726,10 +1726,16 @@ impl Interpreter {
         // binds positionals by index and skips slurpy params, leaving `%_` as
         // `Any` -- so `|%_` would splat a stray positional. Compute it here and let
         // the locals-init loop fill the `%_` slot.
-        let implicit_named_slurpy: Option<Value> = if method_def
-            .param_defs
-            .iter()
-            .any(|pd| pd.slurpy && pd.name == "%_")
+        // ...but only when the body can actually observe `%_`. `cc` records
+        // that conservatively at compile time (`may_observe_named_slurpy`);
+        // a body that never spells `%_` -- `submethod TWEAK(:$!spec) { }`,
+        // the overwhelming majority of methods -- built a hash of the leftover
+        // named args on every call and immediately threw it away.
+        let implicit_named_slurpy: Option<Value> = if cc.may_observe_named_slurpy
+            && method_def
+                .param_defs
+                .iter()
+                .any(|pd| pd.slurpy && pd.name == "%_")
         {
             Some(Self::implicit_method_named_slurpy(
                 &method_def.param_defs,
