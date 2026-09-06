@@ -152,6 +152,11 @@ impl Interpreter {
                     args: Vec::new(),
                 }
             }
+            // `$prefix ~ ({*})`: the parser records the parentheses, and the
+            // dispatch point is inside them.
+            Expr::Grouped(inner) => {
+                Expr::Grouped(Box::new(Self::rewrite_proto_dispatch_expr(inner)))
+            }
             Expr::Unary { op, expr } => Expr::Unary {
                 op: op.clone(),
                 expr: Box::new(Self::rewrite_proto_dispatch_expr(expr)),

@@ -70,7 +70,9 @@ fn parse_for_with_parenthesized_iterable_expression() {
     assert_eq!(stmts.len(), 1);
     match &stmts[0] {
         Stmt::For { iterable, .. } => {
-            assert!(matches!(iterable, Expr::ArrayVar(name) if name == "a"));
+            // The parser records the parentheses `for (@a)` wrote; `@a` is what
+            // they hold, and every consumer asks through them.
+            assert!(matches!(iterable.peel_parens(), Expr::ArrayVar(name) if name == "a"));
         }
         _ => panic!("expected for statement"),
     }

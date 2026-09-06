@@ -234,7 +234,6 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         // Start of the (whitespace-trimmed) RHS input — used below to tell a bare
         // `*` operand (`X ~~ *`, which autoprimes to a WhateverCode) apart from a
         // parenthesized `(*)` (a Whatever *value*, which smartmatches to True).
-        let rhs_start = r;
         // Track whether the smartmatch RHS is a regex literal.  When it is,
         // chaining with subsequent comparison operators (eq, ==, …) must be
         // suppressed because the regex literal terminates the smartmatch RHS
@@ -312,15 +311,13 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 left = Expr::WhateverCurry(Box::new(left));
             }
             // Bare `* ~~ Type` curries to WhateverCode `{ $_ ~~ Type }`.
-            // This is only done here (not in should_curry_whatever) because at the
-            // top-level wrapping stage, parenthesized `((*)) ~~ Type` also has
-            // Expr::Whatever as LHS and should NOT curry — only a true bare `*`
-            // operand in the precedence parser should trigger this.
-            // We distinguish bare `*` from `((*))` by checking whether the consumed
-            // input for the LHS started with `(`.
+            // Only a TRUE bare `*` operand curries here: `(*) ~~ Type` is a
+            // Whatever *value* on the left. The parser records every
+            // parenthesization, so the two are already different shapes —
+            // `Expr::Whatever` versus `Grouped(Whatever)` — and this no longer
+            // has to re-read the consumed source text to tell them apart.
             if matches!(&left, Expr::Whatever) {
-                let lhs_text = input[..input.len() - rest.len()].trim_start();
-                if !lhs_text.starts_with('(') {
+                {
                     // ADR-0033 Phase 2 section 2.5: plant a `WhateverCurry`
                     // marker over the un-curried `* ~~ Type` body instead of
                     // eagerly building the closure, so `.AST` can render the
@@ -337,14 +334,12 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             }
             // Bare `X ~~ *` autoprimes to a WhateverCode `-> $a { X ~~ $a }`.
             // A parenthesized `X ~~ (*)` (or a variable holding a Whatever) is a
-            // Whatever *value* and must smartmatch to True instead — those keep
-            // `Expr::Whatever` as the RHS and reach the runtime smartmatch, which
-            // returns True for a Whatever RHS. We distinguish the two the same way
-            // as the LHS: a true bare `*` operand's consumed text does not start
-            // with `(`.
+            // Whatever *value* and must smartmatch to True instead. Same as the
+            // LHS above: the recorded parenthesization already distinguishes
+            // them, so `Grouped(Whatever)` simply does not match here and
+            // reaches the runtime smartmatch, which returns True.
             if matches!(&right, Expr::Whatever) {
-                let rhs_text = rhs_start[..rhs_start.len() - r.len()].trim_start();
-                if !rhs_text.starts_with('(') {
+                {
                     // ADR-0033 Phase 2 section 2.5: same deferral as the LHS
                     // case above, for `X ~~ *`.
                     let sm_expr = Expr::Binary {

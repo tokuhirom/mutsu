@@ -260,7 +260,9 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
 /// least one element is not a static name/pair (the caller then keeps the body
 /// as a computed expression).
 fn enum_variants_from_body(body: &Expr) -> Option<Vec<(String, Option<Expr>)>> {
-    match body {
+    // `enum (a => 5, b => 10)` arrives parenthesized, and the parser records
+    // that; the variant list is what is inside.
+    match body.peel_parens() {
         Expr::ArrayLiteral(items) => items
             .iter()
             .cloned()

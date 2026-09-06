@@ -36,7 +36,10 @@ use precedence::ternary;
 // `crate::whatever_curry::build_closure` (the closure construction that moved
 // out of the parser per ADR-0033) also calls them.
 use whatever::fat_arrow_curries;
-pub(crate) use whatever::{contains_whatever, is_whatever, should_wrap_whatevercode};
+pub(crate) use whatever::{
+    contains_whatever, is_frozen_whatever, is_whatever, is_whatever_operand,
+    should_wrap_whatevercode,
+};
 
 // Re-exports for WhateverCode-adjacent AST shaping that stays in the parser
 // (`whatever_wrap.rs`): composing `o`/`∘` operands and threading a curried

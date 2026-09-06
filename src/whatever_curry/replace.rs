@@ -17,11 +17,16 @@ use crate::token_kind::TokenKind;
 /// `counter` tracks the next parameter index to assign.
 pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
     match expr {
+        // `((*))` is a frozen `Whatever` value, not a placeholder: clone it
+        // through. A single layer of parentheses is transparent, and
+        // `is_whatever` already looks through it.
+        e if crate::parser::is_frozen_whatever(e) => e.clone(),
         e if is_whatever(e) => {
             let var_name = format!("__wc_{counter}");
             *counter += 1;
             Expr::Var(var_name)
         }
+        Expr::Grouped(inner) => replace_whatever_numbered(inner, counter),
         Expr::WhateverCurry(inner) => replace_whatever_numbered(inner, counter),
         // A thunk barrier is opaque: each of its operands is its own priming
         // scope (already wrapped in a `WhateverCurry` by `super::plant`, which
@@ -197,7 +202,10 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
 /// Replace Whatever and nested single-arg WhateverCode with $_ (for single-arg wrapping).
 pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
+        // `((*))` is a frozen `Whatever` value, not a placeholder.
+        e if crate::parser::is_frozen_whatever(e) => e.clone(),
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => Expr::Var("_".to_string()),
+        Expr::Grouped(inner) => replace_whatever_single(inner),
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
         // See the matching arm in `replace_whatever_numbered`: the final
         // operand is exempt when the chain's last link is a

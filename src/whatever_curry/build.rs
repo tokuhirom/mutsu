@@ -146,6 +146,10 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
 /// slurpy/map semantics.
 fn contains_hyperwhatever(expr: &Expr) -> bool {
     match expr {
+        // `((**))` is a frozen value, not a placeholder; plain parentheses are
+        // transparent.
+        e if crate::parser::is_frozen_whatever(e) => false,
+        Expr::Grouped(inner) => contains_hyperwhatever(inner),
         Expr::HyperWhatever => true,
         Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
@@ -173,7 +177,12 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
 /// Count the number of distinct Whatever (`*`) placeholders in an expression.
 pub(crate) fn count_whatever(expr: &Expr) -> usize {
     match expr {
+        // `((*))` is a frozen `Whatever` value and primes nothing; a single
+        // layer of parentheses is transparent and `is_whatever` already looks
+        // through it.
+        e if crate::parser::is_frozen_whatever(e) => 0,
         e if is_whatever(e) => 1,
+        Expr::Grouped(inner) => count_whatever(inner),
         // A nested, already-planted WhateverCurry operand (e.g. `(* - 1)`
         // inside `(* - 1) - 1`) contributes its own un-curried placeholder
         // count. `count_whatever` already handles the chained-comparison
@@ -286,6 +295,7 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
 /// Used to determine whether a WhateverCode lambda should avoid using $_ as its param.
 pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
     match expr {
+        Expr::Grouped(inner) => expr_contains_topic(inner),
         Expr::Var(name) if name == "_" => true,
         Expr::Whatever | Expr::WhateverArg => false,
         Expr::WhateverCurry(inner) => expr_contains_topic(inner),

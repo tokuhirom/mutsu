@@ -25,53 +25,51 @@ use super::meta_ops::{
     try_parse_sequence_in_paren,
 };
 
-/// True when `expr` is an already-planted WhateverCode priming scope (e.g.
-/// from `*.so` or `* + 1`), which is the value an extra paren layer should
-/// freeze. ADR-0033 Phase 1: the parser defers closure construction to the
-/// compiler, so this is now `Expr::WhateverCurry` rather than a built
-/// `Lambda`/`AnonSubParams`.
-fn is_whatevercode_closure(expr: &Expr) -> bool {
-    matches!(expr, Expr::WhateverCurry(_))
-}
-
-/// True when `s` is exactly one balanced parenthesis group spanning the whole
-/// (trimmed) string — i.e. the opening `(` matches the final `)`. Used to tell
-/// `((*))` (content `(*)` is a whole group → freeze) from `((*) + 1)` (content
-/// `(*) + 1` is not → stays a WhateverCode).
-fn is_single_paren_group(s: &str) -> bool {
-    let s = s.trim();
-    if !s.starts_with('(') || !s.ends_with(')') {
-        return false;
-    }
-    let mut depth = 0usize;
-    let bytes = s.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'(' => depth += 1,
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return i == bytes.len() - 1;
-                }
-            }
-            _ => {}
-        }
-    }
-    false
-}
-
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
     // Parens open a fresh nesting context: nothing inside binds to a prefix
     // operator waiting outside the group.
-    crate::parser::expr::without_pending_prefix(|| paren_expr_inner(input))
+    let (rest, expr) = crate::parser::expr::without_pending_prefix(|| paren_expr_inner(input))?;
+    Ok((rest, mark_parenthesized(expr)))
+}
+
+/// Record that the source wrote parentheses around `expr`.
+///
+/// The parser used to add this marker only for a narrow allowlist of shapes,
+/// each entry buying one specific downstream behaviour, which left the AST
+/// unable to say what raku says: rakudo models any `(...)` as
+/// `Circumfix::Parentheses(SemiList(...))`. The marker is now unconditional, so
+/// a parenthesization is a property of the *source*, not of who happens to care
+/// about it. `Grouped` stays transparent to the compiler; the consumers that
+/// read it read the same thing they always did, just in more places.
+///
+/// Two shapes place the marker differently:
+///
+/// - `PositionalPair` keeps the marker on the *inside*. Every call-argument path
+///   keys on `PositionalPair` being outermost to tell `f((a => 1))` (a
+///   positional `Pair`) from `f(a => 1)` (a named argument).
+/// - An already-`Grouped` expression is wrapped again, because a second pair of
+///   parentheses is a second `Circumfix::Parentheses` in rakudo — and, for
+///   Whatever-currying, the layer that freezes the curry. `(*)` is a curry point
+///   and `((*))` is a literal `Whatever` value; `(*.flip)` composes into an
+///   enclosing curry while `((*.flip))` is a finished `WhateverCode` you can
+///   call `.assuming` on. `parser::expr::is_frozen_whatever` reads that layer
+///   count back, which is why the freeze needs no source-text rescan.
+fn mark_parenthesized(expr: Expr) -> Expr {
+    match expr {
+        Expr::PositionalPair(inner) => {
+            Expr::PositionalPair(Box::new(Expr::Grouped(Box::new(*inner))))
+        }
+        other => Expr::Grouped(Box::new(other)),
+    }
 }
 
 fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     // Try the comprehensive parenthesized assignment parser first.
     // This handles complex LHS forms like %hash{...}, @arr[...], method calls, etc.
     if let Ok((rest, assign_expr)) = crate::parser::stmt::assign::try_parse_assign_expr(input) {
-        return Ok((rest, Expr::Grouped(Box::new(assign_expr))));
+        // `mark_parenthesized` adds the `Grouped` marker on the way out.
+        return Ok((rest, assign_expr));
     }
     let (input, _) = parse_char(input, '(')?;
     let (input, _) = ws(input)?;
@@ -232,20 +230,12 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     if let Some(seq) = try_parse_sequence_in_paren(input, std::slice::from_ref(&first)) {
         return seq;
     }
-    let before_close = input;
     if let Ok((input, _)) = parse_char(input, ')') {
         // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
-        // as a named argument in function calls.
-        //
-        // The inner `Grouped` records that the parens were WRITTEN, which
-        // `PositionalPair` alone cannot say: the parser also produces a bare
-        // `PositionalPair` for a non-bareword key (`"a" => 1`, `$k => 1`), and
-        // without the marker the two spellings are indistinguishable. Only the
-        // RakuAST converter reads it — raku models a parenthesized bareword pair
-        // as `Circumfix::Parentheses(SemiList(… FatArrow))` and a quoted-key one
-        // as a plain `ApplyInfix`. `Grouped` is transparent to the compiler, and
-        // the `PositionalPair` marker every call-argument path keys on stays on
-        // the outside.
+        // as a named argument in function calls. The `Grouped` marker that
+        // records the parentheses is added by `mark_parenthesized` on the way
+        // out, *inside* this wrapper: the `PositionalPair` marker every
+        // call-argument path keys on must stay outermost.
         let first = if matches!(
             &first,
             Expr::Binary {
@@ -253,7 +243,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                 ..
             }
         ) {
-            Expr::PositionalPair(Box::new(Expr::Grouped(Box::new(first))))
+            Expr::PositionalPair(Box::new(first))
         } else {
             first
         };
@@ -269,95 +259,14 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             | Expr::AnonSubParams { .. }) => curried,
             other => normalize_chained_zip_meta(other),
         };
-        // Wrap in Grouped so the compiler's chain-flattener can
-        // distinguish `(1|2)|3` from `1|2|3` for junction operators.
+        // Every one of the behaviours that used to be bought here by a narrow
+        // allowlist — the junction chain-flattener boundary, the listop-closing
+        // `(done)`, the isolated feed, `($a) = 1,2,3` as a list assignment, the
+        // tight parenthesized assignment, and the X/Z meta-op argument boundary
+        // — is now bought by the *unconditional* marker `mark_parenthesized`
+        // adds on the way out. The parentheses are recorded because the source
+        // wrote them, not because one downstream consumer asked for them.
         //
-        // A lone parenthesized bareword (a listop term such as `(done)`) is also
-        // wrapped: the parens close off the listop so it cannot gobble a trailing
-        // operator, which lets `1 ?? (done) !! 2` parse (matching Rakudo). Without
-        // the wrapper the ternary then-branch check would reject the naked
-        // `BareWord`, conflating `(done)` with the gobbling `done`.
-        let result = if matches!(
-            &result,
-            Expr::Binary {
-                op: TokenKind::Pipe | TokenKind::Ampersand | TokenKind::Caret,
-                ..
-            }
-        ) || matches!(&result, Expr::BareWord(_))
-            // A parenthesized feed (`(@a ==> grep ...)`) must stay wrapped so an
-            // enclosing `my @g = (...)` does NOT split it (the parens isolate the
-            // feed: `my @g = (@a ==> grep)` assigns the feed result, whereas
-            // `my @g = @a ==> grep` binds `=` tighter and feeds `(my @g = @a)`).
-            || matches!(&result, Expr::Feed { .. })
-            // A parenthesized single SCALAR stays wrapped so a following `=` treats
-            // it as a LIST-assignment target (`($a) = 1, 2, 3` makes `$a` slurp the
-            // whole list), distinct from a bare `$a = 1, 2, 3` item assignment.
-            // `assign_not_expr_mode` keys off the `Grouped` wrapper for this; the
-            // wrapper is transparent everywhere else (consumers unwrap it, incl.
-            // the for-loop rw-source detection). `@`/`%` vars are NOT wrapped.
-            || matches!(&result, Expr::Var(_))
-            // A parenthesized ASSIGNMENT with a non-variable lvalue (a method /
-            // attribute-accessor LHS like `$.value = x` or `$.value ~= x`) reaches
-            // this fall-through because `try_parse_assign_expr` only handles
-            // `$`/`@`/`%` names, not `$.foo`. Wrap it so it matches the scalar path
-            // (which already yields `Grouped(AssignExpr)`): the parens make the
-            // assignment tight, so `cond ?? a !! ($.value = x)` is legal and must
-            // NOT trip the ternary "assignment too loose" guard.
-            || matches!(
-                &result,
-                Expr::AssignExpr { .. }
-                    | Expr::CompoundAssign { .. }
-                    | Expr::IndexAssign { .. }
-                    | Expr::MultiDimIndexAssign { .. }
-            )
-            // A parenthesized X/Z meta-op keeps its boundary: the argument-list
-            // lift (`lift_list_infix_in_arg_list`) hoists a BARE meta-op's
-            // preceding comma items into its left operand (list-infix is looser
-            // than the argument comma), but parens close the operand off —
-            // `join "", ("+" X~ @parts)` must keep "" as the separator, not
-            // cross ("", "+") with @parts (Cro::MediaType's subtype action).
-            // The lift only matches an unwrapped MetaOp, so Grouped is enough.
-            || matches!(&result, Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z")
-        {
-            Expr::Grouped(Box::new(result))
-        } else {
-            result
-        };
-        // Whatever-currying freeze: a `*` (or a `*`-curried WhateverCode) wrapped
-        // in an *extra* layer of parens becomes a frozen value, not a curry point.
-        // Raku: `(*).Capture` curries to a WhateverCode, but `((*)).Capture` calls
-        // `.Capture` on the literal Whatever (and throws). One level of parens is
-        // transparent to currying; a second freezes. We detect the second level by
-        // checking that the parenthesized content is itself a single, whole paren
-        // group (`(*)`, `(*.so)`, `((*))`) rather than a larger expression that
-        // merely begins with a paren (`(*) + 1`, which stays a WhateverCode).
-        let consumed = &content_start[..content_start.len() - before_close.len()];
-        let result = if is_single_paren_group(consumed)
-            && (crate::parser::expr::is_whatever(&result)
-                || matches!(&result, Expr::HyperWhatever)
-                || is_whatevercode_closure(&result)
-                || matches!(&result, Expr::Grouped(_)))
-        {
-            Expr::Grouped(Box::new(result))
-        } else {
-            result
-        };
-        // `($a) = ...` — a parenthesized single scalar directly followed by an
-        // item-assignment `=` is a LIST assignment: the lone target slurps the
-        // whole RHS as an itemized list (`($a) = 1, 2, 3` → `$a` is `$(1, 2, 3)`,
-        // `.elems` 3), unlike a bare `$a = 1, 2, 3` (item assignment, `$a` is 1).
-        // Wrap in `Grouped` so the `=` handler (logic.rs) keeps the
-        // comma-absorbing list-assignment RHS instead of the item-assignment one.
-        let result = if matches!(&result, Expr::Var(_)) {
-            let after = input.trim_start();
-            if after.starts_with('=') && !after.starts_with("==") && !after.starts_with("=>") {
-                Expr::Grouped(Box::new(result))
-            } else {
-                result
-            }
-        } else {
-            result
-        };
         return Ok((input, result));
     }
     // Comma-separated list with sequence operator detection

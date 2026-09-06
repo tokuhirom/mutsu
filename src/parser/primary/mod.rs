@@ -646,8 +646,8 @@ mod tests {
         let (rest, expr) = primary("(-> *@a { }).count").unwrap();
         assert_eq!(rest, ".count");
         assert!(matches!(
-            expr,
-            Expr::AnonSubParams { ref param_defs, .. }
+            expr.peel_parens(),
+            Expr::AnonSubParams { param_defs, .. }
                 if param_defs.len() == 1
                     && param_defs[0].slurpy
                     && param_defs[0].name == "@a"
@@ -659,8 +659,8 @@ mod tests {
         let (rest, expr) = primary("(-> |c { }).count").unwrap();
         assert_eq!(rest, ".count");
         assert!(matches!(
-            expr,
-            Expr::AnonSubParams { ref param_defs, .. }
+            expr.peel_parens(),
+            Expr::AnonSubParams { param_defs, .. }
                 if param_defs.len() == 1
                     && param_defs[0].slurpy
                     && param_defs[0].sigilless

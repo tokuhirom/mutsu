@@ -120,10 +120,10 @@ pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
                         r2.len(),
                     )
                 })?;
-            if contains_whatever(&right) && !matches!(right, Expr::Whatever | Expr::HyperWhatever) {
+            if contains_whatever(&right) && !crate::parser::expr::is_whatever_operand(&right) {
                 right = Expr::WhateverCurry(Box::new(right));
             }
-            if contains_whatever(&left) && !matches!(left, Expr::Whatever | Expr::HyperWhatever) {
+            if contains_whatever(&left) && !crate::parser::expr::is_whatever_operand(&left) {
                 left = Expr::WhateverCurry(Box::new(left));
             }
             left = wrap_left_exclusive_sequence(
@@ -151,7 +151,7 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
 
     // Helper: wrap LHS WhateverCode before building the sequence node.
     fn maybe_wrap_lhs(left: &mut Expr) {
-        if contains_whatever(left) && !matches!(left, Expr::Whatever) {
+        if contains_whatever(left) && !crate::parser::expr::is_whatever_operand(left) {
             *left = Expr::WhateverCurry(Box::new(left.clone()));
         }
     }

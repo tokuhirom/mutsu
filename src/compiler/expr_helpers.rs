@@ -281,7 +281,9 @@ impl Compiler {
     /// For `($foo, "x")[0]` where index 0 points to `Var("foo")`, returns `Some("foo")`.
     /// For `($foo, "x", 17)[0,1][0]` (chained indexing), resolves recursively.
     pub(super) fn resolve_container_var_name(expr: &Expr) -> Option<String> {
-        match expr {
+        // Every shape below is asked of what the source wrote inside any
+        // parentheses: `($foo, "x", 17)[0, 1][0]` names `$foo`'s container.
+        match expr.peel_parens() {
             Expr::Var(name) => Some(name.clone()),
             Expr::Index {
                 target,
@@ -290,8 +292,8 @@ impl Compiler {
             } => {
                 // If target is an ArrayLiteral and index is a literal Int,
                 // resolve the element at that index.
-                if let Expr::ArrayLiteral(elements) = target.as_ref() {
-                    if let Expr::Literal(lit) = index.as_ref()
+                if let Expr::ArrayLiteral(elements) = target.peel_parens() {
+                    if let Expr::Literal(lit) = index.peel_parens()
                         && let ValueView::Int(i) = lit.view()
                     {
                         let i = i as usize;
@@ -300,7 +302,7 @@ impl Compiler {
                         }
                     }
                     // Multi-index slice: [0,1] produces ArrayLiteral
-                    if let Expr::ArrayLiteral(indices) = index.as_ref() {
+                    if let Expr::ArrayLiteral(indices) = index.peel_parens() {
                         // This creates a new list, not a single container.
                         // However, indexing this list with [0] later may resolve.
                         // We don't handle this case directly.
@@ -317,10 +319,10 @@ impl Compiler {
                     target: inner_target,
                     index: inner_index,
                     is_positional: true,
-                } = target.as_ref()
-                    && let Expr::ArrayLiteral(elements) = inner_target.as_ref()
-                    && let Expr::ArrayLiteral(indices) = inner_index.as_ref()
-                    && let Expr::Literal(outer_lit) = index.as_ref()
+                } = target.peel_parens()
+                    && let Expr::ArrayLiteral(elements) = inner_target.peel_parens()
+                    && let Expr::ArrayLiteral(indices) = inner_index.peel_parens()
+                    && let Expr::Literal(outer_lit) = index.peel_parens()
                     && let ValueView::Int(outer_i) = outer_lit.view()
                 {
                     let outer_i = outer_i as usize;

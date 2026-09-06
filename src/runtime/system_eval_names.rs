@@ -880,6 +880,11 @@ impl Interpreter {
                 }
                 Some(name.clone())
             }
+            // The parser records every `(...)`; `enum E (Foo, Bar)`'s body
+            // is one, and the bare terms are inside it.
+            Expr::Grouped(inner) => {
+                self.find_undeclared_name_in_expr(inner, local_classes, declared)
+            }
             Expr::Binary { left, right, .. } => self
                 .find_undeclared_name_in_expr(left, local_classes, declared)
                 .or_else(|| self.find_undeclared_name_in_expr(right, local_classes, declared)),

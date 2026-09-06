@@ -215,6 +215,12 @@ impl Compiler {
         dwim_left: bool,
         dwim_right: bool,
     ) {
+        // The write-back below dispatches on the *shape* of the left operand, so
+        // it must see the shape the source wrote, not the parenthesization
+        // marker around it: `($a, $b) »~=» <x y>` is the same list of lvalues as
+        // a bare one. Compiling a `Grouped` is transparent, so peeling here
+        // changes nothing else.
+        let left = left.peel_parens();
         // Detect assignment hyper-ops (e.g. >>+=>>, >>~=>>)
         // These need to compute with the base op and then assign back.
         let is_assign_op = op.ends_with('=')
@@ -384,6 +390,14 @@ impl Compiler {
 
     /// Compile MetaOp (Rop, Xop, Zop).
     pub(super) fn compile_expr_meta_op(&mut self, meta: &str, op: &str, left: &Expr, right: &Expr) {
+        // Every branch below dispatches on the *shape* of an operand — a literal
+        // list of lvalues, a grouped declaration, an `xx` to thunk per element —
+        // so it must look through the parenthesization marker the parser records
+        // for `(...)`. Compiling a `Grouped` is transparent, so peeling changes
+        // nothing else. The marker still does its parse-time job of closing the
+        // operand off from the argument-list lift; that happened before here.
+        let left = left.peel_parens();
+        let right = right.peel_parens();
         // A grouped declaration used as an X/Z operand (`my ($a, $b) Z ...`)
         // declares its scalars in the surrounding scope and contributes a List
         // of those scalar values. The parser represents the declaration as a

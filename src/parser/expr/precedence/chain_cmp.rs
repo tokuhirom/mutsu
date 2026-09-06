@@ -24,13 +24,12 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
             op: TokenKind::FatArrow,
             right,
         } => {
-            let value = if contains_whatever(&right)
-                && !matches!(&*right, Expr::Whatever | Expr::HyperWhatever)
-            {
-                Expr::WhateverCurry(right)
-            } else {
-                *right
-            };
+            let value =
+                if contains_whatever(&right) && !crate::parser::expr::is_whatever_operand(&right) {
+                    Expr::WhateverCurry(right)
+                } else {
+                    *right
+                };
             Expr::Binary {
                 left,
                 op: TokenKind::FatArrow,
@@ -38,8 +37,7 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
             }
         }
         other => {
-            if contains_whatever(&other) && !matches!(&other, Expr::Whatever | Expr::HyperWhatever)
-            {
+            if contains_whatever(&other) && !crate::parser::expr::is_whatever_operand(&other) {
                 Expr::WhateverCurry(Box::new(other))
             } else {
                 other
