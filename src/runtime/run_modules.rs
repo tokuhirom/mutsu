@@ -899,6 +899,13 @@ impl Interpreter {
                     &before_function_keys,
                     main_exported,
                 );
+                // A package-less top-level routine the module declared but did
+                // not export is lexical to the module's compunit, not a shared
+                // global. Move it out of the registry before the loading
+                // scope's own entries come back. See
+                // `runtime/unit_private_routines.rs`.
+                let module_path = source_path.to_string_lossy().to_string();
+                self.seclude_private_toplevel_routines(&module_path);
             }
             // See `hide_toplevel_global_routines`: restore the loading scope's
             // own top-level routines regardless of whether the module's body

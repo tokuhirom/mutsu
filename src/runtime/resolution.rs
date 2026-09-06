@@ -101,6 +101,14 @@ impl Interpreter {
             }
             return None;
         }
+        // A compunit-private top-level routine of the unit currently executing
+        // wins over any package entry: it is a lexical of that compunit, and
+        // the shared registry may well hold an unrelated same-named routine
+        // belonging to the scope that loaded it. See
+        // `runtime/unit_private_routines.rs`.
+        if let Some(def) = self.unit_private_routine(name) {
+            return Some(def);
+        }
         let cur_pkg = self.current_package();
         // Innermost package first, then each enclosing one, ending at GLOBAL.
         for pkg in self.bare_name_packages() {

@@ -67,7 +67,11 @@ impl Interpreter {
             self.multi_compiled_key_cache.clear();
             self.fn_resolve_cache_gen = self.fn_resolve_gen;
         }
-        let cache_key = (!is_multi).then(|| {
+        // A name some loaded compunit kept private resolves differently
+        // depending on which unit is asking; this cache is keyed by
+        // (name, package, arity, types) only, so such a name must bypass it
+        // (`runtime/unit_private_routines.rs`).
+        let cache_key = (!is_multi && !self.is_unit_scoped_routine_name(name)).then(|| {
             (
                 name_sym,
                 self.current_package_sym(),
