@@ -1038,6 +1038,9 @@ impl Compiler {
                 } else if Self::has_let_deep(stmts) {
                     // Block contains `let`/`temp` — wrap in LetBlock for save/restore
                     let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
+                    // Raku's "declarations are in effect at block start" rule
+                    // (see `hoist_typed_var_decls`).
+                    self.hoist_typed_var_decls(stmts);
                     let needs_topic = Self::has_real_let_deep(stmts);
                     for (i, s) in stmts.iter().enumerate() {
                         let is_last = i == stmts.len() - 1;
@@ -1054,6 +1057,9 @@ impl Compiler {
                     // Block contains `use` — wrap with import scope save/restore
                     // so imports are lexically scoped to this block
                     self.code.emit(OpCode::PushImportScope);
+                    // Raku's "declarations are in effect at block start" rule
+                    // (see `hoist_typed_var_decls`).
+                    self.hoist_typed_var_decls(stmts);
                     for s in stmts {
                         self.compile_stmt(s);
                     }
@@ -1164,6 +1170,16 @@ impl Compiler {
                             self.compile_stmt(&hoisted);
                         }
                     }
+                    // Raku's `my TYPE $x` is in effect for the WHOLE block, not
+                    // just from its textual position, so an earlier statement
+                    // that reaches the name (an `EVAL '$x = ...'`, a nested sub
+                    // called before the declaration) must already see the
+                    // constraint. The value-position/inline block path does this
+                    // in `compile_block_inline`; this statement-position
+                    // `BlockScope` path did not, so the very same block silently
+                    // lost its declared types just because a statement followed
+                    // it (`t/typed-decl-hoist-block-forms.t`).
+                    self.hoist_typed_var_decls(stmts);
                     for s in stmts {
                         self.compile_stmt(s);
                     }

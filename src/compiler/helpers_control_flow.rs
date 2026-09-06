@@ -506,7 +506,12 @@ impl Compiler {
     /// body (the `for` expression form), which compiles through
     /// `compile_stmts_value` instead.
     pub(super) fn compile_scope_restored_body_value(&mut self, stmts: &[Stmt]) {
-        self.in_scope_restored_body(|c| c.compile_stmts_value(stmts));
+        self.in_scope_restored_body(|c| {
+            // Same block-start declaration visibility as the statement-position
+            // loop body above (`compile_body_with_implicit_try_inner`).
+            c.hoist_typed_var_decls(stmts);
+            c.compile_stmts_value(stmts)
+        });
     }
 
     /// Run `f` with `lexically_in_block` set, restoring the previous value
@@ -750,10 +755,16 @@ impl Compiler {
 
     fn compile_body_with_implicit_try_inner(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
+        // A block's `my TYPE $x` is in effect for the WHOLE block, so register
+        // the constraints at entry (see `hoist_typed_var_decls`). This is the
+        // shared entry point for if/else branches and loop bodies; the
+        // CATCH/CONTROL arm below re-enters through `compile_block_inline`,
+        // which hoists on its own, so hoist only in the plain arm.
         if Self::has_catch_or_control(stmts) {
             self.compile_implicit_try(stmts);
             self.code.emit(OpCode::Pop);
         } else {
+            self.hoist_typed_var_decls(stmts);
             for s in stmts {
                 self.compile_stmt(s);
                 // A statement `given` always nets one stack value (see

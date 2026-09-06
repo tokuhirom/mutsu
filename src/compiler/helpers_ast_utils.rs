@@ -554,7 +554,7 @@ impl Compiler {
             {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                self.emit_set_var_type(name, name_idx, tc_idx, false);
+                self.emit_hoisted_set_var_type(name, name_idx, tc_idx, false);
             }
         }
     }

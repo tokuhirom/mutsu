@@ -310,6 +310,10 @@ impl Compiler {
         // Hoist sub declarations within the sub body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
+        // ...and the body's typed `my` declarations, which are in effect for the
+        // whole routine body, not just from their textual position (see
+        // `hoist_typed_var_decls`).
+        sub_compiler.hoist_typed_var_decls(body);
         // Seed the body chunk's ip -> line table with the sub's definition line so
         // its prologue ops (before the body's first statement marker) already
         // carry a line.
@@ -1117,6 +1121,8 @@ impl Compiler {
         // Hoist sub declarations within the closure body
         sub_compiler.mark_lexical_body(body);
         sub_compiler.hoist_sub_decls(body, true);
+        // ...and the body's typed `my` declarations (see `hoist_typed_var_decls`).
+        sub_compiler.hoist_typed_var_decls(body);
         // If body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack, which is the
         // closure's implicit return value, so keep it (do not Pop).

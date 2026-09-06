@@ -2016,10 +2016,17 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {
-                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, false)?;
+                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, false, false)?;
             }
             OpCode::SetVarTypeScoped { name_idx, tc_idx } => {
-                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, true)?;
+                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, true, false)?;
+            }
+            OpCode::SetVarTypeHoisted {
+                name_idx,
+                tc_idx,
+                scoped,
+            } => {
+                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, *scoped, true)?;
             }
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
