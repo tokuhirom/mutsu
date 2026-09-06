@@ -437,7 +437,7 @@ impl Interpreter {
         // a whole-container cell so the sub's by-name mutation and the owner's
         // by-name read alias one cell (docs/captured-outer-cell-sharing.md §7.2).
         if name.starts_with('@') || name.starts_with('%') {
-            self.box_decl_local_container_cell(code, idx);
+            self.box_decl_local_container_cell(code, idx, false);
             return;
         }
         if self.locals[idx].is_container_ref() {
@@ -489,14 +489,42 @@ impl Interpreter {
     /// element-assign write-back paths already descend through the cell
     /// (`try_native_array_mut` / `try_native_hash_mut_bound` / `env_root_descended_mut`),
     /// and `GetArrayVar`/`GetHashVar` `into_deref()` the cell on read.
-    pub(crate) fn box_decl_local_container_cell(&mut self, code: &CompiledCode, idx: usize) {
-        if self.locals[idx].is_container_ref() {
-            return;
-        }
-        if !matches!(
-            self.locals[idx].view(),
-            ValueView::Array(..) | ValueView::Hash(..)
-        ) {
+    ///
+    /// `unvouched_capture` marks the ADR-0055 unvouched-escaping-capture trigger
+    /// (`CompiledCode::needs_cell_unvouched_containers`). There the cell is not
+    /// an optimisation but the only thing that distinguishes the closure's
+    /// binding from a same-named container in whatever frame happens to be
+    /// calling it, so an already-celled slot is REBOUND to a fresh cell instead
+    /// of being left alone. Same-named `my` locals share one slot, so a second
+    /// block's declaration finds the first block's cell sitting there; keeping
+    /// it would both hand two `my` bindings one container and leave `env` naming
+    /// the first block's leftover plain array, which the escaping closure then
+    /// captured instead of the cell — the owner saw an empty container and the
+    /// writes surfaced one block late (`t/container-capture-cell-dichotomy.t`
+    /// 21-22). A `my` is a fresh binding; a fresh cell is what that means here.
+    ///
+    /// The typed-container refusal below applies to this trigger too. Lifting it
+    /// was tried and measured wrong: `my %h is BagHash = a => 1, b => 0, c => 2`
+    /// initialised to ONE key instead of two, because the declaration's store no
+    /// longer reached the assignment chokepoint that applies the container type
+    /// (`roast/S02-types/baghash.t`, `mixhash.t`). A typed container therefore
+    /// stays unboxed, and stays hijackable — the same shape of residue as the
+    /// thread-escaping one.
+    pub(crate) fn box_decl_local_container_cell(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        unvouched_capture: bool,
+    ) {
+        let cur = if self.locals[idx].is_container_ref() {
+            if !unvouched_capture {
+                return;
+            }
+            self.locals[idx].deref_container()
+        } else {
+            self.locals[idx].clone()
+        };
+        if !matches!(cur.view(), ValueView::Array(..) | ValueView::Hash(..)) {
             return;
         }
         let name = code.locals[idx].clone();
@@ -510,7 +538,7 @@ impl Interpreter {
         {
             return;
         }
-        let container = self.locals[idx].clone().into_container_ref();
+        let container = cur.into_container_ref();
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());
         if self.shared_vars_active {

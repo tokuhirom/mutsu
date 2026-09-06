@@ -4556,6 +4556,11 @@ pub(crate) struct CompiledCode {
     /// `needs_cell_locals` it does NOT require `captured_mutated_locals`
     /// membership (the whole point is the mutation analysis never saw the write).
     ///
+    /// SCALARS only. The `@`/`%` half of the same complement is
+    /// `needs_cell_unvouched_containers` — same rule, different delivery site.
+    /// `&` is in neither (a `Sub` value must not be boxed, and rebinding `&f` is
+    /// a name-write the vouch already sees).
+    ///
     /// INCLUDES this frame's own parameters. They were excluded when the set
     /// first shipped, because boxing one leaked state between two invocations of
     /// a routine and dropped six Cro::HTTP suites. That diagnosis was one layer
@@ -4571,6 +4576,37 @@ pub(crate) struct CompiledCode {
     /// name's process-wide meaning. See
     /// `news/2026-09/a-captured-parameter-gets-the-cell-too.md`.
     pub(crate) needs_cell_unvouched_locals: Vec<Symbol>,
+    /// The `@`/`%` half of `needs_cell_unvouched_locals`: own container lexicals
+    /// an escaping child closure captures that this frame cannot vouch for.
+    ///
+    /// The container lane exists because the hijack `needs_cell_unvouched_locals`
+    /// closes is NOT a staleness defect. A container is reference-shared, so the
+    /// captured *value* stays live (a post-capture `@a.push` is visible to the
+    /// closure, and so is a whole reassignment). The defect is NAME resolution:
+    /// the closure-call merge's don't-overwrite default lets a same-named `@a` in
+    /// whatever frame happens to be calling supply the binding, and a plain
+    /// `Array` capture carries nothing that makes any merge policy prefer the
+    /// closure's own. `ContainerRef` is that signal — every merge force-installs
+    /// one — so the container half needs the cell for the same reason.
+    ///
+    /// Delivered at the DECLARATION site (`exec_set_local_op` ->
+    /// `box_decl_local_container_cell`), not at each capture like the scalar
+    /// lane. That is ADR-0039's mechanism, and it is also the only affordable
+    /// one: a `@o.shift xx $_` thunk is created once per repetition, so boxing
+    /// from `box_captured_lexicals` ran the whole per-free-var loop 720k times
+    /// for 1.2k declarations and took `roast/S15-nfg/concat-stable.t` from 2s to
+    /// 31s (past its 30s budget). One boxing per declaration costs nothing
+    /// measurable.
+    ///
+    /// Two exclusions, both measured (see the computation in
+    /// `compute_free_vars`): a name a THREAD-escaping nested closure captures
+    /// (`todo/deep/celled-container-element-write-races-under-threads.md`), and
+    /// a name any `is <Type>` variable trait in this frame applies to. A typed
+    /// container is refused once more at the boxing site itself
+    /// (`box_decl_local_container_cell`). Both leave the corresponding capture
+    /// hijackable; the typed residue is
+    /// `todo/tickets/typed-container-capture-still-loses-to-a-same-named-caller-array.md`.
+    pub(crate) needs_cell_unvouched_containers: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
     /// literal loaded via `OpCode::LoadRegexClosure` closes over its defining
@@ -5160,6 +5196,7 @@ impl CompiledCode {
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
             needs_cell_unvouched_locals: Vec::new(),
+            needs_cell_unvouched_containers: Vec::new(),
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             thread_escaping: false,
@@ -7014,15 +7051,69 @@ impl CompiledCode {
         // `box_captured_lexicals` publishing the cell into the name-keyed
         // `shared_vars` lane, and that is where parameters are excluded now.
         self.needs_cell_unvouched_locals = escaping_captured_own
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|sym| !vouched.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     // `box_captured_lexicals` only boxes `$` scalars; an
-                    // `@`/`%`/`&` lexical is reference-shared already and takes
-                    // the decl-site container-cell path instead (ADR-0039).
+                    // `@`/`%` lexical takes the decl-site container cell
+                    // instead (`needs_cell_unvouched_containers`, just below),
+                    // and a `&` lexical is never boxed at all.
                     crate::env::is_plain_user_lexical(s) && !s.starts_with(['@', '%', '&'])
                 })
+            })
+            .collect();
+        // The container half of the same complement. It is delivered at the
+        // DECLARATION site rather than at each capture, so the set is computed
+        // here (where the vouch is known) but consumed by `exec_set_local_op`.
+        //
+        // A name captured by a THREAD-escaping nested closure is excluded: the
+        // cross-thread atomic lane (`__mutsu_atomic_arr::`) stands down for an
+        // already-celled container and defers to the general assignment path,
+        // which mutates the `ArrayData` behind the cell without holding the
+        // cell's Mutex — boxing one turns `start { @a[$i] = ... }` into a data
+        // race (see `todo/deep/celled-container-element-write-races-under-threads.md`).
+        // `thread_escaping` is already transitive on each nested code, so a
+        // `start` at any depth is covered.
+        let thread_escaping_captures: std::collections::HashSet<Symbol> = self
+            .closure_compiled_codes
+            .iter()
+            .filter(|nested| nested.thread_escaping)
+            .flat_map(|nested| nested.free_var_syms.iter().copied())
+            .collect();
+        // A name any `is <Type>` variable trait in this frame applies to is also
+        // excluded. `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain
+        // Hash at the declaration store and lets `ApplyVarTrait` coerce it to
+        // the QuantHash afterwards, reading the slot back to find the initial
+        // values; a cell in that slot is not the Hash it looks for, so the
+        // initialiser was dropped and `%h` came out with one key instead of two
+        // (`roast/S02-types/baghash.t`, `mixhash.t`). Same-named `my` locals
+        // share one slot, so the exclusion is by NAME across the whole frame,
+        // not per declaration.
+        let trait_applied: std::collections::HashSet<Symbol> = self
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                OpCode::ApplyVarTrait { name_idx, .. } => self
+                    .constants
+                    .get(*name_idx as usize)
+                    .and_then(|v| match v.view() {
+                        ValueView::Str(name) => Some(Symbol::intern(&name)),
+                        _ => None,
+                    }),
+                _ => None,
+            })
+            .collect();
+        self.needs_cell_unvouched_containers = escaping_captured_own
+            .into_iter()
+            .filter(|sym| {
+                !vouched.contains(sym)
+                    && !thread_escaping_captures.contains(sym)
+                    && !trait_applied.contains(sym)
+            })
+            .filter(|sym| {
+                sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
             })
             .collect();
         for nested in &mut self.closure_compiled_codes {

@@ -86,8 +86,25 @@ impl Interpreter {
             .env()
             .get(&arr_key)
             .or_else(|| self.env().get(&var_name))
-            .cloned();
-        let Some((arc_items, kind)) = target_val.unwrap_or(Value::NIL).into_array() else {
+            .cloned()
+            .unwrap_or(Value::NIL);
+        // A shared `ContainerRef` cell is the binding, not a different kind of
+        // value: deref to reach the array and write the drained result back
+        // THROUGH the cell below, so every alias (and the owner's local slot,
+        // which holds the same cell) observes it. Without this the whole bulk
+        // path silently bailed the moment a container took a cell, and
+        // `@o.shift xx $_` fell back to one closure call per repetition -- 33ms
+        // to 4s on a 1200-element drain.
+        let cell = match target_val.view() {
+            ValueView::ContainerRef(c) => Some(c.clone()),
+            _ => None,
+        };
+        let target_val = if cell.is_some() {
+            target_val.deref_container()
+        } else {
+            target_val
+        };
+        let Some((arc_items, kind)) = target_val.into_array() else {
             return Ok(None);
         };
         if !kind.is_real_array() {
@@ -107,15 +124,17 @@ impl Interpreter {
             crate::value::ArrayData::new(popped)
         };
         // Write the mutated array back
-        let lookup_key = if self.env().contains_key(&arr_key) {
-            &arr_key
+        let new_arr = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+        if let Some(cell) = cell {
+            Value::store_through_cell(&cell, &new_arr);
         } else {
-            &var_name
-        };
-        self.env_mut().insert(
-            lookup_key.to_string(),
-            Value::array_with_kind(crate::gc::Gc::new(items), kind),
-        );
+            let lookup_key = if self.env().contains_key(&arr_key) {
+                &arr_key
+            } else {
+                &var_name
+            };
+            self.env_mut().insert(lookup_key.to_string(), new_arr);
+        }
         Ok(Some(result.into_items()))
     }
 

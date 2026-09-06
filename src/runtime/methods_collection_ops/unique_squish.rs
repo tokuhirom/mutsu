@@ -289,12 +289,31 @@ impl Interpreter {
         // (container identity §3) — a plain `env.clone()` would share those
         // nodes, making the changed-value diff below blind and the revert a
         // no-op, so the lazy iterator's re-run would double the side effects.
+        //
+        // A `ContainerRef`-celled `@`/`%` lexical (ADR-0055: an escaping capture
+        // the creating frame cannot vouch for) is the same hazard one level in:
+        // the binding never changes — the cell IS the binding — so the diff must
+        // compare, and the revert must restore, the cell's CONTENTS. Snapshot
+        // the detached contents under the name; the revert in
+        // `dispatch_iterator_method` writes them back THROUGH the cell.
         let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
             let mut snapshot = self.env.clone();
             let detach: Vec<(crate::symbol::Symbol, Value)> = snapshot
                 .iter()
-                .filter(|(_, v)| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
-                .map(|(k, v)| (*k, v.clone().detach_shared_container()))
+                .filter_map(|(k, v)| {
+                    let inner = match v.view() {
+                        ValueView::Array(..) | ValueView::Hash(..) => v.clone(),
+                        ValueView::ContainerRef(_) => {
+                            let inner = v.deref_container();
+                            if !matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                                return None;
+                            }
+                            inner
+                        }
+                        _ => return None,
+                    };
+                    Some((*k, inner.detach_shared_container()))
+                })
                 .collect();
             for (k, v) in detach {
                 snapshot.insert_sym(k, v);
@@ -341,7 +360,14 @@ impl Interpreter {
             let mut revert_remove = Vec::new();
             if let Some(before) = env_before_callbacks {
                 for (k, old_v) in &before {
-                    if self.env.get_sym(*k) != Some(old_v) {
+                    // Compare through a cell: the snapshot holds the detached
+                    // CONTENTS of a `ContainerRef` binding, so the live side has
+                    // to be deref'd too or every celled name looks changed.
+                    let live = self.env.get_sym(*k).map(|v| match v.view() {
+                        ValueView::ContainerRef(_) => v.deref_container(),
+                        _ => v.clone(),
+                    });
+                    if live.as_ref() != Some(old_v) {
                         revert_values.insert(k.resolve(), old_v.clone());
                     }
                 }

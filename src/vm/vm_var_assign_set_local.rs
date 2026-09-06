@@ -309,7 +309,8 @@ impl Interpreter {
         // share one slot) and break e.g. `let`-restore in a sibling block.
         let box_decl = self.vardecl_context.get()
             && (!code.needs_cell_named_sub.is_empty()
-                || !code.needs_cell_ref_capture_slots.is_empty());
+                || !code.needs_cell_ref_capture_slots.is_empty()
+                || !code.needs_cell_unvouched_containers.is_empty());
         // An `our sub` declared in a bare block captures this local but outlives the
         // block (it lives in the package registry, with no closure env). Box the
         // local AND persist the cell so a call after the block reads the live value.
@@ -366,6 +367,20 @@ impl Interpreter {
                     || code.needs_cell_ref_capture_slots.contains(&idx))
             {
                 self.box_decl_local_cell(code, idx as usize);
+            }
+            // ADR-0055's container lane: an own `@`/`%` an escaping child closure
+            // captures and this frame cannot vouch for becomes a shared cell at
+            // its DECLARATION, so the closure's binding is distinguishable from a
+            // same-named container in whatever frame happens to be calling it.
+            // See `CompiledCode::needs_cell_unvouched_containers` for why the
+            // decl site and not the capture site.
+            if box_decl
+                && code
+                    .locals_sym
+                    .get(idx as usize)
+                    .is_some_and(|sym| code.needs_cell_unvouched_containers.contains(sym))
+            {
+                self.box_decl_local_container_cell(code, idx as usize, true);
             }
             if box_decl_our
                 && let Some(sym) = code.locals_sym.get(idx as usize)
