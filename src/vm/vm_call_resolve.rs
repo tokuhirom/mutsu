@@ -43,7 +43,12 @@ impl Interpreter {
         );
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
-        let use_cache = !self.has_multi_candidates_cached(name);
+        // A name some loaded compunit kept private resolves differently
+        // depending on which unit is asking; this cache is keyed by
+        // (name, package, arity, types) only, so such a name must bypass it
+        // (`runtime/unit_private_routines.rs`).
+        let use_cache =
+            !self.has_multi_candidates_cached(name) && !self.is_unit_scoped_routine_name(name);
         if use_cache && self.fn_resolve_cache_gen == self.fn_resolve_gen {
             if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key)

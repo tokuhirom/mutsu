@@ -725,6 +725,12 @@ impl Interpreter {
         name: &str,
     ) -> bool {
         self.refresh_func_multi_caches_for_generation();
+        // A name some loaded compunit kept private resolves differently
+        // depending on which unit is asking, and this cache is keyed by
+        // (package, name) only — never cache such a name's winner.
+        if self.is_unit_scoped_routine_name(name) {
+            return false;
+        }
         if let Some(&c) = self.func_multi_type_cacheable.get(&(pkg_sym, name_sym)) {
             return c;
         }

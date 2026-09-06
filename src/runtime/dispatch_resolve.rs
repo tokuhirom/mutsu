@@ -98,7 +98,12 @@ impl Interpreter {
                  bump — see fn_keys_for_base in dispatch_resolve.rs"
             );
         }
-        !keys.is_empty()
+        // A compunit-private top-level routine has been moved OUT of the
+        // functions map (`runtime/unit_private_routines.rs`), so the key index
+        // cannot see it; the gate must not veto a resolution that would find
+        // one. The check is a hash lookup guarded by an emptiness test, and the
+        // set only ever holds names some loaded compunit kept private.
+        !keys.is_empty() || self.is_unit_scoped_routine_name(name)
     }
 
     /// Every registry function key whose BASE name is `name`'s base name.
@@ -446,6 +451,13 @@ impl Interpreter {
                 }
             }
             return None;
+        }
+        // A compunit-private top-level routine of the unit currently executing
+        // wins over every package entry: it is a lexical of that compunit, and
+        // the shared registry may hold an unrelated same-named routine
+        // belonging to the scope that loaded it (`runtime/unit_private_routines.rs`).
+        if let Some(def) = self.unit_private_routine(name) {
+            return Some(def);
         }
         // Bare name: search the current package, then each enclosing package,
         // then GLOBAL (see `bare_name_packages`), stopping at the innermost one

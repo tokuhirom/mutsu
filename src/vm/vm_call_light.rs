@@ -676,6 +676,12 @@ impl Interpreter {
                 _ => Self::light_return_type_check(check_val, rt),
             };
             if !passed {
+                // Every other exit path restores the caller's compilation unit
+                // (see the assignment below); this one used to leak the
+                // callee's, leaving unit-scoped resolution (user-declared
+                // operators, compunit-private routines) pointed at the wrong
+                // unit for the rest of the program.
+                self.current_unit = saved_unit;
                 return Err(positional_light_return_type_error(rt, check_val));
             }
         }

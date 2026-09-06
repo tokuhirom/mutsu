@@ -190,6 +190,11 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
+            // A package-less top-level routine the required file declared but
+            // did not export is lexical to that file's compunit, not a shared
+            // global. Move it out of the registry before the loading scope's
+            // own entries come back. See `runtime/unit_private_routines.rs`.
+            self.seclude_private_toplevel_routines(&path.to_string_lossy());
         }
         self.restore_toplevel_global_routines(hidden_toplevel);
         // Invalidate name-keyed resolution caches.
@@ -346,9 +351,8 @@ impl Interpreter {
     /// module's stale `GLOBAL::EXPORT` over the inner module's fresh one
     /// before `apply_module_export` got to read it, silently breaking every
     /// `is export`/`sub EXPORT` symbol in that shape (`t/sub-export.t`).
-    fn is_toplevel_global_routine_key(key: &str) -> bool {
-        key.strip_prefix("GLOBAL::")
-            .is_some_and(|tail| !tail.contains("::") && !tail.contains('/') && tail != "EXPORT")
+    pub(crate) fn is_toplevel_global_routine_key(key: &str) -> bool {
+        Self::toplevel_global_routine_name(key).is_some()
     }
 
     /// Temporarily remove every already-registered package-less top-level
@@ -430,28 +434,15 @@ impl Interpreter {
     /// end. `before_keys` is the set of function-registry keys that existed
     /// before the module body ran; only newly-added MAIN keys are removed.
     ///
-    /// Deliberately scoped to `MAIN` only, not every package-less top-level
-    /// routine a module declares. An earlier version of this fix generalized
-    /// it to sweep any newly-registered, non-`is export`ed top-level name,
-    /// matching how raku scopes a package-less `sub name {...}` lexically to
-    /// its own compilation unit -- but that generalization kept colliding
-    /// with other ambient/ephemeral top-level mechanisms this codebase
-    /// already relies on: a module's own private helper subs its `sub
-    /// EXPORT` body reads before installing its exports
-    /// (`t/sub-export.t`), and NativeCall's prelude helpers
-    /// (`nativesizeof`/`nativecast`/...), which are deliberately spliced as
-    /// package-less `GLOBAL::` routines into every compunit that uses
-    /// NativeCall and are never `is export`ed themselves
-    /// (`PRELUDE_SUB_TRAIT` in `runtime/mod.rs`). Each fix widened the
-    /// exemption list; rather than keep discovering new ambient mechanisms
-    /// case-by-case, the general "reap a module's non-exported package-less
-    /// top-level routines after it loads" cleanup is left as a follow-up
-    /// (`todo/deep/module-toplevel-private-sub-leak-cleanup.md`) and only the
-    /// MAIN-specific removal -- proven safe for years -- is kept here.
-    /// [`Self::hide_toplevel_global_routines`] /
-    /// [`Self::restore_toplevel_global_routines`] still fix the acute bug
-    /// (the false `X::Redeclaration` and the caller-binding clobber) for
-    /// every package-less top-level single routine, not just MAIN.
+    /// Deliberately scoped to `MAIN` only. A leaked `MAIN` must be *removed*,
+    /// not merely made private: an un-exported one left at the dispatchable
+    /// `GLOBAL::MAIN` key would be auto-dispatched at program end. Every OTHER
+    /// package-less top-level routine a loaded compunit declares is handled by
+    /// [`Self::seclude_private_toplevel_routines`] instead, which moves it into
+    /// that compunit's private table rather than deleting it -- deleting it
+    /// breaks the module's own bodies, which reach their private helpers
+    /// through the same registry key the importer does. See
+    /// `runtime/unit_private_routines.rs`.
     pub(crate) fn remove_leaked_main_routines(
         functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
         before_keys: &std::collections::HashSet<Symbol>,
