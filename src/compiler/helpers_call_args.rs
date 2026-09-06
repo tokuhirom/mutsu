@@ -656,6 +656,59 @@ impl Compiler {
         });
     }
 
+    /// ADR-0067's argument producer for a callee with **no compile-time name**
+    /// — a method call, or a call through a code value. Same intent as
+    /// [`Self::mark_arg_as_rw_container_candidate`], different gate: there is
+    /// no name to look up, so the marker records where the callee itself sits
+    /// on the stack and the VM asks that callee's own signature. See
+    /// [`OpCode::MarkRwArgRefContextCallee`].
+    pub(super) fn mark_arg_as_rw_container_candidate_callee(
+        &mut self,
+        callee: crate::opcode::RwArgCallee,
+        positional: Option<u32>,
+        stack_offset: u32,
+        arg: &Expr,
+    ) {
+        let Some(positional) = positional else {
+            return;
+        };
+        if !Self::is_accessor_shaped_arg(arg) {
+            return;
+        }
+        self.insert_accessor_ref_marker(OpCode::MarkRwArgRefContextCallee(Box::new(
+            crate::opcode::RwArgCalleeMark {
+                positional,
+                stack_offset,
+                callee,
+            },
+        )));
+    }
+
+    /// The signature-positional index of each syntactic argument, or `None`
+    /// where there is none to name: a named argument (`:k(v)` / `k => v`)
+    /// consumes no positional slot, and a `|EXPR` slip spreads an unknown
+    /// number of them, so every argument after one has no compile-time index at
+    /// all. Used by ADR-0067's argument producers, which must name the callee's
+    /// parameter, not the argument list's own offset.
+    pub(super) fn arg_positional_indices(args: &[Expr]) -> Vec<Option<u32>> {
+        let mut next = 0u32;
+        let mut unknown = false;
+        args.iter()
+            .map(|arg| {
+                if unknown || Self::is_named_arg_expr(arg) {
+                    // A slip makes every later position unknowable; a plain
+                    // named argument only skips itself.
+                    unknown |= matches!(arg, Expr::Unary { op, .. }
+                        if *op == crate::token_kind::TokenKind::Pipe);
+                    return None;
+                }
+                let idx = next;
+                next += 1;
+                Some(idx)
+            })
+            .collect()
+    }
+
     /// Whether an argument expression *could* be a public attribute accessor
     /// read — the only shape `try_fast_accessor_read`'s `want_ref` branch ever
     /// answers with a container. Keeping the test here (rather than leaving it

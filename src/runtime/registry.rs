@@ -100,6 +100,24 @@ pub(crate) struct Registry {
     /// whenever the filter says `false`, so a missed write fails the debug
     /// `t/` suite rather than degrading silently.
     pub(crate) any_raw_invocant_method: bool,
+    /// ADR-0067, the nameless-callee argument producer: has any user method
+    /// ever been registered that declares a **container-binding positional
+    /// parameter** (`$y is rw`, `$y is raw`, a sigil-less `\y`)?
+    ///
+    /// The negative pre-filter of the method half of
+    /// [`OpCode::MarkRwArgRefContextCallee`](crate::opcode::OpCode::MarkRwArgRefContextCallee)'s
+    /// gate, which would otherwise pay an MRO walk per execution. Set-only for
+    /// exactly the reasons [`any_raw_invocant_method`](Self::
+    /// any_raw_invocant_method) is, maintained by the same single writer
+    /// (`Registry::note_container_binding_methods`) so the two cannot drift.
+    ///
+    /// It is deliberately only a *filter*: the decision is
+    /// `Registry::any_method_binds_container_at`, which asks the receiver's own
+    /// MRO. Using this flag as the answer would hand a container to every
+    /// accessor-shaped method argument in any program that declares one such
+    /// method anywhere — measured on this repo's corpus at 80 files, so the
+    /// over-approximation is not hypothetical.
+    pub(crate) any_container_binding_method_param: bool,
     /// Reverse index (ADR-0019 F4c-1): owner -> every `name` for which
     /// `(owner, name)` currently has a non-empty `user_candidates` row in
     /// [`method_entries`](Self::method_entries), i.e. exactly the names

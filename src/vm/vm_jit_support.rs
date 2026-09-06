@@ -111,6 +111,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MarkLvalueInvocantRefContext(..)
             | OpCode::AttrContainerRef(..)
             | OpCode::MarkRwArgRefContext { .. }
+            | OpCode::MarkRwArgRefContextCallee(..)
             // List / hash construction, indexing and coercion
             | OpCode::MakeArray(_)
             | OpCode::MakeRealArray(_)

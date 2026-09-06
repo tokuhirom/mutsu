@@ -291,6 +291,7 @@ impl Compiler {
             && args.len() == 2
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
         let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
+        let positional_indices = Self::arg_positional_indices(args);
         for (i, arg) in args.iter().enumerate() {
             // Only the closure literal itself is escaping (see
             // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
@@ -303,6 +304,18 @@ impl Compiler {
                 s.compile_method_arg_with_escape(arg, arg_esc)
             });
             self.pending_immutable_topic_block = false;
+            // ADR-0067's argument producer, method-callee half: the invocant
+            // was pushed before this loop started, so the VM can ask the real
+            // callee's signature even though its class is not knowable here.
+            if Self::is_accessor_shaped_arg(arg) {
+                let name_idx = self.code.add_constant(Value::str(mname.clone()));
+                self.mark_arg_as_rw_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Method { name_idx },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
+            }
             if pair_value_capture
                 && i == 1
                 && let Expr::Var(n) = arg
@@ -723,7 +736,8 @@ impl Compiler {
         // `Thread.start` / `Promise.start` hand the block to a thread.
         let thread_esc = mname == "start";
         let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
-        for arg in args {
+        let positional_indices = Self::arg_positional_indices(args);
+        for (i, arg) in args.iter().enumerate() {
             // See the sibling loop in `compile_expr_method_call`.
             let arg_esc = esc
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
@@ -733,6 +747,19 @@ impl Compiler {
                 s.compile_method_arg_with_escape(arg, arg_esc)
             });
             self.pending_immutable_topic_block = false;
+            // ADR-0067's argument producer, as in the sibling loop: this path
+            // serves a receiver that is not a plain variable (`S.new.take(...)`,
+            // a chained call), whose invocant `compile_expr(target)` above has
+            // already pushed.
+            if Self::is_accessor_shaped_arg(arg) {
+                let name_idx = self.code.add_constant(Value::str(mname.clone()));
+                self.mark_arg_as_rw_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Method { name_idx },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
+            }
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
