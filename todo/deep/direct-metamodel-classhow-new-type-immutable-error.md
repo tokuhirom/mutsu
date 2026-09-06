@@ -1,8 +1,78 @@
-# `constant NAME := Metamodel::ClassHOW.new_type(name => 'NAME')` immediately errors as "immutable"
+# `.^add_method` installs an EMPTY method when given a named, separately-declared routine
 
 Found by the doc-diff harness (`docs/doc-diff-backlog.md`, `Language/mop.rakudoc:34` —
 the doc's own worked example showing what a `class A { ... }` declaration desugars to
 at the metaobject-protocol level).
+
+> **Re-measured 2026-09-06 and re-scoped.** Two earlier framings of this file are
+> now closed or wrong: the "immutable type object" error was fixed 2026-08-26 (see
+> the UPDATE below), and the survivor was recorded as "a method-dispatch gap on a
+> `new_type`-minted Package". It is not about `new_type` at all — an ordinary
+> `class C { }` shows it identically. The oracle is checked in as
+> `t/add-method-named-routine.t` (10 rows, all 10 green under `raku`, 6 green
+> under mutsu and 4 `todo`). Run that file rather than re-deriving the matrix.
+
+## What is actually wrong (measured 2026-09-06, raku v2026.07)
+
+`.^add_method(name, $code)` installs a method whose **body is empty** whenever
+`$code` is a NAMED, separately-declared routine. It works for every anonymous
+shape:
+
+| code object passed to `.^add_method` | raku | mutsu |
+|---|---|---|
+| `method () { 1 }` | 1 | 1 |
+| `my method () { 2 }` | 2 | 2 |
+| `anon method m3() { 3 }` | 3 | 3 |
+| `-> $s { 4 }` | 4 | 4 |
+| **`my method m5() { 5 }`** | 5 | **Nil** |
+| **`my method m6(A6:) { 6 }`** | 6 | **Nil** |
+| **`my sub a() { … }` / `&topsub`** | (raku rejects the arity) | **Nil** |
+
+The failure is silent. The method is genuinely registered — `.^can` finds it,
+`.^lookup` returns a defined Method, `.^methods` counts it, and its `.name` and
+`.signature` read back plausibly — the call just returns `Nil`.
+
+And the code object itself is fine: calling the very same
+`my $m = my method m() { 42 }` through `$m()` returns `42`. So `add_method`
+drops the body; the producer does not.
+
+## Root cause
+
+`add_method` (`src/runtime/methods_classhow_dispatch.rs`, the `"add_method"` arm)
+builds its `MethodDef` from the Sub's AST `body` plus `sub_data.compiled_code`.
+A Sub built from a **declared routine** — `&foo`, a `.candidates` entry, a
+`my sub`/`my method` read back through `GetCodeVar` — carries its bytecode in
+`SubData::compiled_routine` instead, and `SubData`'s own doc says why: ADR-0019
+C6c stopped the sub declaration plan shipping an executable AST, and
+`compiled_routine` is kept deliberately SEPARATE from `compiled_code` because
+the two are invoked under different calling conventions
+(`CompiledFunction::param_local_slots` / `named_call_plan` versus
+`call_compiled_closure`'s upvalue alignment).
+
+`MethodDef` has no `compiled_routine` field. So the def gets an empty body and
+no code, and dispatch answers `Nil`.
+
+This is visible in the bytecode: a named `my method a() { 42 }` in expression
+position compiles to `RegisterDecl(0); GetCodeVar("a")` and a separate
+`sub GLOBAL::a` chunk, where the anonymous form compiles to a single
+`MakeAnonSubParams` that carries the body with it.
+
+## What the fix has to decide
+
+Either `MethodDef` gains a `compiled_routine` and the method-dispatch entry
+learns to invoke routine bytecode under the method calling convention (the
+invocant has to be bound as the routine's first positional), or `add_method`
+converts a routine-backed Sub into a closure-backed one at registration time.
+The first keeps one representation per code object; the second keeps dispatch
+unchanged. Worth an ADR only if the first is chosen, since it widens what a
+`MethodDef` can hold.
+
+Whatever lands must keep the four anonymous rows working — they are the shapes
+the batteries actually use — and should also fix the smaller divergence measured
+beside them: mutsu's installed method reports the name it was ADDED under
+(`m`), where raku reports the routine's own name (`m9`).
+
+## Original report (the "immutable" error, fixed 2026-08-26)
 
 ## Repro
 
