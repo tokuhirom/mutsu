@@ -57,7 +57,48 @@ For an `exit 124` roast row, re-run the individual file with a larger timeout
 before classifying it as a correctness bug. The vendored provider executes
 assertions as Raku code and is therefore slower than the Rust-native provider.
 
-## Current residue (2026-09-06)
+## Current residue (2026-09-06, second sweep)
+
+Both sweeps were re-run at the end of 2026-09-06, after that day's fixes. The
+`t/` regression class is **empty** for the first time; the roast side has the
+known timeout plus two rows a same-day refactor introduced.
+
+### `t/` sweep (debug, all 3711 files)
+
+```
+pass under both:                   3688
+regressed under the real Test:     0
+passes only under the real Test:   0
+fail under both (pre-existing):    23
+```
+
+All four rows of the morning's sweep are closed: `t/list-str-calls-element-str.t`
+by the Seq fix, `t/match-vars-are-routine-scoped.t` and
+`t/undeclared-routine-suggests-unit-own-subs.t` by
+`news/2026-09/routine-match-scope-survives-an-eval-in-the-program.md`, and
+`t/closure-capture-cell-dichotomy.t` by PR #7367 (the ADR-0055 unvouched-capture
+fix), exactly as the analysis below predicted — it was never a `Test` blocker.
+
+### Roast sweep (release, whitelist)
+
+```
+pass under both:                   1429
+regressed under the real Test:     3
+passes only under the real Test:   0
+fail under both (pre-existing):    4
+```
+
+- `roast/S03-buf/write-int.t` — `exit 124`, the known timeout. See the
+  performance section below.
+- `roast/S04-declarations/my-6e.t` #61 and `roast/6.c/S04-declarations/my-6c.t`
+  #62, both "also a type error" — **new, and not a `Test` problem**. Bisected to
+  `e49b300` / PR #7364 (ADR-0042 slice 3, retiring the name-keyed
+  type-constraint side table): an EVAL'd `$x = "abc"` stops seeing the type of a
+  `my Int $x` declared later in the same block. Filed as
+  `todo/tickets/eval-assign-loses-a-later-block-declarations-type.md`. CI cannot
+  see it because the dual-provider sweep is not part of CI.
+
+## Earlier residue (2026-09-06, first sweep)
 
 Both sweeps were re-run on this date, on a machine roughly **2x slower** than
 the one the 2026-08-29/30 numbers came from (calibration: `S04-declarations/state.t`
