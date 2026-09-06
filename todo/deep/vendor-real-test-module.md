@@ -95,31 +95,64 @@ fail under both (pre-existing):    4
 
 ```
 pass under both:                   3665
-regressed under the real Test:     4 -> 3 after the fix above
+regressed under the real Test:     4 -> 1 after the fixes below
 passes only under the real Test:   0
 fail under both (pre-existing):    23
 ```
 
 All four were verified to reproduce identically on `origin/main`, so none was
 introduced by the perf work of 2026-09-05. `t/list-str-calls-element-str.t` is
-the one the Seq fix closed. The remaining three, each still open:
+the one the Seq fix closed. **Two of the remaining three were closed on
+2026-09-06**, and both turned out to be general interpreter bugs that had
+nothing to do with `Test` — the module only latched the condition that exposed
+them (`news/2026-09/routine-match-scope-survives-an-eval-in-the-program.md`):
 
-- `t/closure-capture-cell-dichotomy.t` #7 — "call-arg-sourced capture wins over
-  a slot-resident same-named caller lexical".
-- `t/match-vars-are-routine-scoped.t` #8 — "a sub that resets captures does not
-  delete the caller `$<first>`".
-- `t/undeclared-routine-suggests-unit-own-subs.t` #1,#2 — the CHECK-time
-  "Did you mean 'greeting'?" suggestion is absent when the `throws-like` that
-  EVALs the snippet comes from the real module rather than the native handler.
-  The exception type and the die itself are right; only the suggestion list is
-  empty.
+- `t/match-vars-are-routine-scoped.t` #8 — **fixed**. The zero-argument compiled
+  fast call installed its scoped env overlay only while
+  `reflective_name_access_possible()` was false. That flag is process-global and
+  monotonic, so ONE `EVAL` anywhere in a program removed the boundary from every
+  zero-local routine in it, and such a routine's `reset_capture_env_vars` — which
+  REMOVES inherited `$<name>` keys — then deleted the CALLER's named captures.
+  Every file that loads the real `Test` latches the flag (`throws-like` EVALs a
+  string), which is why it was real-provider-only. Reproduced with a bare
+  `EVAL '1'` and no Test module at all; pinned by
+  `t/match-vars-scoped-under-eval.t`.
+- `t/undeclared-routine-suggests-unit-own-subs.t` #1,#2 — **fixed**. Not a
+  provider difference in the check: the EVAL-time undeclared-routine check drew
+  its suggestion candidates from the registry alone, so `EVAL 'sub greeting {};
+  greetng()'` lost the suggestion under BOTH providers. The native `throws-like`
+  simply does not go through EVAL, so only the real module's EVALing
+  implementation exposed it. The EVAL path now passes the EVAL'd unit's own
+  routine declarations, as the mainline CHECK-time walker already did.
+- `t/closure-capture-cell-dichotomy.t` #7 — **still open, and now identified**:
+  it is the *known-open* env-resident half of ADR-0055 section 1.2(b), which the
+  file's own comment already records as open and blocked on
+  `todo/deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md`.
+  The reflective flag is again the bridge: with it latched, `SetLocal`'s
+  `skip_env_write` is disabled, so the *slot*-resident variant the test pins
+  becomes the env-resident variant that was already failing. Repro without any
+  Test module:
+
+  ```raku
+  my $z = EVAL "1";                 # latches the flag
+  sub noop($v) { 1 }
+  my $b = "OUTER";
+  noop($b);                         # the vouch refusal
+  my $f = { $b };
+  sub collide-slot() { my $b = "CALLER"; $f.() }
+  say collide-slot();               # 'CALLER', rakudo says 'OUTER'
+  ```
+
+  So this row is NOT a separate real-`Test` blocker: closing ADR-0055 §1.2(b)
+  closes it. Do not chase it from the `Test` side.
 
 ### Performance: one file left, and the attribution has moved again
 
 `S03-buf/read-write-bits.t` is **no longer** a timeout — it now completes in
 ~16 s here (so ~8 s on the reference machine). Only `write-int.t` remains, at
-~49 s here (~25 s on the reference machine, against a 30 s budget), versus 4.4 s
-under the native provider. It runs ~93 000 assertions, which is why it is the
+~45 s here after the 2026-09-06 dispatch fix, 48 s before it (so ~23 s on the
+reference machine, against a 30 s budget), versus 4.4 s under the native
+provider. It runs ~93 000 assertions, which is why it is the
 last one standing: at ~0.31 ms per assertion that is ~29 s of pure assertion
 overhead.
 
@@ -129,10 +162,43 @@ release, 6.22 G -> ~2.5 G retired instructions — by removing the registry walk
 `nqp::` ops and lone-`multi` resolution were paying. **Do not restart from the
 `&`-sigil framing in `todo/perf/interpreter-call-path-in-hot-loops.md`; that
 section is stale, and so is the `nqp::`/`has_multi_candidates` diagnosis, which
-is now fixed.** The measured next targets are:
+is now fixed.**
+
+**Correction (2026-09-06): target 1 below was mis-attributed, and it has been
+partly overtaken.** `proclaim`'s 280 110 by-name resolutions were NOT the
+defaulted-parameter light-call gate — `proclaim` never reached that gate, because
+it is imported and so is absent from the caller's `compiled_fns` entirely. It
+was excluded from the `otf_call_cache` instead (that cache skipped every
+*plan-compiled* def, which is every module sub), so each call re-ran three full
+registry walks. Fixed:
+`news/2026-09/imported-module-sub-reaches-the-cached-dispatch.md` — a simple
+imported sub went 14.7 us -> 0.9 us per call, at parity with a local one, and
+`proclaim` now resolves 3 times in total rather than 3 times per assertion.
+`write-int.t` went 48.2 s -> 45.4 s here, so **the resolutions were only ~6% of
+that file**: the per-assertion cost is dominated by something else. Two
+measurements say where to look next:
+
+- **The cost is linear in env size.** Adding N unused `our` variables to the
+  mainline of a 2000-assertion file adds ~0.98 ns per entry per assertion:
+  0 pads 0.609 s, 300 pads 1.213 s, 600 pads 1.841 s, 900 pads 2.363 s (release,
+  this machine). `MUTSU_VM_STATS` reports **3 `env_deep_copies` and 2
+  `clone_env`s per assertion**, and `clone_env` is `Env::flattened()` — an
+  O(env) rebuild whenever the live env is a scoped overlay, which it is on the
+  named-call path. `call_compiled_function_named_inner` takes two of them
+  eagerly: `push_caller_env()` and the flat env handed to the `Sub` value built
+  for `callframe().code` introspection. Neither is used by an assertion that
+  never introspects its frame. Making them lazy (or storing the scoped env and
+  flattening at the point of use) is the measured next lever.
+- **`ok`/`is` are multis, so they still resolve once per call** (2001 resolves
+  for 2000 `ok`s). The `otf_call_cache` deliberately excludes multi names; the
+  sound multi-resolution cache misses because the arguments arrive as
+  varref-captured containers, which `multi_arg_type_keys` declines to key on.
+
+The remaining targets, unchanged in substance:
 
 1. **A defaulted parameter disqualifies the callee from the cached light-call
-   path.** `is_positional_light_call_eligible` (`vm/vm_call_eligibility.rs`)
+   path.** (Real, but see the correction above: it is not what `proclaim` was
+   paying, so do not expect the `Test` numbers to move much.) `is_positional_light_call_eligible` (`vm/vm_call_eligibility.rs`)
    requires `pd.default.is_none() && !pd.optional_marker`, so every call to a
    routine with a trailing default re-resolves by name. Measured:
    `sub f($a) {...}` called 1000x costs **1** `function-full-resolve` in total;
