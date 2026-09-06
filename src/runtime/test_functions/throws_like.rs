@@ -78,7 +78,6 @@ impl Interpreter {
                 nested.class_scoped_short_names = self.class_scoped_short_names.clone();
                 nested.lexical_class_scopes = self.lexical_class_scopes.clone();
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
-                nested.restore_var_type_constraints(self.snapshot_var_type_constraints());
                 // Copy the caller's lexicals into the nested interpreter so the
                 // EVAL'd code sees them, and remember which names were copied so
                 // their post-run values can be written back. Raku EVALs the string
@@ -103,28 +102,12 @@ impl Interpreter {
                     nested.env.insert_sym(*k, v.clone());
                     shared_var_names.push(*k);
                 }
-                // The nested interpreter has no local slot for any of these
-                // copied names (they arrive purely through env), so the
-                // bytecode `EVAL`'d code compiles for a plain assignment to
-                // one (e.g. `$text = 'oops'`) resolves it as a package-global
-                // reference and its runtime type-check goes through the
-                // MAP-ONLY `var_type_constraint_fast`, which never consults
-                // env. A block-local typed `my TYPE $x` registers its
-                // constraint env-scoped ONLY (`SetVarTypeScoped`), so without
-                // this it is invisible here even though the env key itself
-                // was just copied above. Resolve each copied name's EFFECTIVE
-                // constraint (env-first, matching normal reads) in the
-                // caller and fold it into the nested interpreter's own map.
-                for name_sym in &shared_var_names {
-                    name_sym.with_str(|name| {
-                        if name.starts_with("__mutsu_") || name.contains("::") {
-                            return;
-                        }
-                        if let Some(tc) = self.var_type_constraint(name) {
-                            nested.var_type_constraints.insert(name.to_string(), tc);
-                        }
-                    });
-                }
+                // A copied `__mutsu_type::<name>` key is all the nested
+                // interpreter needs: since ADR-0042 slice 3 that env entry IS
+                // the name-keyed constraint lane, so the loop that used to fold
+                // each copied name's effective constraint into a separate
+                // process-global map in `nested` is gone with the map.
+                //
                 // Under the (B) per-store env-write gate the caller's plain lexicals
                 // keep only their decl-seed `Any` in `self.env` (their initializing
                 // store's env mirror is skipped — the slot is authoritative). The

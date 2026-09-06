@@ -1937,12 +1937,16 @@ impl Interpreter {
                         // A container argument carries its element/key type
                         // EMBEDDED in the value (tagged at its typed
                         // declaration's assignment) — read it from there. The
-                        // name-keyed `var_type_constraints` store is scope-blind:
-                        // a module method's own `my CSV::Field @f` leaves a
-                        // global "@f" entry behind, and consulting it here
-                        // retyped an UNTYPED caller array that merely shared the
-                        // name (Text::CSV 46_eol_si: script `@f` rendered as
+                        // name-keyed store used to be scope-blind: a module
+                        // method's own `my CSV::Field @f` left a global "@f"
+                        // entry behind, and consulting it here retyped an
+                        // UNTYPED caller array that merely shared the name
+                        // (Text::CSV 46_eol_si: script `@f` rendered as
                         // `Array[CSV::Field].new(...)` after one getline call).
+                        // The global map is gone (ADR-0042 slice 3), but
+                        // reading the container is still the right source: it
+                        // is the only one an argument bound under a DIFFERENT
+                        // name has.
                         if source_name.starts_with('@') || source_name.starts_with('%') {
                             let val = unwrap_varref_value(raw_arg.clone());
                             return self

@@ -466,7 +466,6 @@ impl Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(pkg.to_string())),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
-            var_type_constraints: self.var_type_constraints.clone(),
             state_vars: self.state_vars.clone(),
             ..Self::new_regex_scratch()
         };

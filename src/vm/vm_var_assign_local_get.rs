@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Load the live scalar container denoted by `take-rw $var`.
@@ -404,24 +403,14 @@ impl Interpreter {
                 self.stack.push(def.clone());
                 return Ok(());
             }
-            // Deliberately the global-map-only fast probe: an env-scoped
-            // constraint (`SetVarTypeScoped` / a typed param bind) must NOT
-            // convert a Nil read into the type object here — a `Mu $b = Nil`
-            // parameter's default really is Nil. A typed routine LEXICAL never
-            // reads Nil in the first place: its declaration seeds the type
-            // object and a Nil assignment resets to it in the SetLocal store
-            // path (`typed_scalar_nil_seed_value`).
-            if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
-                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                // Nil type constraint: the type object for Nil is the Nil value
-                // itself, not a "Nil" Package type object.
-                if nominal == "Nil" {
-                    self.stack.push(Value::NIL);
-                } else {
-                    self.stack.push(Value::package(Symbol::intern(&nominal)));
-                }
-                return Ok(());
-            }
+            // No constraint probe here on purpose (ADR-0042 slice 3). A typed
+            // scalar lexical never reaches this branch: its declaration seeds
+            // the type object and a Nil assignment resets to it in the SetLocal
+            // store path (`typed_scalar_nil_seed_value`), and since the cell
+            // carries the constraint the boxed form returns above. What DOES
+            // read Nil here is a `Mu $b = Nil` parameter default, whose Nil is
+            // genuine — the process-global map this used to consult existed
+            // only to tell those two apart by scope-blind luck.
         }
         self.stack.push(val);
         Ok(())

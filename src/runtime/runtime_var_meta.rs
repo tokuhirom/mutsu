@@ -5,6 +5,26 @@ use super::*;
 /// [`Interpreter::atomic_var_seen`] for why this cannot be per-interpreter.
 static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Process-global, monotonic: set the first time any variable type constraint
+/// is registered on ANY interpreter (see
+/// [`Interpreter::env_type_constraint_seen`]). It gates a `format!` + `env.get`
+/// that would otherwise run on every variable write-back, and the overwhelming
+/// majority of programs declare no typed lexical at all.
+///
+/// Process-global rather than per-interpreter for the same reason
+/// [`Interpreter::atomic_var_seen_anywhere`] is: an interpreter that *adopts*
+/// another one's env (the `throws-like` nested EVAL, the regex-scratch
+/// interpreters, `clone_for_thread`) inherits its `__mutsu_type::*` keys but is
+/// constructed fresh, so a per-interpreter flag starts `false` and silently
+/// disables enforcement for constraints that are demonstrably right there in
+/// the env it was handed (`roast/S02-types/type.t` 5-11). Enumerating every
+/// such adoption site is exactly the completeness-dependent design CLAUDE.md
+/// calls the higher-risk route, and getting it wrong turns a loud refusal into
+/// a silent wrong answer. An over-set is conservative: it only makes the
+/// (correct) env lookup run.
+static ENV_TYPE_CONSTRAINT_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl Interpreter {
     pub(crate) fn env(&self) -> &Env {
         &self.env
@@ -91,16 +111,17 @@ impl Interpreter {
     /// registers the constraint ONLY in the env-scoped `__mutsu_type::`
     /// metadata, exactly like a typed parameter
     /// ([`Self::bind_param_type_constraint`]), and never in the global
-    /// name-keyed `var_type_constraints` map. The env entry is dropped with
-    /// the routine frame and travels with a captured closure env, so the
-    /// constraint cannot leak onto a same-named variable in another frame —
-    /// the Text::CSV `t/66_formula.t` shape, where a module method's
-    /// `my Str $e = ...` poisoned the caller script's untyped `$e` (see
-    /// `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
-    /// A stale same-named GLOBAL entry (an outer frame's typed lexical) is
-    /// left untouched: the env-first read in [`Self::var_type_constraint`]
-    /// shadows it while this frame is live, and the outer frame's own
-    /// enforcement must survive this frame's return.
+    /// name-keyed metadata. The env entry is dropped with the routine frame
+    /// and travels with a captured closure env, so the constraint cannot leak
+    /// onto a same-named variable in another frame — the Text::CSV
+    /// `t/66_formula.t` shape, where a module method's `my Str $e = ...`
+    /// poisoned the caller script's untyped `$e` (see
+    /// `news/2026-09/type-constraint-global-side-table-retired.md`).
+    ///
+    /// Since ADR-0042 slice 3 this differs from
+    /// [`Self::set_var_type_constraint_decl`] only in NOT tagging a same-named
+    /// env value with container metadata; both write the same single
+    /// env-scoped lane.
     pub(crate) fn set_var_type_constraint_routine_scoped(&mut self, name: &str, constraint: &str) {
         let info = Self::parse_container_constraint(name, constraint);
         if info.value_type == "atomicint" || constraint.contains("atomicint") {
@@ -124,7 +145,7 @@ impl Interpreter {
         } else {
             self.env.remove(&hash_key_meta_key);
         }
-        self.env_type_constraint_seen = true;
+        Self::mark_env_type_constraint_seen();
     }
 
     fn set_var_type_constraint_impl(
@@ -140,18 +161,13 @@ impl Interpreter {
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
                 self.mark_atomic_var_seen();
             }
-            self.var_type_constraints
-                .insert(key.clone(), info.value_type.clone());
             self.env
                 .insert(meta_key, Value::str(info.value_type.clone()));
-            self.env_type_constraint_seen = true;
+            Self::mark_env_type_constraint_seen();
             let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
             if let Some(key_type) = info.key_type.clone() {
-                self.var_hash_key_constraints
-                    .insert(key.clone(), key_type.clone());
                 self.env.insert(hash_key_meta_key, Value::str(key_type));
             } else {
-                self.var_hash_key_constraints.remove(&key);
                 self.env.remove(&hash_key_meta_key);
             }
             // Only register container type metadata for container-sigil variables
@@ -168,27 +184,14 @@ impl Interpreter {
             // declaration reaches here (via `SetVarDynamic`), so avoid the two
             // `format!` key allocations + the `Symbol::intern`ing `env.remove`s
             // (the env is Symbol-keyed) unless there is actually something to
-            // clear. `env_type_constraint_seen` latches true only once an
-            // env-scoped `__mutsu_type::*` entry has ever been inserted, so when
-            // it is false no such env entry can exist to remove. The two map
-            // removes borrow `name` (`&str`) and never allocate.
-            // Both maps empty and no env-scoped constraint ever registered: there
-            // is nothing any of the three clears could find. Bail before the
-            // (SipHash-keyed) `remove` probes — this runs on every `my`
-            // declaration, so a hot loop body pays two string hashes per `my`
-            // just to look up keys that cannot exist.
-            if self.var_type_constraints.is_empty()
-                && self.var_hash_key_constraints.is_empty()
-                && !self.env_type_constraint_seen
-            {
+            // clear. `env_type_constraint_seen` latches true only once a
+            // `__mutsu_type::*` entry has ever been inserted, so when it is
+            // false no such env entry can exist to remove.
+            if !Self::env_type_constraint_seen() {
                 return;
             }
-            let had_constraint = self.var_type_constraints.remove(name).is_some();
-            let had_hash_key = self.var_hash_key_constraints.remove(name).is_some();
-            if had_constraint || had_hash_key || self.env_type_constraint_seen {
-                self.env.remove(&format!("__mutsu_type::{}", name));
-                self.env.remove(&format!("__mutsu_hash_key_type::{}", name));
-            }
+            self.env.remove(&format!("__mutsu_type::{}", name));
+            self.env.remove(&format!("__mutsu_hash_key_type::{}", name));
         }
     }
 
@@ -196,8 +199,8 @@ impl Interpreter {
     /// parameter whose own declaration says nothing about keys.
     ///
     /// Object-hash-ness lives in two places: `HashData::key_type` on the value,
-    /// and the name-keyed `var_hash_key_constraints` / `__mutsu_hash_key_type::`
-    /// metadata every subscript path consults. Binding `my %o{Mu}` to a plain
+    /// and the env-scoped `__mutsu_hash_key_type::` metadata every subscript
+    /// path consults by name. Binding `my %o{Mu}` to a plain
     /// `sub f(%h)` parameter registered `%h` with the implicit value type `Any`
     /// and NO key type — which both hid the object-hash keying from `%h`'s
     /// subscripts (they stringified the key object, warning
@@ -231,19 +234,18 @@ impl Interpreter {
     }
 
     /// Register the type constraint of a *bound routine parameter*. For scalar
-    /// parameters the constraint is written ONLY to the `env`-keyed
-    /// `__mutsu_type::name` metadata (which is scoped — dropped when the callee's
-    /// env is restored) and NOT to the global, name-keyed `var_type_constraints`
-    /// map. This is what stops a typed parameter (`Str:D $x`) from leaking its
-    /// constraint onto a same-named lexical in the *caller* (`my $x = f(...)`,
-    /// where `f`'s parameter is also `$x`): the global map would otherwise retain
-    /// the entry after the callee returns, and the env-first/`var_type_constraints`-
-    /// fallback read would surface it. `my`-declared and `subset` constraints
-    /// still go through `set_var_type_constraint` (both stores), so the global-map
-    /// fallback remains available where the env entry isn't visible (e.g. an
-    /// `EVAL`'d re-assignment to a `subset`-typed lexical). Container parameters
-    /// (`@a`/`%h`) keep the full behaviour — their element/key-type metadata is
-    /// consulted via the global map / container metadata for element checks.
+    /// parameters the constraint is written to the `env`-keyed
+    /// `__mutsu_type::name` metadata, which is scoped — dropped when the
+    /// callee's env is restored. That is what stops a typed parameter
+    /// (`Str:D $x`) from leaking its constraint onto a same-named lexical in
+    /// the *caller* (`my $x = f(...)`, where `f`'s parameter is also `$x`).
+    /// Since ADR-0042 slice 3 retired the process-global side table this is
+    /// simply how EVERY name-keyed constraint is registered; what still
+    /// distinguishes a parameter is the `None` arm below, which must actively
+    /// clear an inherited entry because an untyped parameter shadows a
+    /// same-named outer lexical. Container parameters (`@a`/`%h`) go through
+    /// the full `set_var_type_constraint`, which also tags the bound value so
+    /// element checks can read the constraint off the container.
     pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<String>) {
         if name.starts_with('@') || name.starts_with('%') {
             let constraint = self.keep_object_hash_key_type(name, constraint);
@@ -258,46 +260,43 @@ impl Interpreter {
                     self.mark_atomic_var_seen();
                 }
                 self.env.insert(meta_key, Value::str(info.value_type));
-                self.env_type_constraint_seen = true;
+                Self::mark_env_type_constraint_seen();
             }
             None => {
                 // An untyped scalar parameter shadows any same-named lexical: it
-                // has NO constraint in the callee's scope. Clear both the env
-                // metadata AND a possibly-stale `var_type_constraints` entry left
-                // by an earlier `my Type $x` declaration whose block has exited
-                // (the global map is not block-scoped). Without this, reading the
-                // (Nil-defaulted) parameter would surface the stale constraint via
-                // the global-map fallback and return the type object instead of
-                // Nil — roast S02-types/nil.t f4. An enclosing typed lexical that
-                // is still in scope keeps its own env metadata, so its enforcement
-                // (read env-first) survives the callee's return.
+                // has NO constraint in the callee's scope, so drop the
+                // (inherited) env metadata for the callee frame. The caller's
+                // own entry lives in the caller's env and is restored with it,
+                // so the enclosing lexical keeps its enforcement after the
+                // callee returns.
                 self.env.remove(&meta_key);
-                self.var_type_constraints.remove(name);
             }
         }
     }
 
+    /// The name-keyed type constraint currently in effect for `name`, or `None`.
+    ///
+    /// ADR-0042 slice 3: there is exactly ONE name-keyed lane left, the
+    /// env-scoped `__mutsu_type::<name>` entry. It is dropped with the frame /
+    /// block that declared it, so a typed declaration can no longer be observed
+    /// from a scope it does not enclose. Everything else about a constraint —
+    /// enforcement on assignment, on element stores, and through a
+    /// differently-named bound alias — is read off the container that carries
+    /// it (`ContainerCell`'s scalar `of`, `ArrayData`/`HashData`'s
+    /// `value_type`/`key_type`), which is why deleting the global side table
+    /// this method used to fall back to changed no observable behaviour.
     pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
-        let key = name;
-        // Fast path: if no env-scoped constraint has ever been registered, the
-        // name-keyed global map is authoritative — skip the `format!` + env lookup.
-        // env-first ordering only matters once a param has shadowed a lexical, which
-        // requires an env constraint (flag=true). See `env_type_constraint_seen`.
-        if !self.env_type_constraint_seen {
-            return self.var_type_constraints.get(key).cloned();
+        // Most programs declare no typed lexical at all; when the monotonic
+        // flag is clear no `__mutsu_type::*` entry can exist, so skip the
+        // `format!` + env probe entirely.
+        if !Self::env_type_constraint_seen() {
+            return None;
         }
-        let meta_key = format!("__mutsu_type::{}", key);
-        if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
-            return Some(tc.to_string());
+        let meta_key = format!("__mutsu_type::{}", name);
+        match self.env.get(&meta_key).map(Value::view) {
+            Some(ValueView::Str(tc)) => Some(tc.to_string()),
+            _ => None,
         }
-        if let Some(tc) = self.var_type_constraints.get(key) {
-            return Some(tc.clone());
-        }
-        None
-    }
-
-    pub(crate) fn var_type_constraint_fast(&self, name: &str) -> Option<&String> {
-        self.var_type_constraints.get(name)
     }
 
     /// Whether any `atomicint`/atomic-storage variable has ever been registered
@@ -330,6 +329,21 @@ impl Interpreter {
     pub(crate) fn mark_atomic_var_seen(&mut self) {
         self.atomic_var_seen = true;
         ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether any variable type constraint has ever been registered in this
+    /// process (monotonic). See [`ENV_TYPE_CONSTRAINT_SEEN`] for why this is
+    /// process-global rather than a per-interpreter field.
+    #[inline(always)]
+    pub(crate) fn env_type_constraint_seen() -> bool {
+        ENV_TYPE_CONSTRAINT_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Latch [`Self::env_type_constraint_seen`]. Called at every
+    /// `__mutsu_type::*` / `__mutsu_hash_key_type::*` env-insert site.
+    #[inline(always)]
+    pub(crate) fn mark_env_type_constraint_seen() {
+        ENV_TYPE_CONSTRAINT_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Whether any sigilless-parameter alias (`__mutsu_sigilless_alias::name` env
@@ -511,22 +525,26 @@ impl Interpreter {
         }
     }
 
+    /// The object-hash key type in effect for `name` (`my %h{Int}`), or `None`.
+    ///
+    /// The twin of [`Self::var_type_constraint`], and retired the same way by
+    /// ADR-0042 slice 3: the env-scoped `__mutsu_hash_key_type::<name>` entry
+    /// is the only name-keyed lane, with `HashData::key_type` on the value
+    /// carrying it everywhere a name is not available. The attribute fallback
+    /// stays — an attribute's declared type lives in the class registry and is
+    /// not a lexical at all.
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
-        let key = name;
-        let meta_key = format!("__mutsu_hash_key_type::{}", key);
+        let meta_key = format!("__mutsu_hash_key_type::{}", name);
         if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
             return Some(tc.to_string());
-        }
-        if let Some(tc) = self.var_hash_key_constraints.get(key) {
-            return Some(tc.clone());
         }
         self.attr_hash_key_constraint(name)
     }
 
     /// The key type of an object-hash *attribute* (`has Callable %!Conv{Mu:U}`)
-    /// referenced as `%!Conv` / `%.Conv` inside a method. The per-variable
-    /// `var_hash_key_constraints` map cannot carry this — it is keyed by bare
-    /// name and the attribute's declared type lives in the class registry — so
+    /// referenced as `%!Conv` / `%.Conv` inside a method. The lexical
+    /// `__mutsu_hash_key_type::` lane cannot carry this — an attribute is not
+    /// a lexical and its declared type lives in the class registry — so
     /// resolve it against the current `self`'s class, exactly as
     /// `scalar_attr_type_constraint` does for typed scalar attributes. The
     /// declared type is stored as `ValueType{KeyType}` (see

@@ -1106,7 +1106,7 @@ impl Interpreter {
 
     /// The declared type of the scalar attribute that a local/env name refers
     /// to (`!x` / `.x` inside a method), for the assignment type check. The
-    /// per-variable `var_type_constraints` map cannot carry this: it is keyed by
+    /// per-variable `__mutsu_type::` lane cannot carry this: it is keyed by
     /// bare name and would conflate `!n` across unrelated classes, so the
     /// constraint is resolved against the current `self`'s class instead.
     ///

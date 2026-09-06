@@ -799,11 +799,12 @@ pub(crate) enum OpCode {
     },
     /// [`Self::SetVarType`] for a scalar `my`/`state` declaration LEXICALLY
     /// INSIDE a routine: registers the constraint in the env-scoped
-    /// `__mutsu_type::` metadata ONLY (exactly like a typed parameter), never
-    /// in the global name-keyed `var_type_constraints` map. The env entry dies
-    /// with the routine frame (and travels with a captured closure env), so
-    /// the constraint cannot leak onto a same-named variable in another frame
-    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    /// `__mutsu_type::` metadata ONLY (exactly like a typed parameter) and
+    /// does not tag a same-named env value with container metadata. The env
+    /// entry dies with the routine frame (and travels with a captured closure
+    /// env), so the constraint cannot leak onto a same-named variable in
+    /// another frame
+    /// (`news/2026-09/type-constraint-global-side-table-retired.md`).
     SetVarTypeScoped {
         name_idx: u32,
         tc_idx: u32,
@@ -8480,7 +8481,7 @@ impl CompiledFunction {
         // written env-scoped by a typed parameter bind or `SetVarTypeScoped`)
         // is frame state: merging it back into the caller env would re-create
         // the cross-frame constraint leak through the env store (see
-        // `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+        // `news/2026-09/type-constraint-global-side-table-retired.md`).
         sym.with_str(|s| {
             s.strip_prefix("__mutsu_type::")
                 .is_some_and(|base| self.is_callee_local_sym_direct(Symbol::intern(base)))

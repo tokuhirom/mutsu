@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     /// `@!attr = ...` / `@.attr = ...` (and the `%` twins): the declared
-    /// element type lives in the class registry, not `var_type_constraints`,
+    /// element type lives in the class registry, not in the by-name lane,
     /// so the plain container-assign paths produce an untyped Array/Hash.
     /// Check the elements and re-embed the `Array[T]`/`Hash[T]` metadata so
     /// the stored container keeps its type identity (`has Str @!cnames;` +
@@ -301,7 +301,7 @@ impl Interpreter {
         // scalar resets Nil to the default type object Any.
         // `$.x = v` / `$!x = v` inside a method reaches the name-based assign
         // rather than a local slot; its declared type lives in the class
-        // registry, not in the name-keyed `var_type_constraints` map (see
+        // registry, not in the name-keyed constraint lane (see
         // `scalar_attr_type_constraint`). Nil keeps the untyped path below,
         // which resets the attribute to its own type object.
         let attr_constraint = (!val.is_nil())

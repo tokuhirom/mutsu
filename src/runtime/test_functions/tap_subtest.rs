@@ -26,7 +26,6 @@ pub(crate) struct SubtestDeclSnapshot {
     subsets: FxHashMap<String, SubsetDef>,
     loaded_modules: HashSet<String>,
     type_metadata: HashMap<String, HashMap<String, Value>>,
-    var_type_constraints: HashMap<String, String>,
 }
 
 impl Interpreter {
@@ -44,7 +43,6 @@ impl Interpreter {
             subsets: registry.subsets.clone(),
             loaded_modules: self.loaded_modules.clone(),
             type_metadata: self.type_metadata.clone(),
-            var_type_constraints: self.snapshot_var_type_constraints(),
         }
     }
 
@@ -61,7 +59,6 @@ impl Interpreter {
             subsets,
             loaded_modules,
             mut type_metadata,
-            var_type_constraints,
         } = snapshot;
         // Invalidate name-keyed resolution caches (functions restored wholesale).
         self.fn_resolve_gen += 1;
@@ -85,7 +82,6 @@ impl Interpreter {
             type_metadata.entry(key).or_insert(val);
         }
         self.type_metadata = type_metadata;
-        self.restore_var_type_constraints(var_type_constraints);
     }
 
     /// Run a subtest body callable.

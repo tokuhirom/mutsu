@@ -526,20 +526,15 @@ impl Interpreter {
                 let val = self.our_pseudo_var_read(name).unwrap_or(val);
                 // When the value is Nil and the variable has a type constraint,
                 // return the type object (consistent with GetLocal behavior).
+                // No constraint probe here (ADR-0042 slice 3): a typed scalar's
+                // type-object seed comes from its declaration and its Nil-reset
+                // from the store path, so a Nil that reaches here — a `= Nil`
+                // parameter default — is genuinely Nil. See the matching
+                // comment in `vm_var_assign_local_get.rs`.
                 let val = if val.is_nil() {
-                    if let Some(def) = self.var_default(name) {
-                        def.clone()
-                    // Global-map-only on purpose: an env-scoped constraint (a
-                    // typed param / `SetVarTypeScoped` lexical) must not turn a
-                    // genuinely-Nil read (a `= Nil` param default) into the
-                    // type object; see the matching comment in
-                    // `vm_var_assign_local_get.rs`.
-                    } else if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
-                        let nominal =
-                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        Value::package(Symbol::intern(&nominal))
-                    } else {
-                        val
+                    match self.var_default(name) {
+                        Some(def) => def.clone(),
+                        None => val,
                     }
                 } else {
                     val
