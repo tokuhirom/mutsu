@@ -178,17 +178,20 @@ imported sub went 14.7 us -> 0.9 us per call, at parity with a local one, and
 that file**: the per-assertion cost is dominated by something else. Two
 measurements say where to look next:
 
-- **The cost is linear in env size.** Adding N unused `our` variables to the
-  mainline of a 2000-assertion file adds ~0.98 ns per entry per assertion:
-  0 pads 0.609 s, 300 pads 1.213 s, 600 pads 1.841 s, 900 pads 2.363 s (release,
-  this machine). `MUTSU_VM_STATS` reports **3 `env_deep_copies` and 2
-  `clone_env`s per assertion**, and `clone_env` is `Env::flattened()` — an
-  O(env) rebuild whenever the live env is a scoped overlay, which it is on the
-  named-call path. `call_compiled_function_named_inner` takes two of them
-  eagerly: `push_caller_env()` and the flat env handed to the `Sub` value built
-  for `callframe().code` introspection. Neither is used by an assertion that
-  never introspects its frame. Making them lazy (or storing the scoped env and
-  flattening at the point of use) is the measured next lever.
+- **The cost is linear in env size, and the site is the METHOD path.** Adding N
+  unused `our` variables to the mainline of a 2000-assertion file adds ~0.98 ns
+  per entry per assertion: 0 pads 0.543 s, 300 pads 1.213 s, 600 pads 1.841 s,
+  900 pads 2.363 s (release, this machine). It is
+  `exec_call_method_mut_op_impl`'s unconditional `flatten_scoped_env()`, which
+  rebuilds the whole lexical env for any method dispatch past the accessor fast
+  path — an assertion makes two (`$output.say`, `$desc.Str`), both on native
+  methods that never read a lexical by name. Commenting it out (unsound, purely
+  to size the prize) takes the 900-pad file from 2.363 s to **0.958 s** and
+  `write-int.t` from 45.4 s to 42.2 s. Two suspects on the SUB path were measured
+  and ruled out: the `Sub` value's `clone_env` for `callframe().code` (no
+  measurable change when removed) and `push_caller_env` (an `Arc` clone, not a
+  flatten). Filed as
+  `todo/perf/method-dispatch-flattens-the-env-on-every-call.md`.
 - **`ok`/`is` are multis, so they still resolve once per call** (2001 resolves
   for 2000 `ok`s). The `otf_call_cache` deliberately excludes multi names; the
   sound multi-resolution cache misses because the arguments arrive as
