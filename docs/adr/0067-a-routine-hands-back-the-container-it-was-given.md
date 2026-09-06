@@ -16,7 +16,9 @@
   [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (Track B is no longer
   GC-coupled), [ADR-0064](0064-var-descriptor-carries-the-contained-value.md)
   (`.VAR` descriptors)
-- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`;
+- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`
+  (every row of it verified against raku and closed by this ADR, now
+  `news/2026-09/method-hands-back-its-invocants-container.md`);
   `todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` (closed by
   Slices 4 and 5, now
   `news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`);
