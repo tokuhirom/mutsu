@@ -849,6 +849,33 @@ misleading about the cause:
   variable plus wiring it into the operator.
   → [todo/tickets/tolerance-dynamic-variable-is-undefined.md](../todo/tickets/tolerance-dynamic-variable-is-undefined.md)
 
+Found in the 2026-09-06 full re-sweep, second triage round, on its
+next-highest-signal file (`Language/structures.rakudoc`, 4 mismatch + 1 crash).
+All three reproduce against raku v2026.07 and each was narrowed to a repro
+smaller than the doc block:
+
+- `Language/structures.rakudoc:220` — a smartmatch whose right operand is the
+  **topic** returns `Bool` instead of the `Match`. Every other spelling (literal
+  regex, regex in a named variable, sub parameter, `WhateverCode`, inside a
+  `.map` block) answers correctly, so neither `.map`, nor the block, nor
+  regex-in-a-variable is the cause: `for (/a/,) { say ("ab" ~~ $_).raku }` is the
+  one-line repro.
+  → [todo/tickets/smartmatch-against-the-topic-returns-bool-not-match.md](../todo/tickets/smartmatch-against-the-topic-returns-bool-not-match.md)
+- `Language/structures.rakudoc:123` — an `is Array` subclass's `iterator`
+  override is ignored *and* the object iterates as a single item (`.say for
+  @thing` prints `[3 2 1 4]` on one line). The second half is the more visible
+  one: `for` never decomposed the instance at all.
+  → [todo/tickets/array-subclass-iterator-override-ignored.md](../todo/tickets/array-subclass-iterator-override-ignored.md)
+- `Language/structures.rakudoc:26` — `.VAR` on an itemized list element reports
+  the inner type (`List`) rather than `Scalar`, the mirror image of the
+  standing "`.VAR` reports `Scalar` whether or not a container arrived" warning
+  in ADR-0067's source finding.
+  → [todo/tickets/itemized-list-element-var-reports-inner-type.md](../todo/tickets/itemized-list-element-var-reports-inner-type.md)
+
+The file's other two rows are `raku-drift-from-doc` (a `.WHICH` address in the
+expected output) plus a `$Logger::get` example that raku itself answers oddly;
+neither is a mutsu defect.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
