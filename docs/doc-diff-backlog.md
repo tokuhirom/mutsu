@@ -387,7 +387,7 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 | `Language/structures.rakudoc:233` | ~~calling an undefined `Any`-typed value as a function throws instead of returning the args~~ | [resolved](../news/2026-08/undefined-any-called-as-sub-throws.md) |
 | `Language/structures.rakudoc:26`, `Language/mop.rakudoc:120` | `$(LIST).VAR.^name` reports `List` instead of `Scalar` (item contextualizer doesn't itemize) | [item-contextualized-list-var-name-not-scalar.md](../todo/tickets/item-contextualized-list-var-name-not-scalar.md) |
 | `Language/mop.rakudoc:329` | a grammar's `method ^parameterize` + parametric role application stack-overflows | [grammar-metaclass-parameterize-stack-overflow.md](../todo/deep/grammar-metaclass-parameterize-stack-overflow.md) |
-| `Language/mop.rakudoc:34` | `constant NAME := Metamodel::ClassHOW.new_type(name => 'NAME')` immediately errors as "immutable" | [direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md) |
+| `Language/mop.rakudoc:34` | ~~`constant NAME := Metamodel::ClassHOW.new_type(name => 'NAME')` immediately errors as "immutable"~~ | [resolved](../news/2026-08/metamodel-how-set-why-after-compose-immutable.md) — and the doc's full worked example (`.^add_method` + `.^compose` + the call) agrees with raku as of [#7417](../news/2026-09/add-method-installs-a-routine-backed-code-object.md) |
 | `Language/mop.rakudoc:93` | `.HOW.^name` on a hash literal is missing the `+{<anon>}` mixin suffix | [how-gist-missing-anon-mixin-suffix.md](../todo/tickets/how-gist-missing-anon-mixin-suffix.md) |
 | `Type/independent-routines.rakudoc:110` | ~~`EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg~~ | [resolved](../news/2026-08/eval-dollar-question-file-not-synthesized.md) |
 | `Type/independent-routines.rakudoc:148` | `repl()` global routine is unimplemented — core, but blocked on `EVAL` not seeing caller lexicals for *reads*, without which it would be a stub | [repl-routine-unimplemented.md](../todo/tickets/repl-routine-unimplemented.md) |
@@ -759,9 +759,10 @@ Found in the 2026-08-22 batch-6 re-run of `js-nutshell`/`IO::Spec::Unix`/`py-nut
 metaclass composing `does Metamodel::Naming does Metamodel::Stashing` fails with
 `X::InvalidType: Invalid typename 'Metamodel::Naming'` before its class body is even
 considered. Added as a "Related finding" section to the existing
-[direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md)
-deep ticket, since it's the same "script type creation directly through
-`Metamodel::*`" territory as that ticket's own finding.
+[metamodel-roles-are-not-composable-types.md](../todo/deep/metamodel-roles-are-not-composable-types.md)
+deep ticket (renamed 2026-09-07), since it's the same "script type creation
+through `Metamodel::*`" territory as that ticket's own finding -- and, now that
+every other framing of that file is closed, it is the ONLY thing left in it.
 
 **Excluded from this batch-6 sub-run:**
 - `Language/js-nutshell.rakudoc` [2] (line 562, `my Str %letters{Str}` iteration order)
