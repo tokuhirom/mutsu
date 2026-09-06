@@ -287,9 +287,21 @@ impl Interpreter {
     }
 
     /// [`Self::reify_map_grep_seq`] over a whole argument list.
+    ///
+    /// Looks through a `Pair`, because a NAMED argument's value is an argument
+    /// too: zef's `Any.new(:specs($spec.values[0].map: {...}))` binds the
+    /// mapped Seq to an `@.specs` attribute, and the binder reads its elements
+    /// through pure code.
     pub(crate) fn reify_map_grep_seq_args(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
         for arg in args {
             self.reify_map_grep_seq(arg)?;
+            match arg.view() {
+                ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
+                    let v = v.clone();
+                    self.reify_map_grep_seq(&v)?;
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
