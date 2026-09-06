@@ -496,6 +496,7 @@ mod methods_classhow_mro;
 mod methods_classhow_parents;
 mod methods_collection;
 pub(crate) mod methods_collection_ops;
+mod methods_definitehow;
 mod methods_dispatch_match;
 mod methods_dispatch_match2;
 mod methods_dispatch_match3;

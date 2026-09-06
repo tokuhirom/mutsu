@@ -255,6 +255,23 @@ pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {
     Ok((input, Expr::Whatever))
 }
 
+/// Does `rest` begin with a type smiley (`:D`, `:U`, `:_`) that terminates
+/// there — i.e. is the immediately-preceding identifier a definiteness-
+/// constrained type name rather than a bare term followed by an adverb?
+fn starts_with_type_smiley(rest: &str) -> bool {
+    let Some(after_colon) = rest.strip_prefix(':') else {
+        return false;
+    };
+    let mut chars = after_colon.chars();
+    if !matches!(chars.next(), Some('D' | 'U' | '_')) {
+        return false;
+    }
+    // A smiley is exactly one character: `:Do` is an adverb named `Do`.
+    !chars
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
 pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
@@ -284,6 +301,16 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         // Reject if followed by `(` - that's a function call, not a constant
         if rest.starts_with('(') {
             return Err(PError::expected("not a function call"));
+        }
+        // `Any` and `Nil` are the two term keywords that also name real types,
+        // so they can carry a definiteness smiley (`Any:D`, `Nil:U`). A smiley
+        // is not a word boundary, so without this the keyword matched and the
+        // leftover `:D` was swallowed downstream as an adverb — `Any:D` became
+        // the plain `Any` type object and `Nil:D` became a `Pair` (ADR-0069).
+        // Falling through to identifier parsing produces the smiley-carrying
+        // type object every other type name already gets.
+        if matches!(kw, "Any" | "Nil") && starts_with_type_smiley(rest) {
+            return Err(PError::expected("not a definiteness-constrained type"));
         }
         // Reject if followed by `=>` (pair key context)
         let trimmed = rest.trim_start();

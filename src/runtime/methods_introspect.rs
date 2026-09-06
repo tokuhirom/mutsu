@@ -284,6 +284,24 @@ impl Interpreter {
         // role declaration expression evaluates to (`(role R {...})`, a
         // candidate-keyed `Package`), and the candidate objects `.^candidates`
         // hands out.
+        // A definiteness-constrained type object (`Int:D`, `Any:U`) is an
+        // ordinary type object whose name carries the smiley (ADR-0069). Its
+        // metaclass is `DefiniteHOW` wrapping the base type's, not the base
+        // type's own `ClassHOW`.
+        if let ValueView::Package(name) = target.view() {
+            let resolved = name.resolve();
+            // `:_` asserts nothing and folds back to the plain type (`Int:_` is
+            // `Int`), so only `:D`/`:U` get a `DefiniteHOW`.
+            if matches!(
+                crate::runtime::types::strip_type_smiley(&resolved).1,
+                Some(":D" | ":U")
+            ) {
+                return Ok(Self::native_how_instance(
+                    "Perl6::Metamodel::DefiniteHOW",
+                    &resolved,
+                ));
+            }
+        }
         if self.is_individual_role_type_object(target) {
             let display = self.role_type_object_display_name(target);
             return Ok(Self::native_how_instance(
