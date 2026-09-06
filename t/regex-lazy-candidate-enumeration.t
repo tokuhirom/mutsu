@@ -8,7 +8,7 @@ use Test;
 # rows that already agreed before the change are just as important as the rows
 # that did not: they are what a laziness change is most likely to break.
 
-plan 64;
+plan 72;
 
 my $c;
 
@@ -62,7 +62,6 @@ todo 'residue: the find scan re-runs the pattern at a position';
 is $c, 1, 'A15 subst runs the block once';
 
 $c = 0; "aaa" ~~ / ( \w* { $c++ } & \w* ) /;
-todo 'ADR-0073: the conjunction arm is still collect-then-pick';
 is $c, 1, 'A16 conjunction runs the block once';
 
 # A17: a `die` in a block on a candidate raku never enters must not abort the
@@ -257,3 +256,25 @@ is ~("a,b,c" ~~ / [ \w+ ] ** 2 % ',' /), 'a,b', 'G2  ** 2 % , chain';
 is ~("a,b,c" ~~ / [ \w+ ] +% ',' /), 'a,b,c', 'G3  +% , chain';
 is (("a,b,c" ~~ / ( \w+ ) ** 1..3 % ',' /)[0].map(~*).join('|')), 'a|b|c',
     'G4  ** 1..3 % , folds each iteration into $0';
+
+# --- A16b: the conjunction's other shapes, all verified against raku ---------
+# The first branch is now walked lazily and the OTHER branches keep the eager
+# yes/no probe (`regex_match_branch_ending_at` asks about one end, so there is
+# no candidate set to stream). These pin that the merge, the priority order and
+# the backtracking into a shorter first-branch match are unchanged.
+
+is ("aaa" ~~ / ( \w* & \w* ) /).Str, 'aaa', 'A16b conjunction of two greedy branches';
+is ("abc" ~~ / (\w+ & <[a..c]>+) /).Str, 'abc', 'A16c a character-class branch';
+nok ("abc" ~~ / (\d+ & \w+) /), 'A16d a branch that cannot match fails the whole conjunction';
+is ("abc" ~~ / (\w+) & (\w+) /).Str, 'abc', 'A16e captures from both sides are kept';
+is ("abcd" ~~ / ( \w+ & \w\w ) /).Str, 'ab', 'A16f the shared end is the shorter branch';
+is ("abc" ~~ /^ [ \w+ & 'abc' ] $/).Str, 'abc', 'A16g anchored conjunction';
+
+{
+    # The continuation rejects the first (longest) end, so the walk comes back
+    # for the second -- and the block runs exactly twice, as raku does.
+    my $n = 0;
+    is ("aaab" ~~ / ( \w* { $n++ } & \w* ) b /).Str, 'aaab',
+        'A16h backtracking into the conjunction still matches';
+    is $n, 2, 'A16i ... and runs the block once per end actually entered';
+}

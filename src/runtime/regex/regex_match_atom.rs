@@ -101,7 +101,7 @@ impl Interpreter {
     /// `target_end`. Returns the branch's own captures (relative to an empty
     /// baseline) on success. Used by conjunction (`&` / `&&`) matching, where
     /// every branch must cover the same substring.
-    fn regex_match_branch_ending_at(
+    pub(super) fn regex_match_branch_ending_at(
         &mut self,
         branch: &RegexPattern,
         chars: &[char],

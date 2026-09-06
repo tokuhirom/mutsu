@@ -20,7 +20,7 @@
 //! is what confines the change to the atoms that can contain code.
 
 use super::super::*;
-use super::regex_helpers::{LTM_DECLARATIVE_MODE, alternation_capture_slots};
+use super::regex_helpers::{LTM_DECLARATIVE_MODE, alternation_capture_slots, merge_regex_captures};
 use super::regex_match_core::MatchSink;
 use super::regex_trail::CapStore;
 use std::cell::Cell;
@@ -93,6 +93,11 @@ impl Interpreter {
                         ratchet,
                         on,
                         GroupShape::Isolated,
+                    );
+                }
+                RegexAtom::Conjunction(branches) => {
+                    return self.drive_conjunction_candidates(
+                        branches, chars, pos, store, pkg, ratchet, on,
                     );
                 }
                 RegexAtom::Alternation(alternatives) => {
@@ -199,6 +204,71 @@ impl Interpreter {
             };
             self.regex_walk_ends_in_pkg(
                 pattern,
+                chars,
+                pos,
+                pkg,
+                false,
+                false,
+                &mut MatchSink::Cont(&mut cont),
+            );
+        }
+        unwind
+    }
+
+    /// Drive a `&`/`&&` conjunction: every branch has to match the SAME
+    /// substring, so the atom's candidates are the FIRST branch's ends that
+    /// every other branch also reaches. The eager producer collected the first
+    /// branch's whole end set before probing any of them, which ran the code
+    /// blocks inside it once per computed end (`( \w* {B} & \w* )` on `"aaa"`
+    /// fired `B` four times against raku's one). Driving the first branch
+    /// through a `MatchSink::Cont` instead means end *k+1* is computed only
+    /// once end *k* has been rejected -- either by a sibling branch that cannot
+    /// reach it, or by the real continuation.
+    ///
+    /// The other branches keep the eager probe: `regex_match_branch_ending_at`
+    /// asks a yes/no question about ONE end, so there is no candidate set to
+    /// stream, and raku evaluates them for the end under test too.
+    #[allow(clippy::too_many_arguments)]
+    fn drive_conjunction_candidates(
+        &mut self,
+        branches: &[RegexPattern],
+        chars: &[char],
+        pos: usize,
+        store: &mut CapStore,
+        pkg: &str,
+        ratchet: bool,
+        on: &mut AtomCandidateCont<'_>,
+    ) -> bool {
+        // An empty conjunction matches zero-width, as the eager producer does.
+        let Some((first, rest)) = branches.split_first() else {
+            return on(self, store, pos, RegexCaptures::default());
+        };
+        let mut unwind = false;
+        {
+            let unwind = &mut unwind;
+            let mut cont =
+                |interp: &mut Interpreter, end: usize, first_caps: RegexCaptures| -> bool {
+                    // Raku keeps the captures from EVERY side of `&`, in written
+                    // order -- same merge the eager arm performs.
+                    let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
+                    for branch in rest {
+                        match interp.regex_match_branch_ending_at(branch, chars, pos, end, pkg) {
+                            Some(bcaps) => merged = merge_regex_captures(merged, bcaps),
+                            // This end is not a candidate at all, so a ratchet has
+                            // nothing to commit to yet: keep walking.
+                            None => return false,
+                        }
+                    }
+                    if on(interp, store, end, merged) {
+                        *unwind = true;
+                        return true;
+                    }
+                    // Ratchet (`:`) commits to the highest-priority candidate and
+                    // forbids backtracking into the atom.
+                    ratchet
+                };
+            self.regex_walk_ends_in_pkg(
+                first,
                 chars,
                 pos,
                 pkg,
