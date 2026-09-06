@@ -120,16 +120,63 @@ in `a1` and 3× in `a2`; `apply_pending_rw_writeback` fires twice in both.
 `propagate_bind_to_ancestor_frames` at the tail of that same path is already
 ruled out by the env-switch A/B above.
 
+## The writer, located
+
+`exec_get_local_op_inner`'s **lazy-sync adopt**
+(`src/vm/vm_var_assign_local_get.rs`, the
+`self.locals[idx] = Value::container_ref(arc);` line):
+
+```rust
+if !self.locals[idx].is_container_ref()
+    && ... // not a Package/Array/Hash/Sub/Instance
+    && let Some(env_hit) = /* overlay_get_sym(name) */
+    && let ValueView::ContainerRef(arc) = env_hit.view()
+{
+    self.locals[idx] = Value::container_ref(arc);
+}
+```
+
+Confirmed with a breakpoint on that exact line: it fires **once in `a2`
+(`idx=0 name="v"` — that is `f`'s own slot) and never in `a1`**. `f` never
+"reads the wrong scope"; its slot is overwritten with the compunit's cell just
+before the read, and from then on the two names denote one container, which is
+exactly the aliasing rows N1/N2 report.
+
+Root cause in one sentence: **`GetLocal` adopts any `ContainerRef` it finds in
+its own env overlay under the same name, without establishing that the cell is
+the one this frame's declaration owns** — and the callee's bind put the
+*compunit's* cell there under the shared name.
+
+The adopt is not gratuitous: it exists so a `:=` performed in a callee that
+targets *this frame's* variable is seen ("propagated back to env but not to
+locals"), and it was already narrowed once, from `get`/`get_sym` to
+`overlay_get`/`overlay_get_sym`, to stop it picking up an ANCESTOR call frame's
+container (`todo/deep/recursive-sub-trailing-comma-array-literal-of-own-param-stack-overflow.md`).
+This is the same class of mistake one tier lower down: the overlay restriction
+stops it reaching an ancestor's container but not a *compunit* container that a
+callee wrote into this frame's overlay under the same name.
+
 ## Suggested next step
 
-Locate the writer inside that bind path, don't theorise about it. The remaining
-un-eliminated writers in it are `self.env_mut().insert(resolved_source, container)`
-(the "update source in env" line), `set_env_with_main_alias(name, container)`
-just below it, and whatever pulls a name back into the caller's local slot on
-return — `f`'s `$v` lives in a compiled local slot (`locals: ["v"]`,
-`SetLocalDecl { slot: 0 }`), so for `f` to read the cell, something must write
-`self.locals[0]` in `f`'s frame or make `f`'s read go by name. Establishing
-which of those two it is, with one breakpoint each, is the next measurement.
+Two questions, in this order:
+
+1. **Why is the compunit's cell in `f`'s OWN overlay at all?** `a`'s bind writes
+   it with `self.env_mut().insert(resolved_source, container)` and
+   `set_env_with_main_alias`, and `a`'s env is supposed to be a `scoped_child` of
+   `f`'s. If the write is landing in a tier `f` owns, that is arguably the bug and
+   the adopt is only the messenger. `Env::scoped_child`'s empty-tier reuse is the
+   thing to check first: `f`'s overlay is empty (its `my $v = 5` went to a local
+   slot, not to env), which is exactly the condition that path keys on.
+2. **If the write is legitimate, the adopt needs an identity signal** beyond the
+   name. The obvious candidate is "this frame declared this slot itself in this
+   invocation" (a `SetLocalDecl` bit per slot): a callee cannot rebind a caller's
+   local except through `$CALLER::`, and that route is already handled by the
+   `resolve_binding` check at the top of the same function. Weigh it against the
+   two cases the adopt exists for before adding a per-frame bit.
+
+Do NOT reach for the env-model campaign this file used to propose. The mechanism
+is one guarded line, in a function whose comment already documents two previous
+narrowings of the same check.
 
 Only once the writer is named is it worth deciding whether this needs an ADR.
 On the evidence so far it does not look like an env-model change: fifteen of the
