@@ -481,6 +481,15 @@ fn lift_phasers_from_expr_inner(
 
     // Recurse into sub-expressions
     match expr {
+        // Parentheses group, so a phaser written *inside* a parenthesized
+        // expression lifts just as it would unparenthesized — that is what makes
+        // `(gather for ... { INIT take ... })` run its `INIT` at initialisation
+        // time rather than per-iteration. A phaser that IS the parenthesized
+        // expression is left alone: `is (BEGIN A + 1), 4` evaluates in place, so
+        // it still sees the `constant A` declared above it.
+        Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::PhaserExpr { .. }) => {
+            lift_phasers_from_expr(inner, begin, check, init)
+        }
         Expr::Binary { left, right, .. }
         | Expr::HyperOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {

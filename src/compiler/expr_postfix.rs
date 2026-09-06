@@ -148,6 +148,10 @@ impl Compiler {
 
     /// Compile postfix ++ on variable/index/method target.
     pub(super) fn compile_expr_postfix_inc(&mut self, expr: &Expr) {
+        // `($x)++` is `$x++` — the parenthesization marker the parser
+        // records for every `(...)` must not hide the lvalue from the
+        // shape dispatch below.
+        let expr = expr.peel_parens();
         if let Some(var) = Self::temp_call_var(expr) {
             // `(temp $c)++`: `temp $c` temporizes `$c` (saved for restoration at
             // scope exit) and yields it as an lvalue, so `++` post-increments the
@@ -261,6 +265,10 @@ impl Compiler {
 
     /// Compile postfix -- on variable/index/method target.
     pub(super) fn compile_expr_postfix_dec(&mut self, expr: &Expr) {
+        // `($x)++` is `$x++` — the parenthesization marker the parser
+        // records for every `(...)` must not hide the lvalue from the
+        // shape dispatch below.
+        let expr = expr.peel_parens();
         if let Some(var) = Self::temp_call_var(expr) {
             // `(temp $c)--`: temporize `$c` then post-decrement it (see the
             // `(temp $c)++` case above).

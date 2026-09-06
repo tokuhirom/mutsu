@@ -61,7 +61,15 @@ pub(super) fn is_literal_expr(expr: &Expr) -> bool {
 /// a literal scalar (`10[0] := 1`, `"Hi"[0] := 1`) or an all-literal list
 /// (`(1,2)[0] := 3`). Binding into such a target is illegal → X::Bind.
 pub(crate) fn index_bind_target_is_immutable(target: &Expr) -> bool {
-    match target {
+    // A *parenthesized* bareword is a type object used as a term (`(List)[0] :=
+    // 1`), which has no element slot to bind. An unparenthesized one is a
+    // sigilless binding (`\v`), whose container the bind can legitimately reach.
+    if matches!(target, Expr::Grouped(_)) && matches!(target.peel_parens(), Expr::BareWord(_)) {
+        return true;
+    }
+    // `(1, 2)[0] := 3` — the parser records the parentheses, and what they hold
+    // is the immutable thing.
+    match target.peel_parens() {
         Expr::Literal(v) => matches!(
             v.view(),
             ValueView::Int(_)
@@ -71,7 +79,10 @@ pub(crate) fn index_bind_target_is_immutable(target: &Expr) -> bool {
                 | ValueView::Bool(_)
         ),
         Expr::ArrayLiteral(elems) => {
-            !elems.is_empty() && elems.iter().all(|e| matches!(e, Expr::Literal(_)))
+            !elems.is_empty()
+                && elems
+                    .iter()
+                    .all(|e| matches!(e.peel_parens(), Expr::Literal(_)))
         }
         _ => false,
     }

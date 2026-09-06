@@ -1210,9 +1210,20 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
+            // The contents of `(...)` are a semilist of *statements*, so a
+            // declaration written inside them (`(my $x = 9) given 2`) renders
+            // as the statement it is rather than as an expression.
+            let content = match inner.as_ref() {
+                Expr::DoStmt(stmt) => convert_stmt(stmt)?.ok_or_else(|| {
+                    RuntimeError::new(format!(
+                        "RakuAST: `.AST` does not yet support this construct: {stmt:?}"
+                    ))
+                })?,
+                other => statement_expression(convert_expr(other)?),
+            };
             let semilist = RakuAstNode {
                 class: RakuAstClass::SemiList,
-                fields: vec![node_field(None, statement_expression(convert_expr(inner)?))],
+                fields: vec![node_field(None, content)],
             };
             Ok(RakuAstNode {
                 class: RakuAstClass::CircumfixParentheses,

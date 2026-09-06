@@ -1803,6 +1803,25 @@ fn collect_assign_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
     }
 }
 
+impl Expr {
+    /// Look through the parenthesization markers the parser records, returning
+    /// the expression the source actually wrote inside the parentheses.
+    ///
+    /// The parser marks *every* `(...)` (see
+    /// `parser::primary::container::paren::mark_parenthesized`), so a consumer
+    /// that pattern-matches a shape must ask for the shape through this, not
+    /// match `Expr` directly, unless it genuinely cares whether parentheses
+    /// were written (junction chain flattening, list assignment, the Whatever
+    /// freeze).
+    pub fn peel_parens(&self) -> &Expr {
+        let mut expr = self;
+        while let Expr::Grouped(inner) = expr {
+            expr = inner;
+        }
+        expr
+    }
+}
+
 fn collect_assign_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     match expr {
         Expr::AssignExpr { name, expr, .. } => {

@@ -3412,14 +3412,15 @@ impl Compiler {
     }
 
     fn for_iterable_var_names(iterable: &Expr) -> Vec<String> {
-        // A single parenthesized scalar (`for ($x) -> $v is rw`) reaches here as
-        // `Grouped(Var)`; unwrap it so the per-element rw writeback targets `$x`.
+        // A single *parenthesized* scalar (`for ($x) -> $v is rw`) writes back to
+        // `$x`; a bare `for $x` does not, so this stays keyed on the marker the
+        // parser records for `(...)` rather than on the variable alone.
         if let Expr::Grouped(inner) = iterable
-            && let Expr::Var(name) = inner.as_ref()
+            && let Expr::Var(name) = inner.peel_parens()
         {
             return vec![name.clone()];
         }
-        if let Expr::ArrayLiteral(items) = iterable {
+        if let Expr::ArrayLiteral(items) = iterable.peel_parens() {
             // A MIXED list (`for $a, 1000, $b, 1_000_000 -> \x, $value`) still
             // has writable sources at the variable positions; a position that is
             // not a plain variable gets the empty name, which every consumer
@@ -3427,7 +3428,7 @@ impl Compiler {
             // dropped the write-through for `$a`/`$b` entirely.
             let names: Vec<String> = items
                 .iter()
-                .map(|item| match item {
+                .map(|item| match item.peel_parens() {
                     Expr::Var(name) => name.clone(),
                     _ => String::new(),
                 })

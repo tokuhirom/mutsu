@@ -679,6 +679,10 @@ impl Compiler {
         value: &Expr,
         outer_positional: bool,
     ) {
+        // `(state buf32 $w .= new)[3] = 77` and `($a, 42, $b)[1, 3] = ...`
+        // subscript what the parentheses hold, so the shape dispatch below looks
+        // through the marker the parser records for every `(...)`.
+        let target = target.peel_parens();
         // Binding (`:=`) to a WhateverCode subscript (`@a[*-1] := 42`) is illegal:
         // the index is a computed slice, not a fixed container slot, so rakudo
         // throws X::Bind::Slice ("Cannot bind to Array slice"). A slice bind

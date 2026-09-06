@@ -11,14 +11,50 @@ use crate::ast::Expr;
 use crate::token_kind::TokenKind;
 use crate::value::ValueView;
 
+/// True when an extra layer of parentheses has frozen a bare `*` (or `**`)
+/// into a plain `Whatever` *value*, so it is no longer a priming point.
+///
+/// `(*).abs` is a `WhateverCode` in raku while `((*)).abs` calls `.abs` on the
+/// literal `Whatever` and throws, and `((*.flip)).assuming(42)` calls `.assuming`
+/// on a finished `WhateverCode` rather than growing the curry. The parser
+/// records every parenthesization, so the two spellings differ by exactly one
+/// `Grouped` layer and the distinction is read off the AST rather than by
+/// rescanning the source text for a balanced paren group.
+pub(crate) fn is_frozen_whatever(expr: &Expr) -> bool {
+    let Expr::Grouped(inner) = expr else {
+        return false;
+    };
+    matches!(inner.as_ref(), Expr::Grouped(_))
+        && matches!(
+            inner.peel_parens(),
+            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever | Expr::WhateverCurry(_)
+        )
+}
+
+/// True when `expr` **is** a Whatever operand (`*` / `**`), as opposed to one
+/// that merely *contains* one. Parenthesization is transparent here — `(*)` is
+/// the same operand as `*` — except for the frozen spelling `((*))`, which is a
+/// plain value and therefore not an operand that primes.
+pub(crate) fn is_whatever_operand(expr: &Expr) -> bool {
+    !is_frozen_whatever(expr)
+        && matches!(
+            expr.peel_parens(),
+            Expr::Whatever | Expr::WhateverArg | Expr::HyperWhatever
+        )
+}
+
 pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
-    if !contains_whatever(expr) || is_whatever(expr) || matches!(expr, Expr::HyperWhatever) {
+    // An operand that IS a `*` / `**` does not curry: it is the Whatever value
+    // itself. `is_whatever_operand` looks through parenthesization, so `(**)` is
+    // the same value as `**`.
+    if !contains_whatever(expr) || is_whatever_operand(expr) {
         return false;
     }
     if contains_xx_with_bare_whatever(expr) {
         return false;
     }
-    match expr {
+    // Parentheses group; every shape decision below is about what they hold.
+    match expr.peel_parens() {
         // SmartMatch: Whatever on RHS is handled at runtime (autoprime).
         // LHS compound Whatever curries (e.g. `*.abs ~~ Code`), but bare
         // `* ~~ Type` currying is handled in the precedence parser where we can
@@ -99,7 +135,7 @@ pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
 }
 
 fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
-    match expr {
+    match expr.peel_parens() {
         Expr::Binary {
             left,
             op: TokenKind::Ident(name),
@@ -148,7 +184,11 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
 /// helper must keep computing exactly what it computes today regardless of
 /// which leaf the classifier in `src/whatever_curry/mark.rs` produced.
 pub(crate) fn is_whatever(expr: &Expr) -> bool {
-    matches!(expr, Expr::Whatever | Expr::WhateverArg)
+    // `(*)` is a bare `*` for every purpose that asks this — the parentheses
+    // group, they do not build a value of their own. A *second* layer freezes
+    // it into a plain `Whatever` value instead (`is_frozen_whatever`), which is
+    // not a priming point and therefore not this.
+    !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::Whatever | Expr::WhateverArg)
 }
 
 /// True when `expr` is an already-planted WhateverCurry marker (produced by a
@@ -161,11 +201,18 @@ pub(crate) fn is_whatever(expr: &Expr) -> bool {
 /// inline such a marker; this helper lets the composing operand positions
 /// detect it.
 fn is_wrapped_whatevercode(expr: &Expr) -> bool {
-    matches!(expr, Expr::WhateverCurry(_))
+    // `(* - 1) - 1` composes the inner `WhateverCode` into a larger one, but
+    // `((* - 1))` is frozen: an extra layer of parentheses finishes the closure
+    // instead of offering it as an operand.
+    !is_frozen_whatever(expr) && matches!(expr.peel_parens(), Expr::WhateverCurry(_))
 }
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
+        // A frozen `((*))` is a plain value; nothing above it primes.
+        e if is_frozen_whatever(e) => false,
+        // Parentheses group, they do not hide a `*` from its priming scope.
+        Expr::Grouped(inner) => contains_whatever(inner),
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
         // `notandthen`, and the ternary) are **opaque** to the enclosing
@@ -248,7 +295,7 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             if matches!(
                 name.resolve().as_str(),
                 "WHAT" | "WHO" | "HOW" | "WHERE" | "DEFINITE" | "VAR"
-            ) && (is_whatever(target) || is_wrapped_whatevercode(target)) =>
+            ) && (is_whatever_operand(target) || is_wrapped_whatevercode(target)) =>
         {
             false
         }

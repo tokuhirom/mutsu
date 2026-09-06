@@ -3,7 +3,9 @@ mod expr;
 // construction that moved out of the parser) needs these priming-scope
 // predicates, so re-export them at crate visibility without making the whole
 // `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
-pub(crate) use expr::{contains_whatever, is_whatever, should_wrap_whatevercode};
+pub(crate) use expr::{
+    contains_whatever, is_frozen_whatever, is_whatever, should_wrap_whatevercode,
+};
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
@@ -1145,7 +1147,7 @@ is (1 + 2 § 3), 1, "x";
         match &stmts[2] {
             Stmt::Expr(Expr::Call { name, args }) => {
                 assert_eq!(name.resolve(), "is");
-                match &args[0] {
+                match args[0].peel_parens() {
                     Expr::Binary { left, op, right } => {
                         assert!(
                             matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))

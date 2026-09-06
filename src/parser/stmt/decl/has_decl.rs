@@ -913,13 +913,21 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 default = Some(shaped_array_new_expr(dims));
             }
         } else if let Some(expr) = default.take() {
-            default = Some(match expr {
+            // `has @.x = (1, 2, 3)` is a list default, not a one-element list
+            // holding a list: ask the shape through the parenthesization marker
+            // the parser records for every `(...)`.
+            let is_list_shaped = matches!(
+                expr.peel_parens(),
                 Expr::ArrayLiteral(_)
-                | Expr::BracketArray(..)
-                | Expr::ArrayVar(_)
-                | Expr::Var(_)
-                | Expr::Index { .. } => expr,
-                other => Expr::ArrayLiteral(vec![other]),
+                    | Expr::BracketArray(..)
+                    | Expr::ArrayVar(_)
+                    | Expr::Var(_)
+                    | Expr::Index { .. }
+            );
+            default = Some(if is_list_shaped {
+                expr
+            } else {
+                Expr::ArrayLiteral(vec![expr])
             });
         }
     }

@@ -182,7 +182,8 @@ impl Compiler {
         // (one per element), generating per-element type methods with conflict
         // checking.
         if matches!(op, TokenKind::Ident(name) if name == "but")
-            && let Expr::ArrayLiteral(elems) = right
+            // The tuple is written parenthesized, and the parser records that.
+            && let Expr::ArrayLiteral(elems) = right.peel_parens()
             && elems.len() > 1
         {
             self.compile_expr(left);

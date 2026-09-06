@@ -350,7 +350,9 @@ sub helper() { }
                     Expr::DoStmt(inner) => match inner.as_ref() {
                         Stmt::VarDecl { name, expr, .. } => {
                             assert_eq!(name, "a");
-                            assert!(matches!(expr, Expr::ArrayLiteral(items) if items.len() == 2));
+                            assert!(
+                                matches!(expr.peel_parens(), Expr::ArrayLiteral(items) if items.len() == 2)
+                            );
                         }
                         other => panic!("expected VarDecl in DoStmt, got {other:?}"),
                     },

@@ -86,7 +86,10 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 // `BareWord` target to `None`): a sigilless raw binding (`\h`)
                 // reaches here as a `BareWord`, and the writeback needs its name
                 // so `h.AT-KEY(k) = v` mutates the bound container in place.
-                let target_var_name = match target.as_ref() {
+                // The write-back name is a property of what the parentheses
+                // hold: `(my $x = $s).substr-rw(...) = $c` writes back through
+                // `$x`.
+                let target_var_name = match target.peel_parens() {
                     Expr::Var(v) => Some(v.clone()),
                     Expr::ArrayVar(v) => Some(format!("@{}", v)),
                     Expr::HashVar(v) => Some(format!("%{}", v)),

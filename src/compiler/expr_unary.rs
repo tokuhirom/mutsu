@@ -44,6 +44,8 @@ impl Compiler {
                 self.code.emit(OpCode::BoolCoerce);
             }
             TokenKind::PlusPlus => {
+                // `++($x)` is `++$x` — see the postfix twin.
+                let expr = expr.peel_parens();
                 if let Some(var) = Self::temp_call_var(expr) {
                     // `++temp $c`: `temp $c` temporizes `$c` (saved for restoration
                     // at scope exit) and yields it as an lvalue, so the `++`
@@ -110,6 +112,8 @@ impl Compiler {
                 }
             }
             TokenKind::MinusMinus => {
+                // `--($x)` is `--$x` — see the postfix twin.
+                let expr = expr.peel_parens();
                 if let Some(var) = Self::temp_call_var(expr) {
                     // `--temp $c`: temporize `$c` then pre-decrement it (see the
                     // `++temp` case above).

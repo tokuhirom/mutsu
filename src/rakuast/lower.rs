@@ -1166,6 +1166,22 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::CircumfixParentheses => {
             let semilist = named_child_or_positional(node)?;
             let inner = named_child_or_positional(semilist)?;
+            // The contents of `(...)` are a semilist of *statements*: a
+            // declaration written there (`(my $x = 9) given 2`) is a statement,
+            // and mutsu carries a statement in expression position as `DoStmt`.
+            let declaration = if inner.class == RakuAstClass::StatementExpression {
+                named_child(inner, "expression").ok()
+            } else {
+                Some(inner)
+            };
+            if let Some(declaration) = declaration
+                && matches!(
+                    declaration.class,
+                    RakuAstClass::VarDeclarationSimple | RakuAstClass::VarDeclarationConstant
+                )
+            {
+                return Ok(Expr::DoStmt(Box::new(lower_stmt_inner(declaration)?)));
+            }
             lower_expr(inner)
         }
         // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a

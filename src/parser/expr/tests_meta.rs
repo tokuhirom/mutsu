@@ -192,7 +192,9 @@ fn parse_hyper_prefix_metaop_negate() {
 fn parse_parenthesized_sequence_with_following_smartmatch() {
     let (rest, expr) = expression("(\"a\"...* ~~ / z /)").unwrap();
     assert_eq!(rest, "");
-    assert!(matches!(expr, Expr::Binary { .. }));
+    // The parser records the parentheses the source wrote; the smartmatch is
+    // what they hold.
+    assert!(matches!(expr.peel_parens(), Expr::Binary { .. }));
 }
 
 #[test]

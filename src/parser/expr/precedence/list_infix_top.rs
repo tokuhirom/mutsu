@@ -117,7 +117,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let mut current_assoc_key: Option<String> = None;
 
     fn maybe_wrap_lhs(left: &mut Expr) {
-        if contains_whatever(left) && !matches!(left, Expr::Whatever) {
+        if contains_whatever(left) && !crate::parser::expr::is_whatever_operand(left) {
             *left = Expr::WhateverCurry(Box::new(left.clone()));
         }
     }
