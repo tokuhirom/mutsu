@@ -2057,6 +2057,17 @@ pub struct Interpreter {
     /// (an env-keyed side table was lost on scope exit).
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
     predictive_seq_iters: HashMap<usize, Value>,
+    /// Bytes a user `IO::Handle` subclass's `READ` handed back BEYOND what the
+    /// caller asked for, keyed by the handle instance's id.
+    ///
+    /// `IO::Handle.read($n)` is specified to keep the excess and serve the next
+    /// read from it, which is what makes `Type/IO/Handle.rakudoc`'s second
+    /// worked example work: its `READ` ignores the byte count and returns the
+    /// whole buffer every time, and rakudo still prints `one` then `two`.
+    /// Without the buffer the first `.get` swallowed both lines.
+    /// TODO: entries are never reclaimed; a custom read handle is rare and the
+    /// buffer is bounded by one `READ` call's result.
+    pub(crate) user_io_read_buffers: HashMap<u64, Vec<u8>>,
     protect_block_cache: ProtectBlockCache,
     /// Lock ids this caller chain has entered through
     /// `Lock::Async.protect-or-queue-on-recursion` (see

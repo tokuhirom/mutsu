@@ -17,16 +17,72 @@ impl Interpreter {
     }
 
     /// Call a user-subclassed `IO::Handle`'s `EOF` predicate.
+    /// The handle instance's id, which keys its pushback buffer
+    /// (`Interpreter::user_io_read_buffers`).
+    fn user_io_handle_id(target: &Value) -> Option<u64> {
+        match target.view() {
+            ValueView::Instance { id, .. } => Some(id),
+            _ => None,
+        }
+    }
+
+    /// `EOF` for the buffered reader: the user handle is only at end of input
+    /// once its own `EOF` says so AND the pushback buffer is drained. A `READ`
+    /// that over-returned typically reports `EOF` immediately (it handed
+    /// everything over in one call), so consulting the user method alone would
+    /// throw away the bytes it just gave us.
     fn call_user_io_eof(&mut self, target: &Value) -> Result<bool, RuntimeError> {
+        if Self::user_io_handle_id(target)
+            .and_then(|id| self.user_io_read_buffers.get(&id))
+            .is_some_and(|buf| !buf.is_empty())
+        {
+            return Ok(false);
+        }
         Ok(self
             .call_method_with_values(target.clone(), "EOF", vec![])?
             .truthy())
     }
 
-    /// Call a user-subclassed `IO::Handle`'s `READ(n)`, returning the raw bytes.
+    /// Call a user-subclassed `IO::Handle`'s `READ(n)`, returning at most `n`
+    /// bytes.
+    ///
+    /// `IO::Handle.read($n)` keeps whatever `READ` hands back beyond `$n` and
+    /// serves the next read from it. `Type/IO/Handle.rakudoc`'s second worked
+    /// example depends on it: its `READ` ignores the byte count and returns the
+    /// whole buffer every time, and rakudo still prints `one` then `two`.
+    /// Without the pushback the first `.get` swallowed both lines, and
+    /// `read_user_io_char` — which asks for one byte at a time — could not work
+    /// against such a handle at all.
     fn call_user_io_read(&mut self, target: &Value, n: usize) -> Result<Vec<u8>, RuntimeError> {
-        let r = self.call_method_with_values(target.clone(), "READ", vec![Value::int(n as i64)])?;
-        Ok(Self::extract_buf_bytes(&r))
+        let Some(id) = Self::user_io_handle_id(target) else {
+            let r =
+                self.call_method_with_values(target.clone(), "READ", vec![Value::int(n as i64)])?;
+            return Ok(Self::extract_buf_bytes(&r));
+        };
+        while self
+            .user_io_read_buffers
+            .get(&id)
+            .is_none_or(|buf| buf.len() < n)
+        {
+            let buffered = self.user_io_read_buffers.get(&id).map_or(0, Vec::len);
+            let want = n - buffered;
+            let r = self.call_method_with_values(
+                target.clone(),
+                "READ",
+                vec![Value::int(want as i64)],
+            )?;
+            let chunk = Self::extract_buf_bytes(&r);
+            if chunk.is_empty() {
+                break;
+            }
+            self.user_io_read_buffers
+                .entry(id)
+                .or_default()
+                .extend(chunk);
+        }
+        let buf = self.user_io_read_buffers.entry(id).or_default();
+        let take = n.min(buf.len());
+        Ok(buf.drain(..take).collect())
     }
 
     /// Drain the rest of a user handle: read chunks via `READ` until `EOF`.
