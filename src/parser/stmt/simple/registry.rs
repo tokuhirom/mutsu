@@ -286,3 +286,14 @@ pub(in crate::parser) fn restore_declare_keywords(saved: HashMap<String, String>
 pub(crate) fn current_language_version() -> String {
     CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().clone())
 }
+
+/// `current_language_version().starts_with(prefix)` without the `String` clone.
+///
+/// The allocating form is fine at parse time, where it is asked once per
+/// construct, but a *VM* hot path cannot pay a heap allocation to ask which
+/// language version is in force — `OpCode::MarkLvalueInvocantRefContext` runs on
+/// every `$obj.acc.m = v` (ADR-0067's E6 producer), where the clone cost ~29% on
+/// a tight loop.
+pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
+    CURRENT_LANGUAGE_VERSION.with(|v| v.borrow().starts_with(prefix))
+}

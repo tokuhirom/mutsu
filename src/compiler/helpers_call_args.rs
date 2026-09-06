@@ -575,6 +575,26 @@ impl Compiler {
     /// index now lands on the marker and falls through to the same call.
     /// No-op when the compiled tail is not a method call.
     pub(super) fn mark_trailing_method_call_as_accessor_ref(&mut self) {
+        self.insert_accessor_ref_marker(OpCode::MarkAccessorRefContext);
+    }
+
+    /// The same insertion, with the runtime-gated marker
+    /// (`MarkLvalueInvocantRefContext`) ADR-0067's E6 producer emits before an
+    /// lvalue method call's *invocant*. `method_name` is the OUTER method's
+    /// name — the one whose invocant this is — when it is a compile-time
+    /// literal, and `None` for the dynamic spelling. See that opcode's doc
+    /// comment: the compiler cannot know whether that callee binds its invocant
+    /// raw, so the marker is emitted for every `$obj.acc.m = v` and the VM
+    /// declines it unless a raw-invocant callee is possible for that name.
+    pub(super) fn mark_trailing_method_call_as_lvalue_invocant_ref(
+        &mut self,
+        method_name: Option<&str>,
+    ) {
+        let idx = method_name.map(|n| self.code.add_constant(Value::str(n.to_string())));
+        self.insert_accessor_ref_marker(OpCode::MarkLvalueInvocantRefContext(idx));
+    }
+
+    fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
         let mut i = self.code.ops.len();
         while i > 0 {
             match &self.code.ops[i - 1] {
@@ -583,7 +603,7 @@ impl Compiler {
                     // Keep the ip -> line table (`op_lines`) aligned with `ops`:
                     // the marker inherits the call's line.
                     let line = self.code.op_lines[i - 1];
-                    self.code.ops.insert(i - 1, OpCode::MarkAccessorRefContext);
+                    self.code.ops.insert(i - 1, marker);
                     self.code.op_lines.insert(i - 1, line);
                     return;
                 }

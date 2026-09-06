@@ -55,6 +55,68 @@ impl Compiler {
         }
     }
 
+    /// ADR-0067, the E6 producer: does this `__mutsu_assign_method_lvalue` call
+    /// have an INVOCANT that must arrive as the attribute's container rather
+    /// than as a copy of its value?
+    ///
+    /// `class C { has $.v is rw }; $c.v.snitch = 9` writes `9` into `$c.v` in
+    /// raku, because `.snitch` binds its invocant raw and `$c.v` names the
+    /// attribute's Scalar. mutsu's producer for that container already exists —
+    /// `MarkAccessorRefContext`, which is what makes `my $x := $c.v; $x = 9`
+    /// write through — it was simply never emitted before an lvalue invocant.
+    ///
+    /// Unlike slice 3a's runtime gate, this cannot ask whether the *callee*
+    /// binds its invocant raw: `$a.snitch`'s callee depends on `$a`'s runtime
+    /// type and, for the dynamic spellings, on a runtime method-name string. So
+    /// the emission is decided by the *invocant's* shape alone. Two things keep
+    /// it narrow anyway. The marker's only consumer, `try_fast_accessor_read`,
+    /// hands back a container just for a zero-argument read of a **public
+    /// `is rw` scalar** attribute accessor and ignores the flag entirely
+    /// otherwise — so every other invocant shape behaves exactly as before, and
+    /// a program with no such accessor at all compiles to bytecode that differs
+    /// only by this one marker. And the op emitted is the *gated*
+    /// `MarkLvalueInvocantRefContext`, which carries the OUTER method's name
+    /// (below) so the VM can decline the flag outright when no callee of that
+    /// name could be raw — see that opcode's doc comment.
+    ///
+    /// A `ContainerRef` invocant is then absorbed by the chokepoint slice 3a
+    /// installed in `assign_method_lvalue_with_values`, which decontainerizes
+    /// as soon as the raw-invocant branch declines — so the ~40 `Instance` /
+    /// `Array` / `Hash` branches below it keep seeing exactly what they saw.
+    ///
+    /// Restricted to an argument-less, unmodified, unquoted method call because
+    /// that is precisely what `try_fast_accessor_read` accepts; marking any
+    /// other spelling would be inert, and saying so here keeps the compile-side
+    /// intent readable rather than leaning on a distant runtime bail-out.
+    ///
+    /// Answers `None` when no marker is wanted. `Some(name)` carries the OUTER
+    /// method's name for the VM's gate — `Some(None)` when that name is only
+    /// computed at run time (`$c.v."$name"() = 9`), which the gate must let
+    /// through.
+    fn lvalue_invocant_wants_accessor_ref(name: Symbol, args: &[Expr]) -> Option<Option<String>> {
+        if name.resolve() != "__mutsu_assign_method_lvalue" || args.len() < 4 {
+            return None;
+        }
+        if !matches!(
+            &args[0],
+            Expr::MethodCall {
+                args: invocant_args,
+                modifier: None,
+                quoted: false,
+                ..
+            } if invocant_args.is_empty()
+        ) {
+            return None;
+        }
+        Some(match &args[1] {
+            Expr::Literal(lit) => match lit.view() {
+                crate::value::ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
     pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
@@ -1696,6 +1758,11 @@ impl Compiler {
                     && Self::is_bare_block_arg(&args[0])
                     && args[1..].iter().all(Self::for_iterable_yields_bare_items);
                 let wb_base = self.index_rw_writeback_base();
+                // ADR-0067, the E6 producer: an lvalue method call whose
+                // INVOCANT is itself a bare attribute-accessor read
+                // (`$c.v.snitch = 9`) must hand the callee the attribute's
+                // container, not a copy of its value.
+                let accessor_ref_invocant = Self::lvalue_invocant_wants_accessor_ref(*name, args);
                 for (i, arg) in args.iter().enumerate() {
                     // `start` keeps marking EVERY argument escaping, exactly as
                     // before; other calls mark only a closure literal.
@@ -1731,6 +1798,13 @@ impl Compiler {
                             s.compile_call_arg_with_escape(arg, escaping_args)
                         });
                         self.pending_immutable_topic_block = false;
+                        if i == 0
+                            && let Some(outer_method) = accessor_ref_invocant.as_ref()
+                        {
+                            self.mark_trailing_method_call_as_lvalue_invocant_ref(
+                                outer_method.as_deref(),
+                            );
+                        }
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));

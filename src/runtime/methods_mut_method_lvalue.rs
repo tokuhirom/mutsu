@@ -168,20 +168,6 @@ impl Interpreter {
                 ));
             }
         }
-        // IO::Path read-only accessors (`.SPEC`, `.CWD`) are not `rw`: assigning
-        // to them raises X::Assignment::RO referencing the current value, matching
-        // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).
-        if method_args.is_empty()
-            && matches!(method, "SPEC" | "CWD")
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Path")
-        {
-            let cur = self
-                .call_method_with_values(target.clone(), method, vec![])
-                .unwrap_or(Value::NIL);
-            let typename = crate::value::what_type_name(&cur);
-            let repr = cur.to_string_value();
-            return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
-        }
         // Lvalue return (ADR-0059) for a TYPE-OBJECT invocant
         // (`Crane::In.in(container, @path) = $v`, a class-method lvalue): run
         // the method and write through the container it returns. Every
@@ -215,6 +201,28 @@ impl Interpreter {
         } else {
             target
         };
+        // IO::Path read-only accessors (`.SPEC`, `.CWD`) are not `rw`: assigning
+        // to them raises X::Assignment::RO referencing the current value, matching
+        // Raku (`'.'.IO.SPEC = ...` / `'.'.IO.CWD = ...`).
+        //
+        // Deliberately BELOW the chokepoint: this is an `Instance` match, and the
+        // ADR-0067 E6 producer can hand an lvalue call a `ContainerRef`-wrapped
+        // invocant (`class C { has IO::Path $.p is rw }; $c.p.SPEC = 5`), which
+        // would slip past the match and degrade the diagnostic into a bare
+        // "No matching candidates for method: SPEC". Neither branch above cares:
+        // the type-object half requires a `Package`, and the raw-invocant half
+        // requires a raw-invocant declaration, which `.SPEC` is not.
+        if method_args.is_empty()
+            && matches!(method, "SPEC" | "CWD")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Path")
+        {
+            let cur = self
+                .call_method_with_values(target.clone(), method, vec![])
+                .unwrap_or(Value::NIL);
+            let typename = crate::value::what_type_name(&cur);
+            let repr = cur.to_string_value();
+            return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
+        }
         // An `is repr('CStruct')` handle keeps no Raku attributes: its fields
         // live in the C struct its `address` points at, so an assignment has to
         // write native memory (`$bind.buffer = $addr`). Without this the write
