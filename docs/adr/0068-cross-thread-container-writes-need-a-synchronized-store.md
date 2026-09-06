@@ -378,7 +378,7 @@ that the harness is cheap (§7.1):
 |---|---|---|
 | `$obj.attr[$i] = v` from 20 threads | **96 / 96** | **0 / 240** (24-way) |
 | `$obj.attr{$k} = v` from 20 threads | 0 / 96 | 0 / 240 (24-way) |
-| `$obj.attr.push($v)` from 20 threads | **95 / 96** | **95 / 96 — still racing** |
+| `$obj.attr.push($v)` from 20 threads | **95 / 96** | **0 / 240** (24-way) |
 
 So route 3 is not merely exposed: at 96/96 it is the highest rate any route in
 this ADR has shown, with `corrupted size vs. prev_size`,
@@ -395,17 +395,29 @@ container**, once, and covers every write in the function regardless of which
 internal helper performs it. That is the same "find the funnel, not the sites"
 shape §2 used for the celled route.
 
+### A mutating METHOD is a third funnel
+
+`$obj.attr.push($v)` raced at 95/96 and goes through neither store funnel. Four
+breakpoint probes (`call_method_mut_with_values`, `try_native_array_mut`,
+`proxy_subclass_array_mutate`, `gc_data_mut`'s aliased branch) all came back
+cold; the §1.2 oracle then showed it arriving as an ordinary *value* dispatch —
+`exec_call_method_op` → `call_method_with_values`, once each. That is its funnel,
+and excluding a small allowlist of mutator method names there
+(`push`/`append`/`prepend`/`unshift`/`pop`/`shift`/`splice` plus the
+`STORE`/`ASSIGN-*`/`DELETE-*` protocol names) takes it to **0/240 at 24-way**.
+
+So step 3's shape is now clear, and it is not the "149-site sweep" §4 warned
+against: there are **three funnels**, not 149 sites — the named element store
+(§2), the attribute-rooted element store (above), and the mutating method. Each
+was found the same way, by asking the §1.2 oracle which path the failing
+workload actually took rather than by reading the write sites.
+
 ### Still open in step 3
 
-- **A mutating METHOD on an attribute container** (`$obj.attr.push`) races at
-  95/96. It does not go through `__mutsu_index_assign_method_lvalue`, and four
-  breakpoint probes (`call_method_mut_with_values`, `try_native_array_mut`,
-  `proxy_subclass_array_mutate`, `gc_data_mut`'s aliased branch) all came back
-  cold, so its write site is not yet located. Locating it is the next
-  measurement, and the §1.2 oracle is the tool.
 - The other lane-decline reasons from §2 (twigil'd names, a container never in a
-  spawning frame's env) are unprobed.
+  spawning frame's env) are unprobed. Given the three funnels above, the
+  expectation is that they arrive at one of them; probe before assuming.
 - Route 5 is still blocked behind the Channel-supply delivery bug, and §3.1's
   `S17-procasync/stress.t` SIGSEGV is still unexplained.
 
-Pinned by `t/concurrent-attribute-element-store.t` (3 rows, green under raku).
+Pinned by `t/concurrent-attribute-element-store.t` (4 rows, green under raku).

@@ -137,6 +137,29 @@ impl Interpreter {
     ///
     /// Named-ness is a call-site property (ADR-0021): only the `Pair` flavour is a
     /// named argument, so a positional `Pair` (`%h.push((a => 1))`) is untouched.
+    /// Whether `method` structurally mutates its container receiver, i.e.
+    /// whether two threads running it on one container race on the backing
+    /// `Vec`/`HashMap`. Deliberately a small allowlist of the mutators, not a
+    /// blanket guard: every other method is a read and pays only the relaxed
+    /// load in the caller's gate.
+    fn method_mutates_container(method: &str) -> bool {
+        matches!(
+            method,
+            "push"
+                | "append"
+                | "prepend"
+                | "unshift"
+                | "pop"
+                | "shift"
+                | "splice"
+                | "STORE"
+                | "ASSIGN-POS"
+                | "ASSIGN-KEY"
+                | "DELETE-POS"
+                | "DELETE-KEY"
+        )
+    }
+
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
@@ -187,6 +210,23 @@ impl Interpreter {
         if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
             return result;
         }
+        // ADR-0068 §4 step 3: a MUTATING METHOD on a container that two threads
+        // can reach -- `$obj.attr.push($v)` is the measured shape, 95/96 runs
+        // corrupt -- structurally mutates the backing node with nothing held.
+        // The element-store routes are excluded at their own funnels; this is
+        // the funnel for the method form, which arrives here as an ordinary
+        // value dispatch (verified by breakpoint: `exec_call_method_op` ->
+        // `call_method_with_values`, reaching none of the store paths).
+        // Keyed on the receiver's own node, which is what two threads holding
+        // the same attribute container share. A no-op (one relaxed load) until
+        // a VM mutator thread is spawned.
+        let _mutating_guard = if crate::value::container_lock::multi_mutator_threads_live()
+            && Self::method_mutates_container(method)
+        {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, &target)
+        } else {
+            None
+        };
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }

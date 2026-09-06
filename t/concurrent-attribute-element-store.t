@@ -18,7 +18,7 @@ use Test;
 # container all land, but it does not corrupt its own heap either, and every
 # row below is measured green under raku.
 
-plan 3;
+plan 4;
 
 # The array attribute: 1000 distinct indices from 20 threads.
 {
@@ -49,4 +49,16 @@ plan 3;
     await (^12).map: -> $t { start { for ^40 -> $k { deep($t * 40 + $k) } } };
     is $n.rows.grep(*.defined).elems, 480,
         'the same holds when the thread body only calls a routine that writes';
+}
+
+# A mutating METHOD on the same attribute container. This arrives as an
+# ordinary value dispatch (`exec_call_method_op` -> `call_method_with_values`,
+# verified by breakpoint) and reaches none of the store funnels, so it needs its
+# own exclusion.
+{
+    class Pushy { has @.log is rw; }
+    my $p = Pushy.new(log => []);
+    sub add($v) { $p.log.push($v) }
+    await (^20).map: -> $t { start { for ^50 -> $k { add($t * 50 + $k) } } };
+    is $p.log.elems, 1000, 'every push onto an attribute container lands';
 }
