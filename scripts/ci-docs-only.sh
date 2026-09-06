@@ -41,9 +41,19 @@ set -u
 # to files the build reads, and the blast radius of guessing wrong there is a
 # silently-untested merge. Top-level *.md (PLAN, README, CLAUDE, ANALYSIS,
 # PERFORMANCE, BATTERIES, AGENTS) is safe and covers the common case.
+#
+# `.claude/**` is agent configuration and agent-facing documentation (skills,
+# settings). Nothing in the build reads it -- not cargo, not `prove`, not the
+# roast runner -- so a change there cannot move a single test result, and
+# adding a skill used to cost a full ~25 min suite for one markdown file. It is
+# on the allowlist as a whole directory rather than just `.claude/skills/**`
+# because the same argument covers everything CI ignores; if something under it
+# ever does become an input to a job, that job's workflow file changes too, and
+# `.github/**` forces the full suite.
 is_doc_path() {
   case "$1" in
     docs/*|news/*|todo/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
+    .claude/*) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
     *.md) return 0 ;;         # top-level markdown only
@@ -160,6 +170,10 @@ self_test() {
   check true  'roast ledger'            TODO_roast/BLOCKERS.md
   check true  'vendored docs'           raku-doc/doc/Type/Str.rakudoc
   check true  'non-md under docs/'      docs/probes/pool-spawn.raku
+  check true  'agent skill'             .claude/skills/rustc-too-old/SKILL.md
+  check true  'agent settings'          .claude/settings.json
+  check true  'skill + news entry'      .claude/skills/x/SKILL.md news/2026-09/y.md
+  check false 'skill + src'             .claude/skills/x/SKILL.md src/vm/vm.rs
   check false 'src change'              src/vm/vm.rs
   check false 'docs + src'              docs/adr/0016-x.md src/vm/vm.rs
   check false 'workflow change'         .github/workflows/ci.yml
