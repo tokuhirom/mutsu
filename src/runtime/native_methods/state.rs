@@ -183,27 +183,41 @@ pub(crate) enum SupplyEvent {
     Quit(Value),
 }
 
-/// Take a receiver from the supply channel registry (can only be consumed once).
+/// Subscribe to a supply's event stream, if it is channel-backed.
 ///
-/// Taking it hands ownership of the stream to a consumer that will deliver every
-/// event on it, so this also records the supply as live-consumed
+/// This does NOT remove the registry entry (ADR-0074). A channel-backed Supply
+/// is a broadcast point: every caller gets its own independent subscriber, fed
+/// a clone of each event distributed after it subscribed, so tapping the same
+/// Supply twice gives both taps the whole stream — which is what Raku does.
+/// Subscribers start empty, so nothing emitted before a tap existed is
+/// replayed to it; that is the *live* Supply semantics the `Proc::Async`
+/// output family and the socket/timer/signal sources all need.
+///
+/// Subscribing still records the supply as live-consumed
 /// ([`mark_supply_live_tapped`]) — the fact the `Proc::Async` await/result-time
 /// replay consults to decide it must NOT redeliver the same output a second
-/// time. Recording it here rather than at each consumer keeps the two delivery
-/// mechanisms mutually exclusive by construction, whoever the consumer is (the
+/// time. Recording it here rather than at each consumer keeps the channel and
+/// the replay mutually exclusive by construction, whoever the consumer is (the
 /// `.start()` live act-loop pump, the react drive loop, a `zip`/`.list`
 /// materialiser); a `whenever` on a `Proc::Async` output Supply registers a tap
 /// as well, so without this both paths would fire it.
+///
+/// The name is historical: it once handed over the sole receiver.
 pub(crate) fn take_supply_channel(supply_id: u64) -> Option<super::supply_channel::SupplyReceiver> {
-    let taken = if let Ok(mut map) = supply_channel_map().lock() {
-        map.remove(&supply_id)
-    } else {
-        None
-    };
-    if taken.is_some() {
+    let subscribed = supply_channel_map().lock().ok().and_then(|mut map| {
+        // A source whose consumers *compete* rather than each seeing every
+        // value (an `IO::Socket::Async` connection's read Supply) keeps the old
+        // exclusive-transfer behaviour: hand the whole stream to the first
+        // asker and leave nothing behind. See `SupplyReceiver::mark_exclusive`.
+        if map.get(&supply_id).is_some_and(|t| t.is_exclusive()) {
+            return map.remove(&supply_id);
+        }
+        map.get(&supply_id).map(|template| template.subscribe())
+    });
+    if subscribed.is_some() {
         mark_supply_live_tapped(supply_id);
     }
-    taken
+    subscribed
 }
 
 /// Drop a still-unclaimed receiver without marking the supply live-consumed.
@@ -219,10 +233,15 @@ pub(in crate::runtime) fn discard_supply_channel(supply_id: u64) {
     }
 }
 
-/// Peek whether a receiver is still available for this supply id, without
-/// consuming it. A `whenever` on such a source is driven by a channel reader
-/// thread and stays live until the channel signals `Done`, so the enclosing
-/// supply block must count it as a source that keeps the supply open.
+/// Whether this supply id is channel-backed. A `whenever` on such a source is
+/// driven by a channel reader thread and stays live until the channel signals
+/// `Done`, so the enclosing supply block must count it as a source that keeps
+/// the supply open.
+///
+/// Since ADR-0074 subscribing no longer removes the entry, so this answers "is
+/// channel-backed" rather than "is still unclaimed". Its caller asks at
+/// `whenever`-registration time, before any subscriber exists, where the two
+/// readings coincide.
 pub(crate) fn has_supply_channel(supply_id: u64) -> bool {
     supply_channel_map()
         .lock()

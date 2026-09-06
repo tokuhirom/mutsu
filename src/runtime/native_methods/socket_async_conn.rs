@@ -172,6 +172,13 @@ impl Interpreter {
         let enc = Self::socket_encoding(args, attributes);
         let supply_id = next_supply_id();
         let (tx, rx) = super::supply_channel::supply_event_channel();
+        // A connection's read Supply is NOT a broadcast point: rakudo hands
+        // each incoming chunk to exactly one of its taps (measured 2026-09-07
+        // against v2026.07 -- tapping `$conn.Supply` twice gives one tap the
+        // bytes and the other nothing, with the winner varying between runs).
+        // Mark it exclusive so `take_supply_channel` keeps handing the whole
+        // stream to the first consumer instead of fanning out (ADR-0074).
+        rx.mark_exclusive();
         if let Ok(mut map) = supply_channel_map().lock() {
             map.insert(supply_id, rx);
         }
