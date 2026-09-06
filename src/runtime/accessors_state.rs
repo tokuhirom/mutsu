@@ -744,6 +744,16 @@ impl Interpreter {
                     value_dependent = true;
                     break 'outer;
                 }
+                // A CONSTRAINED `&`-sigil parameter dispatches on the passed
+                // routine's declared RETURN type — `multi f(Int &x)` vs
+                // `multi f(Str &x)` (roast S06-multi/type-based.t) — and every
+                // routine has the same `value_type_name`, so no argument type
+                // key can tell the two calls apart. Same family as the two
+                // signature checks above; an unconstrained `&x` is fine.
+                if pd.name.starts_with('&') && pd.type_constraint.is_some() {
+                    value_dependent = true;
+                    break 'outer;
+                }
                 // An `is rw` candidate matches only a writable-lvalue argument —
                 // a call-site property, not an arg-type one — so `f($var)` and
                 // `f("lit")` need different winners under one type key.
@@ -751,28 +761,18 @@ impl Interpreter {
                     value_dependent = true;
                     break 'outer;
                 }
-                if let Some(tc) = &pd.type_constraint {
-                    // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
-                    // dependent; a subset type carries an implicit `where`. The `:`
-                    // check also excludes enum-value (`E::a`) and qualified-value
-                    // constraints, which refine within one value-type.
-                    if tc.contains(':') || tc.contains('(') {
-                        value_dependent = true;
-                        break 'outer;
-                    }
-                    // Value-refining numeric pseudo-types: `Inf`/`NaN`/`UInt`/`-Inf`
-                    // all match WITHIN a single `value_type_name` ("Num"/"Int") by
-                    // inspecting the value, so type-keying would mis-route them
-                    // (e.g. `multi f(NaN)` vs `multi f(Numeric)` both key as Num).
-                    if matches!(tc.as_str(), "Inf" | "NaN" | "-Inf" | "UInt") {
-                        value_dependent = true;
-                        break 'outer;
-                    }
-                    let base = tc.split(['[', ' ']).next().unwrap_or(tc.as_str());
-                    if self.registry().subsets.contains_key(base) {
-                        value_dependent = true;
-                        break 'outer;
-                    }
+                // A coercion (`Int(Str)`), an enum-value / `::`-qualified
+                // refinement, a value-refining numeric pseudo-type or a subset
+                // makes the winner depend on the argument's value. A trailing
+                // `:D`/`:U`/`:_` smiley does not: `multi_arg_type_keys` carries
+                // the definedness bit. See `type_constraint_is_value_dependent`,
+                // shared with the method-side gate so both agree on the key
+                // shape they are guarding.
+                if let Some(tc) = &pd.type_constraint
+                    && self.type_constraint_is_value_dependent(tc)
+                {
+                    value_dependent = true;
+                    break 'outer;
                 }
             }
         }
@@ -807,7 +807,10 @@ impl Interpreter {
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
             return self.resolve_function_with_types(name, args);
         };
-        let pkg_sym = Symbol::intern(&self.current_package());
+        // The atomic mirror, not `current_package()`: the owned form is a
+        // `RwLock` read plus a `String` heap allocation on a path that runs on
+        // every multi call, and both spellings intern to the same symbol.
+        let pkg_sym = self.current_package_sym();
         let name_sym = Symbol::intern(name);
         if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
             return self.resolve_function_with_types(name, args);
