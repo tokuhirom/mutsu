@@ -936,6 +936,27 @@ pub(crate) enum OpCode {
     /// `MakeCapture`/`MakePair` consume the `VarRef` tag inline; this opcode is
     /// the standalone spelling for the one-value case.
     CaptureVarCell,
+    /// ADR-0067: the `is rw` tail of a method whose body is a bare private
+    /// attribute (`method acc is rw { $!v }`) hands its caller the
+    /// *attribute's* container, not a copy of its value.
+    ///
+    /// The other rw-tail shapes already do: a sigil-less `\x` parameter tail is
+    /// boxed by [`Self::CaptureVarCell`] (slice 1), and an `@!a[$i]` /
+    /// `%!h{$k}` tail is promoted by the subscript's own container-mode compile.
+    /// The bare `$!v` tail was the one shape left out, because the method frame
+    /// stores the attribute in a *seeded local slot* — boxing that slot would
+    /// mint a cell disconnected from the instance. So this op reaches past the
+    /// slot to `self`'s own attribute cell and promotes it, exactly as
+    /// [`Self::MarkAccessorRefContext`]'s consumer does for a public accessor,
+    /// which is what makes the two agree by construction.
+    ///
+    /// The operand is the constant-pool index of the *bare* attribute name
+    /// (`v` for `$!v`); the instance stores it under that name for a public
+    /// `has $.v` and under `v!` for a private-only `has $!v`. Replaces the
+    /// top-of-stack plain read, and leaves it untouched when there is no
+    /// instance invocant or the slot is aggregate-shaped (an `@`/`%` value is
+    /// already a shared container and has its own accessor path).
+    AttrContainerRef(u32),
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via
@@ -992,6 +1013,37 @@ pub(crate) enum OpCode {
     /// 6.e, where the native `snitch` row exists and a name-blind gate would let
     /// every lvalue invocant through.
     MarkLvalueInvocantRefContext(Option<u32>),
+    /// ADR-0067, the argument producer: [`Self::MarkAccessorRefContext`]
+    /// emitted before a positional *argument* that is an attribute-accessor
+    /// read (`g($c.v)`), and honoured only when the named callee can actually
+    /// bind that position to the caller's container.
+    ///
+    /// An `is rw` / `is raw` / sigil-less parameter binds a location, and the
+    /// binder already accepts a bare `ContainerRef` argument as one. What was
+    /// missing is a *producer*: an accessor read compiles to a value copy
+    /// everywhere except a `:=` bind RHS and (since the E6 producer) an lvalue
+    /// invocant, so `sub g($y is rw) {...}; g($c.v)` died with "expects a
+    /// writable container" and its `is raw` twin silently dropped the write.
+    ///
+    /// Emitting the plain marker for every argument would make each
+    /// `f($obj.attr)` pay an attribute-slot promotion plus an MRO walk to mint
+    /// a container that nothing consumes — the cost E6 measured at ~14% for the
+    /// lvalue-invocant spelling. So the marker carries the callee's name and
+    /// the argument's positional index, and the VM asks whether any registered
+    /// candidate of that name declares a container-binding parameter there.
+    /// The compiler cannot answer that itself: a routine may be declared after
+    /// its use site (the reason `__mutsu_incdec_named_sub_lvalue` resolves at
+    /// run time too).
+    ///
+    /// Over-approximating is the safe direction — the *consumer*
+    /// (`try_fast_accessor_read`'s `want_ref` branch) hands back a container
+    /// only for a zero-argument read of a public `is rw` scalar attribute
+    /// accessor and ignores the flag otherwise — so a multi with any
+    /// container-binding candidate at that position passes the gate.
+    MarkRwArgRefContext {
+        callee_idx: u32,
+        positional: u32,
+    },
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
     /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
     /// named source variable's container should be shared by reference. The

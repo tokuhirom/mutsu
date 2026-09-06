@@ -2266,6 +2266,10 @@ impl Interpreter {
                 self.exec_capture_var_cell_op(code);
                 *ip += 1;
             }
+            OpCode::AttrContainerRef(name_idx) => {
+                self.exec_attr_container_ref_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::MarkBindContext => {
                 self.bind_context.set(true);
                 *ip += 1;
@@ -2305,6 +2309,20 @@ impl Interpreter {
                 if raw_callee_possible
                     || crate::runtime::raw_invocant::any_raw_invocant_method_possible()
                 {
+                    self.accessor_ref_pending = true;
+                }
+                *ip += 1;
+            }
+            OpCode::MarkRwArgRefContext {
+                callee_idx,
+                positional,
+            } => {
+                // ADR-0067's argument producer: only a parameter that binds the
+                // caller's container can consume what this asks for, so resolve
+                // the question against the callee's declaration before paying
+                // for an attribute promotion. See the opcode's doc comment.
+                let callee = Self::const_str(code, *callee_idx).to_string();
+                if self.named_routine_binds_container_at(&callee, *positional as usize) {
                     self.accessor_ref_pending = true;
                 }
                 *ip += 1;

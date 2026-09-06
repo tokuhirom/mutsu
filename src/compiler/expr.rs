@@ -292,9 +292,15 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
             }
             Expr::ArrayLiteral(elems) => {
+                // ADR-0067's argument producer, relayed: when this list literal
+                // IS the argument list of a parser-rewritten named-sub lvalue
+                // (`f($c.v) = 9`), each element is that routine's positional
+                // argument. Read-and-clear before compiling anything, so a
+                // nested list inside an element is not marked as well.
+                let rw_arg_callee = self.pending_rw_arg_list_callee.take();
                 // Elements are stored into the list -> a closure element escapes.
                 self.with_escape(true, |c| {
-                    for elem in elems {
+                    for (elem_idx, elem) in elems.iter().enumerate() {
                         // ... and it holds an array/hash ELEMENT's container for
                         // the same reason: rakudo's
                         // `my @a = 1, 2; my (\p, \q) := (@a[0], @a[1]); p = 9`
@@ -318,6 +324,9 @@ impl Compiler {
                         c.compile_expr(elem);
                         c.scalar_bind_autovivify = saved_autoviv;
                         c.bind_terminal = saved_terminal;
+                        if let Some(callee) = rw_arg_callee.as_deref() {
+                            c.mark_arg_as_rw_container_candidate(callee, elem_idx as u32, elem);
+                        }
                         // A List (`($a, $b)`) holds the *container* of each scalar
                         // variable element, not a snapshot of its value: a later
                         // mutation of `$a` is visible when the List is read

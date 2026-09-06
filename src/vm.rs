@@ -231,6 +231,7 @@ mod vm_react_supply_helpers;
 mod vm_register_ops;
 mod vm_register_sub_ops;
 mod vm_run_loop;
+mod vm_rw_attr_container;
 mod vm_scope_ops;
 mod vm_set_arith_ops;
 mod vm_set_ops;

@@ -61,6 +61,18 @@ impl Compiler {
                 self.compile_return_rw_arg(else_expr);
                 self.code.patch_jump(jump_end);
             }
+            // `method acc is rw { $!v }`: the tail names the *attribute's*
+            // storage, and a method frame reads it out of a seeded local slot
+            // whose cell would be disconnected from the instance. Emit the
+            // op that promotes `self`'s own attribute slot instead — the same
+            // promotion a public accessor read gets in `:=` context, so the
+            // two spellings name one container (see `OpCode::AttrContainerRef`).
+            Expr::Var(name) if Self::rw_tail_attribute_name(name).is_some() => {
+                self.compile_expr(arg);
+                let attr = Self::rw_tail_attribute_name(name).expect("checked above");
+                let idx = self.code.add_constant(Value::str(attr));
+                self.code.emit(OpCode::AttrContainerRef(idx));
+            }
             _ => {
                 let cell_name = self.return_rw_container_name(arg);
                 self.compile_expr(arg);
@@ -71,6 +83,23 @@ impl Compiler {
             }
         }
         self.rw_return_operand = saved_rw;
+    }
+
+    /// The bare attribute name a `$!attr` rw-tail exposes (`v` for `$!v`).
+    ///
+    /// The parser spells `$!v` as `Expr::Var("!v")`. Deliberately narrow: only
+    /// the `$` sigil (an `@!a` / `%!h` tail is `ArrayVar` / `HashVar`, whose
+    /// value is already a shared container reached by its own accessor path),
+    /// and only a plain identifier after the twigil, so nothing else that
+    /// happens to start with `!` is boxed.
+    fn rw_tail_attribute_name(name: &str) -> Option<String> {
+        let rest = name.strip_prefix('!')?;
+        let first = rest.chars().next()?;
+        let plain = (first.is_ascii_alphabetic() || first == '_')
+            && rest
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        plain.then(|| rest.to_string())
     }
 
     /// The lexical name a `return-rw` operand denotes the *container* of, when
@@ -592,6 +621,56 @@ impl Compiler {
     ) {
         let idx = method_name.map(|n| self.code.add_constant(Value::str(n.to_string())));
         self.insert_accessor_ref_marker(OpCode::MarkLvalueInvocantRefContext(idx));
+    }
+
+    /// ADR-0067's argument producer: ask a positional argument that is an
+    /// attribute-accessor read to hand back the attribute's *container*, so an
+    /// `is rw` / `is raw` / sigil-less parameter of `callee` binds the caller's
+    /// location instead of a value copy.
+    ///
+    /// The marker is runtime-gated on the callee's declaration
+    /// (`OpCode::MarkRwArgRefContext`), because the compiler cannot know it — a
+    /// routine may be declared after its use site. No-op when the compiled tail
+    /// is not a method call, or when the argument shape could not be an
+    /// accessor read anyway (an argument-carrying call is never one).
+    pub(super) fn mark_arg_as_rw_container_candidate(
+        &mut self,
+        callee: &str,
+        positional: u32,
+        arg: &Expr,
+    ) {
+        if !Self::is_accessor_shaped_arg(arg) {
+            return;
+        }
+        // A `__mutsu_*` helper is not a user routine and has no registered
+        // signature to gate on, so a marker naming one could only ever answer
+        // "no". The two helpers whose *real* callee is a string argument reach
+        // this through `relayed_rw_arg_callee`, which passes that real name.
+        if callee.starts_with("__mutsu_") {
+            return;
+        }
+        let callee_idx = self.code.add_constant(Value::str(callee.to_string()));
+        self.insert_accessor_ref_marker(OpCode::MarkRwArgRefContext {
+            callee_idx,
+            positional,
+        });
+    }
+
+    /// Whether an argument expression *could* be a public attribute accessor
+    /// read — the only shape `try_fast_accessor_read`'s `want_ref` branch ever
+    /// answers with a container. Keeping the test here (rather than leaving it
+    /// to the runtime) is what stops the marker being emitted, and its callee
+    /// lookup executed, for the overwhelming majority of call arguments.
+    pub(super) fn is_accessor_shaped_arg(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::MethodCall {
+                args,
+                modifier: None,
+                quoted: false,
+                ..
+            } if args.is_empty()
+        )
     }
 
     fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
