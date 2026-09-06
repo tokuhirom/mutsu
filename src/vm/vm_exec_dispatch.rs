@@ -1560,10 +1560,29 @@ impl Interpreter {
                                 }
                             }
                         };
-                        // Store ContainerRef in target and source env
+                        // Store ContainerRef in target and source env.
+                        //
+                        // The SOURCE side is skipped when its home is the
+                        // compunit / mainline file-scope lexical store, which
+                        // owns the name outright while one of its routines
+                        // runs: `unit_scope_lexical_bind` rebinds it there
+                        // instead. Writing the bare `env` key would put this
+                        // cell in the CALLEE's own overlay, from which the
+                        // call-return merge copies it into an intervening
+                        // caller's tier -- where a same-named `my` of the
+                        // caller's, a genuinely independent variable, adopts it
+                        // through `exec_get_local_op_inner`'s lazy-sync and the
+                        // two become one container. Same reasoning, and the
+                        // same gate, as the `SetLocal` scalar-bind twin in
+                        // `vm_var_assign_set_local.rs`; see
+                        // `t/free-var-bind-does-not-alias-caller-lexical.t`.
                         self.set_env_with_main_alias(&name, container.clone());
-                        self.env_mut()
-                            .insert(resolved_source.clone(), container.clone());
+                        let source_is_unit_lexical =
+                            self.unit_scope_lexical_bind(&resolved_source, &container);
+                        if !source_is_unit_lexical {
+                            self.env_mut()
+                                .insert(resolved_source.clone(), container.clone());
+                        }
                         // If the target is an attribute alias (`has $x` makes `x`
                         // an alias for `!x`), also store the ContainerRef under
                         // the private attribute key so writeback picks it up when
@@ -1595,12 +1614,22 @@ impl Interpreter {
                         // reverting to a stale value. See
                         // `propagate_bind_to_ancestor_frames`'s doc comment
                         // for what actually carries the binding across the
-                        // call chain.
-                        self.propagate_bind_to_ancestor_frames(
-                            &resolved_source,
-                            resolved_source_is_own_lexical,
-                            &container,
-                        );
+                        // call chain. Skipped for a unit lexical for the reason
+                        // above, and for one more of its own: the splice picks
+                        // the innermost ancestor frame whose `saved_env` owns
+                        // the name in its OWN tier, and a caller that
+                        // re-declared it has exactly such an entry -- the `Nil`
+                        // marker `exec_set_local_op_inner`'s redeclaration
+                        // guard leaves to say "this is a FRESH binding, do not
+                        // inherit the outer cell", which is the opposite of
+                        // what the splice reads it as.
+                        if !source_is_unit_lexical {
+                            self.propagate_bind_to_ancestor_frames(
+                                &resolved_source,
+                                resolved_source_is_own_lexical,
+                                &container,
+                            );
+                        }
                         // Persist ContainerRef in our_vars for `our` variables.
                         // Store under both the bare name and any existing
                         // package-qualified variants (e.g., "K::x" for bare "x")

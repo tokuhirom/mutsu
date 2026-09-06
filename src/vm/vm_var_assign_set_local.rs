@@ -1931,19 +1931,43 @@ impl Interpreter {
                     self.locals[source_idx] = container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
-                // Update source in env
-                self.env_mut()
-                    .insert(resolved_source.clone(), container.clone());
-                // Propagate ContainerRef to all saved call frame envs so the
-                // binding survives method returns (env restore) and a later
-                // restore doesn't overwrite with stale values. See
-                // `propagate_bind_to_ancestor_frames`'s doc comment for what
-                // actually carries the binding across the call chain.
-                self.propagate_bind_to_ancestor_frames(
-                    &resolved_source,
-                    resolved_source_is_own_lexical,
-                    &container,
-                );
+                // Carry the binding to wherever the SOURCE actually lives.
+                //
+                // When the source is a file-scope lexical of the running
+                // routine's own compunit (or a mainline lexical it captured,
+                // ADR-0024), that store IS the source's home: rebind it there
+                // and do neither of the two by-name routes below. Both of them
+                // would otherwise deposit this cell in an intervening CALLER's
+                // env tier, where a same-named `my` of the caller's -- a
+                // genuinely independent variable -- picks it up through the
+                // `GetLocal` lazy-sync and the two become one container
+                // (`t/free-var-bind-does-not-alias-caller-lexical.t`):
+                //
+                // * the bare `env` insert lands in this frame's own overlay,
+                //   which the call-return merge copies into the caller's tier
+                //   for every name that is not a callee local;
+                // * the ancestor splice looks for the innermost frame whose
+                //   `saved_env` owns the name in its own tier -- and a caller
+                //   that re-declared the name has exactly such an entry, the
+                //   `Nil` marker `exec_set_local_op_inner`'s redeclaration
+                //   guard writes to say "this is a FRESH binding, do not
+                //   inherit the outer cell". That marker means the opposite of
+                //   what the splice reads it as.
+                if !self.unit_scope_lexical_bind(&resolved_source, &container) {
+                    // Update source in env
+                    self.env_mut()
+                        .insert(resolved_source.clone(), container.clone());
+                    // Propagate ContainerRef to all saved call frame envs so the
+                    // binding survives method returns (env restore) and a later
+                    // restore doesn't overwrite with stale values. See
+                    // `propagate_bind_to_ancestor_frames`'s doc comment for what
+                    // actually carries the binding across the call chain.
+                    self.propagate_bind_to_ancestor_frames(
+                        &resolved_source,
+                        resolved_source_is_own_lexical,
+                        &container,
+                    );
+                }
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
                 let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
