@@ -58,10 +58,6 @@ survey:
   closed it. Moved to Icebox pending a re-check of its two named roast rows.
 - `deep/call-compiled-closure-lacks-merge-all-...` — its `CALLER`/`OUTER` repro
   also matches raku now. Only structural residue remains.
-- `deep/dollar-dot-attr-compound-assign-spurious-ro-error` — **the file's own
-  2026-09-01 tail is wrong**: `$.x *= 2` throws `X::Assignment::RO` again (raku
-  silently no-ops), while `$.x = 9` still mutates (raku throws). Two
-  divergences in opposite directions.
 - The `.WHICH` ticket pair — `===` and `set()` membership already agree with
   raku, so only the `.WHICH` *method string* is wrong. That makes the cluster
   cheap and low-risk, which is why it is recommended below.
@@ -259,7 +255,7 @@ Ordinary parser/operator/dispatch fixes still delegate to CI.
 | Ticket | Effort | Why here |
 |---|---|---|
 | [free-var-read-in-callee-resolves-through-dynamic-caller-chain](deep/free-var-read-in-callee-resolves-through-dynamic-caller-chain.md) | XL | **Re-verified by hand for this regen** (`f sees 1` / `alias 200`; raku `f sees 5`). A callee's env is `Env::scoped_child(caller_env)`, so a free variable walks the *dynamic* chain and a routine loses its own lexical. Still the highest-leverage finding with **no ADR** — ADR-0055 §7.5 explicitly disclaims it. Its cheaper half (why `f`'s own `my $var = 5` is not visible in `f`'s env tier) is worth isolating first. The repro needs the file form; the `:=` bind in `g` is load-bearing. |
-| [dollar-dot-attr-compound-assign-spurious-ro-error](deep/dollar-dot-attr-compound-assign-spurious-ro-error.md) | L | **Re-verified, and the file's own tail is stale — rewrite it before dispatching.** Today: `$.x = 9` inside a method *mutates* a non-`rw` attribute (raku throws `X::Assignment::RO`), while `$.x *= 2` *throws* `X::Assignment::RO` (raku silently no-ops). Two divergences in opposite directions, which is the signal that the accessor's lvalue-ness is decided in two places. Needs the "accessor read is an itemized copy" ADR; explicitly **not** ADR-0040. |
+| [dot-twigil-dot-assign-metaop-loses-its-rmw-origin](deep/dot-twigil-dot-assign-metaop-loses-its-rmw-origin.md) | S | **Mostly landed 2026-09-07** (`news/2026-09/dot-twigil-accessor-rmw-is-a-noop.md`): every `$.attr` read-modify-write is a silent no-op now, including the `$.x++` forms that were still silently over-mutating. What survives is `$.attr .= meth`, which still refuses -- `.=` loses its RMW origin in the parser, and `$.s .= uc` / `$.s = $.s.uc` lower to the same `AssignExpr` while raku answers them differently. The ticket lists the three carrier routes and their costs; pick one. |
 | [immutable-lvalues-that-mutsu-still-lets-you-assign-to](deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md) | L | **Partially drained and still worth mining**: the element-store/bind and closure-topic families closed this cycle (both news-linked), and **7 rows survive** — e.g. `my @a = 1,2,3; my $x := @a; $x = 5` mutates `@a` where raku dies. The file records two "obvious fixes" that were tried and *measured* to regress other rows. Mine it for rows; do not dispatch it whole. |
 | [custom-io-handle-write-read-not-dispatched](deep/custom-io-handle-write-read-not-dispatched.md) | XL | **Confirmed both halves**: `$*OUT = $store` writes to the real fd and the store stays empty; a custom `.READ` handle dies `Expected IO::Handle`. Native print/read never check for a user `WRITE`/`READ`/`EOF` override. Cross-cutting (`io_env.rs`, `io_handle.rs`, `handle_open.rs`). |
 | [definiteness-constrained-type-object-identity-lost](deep/definiteness-constrained-type-object-identity-lost.md) | L | **Confirmed and wider than the title**: `Any:D.^name` → `Any` (raku `Any:D`), `Any:U` likewise, `~~` answers `True` for everything, and `.^base_type` does not exist. `grep -rn DefiniteHOW src/` still finds nothing. Needs its own small representation ADR — none exists. |
@@ -361,7 +357,9 @@ evidence.
 - **`todo/` files whose own root-cause or status section is wrong** — this
   project's most common failure mode, so treat it as the default assumption.
   This cycle: `deep/dollar-dot-attr-compound-assign-spurious-ro-error` (its
-  2026-09-01 tail is contradicted by today's run, in both directions),
+  2026-09-01 tail is contradicted by today's run, in both directions, and the
+  2026-09-07 pass then found a THIRD wrong claim -- `$.x++` was still silently
+  over-mutating where the file said silent over-mutation was gone),
   `deep/module-file-scope-...` (headline repro now passes),
   `deep/call-compiled-closure-...` (headline repro now passes),
   `deep/exception-class-hierarchy-...` (title vs body),

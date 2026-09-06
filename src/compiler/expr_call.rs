@@ -216,7 +216,7 @@ impl Compiler {
             self.code.emit(OpCode::AssignExprLocal(slot));
         } else {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
-            self.code.emit(OpCode::AssignExpr(name_idx));
+            self.code.emit(OpCode::AssignExpr(name_idx, false));
         }
     }
 
@@ -419,7 +419,7 @@ impl Compiler {
             let var_name = var_name.clone();
             if is_state || var_name.starts_with('@') || var_name.starts_with('%') {
                 let name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::AssignExpr(name_idx));
+                self.code.emit(OpCode::AssignExpr(name_idx, false));
             } else {
                 self.emit_assign_local_or_name(&var_name);
             }

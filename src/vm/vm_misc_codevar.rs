@@ -471,11 +471,12 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
+        dot_twigil_rmw: bool,
     ) -> Result<(), RuntimeError> {
         // A whole array/hash assign (`@!a = (...)`) always replaces the value, so
         // there is no stale-copy hazard; pass `None` as the pre-snapshot to force
         // the mirror.
-        let r = self.exec_assign_expr_op_inner(code, name_idx);
+        let r = self.exec_assign_expr_op_inner(code, name_idx, dot_twigil_rmw);
         // Phase 3 Stage 2: mirror name-based attribute writes into the shared cell.
         if r.is_ok()
             && let ValueView::Str(name) = code.constants[name_idx as usize].view()
@@ -515,7 +516,7 @@ impl Interpreter {
         if bypass {
             self.unmark_readonly("_");
         }
-        let r = self.exec_assign_expr_op(code, name_idx);
+        let r = self.exec_assign_expr_op(code, name_idx, false);
         if bypass {
             self.restore_readonly("_", was_ro_kind);
         }

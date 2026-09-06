@@ -782,8 +782,17 @@ impl Compiler {
             // parser has already built the ordinary assignment expansion;
             // compile that proven execution shape and keep the annotation
             // available to the RakuAST converter.
-            Expr::CompoundAssign { expanded, .. } => {
+            Expr::CompoundAssign {
+                target, expanded, ..
+            } => {
+                // `$.attr OP= v` is a read-modify-write through the public
+                // accessor, which raku itemizes -- a non-`rw` scalar accessor
+                // makes the write land in a throwaway. Mark it for the
+                // `AssignExpr` this expansion is about to emit.
+                self.dot_twigil_rmw_assign =
+                    matches!(target.as_ref(), Expr::Var(n) if Self::is_dot_twigil_scalar(n));
                 self.compile_expr(expanded);
+                self.dot_twigil_rmw_assign = false;
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
