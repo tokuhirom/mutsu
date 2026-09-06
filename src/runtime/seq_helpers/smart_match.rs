@@ -802,9 +802,7 @@ impl Interpreter {
                 // Reduce-time inline actions from each match (children first).
                 let mut selected = selected;
                 for cap in &mut selected {
-                    if !cap.code_blocks.is_empty()
-                        || cap.named.values().any(|slot| !slot.nodes.is_empty())
-                    {
+                    if cap.named.values().any(|slot| !slot.nodes.is_empty()) {
                         let ct = cap.target_or_new(&text);
                         self.reduce_regex_captures_made(cap, Some(&ct));
                     }

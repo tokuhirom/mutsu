@@ -125,9 +125,9 @@ and `t/grammar-reduce-time-dynvar.t`.
   attaches it to the group (`$0.made`). Unchanged by this work — the value
   follows the block routing that was already there.
 - A block that mentions a `$*` dynamic variable still defers, so it can still run
-  out of order relative to an inline sibling. Moving that half inline needs the
-  per-match `:my $*x` value to be recorded at match end instead of re-derived at
-  reduce time; recorded as `todo/deep/grammar-dynvar-code-block-still-defers.md`.
+  out of order relative to an inline sibling. **Resolved** the following day —
+  see `news/2026-09/grammar-dynvar-code-block-runs-inline.md`, which moved that
+  half inline too and deleted the reduce-time replay machinery outright.
 - A *side-effect-only* block in a later `||` branch still does not run when that
   branch turns out to be the one the overall match needed — the pre-existing
   eager-alternation approximation described above. The real fix is to evaluate a

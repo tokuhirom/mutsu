@@ -74,8 +74,10 @@ impl Interpreter {
                 new_caps.named.entry(k).or_default().merge(v);
             }
             new_caps.positional.append(&mut inner_caps.positional);
-            new_caps.code_blocks.append(&mut inner_caps.code_blocks);
             super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+            new_caps
+                .regex_vars
+                .extend(std::mem::take(&mut inner_caps.regex_vars));
             group.push((next, new_caps));
         }
         group.reverse();
@@ -152,8 +154,10 @@ impl Interpreter {
                         new_caps.named.entry(k).or_default().merge(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                    new_caps
+                        .regex_vars
+                        .extend(std::mem::take(&mut inner_caps.regex_vars));
                     (end, new_caps)
                 })
                 .collect();
@@ -379,8 +383,14 @@ impl Interpreter {
                     new_caps.named.entry(k).or_default().merge(v);
                 }
                 new_caps.positional.append(&mut inner_caps.positional);
-                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                // A write an inline `{ … }` made to the regex's own `:my`/`:let`
+                // lexicals belongs to the SAME lexical scope as the enclosing
+                // pattern, so it leaves the group with it — the single-candidate
+                // twin in `regex_match_capture.rs` has always done this.
+                new_caps
+                    .regex_vars
+                    .extend(std::mem::take(&mut inner_caps.regex_vars));
                 // A `<(` / `)>` capture marker inside the group sets the match
                 // boundaries for the whole pattern; propagate it out of the group.
                 if inner_caps.capture_start.is_some() {
@@ -455,8 +465,8 @@ impl Interpreter {
                 // Match's top-level named captures (`$/<name>`). They are preserved
                 // only in `positional_subcaps` below and are intentionally NOT
                 // merged into the parent `named` / `named_subcaps` maps.
-                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                new_caps.regex_vars.extend(inner_caps.regex_vars.clone());
                 // Store inner captures as subcaptures of this group
                 let mut subcap = inner_caps;
                 subcap.from = pos;
@@ -489,8 +499,10 @@ impl Interpreter {
                         new_caps.named.entry(k).or_default().merge(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                    new_caps
+                        .regex_vars
+                        .extend(std::mem::take(&mut inner_caps.regex_vars));
                     out.push((end, new_caps));
                 }
             }
@@ -1103,7 +1115,6 @@ impl Interpreter {
                 // through the marker channel would store a subcap for every `<.ws>`
                 // in a parse for no benefit.
                 let mut inner_caps = inner_caps;
-                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
             }
             out.push((end, new_caps));

@@ -23,27 +23,6 @@ pub(crate) struct RegexPattern {
     pub(crate) ignore_mark: bool,
 }
 
-/// Context stored for each code block encountered during regex matching.
-#[derive(Clone)]
-pub(crate) struct CodeBlockContext {
-    pub(crate) code: String,
-    pub(crate) named: HashMap<String, Vec<String>>,
-    pub(crate) matched_so_far: String,
-    pub(crate) positional: Vec<String>,
-    /// The regex's own `:my`/`:let` lexicals as they stood at this block's
-    /// textual position. A `make`-bearing block runs on the reduce-time walk,
-    /// long after the match state that held them is gone, so the values have to
-    /// travel with the block — otherwise `/ :my $c; … { $c = 1 } { make $c } /`
-    /// reduces with `$c` unset.
-    pub(crate) regex_vars: HashMap<String, Value>,
-    /// The dynamically-scoped rule *parameters* (`token value($*STOPPER = '"')`)
-    /// in force where this block sits. A block mentioning a `$*` variable is
-    /// always deferred to the reduce walk, by which time the rule that bound the
-    /// parameter has returned, so the binding travels with the block. Empty
-    /// unless the grammar declares such a parameter.
-    pub(crate) dyn_params: Vec<(String, Value)>,
-}
-
 /// A single entry in a quantified capture list: (from, to, subcaptures).
 /// The matched text derives from the span through the shared subject
 /// (ADR-0016 P3).
@@ -228,8 +207,6 @@ pub(crate) struct CapChildren {
     /// pre-P4 parallel vectors, the span survives onto the stored node — the
     /// text-only leaf fallback (fabricated `0..len` offsets) is gone.
     pub(crate) positional: Vec<PosSlot>,
-    /// Inline `{ … }` code blocks recorded on this node, run once at reduce time.
-    pub(crate) code_blocks: Vec<CodeBlockContext>,
     /// What this rule's own `:my $*x` declarations held at this match's reduce
     /// (see `Interpreter::record_rule_dynvars`).
     pub(crate) regex_vars: HashMap<String, Value>,
@@ -288,14 +265,12 @@ impl RegexCaptures {
         let has_children = !self.named.is_empty()
             || !self.capture_alias_map.is_empty()
             || !self.positional.is_empty()
-            || !self.code_blocks.is_empty()
             || !self.regex_vars.is_empty();
         let children = has_children.then(|| {
             Box::new(CapChildren {
                 named: self.named,
                 capture_alias_map: self.capture_alias_map,
                 positional: self.positional,
-                code_blocks: self.code_blocks,
                 regex_vars: self.regex_vars,
             })
         });
@@ -332,10 +307,6 @@ pub(crate) struct RegexCaptures {
     /// Set at the beginning of regex matching to allow code blocks to compute
     /// the matched-so-far text.
     pub(crate) match_from: usize,
-    /// Code blocks encountered during matching (code + captures at that point).
-    /// Executed after match for side effects.
-    /// Each entry: (code, named_captures, matched_so_far, positional_captures)
-    pub(crate) code_blocks: Vec<CodeBlockContext>,
     /// Variables declared via `:my $var = expr;` inside regex.
     /// These are made available to `<{ code }>` closures.
     pub(crate) regex_vars: HashMap<String, Value>,

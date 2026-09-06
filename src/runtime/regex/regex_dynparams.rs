@@ -21,6 +21,10 @@
 //! interpolate the variable (`rule added-words { $*word $*extra }`) — and
 //! restoring the previous binding afterwards so nesting tears down correctly.
 //!
+//! An embedded `{ … }` block that reads such a parameter runs inline, where the
+//! cursor reaches it and while the binding is still in `self.env`, so nothing
+//! has to travel with the block.
+//!
 //! Before this, a `$*` parameter was only ever bound inside the throwaway
 //! scratch interpreter that turns a rule body into a pattern string, and then
 //! textually baked into *that rule's own* code blocks; nothing reached the
@@ -60,33 +64,6 @@ thread_local! {
     static TOKEN_DYNAMIC_PARAMS: RefCell<
         rustc_hash::FxHashMap<(String, String), CachedDynParams>,
     > = RefCell::new(rustc_hash::FxHashMap::default());
-
-    /// The rule-parameter bindings currently in force, innermost last. A plain
-    /// `{ … }` block that mentions a `$*` variable is deferred to the reduce
-    /// walk (that is what makes a `:my $*x` per-match binding work), so by the
-    /// time it runs the rule that bound the parameter has long returned — the
-    /// values have to travel with the block, like its `:my` lexicals do.
-    static ACTIVE_DYN_PARAMS: RefCell<Vec<(String, Value)>> = const { RefCell::new(Vec::new()) };
-}
-
-/// The rule-parameter dynamic bindings a code block collected right now should
-/// be replayed under, innermost binding winning. Empty for every grammar that
-/// declares no dynamically-scoped rule parameter.
-pub(crate) fn active_dynamic_params() -> Vec<(String, Value)> {
-    if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) {
-        return Vec::new();
-    }
-    ACTIVE_DYN_PARAMS.with(|stack| {
-        let stack = stack.borrow();
-        let mut out: Vec<(String, Value)> = Vec::new();
-        for (key, value) in stack.iter() {
-            match out.iter_mut().find(|(k, _)| k == key) {
-                Some(slot) => slot.1 = value.clone(),
-                None => out.push((key.clone(), value.clone())),
-            }
-        }
-        out
-    })
 }
 
 /// Note a freshly registered rule's signature, arming [`ANY_DYNAMIC_TOKEN_PARAM`]
@@ -174,9 +151,6 @@ impl Interpreter {
                 },
             };
             saved.push((pd.name.clone(), self.env.get(&pd.name).cloned()));
-            ACTIVE_DYN_PARAMS.with(|stack| {
-                stack.borrow_mut().push((pd.name.clone(), value.clone()));
-            });
             self.env.insert(pd.name.clone(), value);
         }
         (!saved.is_empty()).then_some(saved)
@@ -186,11 +160,6 @@ impl Interpreter {
     /// restoring whatever they shadowed (an enclosing rule's binding of the same
     /// name, most often).
     pub(crate) fn restore_subrule_dynamic_params(&mut self, saved: SavedDynParams) {
-        ACTIVE_DYN_PARAMS.with(|stack| {
-            let mut stack = stack.borrow_mut();
-            let keep = stack.len().saturating_sub(saved.len());
-            stack.truncate(keep);
-        });
         for (key, prior) in saved.into_iter().rev() {
             match prior {
                 Some(value) => {
