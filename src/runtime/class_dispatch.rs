@@ -552,6 +552,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        crate::alloc_scope!("resolved-method-celled");
         // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
         // Any resolved candidate that has compiled bytecode and is not a delegation
         // forwarder now runs compiled, regardless of what free vars it writes:
@@ -607,10 +608,13 @@ impl Interpreter {
                 )
                 .map(|(v, updated)| (v, Some(updated)));
         }
+        crate::alloc_scope_named!(_sc_cc, "resolved-method-celled:prep");
         let cc = method_def.compiled_code.clone().unwrap();
         let empty_fns = crate::opcode::CompiledFns::default();
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
+        crate::alloc_scope_end!(_sc_cc);
+        crate::alloc_scope_named!(_sc_call, "resolved-method-celled:call");
         let call_result = self.call_compiled_method(
             receiver_class_name,
             owner_class,
@@ -622,6 +626,7 @@ impl Interpreter {
             invocant,
             fns_ref,
         );
+        crate::alloc_scope_end!(_sc_call);
         // MERGE the saved sibling writes (e.g. a sibling BUILD's captured-outer
         // write queued for the outer `.new` caller to drain, #3620) with the
         // body's OWN captured-outer writes that `call_compiled_method` recorded

@@ -288,6 +288,7 @@ impl Interpreter {
             has_custom_bless,
             has_container_defaults,
             attrs_fully_known,
+            user_buildall,
         ) = if registered {
             let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
             let type_constraints =
@@ -328,6 +329,21 @@ impl Interpreter {
                 });
             }
             let has_custom_bless = self.has_user_method(cn_resolved, "bless");
+            // Same MRO probe `run_user_buildall_hook` ran per construction.
+            let user_buildall = {
+                let registry = self.registry();
+                let declares = |m: &str| {
+                    mro.iter()
+                        .any(|cls| registry.user_method_overloads(cls, m).is_some())
+                };
+                if declares("BUILDALL") {
+                    Some("BUILDALL")
+                } else if declares("POPULATE") {
+                    Some("POPULATE")
+                } else {
+                    None
+                }
+            };
             // See `NativeCtorPlan::attrs_fully_known`. Roles are flattened into
             // `ClassDef::attributes` at composition time, so only the MRO's
             // classes need to be registered for the attribute set to be complete.
@@ -371,6 +387,7 @@ impl Interpreter {
                 has_custom_bless,
                 has_container_defaults,
                 attrs_fully_known,
+                user_buildall,
             )
         } else {
             (
@@ -382,6 +399,7 @@ impl Interpreter {
                 false,
                 false,
                 false,
+                None,
             )
         };
         let attr_syms = std::sync::Arc::new(
@@ -436,6 +454,7 @@ impl Interpreter {
             build_steps,
             tweak_steps,
             probe_skeleton,
+            user_buildall,
         });
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale

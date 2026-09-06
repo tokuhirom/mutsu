@@ -380,6 +380,28 @@ Running the entire roast suite locally is wasteful and slow — **let CI run the
 
 The `MUTSU_VM_STATS=1` dual-store counters (`locals_pulls`, `env_flushes`, `env_deep_copies`, `clone_env`, ...) are **deterministic and independent of the optimization level** — they count VM events, not time. So when tuning a perf/decoupling change against those counters, **iterate with the debug build** (`cargo build`, ~30-70s) and read the counters off `target/debug/mutsu`; the numbers are identical to release. Reserve `cargo build --release` for the **final wall-clock measurement** only. Do NOT default to release just because the task is perf-related — that wastes build time per iteration for byte-identical counter output. (Release is `debug = false` by default; for `perf`/flamegraph profiling that needs symbols, build `cargo build --profile profiling` — a release-optimized binary that keeps debuginfo.)
 
+### Counting allocations: `alloc_scope!` + the `alloc-stats` feature
+
+When the question is "how many allocations does *this region* cost" (not "where does wall-clock
+go"), use the deterministic counter rather than a profiler — `perf --call-graph` has never worked in
+this container (stale `/root/.debug` build-id store for `dwarf`, garbage stacks for `fp`):
+
+```
+cargo build --release --features alloc-stats
+MUTSU_ALLOC_STATS=1 ./target/release/mutsu benchmarks/bench-ctor.raku
+```
+
+`alloc_scope!("label")` (in `src/alloc_stats.rs`) opens an accounting region for the rest of its
+block; `alloc_scope_named!`/`alloc_scope_end!` close one early so a function can be split into
+sequential phases. The stderr report gives per-scope allocations and bytes, both inclusive and
+exclusive of nested scopes. Counts are exact and load-independent, so — like the `MUTSU_VM_STATS`
+counters — they are the right thing to iterate a change against. **Wall-clock from an `alloc-stats`
+build is meaningless**; time with an ordinary release build. With the feature off (every normal
+build, and CI) the macro expands to nothing and the counting allocator is not installed, so call
+sites are free to leave in place. `callgrind` also works here (`valgrind` + `callgrind_annotate` are
+installed) and `callgrind_annotate --tree=caller` gives the caller attribution `perf` could not —
+run it on a reduced-iteration copy of the benchmark, it is ~50x slower than native.
+
 ### Benchmark numbers in documents come from the bench CI, not local runs
 
 Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench CI history** (`bench-history.tsv` on the `bench-data` branch, appended on every main push: median of 7 runs plus a same-runner raku ratio that normalizes runner speed), citing the main commit hash the row belongs to. Read it with `git show origin/bench-data:bench-history.tsv`. The `<bench>+jit` rows are the JIT-on series — the default configuration since J5 (2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. Local `perf stat` A/B measurements are fine for PR descriptions and in-flight development decisions, but they drift with thermals and binary layout (±5% is common), so they are NOT the source of truth for documents.

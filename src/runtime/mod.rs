@@ -1109,6 +1109,13 @@ pub(crate) struct NativeCtorPlan {
     /// `run_construction_phase_steps`), so the per-construction whole-cell
     /// `to_map()` value clone is skipped.
     pub(crate) probe_skeleton: Arc<crate::value::AttrMap>,
+    /// Which user-defined whole-object build hook this class's MRO declares —
+    /// `Some("BUILDALL")`, `Some("POPULATE")`, or `None` (the overwhelmingly
+    /// common case). `run_user_buildall_hook` probed this per construction with
+    /// an MRO walk x 2 method names of `user_method_overloads` lookups, each
+    /// interning both names; the answer is pure class shape, so it belongs in
+    /// the plan next to `has_build`/`has_tweak`/`has_custom_bless`.
+    pub(crate) user_buildall: Option<&'static str>,
 }
 
 /// One pre-derived step of a construction phase (BUILD or TWEAK) — see

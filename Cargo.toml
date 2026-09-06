@@ -28,6 +28,11 @@ wasm = ["wasm-bindgen", "console_error_panic_hook"]
 # NativeCall (C FFI) support — gated under `native`; wasm builds cannot do FFI.
 libloading = ["dep:libloading"]
 libffi = ["dep:libffi"]
+# Deterministic per-scope allocation counting (`src/alloc_stats.rs`). A
+# measurement-only build: it installs a counting `#[global_allocator]` and makes
+# `alloc_scope!` expand to a real guard. Never enable it for a timing run or a
+# shipped binary. See todo/perf/adr0019-g3-diffuse-bless-allocation-cost.md.
+alloc-stats = []
 # Cranelift method JIT (ADR-0004, layer 4). Compiled in by default but inert
 # unless MUTSU_JIT=on at runtime. Disable for targets Cranelift can't build on.
 jit = [

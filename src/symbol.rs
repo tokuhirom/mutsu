@@ -167,6 +167,38 @@ pub(crate) mod wk {
         /// must never be re-interned there -- the thread-local intern cache is
         /// a string-keyed hash lookup, which showed up as 5.3% of `bench-fib`.
         rebound_return => "&return";
+        /// The invocant, `self`. One of the fixed env keys every compiled
+        /// method call writes on entry (see the family below).
+        self_ => "self";
+        /// `$.foo` desugaring's alias for the invocant, written next to `self`.
+        anon_state => "__ANON_STATE__";
+        /// `::?CLASS`, written on every compiled method entry.
+        class_decl => "?CLASS";
+        /// `::?ROLE`: written when the method came from a role, removed
+        /// otherwise — so a method call touches this key either way.
+        role_decl => "?ROLE";
+        /// The per-routine `$!`, reset to Nil on entry.
+        error_var => "!";
+        /// The invocation id a non-local return from an inner block targets.
+        callable_id => "__mutsu_callable_id";
+        /// The implicit `*%_` named slurpy every method carries.
+        named_slurpy => "%_";
+    }
+
+    /// Whether `key` is one of the fixed per-call env keys the well-known
+    /// method-entry family above covers. Only used by debug assertions and
+    /// tests that check the string-keyed and symbol-keyed spellings agree.
+    #[cfg(test)]
+    pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 7] {
+        [
+            (self_(), "self"),
+            (anon_state(), "__ANON_STATE__"),
+            (class_decl(), "?CLASS"),
+            (role_decl(), "?ROLE"),
+            (error_var(), "!"),
+            (callable_id(), "__mutsu_callable_id"),
+            (named_slurpy(), "%_"),
+        ]
     }
 }
 
@@ -535,5 +567,22 @@ mod tests {
         let before = capture_shaped_symbols().0.len();
         let _ = Symbol::intern("31337");
         assert_eq!(capture_shaped_symbols().0.len(), before);
+    }
+
+    #[test]
+    fn method_entry_well_known_symbols_match_their_strings() {
+        // The compiled method-call paths write these env keys symbol-keyed
+        // (`insert_sym`) instead of allocating a `String` per call. A typo in
+        // one of the literals would not fail to compile -- it would silently
+        // write a DIFFERENT env key, so `self` / `?CLASS` / `%_` would read as
+        // undefined inside every method body. Pin each against the string
+        // spelling the interpreter's other (string-keyed) readers use.
+        for (sym, text) in wk::method_entry_keys() {
+            assert_eq!(sym, Symbol::intern(text), "well-known symbol {text:?}");
+            assert!(
+                sym.with_str(|s| s == text),
+                "well-known symbol {text:?} resolves to a different string"
+            );
+        }
     }
 }
