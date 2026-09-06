@@ -4,22 +4,21 @@ use Test;
 # A typed scalar `my` inside a plain mainline block must not leak its
 # constraint onto a same-named variable outside the block (the bare-name-keyed
 # constraint store was scope-blind —
-# todo/deep/bare-name-type-constraint-store-is-scope-blind.md, issue 2
+# news/2026-09/type-constraint-global-side-table-retired.md, issue 2
 # "Mainline blocks"). Companion to t/typed-lexical-constraint-frame-scoped.t,
 # which covers the routine-scoped half of the same fix.
 #
 # Scope: this covers only a genuine source `{ ... }` block (compiled to
-# `OpCode::BlockScope`). The `if`/`unless`/`else` branch-body half
-# (`OpCode::BlockLocalScope`) is now ALSO fixed, for the "fresh-after" shape
-# (a typed `my` inside the branch, then a FRESH untyped `my` of the same name
-# declared after the branch exits) — see ADR-0042 slice 1 (step 4) and
-# t/typed-constraint-scope-matrix.t, which pins it (plus the ADR's container
-# matrix). `while`/`for`/C-style-loop bodies have no scope-boundary opcode of
-# their own, but their `push_loop_local_scope`/`pop_loop_local_scope` bracket
-# now restores a declaration's `__mutsu_type::` metadata just the same (ADR-0042
-# §11). The "outer-first shadow" shape (an outer variable declared BEFORE the
-# inner typed shadow, then reused after it exits) is fixed for every branch and
-# loop construct and pinned by t/typed-constraint-shadow-scope.t.
+# `OpCode::BlockScope`). Every other scope shape is fixed too and pinned
+# elsewhere: `if`/`unless`/`else` branch bodies (`OpCode::BlockLocalScope`) and
+# the ADR's container matrix by t/typed-constraint-scope-matrix.t;
+# `while`/`for`/C-style-loop bodies, which have no scope-boundary opcode of
+# their own but whose `push_loop_local_scope`/`pop_loop_local_scope` bracket
+# restores a declaration's `__mutsu_type::` metadata just the same (ADR-0042
+# §11); the "outer-first shadow" shape by t/typed-constraint-shadow-scope.t.
+# t/typed-constraint-store-matrix.t pins all of it together, in the 47-row form
+# it was re-measured against `raku` before ADR-0042 slice 3 deleted the global
+# side table.
 
 plan 7;
 

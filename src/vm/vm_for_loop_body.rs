@@ -354,15 +354,24 @@ impl Interpreter {
         self.sever_multi_param_cells(spec, &severable_multi_params);
         // A multi-parameter loop (`-> $k, $v`) binds its parameters with plain
         // assignments emitted into the body prefix (`build_for_bind_stmts`), and
-        // `SetLocal` type-checks an assignment against the *name-keyed* constraint
-        // map. That map is not block-scoped, so an unrelated `my Int $v` anywhere
-        // in the program made `-> $k, $v` reject every non-Int value
-        // ("Type check failed in assignment to $v; expected Int"). A parameter is
-        // a fresh binding that shadows whatever the name meant outside, so clear
-        // the constraint for the duration of the loop and restore it after — the
-        // same contract `bind_param_type_constraint` gives an untyped routine
-        // parameter, minus the permanent loss of the enclosing lexical's type.
-        // (The single-param form binds natively and never had this problem.)
+        // `SetLocal` type-checks an assignment against the name-keyed
+        // constraint, so an ENCLOSING `my Int $v` made `-> $k, $v` reject every
+        // non-Int value ("Type check failed in assignment to $v; expected Int").
+        // A parameter is a fresh binding that shadows whatever the name meant
+        // outside, so clear the constraint for the duration of the loop and
+        // restore it after — the same contract `bind_param_type_constraint`
+        // gives an untyped routine parameter, minus the permanent loss of the
+        // enclosing lexical's type. (The single-param form binds natively and
+        // never had this problem.)
+        //
+        // ADR-0042 slice 3 shrank this, and its ledger entry listed it for
+        // deletion — but only the *unscoped* half went. The name-keyed lane is
+        // now the block-scoped `__mutsu_type::<name>` env entry alone, so an
+        // unrelated `my Int $v` in another frame can no longer reach here (that
+        // was the process-global map, now gone) and the save/restore no longer
+        // promotes an env-only constraint into a global one. What remains is
+        // genuine Raku semantics that this mechanism still has to implement:
+        // shadowing a *lexically enclosing* typed `$v` for the loop's extent.
         //
         // Loop parameter types themselves are still unenforced: `ForLoopSpec`
         // carries no per-parameter constraint. See

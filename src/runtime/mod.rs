@@ -2465,9 +2465,6 @@ pub struct Interpreter {
     /// `use attributes :D/:U/:_` pragma — applies default smiley to unsmiley'd attribute type constraints.
     /// Empty string means no pragma active.
     pub(crate) attributes_pragma: String,
-    /// Legacy name-keyed bridge for EVAL and specialized compatibility paths.
-    /// Ordinary scalar enforcement lives on ContainerCell.
-    var_type_constraints: HashMap<String, String>,
     /// Monotonic flag: set once any `atomicint` variable / atomic storage has been
     /// registered in this interpreter (or inherited from a parent thread). The
     /// per-`GetGlobal`/`GetLocal` atomic-variable check is expensive (a `format!`
@@ -2480,13 +2477,6 @@ pub struct Interpreter {
     /// pub(crate) so `vm_jit_layout` can `offset_of!` it: the Tier B inline
     /// GetLocal fast path reads this flag from native code.
     pub(crate) atomic_var_seen: bool,
-    /// Monotonic flag: set once any *env-scoped* variable type constraint has been
-    /// written (via `set_var_type_constraint`'s `env.insert` branch or
-    /// `bind_param_type_constraint`). The hot `var_type_constraint` read does a
-    /// `format!("__mutsu_type::{}")` + `env.get` on every variable write-back to
-    /// support env-first, block-scoped constraints. When this flag is clear the
-    /// name-keyed bridge is authoritative and the env lookup can be skipped.
-    env_type_constraint_seen: bool,
     /// Monotonic flag: set once any sigilless-parameter alias
     /// (`__mutsu_sigilless_alias::name` env key, created when binding a `\target`
     /// raw/sigilless parameter or a `:=`-style alias) has been registered. The hot
@@ -2501,8 +2491,10 @@ pub struct Interpreter {
     var_defaults: HashMap<String, Value>,
     // Array/Hash element defaults are embedded in `ArrayData.default` /
     // `HashData.default`.
-    /// Optional hash key type constraints (e.g. `%h{Str}`).
-    var_hash_key_constraints: HashMap<String, String>,
+    // An object hash's key type (`%h{Str}`) is carried by `HashData::key_type`
+    // on the value and, for the name-keyed lane, by the env-scoped
+    // `__mutsu_hash_key_type::<name>` entry — the process-global side table
+    // that used to mirror it was retired with ADR-0042 slice 3.
     // Array/Hash/Set/Bag/Mix type metadata and object-hash original keys are
     // embedded in their backing data structs (ArrayData/HashData/SetData/
     // BagData/MixData) — no side tables.

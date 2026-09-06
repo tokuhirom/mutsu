@@ -1,17 +1,22 @@
 # ADR-0042: A type constraint belongs to the container, not to a name — retiring the `var_type_constraints` side table
 
-- Status: Partially Implemented — Slice 1 landed 2026-08-20 as PR #6743
-  (`dc39cb3e3`; see §10); its follow-on "outer-first shadow" finding fixed
-  2026-08-22 as `b388b1b9f` (see §11, which supersedes part of §5.2/§6).
-  Slice 1 re-verified `raku`-oracled on `c10d305d4` (2026-08-23): §2.2 matrix
-  7/7, §3 alias probe 8/8, §3.1 `state` gap closed. Slices 2 and 3 not started.
+- Status: Implemented — all three slices have landed. Slice 1 landed 2026-08-20
+  as PR #6743 (`dc39cb3e3`; see §10); its follow-on "outer-first shadow" finding
+  was fixed 2026-08-22 as `b388b1b9f` (see §11, which supersedes part of
+  §5.2/§6). Slice 2 landed 2026-08-31 (a scalar's constraint is carried on its
+  `ContainerCell`) and 2026-08-28 (ADR-0055 slice 1 retired
+  `box_decl_local_cell`'s constraint bail). Slice 3 landed 2026-09-06 — the
+  `var_type_constraints` map, its `var_hash_key_constraints` twin, and their
+  workarounds are deleted; see §12.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline lexicals —
   the same by-name/lexical split for scalar *values*),
   ADR-0025 (cell boxing must be value-kind-blind),
   ADR-0039 (`@`/`%` lexicals resolve lexically — §7 below shows this ADR owns
   ADR-0039 §4.1's typed-container exclusion)
-- Addresses: `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`
+- Addresses: `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`,
+  closed out 2026-09-06 to
+  `news/2026-09/type-constraint-global-side-table-retired.md`
 
 ## 1. Context
 
@@ -323,7 +328,8 @@ compiles to and should not be in flight simultaneously.
   delegated to CI. Watch bench CI after slice 1 — `check_push_element_type` is
   on the `@a.push` hot path and swaps a map probe for a container-metadata read.
 - On completion, `git mv todo/deep/bare-name-type-constraint-store-is-scope-blind.md`
-  to `news/2026-08/` and update this ADR's Status.
+  to `news/` and update this ADR's Status. **Done** (2026-09-06):
+  `news/2026-09/type-constraint-global-side-table-retired.md`.
 
 ## 9. Status of the ticket's residual 4
 
@@ -443,3 +449,50 @@ The three rows in `t/typed-constraint-shadow-scope.t` are now ordinary
 
 Pinned by `t/typed-constraint-shadow-scope.t` (35 `raku`-verified assertions,
 replacing the expected-failing `t/typed-constraint-shadow-leak-unfixed.t`).
+
+## 12. Slice 3 status (landed 2026-09-06)
+
+`Interpreter::var_type_constraints` and `var_hash_key_constraints` are gone.
+`news/2026-09/type-constraint-global-side-table-retired.md` has the full
+write-up; three things recorded above need correcting.
+
+**The whole matrix was re-measured before any code was written, and all of it
+already agreed with `raku`.** 47 rows — §2.1's ten scalar shapes, §2.2's seven
+container shapes, §3's alias probe extended with the scalar and sigilless
+aliases, the deep ticket's five spot-check rows, seven "an outer typed
+declaration keeps enforcing after a shadow" rows, and ten rows covering the
+store's non-enforcement readers. Slice 3 was therefore taken purely as the
+architectural change this ADR describes, not as a bug fix. The matrix is pinned
+in `t/typed-constraint-store-matrix.t`, byte-identical under `mutsu` and `raku`.
+
+**One item on §5.3's deletion list was kept: the multi-parameter `for`-loop
+save/clear/restore** (`vm_for_loop_body.rs`). §5.3 assumed it existed only
+because the map was unscoped. Half of it did — an unrelated `my Int $v` in
+another frame, and the env-only-to-global promotion defect, are both gone with
+the second store. The other half is genuine Raku semantics that still has to be
+implemented somewhere: a loop parameter is a fresh binding that shadows a
+*lexically enclosing* typed `$v` for the loop's extent, and with the by-name
+lane now block-scoped that shadowing is exactly what the clear/restore does.
+
+**§4's two "deliberately map-only" Nil→type-object readers were deleted, not
+migrated.** They were correct to be map-only under the old two-store design, but
+a typed scalar's type-object seed comes from its declaration and its Nil-reset
+from the store path (`typed_scalar_nil_seed_value`), so nothing typed reaches
+them; the Nil that does is a `= Nil` parameter default and is genuinely Nil.
+`var_type_constraint_fast` has no callers left and is gone.
+
+**The gate flag had to become process-global.** `env_type_constraint_seen`
+short-circuits the by-name probe when no typed lexical has ever been declared.
+Once the map was the fallback no longer, a `false` reading means "no constraint"
+outright — and an interpreter that ADOPTS another's env (`throws-like`'s nested
+EVAL interpreter, the regex-scratch interpreters, `clone_for_thread`) is built
+fresh, so a per-interpreter field started `false` while holding the very
+`__mutsu_type::*` keys it gates. It is now a monotonic process-global
+`AtomicBool` for the same reason `ATOMIC_VAR_SEEN` is; an over-set only makes
+the correct lookup run. This was not caught by an env-gated experiment that
+disabled the map *reads* — with the local flag still `false` the gated read was
+never reached, so that experiment was a false green across `make test` and 414
+roast files. It surfaced only when the field itself was removed.
+
+Verification: `make test` 3700 files / 37887 tests; the full roast whitelist on
+release, 1436 files / 218962 tests; the bundled-library gate at 289/312.

@@ -319,21 +319,13 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn snapshot_var_type_constraints(&self) -> HashMap<String, String> {
-        self.var_type_constraints.clone()
-    }
-
-    pub(crate) fn restore_var_type_constraints(&mut self, snapshot: HashMap<String, String>) {
-        self.var_type_constraints = snapshot;
-    }
-
     /// Element type constraint for a container variable, preferring the
-    /// metadata embedded in the value itself over the name-keyed
-    /// `var_type_constraints` side table. The embedded metadata travels with
-    /// the value through frame save/restore, so it stays correct when a
-    /// recursive call re-binds a same-named variable to a differently-typed
-    /// container (`my @ret := Array[T].new` in a recursive sub) — the
-    /// name-keyed store is clobbered by the inner frame in that case.
+    /// metadata embedded in the value itself over the name-keyed lane. The
+    /// embedded metadata travels with the value through frame save/restore, so
+    /// it stays correct when a recursive call re-binds a same-named variable to
+    /// a differently-typed container (`my @ret := Array[T].new` in a recursive
+    /// sub), and it is the only source that can answer for a differently-named
+    /// bound alias (ADR-0042 §3).
     pub(crate) fn element_constraint_for(&self, var_name: &str, value: &Value) -> Option<String> {
         if let Some(info) = self.container_type_metadata(value) {
             if info.value_type.is_empty() {

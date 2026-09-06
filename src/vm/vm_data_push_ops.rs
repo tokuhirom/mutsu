@@ -380,10 +380,10 @@ impl Interpreter {
     /// Type-check a pushed value (or every element of a pushed `Slip`) against
     /// the declared element type of `target_name`. A no-op for an untyped array.
     ///
-    /// ADR-0042 slice 1: constraint comes from `element_constraint_for`
-    /// (container-embedded metadata first, name-keyed map as fallback) rather
-    /// than the map-only `var_type_constraint_fast` — this is the hot
-    /// `@a.push` chokepoint the ADR names for the bench-CI watch.
+    /// ADR-0042 slice 1: the constraint comes from `element_constraint_for`
+    /// (the container's own embedded metadata first, the by-name lane only as
+    /// a fallback) — this is the hot `@a.push` chokepoint the ADR names for
+    /// the bench-CI watch.
     fn check_push_element_type(
         &mut self,
         target_name: &str,
@@ -439,8 +439,8 @@ impl Interpreter {
     /// The native integer element type of the array variable `name`, if any.
     ///
     /// ADR-0042 slice 1: routed through `element_constraint_for` (see
-    /// `check_push_element_type`) instead of the map-only
-    /// `var_type_constraint_fast`.
+    /// `check_push_element_type`), so the container's own metadata answers
+    /// first.
     pub(crate) fn native_int_element_constraint(&mut self, name: &str) -> Option<String> {
         let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
         let constraint = self.element_constraint_for(name, &target)?;

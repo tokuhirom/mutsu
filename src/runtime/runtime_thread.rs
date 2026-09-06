@@ -757,19 +757,14 @@ impl Interpreter {
             var_bindings: HashMap::new(),
             variables_pragma: self.variables_pragma.clone(),
             attributes_pragma: self.attributes_pragma.clone(),
-            var_type_constraints: self.var_type_constraints.clone(),
             // Inherit monotonically: if the parent ever registered an atomic var,
             // the child (which shares the atomic storage via shared_vars) must keep
             // running the atomic-variable read check.
-            // Inherit monotonically: the parent's env-scoped constraints are copied
-            // into the child's env, so the child must keep consulting env-first.
-            env_type_constraint_seen: self.env_type_constraint_seen,
             // Inherit monotonically: the parent's sigilless-alias env keys are
             // copied into the child env, so the child must keep walking the chain.
             atomic_var_seen: self.atomic_var_seen,
             sigilless_alias_seen: self.sigilless_alias_seen,
             var_defaults: self.var_defaults.clone(),
-            var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             // Per-thread snapshot (not a shared-handle clone), but an O(1) share
             // of the inner `Arc` (docs/per-task-clone-slimming.md slice 4): a
             // fresh outer `Arc<RwLock<...>>` keeps the child thread's instance

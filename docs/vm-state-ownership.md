@@ -13,8 +13,9 @@ VM-native code, the **execution state** other than the declaration registries mo
 
 - **env** (the variable store itself, `Interpreter.env: Env`) — by far the hottest. `self.interpreter.env`/`env_mut` =
   **483 sites** in the VM tree alone.
-- **Type checking**: `type_matches_value` (VM 8 + runtime 26 files), `var_type_constraint`/`var_type_constraints`,
-  `var_hash_key_constraints`.
+- **Type checking**: `type_matches_value` (VM 8 + runtime 26 files) and `var_type_constraint`. (The
+  `var_type_constraints` / `var_hash_key_constraints` side maps this row used to name are gone — ADR-0042
+  slice 3 moved the constraint onto the container and left one env-scoped by-name lane.)
 - **readonly tracking**: `readonly_vars`/`mark_readonly`/`unmark_readonly` (VM 4 + runtime 2).
 - **let/temp restoration**: `let_saves`/`restore_let_saves`/`discard_let_saves` (VM 5 + runtime 2).
 - **state variables**: `state_vars`/`our_vars`/`once_values` (VM 0 + runtime 3 — almost entirely on the tree-walk side).

@@ -1269,7 +1269,7 @@ pub(crate) struct Compiler {
     /// a `my TYPE $x` declaration compiled while this flag is set can safely
     /// use the env-only `SetVarTypeScoped` opcode instead of the both-store
     /// `SetVarType`, exactly like inside a routine
-    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`, issue
+    /// (`news/2026-09/type-constraint-global-side-table-retired.md`, issue
     /// 2 "Mainline blocks"). Set/restored narrowly around that one branch —
     /// the other `Stmt::Block` branches (implicit try, phaser scope,
     /// `LetBlock`, import scope) do not perform this env restore, so a `my`
@@ -2413,7 +2413,7 @@ impl Compiler {
     /// registration, exactly like a typed parameter — so its constraint dies
     /// with the frame/block instead of leaking onto a same-named variable
     /// elsewhere through the global name-keyed store
-    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    /// (`news/2026-09/type-constraint-global-side-table-retired.md`).
     ///
     /// ADR-0042 slice 1: `@`/`%` containers now use the same scoped opcode as
     /// scalars. Their element/key metadata is embedded directly on the

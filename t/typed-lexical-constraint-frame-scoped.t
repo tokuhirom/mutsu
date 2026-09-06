@@ -3,7 +3,7 @@ use Test;
 
 # A typed scalar `my` inside a routine must not leak its constraint onto a
 # same-named variable in another frame (the bare-name-keyed constraint store
-# was scope-blind — todo/deep/bare-name-type-constraint-store-is-scope-blind.md,
+# was scope-blind — news/2026-09/type-constraint-global-side-table-retired.md,
 # Text::CSV t/66_formula.t line 129).
 
 plan 12;

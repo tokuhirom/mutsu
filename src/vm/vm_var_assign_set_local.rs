@@ -1424,7 +1424,7 @@ impl Interpreter {
         // A scalar attribute write from inside a method (`$!x = v` / `$.x = v`)
         // is compiled as an ordinary name assignment, so its declared type has
         // to be pulled from the class registry rather than the name-keyed
-        // `var_type_constraints` map. Resolving it HERE — the single pre-store
+        // constraint lane. Resolving it HERE — the single pre-store
         // choke point — gives the attribute the same treatment as any other
         // typed scalar (type check, `:D`, coercion, native wrapping) before the
         // slot write and before the mirror into `self`'s cell. Skipped for a
@@ -2015,7 +2015,7 @@ impl Interpreter {
         // value may share its backing `Arc` with a typed source container
         // (`my @a = @typed`), and an untyped declaration must not present its
         // value as typed. Skip for attribute variables (.h, !h) which get
-        // typed metadata from the class definition, not var_type_constraints.
+        // typed metadata from the class definition, not the by-name lane.
         //
         // Also skip for a `constant %h` / `constant @a`: its `declared_type`
         // ("Map" for a `%`-sigil list-coerced constant, per

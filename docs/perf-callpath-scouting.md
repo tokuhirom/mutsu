@@ -117,6 +117,7 @@ now the top structural cost, and §3.0 is the next slice.
 Now that the `format!`s are gone, what is left is `exec_set_local_op_inner`
 itself (~11%), the allocator, and `Env::get_sym`/`memcmp`/SipHash from the
 remaining `String`-keyed side maps (`var_type_constraints`, `var_defaults`).
+(`var_type_constraints` has since been deleted outright — ADR-0042 slice 3.)
 
 ## 3. The slices, in order
 
@@ -186,6 +187,8 @@ guessing: candidates are `Env::scoped_child`'s `Arc<SymMap>` box, the args `Vec`
 HashMap<String, Value>` are probed by name on every assignment (they short-circuit
 when empty, so they cost nothing for programs that use neither — but any typed
 variable turns them on). Same treatment as #4493/#4494: key by `Symbol`.
+**Update (2026-09-06):** `var_type_constraints` was deleted rather than re-keyed
+(ADR-0042 slice 3); only `var_defaults` is left for this slice.
 
 ### 3.4 `Value::eq` on instances is super-linear — a correctness cliff, not just perf
 
