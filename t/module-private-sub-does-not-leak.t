@@ -13,7 +13,7 @@ use PrivateSubMod;
 # Every expectation below was verified against Rakudo.
 # See runtime/unit_private_routines.rs.
 
-plan 9;
+plan 10;
 
 # The loading scope declares its own routine of the same name as the module's
 # private helper. The two are independent lexicals.
@@ -39,6 +39,11 @@ nok $bare.defined,
     'a private helper the loading scope never declared is not callable here';
 is visible-hidden-only(2), 14,
     'and the module own exported wrapper still reaches it';
+
+# The other side of the line: `our sub` in a package-less compunit really is a
+# GLOBAL stash entry, so it stays reachable here without being exported.
+is our-scoped-helper(2), 22,
+    'an our-scoped top-level sub is NOT secluded';
 
 # `use lib`/`use` above already loaded the unit; a `require` of the same unit
 # must not publish the private helper either.
