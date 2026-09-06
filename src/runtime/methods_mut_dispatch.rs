@@ -15,6 +15,17 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A user `IO::Handle` subclass overriding `WRITE`/`READ`/`EOF` routes
+        // its high-level text methods through those overrides. The read-side
+        // methods (`.read`, `.eof`, `.getc`, `.get`, ...) are mut-path methods
+        // and arrive HERE, not at the two dispatch entries that already carried
+        // the hook -- so they fell through to the native `IO::Handle` arm and
+        // died with "Expected IO::Handle" for want of a real file descriptor,
+        // while `.print` on the same object worked. See
+        // `try_user_io_handle_method`.
+        if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
+            return result;
+        }
         // Augmented native-type dispatch (mut-path twin of the non-mut guard in
         // `call_method_with_values`): see `native_lever_a_user_override`'s doc
         // comment. A native-typed receiver never carries an attribute cell, so

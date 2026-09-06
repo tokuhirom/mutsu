@@ -193,105 +193,114 @@ impl Interpreter {
             };
         }
 
-        if has_write {
-            // `nl-out` for the newline-appending methods; default "\n".
-            let nl_out = match target.view() {
-                ValueView::Instance { attributes, .. } => attributes
-                    .as_map()
-                    .get("nl-out")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "\n".to_string()),
-                _ => "\n".to_string(),
-            };
-            // Raw-byte methods first: their argument is (or may be) a Blob.
-            match method {
-                "write" => {
-                    let mut out = Vec::new();
-                    for arg in args {
-                        if Self::is_buf_value(arg) {
-                            out.extend(self.supply_chunk_to_bytes(arg, "utf-8"));
-                        } else {
-                            out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
-                        }
-                    }
-                    return Some(self.call_user_io_write(target, out).map(|_| Value::TRUE));
-                }
-                "spurt" => {
-                    let cv = args
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| Value::str(String::new()));
-                    let bytes = if Self::is_buf_value(&cv) {
-                        Self::extract_buf_bytes(&cv)
-                    } else {
-                        cv.to_string_value().into_bytes()
-                    };
-                    return Some(self.call_user_io_write(target, bytes).map(|_| Value::TRUE));
-                }
-                _ => {}
-            }
-            // Text methods: build the string content then append `nl-out`.
-            let (content, newline) = match method {
-                "print" => {
-                    let mut c = String::new();
-                    for arg in args {
-                        c.push_str(&loan_env!(self, render_str_value(arg)));
-                    }
-                    (c, false)
-                }
-                "put" => {
-                    let mut c = String::new();
-                    for arg in args {
-                        c.push_str(&loan_env!(self, render_str_value(arg)));
-                    }
-                    (c, true)
-                }
-                "say" => {
-                    let mut c = String::new();
-                    for arg in args {
-                        match loan_env!(self, render_gist_value(arg)) {
-                            Ok(g) => c.push_str(&g),
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    (c, true)
-                }
-                "printf" => {
-                    // printf requires a format argument; a bare `$handle.printf`
-                    // matches no candidate (roast .../multi-no-match.t).
-                    if args.is_empty() {
-                        return Some(Err(
-                            crate::runtime::methods_signature_errors::make_multi_no_match_error(
-                                "printf",
-                            ),
-                        ));
-                    }
-                    let fmt = args
-                        .first()
+        // A handle that overrides BOTH `WRITE` and `READ` must still reach the
+        // read block below: this used to `return None` from the write match's
+        // catch-all, so `.read`/`.eof`/`.getc` on such a handle fell through to
+        // the native `IO::Handle` arm and died with "Expected IO::Handle" --
+        // which is exactly the shape `Type/IO/Handle.rakudoc`'s second worked
+        // example uses. `break 'write` falls through instead.
+        #[allow(clippy::never_loop)]
+        'write: {
+            if has_write {
+                // `nl-out` for the newline-appending methods; default "\n".
+                let nl_out = match target.view() {
+                    ValueView::Instance { attributes, .. } => attributes
+                        .as_map()
+                        .get("nl-out")
                         .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let rest = &args[1..];
-                    if let Err(e) =
-                        crate::runtime::sprintf::validate_sprintf_directives(&fmt, rest.len())
-                    {
-                        return Some(Err(e));
+                        .unwrap_or_else(|| "\n".to_string()),
+                    _ => "\n".to_string(),
+                };
+                // Raw-byte methods first: their argument is (or may be) a Blob.
+                match method {
+                    "write" => {
+                        let mut out = Vec::new();
+                        for arg in args {
+                            if Self::is_buf_value(arg) {
+                                out.extend(self.supply_chunk_to_bytes(arg, "utf-8"));
+                            } else {
+                                out.extend(loan_env!(self, render_str_value(arg)).into_bytes());
+                            }
+                        }
+                        return Some(self.call_user_io_write(target, out).map(|_| Value::TRUE));
                     }
-                    (
-                        crate::runtime::sprintf::format_sprintf_args(&fmt, rest),
-                        false,
-                    )
+                    "spurt" => {
+                        let cv = args
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| Value::str(String::new()));
+                        let bytes = if Self::is_buf_value(&cv) {
+                            Self::extract_buf_bytes(&cv)
+                        } else {
+                            cv.to_string_value().into_bytes()
+                        };
+                        return Some(self.call_user_io_write(target, bytes).map(|_| Value::TRUE));
+                    }
+                    _ => {}
                 }
-                "print-nl" => (String::new(), true),
-                _ => return None,
-            };
-            let mut text = content;
-            if newline {
-                text.push_str(&nl_out);
+                // Text methods: build the string content then append `nl-out`.
+                let (content, newline) = match method {
+                    "print" => {
+                        let mut c = String::new();
+                        for arg in args {
+                            c.push_str(&loan_env!(self, render_str_value(arg)));
+                        }
+                        (c, false)
+                    }
+                    "put" => {
+                        let mut c = String::new();
+                        for arg in args {
+                            c.push_str(&loan_env!(self, render_str_value(arg)));
+                        }
+                        (c, true)
+                    }
+                    "say" => {
+                        let mut c = String::new();
+                        for arg in args {
+                            match loan_env!(self, render_gist_value(arg)) {
+                                Ok(g) => c.push_str(&g),
+                                Err(e) => return Some(Err(e)),
+                            }
+                        }
+                        (c, true)
+                    }
+                    "printf" => {
+                        // printf requires a format argument; a bare `$handle.printf`
+                        // matches no candidate (roast .../multi-no-match.t).
+                        if args.is_empty() {
+                            return Some(Err(
+                                crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                                    "printf",
+                                ),
+                            ));
+                        }
+                        let fmt = args
+                            .first()
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let rest = &args[1..];
+                        if let Err(e) =
+                            crate::runtime::sprintf::validate_sprintf_directives(&fmt, rest.len())
+                        {
+                            return Some(Err(e));
+                        }
+                        (
+                            crate::runtime::sprintf::format_sprintf_args(&fmt, rest),
+                            false,
+                        )
+                    }
+                    "print-nl" => (String::new(), true),
+                    _ => break 'write,
+                };
+                let mut text = content;
+                if newline {
+                    text.push_str(&nl_out);
+                }
+                return Some(
+                    self.call_user_io_write(target, text.into_bytes())
+                        .map(|_| Value::TRUE),
+                );
             }
-            return Some(
-                self.call_user_io_write(target, text.into_bytes())
-                    .map(|_| Value::TRUE),
-            );
         }
 
         if has_read {
