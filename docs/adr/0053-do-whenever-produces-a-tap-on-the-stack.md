@@ -1,6 +1,6 @@
 # ADR-0053: `do whenever` produces a `Tap` on the stack — retiring the source-variable name bridge
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Proposed (design complete; **partially implemented** — see §8)
 - Date: 2026-08-20
 - Origin: `todo/deep/whenever-expression-position-needs-real-design.md`
   (re-verified against `main` @ `16a7def3e`, 2026-08-20). The investigation
@@ -332,3 +332,35 @@ closure clone (plus one per `LAST`/`QUIT` phaser) that the same function
 already performs. The drive loop gains one set lookup per subscription per
 poll round; it already performs per-round per-subscription source polling.
 No steady-state emit-path cost is added.
+
+## 8. Status reconciliation (2026-09-06)
+
+The header said "implementation not started" for two and a half weeks after it
+stopped being true. Measured on `main`:
+
+- **`.WHAT` already answers `Tap`** for both legal shapes,
+  `my $tap = do whenever $s.Supply -> $x {…}` and `do { whenever $s {…} }`. The
+  `Str "whenever"` / `Supply` / `Any` answers this ADR was written against are
+  gone, and so is the source-variable name bridge's visible symptom.
+- **The subscription identity half is not done**, and it is worse than the
+  originating ticket recorded. `Tap.close` does not merely drop the value
+  emitted immediately before it: it discards **every event the react loop has
+  not yet processed**. With two emits followed by a close — no ordering
+  ambiguity at all — raku delivers both and mutsu delivers neither.
+
+The site is `Interpreter::drain_waker_events`
+(`src/vm/vm_react_subscriptions.rs`): it calls `waker.drain()`, which hands back
+the whole FIFO batch, and *then* consults `is_whenever_closed` per event. The
+close is a bit in a process-global set with no position in the event order, so
+that check cannot distinguish an event queued before the close from one queued
+after, and drops both.
+
+Closing this needs an ordering between the close and the queued emits — either
+enqueue the close as an event on the same waker queue (closest to raku, but
+`close_whenever` is a free function with no waker in scope), or stamp events with
+an emit counter and give the close an epoch (less invasive, but adds a counter to
+the hot emit path). The global bit stays as the steady-state "this subscription is
+retired" check; only the in-batch test changes.
+
+Pinned by `t/whenever-tap-close-ordering.t` — four rows, all green under raku, the
+two close rows `todo` under mutsu.

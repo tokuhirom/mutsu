@@ -184,14 +184,69 @@ react {
 # prints "Supply", not "Tap" -- even the narrow do{}-wrapped case is broken
 ```
 
-## Re-verified 2026-09-01 (TRIAGE regeneration): the symptom moved
+## Re-verified 2026-09-01: the symptom moved
 
 Both legal shapes (`my $tap = do whenever ...` and `do { whenever ... }`) now
-answer `Tap` for `.WHAT` and deliver `got 1` — the `Str "whenever"` /
-`Supply` / `Any` symptoms above are gone. What is still wrong is the
-**subscription identity** half: after `$s.emit(1); $tap.close; $s.emit(2)`,
-raku prints `got 1` then `done`, but mutsu prints only `done` — closing the
-Tap retroactively drops the value emitted *before* the close. ADR-0053's
-header still says "implementation not started", which is stale relative to
-the `.WHAT` result; whoever picks this up should first reconcile the ADR with
-whatever landed, then implement the identity slice.
+answer `Tap` for `.WHAT` — the `Str "whenever"` / `Supply` / `Any` symptoms above
+are gone. ADR-0053's header still says "implementation not started", which is
+stale relative to that.
+
+## Re-measured 2026-09-06: it is worse than "the value before the close", and the site is located
+
+`t/whenever-tap-close-ordering.t` pins the four rows below; all four are green
+under `raku` v2026.07, two are `todo` under mutsu.
+
+| shape | raku | mutsu |
+|---|---|---|
+| `.WHAT` of a `do whenever` | `Tap` | `Tap` |
+| two emits, **no** close | both delivered | both delivered |
+| two emits, **then** close | **both delivered** | **neither** |
+| emit, close, emit | first delivered | **neither** |
+
+So `.close` does not merely drop the one value emitted before it — it discards
+**every value the react loop has not got to yet**, however long before the close
+it was emitted. Row 3 has no ordering ambiguity at all: both emits precede the
+close and both are lost.
+
+### The site
+
+`Interpreter::drain_waker_events` (`src/vm/vm_react_subscriptions.rs`) does:
+
+```rust
+let events = waker.drain();          // the whole queued batch, FIFO
+for (key, event) in events {
+    if react_subs[key].whenever_id.is_some_and(is_whenever_closed) {
+        react_subs[key].done = true;
+        continue;                    // <-- discards an ALREADY-QUEUED event
+    }
+    ...
+```
+
+`Tap.close` (`native_tap`, `runtime/native_methods/scheduler.rs`) calls
+`close_whenever(id)`, which sets a bit in a process-global set
+(`native_methods/state.rs`). The bit has no position in the event order, so a
+check performed after the batch has been drained cannot tell an event that was
+queued *before* the close from one queued after it — and drops both.
+
+### What a fix has to supply
+
+An ordering between the close and the queued emits. The waker's
+`VecDeque<(usize, SinkEvent)>` is already FIFO, so the two shapes that fit are:
+
+- **make the close an event.** Enqueue a close marker on the same waker queue
+  instead of only setting the global bit; the drain then delivers what precedes
+  it and stops at it. Closest to raku's semantics and needs no sequence numbers,
+  but `close_whenever` is a free function with no waker in scope, so the Tap
+  would have to carry (or reach) its subscription's waker.
+- **give the close an epoch.** Record the global emit counter at close time and
+  stamp each queued event with the counter at enqueue time; drop only events
+  stamped later. Less invasive to the call graph, but adds a counter to the hot
+  emit path.
+
+Either way the global `closed_whenever_map` bit stays as the *steady-state*
+check (the three other consumers in `vm_react_subscriptions.rs` are about
+retiring a finished subscription, not about a single event) — what changes is
+only the in-batch check quoted above.
+
+ADR-0053 owns the design. Reconcile its header with the `.WHAT` row before
+implementing.
