@@ -211,12 +211,9 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
                 keys.iter()
                     .map(|(k, v)| {
                         let key = gist_value(&m.typed_key(k));
-                        if (**v - 1.0).abs() < f64::EPSILON {
-                            key
-                        } else if v.fract() == 0.0 {
-                            format!("{}({})", key, **v as i64)
-                        } else {
-                            format!("{}({})", key, v)
+                        match crate::builtins::mix_weight::render(**v) {
+                            Some(w) => format!("{}({})", key, w),
+                            None => key,
                         }
                     })
                     .collect::<Vec<_>>()

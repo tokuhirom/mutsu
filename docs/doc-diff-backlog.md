@@ -82,6 +82,11 @@ doc) are version skew, not mutsu bugs — lowest priority.
 ## Triaged
 
 ### Resolved (will drop from the next sweep)
+- `Language/operators.rakudoc:1795` — the baggy operators combined Mix weights as raw
+  `f64`, so a `Rat` weight came back as `4.140000000000001`. Weights now combine under
+  the numeric tower in one canonical place, which also fixed `(.)`, `Mix.total`, and the
+  saturating weight renderer —
+  [news](../news/2026-09/mix-weight-arithmetic-under-the-numeric-tower.md).
 - `Cool.rakudoc:1416` — `"foo".Rat` returned a silent `Rat` `0` instead of the lazy
   `X::Str::Numeric` `Failure` every sibling coercion already produced; the guard was
   simply missing from the `"Rat"` arm —
@@ -819,10 +824,6 @@ against raku v2026.07**, and each was narrowed past the doc example to a
 one-line repro before filing — in two cases the doc example was actively
 misleading about the cause:
 
-- `Language/operators.rakudoc:1795` — baggy union `(+)` adds weights as `f64`,
-  so a `Rat` weight comes back as `4.140000000000001`. Ordinary `Rat + Int` is
-  exact, so this is the operator, not the tower.
-  → [todo/tickets/baggy-union-weight-loses-rat-precision.md](../todo/tickets/baggy-union-weight-loses-rat-precision.md)
 - `Language/operators.rakudoc:1977` — `1 but R(42)` names the mixin `Int+{R[Int]}`
   instead of `Int+{R}`: the single-attribute initialization form is being recorded
   as a role *parameterization*. Behaviour is correct; only `.^name` is wrong.

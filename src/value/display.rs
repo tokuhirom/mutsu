@@ -697,14 +697,9 @@ impl Value {
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()
-                        .map(|(k, v)| {
-                            if (**v - 1.0).abs() < f64::EPSILON {
-                                k.clone()
-                            } else if v.fract() == 0.0 {
-                                format!("{}({})", k, **v as i64)
-                            } else {
-                                format!("{}({})", k, v)
-                            }
+                        .map(|(k, v)| match crate::builtins::mix_weight::render(**v) {
+                            Some(w) => format!("{}({})", k, w),
+                            None => k.clone(),
                         })
                         .collect::<Vec<_>>()
                         .join(" ")

@@ -40,31 +40,6 @@ fn gcd_u64(mut a: u64, mut b: u64) -> u64 {
     a
 }
 
-fn f64_to_rat(f: f64) -> (i64, i64) {
-    if f.is_nan() {
-        return (0, 0);
-    }
-    if f.is_infinite() {
-        return if f > 0.0 { (1, 0) } else { (-1, 0) };
-    }
-    let negative = f < 0.0;
-    let f = f.abs();
-    let mut den: i64 = 1;
-    let mut num = f;
-    for _ in 0..18 {
-        if (num - num.round()).abs() < 1e-10 {
-            break;
-        }
-        num *= 10.0;
-        den *= 10;
-    }
-    let n = num.round() as i64;
-    let g = gcd_u64(n.unsigned_abs(), den.unsigned_abs());
-    let n = n / g as i64;
-    let d = den / g as i64;
-    if negative { (-n, d) } else { (n, d) }
-}
-
 fn positional_pairs(values: &[Value]) -> Vec<Value> {
     values
         .iter()
@@ -910,12 +885,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ))),
             ValueView::Mix(m, _) => {
                 // Sort values before summing to ensure deterministic results
-                // regardless of HashMap iteration order, avoiding f64
-                // non-associativity issues (e.g. 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
+                // regardless of HashMap iteration order: a weight that only
+                // decodes to `Num` still sums non-associatively (e.g.
+                // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
                 let mut vals: Vec<f64> = m.values().copied().collect();
                 vals.sort_by(|a, b| a.total_cmp(b));
-                let (n, d) = f64_to_rat(vals.iter().sum::<f64>());
-                Some(Ok(crate::value::make_rat(n, d)))
+                // Sum under the numeric tower and decode the total the same way
+                // every other weight read-out does, so `.total` is `Int` for a
+                // whole total and an exact `Rat` for a decimal one. The old
+                // `f64_to_rat` reconstruction snapped anything within 1e-10 of a
+                // whole number, turning `(a => 1.00000000001).Mix.total` into 1.
+                Some(Ok(crate::value::mix_weight_to_value(
+                    crate::builtins::mix_weight::sum(vals),
+                )))
             }
             _ => None,
         },

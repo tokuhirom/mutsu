@@ -400,13 +400,16 @@ impl Interpreter {
                 for item in value.as_list_items().unwrap().iter() {
                     match item.view() {
                         ValueView::Pair(k, v) => {
-                            *weights.entry(str_elem_key(k)).or_insert(0.0) +=
-                                Self::multiply_pair_f64(v);
+                            let w = Self::multiply_pair_f64(v);
+                            let e = weights.entry(str_elem_key(k)).or_insert(0.0);
+                            *e = crate::builtins::mix_weight::add(*e, w);
                         }
                         ValueView::ValuePair(k, v) => {
                             let (key, elem) = quanthash_elem_entry(k);
                             record_quanthash_original(originals, &key, &elem);
-                            *weights.entry(key).or_insert(0.0) += Self::multiply_pair_f64(v);
+                            let w = Self::multiply_pair_f64(v);
+                            let e = weights.entry(key).or_insert(0.0);
+                            *e = crate::builtins::mix_weight::add(*e, w);
                         }
                         _ => {
                             let (key, elem) = quanthash_elem_entry(item);
@@ -477,7 +480,7 @@ impl Interpreter {
             let mut result = std::collections::HashMap::new();
             for (k, lv) in l {
                 if let Some(rv) = r.get(&k) {
-                    let product = lv * rv;
+                    let product = crate::builtins::mix_weight::mul(lv, *rv);
                     if product != 0.0 {
                         result.insert(k, product);
                     }
@@ -646,13 +649,15 @@ impl Interpreter {
                     match item.view() {
                         ValueView::Pair(k, v) => {
                             let weight = v.to_f64();
-                            *result.entry(str_elem_key(k)).or_insert(0.0) += weight;
+                            let e = result.entry(str_elem_key(k)).or_insert(0.0);
+                            *e = crate::builtins::mix_weight::add(*e, weight);
                         }
                         ValueView::ValuePair(k, v) => {
                             let weight = v.to_f64();
                             let (key, elem) = quanthash_elem_entry(k);
                             record_quanthash_original(originals, &key, &elem);
-                            *result.entry(key).or_insert(0.0) += weight;
+                            let e = result.entry(key).or_insert(0.0);
+                            *e = crate::builtins::mix_weight::add(*e, weight);
                         }
                         _ => {
                             let (key, elem) = quanthash_elem_entry(item);
@@ -727,7 +732,7 @@ impl Interpreter {
             let r = Self::addition_mix_weights(right, &mut originals)?;
             for (k, v) in r {
                 let e = l.entry(k).or_insert(0.0);
-                *e += v;
+                *e = crate::builtins::mix_weight::add(*e, v);
             }
             return Ok(Value::mix_with_original_keys(l, originals));
         }

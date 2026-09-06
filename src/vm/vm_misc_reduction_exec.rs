@@ -375,13 +375,26 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // For set operators, promote all elements to the highest set type before reducing.
-        // In Raku, [(-)] [Set, Set, Mix] first promotes all to Mix, then reduces.
-        if matches!(
+        let is_set_op = matches!(
             base_op.as_str(),
             "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍" | "(+)" | "⊎"
-        ) && list.len() > 2
-        {
+        );
+        // A set operator classifies its operands by their Set/Bag/Mix type, so it
+        // must see the VALUE a `$`-lexical holds, not the container. The
+        // `deitemize_element` pass above strips a `Scalar`, but a plain lexical
+        // read yields a `ContainerRef`, which it leaves alone -- so
+        // `[(^)] $b1, $b2` classified both Bags as level 0 and returned
+        // `Set.new(Bag, Bag)` (each Bag treated as one opaque element) where the
+        // very same `$b1 (^) $b2` was correct, because the infix opcode receives
+        // an already-dereferenced stack value.
+        if is_set_op {
+            for item in &mut list {
+                *item = item.deref_container();
+            }
+        }
+        // For set operators, promote all elements to the highest set type before reducing.
+        // In Raku, [(-)] [Set, Set, Mix] first promotes all to Mix, then reduces.
+        if is_set_op && list.len() > 2 {
             let set_level = |v: &Value| -> u8 {
                 match v.view() {
                     ValueView::Mix(_, _) => 2,

@@ -70,7 +70,7 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
             let mut result = HashMap::new();
             for (k, v) in &a {
                 let bv = b.get(k).copied().unwrap_or(0.0);
-                let diff = v - bv;
+                let diff = crate::builtins::mix_weight::sub(*v, bv);
                 if diff != 0.0 {
                     result.insert(k.clone(), diff);
                 }
@@ -227,7 +227,7 @@ pub(crate) fn set_sym_diff_values(left: &Value, right: &Value) -> Value {
             for k in all_keys {
                 let av = a.get(&k).copied().unwrap_or(0.0);
                 let bv = b.get(&k).copied().unwrap_or(0.0);
-                let diff = (av - bv).abs();
+                let diff = crate::builtins::mix_weight::sub(av, bv).abs();
                 if diff != 0.0 {
                     result.insert(k, diff);
                 }
@@ -281,7 +281,10 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
                     .map(|m| m.get(&k).copied().unwrap_or(0.0))
                     .collect();
                 weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-                let diff = weights[0] - weights.get(1).copied().unwrap_or(0.0);
+                let diff = crate::builtins::mix_weight::sub(
+                    weights[0],
+                    weights.get(1).copied().unwrap_or(0.0),
+                );
                 if diff != 0.0 {
                     result.insert(k, diff);
                 }
