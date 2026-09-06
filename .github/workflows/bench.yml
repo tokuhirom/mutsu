@@ -28,6 +28,7 @@ on:
       - 'TODO_roast/**'
       - 'old-design-docs/**'
       - 'raku-doc/**'
+      - '.claude/**'
       - '*.md'
       - 'LICENSE'
   workflow_dispatch:

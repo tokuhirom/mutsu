@@ -17,7 +17,24 @@ version first; it costs one command.
 
 ## 1. Recognize it
 
-The tell is an error about the *language*, not about your program's meaning:
+There are two shapes, and which one you get depends on whether the declared
+MSRV is currently accurate.
+
+**The good one** — cargo refuses before compiling anything, because
+`Cargo.toml`'s `rust-version` is higher than the installed toolchain:
+
+```
+error: rustc 1.94.1 is not supported by the following package:
+  mutsu@0.23.0 requires rustc 1.96.0
+```
+
+That is unambiguous: go to step 2. Note that cargo checks *every* package in
+the workspace, so this fires even for `cargo check -p mutsu-lsp`, which does
+not build the interpreter at all.
+
+**The confusing one** — the declaration has drifted behind what the source
+actually uses, so cargo's gate passes and the compiler then rejects the
+*language*, not your program's meaning:
 
 ```
 error[E0658]: `if let` guards are experimental
@@ -29,6 +46,9 @@ error[E0658]: `if let` guards are experimental
 `E0658` is the canonical one, but the family also includes "is unstable", "use
 of unstable library feature", and "requires nightly". A `= note: see issue
 NNNNN` line pointing at a rust-lang tracking issue is a strong signal.
+
+Seeing this second shape means the MSRV declaration is stale — worth fixing
+once you are unblocked, so the next person gets the first shape instead.
 
 **Read the whole error, not the tail of the log.** A long build's last few lines
 are just `error: could not compile ... due to 1 previous error`, which says
@@ -62,13 +82,14 @@ The pinned action SHA carries a version comment:
 That comment is the version CI builds with, so it is by definition a version the
 code compiles under.
 
-`Cargo.toml`'s `rust-version` is **not** that answer, and trusting it will send
-you in circles. It is a declared MSRV that cargo checks against the running
-toolchain — it does not track which features the source has since started using.
-At the time of writing it says `1.94.0` while the code needs `1.96.0`, so an
-installed 1.94.1 satisfies cargo's gate and then fails to compile. If you notice
-that gap, it is a real (if harmless) inconsistency worth mentioning to the user;
-it is not something to "fix" by editing either number to make an error go away.
+`Cargo.toml`'s `rust-version` is a useful first signal but not the
+authoritative one. It is a hand-maintained MSRV declaration that cargo checks
+against the running toolchain; it does not track which features the source has
+since started using. It read `1.94.0` for a while after the code already needed
+`1.96.0`, which is exactly how an installed 1.94.1 came to satisfy cargo's gate
+and *then* fail to compile. Both manifests (root and `crates/mutsu-lsp/`) now
+say `1.96.0`, so the two agree — but if they ever disagree again, the CI pin
+wins, and the drift is worth reporting rather than papering over.
 
 Note also that the repo has no `rust-toolchain.toml`, which is why the container
 toolchain is whatever it is rather than being pinned per-checkout.
@@ -105,5 +126,8 @@ small box.
 - **Do not switch to nightly** to get the feature. CI builds on pinned stable;
   a nightly-only local build hides real errors until the PR is open. (The one
   legitimate nightly here is the miri job, which pins its own dated nightly.)
-- **Do not edit `Cargo.toml`'s `rust-version`** to silence anything. It gates
-  nothing you are hitting.
+- **Do not edit `Cargo.toml`'s `rust-version` to make an error go away.**
+  Raising it when it has genuinely drifted behind the code is a real fix — it
+  converts a future E0658 into cargo's legible refusal — but lowering it, or
+  raising it in the hope that a compile error disappears, only misstates what
+  the crate supports. It gates the toolchain, not the features.
