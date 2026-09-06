@@ -365,6 +365,11 @@ pub(super) fn dispatch(
                     | ValueView::RangeExclBoth(..)
                     | ValueView::GenericRange { .. }
                     | ValueView::Version { .. }
+                    // A Pair's identity is composed from its key's and value's
+                    // own identities, so it is a value type: raku's
+                    // `(a => 1).WHICH.^name` is `ValueObjAt`.
+                    | ValueView::Pair(_, _)
+                    | ValueView::ValuePair(_, _)
             );
             let which_str = match target.view() {
                 ValueView::Package(name) => format!(
@@ -499,6 +504,20 @@ pub(super) fn dispatch(
                 }
                 ValueView::Hash(map) => {
                     format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map))
+                }
+                // A Pair is value-identified, from the key's and value's own
+                // `.WHICH` (raku: `(a => 1).WHICH eq (a => 1).WHICH`). Without
+                // this the Pair fell to the global-counter tail below and every
+                // read minted a fresh, unstable id -- so two structurally
+                // identical pairs never matched, and the string was not even
+                // stable across two reads of the SAME pair.
+                //
+                // `value_which_key` already carries the correct encoding (it is
+                // what Set/Bag/Mix element keying uses, and it recurses through
+                // the key and value), so delegate rather than invent a second
+                // one.
+                ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
+                    runtime::utils::value_which_key(target)
                 }
                 ValueView::Promise(p) => {
                     format!("Promise|{:p}", p.arc_ptr())

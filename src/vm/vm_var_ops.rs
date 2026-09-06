@@ -83,23 +83,37 @@ impl Interpreter {
         }
     }
 
-    /// Resolve a hash's `:=`-bound element cells, returning a new hash whose
+    /// Resolve a hash's `:=`-bound element cells, returning a hash whose
     /// entries snapshot the cells' current values (assignment semantics).
+    ///
+    /// Everything else about the `HashData` travels along. Rebuilding a bare
+    /// `Value::hash(map)` here silently dropped `original_keys` — and with it
+    /// the object-hash keys — so `my Any:D %t{List:D} = ($(1, 2) => %h<k>,)`
+    /// died with "expected List:D but got Str" purely because the VALUE came
+    /// from a container read and brought this deref into play, while the same
+    /// assignment with a literal value succeeded. `key_type`, `value_type`,
+    /// `declared_type` and the `is default(...)` value were on the same cliff.
     pub(super) fn resolve_hash_for_iteration(
         &self,
         items: &crate::gc::Gc<crate::value::HashData>,
     ) -> Value {
-        let mut resolved = HashMap::new();
-        for (key, value) in items.iter() {
-            let resolved_value = match value.view() {
+        let resolved: Vec<(String, Value)> = items
+            .iter()
+            .filter_map(|(key, value)| match value.view() {
                 // Decont a `:=`-bound shared cell: the resolved copy
                 // snapshots the current value (assignment semantics).
-                ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
-                _ => value.clone(),
-            };
-            resolved.insert(key.clone(), resolved_value);
-        }
-        Value::hash_with_data(Value::hash_arc(resolved))
+                ValueView::ContainerRef(cell) => Some((key.clone(), cell.lock().unwrap().clone())),
+                _ => None,
+            })
+            .collect();
+        let mut value = Value::hash_with_data(items.clone());
+        value.with_hash_mut(|arc| {
+            let data = crate::gc::Gc::make_mut(arc);
+            for (key, resolved_value) in resolved {
+                data.map.insert(key, resolved_value);
+            }
+        });
+        value
     }
 
     pub(super) fn resolve_array_entry(
