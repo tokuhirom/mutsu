@@ -406,6 +406,7 @@ mod builtins_multidim_ops;
 mod builtins_multidim_subscript;
 mod builtins_multidim_subscript_adverb;
 mod builtins_postcircumfix;
+mod catch_inline;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
@@ -2946,6 +2947,15 @@ pub struct Interpreter {
     /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
     /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
     pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
+    /// ADR-0072: active exception-absorbing regions on the dynamic call stack —
+    /// every `try` and every block with a `CATCH { }`. A `die` raised deep inside
+    /// a protected body consults `.last()`: when that innermost region's CATCH is
+    /// resume-capable, the handler runs INLINE at the throw site so `.resume`
+    /// returns to the `die`'s own call site with every intervening Rust frame
+    /// still live. See `vm::CatchHandlerEntry`.
+    pub(crate) catch_handlers: Vec<crate::vm::CatchHandlerEntry>,
+    /// Monotonic id source for `CatchHandlerEntry::token`.
+    pub(crate) catch_handler_seq: u64,
     /// Address of the `CompiledCode` of the bytecode frame currently executing
     /// in `exec_one` (set at the top of every dispatch). Used by the lazy-force
     /// machinery to reconcile the *caller's* local slots from env after a reify

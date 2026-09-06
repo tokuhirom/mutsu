@@ -108,22 +108,25 @@ impl Interpreter {
             Some(_) => true,
             None => false,
         };
-        if has_real_args {
-            return Err(self.runtime_error_from_die_value(args.first().unwrap(), "Died", false));
-        }
-        if let Some(current) = self.env.get("!").cloned()
-            && !current.is_nil()
-        {
-            return Err(self.runtime_error_from_die_value(&current, "Died", false));
-        }
-        // die() with no args and $! not set: create X::AdHoc with "Died" message
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("payload".to_string(), Value::str("Died".to_string()));
-        attrs.insert("message".to_string(), Value::str("Died".to_string()));
-        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
-        let mut err = RuntimeError::new("Died");
-        err.exception = Some(Box::new(exception));
-        Err(err)
+        let err = if has_real_args {
+            self.runtime_error_from_die_value(args.first().unwrap(), "Died", false)
+        } else if let Some(current) = self.env.get("!").cloned().filter(|c| !c.is_nil()) {
+            self.runtime_error_from_die_value(&current, "Died", false)
+        } else {
+            // die() with no args and $! not set: X::AdHoc with "Died" message
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("payload".to_string(), Value::str("Died".to_string()));
+            attrs.insert("message".to_string(), Value::str("Died".to_string()));
+            let exception = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+            let mut err = RuntimeError::new("Died");
+            err.exception = Some(Box::new(exception));
+            err
+        };
+        // ADR-0072: `die` in *expression* position (`my $x = die "..."`) compiles
+        // to a call, so this is the resumable throw site for that form. A
+        // resume-capable CATCH several frames up runs INLINE here; on `.resume`
+        // the call's value is `Any`, matching rakudo.
+        self.try_catch_inline(err)
     }
 
     pub(super) fn builtin_fail(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -477,27 +480,7 @@ impl Interpreter {
         // frame reconciles its slots from `env` when the deep call chain returns
         // (the same path a normal cross-frame by-name write takes). This is what
         // makes the handler's `$out ~= .Str` survive to after `render()`.
-        let handler_locals: Vec<Value> = code
-            .locals
-            .iter()
-            .map(|name| {
-                self.env().get(name).cloned().unwrap_or_else(|| {
-                    name.strip_prefix('$')
-                        .or_else(|| name.strip_prefix('@'))
-                        .or_else(|| name.strip_prefix('%'))
-                        .or_else(|| name.strip_prefix('&'))
-                        .and_then(|bare| self.env().get(bare).cloned())
-                        .unwrap_or(Value::NIL)
-                })
-            })
-            .collect();
-        let seeded = handler_locals.clone();
-        let saved_locals = std::mem::replace(&mut self.locals, handler_locals);
-        // The handler addresses the installing frame's lexicals by name through
-        // env (handler_locals above), NOT this deep frame's upvalue array. Clear
-        // the upvalue array so any `GetUpvalue` in the handler range falls back to
-        // the env read (correct), instead of indexing the wrong frame's array.
-        let saved_upvalues = std::mem::take(&mut self.upvalues);
+        let frame = self.enter_installing_frame(&code);
 
         // The handler runs in the deep frame's stack; isolate its operand-stack
         // effects so the suspended computation's stack is left untouched.
@@ -507,32 +490,9 @@ impl Interpreter {
 
         // Flush slots the handler changed back to env so the installing frame
         // (and any intervening by-name reader, e.g. `render`'s own `$out ~=`)
-        // observes them. Only changed slots are written, to keep blast radius
-        // minimal.
-        let handler_locals = std::mem::replace(&mut self.locals, saved_locals);
-        self.upvalues = saved_upvalues;
-        for (i, name) in code.locals.iter().enumerate() {
-            if name.is_empty() {
-                continue;
-            }
-            if handler_locals[i] != seeded[i] {
-                self.env_mut()
-                    .insert(name.clone(), handler_locals[i].clone());
-                // The handler body mutated the installing frame's lexical `name`
-                // by writing `env` here (double-OFF: a *resumed* indirect `warn`
-                // left the caller's `$out` slot stale even though env held the
-                // handler's write). Record the name for the precise drain
-                // (`apply_pending_rw_writeback`) that every call site runs:
-                // drop-on-miss for the same frame, plus retain-on-miss so a deeper
-                // raise site carries it up to the installing frame.
-                self.pending_rw_writeback_sources.push(name.clone());
-                self.record_caller_var_writeback(name);
-                // This env write happened without a call opcode, so a leaf
-                // closure between the raise site and the installing frame would
-                // otherwise drop it on return. See `inline_control_env_writes`.
-                self.inline_control_env_writes.push(Symbol::intern(name));
-            }
-        }
+        // observes them (`leave_installing_frame`, shared with ADR-0072's
+        // inline-CATCH path).
+        self.leave_installing_frame(&code, frame);
 
         self.set_when_matched(saved_when);
         if let Some(v) = saved_topic {

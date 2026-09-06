@@ -570,7 +570,7 @@ impl Interpreter {
     /// Parses the string lines to extract frame info (best-effort).
     /// `is_runtime` stamps the result — see
     /// [`Self::build_backtrace_value_with_runtime`].
-    pub(super) fn backtrace_value_from_string_with_runtime(
+    pub(crate) fn backtrace_value_from_string_with_runtime(
         bt_str: &str,
         is_runtime: bool,
     ) -> Value {

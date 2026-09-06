@@ -97,3 +97,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0069](0069-a-definiteness-constrained-type-object-is-a-named-type-object.md) | A definiteness-constrained type object is a named type object, not a new value kind | Accepted (implemented) |
 | [0070](0070-native-methods-declare-the-named-arguments-they-accept.md) | A builtin method declares the named arguments it accepts, and the arity cascade drops the rest | Proposed (slice 1 implemented) |
 | [0071](0071-native-operators-are-dispatch-candidates.md) | A natively implemented operator is a dispatch candidate, not a fallback — the increment operators rank against their core candidate set | Proposed (increment operators implemented; infix operators not started) |
+| [0072](0072-a-resumable-exception-runs-its-handler-at-the-throw-point.md) | A resumable exception runs its `CATCH` handler at the throw point, not after unwinding | Accepted (Slice 1 implemented; Slices 2-3 open) |

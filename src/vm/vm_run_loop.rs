@@ -315,6 +315,12 @@ impl Interpreter {
         let saved_upvalues = std::mem::take(&mut self.upvalues);
         let saved_call_frames = std::mem::take(&mut self.call_frames);
         let saved_resume_ip = self.resume_ip.take();
+        // ADR-0072: a nested VM run (EVAL, a `dies-ok { }` block, the map/grep
+        // eager loops) is its own execution; a `die` inside it must not be
+        // inline-handled by a CATCH belonging to the outer run, for the same
+        // isolation reason `resume_ip` is cleared above. Such a throw keeps the
+        // ordinary unwinding path.
+        let saved_catch_handlers = std::mem::take(&mut self.catch_handlers);
         let saved_last_topic = self.last_topic_value.take();
         let saved_topic_save_stack = std::mem::take(&mut self.topic_save_stack);
         let saved_topic_source_var = self.topic_source_var.take();
@@ -403,6 +409,7 @@ impl Interpreter {
         self.upvalues = saved_upvalues;
         self.call_frames = saved_call_frames;
         self.resume_ip = saved_resume_ip;
+        self.catch_handlers = saved_catch_handlers;
         self.last_topic_value = saved_last_topic;
         self.topic_save_stack = saved_topic_save_stack;
         self.topic_source_var = saved_topic_source_var;

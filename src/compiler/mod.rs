@@ -3622,7 +3622,7 @@ impl Compiler {
             let err = crate::method_signature_shared::placeholder_scope_error("mainline", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             self.code.compute_needs_env_sync();
             return (self.code, self.compiled_functions);
         }

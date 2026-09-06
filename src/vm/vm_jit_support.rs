@@ -163,6 +163,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // `exec_one` arm does.
             | OpCode::StateVarInit(..)
             // Always-throwing terminator (records its own resume point)
-            | OpCode::Die
+            | OpCode::Die { .. }
     )
 }

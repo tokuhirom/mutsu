@@ -245,6 +245,6 @@ impl Compiler {
         );
         let idx = self.code.add_constant(Value::str(msg));
         self.code.emit(OpCode::LoadConst(idx));
-        self.code.emit(OpCode::Die);
+        self.code.emit(OpCode::Die { user_throw: false });
     }
 }

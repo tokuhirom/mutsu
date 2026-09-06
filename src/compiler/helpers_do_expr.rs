@@ -47,7 +47,7 @@ impl Compiler {
             let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         // DoBlocks from lifted CHECK phasers carry a sentinel label so we can
