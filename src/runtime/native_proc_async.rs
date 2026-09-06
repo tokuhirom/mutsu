@@ -681,33 +681,41 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    let Some(cb) = get_supply_taps(sid).into_iter().next() else {
+                    // Every registered tap gets its own act loop over its own
+                    // subscriber (ADR-0074). Serving only the first one was why
+                    // `$p.stdout.tap(...)` twice fed the first tap and left the
+                    // second empty, where Raku gives both the whole stream.
+                    let tap_cbs = get_supply_taps(sid);
+                    if tap_cbs.is_empty() {
                         continue;
-                    };
-                    let Some(rx) = take_supply_channel(sid) else {
-                        continue;
-                    };
-                    mark_supply_live_tapped(sid);
-                    let quit_cb = get_supply_quit_taps(sid).into_iter().next();
-                    let mut thread_interp = self.clone_for_thread();
-                    let close_flag = rx.close_flag();
-                    let close_id = register_act_loop_close(close_flag.clone());
-                    live_tap_handles.push(crate::runtime::worker_pool::submit_joinable(
-                        move || {
-                            Self::run_supply_act_loop(
-                                &mut thread_interp,
-                                &rx,
-                                &cb,
-                                0.0,
-                                None,
-                                quit_cb,
-                                Some((close_id, close_flag)),
-                                false,
-                                true,
-                                None,
-                            );
-                        },
-                    ));
+                    }
+                    let mut quit_cbs = get_supply_quit_taps(sid).into_iter();
+                    for cb in tap_cbs {
+                        let Some(rx) = take_supply_channel(sid) else {
+                            continue;
+                        };
+                        mark_supply_live_tapped(sid);
+                        let quit_cb = quit_cbs.next();
+                        let mut thread_interp = self.clone_for_thread();
+                        let close_flag = rx.close_flag();
+                        let close_id = register_act_loop_close(close_flag.clone());
+                        live_tap_handles.push(crate::runtime::worker_pool::submit_joinable(
+                            move || {
+                                Self::run_supply_act_loop(
+                                    &mut thread_interp,
+                                    &rx,
+                                    &cb,
+                                    0.0,
+                                    None,
+                                    quit_cb,
+                                    Some((close_id, close_flag)),
+                                    false,
+                                    true,
+                                    None,
+                                );
+                            },
+                        ));
+                    }
                 }
 
                 // Take stdout/stderr handles before moving child into thread
