@@ -1,5 +1,34 @@
 use super::*;
 
+/// Cache-key stand-in for the parser's synthetic test-assertion callsite-line
+/// marker. Deliberately the marker's own reserved key name: it can never
+/// collide with a `value_type_name`, and it keeps "marker present" and "marker
+/// absent" in distinct cache buckets.
+const CALLSITE_LINE_MARKER_KEY: &str = "__mutsu_test_callsite_line";
+
+/// Cache-key marker appended after an argument's type key when that argument is
+/// *undefined* (`value_is_defined` is false). A `:D`/`:U` smiley candidate set
+/// dispatches on exactly that bit on top of the type, so a key that carries it
+/// stays a function of the winner — which is what lets
+/// `multi_dispatch_type_cacheable` / `func_multi_dispatch_type_cacheable` admit
+/// smiley candidates instead of refusing the whole name. Emitted only for the
+/// undefined case, so the common (defined) key shape is unchanged; the name is
+/// reserved and can never collide with a type name or a `value_type_name`.
+const UNDEFINED_ARG_KEY: &str = "__mutsu_key_undefined";
+
+/// Cache-key marker introducing the *declared type* of a `VarRef` argument's
+/// source variable. Without the marker a declared-type key would be
+/// indistinguishable from the value key of an additional argument
+/// (`f($x)` with `my Int $x` vs `f(1, 2)` would both key as `[Int, Int]`), and
+/// the two calls have different arities and therefore different winners.
+const DECLARED_TYPE_KEY: &str = "__mutsu_key_declared_type";
+
+/// Cache-key marker introducing an enum VALUE argument's `(enum type, member)`
+/// pair. An enum member refines within one `value_type_name` -- `Less` and
+/// `More` are both `Order` -- so `multi f(Less)` and `multi f(More)` need
+/// distinct buckets.
+const ENUM_MEMBER_KEY: &str = "__mutsu_key_enum_member";
+
 impl Interpreter {
     pub(crate) fn refresh_method_caches_for_generation(&mut self) {
         let generation = self.registry().method_generation;
@@ -27,16 +56,52 @@ impl Interpreter {
     /// stringification (`"$obj"` → `StringConcat` → this) leaves the caller's
     /// `self` pointing at `$obj`, breaking a later `self` read in an enclosing
     /// nested sub (which resolves `self` from env via `GetSelfOrNoSelf`).
-    /// Build a per-positional-arg type key for the sound multi-resolution cache.
-    /// Returns `None` (do not cache) when any arg is value-/identity-dependent or
-    /// autothreads (`Junction`), or is a container/named-pair arg, so dispatch can
-    /// not be keyed on the positional types alone.
+    /// Build the per-argument key for the sound multi-resolution caches.
+    ///
+    /// Each argument contributes its runtime type, plus the two other
+    /// properties dispatch can read: its *definedness* (a `:D`/`:U` smiley
+    /// candidate tests exactly that) and, for a `VarRef`, the *declared type*
+    /// of the variable it came from. Both are emitted behind reserved markers
+    /// so they cannot be confused with an ordinary type key.
+    ///
+    /// Returns `None` (do not cache) for an argument whose contribution to
+    /// dispatch cannot be reduced to those: a `Junction` (which autothreads), a
+    /// container or `Capture`, and a genuine named/positional `Pair` — the
+    /// internal callsite-line marker excepted, since it is filtered out before
+    /// binding and no signature can declare it.
     pub(crate) fn multi_arg_type_keys(
         &mut self,
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
-        for a in args {
+        for raw in args {
+            // A `VarRef` (a variable passed as an argument) dispatches on the
+            // *source variable's declared type* as well as on the value's own
+            // type: `unwrap_varref_for_dispatch` feeds that declared type into
+            // `candidate_type_distance`, so `my int $y` and `my $x` holding the
+            // same `Int` can pick different candidates (roast
+            // S06-multi/by-trait.t). Key BOTH, behind a reserved marker so a
+            // declared-type key can never be mistaken for the value key of an
+            // extra argument. The only other thing a `VarRef` argument decides
+            // is whether an `is rw` parameter accepts it, and a candidate set
+            // containing an `is rw` parameter is already refused wholesale by
+            // `func_multi_dispatch_type_cacheable` / `multi_dispatch_type_cacheable`.
+            //
+            // Refusing to key a `VarRef` at all — which is what this did before
+            // — meant every assertion that passes a *variable*
+            // (`is $got, $expected, "..."`, `is-deeply @a, @b, "..."`, i.e. most
+            // of roast) re-ran the whole candidate walk on every call.
+            let a = match raw.view() {
+                ValueView::VarRef { name, value, .. } => {
+                    if let Some(tc) = name.with_str(|n| self.var_type_constraint(n)) {
+                        keys.push(crate::symbol::Symbol::intern(DECLARED_TYPE_KEY));
+                        keys.push(crate::symbol::Symbol::intern(&tc));
+                    }
+                    value.clone()
+                }
+                _ => raw.clone(),
+            };
+            let a = &a;
             let key = match a.view() {
                 ValueView::Instance { class_name, .. } => class_name,
                 // A bare type object (`Int`, `Foo`, ...) must key on its OWN
@@ -45,6 +110,41 @@ impl Interpreter {
                 // "Package" regardless of which type it names — see
                 // `todo/tickets/multi-arg-type-keys-package-collision.md`.
                 ValueView::Package(name) => name,
+                // An enum VALUE is its own dispatch identity, for the same
+                // reason a type object is: `multi f(Less)` and `multi f(More)`
+                // are distinct candidates that both see a `value_type_name` of
+                // `Order`, so keying on the type alone hands the second call
+                // the first one's winner (`t/anonymous-any-multi-dispatch.t`
+                // "anonymous enum-value parameter still rejects peers"). Key on
+                // `Type::Member`, which is unique and never a plain type name.
+                ValueView::Enum {
+                    enum_type, key: k, ..
+                } => {
+                    // Two symbols behind a reserved marker rather than one
+                    // interned `"Type::Member"` string: no per-call `format!`,
+                    // and no way for the pair to be read as the plain type name
+                    // of some other argument.
+                    keys.push(crate::symbol::Symbol::intern(ENUM_MEMBER_KEY));
+                    keys.push(enum_type);
+                    k
+                }
+                // The synthetic callsite-line marker the parser appends to every
+                // test-assertion call (`ok 1, "x"` -> `..., "__mutsu_test_callsite_line" => 3`)
+                // is a mutsu-internal diagnostic carrier, not a dispatch
+                // participant: `bind_function_args_values` filters it out before
+                // binding, and no signature can declare it (the name is reserved).
+                // Keying it as a constant marker — rather than refusing to key the
+                // whole call, as the general `Pair` arm below does — is what lets
+                // the sound multi cache serve the vendored upstream `Test`, whose
+                // `multi sub ok(Mu $cond, $desc = '')` otherwise paid a full
+                // candidate walk on EVERY assertion. Only the marker's *name* is
+                // keyed; its line-number value cannot select a candidate, because
+                // any candidate that inspects a value at all (`where` / literal /
+                // subset / smiley / coercion) makes the whole name un-cacheable in
+                // `func_multi_dispatch_type_cacheable` before this key is used.
+                _ if Self::is_callsite_line_marker(a) => {
+                    crate::symbol::Symbol::intern(CALLSITE_LINE_MARKER_KEY)
+                }
                 ValueView::Junction { .. }
                 | ValueView::Mixin(..)
                 | ValueView::Scalar(_)
@@ -52,13 +152,8 @@ impl Interpreter {
                 | ValueView::Pair(..)
                 | ValueView::ValuePair(..)
                 | ValueView::Capture { .. }
-                // A `VarRef` (a variable passed as an argument) dispatches on the
-                // *source variable's declared type* as well as the value's type --
-                // `unwrap_varref_for_dispatch` feeds that declared type into
-                // `candidate_type_distance`, so `my int $y` and `my $x` holding the
-                // same `Int` can pick different candidates (roast
-                // S06-multi/by-trait.t). Its value type alone is therefore not a
-                // sound cache key.
+                // A `VarRef` nested inside a `VarRef` is not a shape the
+                // unwrap above produces; refuse it rather than guess.
                 | ValueView::VarRef { .. } => return None,
                 _ => {
                     let name = crate::runtime::utils::value_type_name(a);
@@ -69,8 +164,51 @@ impl Interpreter {
                 }
             };
             keys.push(key);
+            // Definedness is the one *value* property a type-keyed candidate set
+            // is still allowed to depend on (`Mu:D` / `Mu:U`), and the type key
+            // alone does not carry it: a type object `Int` and the instance `42`
+            // both key as `Int`, and an empty `Slip` keys the same as a full one.
+            // Append the marker so those land in different buckets. Cheap and
+            // side-effect free -- `value_is_defined` is a pure view match, and
+            // the views it would have to lock through (`ContainerRef`, `Mixin`)
+            // already returned `None` above.
+            if !crate::runtime::types::value_is_defined(a) {
+                keys.push(crate::symbol::Symbol::intern(UNDEFINED_ARG_KEY));
+            }
         }
         Some(keys)
+    }
+
+    /// Whether one candidate parameter's type constraint makes the enclosing
+    /// multi's winner depend on an argument's *value* rather than on the
+    /// `(type, definedness)` pair the resolve caches key on. Shared by the
+    /// method-side [`Self::multi_dispatch_type_cacheable`] and the
+    /// function-side `func_multi_dispatch_type_cacheable`, which must agree:
+    /// they gate the same kind of cache over the same key shape.
+    ///
+    /// A trailing `:D`/`:U`/`:_` smiley is **not** value-dependent: the smiley
+    /// tests exactly `value_is_defined`, and [`Self::multi_arg_type_keys`]
+    /// carries that bit in the key ([`UNDEFINED_ARG_KEY`]). This is what lets
+    /// the vendored upstream `Test`'s smiley-split assertions
+    /// (`multi sub is(Mu $got, Mu:U $expected, …)` /
+    /// `multi sub is(Mu $got, Mu:D $expected, …)`, and the four `is-deeply`
+    /// candidates) be cached at all — before it, one smiley anywhere in the
+    /// candidate set made every call re-run the whole candidate walk.
+    /// Everything else that reads a value stays value-dependent: a coercion
+    /// (`Int(Str)`), an enum-value or otherwise `::`-qualified refinement, the
+    /// value-refining numeric pseudo-types, and a subset (an implicit `where`).
+    pub(crate) fn type_constraint_is_value_dependent(&self, tc: &str) -> bool {
+        let (base, _smiley) = crate::runtime::types::strip_type_smiley(tc);
+        // A `Int:D()` coercion-with-smiley keeps its `(` here, so it is still
+        // caught: only the trailing smiley is peeled.
+        if base.contains(':') || base.contains('(') {
+            return true;
+        }
+        if matches!(base, "Inf" | "NaN" | "-Inf" | "UInt") {
+            return true;
+        }
+        let root = base.split(['[', ' ']).next().unwrap_or(base);
+        self.registry().subsets.contains_key(root)
     }
 
     /// Whether a `(class, method)` is a MULTI whose dispatch is purely type+arity
@@ -131,6 +269,13 @@ impl Interpreter {
                         value_dependent = true;
                         break 'outer;
                     }
+                    // A CONSTRAINED `&`-sigil parameter dispatches on the
+                    // passed routine's declared RETURN type — see the matching
+                    // note in `func_multi_dispatch_type_cacheable`.
+                    if pd.name.starts_with('&') && pd.type_constraint.is_some() {
+                        value_dependent = true;
+                        break 'outer;
+                    }
                     // An `is rw` candidate matches only a writable-lvalue
                     // argument — a property of the call site, not of the arg's
                     // type — so `m($var)` and `m("lit")` need different winners
@@ -140,24 +285,11 @@ impl Interpreter {
                         value_dependent = true;
                         break 'outer;
                     }
-                    if let Some(tc) = &pd.type_constraint {
-                        // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
-                        // dependent; a subset type carries an implicit `where`.
-                        if tc.contains(':') || tc.contains('(') {
-                            value_dependent = true;
-                            break 'outer;
-                        }
-                        // Value-refining numeric pseudo-types match WITHIN a single
-                        // `value_type_name`, so type-keying would mis-route them.
-                        if matches!(tc.as_str(), "Inf" | "NaN" | "-Inf" | "UInt") {
-                            value_dependent = true;
-                            break 'outer;
-                        }
-                        let base = tc.split(['[', ' ']).next().unwrap_or(tc.as_str());
-                        if self.registry().subsets.contains_key(base) {
-                            value_dependent = true;
-                            break 'outer;
-                        }
+                    if let Some(tc) = &pd.type_constraint
+                        && self.type_constraint_is_value_dependent(tc)
+                    {
+                        value_dependent = true;
+                        break 'outer;
                     }
                 }
             }
@@ -251,9 +383,21 @@ impl Interpreter {
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
-        if let Some(arg_keys) = self.multi_arg_type_keys(args)
+        if let Some(mut arg_keys) = self.multi_arg_type_keys(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
         {
+            // The INVOCANT's definedness is part of the dispatch too: an
+            // invocant smiley (`multi method gist(Cook:U:)` /
+            // `(Cook:D:)`) selects on exactly it, and `class_sym` is the same
+            // for a type object and an instance. `multi_arg_type_keys` only
+            // sees the argument list, so carry the receiver's bit here — the
+            // arg keys are a `Vec`, so a leading marker is unambiguous.
+            // Without it, `Cook.gist` and `Cook.new.gist` share one bucket and
+            // the second is served the first's candidate
+            // (`t/multi-method-invocant-definedness.t`).
+            if !crate::runtime::types::value_is_defined(target) {
+                arg_keys.insert(0, crate::symbol::Symbol::intern(UNDEFINED_ARG_KEY));
+            }
             let mkey = (class_sym, method_sym, arg_keys);
             if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
                 return hit.clone();

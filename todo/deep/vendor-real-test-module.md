@@ -57,7 +57,38 @@ For an `exit 124` roast row, re-run the individual file with a larger timeout
 before classifying it as a correctness bug. The vendored provider executes
 assertions as Raku code and is therefore slower than the Rust-native provider.
 
-## Current residue (2026-09-06, second sweep)
+## Current state (2026-09-06, third pass — the perf blocker)
+
+`todo/tickets/eval-assign-loses-a-later-block-declarations-type.md`, which the
+second sweep's two new roast rows were bisected to, was closed the same day by
+`news/2026-09/typed-declaration-hoist-missing-in-most-block-forms.md`, so the
+correctness residue is back to the single known timeout.
+
+That timeout was then attacked directly, with callgrind rather than A/B
+experiments, and the attribution turned out to be neither of the two candidates
+the earlier sections name. **The whole per-assertion cost was dominated by
+multi-candidate resolution**: `resolve_function_with_types` was 29% of a
+300-assertion program, re-run on every single `ok`/`is`/`is-deeply` call,
+because three separate things kept a `Test` assertion out of the sound
+multi-resolution cache (the parser's callsite-line marker, the `:D`/`:U`
+smileys, and `VarRef` arguments). Fixing all three —
+`news/2026-09/multi-resolve-cache-keys-carry-definedness-and-declared-type.md` —
+took `roast/S03-buf/write-int.t` under the real module from **48.0 s to 28.6 s**
+on this machine, against a 30 s budget, with 184 079 full resolves down to
+22 805 (all of them now per-*subtest*, not per-assertion).
+
+**So the timeout class is closed on this machine but with no margin.** Before
+declaring completion criterion 2 met, re-measure on the reference machine and
+under `prove -j4` contention. The next measured target is filed as
+`todo/perf/listop-call-bypasses-every-compiled-call-cache.md`: a listop call
+(`ok 1, "x"` compiles to `ExecCallPairs`, not `CallFunc`) reaches none of the
+three name-keyed compiled-call caches and takes the carrier path — a whole-frame
+env snapshot plus a writeback diff — on **every assertion of every roast file**.
+That, and the pre-existing
+`todo/perf/method-dispatch-flattens-the-env-on-every-call.md` (measured at 17%
+of the `ok` loop by an unsound flatten-removal experiment), are what remain.
+
+## Earlier residue (2026-09-06, second sweep)
 
 Both sweeps were re-run at the end of 2026-09-06, after that day's fixes. The
 `t/` regression class is **empty** for the first time; the roast side has the
@@ -98,7 +129,7 @@ fail under both (pre-existing):    4
   `todo/tickets/eval-assign-loses-a-later-block-declarations-type.md`. CI cannot
   see it because the dual-provider sweep is not part of CI.
 
-## Earlier residue (2026-09-06, first sweep)
+## Earlier residue (2026-09-06, first sweep — before the multi-cache fix)
 
 Both sweeps were re-run on this date, on a machine roughly **2x slower** than
 the one the 2026-08-29/30 numbers came from (calibration: `S04-declarations/state.t`

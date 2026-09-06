@@ -99,3 +99,45 @@ Iterate on `MUTSU_VM_STATS`'s `clone_env` / `env_deep_copies` counters (they are
 deterministic and optimization-independent, so the debug build is enough), then
 confirm on release with the padding table above: the cleanest success signal is
 that the per-assertion cost stops scaling with env size at all.
+
+## Update (2026-09-06): the flatten also destroys the return merge
+
+Re-measured after the multi-resolution cache started serving `Test`'s
+assertions
+(`news/2026-09/multi-resolve-cache-keys-carry-definedness-and-declared-type.md`),
+with the same unsound experiment (an env-var kill switch on
+`flatten_scoped_env`): the 20 000-assertion `ok` loop goes **3.58 s -> 2.96 s**,
+i.e. **17%** of what is left.
+
+Callgrind says why it is worth more than its own `HashMap` clone. The single
+largest self-cost item in the loop is `std::thread::local::LocalKey<T>::with`
+(11.8% of the loop), and its dominant caller is
+`call_compiled_function_named_inner` — **333 586 thread-local accesses across
+600 named calls**, ~556 per call. Those come from the scoped-overlay *return
+merge*:
+
+```rust
+for (k, v) in self.env().iter() { ... k.with_str(...) ... }
+```
+
+On a scoped env `iter()` is overlay-only, so that loop is O(callee writes) —
+which is the whole point of Slice 6. But the method-dispatch flatten runs
+*first* (`$output.say: $tap` inside `proclaim` is a full method dispatch), so by
+the time the callee returns its env is FLAT and the merge iterates every name in
+scope, calling `Symbol::with_str` two or three times per key.
+
+So the flatten costs twice: once to build the merged map, and once more by
+turning the frame's O(writes) return merge into an O(whole env) scan. Any fix
+should be measured against the merge loop's `with_str` count, not just against
+`env_deep_copies`.
+
+Two cheaper sub-fixes, if the full "move the flatten to the consumers" change
+stays too risky:
+
+* `Env::flattened()` can return `parent.flattened()` directly when the overlay
+  is empty and there are no tombstones — provably identical (`scoped_child`
+  already derives an empty child's `file_sym` from the parent), and O(1) when
+  the parent is flat.
+* the merge loop's `k.with_str(is_routine_scoped_implicit_var)` runs for every
+  key; the names it tests are a fixed handful, so interning them once and
+  comparing `Symbol` ids removes a thread-local round trip per key.
