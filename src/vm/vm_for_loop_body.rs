@@ -14,12 +14,18 @@ impl Interpreter {
         saved: Option<Value>,
         saved_local: Option<(usize, Value)>,
     ) {
+        // Symbol-keyed: this runs on every `for` body execution, and the
+        // `String`-keyed `insert`/`remove` would allocate the key and re-intern
+        // `"_"` each time (the thread-local intern cache is a string-keyed hash
+        // lookup). `wk::topic()` resolves once per process. Neither key latches
+        // an env metadata flag (`note_env_key` only fires for `__mutsu_*`), so
+        // the symbol form is equivalent here.
         match saved {
             Some(v) => {
-                self.env_mut().insert("_".to_string(), v);
+                self.env_mut().insert_sym(crate::symbol::wk::topic(), v);
             }
             None => {
-                self.env_mut().remove("_");
+                self.env_mut().remove_sym(crate::symbol::wk::topic());
             }
         }
         if let Some((slot, v)) = saved_local {
@@ -43,8 +49,8 @@ impl Interpreter {
     /// `vm_for_loop_lazy.rs`).
     pub(super) fn restore_topic_readonly(&mut self, saved: Option<crate::ast::ReadonlyKind>) {
         match saved {
-            Some(kind) => self.mark_readonly_with("_", kind),
-            None => self.unmark_readonly("_"),
+            Some(kind) => self.mark_readonly_sym_with(crate::symbol::wk::topic(), kind),
+            None => self.unmark_readonly_sym(crate::symbol::wk::topic()),
         }
     }
 
@@ -54,7 +60,9 @@ impl Interpreter {
         if let Some(slot) = topic_local {
             self.locals[slot] = val.clone();
         }
-        self.env_mut().insert("_".to_string(), val);
+        // Symbol-keyed for the same reason as `restore_loop_topic`: this is the
+        // per-item topic bind, the hottest `"_"` write in the VM.
+        self.env_mut().insert_sym(crate::symbol::wk::topic(), val);
     }
 
     /// The `'$name'`-quoted form a loop parameter's bare env-key name

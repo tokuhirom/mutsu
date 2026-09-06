@@ -27,6 +27,15 @@ impl crate::Interpreter {
     /// renders correctly from the pure `to_string_value`, so the native fast
     /// path keeps it.
     pub(crate) fn list_str_needs_interpreter(value: &Value) -> bool {
+        // Tag-probed: this runs on every `~`/`eq` operand and every
+        // interpolated value (`exec_string_concat_op`), so the overwhelmingly
+        // common non-list operand -- an `Int`, a `Str` -- must reject before
+        // the `deref_container` clone below. The probe answers `false` only for
+        // kinds that can neither be a list nor wrap one, so a rejection here is
+        // exactly the `_ => false` arm of the match.
+        if !value.may_hide_a_stringifiable_list() {
+            return false;
+        }
         // The list may arrive itemized (`$[...]`, e.g. bound to a `Mu $got`
         // parameter) or behind a `ContainerRef` cell; stringification looks
         // through both.
