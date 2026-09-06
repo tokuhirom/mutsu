@@ -53,6 +53,35 @@ impl Interpreter {
         }
     }
 
+    /// True when a `$`-sigil `:=` bind SOURCE is a container that is not a
+    /// **Scalar** container, so a later whole-value `$x = v` through the bound
+    /// name is rakudo's X::AdHoc "Cannot assign to an immutable value".
+    ///
+    /// rakudo's rule is sharper than "immutable": `$x = v` needs `$x` bound to a
+    /// Scalar, and no other container qualifies — a real `Array`, a `Hash`, a
+    /// `Map` and a `Pair` all refuse it, though each is mutable through its own
+    /// interface. `my $x := @a; $x = 5` is a hard error there and used to
+    /// overwrite `@a` here.
+    ///
+    /// Separate from [`bind_source_has_no_container`] because the two say
+    /// different things and are gated differently. That one is about
+    /// immutability and applies to any `:=`; this one is about *which kind of
+    /// container the name owns*, and its caller restricts it to a DECLARATION —
+    /// a parameter bind reaches the same store, and an `is raw` / `\x`
+    /// parameter bound to an array must stay assignable.
+    ///
+    /// The aliasing these binds exist for is untouched: only the whole-value
+    /// `=` is refused, so `$x.push(9)`, `$x<k> = 2` and `$x[0]` keep working.
+    fn bind_source_is_non_scalar_container(v: &Value) -> bool {
+        matches!(
+            v.view(),
+            ValueView::Array(..)
+                | ValueView::Hash(_)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+        )
+    }
+
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
     /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
     /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
@@ -598,6 +627,24 @@ impl Interpreter {
         let bind_marks_immutable = scalar_bind
             && (bind_source.is_none() || synthetic_index_source)
             && Self::bind_source_has_no_container(&raw_popped);
+        // The other half of rakudo's rule: `$x = v` needs `$x` bound to a
+        // SCALAR container, and a `Hash`/`Map`/`Pair`/real `Array` is not one
+        // even though each is mutable through its own interface
+        // (`todo/deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md`
+        // section C). Two source shapes reach it: an unnamed container value
+        // (`my $x := [1,2,3]`, `{a=>1}`, `Map.new(...)`, `(a => 1)`), and a
+        // NAMED `@`/`%` source (`my $x := @a`), which the immutability test
+        // above excludes outright because a named bind denotes another
+        // variable. Restricted to a DECLARATION: a parameter bind reaches this
+        // same store, and an `is raw` / `\x` parameter bound to an array must
+        // stay assignable.
+        let bind_marks_non_scalar_container = is_vardecl
+            && scalar_bind
+            && (((bind_source.is_none() || synthetic_index_source)
+                && Self::bind_source_is_non_scalar_container(&raw_popped))
+                || bind_source
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with(['@', '%'])));
         // The same "a `:=` bind to a VALUE, not to another name" test as
         // `bind_marks_immutable`, minus the immutability allowlist: `my $o :=
         // C.new` binds `$o` straight to the object, so `$o` owns no Scalar
@@ -785,7 +832,7 @@ impl Interpreter {
         // bare name. A `$` name bound straight to a literal has no container of
         // its own, so rakudo's assignment error is X::AdHoc "Cannot assign to
         // an immutable value".
-        if bind_marks_immutable {
+        if bind_marks_immutable || bind_marks_non_scalar_container {
             let bare = code.locals[idx]
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
