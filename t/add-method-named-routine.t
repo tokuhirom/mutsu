@@ -1,10 +1,10 @@
 use Test;
 
 # `.^add_method(name, $code)` must install a callable method whatever shape the
-# code object arrives in. In mutsu it silently installs an EMPTY one whenever
-# `$code` is a NAMED, separately-declared routine: the method is registered
-# (`.^can`, `.^lookup`, `.^methods`, its `.name` and `.signature` are all
-# right), and calling it returns `Nil` with no error.
+# code object arrives in. mutsu used to silently install an EMPTY one whenever
+# `$code` was a NAMED, separately-declared routine: the method was registered
+# (`.^can`, `.^lookup`, `.^methods`, its `.name` and `.signature` were all
+# right) and calling it returned `Nil` with no error.
 #
 # `todo/deep/direct-metamodel-classhow-new-type-immutable-error.md` recorded
 # this as "a method-dispatch gap on a `new_type`-minted Package". Measured
@@ -12,14 +12,14 @@ use Test;
 # ordinary `class C { }` shows it identically, and what actually decides the
 # outcome is whether the code object is anonymous or a named declaration.
 #
-# The value itself is fine -- calling the same `my method m() { 42 }` directly
-# through its variable returns 42. `add_method` builds its `MethodDef` from the
-# Sub's AST `body` plus `compiled_code`, and a Sub built from a DECLARED routine
-# carries its bytecode in `compiled_routine` instead (ADR-0019 C6c stopped the
-# declaration plan shipping an executable AST), which `MethodDef` has no field
-# for.
+# The value itself was always fine -- calling the same `my method m() { 42 }`
+# directly through its variable returned 42. `add_method` builds its `MethodDef`
+# from the Sub's AST `body` plus `compiled_code`, and a Sub built from a DECLARED
+# routine carries its bytecode in `compiled_routine` instead (ADR-0019 C6c
+# stopped the declaration plan shipping an executable AST); `MethodDef` has no
+# field for it, so it now takes the routine's own `CompiledCode`.
 
-plan 10;
+plan 16;
 
 # What already works: every anonymous shape.
 {
@@ -61,14 +61,12 @@ plan 10;
     class A5 { }
     A5.^add_method('m', my method m5() { 5 });
     A5.^compose;
-    todo 'a named `my method` installs an empty body';
     is A5.m(), 5, 'a named `my method` installs and runs';
 }
 {
     class A6 { }
     A6.^add_method('m', my method m6(A6:) { 6 });
     A6.^compose;
-    todo 'same mechanism; the type invocant is not what breaks it';
     is A6.m(), 6, 'a named `my method` with a type invocant installs and runs';
 }
 {
@@ -77,7 +75,6 @@ plan 10;
     constant A7 := Metamodel::ClassHOW.new_type(name => 'A7');
     A7.^add_method('m', my method m7(A7:) { 7 });
     A7.^compose;
-    todo 'same mechanism, reached through a hand-minted type';
     is A7.m(), 7, 'the MOP example from Language/mop.rakudoc runs';
 }
 
@@ -89,4 +86,37 @@ plan 10;
     A9.^compose;
     todo 'mutsu reports the added name, raku the routine name';
     is A9.^lookup('m').name, 'm9', 'lookup reports the routine name';
+}
+
+# Shapes that exercise the routine calling convention through the method ABI.
+{
+    class B1 { has $.n = 7 }
+    B1.^add_method('get', my method g1() { self.n });
+    B1.^compose;
+    is B1.new.get(), 7, 'a routine-backed method reads the invocant\'s attributes';
+}
+{
+    class B2 { }
+    B2.^add_method('add', my method g2($a, $b) { $a + $b });
+    B2.^compose;
+    is B2.add(3, 4), 7, 'positional parameters bind';
+}
+{
+    class B3 { }
+    B3.^add_method('nam', my method g3(:$k = 9) { $k });
+    B3.^compose;
+    is B3.nam(:k(5)), 5, 'a named parameter binds';
+    is B3.nam(), 9, 'and its default applies';
+}
+{
+    class B5 { has $.v = 3 }
+    B5.^add_method('d', my method g5(B5:D:) { self.v });
+    B5.^compose;
+    is B5.new.d(), 3, 'a :D invocant constraint binds';
+}
+{
+    class B7 { }
+    B7.^add_method('r', my method g7() { return 11; 99 });
+    B7.^compose;
+    is B7.r(), 11, 'an explicit `return` inside the routine body works';
 }
