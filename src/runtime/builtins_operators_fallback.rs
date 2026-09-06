@@ -33,6 +33,15 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // The re-entrant (EVAL / embedded-block) twin of the VM-side increment
+        // dispatch in `exec_call_func_op`: rank the native `++`/`--` candidate
+        // set against the user `multi` that made this a call in the first place.
+        if let Some(inc_op) =
+            crate::runtime::native_increment_dispatch::IncrementOp::from_routine_name(name)
+            && self.core_increment_candidate_wins(name, args) == Some(true)
+        {
+            return self.run_core_increment(inc_op, &args[0], None);
+        }
         if let Some(op) = name
             .strip_prefix("infix:<")
             .and_then(|s| s.strip_suffix('>'))

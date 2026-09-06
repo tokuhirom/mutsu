@@ -5,6 +5,11 @@ pub(crate) fn is_user_declared_prefix_sub(symbol: &str) -> bool {
     is_user_declared_sub(&op_name)
 }
 
+pub(crate) fn is_user_declared_postfix_sub(symbol: &str) -> bool {
+    let op_name = format!("postfix:<{}>", symbol);
+    is_user_declared_sub(&op_name)
+}
+
 /// Match a user-declared prefix operator against the current input.
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.

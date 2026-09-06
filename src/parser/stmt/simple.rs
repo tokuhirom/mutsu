@@ -93,8 +93,8 @@ pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapsho
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
-    is_user_declared_prefix_sub, is_user_declared_value_term, is_user_defined_infix,
-    match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
+    is_user_declared_postfix_sub, is_user_declared_prefix_sub, is_user_declared_value_term,
+    is_user_defined_infix, match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
     match_user_declared_postcircumfix_op, match_user_declared_postfix_op,
     match_user_declared_prefix_op, match_user_declared_term_symbol,
     register_user_callable_term_symbol, register_user_term_symbol,

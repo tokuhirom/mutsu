@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -358,6 +359,36 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // `++`/`--` reach here as a call only because a user declared a `multi`
+        // for the operator; the native implementation is one candidate of that
+        // multi (rakudo's `Int:D`/`Bool`/`Num:D`/... core candidates), so rank
+        // it against the user's before dispatching. When the core candidate
+        // wins, the increment runs here, through the `VarRef` the call site
+        // already wrapped the operand in — the only place that can both mutate
+        // for the builtin and leave the variable alone when a (non-`is rw`)
+        // user candidate wins.
+        if arity == 1 && !self.stack.is_empty() {
+            let name_str = Self::const_str(code, name_idx);
+            if let Some(op) = IncrementOp::from_routine_name(name_str) {
+                let arg = self.stack[self.stack.len() - 1].clone();
+                if self.core_increment_candidate_wins(name_str, std::slice::from_ref(&arg))
+                    == Some(true)
+                {
+                    self.stack.pop();
+                    // An attribute operand (`++$!x`) is read-modify-written
+                    // through its backing cell, exactly as the increment
+                    // opcodes do around `exec_pre_increment_op_inner`.
+                    if let Some((attr, _, _)) = arg.as_varref() {
+                        let attr = attr.resolve().to_string();
+                        self.sync_attr_local_from_cell_by_name(code, &attr);
+                    }
+                    let result = self.run_core_increment(op, &arg, Some(code))?;
+                    self.apply_pending_rw_writeback(code);
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            }
+        }
         // NativeCall: a sub declared `is native(...)` is dispatched through C
         // FFI rather than running its (`{ * }`) Raku body. The registry is
         // empty in the overwhelmingly common case, so this guard is free.

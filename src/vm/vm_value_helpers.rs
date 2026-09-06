@@ -173,7 +173,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn normalize_incdec_source(value: Value) -> Value {
+    pub(crate) fn normalize_incdec_source(value: Value) -> Value {
         match value.view() {
             ValueView::Nil => return Value::int(0),
             ValueView::Package(name) => {
@@ -193,7 +193,7 @@ impl Interpreter {
     /// Like normalize_incdec_source, but also checks the variable's type
     /// constraint when the value is Nil. This ensures that e.g. `my Num $v; ++$v`
     /// starts from Num(0.0) rather than Int(0).
-    pub(super) fn normalize_incdec_source_with_type(
+    pub(crate) fn normalize_incdec_source_with_type(
         &mut self,
         var_name: &str,
         value: Value,
@@ -215,7 +215,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn decrement_value(value: &Value) -> Value {
+    pub(crate) fn decrement_value(value: &Value) -> Value {
         match value.view() {
             ValueView::Int(i) => i
                 .checked_sub(1)

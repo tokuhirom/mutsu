@@ -356,6 +356,69 @@ impl Interpreter {
         r
     }
 
+    /// Carry an in-place `++`/`--` along the sigilless alias chain
+    /// (`my \c = $b`, `$!attr := outer_var`), so every name bound to the same
+    /// container observes the new value.
+    ///
+    /// Shared by the increment opcodes and by the core-candidate increment that
+    /// `exec_call_func_op` runs when a user `multi prefix:<++>` turned the
+    /// operator into a call site — both are the same store, so both must walk
+    /// the same chain.
+    pub(crate) fn propagate_incdec_sigilless_alias(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        new_val: &Value,
+    ) {
+        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
+            if let ValueView::Str(n) = v.view() {
+                Some(n.to_string())
+            } else {
+                None
+            }
+        });
+        let mut seen_aliases = std::collections::HashSet::new();
+        while let Some(current_alias) = alias_name {
+            if !seen_aliases.insert(current_alias.clone()) {
+                break;
+            }
+            self.set_env_with_main_alias(&current_alias, new_val.clone());
+            self.update_local_if_exists(code, &current_alias, new_val);
+            let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
+            alias_name = self.env().get(&next_key).and_then(|v| {
+                if let ValueView::Str(n) = v.view() {
+                    Some(n.to_string())
+                } else {
+                    None
+                }
+            });
+        }
+    }
+
+    /// Store the result of a core-candidate `++`/`--` back through the operand's
+    /// container reference, reaching every lvalue shape the increment *opcodes*
+    /// reach: an indexed element temp, a package/`our` scalar, an anonymous
+    /// state slot, a caller local slot, the sigilless alias chain, and an
+    /// attribute's backing cell.
+    pub(crate) fn store_core_increment_result(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        index: Option<usize>,
+        new_val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if index.is_some() || name.contains("\u{0}idx\u{0}") {
+            return self.assign_varref_target(name, index, new_val.clone());
+        }
+        self.store_scalar_by_name(name, new_val);
+        self.sync_anon_state_value(name, new_val);
+        self.update_local_if_exists(code, name, new_val);
+        self.propagate_incdec_sigilless_alias(code, name, new_val);
+        self.mirror_attr_local_to_cell_by_name(code, name);
+        Ok(())
+    }
+
     fn exec_pre_increment_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -392,31 +455,7 @@ impl Interpreter {
             let new_val = self.increment_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
-            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-                if let ValueView::Str(n) = v.view() {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
-            });
-            let mut seen_aliases = std::collections::HashSet::new();
-            while let Some(current_alias) = alias_name {
-                if !seen_aliases.insert(current_alias.clone()) {
-                    break;
-                }
-                self.set_env_with_main_alias(&current_alias, new_val.clone());
-                self.update_local_if_exists(code, &current_alias, &new_val);
-                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.env().get(&next_key).and_then(|v| {
-                    if let ValueView::Str(n) = v.view() {
-                        Some(n.to_string())
-                    } else {
-                        None
-                    }
-                });
-            }
+            self.propagate_incdec_sigilless_alias(code, name, &new_val);
             self.stack.push(new_val);
             return Ok(());
         }
@@ -511,31 +550,7 @@ impl Interpreter {
             let new_val = self.decrement_value_smart(&val)?;
             self.locals[slot] = new_val.clone();
             self.flush_local_to_env(code, slot);
-            // Propagate via sigilless alias chain (e.g. `$!attr := outer_var`).
-            let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-            let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-                if let ValueView::Str(n) = v.view() {
-                    Some(n.to_string())
-                } else {
-                    None
-                }
-            });
-            let mut seen_aliases = std::collections::HashSet::new();
-            while let Some(current_alias) = alias_name {
-                if !seen_aliases.insert(current_alias.clone()) {
-                    break;
-                }
-                self.set_env_with_main_alias(&current_alias, new_val.clone());
-                self.update_local_if_exists(code, &current_alias, &new_val);
-                let next_key = format!("__mutsu_sigilless_alias::{}", current_alias);
-                alias_name = self.env().get(&next_key).and_then(|v| {
-                    if let ValueView::Str(n) = v.view() {
-                        Some(n.to_string())
-                    } else {
-                        None
-                    }
-                });
-            }
+            self.propagate_incdec_sigilless_alias(code, name, &new_val);
             self.stack.push(new_val);
             return Ok(());
         }

@@ -5,7 +5,7 @@ use crate::value::ValueView;
 /// The distance reported for a constraint that is not an ancestor of the
 /// argument's type at all (including types whose hierarchy mutsu does not
 /// model).  Any real ancestor scores below this.
-const UNRELATED_DISTANCE: usize = 500;
+pub(super) const UNRELATED_DISTANCE: usize = 500;
 
 /// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
 /// `Str()` is short for `Str(Any)`, so it accepts anything.
@@ -487,7 +487,7 @@ impl Interpreter {
     /// Each parameter contributes the number of MRO levels between the
     /// constraint and the actual type; unconstrained parameters contribute a
     /// large constant so that constrained candidates are always preferred.
-    fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
+    pub(crate) fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
         let mut total = 0usize;
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
         let mut pos_idx = 0usize;
@@ -644,7 +644,7 @@ impl Interpreter {
         }
     }
 
-    fn type_hierarchy_distance(&self, constraint: &str, value: &Value) -> usize {
+    pub(crate) fn type_hierarchy_distance(&self, constraint: &str, value: &Value) -> usize {
         let value_type = super::value_type_name(value);
         // Strip :D/:U smiley
         let base = if constraint.ends_with(":D") || constraint.ends_with(":U") {
