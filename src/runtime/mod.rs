@@ -560,6 +560,7 @@ mod methods_trans;
 mod methods_type_coerce;
 mod methods_walk;
 pub(crate) mod native_increment_dispatch;
+pub(crate) mod native_infix_dispatch;
 mod native_io;
 pub(crate) mod raw_invocant;
 mod rw_arg_container;

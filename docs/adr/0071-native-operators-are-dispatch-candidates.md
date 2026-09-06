@@ -1,6 +1,6 @@
 # ADR-0071: A natively implemented operator is a dispatch candidate, not a fallback
 
-- Status: Proposed (increment operators implemented; infix operators not started)
+- Status: Accepted (increment operators and infix operators both implemented)
 - Date: 2026-09-07
 - Supersedes: nothing
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (one dispatch entry),
@@ -205,12 +205,8 @@ agree with rakudo.
 
 ## Known remaining divergences (deliberately out of scope)
 
-- **`infix:<...>` has the same missing gate.** `try_user_infix` in
-  `src/vm/vm_arith_ops.rs` hands every matching user candidate the call, so
-  `multi infix:<+>($a, $b) is default { "USER" }; say 1 + 2` prints `USER` where
-  rakudo prints `3`. The candidate-set modelling in this ADR generalises to it,
-  but the core candidate *sets* are far larger (`&infix:<+>` has dozens) and the
-  execution side is not an lvalue store, so it is a separate slice.
+- **`infix:<...>` had the same missing gate**, and it is now closed the same
+  way — see "Infix operators" below.
 - **A refinement-constrained user candidate on an increment operator.** rakudo
   refuses to compile `multi prefix:<++>(Int $a where * > 0)`, a `subset`-typed
   candidate, or a literal-parameter candidate at all ("Circularity detected in
@@ -221,6 +217,164 @@ agree with rakudo.
   ++MyInt.new(5)` is `6` in rakudo and `1` in mutsu — but that is true with no
   user candidate in scope too, so it is a pre-existing `increment_value` gap, not
   a dispatch one.
+
+## Infix operators (2026-09-07)
+
+The infix half was deferred out of the original slice because of two open
+questions. Both were answered by measurement.
+
+### Question 1: how to model core candidate sets that are large and per-operator
+
+`&infix:<+>` has 31 core candidates and every operator has its own set, so the
+hand-written nine-entry table the increment slice used does not scale. The two
+options were (a) vendoring a table derived once from rakudo's `.candidates`, and
+(b) modelling a small set of *numeric-promotion tiers* the ranking consults
+generically.
+
+**Chosen: (a), a vendored table, factored into shared groups.** The tier model
+was tried first and rejected on evidence: a tier model has to answer "what is the
+narrowest core constraint for this operand", and for a `1 + 2e0` call it would
+answer `(Int, Num)` at distance 0 — but rakudo has **no** `(Int:D, Num:D)`
+candidate, so the call really binds `(Real, Real)`, and a user
+`multi infix:<+>(Int $a, Num $b)` therefore *wins* (measured: `USER`). No tier
+model that reasons per-operand can see that, because the fact being used is the
+*absence* of a pair. The narrowness question is about the candidate set as a set,
+so the set is what has to be modelled.
+
+The cost is much smaller than the ticket feared, because the sets are shared: the
+whole numeric family is `Int:D`/`Num:D`, three `Rational:D` rows, three
+`Complex:D` rows and `(Real, Real)`, with per-operator additions (temporal and
+`Range` rows for `+`/`-`, no `Complex` for `<`, none of `Real`/`Rational` for
+`!=`). `src/runtime/native_infix_dispatch.rs` is ~60 table rows in nine shared
+groups covering 22 operators, each row a pair of type-constraint strings. An
+operator with no entry keeps the old behaviour (the user candidate wins), which
+is always right for a purely user-defined `infix:<@@>`.
+
+Alternative B of the increment slice (register synthetic `FunctionDef`s) stays
+deferred for the same reasons, and would now also have to render 31 signatures
+per operator.
+
+### Question 2: the cost on the arithmetic hot path
+
+`try_user_infix` is on the arithmetic hot path, and unlike the increment slice's
+`CallFunc` guard it cannot be name-gated. It did not need to be: the funnel
+*already* bails on `user_declared_infix_ops.is_empty()` before it does anything
+else, so the ranking is unreachable unless a user `infix:<op>` of that exact name
+is in scope. Measured with `rust-gdb -batch` breakpoints on both
+`try_user_infix`'s post-guard body and `core_infix_candidate_wins`, running
+`benchmarks/int-arith.raku` (an Int-addition loop): **both breakpoints hit zero
+times**. The same breakpoint fires on the first `+` of a program that declares
+`multi infix:<+>`, so the probe is valid. There is no A/B to run — the
+instruction stream for arithmetic with no user operator in scope is unchanged.
+
+### Decision
+
+The same one as for the increment operators, minus the lvalue store (an infix
+has no lvalue, so "the core candidate wins" simply means `try_user_infix` reports
+`None` and the existing native path runs):
+
+1. The core candidate set of each natively-implemented infix is modelled as the
+   pairs of type constraints its two-operand candidates bind, transcribed from
+   rakudo's `.candidates`.
+2. The narrowest core candidate for the call is the one with the most
+   meaningfully-typed positionals, then the least MRO distance.
+3. That candidate is ranked against the user's with
+   `candidate_specificity_rank_for_args` + `candidate_type_distance`, nominal
+   narrowness first. **Ties go to core.**
+4. A plain `sub infix:<op>` is a lexical shadow, not a candidate, and still
+   replaces the operator outright.
+
+### What the ranking needed underneath
+
+Four gaps in the dispatch metrics surfaced as soon as an operator started
+ranking against a core candidate, each a pre-existing wrong answer for ordinary
+`multi` dispatch too:
+
+- **`Rational` scored `UNRELATED`.** `(1/2) ~~ Rational` is True but the role was
+  not on `Rat`'s modelled MRO, so rakudo's core `(Rational:D, Rational:D)` row
+  could not be expressed. Added; a user `multi infix:<+>(Rat $a, Rat $b)` now
+  out-narrows it, as in rakudo.
+- **An enum value ranked as its base type.** `enum A <e1 e2>` values report
+  `Int`, so `multi f(A $x)` lost to `multi f(Int $x)` for `f(e1)` (rakudo picks
+  the enum-typed one). An enum value now narrows in three steps — its own value
+  name, its enum type, then the base type.
+- **An enum *value* used as a parameter (`multi infix:<->(e1, e2)`, roast
+  `S03-operators/custom.t`) scored `UNRELATED`.** It is the narrowest constraint
+  there is, so it is distance 0. Together with counting a literal positional
+  toward nominal narrowness, this is what keeps that whitelisted roast test
+  passing once the operator has a core candidate to lose to.
+- **`UInt` did not rank as a `subset`.** It is `subset UInt of Int where * >= 0`
+  in rakudo, but mutsu implements it as a type-matching special case rather than
+  a registry entry, so `multi f(UInt $x)` lost every tie to `multi f(Int $x)`
+  for `f(10)` — and `t/inline-module-check-import.t`'s
+  `multi infix:<+>(UInt $a, UInt $b)` lost to the core `(Int:D, Int:D)`.
+  `Interpreter::constraint_is_subset` now covers the core subsets as well as the
+  registry, and `f(10)` picks the `UInt` candidate as rakudo does.
+
+### Measured acceptance criteria
+
+Pinned by `t/user-infix-op-candidate-ranking.t`, which passes **identically under
+`raku` and under `mutsu`** (49/49 both ways, two of them `todo`-marked; see the
+divergence below).
+
+| call, with `multi infix:<+>($a, $b) is default { "USER" }` in scope | rakudo | before | after |
+|---|---|---|---|
+| `1 + 2` | core `(Int:D, Int:D)` → `3` | user → `USER` | core → `3` |
+| `1.5 + 2.5` | core `(Rational:D, ...)` → `4` | `USER` | `4` |
+| `1e0 + 2e0` | core `(Num:D, Num:D)` → `3` | `USER` | `3` |
+| `1 + 2e0` | core `(Real, Real)` → `3` | `USER` | `3` |
+| `True + 1` | core `(Int:D, Int:D)` → `2` | `USER` | `2` |
+| `<42> + 1` | core `(Int:D, Int:D)` → `43` | `USER` | `43` |
+| `(1+2i) + 1` | core `(Complex:D, Real)` → `2+2i` | `USER` | `2+2i` |
+| `(1..2) + 1` | core `(Range:D, Real:D)` → `2..3` | `USER` | `2..3` |
+| `"a" + "b"` | user (only the `Mu` catch-all matches) | user (agreed) | unchanged |
+| `1 + "2"`, `Any + Any`, `1 + Nil` | user | user (agreed) | unchanged |
+| `P.new + P.new` | user | user (agreed) | unchanged |
+| `$x += 2`, `[+] 1, 2, 3`, `@a >>+<< @b` | core (derived forms inherit) | `USER` for `+=` | core |
+
+Ranking rows, `1 + 2` unless noted:
+
+| user candidate | rakudo | before | after |
+|---|---|---|---|
+| `(Any $a, Any $b)` / `(Mu $a, Mu $b)` | core | user | core |
+| `(Cool $a, Cool $b)` / `(Real ...)` / `(Numeric ...)` | core | user | core |
+| `($a where * > 0, $b)` | core | user | core |
+| `(Str $a, Str $b)`, `"a" + "b"` | user | user (agreed) | unchanged |
+| `(Str $a, $b)`, `"a" + 1` | user | user (agreed) | unchanged |
+| `(Rat $a, Rat $b)`, `1.5 + 2.5` | user | user (agreed) | unchanged |
+| `(Int $a, Num $b)`, `1 + 2e0` | user | user (agreed) | unchanged |
+| `subset Sm of Int`, `(Sm $a, Sm $b)` | user | user (agreed) | unchanged |
+| `enum E <A B>`, `(E $a, E $b)`, `A + B` | user | user (agreed) | unchanged |
+| `sub` (not `multi`) | user, for every type | user | unchanged |
+
+The other operators rank the same way, verified per operator against rakudo:
+`-`, `*`, `/`, `**`, `%`, `~`, `==`, `eq`, `<`, `cmp` all run their core
+candidate for an untyped `is default` user candidate, and all reach a matching
+user candidate for two instances of a user class.
+
+### Known remaining divergence: an exact nominal tie should be ambiguous
+
+rakudo refuses `multi infix:<+>(Int $a, Int $b) { }; 1 + 2` with
+`Ambiguous call to 'infix:<+>(Int, Int)'`, listing the core `(Int:D $a, Int:D $b)`
+next to the user's; the same holds for `multi infix:<~>(Str $a, Str $b)`. mutsu
+gives the tie to the core candidate (rule 3) and runs the native operator
+silently. Raising the error needs the core candidate to carry a renderable
+signature, which is alternative B; the two rows are `todo`-marked in
+`t/user-infix-op-candidate-ranking.t` so the divergence cannot be forgotten.
+
+### Consequences of the infix half
+
+- `try_user_infix` is the single funnel for every user infix — the arithmetic
+  opcodes, `InfixFunc`, the hyper/reduce/cross metaop bridge and the flip-flop
+  path all go through it — so one gate covers all of them, and the derived forms
+  (`+=`, `[+]`, `>>+<<`, `X+`) inherit the base operator's decision, which is
+  what rakudo does.
+- `exec_mod_op` was the one arithmetic opcode that never called
+  `try_user_infix`, so `multi infix:<%>(P $a, P $b)` was unreachable for
+  `P.new % P.new`. It calls it now, like `+`/`-`/`*`.
+- `candidate_specificity_rank_for_args` is unchanged; the ranking site adds
+  literal positionals to the nominal-narrowness key itself, because a literal
+  parameter carries the argument's own type on top of its equality constraint.
 
 ## Consequences
 
