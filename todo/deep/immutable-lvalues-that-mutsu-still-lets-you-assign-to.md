@@ -11,6 +11,9 @@ top of the closure-topic fix (`news/2026-09/closure-and-map-grep-topic-readonly.
 
 Closed since the survey opened:
 
+- **section C in full (2026-09-06)** — a `$` bound to a non-Scalar container now
+  refuses whole-value assignment:
+  `news/2026-09/scalar-bind-to-a-non-scalar-container-refuses-assignment.md`;
 - the element-store and `:=`-bind halves —
   `news/2026-09/immutable-element-store-and-bind.md`;
 - the closure/map/grep topic family (`(1,2).map({$_=5})`,
@@ -29,7 +32,8 @@ one is a method-call-path gap rather than a store-path gap, and it belongs to
 ADR-0067's L4/L5/M1/M2 readonly-enforcement rows.
 
 Section B below was re-measured on **2026-09-06**: all seven rows still diverge
-exactly as recorded.
+exactly as recorded. Section C was re-measured the same day (all seven rows
+diverged) and then closed; sections A, B, D, E and F are what is left.
 
 **Read the "how the surviving rows differ" section below before designing
 anything**: two successive stated blockers for the closure-topic rows (first
@@ -109,34 +113,34 @@ tracks partially in `scalar_bind_*`), or section B is closed first — once an
 element really is a cell, `is_container_ref()` becomes a sound oracle for both.
 Closing B first is the architecturally cleaner order.
 
-### C. A `$` bind of a MUTABLE container is still assignable
+### C. A `$` bind of a MUTABLE container is still assignable — **CLOSED 2026-09-06**
+
+`news/2026-09/scalar-bind-to-a-non-scalar-container-refuses-assignment.md`,
+pinned by `t/scalar-bind-to-non-scalar-container.t`.
 
 rakudo's rule is sharper than "immutable": `$x = v` needs `$x` bound to a
 **Scalar** container, and no other container qualifies — a real `Array`, a
 `Hash`, a `Map` and a `Pair` all refuse it, though each is mutable through its
-own interface.
+own interface. All seven rows now throw `X::AdHoc: Cannot assign to an immutable
+value`, matching raku's class and wording, and the `my $x := @a` row no longer
+silently overwrites `@a`.
 
-```
-my @a = 1,2,3; my $x := @a;        $x = 5     # raku: X::AdHoc; mutsu: OK, @a becomes 5
-my $x := [1,2,3];                  $x = 5     # raku: X::AdHoc; mutsu: OK
-my @a := (1,2,3); my $x := @a;     $x = 5     # raku: X::AdHoc; mutsu: OK
-my $x := {a=>1};                   $x = 5     # raku: X::AdHoc; mutsu: OK
-my $x := Map.new((a=>1));          $x = 5     # raku: X::AdHoc; mutsu: OK
-my $x := (a => 1);                 $x = 5     # raku: X::AdHoc; mutsu: OK
-```
+The fix is `bind_source_is_non_scalar_container` beside the existing
+`bind_source_has_no_container` (`vm/vm_var_assign_set_local.rs`). Two things the
+file predicted correctly and one it did not:
 
-Deliberately left out of the 2026-09-05 element-store fix, which extended
-`bind_source_has_no_container`'s allowlist only to immutable Positionals. Two of
-these rows (`my $x := @a`, `my $x := %h`) do not even reach that decision — a
-bind whose RHS is a simple variable carries a NAMED source and is excluded from
-the marking outright — so closing this family means deciding what a named
-`@`/`%` source should imply for a `$` target, not just widening a match arm. The
-`$x.push(...)` aliasing those binds exist for must keep working; only the
-whole-value `=` is refused.
+- the two named-source rows (`my $x := @a`, `my $x := %h`) really do not reach
+  the immutability test, and needed their own arm keyed on the source name's
+  sigil;
+- the marking has to be restricted to a **declaration**. A parameter bind reaches
+  the same store, and an `is raw` / `\x` parameter bound to an array must stay
+  assignable;
+- `my $x := (a => 1)` arrives as `ValueView::ValuePair`, not `ValueView::Pair`,
+  so matching only the latter left that row passing.
 
-One near-miss in the same family: `my $x := $(1,2,3); $x = 5` throws `X::AdHoc`
-in both, but rakudo words it "Cannot assign to a readonly variable or a value"
-where mutsu says "Cannot assign to an immutable value".
+One near-miss remains: `my $x := $(1,2,3); $x = 5` throws `X::AdHoc` in both, but
+rakudo words it "Cannot assign to a readonly variable or a value" where mutsu
+says "Cannot assign to an immutable value".
 
 ### D. A `gather` sequence's element store
 
