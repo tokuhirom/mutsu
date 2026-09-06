@@ -1067,6 +1067,26 @@ pub(crate) enum OpCode {
         callee_idx: u32,
         positional: u32,
     },
+    /// ADR-0067, the argument producer for a callee that has **no
+    /// compile-time name**: a method call, whose invocant's class is only known
+    /// at run time (`$s.take($c.v)`), and a call through a code value
+    /// (`my $r = &g; $r($c.v)`).
+    ///
+    /// [`Self::MarkRwArgRefContext`] gates on the callee's *name*, so neither
+    /// of these spellings could use it. They do not need a name: measured with
+    /// `--dump-bytecode`, every one of them pushes the callee — the method's
+    /// invocant, or the code object itself — **before** its arguments, so at
+    /// the instant this op runs the real callee is already on the stack, one
+    /// slot below the argument being compiled for each earlier positional
+    /// (`RwArgCalleeMark::positional + 1`). The gate therefore asks the actual
+    /// callee rather than over-approximating over every routine that shares a
+    /// name.
+    ///
+    /// Sets the same `accessor_ref_pending` flag as the other four producers,
+    /// deliberately: the consumer (`try_fast_accessor_read`'s `want_ref`
+    /// branch) must stay one code path, or the container a `:=` bind gets and
+    /// the container an argument gets could drift apart.
+    MarkRwArgRefContextCallee(Box<RwArgCalleeMark>),
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
     /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
     /// named source variable's container should be shared by reference. The
@@ -8113,6 +8133,37 @@ impl<'a> IntoIterator for &'a CompiledFns {
     fn into_iter(self) -> Self::IntoIter {
         self.map.iter()
     }
+}
+
+/// Payload of [`OpCode::MarkRwArgRefContextCallee`] — ADR-0067's argument
+/// producer for a nameless callee. Boxed so the variant costs one pointer and
+/// the `opcode_size_guard` budget is untouched.
+#[derive(Clone, Debug)]
+pub(crate) struct RwArgCalleeMark {
+    /// Which positional parameter of the callee's *signature* this argument
+    /// binds to — named arguments earlier in the list do not consume one.
+    pub(crate) positional: u32,
+    /// How many argument values sit above the callee on the stack when this op
+    /// runs (its index in the syntactic argument list, named arguments
+    /// included, since each leaves exactly one value): the callee is at
+    /// `stack.len() - stack_offset - 2`.
+    pub(crate) stack_offset: u32,
+    /// How to reach the callee from there.
+    pub(crate) callee: RwArgCallee,
+}
+
+/// Where [`RwArgCalleeMark`]'s callee comes from.
+#[derive(Clone, Debug)]
+pub(crate) enum RwArgCallee {
+    /// `<invocant>.NAME(...)` — the invocant is the stack value, `NAME` is a
+    /// compile-time constant (this covers the quoted spelling `$s."take"()`
+    /// too, which compiles to a constant name).
+    Method { name_idx: u32 },
+    /// `$code(...)` / `$code.(...)` — the stack value *is* the code object.
+    Code,
+    /// `&g(...)` — nothing is pushed; the callee is the code variable this
+    /// constant names, resolved exactly as `CallOnCodeVar` resolves it.
+    CodeVar { name_idx: u32 },
 }
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the

@@ -1,8 +1,9 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
 - Status: Accepted (all slices implemented. 1, 2, 3a, 4 and 5 on 2026-09-05;
-  3b, the E6 rw-attribute-accessor producer, the returned-container consumers
-  and the subscript-receiver producer on 2026-09-06. Slice 3 was re-scoped into
+  3b, the E6 rw-attribute-accessor producer, the returned-container consumers,
+  the subscript-receiver producer and the nameless-callee argument producer on
+  2026-09-06. Slice 3 was re-scoped into
   3a/3b on 2026-09-05 after measurement, and 3a's E6 row split off again into
   that producer; Slice 4 absorbed two of Slice 5's three acceptance rows, again
   after measurement; Slice 3b shipped the *named-receiver* half of the arrival
@@ -25,7 +26,10 @@
   `todo/tickets/rw-method-result-is-not-a-container-for-bind-or-invocant.md` and
   `todo/tickets/attribute-accessor-container-lost-in-argument-position.md`
   (closed by the returned-container-consumers slice, now
-  `news/2026-09/rw-result-container-consumers.md`)
+  `news/2026-09/rw-result-container-consumers.md`);
+  `todo/tickets/rw-argument-producer-needs-a-nameless-callee-gate.md` (closed by
+  the nameless-callee argument producer, now
+  `news/2026-09/rw-argument-producer-nameless-callee.md`)
 
 ## Context
 
@@ -1311,6 +1315,122 @@ ordinary method call over a subscript receiver in it — `.succ`, `.WHAT`, `.uc`
 a promotion, `.sort`/`.grep`/`.sum`, and copy semantics for both an array and a
 hash — is exercising the producer's decline path and the chokepoint that hides
 the container from an ordinary callee.
+#### The nameless-callee argument producer — IMPLEMENTED 2026-09-06
+
+The returned-container-consumers slice closed argument position for a **named**
+callee and recorded the other two spellings as
+`todo/tickets/rw-argument-producer-needs-a-nameless-callee-gate.md`: a method
+call, whose invocant's class is not a compile-time fact, and a call through a
+code variable, which has no name at all. That ticket asked for a judgment call
+between a program-wide set-only flag and a name-keyed method index, and said the
+code-variable half needed the decision moved into the binder. Every row was
+re-measured against raku v2026.07 and a debug `mutsu` built from `main` at
+`2896304c5` before any code was written, together with a 69-row survey of the
+neighbouring parameter flavours, callee shapes and argument shapes. **The
+ticket's framing of the choice was wrong, and so was its claim about what the
+open rows do.**
+
+**Correction 1 — there is no need to guess the callee, because the callee is
+already on the stack.** The ticket's premise is that a nameless callee cannot be
+asked. `--dump-bytecode` says otherwise: every spelling pushes its callee —
+the method's invocant, or the code object itself — **before** its arguments, and
+the marker is inserted immediately before the *argument's own* trailing
+`CallMethod`. So when the marker executes, the real callee is one slot below the
+argument being evaluated, plus one for each earlier argument (each leaves
+exactly one value):
+
+```text
+$s.take($c.v)     GetLocal($s);   GetLocal($c); <marker>; CallMethodMut{"v"}; CallMethod{"take"}
+$r($c.v)          GetLocal($r);   GetLocal($c); <marker>; CallMethodMut{"v"}; CallOnValue
+```
+
+`OpCode::MarkRwArgRefContextCallee` therefore carries *where the callee is*
+rather than *what it is called*, and the gate
+(`Interpreter::rw_arg_callee_binds_container`, `src/vm/vm_rw_arg_callee.rs`)
+asks the callee itself:
+
+- **a method call** resolves the receiver's own MRO and asks
+  `Registry::any_method_binds_container_at` — over-approximating across a
+  `multi`'s candidates, unavoidably (the arguments are still being evaluated, so
+  no candidate can be selected yet), but *within one `(owner, name)` row*;
+- **a code value** reads `SubData::param_defs` straight off the stack value:
+  exact, lock-free, no registry at all. This is the row the ticket said needed a
+  binder redesign;
+- **`&g(...)`** — a third spelling the ticket did not list, and one that *does*
+  have a compile-time name the old gate simply never saw
+  (`CallOnCodeVar` is emitted by a different compiler path). It resolves the
+  code variable the way `CallOnCodeVar` does, and falls back to
+  `named_routine_binds_container_at` when the routine is declared later.
+
+The ticket's cheap flag survives, demoted to what it is actually good for:
+`Registry::any_container_binding_method_param` is a **pre-filter** in front of
+the MRO walk, raised by the same single writer that raises slice 3a's
+`any_raw_invocant_method`, and it is never the answer. The corpus measurement is
+what settles that: 80 files under `modules/`, `vendor/`, `t/` and `roast/`
+declare a container-binding method positional parameter and 107 contain an
+accessor-shaped method-call argument, so the flag-as-decision would fire across
+most of this repo's own corpus rather than in a rare program.
+
+Two indices are tracked, not one, and the distinction is load-bearing: a named
+argument consumes no *signature* position but does leave a *stack* value, so
+`RwArgCalleeMark` carries `positional` (which parameter) and `stack_offset`
+(how far above the callee) separately. A `|EXPR` slip makes `positional`
+unknowable for every later argument, and the compiler declines to mark those —
+`Compiler::arg_positional_indices` is the one place that rule lives.
+
+**Correction 2 — "both remaining rows refuse loudly, neither is a silent wrong
+answer" holds for one parameter flavour out of three.** The ticket only tested
+`$y is rw`, which the binder refuses. `is raw` and a sigil-less `\y` accept a
+value, so the write lands on the copy and the program continues:
+
+| # | Program (`class C { has $.v is rw }`) | raku | mutsu (before) |
+|---|---|---|---|
+| m01 | `Sink.new.take($c.v)`, `method take($y is rw)` | `9` | dies, "expects a writable container" |
+| m02 | the same with `method take(\y)` | `9` | dies, `Cannot modify an immutable Int (42)` |
+| m03 | the same with `method take($y is raw)` | `9` | dies, `Cannot assign to a readonly variable` |
+| m14 | `method !take($y is rw)` via `method go($z is raw) { self!take($z) }` | `9` | **`42` — silent, exit 0** |
+| v05 | `sub g(\y) { y = 9 }; my $r = &g; $r($c.v)` | `9` | dies, `Cannot modify an immutable Int` |
+| s07 | `&g($c.v)` | `9` | dies, "expects a writable container" |
+| k07 | `Sink.new.take($c.v).VAR.^name` | `Int` | dies |
+
+**No new consumer, for the sixth time.** The binder's bare-`ContainerRef` arm,
+`assign_lvalue_container` and slice 3a's `try_raw_invocant_container_lvalue`
+take these containers unchanged, and every parameter question in the gate reads
+the one `ParamDef::binds_caller_container` predicate the binder itself uses.
+Part 4 of this ADR now stands at six producers and the same consumers.
+
+**Cost.** The marker exists in bytecode only for an argument-less, unmodified,
+unquoted method-call argument, so it cannot appear on a path that did not ask
+for it: dumping the bytecode of all 23 files under `benchmarks/` finds **zero**
+occurrences of either `MarkRwArgRefContext` op. The method branch's MRO walk
+sits behind the set-only registration flag, so a program that declares no
+container-binding method parameter pays one bool read. No A/B is claimed and
+none was run: a byte-identical control drifted +6.3% on this box during the E6
+measurement, so anything under ~7% would be unreadable, and what was actually
+measured here is the marker count, not a time.
+
+**What still refuses, all measured, all loudly, all out of scope.** A
+*subscript* argument (`Sink.new.take(@a[0])`, `$r(@a[0])`) — the named-sub twin
+`g(@a[0])` works through the `CallFunc` index-writeback protocol, so this is a
+different producer and gets its own ticket
+(`todo/tickets/subscript-argument-container-producer.md`, which also records
+`$obj.^lookup('m')($obj, $c.v)`, where a `Method` object invoked as a code value
+counts its invocant as positional 0, and `method m(:$y is rw)`, which raku
+refuses at *compile* time and mutsu refuses at the call). `handles <take>`
+delegation re-dispatches with a value, a pre-existing delegation gap. A `|@slip`
+before the accessor declines by construction, as above.
+
+**Pinned by** `t/rw-arg-nameless-callee.t` (38 tests, byte-identical under
+`mutsu` and `raku`): the three parameter flavours over a method callee, the
+inherited / role-composed / `submethod` / `multi` / `where`-constrained /
+type-object-invocant / quoted-name / `augment class Int` / `self.`-called /
+two-frame-relay / private-method-relay spellings, an accessor reached through
+another accessor, leading and trailing named arguments (the `positional` vs
+`stack_offset` split), code values held in a scalar, an array element, a hash
+element, a plain parameter and a `&`-sigil named parameter, the `&g(...)`
+spelling, and six controls — a non-rw accessor, a literal, `is copy`, a
+read-only parameter, a native method argument that must stay a copy
+(`@a.push($c.v)`), and the call's own return still being a value.
 
 ### Slice 4 — the chain walk steps through an object
 

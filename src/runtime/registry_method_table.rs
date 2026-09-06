@@ -45,6 +45,31 @@ fn entry_is_live(entry: &MethodEntry) -> bool {
         || entry.proto.is_some()
 }
 
+/// The positional parameters of a method, in call order — the invocant is
+/// parameter zero of the *routine* but never of the *argument list*, so it is
+/// skipped here, as are named parameters.
+fn method_positional_params(def: &MethodDef) -> impl Iterator<Item = &crate::ast::ParamDef> {
+    def.param_defs.iter().filter(|p| !p.named && !p.is_invocant)
+}
+
+/// Whether `def` binds its `positional`-th positional parameter to the
+/// caller's container (`is rw`, `is raw`, or a sigil-less `\y`). Reads
+/// `ParamDef::binds_caller_container`, the same predicate the binder itself
+/// uses to decide whether to install the shared cell, so the gate and the
+/// consumer cannot disagree about what "binds a container" means.
+pub(crate) fn method_def_binds_container_at(def: &MethodDef, positional: usize) -> bool {
+    method_positional_params(def)
+        .nth(positional)
+        .is_some_and(|p| p.binds_caller_container())
+}
+
+/// Whether `def` binds *any* positional parameter to the caller's container —
+/// the registration-time half of the same question, feeding
+/// [`Registry::any_container_binding_method_param`].
+pub(crate) fn method_def_binds_container_positionally(def: &MethodDef) -> bool {
+    method_positional_params(def).any(|p| p.binds_caller_container())
+}
+
 impl Registry {
     /// F4c-1 read accessor for [`owner_method_names`](Registry::owner_method_names):
     /// every user-declared method/attribute-accessor name `owner` currently
@@ -170,6 +195,45 @@ impl Registry {
             // the one writer of both, so they cannot disagree.
             crate::runtime::raw_invocant::note_any_raw_invocant_method();
         }
+        self.note_container_binding_methods(defs);
+    }
+
+    /// Raise [`Registry::any_container_binding_method_param`] if any of `defs`
+    /// declares a container-binding positional parameter (ADR-0067's
+    /// nameless-callee argument producer). Set-only, same argument as above.
+    fn note_container_binding_methods(&mut self, defs: &[MethodDef]) {
+        if !self.any_container_binding_method_param
+            && defs.iter().any(method_def_binds_container_positionally)
+        {
+            self.any_container_binding_method_param = true;
+        }
+    }
+
+    /// Whether any user candidate of `(owner, name)` binds its `positional`-th
+    /// positional parameter to the caller's container.
+    ///
+    /// Deliberately over-approximating across a `multi`'s candidates: the
+    /// call's arguments are still being evaluated when the gate asks, so the
+    /// candidate cannot be selected yet. Over-approximating within one
+    /// `(owner, name)` row is the safe direction — the consumer
+    /// (`try_fast_accessor_read`'s `want_ref` branch) hands back a container
+    /// only for a zero-argument read of a public `is rw` scalar attribute
+    /// accessor and ignores the flag otherwise — and it is still enormously
+    /// narrower than a program-wide flag.
+    pub(crate) fn any_method_binds_container_at(
+        &self,
+        owner: Symbol,
+        name: Symbol,
+        positional: usize,
+    ) -> bool {
+        self.method_entries
+            .get(&MethodEntryKey { owner, name })
+            .is_some_and(|entry| {
+                entry
+                    .user_candidates
+                    .iter()
+                    .any(|def| method_def_binds_container_at(def, positional))
+            })
     }
 
     /// Adds or removes `name` from `owner`'s slot in the reverse index to

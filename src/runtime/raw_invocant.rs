@@ -181,7 +181,7 @@ impl Interpreter {
     /// Instance/type-object halves of ADR-0059) this answers for *any* value,
     /// because a raw invocant is exactly the case where the invocant is an
     /// ordinary `Int`/`Str`/... and the routine came from `augment class Any`.
-    fn raw_invocant_class_name(target: &Value) -> String {
+    pub(crate) fn raw_invocant_class_name(target: &Value) -> String {
         match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),

@@ -978,7 +978,12 @@ impl Compiler {
         let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
         if let Expr::CodeVar(name) = target {
             let arg_sources_idx = self.add_arg_sources_constant(args);
-            for arg in args {
+            // ADR-0067's argument producer: `&g($c.v)` has no callee on the
+            // stack, but the code variable's NAME is a compile-time constant,
+            // so the VM resolves it exactly as `CallOnCodeVar` does.
+            let code_var_idx = self.code.add_constant(Value::str(name.clone()));
+            let positional_indices = Self::arg_positional_indices(args);
+            for (i, arg) in args.iter().enumerate() {
                 // ADR-0021: `&code(args)` is a sub call, same call-site
                 // named-ness rule as a regular function call. A
                 // bareword-keyed fat-arrow/colonpair mints the named
@@ -989,6 +994,14 @@ impl Compiler {
                     self.mint_named_pair = true;
                 }
                 self.compile_expr(arg);
+                self.mark_arg_as_rw_container_candidate_callee(
+                    crate::opcode::RwArgCallee::CodeVar {
+                        name_idx: code_var_idx,
+                    },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
@@ -1003,12 +1016,22 @@ impl Compiler {
         } else {
             self.compile_expr(target);
             let arg_sources_idx = self.add_arg_sources_constant(args);
-            for arg in args {
+            let positional_indices = Self::arg_positional_indices(args);
+            for (i, arg) in args.iter().enumerate() {
                 if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
                 {
                     self.mint_named_pair = true;
                 }
                 self.compile_expr(arg);
+                // ADR-0067's argument producer: the callee code object is the
+                // stack value `compile_expr(target)` just pushed, so the VM can
+                // read its real signature — no name is needed anywhere.
+                self.mark_arg_as_rw_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Code,
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }

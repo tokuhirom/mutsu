@@ -2334,6 +2334,15 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::MarkRwArgRefContextCallee(mark) => {
+                // The same producer for a callee with no compile-time name: the
+                // callee itself is on the stack (or is a named code variable),
+                // so the gate asks its real signature. See the opcode's doc.
+                if self.rw_arg_callee_binds_container(code, mark) {
+                    self.accessor_ref_pending = true;
+                }
+                *ip += 1;
+            }
             OpCode::MarkArrayShareSource(name_idx) => {
                 self.array_share_context.set(true);
                 self.array_share_source
