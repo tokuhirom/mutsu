@@ -719,6 +719,16 @@ impl Value {
         self.0.is_seq()
     }
 
+    /// Whether this could be, or could be hiding, a list that
+    /// `Interpreter::list_str_needs_interpreter` would have to scan. A pure tag
+    /// probe (see [`Self::is_junction_value`]); a `false` here is a definitive
+    /// "not a list", so the caller can skip that scan's `deref_container`
+    /// clone entirely.
+    #[inline]
+    pub(crate) fn may_hide_a_stringifiable_list(&self) -> bool {
+        self.0.may_hide_a_stringifiable_list()
+    }
+
     /// Whether this is a `LazyList`. A pure tag probe (see
     /// [`Self::is_junction_value`]).
     #[inline]

@@ -74,7 +74,13 @@ impl Interpreter {
                 return None;
             }
         }
-        {
+        // Gated on the process-global flag, like the `elem_index_meta_possible`
+        // probe further down: this runs on EVERY hash element write, and the
+        // `format!` plus the `Symbol::intern`ing `contains_key` it guards are
+        // exactly the cost `ELEM_INDEX_META_SEEN` was introduced to avoid. The
+        // key can only exist once the program `:=`-binds an element, which
+        // latches the flag through `Env::insert`.
+        if crate::env::elem_index_meta_possible() {
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
             if self.env().contains_key(&bound_key) {
                 return None;
@@ -162,9 +168,15 @@ impl Interpreter {
         }
         {
             let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
-            let bound_key = format!("__mutsu_bound_index::{}", var_name);
-            if self.env().contains_key(&shaped_key) || self.env().contains_key(&bound_key) {
+            if self.env().contains_key(&shaped_key) {
                 return None;
+            }
+            // See the hash twin above for why the bound-index probe is gated.
+            if crate::env::elem_index_meta_possible() {
+                let bound_key = format!("__mutsu_bound_index::{}", var_name);
+                if self.env().contains_key(&bound_key) {
+                    return None;
+                }
             }
         }
         let var_name = var_name.to_string();
@@ -284,8 +296,9 @@ impl Interpreter {
             }
         }
         // Reject if any bound indices exist for this variable
-        // (e.g. `%h<a> := $foo` makes element writes propagate to $foo)
-        {
+        // (e.g. `%h<a> := $foo` makes element writes propagate to $foo).
+        // Gated like the twin above: no bound element, no probe.
+        if crate::env::elem_index_meta_possible() {
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
             if self.env().contains_key(&bound_key) {
                 return None;

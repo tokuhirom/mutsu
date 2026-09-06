@@ -381,6 +381,40 @@ impl NanBox {
         )
     }
 
+    /// Whether this word could possibly be, or be hiding, a list that
+    /// `Interpreter::list_str_needs_interpreter` would have to scan — the list
+    /// kinds themselves plus the three wrappers that scan looks through
+    /// (`with_deref`'s `ContainerRef`/`ContainerView`, `deref_container`'s
+    /// `HashEntryRef` read-through, and `descalarize`'s `Scalar`).
+    ///
+    /// It must stay a tag probe. The scan runs on every `~`/`eq` operand and
+    /// every interpolated value, and its first step clones through
+    /// `deref_container`; a plain `Int` or `Str` operand has to reject here,
+    /// before paying for that clone. The rest of that operand coercion
+    /// (`exec_string_concat_op`) is written to the same rule.
+    #[inline]
+    pub(in crate::value) fn may_hide_a_stringifiable_list(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(
+                Kind::ArrayList
+                    | Kind::ArrayArray
+                    | Kind::ArrayItemList
+                    | Kind::ArrayItemArray
+                    | Kind::ArrayShaped
+                    | Kind::ArrayLazy
+                    | Kind::Slip
+                    | Kind::Seq
+                    | Kind::HyperSeq
+                    | Kind::RaceSeq
+                    | Kind::ContainerRef
+                    | Kind::ContainerView
+                    | Kind::HashEntryRef
+                    | Kind::Scalar
+            )
+        )
+    }
+
     /// The `MatchNode` pointee if this is a lazy `Match`. The non-forcing
     /// probe behind the seam accessors' fast paths.
     #[inline]
