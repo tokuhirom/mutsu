@@ -18,8 +18,8 @@ Self-contained procedures live under `.agents/skills/<name>/SKILL.md` rather
 than in this file; read the matching one before starting such a task. Currently:
 `cut-release` (releasing), `install-raku` (installing the Rakudo oracle when
 `raku` is missing), `roast-triage` (choosing and investigating roast work),
-`test-util-workout`, `reclaim-disk` (stale worktrees and cargo caches),
-`mutsu-ticket-flow`, and `rakuast-implementation`.
+`reclaim-disk` (stale worktrees and cargo caches), `mutsu-ticket-flow`, and
+`rakuast-implementation`.
 
 ## Architecture
 

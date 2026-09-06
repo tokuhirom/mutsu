@@ -15,7 +15,6 @@ before starting one of these tasks:
 | [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
 | [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
 | [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
-| [`test-util-workout`](.agents/skills/test-util-workout/SKILL.md) | A "Test::Util workout" request |
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo/tickets/` items end-to-end through merge |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast*.t`) |
@@ -414,10 +413,6 @@ Agent worktrees under `.claude/worktrees/` and cargo caches under `target/` are 
 ## LXC container environment
 
 This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
-
-## Test::Util function workout
-
-When the user says **"Test::Util workout"** (or similar), follow **`.agents/skills/test-util-workout/SKILL.md`**: pick one function from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, write `t/<function-name>.t`, fix the interpreter (in `src/runtime/test_functions.rs`, never as a core builtin) until it passes, and land it as a PR.
 
 ## Debugging guidelines
 
