@@ -541,6 +541,23 @@ impl Interpreter {
         }
     }
 
+    /// Record a plain-lexical `@`/`%` **parameter** binding so
+    /// `clone_for_thread_for_block` keeps it off the name-keyed `shared_vars`
+    /// lane: a parameter is a fresh per-invocation binding, not the one shared
+    /// object that lane represents, and the lane is seeded once per name, so a
+    /// spawned block capturing it would be frozen at the first call's argument.
+    ///
+    /// [`Self::bind_param_value`] does this for every binding that goes through
+    /// the signature binder. The native `map`/`grep`/`first` fast paths bind a
+    /// block's parameter straight into `env` for speed, so they call this
+    /// directly.
+    pub(crate) fn note_param_bound_aggregate(&mut self, name: &str, value: &Value) {
+        if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
+            self.param_bound_aggregates
+                .insert(name.to_string(), value.clone());
+        }
+    }
+
     pub(in crate::runtime) fn bind_param_value(&mut self, name: &str, value: Value) {
         // An `@`-sigiled parameter is a positional binding: whatever Positional it
         // is given becomes *the array's elements*. An attributive one
@@ -561,10 +578,7 @@ impl Interpreter {
         // off the name-keyed `shared_vars` lane, which is seeded once per name
         // and would freeze a spawned block's view of it at the first spawn's
         // value (`reduce -> $h, @words { $h + await start { [+] @words } }`).
-        if name.starts_with(['@', '%']) && Self::is_plain_lexical_name(name) {
-            self.param_bound_aggregates
-                .insert(name.to_string(), value.clone());
-        }
+        self.note_param_bound_aggregate(name, &value);
         self.env.insert(name.to_string(), value.clone());
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {

@@ -88,20 +88,26 @@ impl Interpreter {
             // `reduce -> $h, @words { $h + await start { [+] @words } }, ...`
             // had every worker read the first binding's value.
             //
-            // Two conditions narrow this to exactly that case. The free variable
-            // must resolve to NO parent slot (the env-level binder is the only
-            // parameter path that writes `env` without a local slot behind it),
-            // and the container `param_bound_aggregates` recorded for the name
-            // must be the SAME container the env currently holds — so an
-            // unrelated outer aggregate that merely shares the name (or a later
-            // `my` re-binding of it), and its `__mutsu_atomic_*` CAS copies,
-            // keep the lane exactly where
-            // `docs/recursive-start-shared-vars.md` requires.
-            for (i, sym) in cc.free_var_syms.iter().enumerate() {
+            // What narrows this to exactly that case is that the container
+            // `param_bound_aggregates` recorded for the name must be the SAME
+            // container the env currently holds — so an unrelated outer
+            // aggregate that merely shares the name (or a later `my` re-binding
+            // of it), and its `__mutsu_atomic_*` CAS copies, keep the lane
+            // exactly where `docs/recursive-start-shared-vars.md` requires.
+            //
+            // This deliberately does NOT also require the free variable to
+            // resolve to no parent slot. That extra condition once stood in for
+            // "the env-level binder is the only parameter path that writes
+            // `env` without a local slot behind it", but the property that
+            // matters is being a PARAMETER binding, not how it is stored: a
+            // slot-bound `@`/`%` parameter (`sub f(@P) { start { @P[0] } }`, and
+            // now `-> @P { start { @P[0] } }` too, since a one-parameter pointy
+            // block keeps its sigil and gets a real `ParamDef`) is just as
+            // fresh per invocation, and leaving it on the once-seeded name lane
+            // froze every worker at the first call's argument.
+            for sym in cc.free_var_syms.iter() {
                 let name = sym.resolve();
-                let slot_bound = cc.free_var_parent_slots.get(i).copied().flatten().is_some();
-                if !slot_bound
-                    && let Some(bound) = self.param_bound_aggregates.get(name.as_str())
+                if let Some(bound) = self.param_bound_aggregates.get(name.as_str())
                     && self
                         .env
                         .get(&name)

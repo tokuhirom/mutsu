@@ -266,7 +266,20 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             // instead of the bound param. Route them through the param_defs
             // (AnonSubParams) path, which binds `@_`/`%_` correctly.
             && first.name != "@_"
-            && first.name != "%_";
+            && first.name != "%_"
+            // NO `@`/`%` parameter may use it either, for the same reason
+            // generalized: `Expr::Lambda` keeps only a sigil-STRIPPED name and
+            // no `ParamDef` at all, so `-> @x` and `-> $x` become the same
+            // `param: "x"` and the block compiles to `MakeLambda`, whose
+            // arguments go through `bind_function_args_values`'s legacy
+            // (defs-less) branch. That branch cannot tell a container
+            // parameter from a scalar one, so it binds BY VALUE -- and every
+            // `.push`/`.unshift`/`.shift`/element write the block made was
+            // silently lost instead of reaching the caller's array or hash.
+            // A two-parameter pointy block was already correct because it
+            // takes the `AnonSubParams` path below; route the one-parameter
+            // form there too.
+            && !first.name.starts_with(['@', '%']);
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first

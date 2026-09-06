@@ -7,7 +7,7 @@ use crate::parser::stmt::modifier::is_stmt_modifier_after_trailing_comma;
 /// without this the element parser would try to read `if`/`for` as a term and
 /// fail with a bogus "expected expression" (`UpRooted::Table` writes
 /// `die sprintf(...), $a, $b,\n\tif ...;`).
-fn comma_list_ends_here(r: &str) -> bool {
+pub(in crate::parser) fn comma_list_ends_here(r: &str) -> bool {
     r.starts_with(';')
         || r.is_empty()
         || r.starts_with('}')
