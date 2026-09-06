@@ -2,8 +2,9 @@
 
 - Status: Accepted (slice 1 implemented 2026-08-28; slice 1b — the vouch's
   complement — implemented 2026-09-06, which closes §1.2(b) for plain scalars
-  and retires the prerequisite §7.3 recorded; slices 2-5 not started. §7.6
-  records what the 2026-09-06 re-measurement corrected.)
+  and retires the prerequisite §7.3 recorded; slice 1b's one carve-out, the
+  parameter exclusion, was itself retired later the same day — §7.7; slices 2-5
+  not started. §7.6 records what the 2026-09-06 re-measurement corrected.)
 - Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
   authored concurrently as 0054 and this one lost the tie; the index row for
   0054 belongs to the argument-list-interpolation ADR)
@@ -479,8 +480,10 @@ that mattered):
 | liveness (`$b` reassigned after capture) | `.()` | MUTATED | MUTATED | MUTATED |
 | `is rw` writeback after capture | `.()` | OUTER! | OUTER! | OUTER! |
 | capture over a **parameter**, per invocation | `.map` | A,B,C | A,B,C | A,B,C |
-| capture over a parameter **handed to a call** | `.()` | **CALLER** | **CALLER** | OUTER |
+| capture over a parameter **handed to a call** | `.()` | **CALLER** | **CALLER** ¹ | OUTER |
 | `@`-sigil capture vs a same-named caller `@a` | `.()` | **1** | **1** | 3 |
+
+¹ Closed later the same day — see §7.7.
 
 **What the ADR got right.** §1.2(b) reproduces exactly as written, with both
 added lines load-bearing for the reasons given, and §1.3's conclusion holds: the
@@ -502,11 +505,13 @@ the fix that shipped.
 
 2. **§7.3's blocker is not a blocker.** It records slice 2's prerequisite list as
    "slice 1 (done) **and** ADR-0025 slice 2's mechanism (open, blocked on the Cro
-   ticket)". The Cro regression is caused by boxing the frame's own
+   ticket)". The Cro regression is triggered by boxing the frame's own
    **parameters**, and excluding them costs one narrow shape rather than the fix.
    `todo/deep/unvouched-capture-cells-leak-state-across-cro-client-requests.md`
-   is retired; the residue is
-   `todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md`.
+   is retired; the residue was
+   `todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md`,
+   itself closed the same day — see §7.7, which corrects this bullet: the cell
+   was never the cause.
 
 3. **§4's "correctness" bullet is broader than what shipped.** §1.2(b) is closed
    for plain scalars only. The `@`/`%` half of the same family (last row of the
@@ -534,6 +539,41 @@ are a single family (a capture the creator mutates later, for which the
 escape/ownership analysis produces no cell) that this slice does not address —
 `needs_cell_unvouched_locals` is keyed on the *vouch*, and those captures are
 refused a cell by the escape analysis instead, one frame further out.
+
+### 7.7 Slice 1b's parameter carve-out retired (2026-09-06)
+
+§7.6 recorded the exclusion of `param_locals` from
+`needs_cell_unvouched_locals` as the one narrow shape slice 1b traded away, and
+`todo/tickets/parameter-capture-handed-to-a-call-has-neither-defence.md` proposed
+the fix as "make parameter binding reset a stale cell the way a vardecl does".
+Both the diagnosis and the proposed fix were wrong, and the dichotomy is now
+exhaustive with no carve-out: **a captured parameter gets the cell like any other
+own local.**
+
+- There is no stale cell to reset. Every call path installs a fresh `locals`
+  vector from the pool, so a cell boxed into a parameter's slot is
+  per-invocation, and the env mirror of it is a callee-local name that both
+  return-merge arms drop.
+- What leaked was `box_captured_lexicals`' **second** publication of the new
+  cell, into the name-keyed cross-thread `shared_vars` lane. That lane makes a
+  cell the meaning of a *bare name* process-wide (and clears
+  `thread_redeclared_vars`, the mask that says a different binding owns the
+  name), which is a claim that is never true of a per-invocation binding.
+  `Cro::HTTP::Client.request`'s `$url` parameter thereby became the meaning of
+  `$url` in the script that called it, so its base URL accumulated a path
+  segment per request.
+- Parameters are excluded at that lane instead
+  (`if self.shared_vars_active && !code.param_locals.contains(sym)`), which
+  costs nothing: the lane exists to replace a stale plain snapshot seeded by an
+  earlier `start`, and a parameter cannot have been snapshotted before it
+  existed.
+- §7.6's table row "capture over a parameter handed to a call" now reads OUTER.
+  Its slot-resident twin, which the ticket claimed already passed, in fact
+  answered `(Any)` and now reads OUTER too.
+
+Write-up and pins: `news/2026-09/a-captured-parameter-gets-the-cell-too.md`,
+`t/captured-param-cell-not-in-shared-vars-lane.t`,
+`t/closure-capture-cell-dichotomy.t` (17 → 22 assertions).
 
 ### 7.5 Not addressed
 

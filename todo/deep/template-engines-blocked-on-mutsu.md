@@ -13,7 +13,7 @@ carried-over figure. Several rows had gone badly stale.
 | Candidate | raku | mutsu | First failure under mutsu |
 | --- | --- | --- | --- |
 | `Template::Mustache` 1.2.6 | 11/13 ¹ | **13/13** | none — the bundled battery |
-| `Template6` 0.16.0 | 12/12 | ~~0/12~~ → ~~10/12~~ → **11/12** | **REDUCED AND LARGELY FIXED 2026-09-06** (`news/2026-09/template6-zero-to-ten-of-twelve.md`). The `Use of Nil in string context` headline was, as this file predicted, a pointer and not the diagnosis: reducing `Parser.compile` by deletion found four unrelated general bugs — a split-`:v` separator `Match` carried no named captures; `.subst(…, :nth(2..*))` aborted the process with a Rust `capacity overflow`; an attribute default's closure was stamped with the *constructing* class and lost its own file's subs; and an assignment to `$_` inside a nested block was discarded on block exit. `02-for` was then fixed on 2026-09-06 too: a one-parameter pointy block lost its parameter's sigil, so `-> @stack { @stack.shift }` bound the caller's array BY VALUE (`news/2026-09/one-parameter-pointy-block-loses-its-sigil.md`). One file remains, filed as `todo/tickets/template6-include-local-data-not-reaching-the-included-stash.md` (`05-includes`) |
+| `Template6` 0.16.0 | 12/12 | ~~0/12~~ → ~~10/12~~ → ~~11/12~~ → **12/12** | **DONE 2026-09-06** (`news/2026-09/template6-zero-to-ten-of-twelve.md`). The `Use of Nil in string context` headline was, as this file predicted, a pointer and not the diagnosis: reducing `Parser.compile` by deletion found four unrelated general bugs — a split-`:v` separator `Match` carried no named captures; `.subst(…, :nth(2..*))` aborted the process with a Rust `capacity overflow`; an attribute default's closure was stamped with the *constructing* class and lost its own file's subs; and an assignment to `$_` inside a nested block was discarded on block exit. `02-for` was then fixed on 2026-09-06 too: a one-parameter pointy block lost its parameter's sigil, so `-> @stack { @stack.shift }` bound the caller's array BY VALUE (`news/2026-09/one-parameter-pointy-block-loses-its-sigil.md`). The last file, `05-includes`, followed on 2026-09-06 as well and it too was one general bug rather than the template machinery the ticket suspected: the *no-capture* regex matcher (`regex_match_end_from_in_pkg`, the engine behind `.comb(/rx/)`, `.split`, `.subst(:g)` and the lookaround assertions) ignored `RegexToken::frugal` outright, so `Parser!action`'s `.comb(/ \" .*? \" | \' .*? \' | \S+ /)` matched from the first quote to the LAST one and returned the whole `[% INCLUDE "included" name = "World" %]` statement as a single token (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`). The dist is complete |
 | `Template::Jinja2` 0.2.0 | 22/23 | ~~0/23~~ → **3/23** | The two 2026-08-19 blockers are genuinely fixed, and so is the *third* one found on 2026-09-06: `lib/Template/Jinja2/Renderer.rakumod:114`'s `when If {` was parsed as a call (`Function 'If' needs parens to avoid gobbling block`) because a `use`d module's `is export`ed classes never reached the parser's type index — a trait on a declarator wraps it in a bare `Stmt::Block` the module scan did not walk into. The dist now loads; the remaining 20 files are ordinary per-feature failures |
 | `Template::Mojo` 0.2.2 | 5/5 | **4/5** | `00-basic` only; residue in `todo/tickets/template-mojo-residual-failures.md` |
 | `Template::Nest::Fast` 0.3.0 | 10/10 | **0/10** | `with $f ~~ m:g/…/ -> @m` binds `@m` to a one-element list *containing* the match list instead of to the list itself, so `$m[0].from` is Nil and `!index-template` warns and then dies. Reduced: `with ("a<!--x-->b<!--yy-->c" ~~ m:g/('<!--') \s* (\w+) \s* ('-->')/) -> @m { say @m.elems }` — raku 2, mutsu 1 |
@@ -70,9 +70,14 @@ needs its own reduction before it can be scheduled. What *is* known:
   turned out to be one of several stacked at the same call site: **do not
   declare a load blocker the last one until the dist actually loads.**
 - `Template6` was reduced on 2026-09-06 by deleting constructs out of
-  `Parser.compile` until each divergence fell out. Four bugs, none of them the
+  `Parser.compile` until each divergence fell out. Five bugs, none of them the
   warning in the headline. The method worked exactly as this file prescribed
-  it — write it down again for the next row.
+  it — write it down again for the next row. The last one is the sharpest
+  example: the ticket filed for `05-includes` guessed at `|%localdata` flatten
+  and `Stash.make-clone`, and the actual cause was two layers earlier and in a
+  different subsystem entirely (a frugal regex quantifier). Diffing the
+  *generated script* against raku's — which the ticket suggested and which cost
+  one `note` — pointed straight at the tokenizer.
 
 ## Already reduced and split out
 
@@ -91,8 +96,9 @@ needs its own reduction before it can be scheduled. What *is* known:
    pair, plus the imported-`is export`-type parse bug found and fixed
    2026-09-06). The dist loads and runs 3/23; what is left is ordinary
    per-feature compatibility work, no longer a single lever.
-3. ~~`Template6`~~ — **11/12 as of 2026-09-06**; the one residual file is filed
-   as a ticket and is ordinary compatibility work now, not a survey blocker.
+3. ~~`Template6`~~ — **12/12 as of 2026-09-06**; the dist is closed. Five
+   general interpreter bugs came out of reducing it, every one of them found by
+   deleting constructs rather than by reading the first error line.
 4. `Template::Nest::Fast` — 0/10 behind a single reduced bug (`with EXPR -> @m`
    wrapping the list); likely the cheapest whole row left.
 5. The rest (`Mojo`, `HAML`, `Classic`) as ordinary compatibility work; each is

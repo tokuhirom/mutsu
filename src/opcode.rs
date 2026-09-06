@@ -4093,13 +4093,14 @@ pub(crate) struct CompiledCode {
     /// Every name this code declares as a SIGNATURE PARAMETER (routine, method,
     /// or pointy block), interned. Unlike [`Self::param_local_slots`] this covers
     /// named and destructured sub-signature parameters too, and it is keyed on
-    /// the name rather than the slot, because its one consumer asks a name
-    /// question: is this own local a binding the *caller* creates fresh on every
+    /// the name rather than the slot, because its consumer asks a name question:
+    /// is this own local a binding the *caller* creates fresh on every
     /// invocation? Populated by `Compiler::declare_param`, the single entry point
     /// for parameter declaration. Empty for hand-built chunks.
     ///
-    /// Consumer: `needs_cell_unvouched_locals` (ADR-0055) must not give a
-    /// parameter a shared cell — see that field's doc comment.
+    /// Consumer: `box_captured_lexicals` must not publish a parameter's shared
+    /// cell into the NAME-KEYED cross-thread `shared_vars` lane — see the
+    /// `needs_cell_unvouched_locals` doc comment.
     pub(crate) param_locals: rustc_hash::FxHashSet<Symbol>,
     /// Out-of-band lexical scope chains for `SymbolicDeref` sites (indexed by the
     /// op's `scopes_idx`). `$::($name)::x` can only be recognised as an `OUTER::`
@@ -4493,12 +4494,20 @@ pub(crate) struct CompiledCode {
     /// `needs_cell_locals` it does NOT require `captured_mutated_locals`
     /// membership (the whole point is the mutation analysis never saw the write).
     ///
-    /// Excludes this frame's own PARAMETERS (`param_locals`): a parameter is a
-    /// fresh binding the caller creates per invocation, and the `is rw`
-    /// writeback the vouch refusal guards against applies to a local the frame
-    /// declares and hands onward, not to the frame's own parameter. Boxing one
-    /// leaked state between two invocations of the same routine — see
-    /// `news/2026-09/adr0055-unvouched-escaping-captures-get-a-cell.md`.
+    /// INCLUDES this frame's own parameters. They were excluded when the set
+    /// first shipped, because boxing one leaked state between two invocations of
+    /// a routine and dropped six Cro::HTTP suites. That diagnosis was one layer
+    /// too shallow: the cell itself is per-invocation (every call path installs a
+    /// fresh `locals` vector, and the env mirror of the cell is a callee-local
+    /// name the return merge drops). What leaked was `box_captured_lexicals`'
+    /// *second* publication — into the NAME-KEYED, process-wide `shared_vars`
+    /// lane, which is live whenever any thread is running. That lane makes a
+    /// cell THE meaning of a bare name program-wide, so a callee's parameter
+    /// hijacked an unrelated same-named lexical in the caller. Parameters are
+    /// excluded THERE instead (see `CompiledCode::param_locals`), which is the
+    /// narrow, true statement: a per-invocation binding must never become a
+    /// name's process-wide meaning. See
+    /// `news/2026-09/a-captured-parameter-gets-the-cell-too.md`.
     pub(crate) needs_cell_unvouched_locals: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
@@ -6928,15 +6937,17 @@ impl CompiledCode {
         // exhaustive if the complement of the vouch also gets a cell. Compute it
         // here, where `vouched` is known.
         //
-        // `param_locals` is excluded: a parameter is a fresh binding created by
-        // the caller per invocation, so the `is rw`-writeback hazard the
-        // `own_call_arg_sources` refusal guards against does not apply to it,
-        // and giving one a cell makes two invocations of the same routine share
-        // a binding (the Cro::HTTP::Client request-path accumulation).
+        // A frame's own PARAMETERS are INCLUDED. Excluding them here (the
+        // original shape of this filter) cost exactly the case the dichotomy
+        // exists to close — a capture of a parameter that was itself handed to a
+        // call had NEITHER defence, so a same-named lexical in whatever frame
+        // happened to be calling won. The Cro::HTTP state leak that motivated the
+        // exclusion is real, but it is not caused by the cell: it is caused by
+        // `box_captured_lexicals` publishing the cell into the name-keyed
+        // `shared_vars` lane, and that is where parameters are excluded now.
         self.needs_cell_unvouched_locals = escaping_captured_own
             .into_iter()
             .filter(|sym| !vouched.contains(sym))
-            .filter(|sym| !self.param_locals.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     // `box_captured_lexicals` only boxes `$` scalars; an

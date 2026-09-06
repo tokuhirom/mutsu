@@ -1,5 +1,33 @@
 use super::super::*;
 
+/// Queue the candidate end positions of one quantified token onto the
+/// depth-first work stack.
+///
+/// The stack is LIFO, so whatever is pushed LAST is explored FIRST, and
+/// `positions` always arrives in ascending order (fewest repetitions first).
+/// Pushing it unchanged therefore explores the LONGEST repetition first, which
+/// is exactly greedy priority. A frugal quantifier (`*?`, `+?`, `**{...}?`)
+/// has the mirror priority — shortest first — so its positions go on in
+/// descending order. Without this the no-capture matcher matched every frugal
+/// quantifier greedily, which is what made `"a \"b\" c \"d\"".comb(/ \" .*? \" /)`
+/// return one match spanning both quoted runs instead of two.
+fn push_quant_positions(
+    stack: &mut Vec<(usize, usize)>,
+    next_idx: usize,
+    positions: Vec<usize>,
+    frugal: bool,
+) {
+    if frugal {
+        for p in positions.into_iter().rev() {
+            stack.push((next_idx, p));
+        }
+    } else {
+        for p in positions {
+            stack.push((next_idx, p));
+        }
+    }
+}
+
 impl Interpreter {
     pub(super) fn regex_match_end_from_in_pkg(
         &mut self,
@@ -55,15 +83,26 @@ impl Interpreter {
                     }
                 }
                 RegexQuant::ZeroOrOne => {
-                    stack.push((idx + 1, pos));
-                    if let Some(next) = self.regex_match_atom_in_pkg(
+                    let matched = self.regex_match_atom_in_pkg(
                         &token.atom,
                         chars,
                         pos,
                         pkg,
                         pattern.ignore_case,
-                    ) {
-                        stack.push((idx + 1, next));
+                    );
+                    // The stack is LIFO, so whatever is pushed LAST is explored
+                    // first. Greedy `?` prefers the one-match branch; frugal `??`
+                    // prefers zero.
+                    if token.frugal {
+                        if let Some(next) = matched {
+                            stack.push((idx + 1, next));
+                        }
+                        stack.push((idx + 1, pos));
+                    } else {
+                        stack.push((idx + 1, pos));
+                        if let Some(next) = matched {
+                            stack.push((idx + 1, next));
+                        }
                     }
                 }
                 RegexQuant::ZeroOrMore => {
@@ -83,9 +122,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions {
-                        stack.push((idx + 1, p));
-                    }
+                    push_quant_positions(&mut stack, idx + 1, positions, token.frugal);
                 }
                 RegexQuant::OneOrMore => {
                     let mut positions = Vec::new();
@@ -113,9 +150,7 @@ impl Interpreter {
                         positions.push(next);
                         current = next;
                     }
-                    for p in positions {
-                        stack.push((idx + 1, p));
-                    }
+                    push_quant_positions(&mut stack, idx + 1, positions, token.frugal);
                 }
                 RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
                     let (min, max) = match &token.quant {
@@ -165,9 +200,7 @@ impl Interpreter {
                         continue; // didn't match minimum times
                     }
                     // Push all valid positions (from min to actual count)
-                    for p in positions {
-                        stack.push((idx + 1, p));
-                    }
+                    push_quant_positions(&mut stack, idx + 1, positions, token.frugal);
                 }
             }
         }
