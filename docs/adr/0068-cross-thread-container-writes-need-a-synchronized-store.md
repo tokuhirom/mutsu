@@ -421,3 +421,27 @@ workload actually took rather than by reading the write sites.
   `S17-procasync/stress.t` SIGSEGV is still unexplained.
 
 Pinned by `t/concurrent-attribute-element-store.t` (4 rows, green under raku).
+
+## 9. The mitigation the unsynchronized store had earned is retired (2026-09-07)
+
+With the three funnels guarded, the celled path is synchronized, which falsifies
+the premise of the one mitigation that had been put in place *because* it was
+not. `CompiledCode::compute_free_vars` subtracted `thread_escaping_captures`
+from `needs_cell_unvouched_containers` — every name a thread-escaping nested
+closure captured was excluded from the declaration-site container cell and kept
+the name-keyed lane, its comment saying that boxing one "turns
+`start { @a[$i] = ... }` into a data race".
+
+Removing the subtraction closes the last ADR-0055 name-hijack hole (a
+`start`-captured `@a` resolving to a same-named lexical in whatever frame calls
+the closure) and removes the last consumer of `CompiledCode::thread_escaping`,
+which is deleted with its compiler plumbing. The four concurrency pins and all
+five stress probes stay at 0 failures at 24-way across 240 processes.
+
+The `todo/deep/` ticket predicted this would need "retire the lane for
+containers that have a cell", not a deletion, because the lane also performs
+dirty-marking and `sync_shared_vars_to_env` writeback. Measured, it does not:
+the cell *is* the sharing, so a worker's `@b.push(30)` is visible in the
+declaring frame with no writeback step. See
+`news/2026-09/thread-escaping-container-cell-exclusion-retired.md`; pinned by
+`t/thread-escaping-container-capture-is-lexical.t`.

@@ -82,11 +82,14 @@ Three specific loose ends from the route audit:
 ADR-0068 §1.1's requirement of a `--profile profiling` build, the `gc-stress`
 environment and 24-way oversubscription is **not** necessary, and §7.1 records why.
 The discriminator is which store path the workload takes, not how loaded the box
-is. A `start` block that mentions the container lexically is excluded from celling
-by `thread_escaping_captures` and lands on the safe lane — which is what made five
-earlier hand-shrunk probes come back clean. Reach the container through a **named
-sub the thread body merely calls** (a route the thread-escape analysis cannot see,
-ADR-0039 §8.6) and an ordinary debug build fails on the first run, with the GC off:
+is. Historically a `start` block that mentioned the container lexically was
+excluded from celling by `thread_escaping_captures` and landed on the name-keyed
+lane — which is what made five earlier hand-shrunk probes come back clean. That
+exclusion is retired (2026-09-07, ADR-0068 §9), so such a block now takes the
+guarded cell path; the probe below still discriminates, because it reaches the
+container through a **named sub the thread body merely calls** (a route the
+capture analysis cannot see, ADR-0039 §8.6). On an ordinary debug build with the
+GC off it failed on the first run before the guards landed:
 
 ```raku
 {

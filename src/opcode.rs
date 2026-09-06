@@ -4618,14 +4618,15 @@ pub(crate) struct CompiledCode {
     /// 31s (past its 30s budget). One boxing per declaration costs nothing
     /// measurable.
     ///
-    /// Two exclusions, both measured (see the computation in
-    /// `compute_free_vars`): a name a THREAD-escaping nested closure captures
-    /// (`todo/deep/celled-container-element-write-races-under-threads.md`), and
-    /// a name any `is <Type>` variable trait in this frame applies to. A typed
+    /// One exclusion, measured (see the computation in `compute_free_vars`): a
+    /// name any `is <Type>` variable trait in this frame applies to. A typed
     /// container is refused once more at the boxing site itself
-    /// (`box_decl_local_container_cell`). Both leave the corresponding capture
-    /// hijackable; the typed residue is
+    /// (`box_decl_local_container_cell`). It leaves the corresponding capture
+    /// hijackable; that residue is
     /// `todo/tickets/typed-container-capture-still-loses-to-a-same-named-caller-array.md`.
+    /// A second exclusion, for a name a THREAD-escaping nested closure
+    /// captures, was retired once ADR-0068 synchronized the celled store
+    /// (`news/2026-09/thread-escaping-container-cell-exclusion-retired.md`).
     pub(crate) needs_cell_unvouched_containers: Vec<Symbol>,
     /// Own locals interpolated into a regex constant of this same frame
     /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
@@ -4650,15 +4651,6 @@ pub(crate) struct CompiledCode {
     /// mechanism that carries a `submethod DESTROY { $a++ }` write on a worker
     /// back to the parent. Populated by `record_type_body_captures`.
     pub(crate) type_body_written_lexicals: Vec<Symbol>,
-    /// True when this closure was compiled in a position that hands it to a
-    /// THREAD (`start { ... }`, `Thread.start`, `Promise.start`). A plain
-    /// escaping position (stored/returned) is not enough: this gates boxing a
-    /// type-constrained scalar into a shared cell, which is required for the
-    /// parent to observe a worker's write (the name-keyed `shared_vars` lane
-    /// no longer carries a spawned block's own captured scalars, PLAN.md §6)
-    /// but must NOT happen for a same-frame closure, because `cas` resolves its
-    /// target BY NAME and is not cell-aware (roast S17-lowlevel/cas.t).
-    pub(crate) thread_escaping: bool,
     /// The subset of this code's own `free_var_syms` whose captured value is
     /// **authoritative**: the CREATING frame declares them as plain lexicals and
     /// provably never mutates them after this closure captured them, so the
@@ -5235,7 +5227,6 @@ impl CompiledCode {
             needs_cell_unvouched_containers: Vec::new(),
             needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
-            thread_escaping: false,
             authoritative_free_vars: Vec::new(),
             self_capture_decl_locals: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
@@ -7039,21 +7030,6 @@ impl CompiledCode {
             .filter(|sym| self.needs_cell_locals.contains(sym))
             .collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
-        // Thread-escape is transitive through enclosing closures: a nested
-        // `start { $c = ... }` inside `.map({ ... })` reaches the outer `$c`
-        // only via this frame's capture, so the boxing decision at the OUTER
-        // creation site (which consults `cc.thread_escaping` to relax the
-        // typed-scalar skip) must see the nested thread hand-off. The cell
-        // requirement itself already bubbles via `needs_cell_free_vars`; this
-        // carries the thread bit alongside it.
-        if !self.thread_escaping
-            && self
-                .closure_compiled_codes
-                .iter()
-                .any(|nested| nested.thread_escaping)
-        {
-            self.thread_escaping = true;
-        }
         // Tell each closure we embed which of ITS free variables we (the creating
         // frame) vouch for: a plain lexical we declare and never mutate after the
         // capture op runs. Only such a capture can be installed with overwrite
@@ -7117,20 +7093,6 @@ impl CompiledCode {
         // DECLARATION site rather than at each capture, so the set is computed
         // here (where the vouch is known) but consumed by `exec_set_local_op`.
         //
-        // A name captured by a THREAD-escaping nested closure is excluded: the
-        // cross-thread atomic lane (`__mutsu_atomic_arr::`) stands down for an
-        // already-celled container and defers to the general assignment path,
-        // which mutates the `ArrayData` behind the cell without holding the
-        // cell's Mutex — boxing one turns `start { @a[$i] = ... }` into a data
-        // race (see `todo/deep/celled-container-element-write-races-under-threads.md`).
-        // `thread_escaping` is already transitive on each nested code, so a
-        // `start` at any depth is covered.
-        let thread_escaping_captures: std::collections::HashSet<Symbol> = self
-            .closure_compiled_codes
-            .iter()
-            .filter(|nested| nested.thread_escaping)
-            .flat_map(|nested| nested.free_var_syms.iter().copied())
-            .collect();
         // A name any `is <Type>` variable trait in this frame applies to is also
         // excluded. `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain
         // Hash at the declaration store and lets `ApplyVarTrait` coerce it to
@@ -7156,11 +7118,7 @@ impl CompiledCode {
             .collect();
         self.needs_cell_unvouched_containers = escaping_captured_own
             .into_iter()
-            .filter(|sym| {
-                !vouched.contains(sym)
-                    && !thread_escaping_captures.contains(sym)
-                    && !trait_applied.contains(sym)
-            })
+            .filter(|sym| !vouched.contains(sym) && !trait_applied.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
             })
