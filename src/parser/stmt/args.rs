@@ -24,47 +24,37 @@ fn regroup_assign_expr_metaop_rhs(expr: Expr) -> Expr {
     else {
         return expr;
     };
-    let Expr::ArrayLiteral(mut items) = *expr else {
+    let Expr::ArrayLiteral(items) = *expr else {
         return Expr::AssignExpr {
             name,
             expr,
             is_bind,
         };
     };
-    let Some(last) = items.pop() else {
-        return Expr::AssignExpr {
-            name,
-            expr: Box::new(Expr::ArrayLiteral(items)),
-            is_bind,
-        };
+    // Raku's list infixes (`Z`, `X`, `Zop`, `Xop`, `minmax`) are LOOSER than the
+    // comma, so the whole comma level is the left operand: `my @r = 1, 2 Z <a b>`
+    // is `(1, 2) Z <a b>`. This used to lift by hand, one level: pop the last
+    // item and, if it was a metaop, push its `left` back as an item. That cannot
+    // see a CHAIN -- `1, 2 Z <a b> Z <c d>` arrives as a metaop whose own `left`
+    // is another metaop, so pushing that `left` produced
+    // `(1, (2 Z <a b>)) Z <c d>` and the answer `[(1, "c"), (((2, "a"),).Seq, "d")]`
+    // where raku says `[(1, "a", "c"), (2, "b", "d")]`.
+    //
+    // `lift_list_infix_in_arg_list` is the chain-aware lift the parenthesised
+    // and listop-argument spellings already share: it walks the left-nested
+    // same-op chain, collects each `right` as a column, and folds the preceding
+    // comma items into the first column. Reusing it makes all three spellings of
+    // the same source agree by construction.
+    let lifted = crate::parser::primary::lift_list_infix_in_arg_list(items);
+    let expr = if lifted.len() == 1 {
+        lifted.into_iter().next().unwrap()
+    } else {
+        Expr::ArrayLiteral(lifted)
     };
-    match last {
-        Expr::MetaOp {
-            meta,
-            op,
-            left,
-            right,
-        } if matches!(meta.as_str(), "X" | "Z") => {
-            items.push(*left);
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(Expr::MetaOp {
-                    meta,
-                    op,
-                    left: Box::new(Expr::ArrayLiteral(items)),
-                    right,
-                }),
-                is_bind,
-            }
-        }
-        other => {
-            items.push(other);
-            Expr::AssignExpr {
-                name,
-                expr: Box::new(Expr::ArrayLiteral(items)),
-                is_bind,
-            }
-        }
+    Expr::AssignExpr {
+        name,
+        expr: Box::new(expr),
+        is_bind,
     }
 }
 

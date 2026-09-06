@@ -226,11 +226,17 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                     to_expr(inner_right_items),
                     to_expr(right_items),
                 ];
-                args.push(Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::str_from("with"))),
-                    op: TokenKind::FatArrow,
-                    right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
-                });
+                // A BARE `Z` has no inner operator, so it must not carry a
+                // `with` adverb -- `infix:<>` names nothing. (Case 2 below has
+                // always had this guard; this arm and the paren-list lift did
+                // not, which is what made `(1, 2 Z <a b> Z <c d>)` fail.)
+                if !op.is_empty() {
+                    args.push(Expr::Binary {
+                        left: Box::new(Expr::Literal(Value::str_from("with"))),
+                        op: TokenKind::FatArrow,
+                        right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                    });
+                }
                 return Expr::Call {
                     name: Symbol::intern("zip"),
                     args,
@@ -348,11 +354,19 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
             .any(|col| col.len() == 1 && matches!(col[0], Expr::Whatever));
         let lifted_expr = if *meta == "Z" && columns_rev.len() > 2 && !has_standalone_whatever {
             let mut args: Vec<Expr> = columns_rev.into_iter().map(col_to_expr).collect();
-            args.push(Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str_from("with"))),
-                op: TokenKind::FatArrow,
-                right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
-            });
+            // A BARE `Z` chain zips into tuples with no combining operator, so
+            // it takes no `with` adverb: emitting one built `infix:<>`, which
+            // names nothing, and `(1, 2 Z <a b> Z <c d>)` died reporting the
+            // failed operator lookup as "Two terms in a row". Only `Zop`
+            // (`Z+`, `Z~`, ...) carries the adverb -- which is why the `Z+`
+            // spelling of the very same shape always worked.
+            if !op.is_empty() {
+                args.push(Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str_from("with"))),
+                    op: TokenKind::FatArrow,
+                    right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                });
+            }
             Expr::Call {
                 name: Symbol::intern("zip"),
                 args,
