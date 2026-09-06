@@ -1,15 +1,13 @@
-# A named sub's free variable resolves through the DYNAMIC caller chain, so an intervening caller's same-named local shadows the lexical one
+# A `:=` bind of a free variable aliases an intervening caller's same-named lexical
 
-Found while fixing
-`todo/deep/bind-propagate-ancestor-frames-clobbers-unrelated-recursive-locals.md`
-(now `news/2026-08/bind-propagate-ancestor-frames-frame-ownership-gate.md`).
-Independent of that bug and NOT fixed by it — verified unchanged before and
-after that fix.
+> **Re-measured end-to-end on 2026-09-06 (`main`, raku v2026.07), and BOTH of this
+> file's stated premises were false.** The title and the analysis below have been
+> rewritten around what the measurements actually show. The oracle is now checked
+> in as `t/free-var-bind-does-not-alias-caller-lexical.t` — 19 rows, all 19 green
+> under `raku`, 15 green under mutsu and 4 `todo`. Do not re-derive the matrix;
+> run that file.
 
-## Symptom
-
-A caller's own `my` lexical is clobbered by a `:=` bind performed in a callee
-that names a *different* (mainline) variable with the same name.
+## What is actually wrong
 
 ```raku
 my $var = 1;
@@ -17,76 +15,177 @@ my $alias;
 sub g() { $alias := $var; }
 sub f() { my $var = 5; g(); say "f sees $var"; }
 f();
-$var = 200;
-say "alias $alias";
+```
+* `raku`: `f sees 5`
+* `mutsu`: `f sees 1`
+
+and the shape of it is an **aliasing, not a stale read** — the caller's lexical
+and the compunit's become *one container*:
+
+```raku
+my $n = 1; my $a;
+sub gn() { $a := $n }
+sub fn() { my $n = 5; gn(); $n = 7; say $n }
+fn();      # 7 in both
+say $n;    # raku: 1     mutsu: 7   <-- f's write reached the compunit lexical
 ```
 
-* `raku`:  `f sees 5` / `alias 200`
-* `mutsu`: `f sees 1` / `alias 200`
+It happens **during** the call: a `say $n` placed before `gn()` prints 5 and the
+identical statement after it prints 1.
 
-`f`'s own `$var` reads back as `1` after the call to `g` — `f` lost its own
-lexical to the mainline one.
+## Premise 1 that was false: "free-variable reads resolve through the dynamic caller chain"
 
-## Root cause (partly established)
+They do not, today. Every one of these answers exactly as raku, with an
+intervening caller shadowing the name:
 
-mutsu's `Env` is a *dynamic* chain: a callee's env is
-`Env::scoped_child(caller_env)` (`src/vm/vm_call_named_inner.rs`), so a free
-variable read inside `g` walks `g -> f -> mainline` rather than `g`'s lexical
-parent (the mainline). Lexical scoping is only approximated by that caller
-chain, and it diverges exactly when an intervening caller declares the same
-name.
+| shape | result |
+|---|---|
+| a callee READS the free variable | callee sees the compunit's value, caller keeps its own |
+| a callee WRITES it | write reaches the compunit lexical, caller keeps its own |
+| **two** levels of intervening callers, each shadowing | all three frames see their own binding |
+| the caller writes its own lexical, before or after the call | stays its own; compunit untouched |
+| the caller declares its `my` **after** the call | unaffected |
+| the bind performed in the mainline instead of a callee | unaffected, and the alias still works |
+| the bind in the other direction (`$freevar := $local`) | unaffected |
 
-In this particular shape the divergence surfaces through the `:=` bind
-machinery — `Interpreter::propagate_bind_to_ancestor_frames`
-(`src/vm/vm_var_assign_ops.rs`) writes the bind's shared `ContainerRef` into
-the innermost ancestor frame that declares `var` — but the reported value `1`
-(the *mainline* value, not `f`'s `5`) shows `f`'s `my $var = 5` did not even
-land in `f`'s own env tier: the innermost frame the splice found was the
-mainline's, and `f`'s later read of `$var` went to env rather than to its
-local slot. So there are (at least) two interacting mechanisms here: the
-dynamic-chain resolution, and a local/env dual-store coherence gap for a
-routine-level `my` that is never written by name.
+Whatever the env chain does in general, it is not producing this bug, and a
+campaign to make routine envs lexically parented (the ADR this file asked for)
+is not what closes it.
 
-## Re-measured 2026-08-28: unchanged by ADR-0055 slice 1, and unchanged by the slice-2 merge flip
+## Premise 2 that was false: "the divergence surfaces through `propagate_bind_to_ancestor_frames`"
 
-The repro was re-run against ADR-0055 slice 1 (the vouch/cell dichotomy — every
-escaping-captured plain scalar is now either authoritative or a shared cell) and
-against a prototype of slice 2 (the closure-wins merge). Both leave it at
-`f sees 1 / alias 200`.
+It does not. That function *is* reached (verified with a `rust-gdb` ignore-count
+breakpoint: 1 hit) and its splice *does* fire, but **disabling the splice
+entirely changes no row**. A/B'd on the same binary through an env switch, with
+the splice on and off, every divergent row is byte-identical. It is a bystander.
 
-That is the expected result, and it sharpens the scope: ADR-0055 is about how a
-*captured env* is merged into a closure's frame, whereas this is about how a
-*named sub's* frame is chained to its caller in the first place
-(`Env::scoped_child(caller_env)`). A merge policy cannot fix a frame whose
-parent is the wrong frame. This needs its own ADR — "a routine's env parent is
-its lexical scope, not its caller" — and ADR-0055 §7.5 now records it as
-out of scope for that ADR.
+The only other writer into an ancestor frame's `saved_env`
+(`box_carrier_free_var_writes`, `vm/vm_env_helpers.rs`) is gated on
+`__mutsu_in_eval` and never runs here either.
 
-## Why this is not a small slice
+## The sharpest discriminator — start here
 
-Making free-variable resolution genuinely lexical (resolve through the
-closure's captured env rather than the dynamic caller chain) is an
-architectural change to the env model and is very likely ADR territory. The
-narrower half — why `f`'s `my $var = 5` is not visible in `f`'s own env tier
-when a callee reads the name — may be independently fixable and is the
-cheaper thing to investigate first.
+The two callees below differ **only in whether the bind is the last statement of
+the routine**:
 
-## Repro
+```raku
+my $v1 = 1;
+sub a1() { my $t := $v1 }        # bind is the last statement
+sub f1() { my $v1 = 5; a1(); say $v1 }   # 5   -- correct
 
-The snippet above; `raku` is the oracle.
+my $v2 = 1;
+sub a2() { my $t := $v2; 0 }     # ANY statement after the bind
+sub f2() { my $v2 = 5; a2(); say $v2 }   # 1   -- wrong
+```
 
-## Deep triage (2026-09-01)
+The target is a callee-local `my $t` in both, so this is not about the target
+being free either — the earlier note that "a bind to a local target is fine" was
+measured on the last-statement spelling only. Whatever leaks the source's
+container into the caller runs at, or after, the *statement boundary following
+the bind* — not at the bind itself, and not in the ancestor-frame splice.
 
-Reproduced unchanged on `main`: mutsu prints `f sees 1` followed by
-`alias 200`, while Raku preserves `f`'s own lexical and prints `f sees 5`.
-ADR-0055 remains **Accepted**, but its current status explicitly leaves this
-read-side named-sub problem out of scope in §7.5: a named routine must inherit
-its lexical declaration scope rather than its dynamic caller environment.
+Two further facts to constrain the search:
 
-The current call setup still creates the callee environment with
-`Env::scoped_child(caller_env)` (`src/vm/vm_call_named_inner.rs`). Repairing
-that relationship changes the environment model and interaction with dynamic
-variables, captured bindings, local-slot synchronization, and bind writeback.
-It therefore needs a dedicated ADR and a staged campaign, rather than an
-XML- or call-site-specific exception. This record was moved from
-`todo/tickets/` to `todo/deep/` accordingly.
+- It is **not specific to a mainline-scoped caller**: a lexical `my sub` inside a
+  block shows it identically.
+- The correct rows and the wrong rows behave *differently inside a bare block*
+  than at file scope. The pinned test is deliberately flat for that reason; a
+  probe written inside `{ }` measures a different surface and will mislead you.
+
+### Why the two spellings differ, from `--dump-bytecode`
+
+They compile to different opcodes for the bind itself:
+
+```
+a1 (bind is last):   GetGlobal(v); Dup; SetGlobal(t)      locals: []
+a2 (statement after): GetGlobal(v); ContainerizePair;
+                      WrapVarRef{name: v, slot: u32::MAX};
+                      MarkBindContext; MarkVarDeclContext;
+                      MarkScalarBindContext; SetLocal(0)    locals: ["t"]
+```
+
+So only `a2` runs `exec_set_local_op_inner`'s scalar-bind path
+(`vm/vm_var_assign_set_local.rs`, around lines 1899-1975). `a1` never gets there
+at all — its bind is a `SetGlobal`. That is the whole difference, and it means
+the leak is somewhere in that bind path rather than in anything about scoping.
+
+Narrowed further by a four-breakpoint gdb comparison of the two variants
+(`unit_scope_lexical_write`, `apply_pending_rw_writeback`, `flush_local_to_env`,
+`set_env_with_main_alias_inner`): the only counter that differs is
+`flush_local_to_env`, 0 in `a1` and 1 in `a2` — but its backtrace shows it
+flushing the bind's *target* slot (`t`), not the source, so it is a marker that
+the path ran rather than the writer itself. `unit_scope_lexical_write` fires 5×
+in `a1` and 3× in `a2`; `apply_pending_rw_writeback` fires twice in both.
+
+`propagate_bind_to_ancestor_frames` at the tail of that same path is already
+ruled out by the env-switch A/B above.
+
+## The writer, located
+
+`exec_get_local_op_inner`'s **lazy-sync adopt**
+(`src/vm/vm_var_assign_local_get.rs`, the
+`self.locals[idx] = Value::container_ref(arc);` line):
+
+```rust
+if !self.locals[idx].is_container_ref()
+    && ... // not a Package/Array/Hash/Sub/Instance
+    && let Some(env_hit) = /* overlay_get_sym(name) */
+    && let ValueView::ContainerRef(arc) = env_hit.view()
+{
+    self.locals[idx] = Value::container_ref(arc);
+}
+```
+
+Confirmed with a breakpoint on that exact line: it fires **once in `a2`
+(`idx=0 name="v"` — that is `f`'s own slot) and never in `a1`**. `f` never
+"reads the wrong scope"; its slot is overwritten with the compunit's cell just
+before the read, and from then on the two names denote one container, which is
+exactly the aliasing rows N1/N2 report.
+
+Root cause in one sentence: **`GetLocal` adopts any `ContainerRef` it finds in
+its own env overlay under the same name, without establishing that the cell is
+the one this frame's declaration owns** — and the callee's bind put the
+*compunit's* cell there under the shared name.
+
+The adopt is not gratuitous: it exists so a `:=` performed in a callee that
+targets *this frame's* variable is seen ("propagated back to env but not to
+locals"), and it was already narrowed once, from `get`/`get_sym` to
+`overlay_get`/`overlay_get_sym`, to stop it picking up an ANCESTOR call frame's
+container (`todo/deep/recursive-sub-trailing-comma-array-literal-of-own-param-stack-overflow.md`).
+This is the same class of mistake one tier lower down: the overlay restriction
+stops it reaching an ancestor's container but not a *compunit* container that a
+callee wrote into this frame's overlay under the same name.
+
+## Suggested next step
+
+Two questions, in this order:
+
+1. **Why is the compunit's cell in `f`'s OWN overlay at all?** `a`'s bind writes
+   it with `self.env_mut().insert(resolved_source, container)` and
+   `set_env_with_main_alias`, and `a`'s env is supposed to be a `scoped_child` of
+   `f`'s. If the write is landing in a tier `f` owns, that is arguably the bug and
+   the adopt is only the messenger. `Env::scoped_child`'s empty-tier reuse is the
+   thing to check first: `f`'s overlay is empty (its `my $v = 5` went to a local
+   slot, not to env), which is exactly the condition that path keys on.
+2. **If the write is legitimate, the adopt needs an identity signal** beyond the
+   name. The obvious candidate is "this frame declared this slot itself in this
+   invocation" (a `SetLocalDecl` bit per slot): a callee cannot rebind a caller's
+   local except through `$CALLER::`, and that route is already handled by the
+   `resolve_binding` check at the top of the same function. Weigh it against the
+   two cases the adopt exists for before adding a per-frame bit.
+
+Do NOT reach for the env-model campaign this file used to propose. The mechanism
+is one guarded line, in a function whose comment already documents two previous
+narrowings of the same check.
+
+Only once the writer is named is it worth deciding whether this needs an ADR.
+On the evidence so far it does not look like an env-model change: fifteen of the
+nineteen rows, including every plain read and write at every nesting depth,
+already behave correctly.
+
+## Related
+
+ADR-0055 §7.5 records the general "a routine's env parent is its lexical scope,
+not its caller" question as out of scope for that ADR. That question is real, but
+it is **no longer** what this file is about, and the two should not be conflated
+again.
