@@ -73,10 +73,25 @@ refused wholesale by both cacheability gates.
 ## Result
 
 `roast/S03-buf/write-int.t` — the one remaining timeout in the roast
-real-`Test` sweep, and the file that runs ~93 000 assertions — went from
-**184 079 full multi resolves to 22 805**, and from **48.0 s to 28.6 s**
-against a 30 s budget (the native provider runs it in 4.3 s). The
-20 000-assertion `ok` loop went **5.07 s -> 3.36 s**.
+real-`Test` sweep, and the file that runs 93 370 assertions across 2 530
+subtests — went from **184 079 full multi resolves to 22 805**, and from
+**48.0 s to 29.5 s** (median of three; 28.8–29.5 s). The 20 000-assertion `ok`
+loop went **5.07 s -> 3.36 s**.
+
+Calibration on the same idle box, same file, same output sink, all three
+running the identical 93 370 assertions:
+
+| provider | wall | per assertion |
+| --- | --- | --- |
+| rakudo | 3.49 s | 37 us |
+| mutsu, native `Test` | 5.04 s | 54 us |
+| mutsu, vendored `Test` | 29.5 s | 316 us |
+
+So the interpreter itself is at rakudo's rough parity here; what costs 8.5x is
+*executing `Test.rakumod` as Raku code*. And 29.5 s against a 30 s per-file
+budget is **at** the budget, not under it — this file will still time out on a
+slower CI runner or under `prove -j4`. The timeout class is reduced, not
+closed.
 
 What is left of those 22 805 resolves is per-*subtest*, not per-assertion:
 `_pop_vars` (7 590), `plan` (5 062), `item` (5 060) and `subtest` (5 060), for
