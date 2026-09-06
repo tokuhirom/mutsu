@@ -68,6 +68,22 @@ The tractable shapes of the work, in increasing order of blast radius:
 Deciding between them wants a measurement pass over the `Grouped` consumers
 first, which is why this is a ticket rather than a slice.
 
+## Already covered
+
+One shape is done and must not regress: a **lone parenthesized bareword pair**
+(`(a => 1)`) renders `Circumfix::Parentheses(SemiList(Statement::Expression(
+FatArrow)))`, matching rakudo. It fell out of
+`news/2026-09/rakuast-fat-arrow-key-spellings-unswapped.md`, which needed the
+paren parser to record parenthesization anyway in order to tell a parenthesized
+bareword key from a quoted one — so `paren.rs` now emits
+`PositionalPair(Grouped(pair))` for exactly that shape. `("a" => 1)` is NOT
+covered: a quoted-key pair arrives already wrapped in `PositionalPair`, so the
+`Grouped` marker never reaches it.
+
+That is approach (3) above applied to a single shape, and it is a worked example
+of its cost: the AST now says "parenthesized" in one place and nowhere else,
+which is precisely the inconsistency this ticket has to resolve.
+
 ## Repro
 
 ```

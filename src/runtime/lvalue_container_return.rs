@@ -136,7 +136,7 @@ impl Interpreter {
             return Ok(None);
         }
         if !self.method_lvalue_returns_container(&target, method, method_args) {
-            return Ok(None);
+            return self.type_object_non_rw_method_lvalue(&target, method, method_args, value);
         }
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
@@ -161,6 +161,73 @@ impl Interpreter {
             Some(assigned) => assigned.map(Some),
             None => Ok(None),
         }
+    }
+
+    /// `Class.m($arg) = $v` where `m` is a declared method that is **not**
+    /// rw-capable: raku dies (`Cannot modify an immutable Int (42)`) after
+    /// calling `m` with its real arguments.
+    ///
+    /// mutsu used to fall through to the legacy `$obj.name($value)` setter
+    /// convention here, which re-called `m` with the *assigned value* as its
+    /// only argument (or, for a sigilless parameter, with the invocant) and
+    /// then reported the assignment as done — so the write silently vanished
+    /// and the program continued. The instance twin never reached that: it hits
+    /// the "cannot assign through .m on non-instance" / "method 'm' is not rw"
+    /// refusals first.
+    ///
+    /// The gate is the same declaration oracle the instance path uses
+    /// (`method_is_rw_capable`, ADR-0067 slice 2), so only a method the class
+    /// actually declares is affected. Anything the class does not declare — a
+    /// builtin, an `AT-KEY`-shaped element accessor, a name resolved elsewhere
+    /// — answers `Ok(None)` and the legacy chain is untouched, and so is the
+    /// attribute-accessor shape (`method x() { $!x }`), which names its
+    /// location rather than computing one and is handled by the attribute
+    /// machinery.
+    ///
+    /// Argument-less (`Class.m() = $v`) is left alone too: the legacy chain
+    /// requires a non-empty argument list, so there is nothing to preempt.
+    fn type_object_non_rw_method_lvalue(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if method_args.is_empty() || matches!(method, "AT-KEY" | "AT-POS") {
+            return Ok(None);
+        }
+        let Some(class_name) = Self::lvalue_invocant_class_name(target) else {
+            return Ok(None);
+        };
+        let Some(def) = self.resolve_method(&class_name, method, method_args) else {
+            return Ok(None);
+        };
+        // rw-capable methods never reach here (the caller took the other
+        // branch); an attribute accessor is excluded for the reason above.
+        if Self::rw_method_attribute_target(&def.body).is_some() {
+            return Ok(None);
+        }
+        let was_lvalue = self.in_lvalue_assignment;
+        self.in_lvalue_assignment = true;
+        // As in `try_rw_method_container_lvalue`: the pending argument-source
+        // names still describe the enclosing `__mutsu_assign_method_lvalue`
+        // call, whose first "argument" is the invocant, so a sigilless (`\x`)
+        // parameter would re-read the invocant by that name. This call site
+        // supplies values.
+        let saved_sources = self.take_pending_call_arg_sources();
+        let result = self.call_method_with_values(target.clone(), method, method_args.to_vec());
+        self.set_pending_call_arg_sources(saved_sources);
+        self.in_lvalue_assignment = was_lvalue;
+        // A method that throws when called is not a failed *assignment*: leave
+        // the existing chain to produce the diagnostic, exactly as the rw path
+        // does.
+        let Ok(result) = result else {
+            return Ok(None);
+        };
+        // Writes through if the body happened to hand back a container anyway;
+        // otherwise this is raku's `Cannot modify an immutable <Type> (<value>)`.
+        self.assign_through_rw_result(result, value.clone())
+            .map(Some)
     }
 
     /// The assignment call site wraps the invocant in a `VarRef` (its source

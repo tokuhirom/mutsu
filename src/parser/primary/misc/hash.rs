@@ -236,7 +236,10 @@ fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
             Ok(key) => Ok(Some((key, (**left).clone()))),
             Err(_) => Ok(None),
         },
-        Expr::PositionalPair(inner) => hash_pair_from_expr(inner),
+        // Both markers are transparent to a hash entry: `PositionalPair` says
+        // the pair is not a named argument, and the inner `Grouped` says the
+        // parens were written (see `paren.rs`). The pair underneath is the entry.
+        Expr::PositionalPair(inner) | Expr::Grouped(inner) => hash_pair_from_expr(inner),
         _ => Ok(None),
     }
 }

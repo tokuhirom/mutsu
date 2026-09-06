@@ -137,7 +137,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementFor => lower_for(node),
         // `INIT { … }` / `LEAVE { … }` / … -> `Stmt::Phaser`, one class per kind.
         // `BEGIN` is absent deliberately — see `lower_phaser`.
-        RakuAstClass::StatementPrefixPhaserCheck
+        RakuAstClass::StatementPrefixPhaserBegin
+        | RakuAstClass::StatementPrefixPhaserCheck
         | RakuAstClass::StatementPrefixPhaserInit
         | RakuAstClass::StatementPrefixPhaserEnd
         | RakuAstClass::StatementPrefixPhaserEnter
@@ -413,23 +414,23 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// A `StatementPrefix::Phaser::<Kind>` -> `Stmt::Phaser`.
 ///
-/// Two kinds are deliberately absent:
+/// One kind is deliberately absent: `PRE`/`POST` — rakudo wraps their block in
+/// a call (the phaser's child is an `ApplyPostfix`, not a `Block`), and mutsu
+/// also keeps a source-text condition for the `X::Phaser::PrePost` message, so
+/// the converter refuses them and nothing lowered can be one.
 ///
-/// * `PRE`/`POST` — rakudo wraps their block in a call (the phaser's child is
-///   an `ApplyPostfix`, not a `Block`), and mutsu also keeps a source-text
-///   condition for the `X::Phaser::PrePost` message, so the converter refuses
-///   them and nothing lowered can be one.
-/// * `BEGIN` — it runs at *compile* time, and mutsu hoists it during
-///   compilation of a program rather than in `reorder_phasers`, so the
-///   re-entrant carrier this lowering feeds runs it in statement position
-///   instead. `EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST)` would answer 1
-///   where raku and mutsu's own direct execution both answer 0. Refusing is the
-///   honest boundary until the carrier gains a BEGIN pass — see
-///   `todo/tickets/rakuast-eval-begin-phaser.md`. `CHECK` and `INIT` are fine:
-///   `reorder_phasers_for_eval` handles both.
+/// `BEGIN` runs at *compile* time, which the re-entrant carrier this lowering
+/// feeds did not do — it ran the phaser in statement position, so
+/// `EVAL(Q{my $x = 0; BEGIN { $x = 1 }; $x}.AST)` answered 1 where raku and
+/// mutsu's own direct execution both answer 0, and lowering it was refused
+/// outright. Both EVAL carriers now run `run_toplevel_begin_phasers` — the same
+/// compile-time pass the mainline pipeline uses — before
+/// `reorder_phasers_for_eval` handles `CHECK`/`INIT`, so `BEGIN` lowers like any
+/// other kind.
 fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     use crate::ast::PhaserKind;
     let kind = match node.class {
+        RakuAstClass::StatementPrefixPhaserBegin => PhaserKind::Begin,
         RakuAstClass::StatementPrefixPhaserCheck => PhaserKind::Check,
         RakuAstClass::StatementPrefixPhaserInit => PhaserKind::Init,
         RakuAstClass::StatementPrefixPhaserEnd => PhaserKind::End,
@@ -1242,15 +1243,19 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let block = named_child_or_positional(node)?;
             Ok(Expr::Gather(lower_block(block)?))
         }
-        // A fat-arrow pair `a => 1` -> a positional pair over a `FatArrow` binop.
+        // A `FatArrow` is raku's node for a BAREWORD key (`a => 1`), which is a
+        // *named* argument -- mutsu spells that as a bare `Binary{FatArrow}`.
+        // The quoted/computed spelling arrives as an `ApplyInfix` over `=>`
+        // instead and lowers, below, to the `PositionalPair` that marks it
+        // positional.
         RakuAstClass::FatArrow => {
             let key = leaf_str(node, "key")?;
             let value = lower_expr(named_child(node, "value")?)?;
-            Ok(Expr::PositionalPair(Box::new(Expr::Binary {
+            Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
-            })))
+            })
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
         // bareword term, which mutsu evaluates to the type object.
@@ -1337,11 +1342,25 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
             let op = infix_token(named_child(node, "infix")?)?;
-            Ok(Expr::Binary {
+            let binary = Expr::Binary {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
-            })
+            };
+            // `=>` as an ordinary infix is raku's node for a non-bareword key
+            // (`"a" => 1`, `$k => 1`), which is a POSITIONAL pair rather than a
+            // named argument. mutsu marks that with `PositionalPair`; the
+            // bareword spelling is a `FatArrow` node and lowers bare, above.
+            if matches!(
+                &binary,
+                Expr::Binary {
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    ..
+                }
+            ) {
+                return Ok(Expr::PositionalPair(Box::new(binary)));
+            }
+            Ok(binary)
         }
         RakuAstClass::ApplyPrefix => {
             let operand = lower_expr(named_child(node, "operand")?)?;

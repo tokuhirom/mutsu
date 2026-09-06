@@ -1162,30 +1162,37 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::StatementPrefixGather,
             fields: vec![node_field(None, block_node(body)?)],
         }),
-        // A fat-arrow pair `a => 1` -> `FatArrow(key => "a", value => …)`. Only a
-        // string-literal key is modelled (a computed key stays the boundary).
+        // A pair the parser marked POSITIONAL: a non-bareword key (`"a" => 1`,
+        // `$k => 1`), or a parenthesized one, which carries an inner `Grouped`.
+        // The marker itself says nothing about the rendering — raku renders a
+        // quoted/computed key as a plain `ApplyInfix` and parentheses as a
+        // `Circumfix::Parentheses` — so unwrap and let those arms decide.
+        //
+        // Rendering keyed off this variant is what made mutsu emit the two
+        // spellings the wrong way round: `PositionalPair` does not mean "quoted
+        // key", it means "not a named argument", which a parenthesized BAREWORD
+        // pair also is.
         Expr::PositionalPair(inner) => match &**inner {
+            // A non-bareword key. Render the infix DIRECTLY rather than
+            // recursing: the `FatArrow` arm below keys on the bare
+            // `Binary{FatArrow}` shape, which is what this pair is once the
+            // marker is peeled off, and it would claim a bareword key.
             Expr::Binary {
                 left,
-                op: crate::token_kind::TokenKind::FatArrow,
+                op: op @ crate::token_kind::TokenKind::FatArrow,
                 right,
-            } => {
-                let key = match &**left {
-                    Expr::Literal(v) | Expr::LiteralSrc(v, _) => match v.view() {
-                        ValueView::Str(s) => s.to_string(),
-                        _ => return Err(unsupported("non-string pair key")),
-                    },
-                    _ => return Err(unsupported("non-literal pair key")),
-                };
-                Ok(RakuAstNode {
-                    class: RakuAstClass::FatArrow,
-                    fields: vec![
-                        leaf_field(Some("key"), Value::str(key)),
-                        node_field(Some("value"), convert_expr(right)?),
-                    ],
-                })
-            }
-            _ => Err(unsupported("non-fat-arrow positional pair")),
+            } => Ok(RakuAstNode {
+                class: RakuAstClass::ApplyInfix,
+                fields: vec![
+                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                    node_field(Some("right"), convert_expr(right)?),
+                ],
+            }),
+            // Parenthesized (the paren parser's inner `Grouped` marker), or any
+            // other shape: the parenthesization and the pair itself are what
+            // raku renders, so let those arms decide.
+            other => convert_expr(other),
         },
         // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
@@ -1249,6 +1256,41 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // implementation detail (`crate::chain_compare::expand`) this
         // converter never sees.
         Expr::ChainedCompare { operands, ops } => convert_chained_compare(operands, ops),
+        // A fat-arrow pair with a BAREWORD key -> `FatArrow(key => "a", value)`.
+        // raku models the two key spellings as different nodes: a bareword key
+        // is a `FatArrow` carrying the key as a plain string, while a quoted or
+        // computed one is an ordinary `ApplyInfix` over `=>` (the arm below).
+        // The parser draws exactly that line already -- a bareword key yields a
+        // bare `Binary{FatArrow}` (it is a NAMED argument), and every other
+        // spelling is wrapped in `PositionalPair` -- so the shape here is the
+        // bareword one.
+        //
+        // Colonpairs (`:foo`, `:foo(1)`) share this shape and so render as a
+        // `FatArrow` too, where raku has a distinct `ColonPair::*` family. That
+        // is a separate divergence, unchanged in kind by this arm: before it,
+        // they rendered as an `ApplyInfix` claiming a quoted-string key, which
+        // they never had.
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+        } if matches!(&**left,
+            Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_))) =>
+        {
+            let (Expr::Literal(v) | Expr::LiteralSrc(v, _)) = &**left else {
+                unreachable!("guarded above")
+            };
+            let ValueView::Str(key) = v.view() else {
+                unreachable!("guarded above")
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::FatArrow,
+                fields: vec![
+                    leaf_field(Some("key"), Value::str(key.to_string())),
+                    node_field(Some("value"), convert_expr(right)?),
+                ],
+            })
+        }
         // List-associative infixes (`andthen`/`orelse`/`notandthen`) render as a
         // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
         // so flatten a same-operator left chain into one operand list.
@@ -2591,7 +2633,10 @@ fn arg_list(args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
 /// (`__`-prefixed key), rather than one the source wrote.
 fn is_injected_named_arg(arg: &Expr) -> bool {
     let pair = match arg {
-        Expr::PositionalPair(inner) => inner.as_ref(),
+        Expr::PositionalPair(inner) => match inner.as_ref() {
+            Expr::Grouped(g) => g.as_ref(),
+            other => other,
+        },
         other => other,
     };
     let Expr::Binary {

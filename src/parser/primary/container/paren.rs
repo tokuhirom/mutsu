@@ -236,6 +236,16 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     if let Ok((input, _)) = parse_char(input, ')') {
         // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
         // as a named argument in function calls.
+        //
+        // The inner `Grouped` records that the parens were WRITTEN, which
+        // `PositionalPair` alone cannot say: the parser also produces a bare
+        // `PositionalPair` for a non-bareword key (`"a" => 1`, `$k => 1`), and
+        // without the marker the two spellings are indistinguishable. Only the
+        // RakuAST converter reads it — raku models a parenthesized bareword pair
+        // as `Circumfix::Parentheses(SemiList(… FatArrow))` and a quoted-key one
+        // as a plain `ApplyInfix`. `Grouped` is transparent to the compiler, and
+        // the `PositionalPair` marker every call-argument path keys on stays on
+        // the outside.
         let first = if matches!(
             &first,
             Expr::Binary {
@@ -243,7 +253,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                 ..
             }
         ) {
-            Expr::PositionalPair(Box::new(first))
+            Expr::PositionalPair(Box::new(Expr::Grouped(Box::new(first))))
         } else {
             first
         };
