@@ -383,7 +383,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 30, not 20: this job's cache is its own, and a cold restore compiles two
+    # dependency sets from scratch (native minus cranelift, then all of them
+    # again for wasm32) before either clippy pass starts.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
