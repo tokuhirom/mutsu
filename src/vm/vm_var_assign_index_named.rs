@@ -1840,7 +1840,7 @@ impl Interpreter {
                     });
                 let use_which = is_object_hash || target_quanthash;
                 let key = if use_which {
-                    runtime::utils::value_which_key(&idx)
+                    self.which_key(&idx)
                 } else if !is_object_hash && matches!(idx.view(), ValueView::Package(_)) {
                     // A bare type object keyed into a plain (Str-keyed) hash
                     // coerces to the empty string with Rakudo's "uninitialized

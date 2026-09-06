@@ -233,6 +233,13 @@ impl Interpreter {
                             }
                         }
                         let is_obj_hash = self.is_object_hash(&target);
+                        if is_obj_hash {
+                            // Resolve user-defined `WHICH` identities before the
+                            // interpreter-free keying below (`which_identity`).
+                            for k in items.iter() {
+                                self.warm_which_identity(k);
+                            }
+                        }
                         let pairs: Vec<(Value, bool)> = items
                             .iter()
                             .map(|k| {
@@ -433,7 +440,7 @@ impl Interpreter {
                     _ => {
                         // For object hashes, use WHICH for lookup, fallback to hash_key_encode
                         let lookup_key = if self.is_object_hash(&target) {
-                            let which = crate::runtime::utils::value_which_key(&idx);
+                            let which = self.which_key(&idx);
                             if map.contains_key(&which) {
                                 which
                             } else {

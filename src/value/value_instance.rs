@@ -75,6 +75,11 @@ impl Clone for InstanceAttrs {
         Self {
             class_name: std::sync::atomic::AtomicU32::new(self.class_name().raw()),
             attributes: Arc::new(RwLock::new(map)),
+            // An independent copy carries the same attribute values, so its
+            // user-`WHICH` identity is the same string — but in its own cell,
+            // since the copy is a separate object whose later mutations must
+            // not retag the original.
+            which_memo: Arc::new(RwLock::new(self.which_memo())),
             id: self.id,
             queue_destroy: false,
             finalized: std::sync::atomic::AtomicBool::new(false),
@@ -96,6 +101,7 @@ impl InstanceAttrs {
         Self {
             class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
+            which_memo: Arc::new(RwLock::new(None)),
             id,
             queue_destroy,
             finalized: std::sync::atomic::AtomicBool::new(false),
@@ -104,16 +110,37 @@ impl InstanceAttrs {
 
     /// Build an `InstanceAttrs` that shares an existing cell (used by the cell
     /// reuse path in `make_instance_with_id`).
-    fn from_cell(class_name: Symbol, cell: AttrCell, id: u64, queue_destroy: bool) -> Self {
+    fn from_cell(
+        class_name: Symbol,
+        cell: AttrCell,
+        which_memo: Arc<RwLock<Option<Arc<str>>>>,
+        id: u64,
+        queue_destroy: bool,
+    ) -> Self {
         if queue_destroy && let Ok(mut counts) = live_instance_refcounts(id).lock() {
             *counts.entry(id).or_insert(0) += 1;
         }
         Self {
             class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
+            which_memo,
             id,
             queue_destroy,
             finalized: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// The cached user-`WHICH` identity of this object, if the interpreter has
+    /// deposited one (see the `which_memo` field doc).
+    pub(crate) fn which_memo(&self) -> Option<Arc<str>> {
+        self.which_memo.read().ok().and_then(|m| m.clone())
+    }
+
+    /// Deposit (or refresh) this object's user-`WHICH` identity. Called only by
+    /// the interpreter, which is the only layer that can run the user's method.
+    pub(crate) fn set_which_memo(&self, which: Arc<str>) {
+        if let Ok(mut slot) = self.which_memo.write() {
+            *slot = Some(which);
         }
     }
 
@@ -297,6 +324,7 @@ impl InstanceAttrs {
         Self::from_cell(
             class_name,
             Arc::clone(&self.attributes),
+            Arc::clone(&self.which_memo),
             self.id,
             self.queue_destroy,
         )

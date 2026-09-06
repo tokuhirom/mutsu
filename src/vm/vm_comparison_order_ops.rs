@@ -592,6 +592,10 @@ impl Interpreter {
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // `===` is `$a.WHICH eq $b.WHICH`, so a class that overrides `WHICH`
+        // decides its own identity here (see `runtime::which_identity`).
+        self.warm_which_identity(&left);
+        self.warm_which_identity(&right);
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(Value::truth(runtime::values_identical(&l, &r)))
         })?;
@@ -605,6 +609,8 @@ impl Interpreter {
         // !== is a negation meta-operator applied to ===.
         // It first evaluates === (which autothreads through junctions),
         // then negates the boolean-collapsed result, always returning Bool.
+        self.warm_which_identity(&left);
+        self.warm_which_identity(&right);
         let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(Value::truth(runtime::values_identical(&l, &r)))
         })?;

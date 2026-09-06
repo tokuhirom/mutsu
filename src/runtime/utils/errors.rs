@@ -343,9 +343,15 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
         ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
         ValueView::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
-        ValueView::Instance { id, .. } => {
-            format!("{}|{}", value_type_name(value), id)
-        }
+        // A class may override `WHICH` to give its instances value semantics
+        // (`Set(A.new(a=>5)) eqv Set(A.new(a=>5))`). Running that user method
+        // needs the interpreter, so it deposits the answer on the instance and
+        // we read it here; without an override the identity is the object's own
+        // id. See `InstanceAttrs::which_memo`.
+        ValueView::Instance { id, .. } => match value.user_which_memo() {
+            Some(which) => which.to_string(),
+            None => format!("{}|{}", value_type_name(value), id),
+        },
         ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(&items)),
         ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map)),
         // A Pair with a plain string key and a ValuePair holding a Str key are

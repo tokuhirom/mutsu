@@ -155,6 +155,15 @@ impl Interpreter {
         {
             return result;
         }
+        // `.WHICH` of an aggregate (`Pair`, `Set`, `Bag`, `Mix`) is composed
+        // from its elements' identities by the interpreter-free
+        // `value_which_key`, so resolve any user-defined element `WHICH` first.
+        // This is also the refresh point for an instance whose attributes
+        // changed since its identity was last computed
+        // (see `runtime::which_identity`).
+        if method == "WHICH" && args.is_empty() {
+            self.warm_which_identity(&target);
+        }
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }

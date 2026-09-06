@@ -2,10 +2,11 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn dispatch_to_set_with_what(
-        &self,
+        &mut self,
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_set(target, what)
     }
 
@@ -122,10 +123,11 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_to_bag_with_what(
-        &self,
+        &mut self,
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_bag(target, what)
     }
 
@@ -146,15 +148,17 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_to_mix(&self, target: Value) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_to_mix(&mut self, target: Value) -> Result<Value, RuntimeError> {
+        self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_mix(target, "Mix")
     }
 
     pub(super) fn dispatch_to_mix_with_what(
-        &self,
+        &mut self,
         target: Value,
         what: &str,
     ) -> Result<Value, RuntimeError> {
+        self.warm_which_identity(&target);
         crate::builtins::quanthash_coerce::to_mix(target, what)
     }
 
