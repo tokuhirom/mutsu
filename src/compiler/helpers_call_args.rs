@@ -691,6 +691,32 @@ impl Compiler {
         }
     }
 
+    /// ADR-0067's subscript-receiver producer: swap the just-compiled receiver's
+    /// trailing `Index` for [`OpCode::IndexInvocantRef`], so `@a[0].mut` /
+    /// `%h<a>.mut` can hand the element's own container to a callee that binds
+    /// its invocant raw.
+    ///
+    /// A *replacement* rather than an inserted marker, because the location has
+    /// to be produced by the subscript itself: unlike the E6 accessor producer,
+    /// there is no later op that could still reach back for it — `Index` has
+    /// already read the element's value out of the container.
+    ///
+    /// No-op unless the receiver really is a subscript whose compiled tail is a
+    /// plain `Index`. The mutating subscript-method path (`@a[0].push`) compiles
+    /// to `IndexElemAutoviv` instead and is left alone: it hands back the
+    /// element's shared node for in-place mutation, which is a different
+    /// contract from replacing the element.
+    pub(super) fn mark_trailing_index_as_invocant_ref(&mut self, target: &Expr) {
+        if !matches!(target, Expr::Index { .. }) {
+            return;
+        }
+        if let Some(last) = self.code.ops.last_mut()
+            && let OpCode::Index { is_positional } = *last
+        {
+            *last = OpCode::IndexInvocantRef { is_positional };
+        }
+    }
+
     /// The current depth of the pending-writeback queue, to be captured by a
     /// call emitter BEFORE it compiles its arguments and handed back to
     /// [`Self::emit_index_rw_writebacks`] afterwards.

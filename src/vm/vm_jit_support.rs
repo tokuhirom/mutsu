@@ -125,6 +125,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::DerefContainer
             | OpCode::DecontListElems
             | OpCode::Index { .. }
+            | OpCode::IndexInvocantRef { .. }
             | OpCode::IndexAutovivifyLazy { .. }
             // String / bool / numeric helpers
             | OpCode::StringConcat(_)

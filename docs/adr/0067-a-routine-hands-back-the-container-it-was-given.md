@@ -1,13 +1,13 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05, Slice 3b,
-  the E6 rw-attribute-accessor producer and the returned-container consumers
-  2026-09-06; Slice 3 was re-scoped
-  into 3a/3b on 2026-09-05 after measurement, and 3a's E6 row split off again
-  into that producer; Slice 4 absorbed two of Slice 5's three acceptance rows,
-  again after measurement; Slice 3b shipped the *named-receiver* half of the
-  arrival direction and split its subscript-receiver rows (I3/K3) off into a
-  producer slice of their own, which is the only slice still open)
+- Status: Accepted (all slices implemented. 1, 2, 3a, 4 and 5 on 2026-09-05;
+  3b, the E6 rw-attribute-accessor producer, the returned-container consumers
+  and the subscript-receiver producer on 2026-09-06. Slice 3 was re-scoped into
+  3a/3b on 2026-09-05 after measurement, and 3a's E6 row split off again into
+  that producer; Slice 4 absorbed two of Slice 5's three acceptance rows, again
+  after measurement; Slice 3b shipped the *named-receiver* half of the arrival
+  direction and split its subscript-receiver rows (I3/K3) off into a producer
+  slice of their own, which closed the ADR)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -16,7 +16,9 @@
   [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (Track B is no longer
   GC-coupled), [ADR-0064](0064-var-descriptor-carries-the-contained-value.md)
   (`.VAR` descriptors)
-- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`;
+- Addresses: `todo/deep/native-method-cannot-return-an-lvalue-container.md`
+  (every row of it verified against raku and closed by this ADR, now
+  `news/2026-09/method-hands-back-its-invocants-container.md`);
   `todo/tickets/lvalue-chain-through-at-key-at-pos-object-root.md` (closed by
   Slices 4 and 5, now
   `news/2026-09/lvalue-chain-through-at-key-at-pos-object-root.md`);
@@ -1209,6 +1211,106 @@ attributes, the container identity (`=:=`) that proves the accessor and the
 method name one cell, the aggregate tail, both multi-dispatch rows, the
 `is copy` / read-only argument shapes that must keep copying, repeated argument
 binding through the same accessor, and the five refusal controls.
+
+#### The subscript-receiver producer — IMPLEMENTED 2026-09-06
+
+Slice 3b split rows I3/K3 (`@a[0].mut`, `%h<a>.mut`) off with a prescription:
+the subscript has to *produce* the element's container, the emission has to be
+unconditional because rawness is not statically known, and the result has to be
+paired with a decontainerize guard in `CallMethod` and re-measured. Every row of
+the I/K family plus a fresh 19-row `<subscript>.method` survey and a 10-row
+promotion-visibility survey were re-measured against raku v2026.07 and a debug
+`mutsu` built from `main` at `e350c16bd` before any code was written.
+
+**Two of the three things the prescription asked for already existed, and that
+is the whole shape of this slice.**
+
+- **The decontainerize chokepoint is already there.**
+  `exec_call_method_op_impl` has decontainerized a `ContainerRef` invocant since
+  ADR-0036 slice 3 handed elements out in bulk ("a method invocant that is a
+  first-class element container ... is transparent to method dispatch"), with
+  `.VAR` and the renderer set as its documented exceptions. So the ~40
+  `Instance`/`Array`/`Hash` branches below it never see the container, and no
+  new guard was written.
+- **The consumer is slice 3b's, unchanged.**
+  `arm_raw_invocant_arrival` already prefers an existing `ContainerRef` receiver
+  over minting a cell ("Already a location: whatever produced it owns the
+  identity"). The only edit that reuse needed was to lift its
+  `target_name.is_empty()` pre-gate, which is now expressed as two stack
+  positions instead of a name — `CallMethod` is `[receiver, args..]` and
+  `CallMethodDynamic` puts the runtime method name between them.
+
+**What shipped.**
+
+- **`OpCode::IndexInvocantRef`**, a variant of `Index` emitted by
+  `Compiler::mark_trailing_index_as_invocant_ref` in
+  `compile_expr_method_generic` and `compile_expr_dynamic_method`. It replaces
+  the receiver's trailing `Index` rather than inserting a marker before it, for
+  the reason the E6 producer could insert one and this cannot: `Index` has
+  already read the element's value out of the container, so there is no later op
+  that could reach back for the location.
+- **The producer** (`src/vm/vm_subscript_invocant_ref.rs`) hands out
+  `array_slot_ref` / `hash_slot_ref` — the same in-place, idempotent promotion
+  `.pairs`/`.values`/`.Seq` use — and **declines by leaving the stack
+  untouched**, so the ordinary `Index` implementation runs verbatim for every
+  shape that is not a direct hit on an existing element of a mutable
+  `Array`/`Hash`. Slices, `Whatever`, junction and `Range` receivers,
+  `postcircumfix` overloads and object hashes are therefore not re-derived here;
+  they are the one implementation that already handles them.
+- **`List`/`ItemList`/`Lazy` are excluded deliberately.** `(1,2)[0]` is
+  immutable in raku, so promoting it would turn a refusal into a silent success
+  — strictly worse than the silent no-op it is today. That no-op is unchanged
+  and belongs to the L4/L5/M1/M2 readonly-enforcement family, recorded in
+  `todo/tickets/immutable-list-element-write-is-silently-dropped.md`.
+- **One thing was unified rather than copied.** `@a[*-1].mut` needs the `*`
+  resolved before there is an index to address, and that resolution existed
+  *twice* — inline in the single-dimension slice walk and again in
+  `vm_var_multidim_ops.rs`. Both now call one
+  `Interpreter::eval_whatever_code_index`, which is what the producer calls too:
+  three consumers, one implementation, per PLAN.md's standing rule.
+
+**The cost.** The compile-side change is unconditional but the runtime gate is
+`any_raw_invocant_method_possible()`, slice 3b's set-only process-global mirror:
+for a program that declares no raw-invocant method anywhere,
+`IndexInvocantRef` is one relaxed atomic load followed by `Index`, and the
+`CallMethod` arming site is one relaxed atomic load before the method name is
+even resolved from the constant pool. No A/B number is quoted here on purpose —
+the machine this was developed on measures +6.3% on a byte-identical control
+(see the E6 numbers above), so a figure from it would be noise reported as
+signal. What *is* verified is that the flag is not raised at all in a program
+without a raw-invocant declaration, so there is no hot-path work to measure.
+
+**The JIT needs no separate treatment**, which the prescription flagged as a
+risk: `vm_jit_support.rs`'s shim list already carries `OpCode::Index`, so
+neither op is compiled to native code and both run the same interpreter arm.
+`IndexInvocantRef` was added to that list beside it. The pin drives a
+200-iteration loop past the default threshold of 100, and was additionally run
+under `MUTSU_JIT_THRESHOLD=1` (every chunk compiled immediately) and
+`MUTSU_JIT=off` — 33/33 in all three configurations.
+
+**What went green.** I3 and K3 themselves; all three raw-invocant spellings over
+both binders; an argument-carrying raw-invocant method; `augment class Str`
+receivers; nested subscripts in all four combinations (`@a[0][1]`, `%h<a>[0]`,
+`%h<a><b>`, `$obj.attr[0]`); the runtime method-name spelling; `@a[*-1]` and
+computed subscripts (evaluated exactly once); shaped arrays; typed arrays, whose
+element constraint rides on the promoted cell; role-composed raw invocants; and
+repeated mutation through the same element.
+
+**Still refusing or unchanged, all measured, all deliberately out of scope:**
+a slice receiver (`@a[0,1].mut` dies in raku and in mutsu); past-the-end and
+missing-key receivers (both die, and neither vivifies); an immutable `List`
+element (raku dies, mutsu silently does nothing — the ticket above); and
+everything slices 3a/3b already listed, O1 (`@a.mut`, an aggregate receiver)
+included.
+
+**Pinned by** `t/raw-invocant-subscript-receiver.t` (33 tests, byte-identical
+output under `mutsu` and `raku`). Half of that file is deliberately regression
+material: because the `augment` at the top raises the program-wide flag, every
+ordinary method call over a subscript receiver in it — `.succ`, `.WHAT`, `.uc`,
+`.push`/`.append` on container elements, `.raku`/`.gist`/`.Str` rendering after
+a promotion, `.sort`/`.grep`/`.sum`, and copy semantics for both an array and a
+hash — is exercising the producer's decline path and the chokepoint that hides
+the container from an ordinary callee.
 
 ### Slice 4 — the chain walk steps through an object
 

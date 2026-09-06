@@ -496,6 +496,30 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // ADR-0067's subscript-receiver producer: when the receiver on the stack
+        // is already a container (`IndexInvocantRef` put it there), arm slice
+        // 3b's arrival channel around this dispatch so a callee that binds its
+        // invocant raw writes through the *element*. The receiver is
+        // decontainerized inside the impl either way, so a callee that does not
+        // bind raw sees exactly what it sees today.
+        //
+        // The pre-gate is spelled out here rather than left to the callee so a
+        // program that declares no raw-invocant method never even resolves the
+        // method name: this runs on every `CallMethod` in the program.
+        let armed_raw_invocant = if crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+            && let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 1)
+        {
+            self.arm_raw_invocant_arrival_from_receiver(
+                receiver_idx,
+                receiver_idx + 1,
+                &Self::rewrite_method_name_cow(
+                    Self::const_str(code, name_idx),
+                    modifier_idx.map(|idx| Self::const_str(code, idx)),
+                ),
+            )
+        } else {
+            false
+        };
         let result = self.exec_call_method_op_impl(
             code,
             name_idx,
@@ -504,6 +528,7 @@ impl Interpreter {
             quoted,
             arg_sources_idx,
         );
+        self.disarm_raw_invocant_arrival(armed_raw_invocant);
         // The pending arg-source names/slots are scoped to THIS dispatch: a
         // callee signature bind consumes them, but a native/builtin dispatch
         // never binds and would leave them behind. A later bind with no

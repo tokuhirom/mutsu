@@ -708,6 +708,14 @@ impl Compiler {
             return;
         }
         self.compile_expr(target);
+        // ADR-0067's subscript-receiver producer: a raw invocant parameter binds
+        // the caller's container, and for `@a[0].mut` / `%h<a>.mut` the only
+        // place that container can come from is the subscript itself — the
+        // trailing `CallMethod` carries no receiver name and the element's value
+        // has already been read onto the stack. Rawness is not statically
+        // knowable (it depends on the element's runtime type), so the swap is
+        // unconditional and the gate is at run time.
+        self.mark_trailing_index_as_invocant_ref(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
@@ -753,6 +761,10 @@ impl Compiler {
             _ => None,
         };
         self.compile_expr(target);
+        // The subscript-receiver producer applies to the dynamic spelling too:
+        // the method name is a runtime value, so rawness is even less knowable
+        // here than for a literal name.
+        self.mark_trailing_index_as_invocant_ref(target);
         self.compile_expr(name_expr);
         let arity = args.len() as u32;
         // ADR-0054 S3: bake `|EXPR` positions before compiling the args

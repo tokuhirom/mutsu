@@ -19,7 +19,7 @@ impl Interpreter {
     /// dispatches the method named by its short name (`.Int`), so use that name
     /// rather than the type object's gist (`(Int)`). Any other value falls back
     /// to its string form (mutsu treats a plain `Str` as a method name).
-    fn dynamic_method_name(name_val: &Value) -> String {
+    pub(super) fn dynamic_method_name(name_val: &Value) -> String {
         match name_val.view() {
             ValueView::Package(name) => name.resolve(),
             _ => name_val.to_string_value(),

@@ -20,6 +20,17 @@ Closed since the survey opened:
   `news/2026-09/closure-and-map-grep-topic-readonly.md`, pinned by
   `t/closure-topic-readonly.t`.
 
+Tracked separately, same family, different producer: a **raw-invocant method**
+called on an immutable `List` element (`my $l = (1,2); $l[0].mut`) succeeds
+silently where raku dies —
+`todo/tickets/immutable-list-element-write-is-silently-dropped.md` (2026-09-06).
+Every *ordinary* store to such an element is already refused correctly, so that
+one is a method-call-path gap rather than a store-path gap, and it belongs to
+ADR-0067's L4/L5/M1/M2 readonly-enforcement rows.
+
+Section B below was re-measured on **2026-09-06**: all seven rows still diverge
+exactly as recorded.
+
 **Read the "how the surviving rows differ" section below before designing
 anything**: two successive stated blockers for the closure-topic rows (first
 "separate the two `call_compiled_closure_with_topic` callers", then ADR-0036 /
