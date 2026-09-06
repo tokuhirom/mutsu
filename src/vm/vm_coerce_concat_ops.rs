@@ -266,12 +266,24 @@ impl Interpreter {
         // operand in grammar-action code, where an unconditional `view()` would
         // materialize a lazy Match (see
         // `tests/lazy_match_no_eager_materialization.rs`).
-        if v.is_seq_value()
+        //
+        // The reified value FALLS THROUGH to the element-stringifier resolution
+        // below rather than being returned here: a `Seq` of objects that define
+        // their own `.Str` needs both steps, and returning early gave the pure
+        // stringifier a Seq of `Instance`s it cannot call `.Str` on. That made
+        // `@objs.Seq eq "p1 p2"` False where the identical `@objs eq "p1 p2"`
+        // (an Array, which never took this early return) was True — and, in the
+        // vendored `Test.rakumod`, made `is @sorted, @people.sort(...)` fail on
+        // two values whose diagnostics printed identically
+        // (roast/integration/advent2009-day20.t).
+        let v = if v.is_seq_value()
             && let ValueView::Seq(body) = v.view()
             && body.needs_touch()
         {
-            return self.reify_or_consume_seq_target(v, "Str");
-        }
+            self.reify_or_consume_seq_target(v, "Str")?
+        } else {
+            v
+        };
         // A role-mixed value is NOT an `Instance` view, so it used to fall
         // straight through to the `_` arm below and lose its composed
         // `Stringy`/`Str` (see `mixin_user_stringifier`).

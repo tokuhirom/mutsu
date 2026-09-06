@@ -7,7 +7,7 @@ use Test;
 # the elements first and hands the result to the same renderer, so the
 # list-shape rules (space separation, nested flattening) stay in one place.
 
-plan 16;
+plan 19;
 
 class C { has $.t; method Str { $!t } }
 class D { has $.t; method Stringy { "S:" ~ $!t } }
@@ -55,6 +55,20 @@ class D { has $.t; method Stringy { "S:" ~ $!t } }
     is @a, @a.Seq, 'a Seq stringifies its elements like an Array';
     is ~@a.Seq, 'a b', 'and prefix ~ on that Seq agrees';
     is @a, @a.map({ $_ }), 'a mapped Seq agrees too';
+}
+
+# ... and infix `eq` must agree with all of the above. A Seq that still holds a
+# deferred source reaches string context through the operand coercion, which
+# reified it and RETURNED, skipping the element-`Str` resolution the Array side
+# had already had -- so the two sides of an otherwise identical comparison were
+# rendered by different stringifiers. These assertions fail through `eq`
+# directly, so they catch it under mutsu's native Test provider too, not only
+# under the vendored `Test.rakumod` whose `is` is the `eq` in question.
+{
+    my @a = (C.new(t => "a"), C.new(t => "b"));
+    ok @a.Seq eq 'a b', 'infix eq on a Seq of objects uses the element Str';
+    ok @a.Seq eq @a, 'a Seq compares eq to the same Array';
+    ok @a.map({ $_ }) eq @a, 'a mapped Seq does too';
 }
 
 # A list with no such element takes the untouched fast path.
