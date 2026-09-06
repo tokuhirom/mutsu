@@ -741,7 +741,36 @@ mod tests {
         );
         // `a` (and `b` through the cycle) are still usable.
         assert_eq!(a.children.lock().unwrap().len(), 1);
+
+        // Reclaim the fixture instead of leaving it for Miri's process-exit
+        // leak check (the `miri` CI job runs step 1 with the leak check on, and
+        // this test's two `TestNode`s plus their child `Vec`s showed up there as
+        // four `memory leaked` reports).
+        //
+        // Re-buffering FIRST is the whole trick. The collect above drained both
+        // nodes out of the candidate buffer, and `Gc::drop` does not put them
+        // back: unit tests run with the GC off (`gc_enabled` is `!cfg!(test)`),
+        // so the `buffer_candidate` call in `Drop` never runs. A bare
+        // `drop(a); collect_cycles()` therefore reclaims nothing -- the
+        // collector has no suspects to scan. A candidate entry holds only a
+        // `Weak`, so buffering while the handles are still live is fine: the
+        // entries stay upgradable across the drops below, because the cycle
+        // keeps both nodes alive until the collector breaks it.
+        let b = a.children.lock().unwrap()[0].clone();
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        drop(b);
         drop(a);
+        let stats = collect_cycles();
+        assert_eq!(
+            stats.reclaimed_nodes, 2,
+            "the fixture cycle is garbage once the external ref goes"
+        );
+        assert_eq!(
+            DROPS.load(Ordering::Relaxed) - before,
+            2,
+            "both nodes are freed, so the test leaves nothing behind"
+        );
     }
 
     #[test]
