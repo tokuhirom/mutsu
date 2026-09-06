@@ -1,105 +1,79 @@
-# Native methods need a declared set of accepted named arguments
+# Native methods still without a declared set of accepted named arguments
 
-Follow-on from
-[news/2026-08/native-methods-honour-the-implicit-slurpy-named.md](../../news/2026-08/native-methods-honour-the-implicit-slurpy-named.md),
-which fixed the *loud* half of "a named argument may occupy a positional slot".
-This file records the *silent* half, which the same investigation measured but
-could not close soundly.
+**Narrowed 2026-09-07.** The mechanism this file asked for now exists:
+[ADR-0070](../../docs/adr/0070-native-methods-declare-the-named-arguments-they-accept.md),
+`src/builtins/accepted_nameds.rs`, `scripts/native-method-adverb-survey.raku`
+and `t/native-method-accepted-nameds.t`. Every row of the original measured
+table is fixed. What is left is the residue of the same survey, which needs no
+new design — only more rows.
 
-## What is already fixed
+## What shipped
 
-`call_method_with_values` now implements Raku's implicit `*%_` for native
-methods: it offers the full argument list first, and only when the whole
-dispatch chain answers `X::Method::NotFound` does it retry with the named
-arguments removed. That is provably non-regressive — a call that succeeds today
-never takes the retry path — and it fixed every case where an unknown named made
-the arity-keyed native lookup *miss* (`4.log(:base(2))`, `"abc".uc(:foo)`, and
-22 more measured against `raku`).
+`native_method_accepted_nameds(method) -> Option<&'static [&'static str]>` is
+consulted at the three places the builtin dispatch layer is entered
+(`try_native_method_raw`'s arity cascade, its interpreter-side twin, and
+`dispatch_method_by_name_1/2/3`). A named argument outside a *declared*
+method's set is dropped before an arity is chosen; a method the table does not
+mention is untouched. 29 methods are declared, from a Rakudo signature survey.
+`first` gained the `X::Adverb` validation Rakudo does instead (mirroring the
+`grep` handler), in both the method and the sub form.
 
-Re-confirmed 2026-08-26 while closing
-`todo/tickets/str-comb-named-arg-only-dispatch-missing.md`: `.comb(:match)` —
-which that ticket suspected would need the per-method declaration described
-below — is entirely on the *loud* side and is already fixed by the retry. It
-needs no accepted-named table. The scope of this ticket is unchanged: only the
-silent-wrong-arm cases listed next.
+A 2 600-probe sweep over `native_method_row_table.rs` went from 754
+not-named-blind probes to 422, with no probe losing named-blindness.
 
-## What is still wrong
+## What is left
 
-The retry cannot help when the wrong arm *hits*. If a native arm accepts the
-named `Pair` in a positional slot and numifies or consumes it, the call succeeds
-with the wrong answer and there is no error to retry on. Measured 2026-08-25
-against `raku` (mutsu on the left of the arrow is the current, post-fix
-behaviour):
+### 1. Methods still undeclared, with a measured wrong answer
 
-| Call | raku | mutsu |
-|---|---|---|
-| `"abc".chop(:zzz)` | `"ab"` | `"abc"` (the pair numified to a 0 char count) |
-| `10.polymod(3, :zzz)` | `(1, 3)` | `(1, 3, Inf)` (the pair became a second modulus) |
-| `3.fmt("%d", :zzz)` | `"3"` | dies `X::AdHoc` (surplus sprintf argument) |
-| `(1,2,3).rotor(2, :zzz)` | `((1, 2),)` | `((1, 2), ())` (the pair became a second cycle spec) |
-| `(1,2,3).classify({$_}, :zzz)` | 3 keys | 4 keys — the pair was classified as an element |
-| `(1,2,3).first(:zzz)` | dies `X::Adverb` | `Any` |
+- **`add` / `remove` on the mutable QuantHashes.** `BagHash.new(1,2,2).add(1,
+  :zzz)` dies with "Too many positionals passed; expected 2 arguments but got 3"
+  where raku answers `Nil`. Rakudo's survey says these accept no named at all,
+  so the row itself is trivial — but the failure does *not* come from either
+  arity cascade or from `dispatch_method_by_name_*`, so adding the row alone
+  does not fix it. Find the handler that raises that arity error (it looks like
+  a class-registered native method with a declared signature) and route it
+  through the same declaration. `grab` is in the same family.
+- **`base(:no-trailing-zeroes)`** is declared, and correctly so, but not
+  implemented: `0.5.base(10, 5, :no-trailing-zeroes)` answers `"0.50000"` where
+  raku answers `"0.5"`. Purely a missing feature now; the adverb reaches the
+  implementation.
 
-`chop` / `polymod` / `fmt` have no named parsing at all to extend. `rotor` and
-`classify` do, but a named-flavour `Pair` can legitimately arrive there as
-*data* — `builtins_collection_classify.rs` says so explicitly in
-`callable_item`'s comment ("a list element that is a named-marker `Pair` is data
-here, not a call-site named argument") — so blanket-dropping named pairs in
-those two would trade one wrong answer for another. `first` is different again:
-Rakudo *validates* its adverbs and throws `X::Adverb` for an unknown one, rather
-than swallowing it.
+### 2. Methods whose accepted set Rakudo answers only through `%_`
 
-## Why it is large
+`scripts/native-method-adverb-survey.raku` reports `**SLURPY**` and nothing else
+for a routine that reads its adverbs out of `%_` rather than declaring
+parameters — `grep`, `first`, `subst`, `trans`, `reduce`, `produce`, `keys`,
+`values`, `kv`, `pairs`, `list`, `Array`. For those the survey is a *lower
+bound*, so they are deliberately absent from the table. Each needs its accepted
+set confirmed by hand against `raku-doc/doc/Type/` before it can be declared.
+(Measured 2026-09-07: none of them currently answers a `:zzz` probe wrongly, so
+this is hardening, not a live bug.)
 
-The sound fix is the declaration the ticket that started this predicted: each
-native method needs to state **which named arguments it accepts**, so unknown
-ones can be dropped before any positional-slot interpretation while declared
-adverbs keep flowing through. Today that knowledge is scattered and implicit:
+### 3. Unrelated divergences the sweep surfaced
 
-- adverb parsing lives in per-method Rust helpers (`SplitOpts::from_args`,
-  `split_string_match_args`, `extract_extrema_adverbs`, `native_comb_method`,
-  `dispatch_rotor`, the `subst`/`trans`/`match`/`grep`/`first` handlers, the IO
-  and temporal constructors, …), each with its own hand-written match on key
-  strings;
-- the arity cascade (`native_method_0arg`/`_1arg`/`_2arg`) has no notion of
-  named arguments at all — it just indexes `args[0]`, `args[1]`;
-- a handful of adverb-aware natives are already lifted out in front of the
-  cascade as interceptors (`native_contains_with_options`,
-  `native_prefix_suffix_with_options`, `native_substr_eq_with_options` in
-  `src/vm/vm_native_dispatch.rs`), which is the shape the end state wants.
+Not named-argument bugs — the *plain* call already differs from raku — but worth
+their own tickets if anyone picks them up:
 
-Two plausible designs, both needing an ADR before code:
+- `4.roots(2)` answers `(2e0, -2e0)` where raku answers the two complex roots
+  `(<2+0i>, <-2+2.4e-16i>)`.
+- `(1,2,3).rotor("b")` answers `().Seq` where raku dies "cannot unbox to a
+  native integer"; `(1,2,3).AT-POS("b")` answers `Nil` where raku dies.
+- `(1,2,3).splice(1, 1)` reports `X::Immutable` where raku reports
+  "Cannot resolve caller".
 
-1. **Per-method accepted-named table.** A `native_method_accepted_nameds(method)
-   -> &'static [&'static str]` consulted at the dispatch entry; unknown nameds
-   are dropped, declared ones stay in place. Cheap to implement, but the table's
-   *completeness* is load-bearing: a method missing from it silently loses a real
-   adverb. It must be generated from, or checked against, the helpers above —
-   never hand-maintained on its own.
-2. **Every adverb-aware native becomes an interceptor.** Extend the
-   `native_*_with_options` pattern until no arm inside the arity cascade reads an
-   argument `Pair`, then make the cascade named-blind by construction. More work,
-   but the invariant is then structural rather than a list someone has to keep
-   in sync.
-
-Either way the entry point is one place —
-`Interpreter::call_method_with_values` in
-`src/runtime/methods_call_dispatch.rs`, which every dispatch chain funnels
-through exactly once (verified with `rust-gdb`), and which already owns the
-implicit-`*%_` retry.
-
-## Repro
+## Repro for the residue
 
 ```
-raku -e 'say "abc".chop(:zzz); say 10.polymod(3, :zzz); say 3.fmt("%d", :zzz)'
-# ab / (1 3) / 3
-./target/debug/mutsu -e 'say "abc".chop(:zzz); say 10.polymod(3, :zzz); say 3.fmt("%d", :zzz)'
-# abc / (1 3 Inf) / dies
+raku -e 'say BagHash.new(1,2,2).add(1, :zzz).raku; say 0.5.base(10, 5, :no-trailing-zeroes)'
+# Nil / 0.5
+./target/debug/mutsu -e 'say BagHash.new(1,2,2).add(1, :zzz).raku; say 0.5.base(10, 5, :no-trailing-zeroes)'
+# dies / 0.50000
 ```
 
 ## Affected files
 
-- `src/runtime/methods_call_dispatch.rs` (`call_method_with_values`)
-- `src/builtins/methods_0arg/`, `src/builtins/methods_narg/` (the arity cascade)
-- `src/vm/vm_native_dispatch.rs` (the existing interceptor pattern)
-- the per-method adverb helpers listed above
+- `src/builtins/accepted_nameds.rs` (the table — add rows here)
+- `scripts/native-method-adverb-survey.raku` (regenerates the evidence)
+- `t/native-method-accepted-nameds.t` (pins every declared row, and passes
+  under `raku` unmodified)
+- whichever handler raises the `add`/`remove` arity error (not yet located)

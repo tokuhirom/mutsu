@@ -489,6 +489,17 @@ impl Interpreter {
         if Self::is_range_int_bounds_rw(target, &method_name, args) {
             return Some(self.range_int_bounds_rw(target));
         }
+        // A named argument the method does not accept must not be counted as a
+        // positional: the cascade below picks its arm by `args.len()` and then
+        // indexes `args[0]`/`args[1]`, so an undeclared `Pair` would be numified
+        // or consumed as data (`"abc".chop(:zzz)` -> a 0 character count). Every
+        // native that genuinely reads an adverb is either lifted out as an
+        // interceptor above (`contains` / `starts-with` / `ends-with` /
+        // `substr-eq`) or declared in `builtins::accepted_nameds`; for anything
+        // it declares, the cascade is named-blind. See that module for why the
+        // declaration is partial and why `None` is the safe default.
+        let stripped = crate::builtins::strip_undeclared_nameds(method_name.as_str(), args);
+        let args: &[Value] = stripped.as_deref().unwrap_or(args);
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

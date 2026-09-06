@@ -1,3 +1,4 @@
+pub(crate) mod accepted_nameds;
 pub(crate) mod arith;
 pub(crate) mod backtrace_methods;
 pub(crate) mod buf_bits;
@@ -93,6 +94,7 @@ pub(crate) fn chomp_one(s: &str) -> String {
     }
 }
 
+pub(crate) use accepted_nameds::strip_undeclared_nameds;
 pub(crate) use arith::{
     arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub,
 };

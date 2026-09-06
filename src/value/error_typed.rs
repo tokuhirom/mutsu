@@ -368,6 +368,28 @@ impl RuntimeError {
         Self::typed("X::Adverb", attrs)
     }
 
+    /// The soft `Failure` form of [`Self::unexpected_adverb`].
+    ///
+    /// `grep` *throws* its `X::Adverb` while `first` `fail`s with the same
+    /// exception, so `(1,2,3).first(:zzz)` yields a Failure that only blows up
+    /// when it is used. Same exception object either way -- a `CATCH` and a
+    /// `throws-like X::Adverb` see no difference; a sunk result does.
+    pub(crate) fn unexpected_adverb_failure(
+        unexpected: &[String],
+        what: &str,
+        source: &str,
+    ) -> Value {
+        let err = Self::unexpected_adverb(unexpected, what, source);
+        let exception = err
+            .exception
+            .map(|e| *e)
+            .unwrap_or_else(|| Value::str(err.message.to_string()));
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), exception);
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
+        Value::make_instance(crate::symbol::Symbol::intern("Failure"), failure_attrs)
+    }
+
     /// X::Immutable - Cannot modify an immutable value
     pub(crate) fn immutable(typename: &str, method: &str) -> Self {
         let msg = format!("Cannot call '{}' on an immutable '{}'", method, typename);
