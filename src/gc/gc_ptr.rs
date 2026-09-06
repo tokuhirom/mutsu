@@ -778,8 +778,16 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
 /// value is *dereferenced* for the lifetime of the returned borrow (the aliasing
 /// is logical — visible through the container's other `Gc` holders — not two live
 /// Rust borrows at once), and that concurrent structural mutation from another
-/// thread remains routed through the synchronized shared-store lanes (the narrow
-/// cross-thread race deferred to ADR-0001 layer 3c). The candidate buffer's
+/// thread is excluded. The name-keyed shared-store lanes
+/// (`runtime/runtime_shared_vars.rs`) cover the common case, but they are NOT a
+/// blanket guarantee: they decline for a container reached through a
+/// `ContainerRef` cell, for an attribute or twigil'd name, and for a write that
+/// is not name-keyed at all. ADR-0068 §2/§3 measured that gap corrupting the
+/// heap (`double free or corruption`) through `.tap` / `Promise.then` /
+/// `Thread.start` captures, and supplies the store-side exclusion in
+/// `value::container_lock`. A NEW aliased-write site reached from more than one
+/// thread must take `ContainerStructGuard` (or a lane) itself; do not read this
+/// clause as "the lanes already handle it". The candidate buffer's
 /// retained `Weak` adds no hazard — a buffered node's value is read only at a
 /// collect safepoint, never concurrently with a live mutation.
 #[allow(clippy::mut_from_ref)]

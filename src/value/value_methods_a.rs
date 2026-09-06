@@ -554,7 +554,17 @@ impl Value {
     /// `f` to the inner value WITHOUT cloning it.
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self.view() {
-            ValueView::ContainerRef(arc) | ValueView::ContainerView(arc) => f(&arc.lock().unwrap()),
+            ValueView::ContainerRef(arc) | ValueView::ContainerView(arc) => {
+                // ADR-0068: the cell's own `Mutex` does not exclude the element
+                // store, which derives a raw pointer into this same slot and
+                // then mutates it with the lock released. Without this a
+                // concurrent read clones a half-overwritten `Value` and takes a
+                // refcount on a node the writer already dropped. A no-op (one
+                // relaxed load) until a VM mutator thread is spawned.
+                let _cross_thread =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
+                f(&arc.lock().unwrap())
+            }
             _ => f(self),
         }
     }
@@ -583,6 +593,9 @@ impl Value {
     /// `arc.lock().unwrap().clone()` reads it replaces.
     pub fn into_deref(self) -> Value {
         if let ValueView::ContainerRef(arc) = self.view() {
+            // See `with_deref`: the cell lock alone does not exclude the store.
+            let _cross_thread =
+                crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
             return arc.lock().unwrap().clone();
         }
         self

@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Proposed**
+- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 open)
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
@@ -164,7 +164,7 @@ ran below the oversubscription threshold §1.1 identifies — and a cheap next s
 under the §1.1 harness at 24-way, and run the §1.2 oracle over it to see whether its containers
 are on the lane at all. Left recorded, not chased.
 
-## 4. Decision (proposed)
+## 4. Decision
 
 **Adopt remedy (B) — synchronize the store at the container, gated by (C) — and reject (A).**
 Concretely, in this order:
@@ -254,3 +254,115 @@ mutual-exclusion edge. This ADR does not argue that case and must not be read as
 4. **Does the (C) flag belong in `gc_contents_mut` itself** (one relaxed load at the primitive,
    for every site at once) or at each synchronized store? Measuring the primitive-level load
    against the bench CI is the deciding datum, and it was not taken this session.
+
+## 7. Implementation (2026-09-06): what was measured, and which premises above were wrong
+
+Status moves to **Accepted**. Steps 1 and 2 of §4 are implemented
+(`src/value/container_lock.rs`, `Value::with_deref`/`into_deref`, the element
+store in `vm/vm_var_assign_index_named.rs`). Step 3 — widening to the remaining
+lane-decline reasons — is still open. Three things this ADR asserted did not
+survive contact with the code, and they matter more than the fix itself.
+
+### 7.1 The reproduction is far cheaper than §1.1 says
+
+§1.1 requires a `--profile profiling` build, the `gc-stress` environment, and
+**24-way oversubscription on 12 cores**, and reports 6/960 as a good rate. None
+of that is necessary. On an ordinary `cargo build` debug binary, this six-line
+program corrupts the heap on **93 of 96 runs**:
+
+```raku
+{
+    my @a;
+    sub put-it($i) { @a[$i] = 1 }
+    await (^20).map: -> $t { start { for ^50 -> $k { put-it($t * 50 + $k) } } };
+    say @a.grep(*.defined).elems;   # want 1000
+}
+```
+
+It fails **20/20 with `MUTSU_GC=off`**, so the GC is not involved; it fails at
+8-way, so oversubscription is not the ingredient either. Observed shapes:
+`with_array_mut probed an Array` (`value/view.rs:849`), `Gc::drop strong-count
+underflow`, `Arc counter overflow`, `corrupted size vs. prev_size`,
+`double free or corruption`, `malloc(): unaligned tcache chunk detected`, and
+silent short counts (906, 916, 180).
+
+What actually decides whether a probe reproduces is **which store path it takes**,
+exactly as §1.1's own negative result hinted — and the discriminator is not size
+but *how the thread reaches the container*. A `start` block that mentions `@a`
+lexically is excluded from celling by `thread_escaping_captures`
+(`CompiledCode::compute_free_vars`) and lands on the synchronized lane, which is
+why five hand-shrunk probes came back clean. Reaching the container through a
+**named sub the thread body merely calls** defeats that analysis (ADR-0039 §8.6),
+leaves the container celled, and puts the write on the racing path. That single
+change turns a workload that needs hundreds of oversubscribed profiling runs into
+one that fails on the first try.
+
+Use the §1.2 path oracle to confirm a probe is on the racing path; then a plain
+`for i in $(seq 96)` loop is a sufficient harness. Keep §1.1 for workloads (like
+the real `roast/integration/advent2014-day05.t`) that cannot be reshaped.
+
+### 7.2 "Hold the cell's lock across the mutation" is right; "the cell's Mutex protects the Value but not the container" is not the operative fact
+
+§2 says the store "clones the inner `Gc<ArrayData>` out from under the lock,
+releases it, and then performs the aliased in-place mutation". True — but the
+consequence drawn from it (that the missing exclusion is between two *writers* of
+one container node) is wrong twice over:
+
+- **Two threads writing one celled container do not share a container node.**
+  Instrumenting the store's node address across a run of the probe above shows
+  **13 distinct `Gc<ArrayData>`/`Gc<HashData>` addresses**, because
+  `Gc::make_mut` copies a node whose strong count is greater than one. A
+  store-side lock keyed on the container node therefore excludes nothing: it
+  left the failure rate unchanged. What every alias *does* share is the
+  `Gc<ContainerCell>`. **The exclusion has to be keyed on the cell.**
+- **The dominant race is writer-versus-reader, not writer-versus-writer.**
+  `Value::with_deref` / `Value::into_deref` — the read chokepoint for every
+  celled container — take the cell's `Mutex<Value>` and clone the inner `Value`
+  out. The store takes that same `Mutex` only long enough for
+  `descend_container_ref` to derive a raw pointer into the slot, then drops it
+  and mutates for the rest of the statement. So reader and writer never excluded
+  each other **at all**, and a reader that clones a `Value` mid-overwrite takes a
+  refcount on a node the writer has already dropped. Cell-keyed exclusion on the
+  write side alone took 95/96 failures to 13/96; adding the *same* exclusion on
+  the read side took it to **0/240 at 24-way, and 0/96 at 8-way**.
+
+The accurate one-line root cause is therefore: **the element store does not hold
+the cell's lock at all, so it excludes neither another writer nor a reader.**
+
+### 7.3 Route acceptance (debug build, `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`)
+
+| Route (§3) | Before | After |
+|---|---|---|
+| 1 — plain `.tap` callback captures (the day05 `@seen[$_]` idiom) | 17 / 96 | **0 / 96** |
+| 4 — `Thread.start` bodies | 64 / 64 | **0 / 64** |
+| celled array element store via a named sub | 93 / 96 | **0 / 240** (24-way) |
+| celled hash key store via a named sub | 95 / 96 | **0 / 240** (24-way) |
+
+Route 3 (object attributes) remains **unclassified**, route 5 remains blocked
+behind the Channel-supply delivery bug, and §3.1's `S17-procasync/stress.t`
+SIGSEGV remains unexplained. Those are step 3.
+
+### 7.4 The mechanism that was adopted
+
+`value::container_lock` — a table of 64 striped `Mutex<()>`, keyed by the
+address of the shared `ContainerCell` (falling back to the container node for an
+uncelled root). Not the cell's own `Mutex<Value>`: `descend_container_ref` must
+take that lock to derive the pointer it returns, so a guard object holding it
+across the mutation region would self-deadlock on every nested read of the same
+cell. A separate lock sidesteps that, and answers §6 question 1 —
+`ContainerCell`'s `Mutex` is *not* the right lock to hold, but its *identity* is
+exactly the right key.
+
+Two properties keep it deadlock-free and affordable, and both are load-bearing:
+
+- **A thread holds at most one of these locks at a time**; a nested acquisition
+  is a no-op. No lock-ordering cycle can exist between two threads, and a store
+  that re-enters another store cannot self-deadlock. This deliberately leaves a
+  hole (a nested read of a *different* cell is unprotected) — §6 question 1's
+  answer, that acceptance must be the stress harness rather than the argument,
+  applies to it.
+- **§4 step 1's gate is what makes it free.** A program that never spawns a VM
+  mutator thread pays one `Relaxed` load per read/store and never touches a
+  mutex. §6 question 4 is answered by placement rather than measurement: the gate
+  sits in `ContainerStructGuard`, not in `gc_contents_mut`, so the primitive's
+  147 other call sites are untouched.

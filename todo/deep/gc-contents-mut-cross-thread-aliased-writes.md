@@ -1,99 +1,100 @@
 # `gc_contents_mut` aliased writes are unsynchronized across VM threads
 
-This is the residue of `todo/deep/procasync-stress-segv.md`, which was closed on
-2026-09-05 by finding and fixing the path that actually crashed
-(`news/2026-09/supply-act-serialization-and-the-concurrency-crash-cluster.md`). Read that
-entry first: it has the evidence, the measurements, and the negative results from the
-memory checkers, none of which is repeated here.
+This is the residue of `todo/deep/procasync-stress-segv.md`, closed on 2026-09-05 by
+finding and fixing the path that actually crashed
+(`news/2026-09/supply-act-serialization-and-the-concurrency-crash-cluster.md`).
 
-**Design status (2026-09-05): [ADR-0068](../../docs/adr/0068-cross-thread-container-writes-need-a-synchronized-store.md)
-is the `Proposed` design for this finding.** It carries the route audit, the calibrated
-reproduction harness, the path oracle, the deadlock quantification that rejects
-"synchronize the primitive", and the proposed remedy. This file is now the *open work
-item*; the ADR is the reasoning. Do not re-derive either from scratch.
+**Design status: [ADR-0068](../../docs/adr/0068-cross-thread-container-writes-need-a-synchronized-store.md)
+is `Accepted`, and its §4 steps 1 and 2 are IMPLEMENTED** (2026-09-06,
+`news/2026-09/celled-container-cross-thread-store-exclusion.md`). Read ADR-0068 §7
+before anything else here: it records three premises of the original design that
+measurement contradicted, including the one this file used to lead with. This
+file is now only the *open remainder* — §4 step 3.
 
-## The general hazard
+## What is closed
 
-`crate::gc::gc_contents_mut` is, in its own words, *"the codebase's single
-aliased-container-write primitive"*: given a `Gc<T>` whose strong count is greater than
-one, it hands out a `&mut T` so that a write through one alias is visible through every
-holder of the same node. That is how mutsu implements Raku container identity, and it is
-correct on one thread.
+The celled-container route. An element store that reaches its container through a
+shared `ContainerRef` cell now takes a cell-keyed stripe lock
+(`src/value/container_lock.rs`), and so do the read chokepoints
+(`Value::with_deref` / `into_deref`). ADR-0068's routes 1 (`.tap` captures) and 4
+(`Thread.start` bodies) went from 17/96 and 64/64 failures to 0/96 and 0/64; the
+named-sub array and hash probes went from 93/96 and 95/96 to 0/240 at 24-way.
+`t/concurrent-celled-container-store.t` pins all four shapes.
 
-Its `# Safety` clause already names the gap:
+Two corrections that the fix turned up, and that anyone continuing this work needs:
 
-> The caller must ensure that ... concurrent structural mutation from another thread
-> remains routed through the synchronized shared-store lanes (the narrow cross-thread
-> race deferred to ADR-0001 layer 3c).
+- **The shared thing is the CELL, not the container node.** Twenty threads writing
+  one celled array reach *thirteen* distinct `Gc<ArrayData>` addresses, because
+  `Gc::make_mut` copies an aliased node. A node-keyed lock excludes nothing, and
+  measurably did not move the failure rate.
+- **The dominant race was writer-versus-reader.** The store derives a raw pointer
+  into the cell's slot and releases the cell's `Mutex`; the readers take that same
+  `Mutex` to clone the inner `Value` out. So they never excluded each other, and a
+  reader could take a refcount on a node the writer had already dropped. Locking
+  only the write side left 13/96 failures standing.
 
-There are **149 call sites** and none of them establishes that. The shared-store lanes
-(`runtime/runtime_shared_vars.rs`) are keyed by variable name and seeded from a spawning
-frame's env walk. Any *other* way a container comes to be aliased by two VM threads
-bypasses them entirely, and then two threads can call `Vec::resize` / `HashMap::insert` on
-the same allocation at once.
+## What is still open — ADR-0068 §4 step 3
 
-## What the 2026-09-05 audit established
+`gc_contents_mut` has 149 call sites and the exclusion is applied at three of them.
+The remaining exposure is the rest of the ways a container becomes cross-thread
+reachable while the name-keyed lane declines (ADR-0068 §2 lists five):
 
-**The root cause is narrower and more specific than "149 unsynchronized sites".** The lane
-does not merely fail to cover the container — it *hands the write to a mechanism it
-believes is synchronized and is not*. `assign_array_elem_to_shared_var` returns `None` when
-the env entry is a `ContainerRef`, on the recorded premise that such an array *"is already
-shared through the Mutex"*. `ContainerCell`'s `Mutex` protects the cell's **`Value`**, not
-the container the `Value` points at: the element store clones the inner `Gc<ArrayData>` out
-from under the lock and then runs `gc_contents_mut` → `autoviv_resize` → `Vec::resize` with
-no lock held. On the confirmed-racing workload that `return None` fired 21/21 times. A
-container reaches that state whenever the closure machinery boxes it into a shared cell —
-most commonly because a **named sub closes over it**. See ADR-0068 §2.
+- the name is not a plain lexical `@`/`%` (attributes, twigils);
+- the name is masked as re-declared;
+- the container was never in a spawning frame's env;
+- the write is not name-keyed at all (`$obj.attr[$i]`, `%h<k>[$i]`, a container
+  returned from a method);
+- mutating *methods* rather than element stores — `push`/`pop`/`splice`/`:delete`
+  and the `try_native_array_mut` / `try_native_hash_mut_bound` paths — which reach
+  their container through the same `env_root_descended_mut` chokepoint but do not
+  yet take the guard.
 
-### Route audit (measured, ADR-0068 §3)
+Each wants its own oracle-classified probe and its own stress acceptance, per
+ADR-0068 §4 step 3 — not one 149-site sweep.
 
-| Route | Verdict |
-|---|---|
-| `Supply.act` tap captures | **Closed** by #7336 (0/240 after; 6/960 with the fix disabled) |
-| plain `.tap` callback captures | **RACES** — 4/960, with `free(): double free detected in tcache 2` and `double free or corruption (out)` core dumps. Not fixable by locking dispatch: `.tap` has no serialization guarantee in Raku |
-| `Promise.then` combinator callback captures | **RACES** — 3/240, lost updates |
-| `Thread.start` bodies | **Exposed** on the path oracle (21/0), same site as the two above |
-| `Channel.Supply` tap captures | **Exposed** on the path oracle (20/0), but blocked behind a separate deterministic Channel-supply delivery bug that drops/misorders values on a single unloaded run — fix that first or the race rate is unmeasurable |
-| Object attribute (`has @.seen is rw`) | **Unresolved** — reaches none of the probed aliased-store sites, nor `gc_data_mut`, nor the computed-attr sites. Needs its own path trace before it can be called covered or exposed |
+Three specific loose ends from the route audit:
 
-Routes 1, 2 and 4 all corrupt through the **same** site
-(`vm/vm_var_assign_index_named.rs:2353`) — three doors into one room, which is what makes a
-store-side remedy tractable.
+- **Route 3 (object attributes, `has @.seen is rw`) is unclassified.** It reaches
+  none of the probed aliased-store sites, nor `gc_data_mut`, nor the computed-attr
+  sites. Trace it before calling it covered or exposed.
+- **Route 5 (`Channel.Supply` tap captures)** is exposed on the path oracle but
+  blocked behind a separate deterministic Channel-supply delivery bug that
+  drops/misorders values on a single unloaded run. Fix that first.
+- **`roast/S17-procasync/stress.t` SIGSEGV** (CI run 30590633128, 2026-07-30, the
+  rakudo#3299 block) has never reproduced and is still unexplained. Run it under
+  the §1.1 harness at 24-way and the §1.2 oracle to see whether its containers are
+  on the lane at all.
 
-## Reproduction harness — this is the reusable part
+## How to reproduce this class cheaply — read this before building a harness
 
-Previous attempts failed for a measurable reason, and the correction matters more than the
-old advice did:
+ADR-0068 §1.1's requirement of a `--profile profiling` build, the `gc-stress`
+environment and 24-way oversubscription is **not** necessary, and §7.1 records why.
+The discriminator is which store path the workload takes, not how loaded the box
+is. A `start` block that mentions the container lexically is excluded from celling
+by `thread_escaping_captures` and lands on the safe lane — which is what made five
+earlier hand-shrunk probes come back clean. Reach the container through a **named
+sub the thread body merely calls** (a route the thread-escape analysis cannot see,
+ADR-0039 §8.6) and an ordinary debug build fails on the first run, with the GC off:
 
-- **CPU oversubscription is the necessary ingredient, not concurrency.** At 8-way on 12
-  cores the *known-racing* pre-fix workload was 0/64 and 0/240 — clean. At **24-way on 12
-  cores** it failed 6/960 within seconds per batch. Every earlier "could not reproduce" in
-  this area was taken below that threshold and means nothing.
-- Run the **real workload** as separate processes under the `gc-stress` environment
-  (`MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`) on a `--profile profiling`
-  build. mutsu's own `Vec` bounds check and glibc's allocator are the detectors.
-- **A hand-shrunk probe is not a substitute for the real file.** Five standalone probes
-  written from the racing test's own source were clean over 1440+ block executions at full
-  power *with the fix disabled*, because shrinking silently moved them onto the
-  **synchronized** lane.
-- **Use the path oracle before the stress harness.** `rust-gdb`'s ignore counter turns a
-  breakpoint into a free call counter with no rebuild; breaking on
-  `vm_var_assign_index_named.rs:2353` (unsynchronized) and
-  `Interpreter::shared_array_elem_set` (lane) classifies a workload as exposed-or-covered in
-  one debug run. See ADR-0068 §1.2 for the exact command.
-- **Do not start with `valgrind --tool=memcheck`** (0 errors on a demonstrably racing
-  workload — it serializes threads onto one core) or `helgrind` (cannot symbolize the
-  optimized binary). AddressSanitizer reports nothing either; it is useful only as a
-  *scheduler*, because its ~10x slowdown widens the window.
+```raku
+{
+    my @a;
+    sub put-it($i) { @a[$i] = 1 }
+    await (^20).map: -> $t { start { for ^50 -> $k { put-it($t * 50 + $k) } } };
+    say @a.grep(*.defined).elems;   # want 1000
+}
+```
 
-## The one instance that is NOT explained by the fixed path
+Use ADR-0068 §1.2's `rust-gdb` ignore-counter oracle to confirm a new probe is on
+the racing path before trusting a clean result. Do not start with
+`valgrind --tool=memcheck` (it serializes threads onto one core and reports
+nothing) or helgrind (cannot symbolize the optimized binary).
 
-`roast/S17-procasync/stress.t` died of SIGSEGV once, on CI run 30590633128 (2026-07-30), in
-the rakudo#3299 block that starts 1200 `Proc::Async` instances inside a `react`. It has
-never reproduced — ~130 targeted local runs across four configurations, plus the 2026-09-05
-session's — and it has no `Supply.act` tap, so the `.act` fix does not obviously cover it.
-The 2026-09-05 audit does **not** explain it either. What it adds is a reason the hunts
-failed (all of them ran below the oversubscription threshold above) and a cheap next step:
-run that file under the 24-way harness, and run the path oracle over it to see whether its
-containers are on the lane at all. Treat it as an open, unexplained instance of the general
-hazard rather than as its own investigation.
+## A follow-up worth measuring
+
+The read-side guard sits in `Value::with_deref` / `into_deref`, which are hot. It
+is gated on "a VM mutator thread has been spawned", so a single-threaded program
+pays one `Relaxed` load — but a *threaded* program now takes a mutex on every
+celled-container read. No slowdown showed up in `make test`, and nothing measured
+it directly. If a concurrency-heavy benchmark regresses, that gate is the first
+place to look, and per-cell striping granularity is the first knob.
