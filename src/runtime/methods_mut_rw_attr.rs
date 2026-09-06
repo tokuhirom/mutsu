@@ -66,6 +66,83 @@ impl Interpreter {
         })
     }
 
+    /// The type check every attribute store applies to the value on its way in.
+    ///
+    /// One rule, two callers: the generated public accessor
+    /// (`$obj.attr = v`) and the hand-written `is rw` method that exposes the
+    /// same attribute (`method acc is rw { $!attr }`; `$obj.acc = v`). An
+    /// `is rw` method over a bare `$!attr` *is* an accessor, so the two must
+    /// agree — the method store used to skip the check entirely, letting
+    /// `$obj.acc = "str"` land a `Str` in a `has Int $.n`.
+    ///
+    /// `Nil` is exempt: it never reaches the attribute, because
+    /// [`Self::attr_store_nil_default`] replaces it with the declared default
+    /// or the declared type object first.
+    pub(crate) fn check_attr_store_type(
+        &mut self,
+        class_name: &str,
+        attr: &str,
+        attr_sigil: char,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        // For `@`/`%` attributes the constraint applies to the elements, not to
+        // the container being stored; those checks live at the call sites.
+        if attr_sigil != '$' || value.is_nil() {
+            return Ok(());
+        }
+        let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr) else {
+            return Ok(());
+        };
+        if self.type_matches_value(&type_constraint, value)
+            || self.is_container_subclass(&type_constraint)
+        {
+            return Ok(());
+        }
+        Err(RuntimeError::typecheck_assignment(
+            &type_constraint,
+            value,
+            Some(&format!("$!{}", attr)),
+        ))
+    }
+
+    /// What assigning `Nil` to attribute `attr` actually stores.
+    ///
+    /// Raku's `=` restores a container's *default* when handed `Nil`: the
+    /// `is default(...)` value when the declaration has one, otherwise the
+    /// declared type object (`A` for `has A $.a`) — and `Any` for an untyped
+    /// scalar attribute, which is what an untyped `Scalar` container defaults
+    /// to. Anything but `Nil` passes straight through.
+    ///
+    /// Shared by the accessor store and the `is rw` method store for the same
+    /// reason [`Self::check_attr_store_type`] is: they are two spellings of one
+    /// accessor. The method store used to apply only the `is default(...)` half
+    /// (so `$obj.acc = Nil` left a literal `Nil` in a typed attribute), and the
+    /// accessor store only the typed half (so an *untyped* attribute kept `Nil`
+    /// instead of resetting to `Any`).
+    pub(crate) fn attr_store_nil_default(
+        &mut self,
+        class_name: &str,
+        attr: &str,
+        attr_sigil: char,
+        value: Value,
+    ) -> Value {
+        if !value.is_nil() {
+            return value;
+        }
+        if let Some(def) = self.class_attribute_default_with_role_fallback(class_name, attr) {
+            return def;
+        }
+        // An `@`/`%` attribute's Nil decay is the container's own business
+        // (`decay_nil_container_elements`), not a type-object reset.
+        if attr_sigil != '$' {
+            return value;
+        }
+        let type_name = self
+            .get_attr_type_constraint(class_name, attr)
+            .unwrap_or_else(|| "Any".to_string());
+        Value::package(Symbol::intern(&type_name))
+    }
+
     /// Detect an `is rw` method whose body returns an *indexed* attribute
     /// element — `@!attr[$param]` or `%!attr{$param}` — where the index/key is
     /// a single positional parameter. Returns `(attr_name, param_name,

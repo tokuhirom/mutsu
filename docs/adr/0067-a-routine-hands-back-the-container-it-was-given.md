@@ -1186,13 +1186,21 @@ would disagree with that storage — the same restriction slice 3a's route 4 and
 through an `is rw` method (`$u.auth = Nil` for `method auth is rw { $!a }` on a
 typed `has A $.a`) leaves the attribute holding `Nil` where raku restores the
 declared type object — the accessor store does it right, the rw-method store
-writes the value straight into the attribute map and skips the reset. Recorded
-as `todo/tickets/rw-method-lvalue-store-skips-typed-attribute-nil-reset.md`. And
+writes the value straight into the attribute map and skips the reset. And
 `sub f(\x) is raw { x }; f(<non-location>) = 9` reports success and drops the
 write where raku dies — `f(42) = 9` reproduces it with no accessor anywhere, so
 it is the assignment path failing to refuse a routine that handed back a value,
-not an argument-producer gap. Unchanged by this slice and recorded as
-`todo/tickets/raw-sub-lvalue-assign-does-not-refuse-a-value-result.md`.
+not an argument-producer gap. Unchanged by this slice.
+
+Both were fixed on 2026-09-06 (together with a third, unrelated `@`-attribute
+list-assignment bug found in the same neighbourhood) — see
+`news/2026-09/attribute-and-raw-lvalue-stores-share-one-rule.md`. The rw-return
+container capture (`OpCode::CaptureVarCell`) now asks the readonly registry
+before minting a cell, so a routine that handed back a value is refused instead
+of writing into a container nobody shares; and the rw-method attribute store
+shares the accessor's `Nil`-reset and type-check rules
+(`attr_store_nil_default` / `check_attr_store_type`) rather than carrying its
+own partial copies.
 
 **Pinned by** `t/rw-result-container-consumers.t` (36 tests, byte-identical
 output under `mutsu` and `raku`): every row of both tickets, the four `is rw`
