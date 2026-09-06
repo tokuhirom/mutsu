@@ -274,8 +274,6 @@ impl Compiler {
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
         let esc = Self::method_escapes_closure_args(&mname);
-        // `Thread.start` / `Promise.start` hand the block to a thread.
-        let thread_esc = mname == "start";
         // `Pair.new($k, $v)` binds its value parameter raw, so the built Pair's
         // value aliases `$v`'s container (write-through, traps.rakudoc; only the
         // 2-positional form — the named form and the key decontainerize). Tag the
@@ -300,9 +298,7 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.with_thread_escape(thread_esc, |s| {
-                s.compile_method_arg_with_escape(arg, arg_esc)
-            });
+            self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             // ADR-0067's argument producer, method-callee half: the invocant
             // was pushed before this loop started, so the VM can ask the real
@@ -733,8 +729,6 @@ impl Compiler {
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
         let esc = Self::method_escapes_closure_args(&mname);
-        // `Thread.start` / `Promise.start` hand the block to a thread.
-        let thread_esc = mname == "start";
         let immutable_topic_cb = Self::method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
         for (i, arg) in args.iter().enumerate() {
@@ -743,9 +737,7 @@ impl Compiler {
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.pending_immutable_topic_block = immutable_topic_cb && Self::is_bare_block_arg(arg);
-            self.with_thread_escape(thread_esc, |s| {
-                s.compile_method_arg_with_escape(arg, arg_esc)
-            });
+            self.compile_method_arg_with_escape(arg, arg_esc);
             self.pending_immutable_topic_block = false;
             // ADR-0067's argument producer, as in the sibling loop: this path
             // serves a receiver that is not a plain variable (`S.new.take(...)`,

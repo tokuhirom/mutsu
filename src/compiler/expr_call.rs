@@ -1765,11 +1765,9 @@ impl Compiler {
                 // A closure LITERAL passed as a call argument escapes: the callee
                 // may store it (`register { $c++ }`), and the caller cannot tell.
                 // So the captured-and-mutated locals it names must become shared
-                // `ContainerRef` cells. `start` additionally hands its block to a
-                // thread — a strictly narrower signal, see
-                // `CompiledCode::thread_escaping`. See `is_closure_literal_arg`
-                // for why only the literal, and not the whole argument list, is
-                // marked (this replaces the old `start`-only allowlist).
+                // `ContainerRef` cells. See `is_closure_literal_arg` for why only
+                // the literal, and not the whole argument list, is marked (this
+                // replaces the old `start`-only allowlist).
                 let is_start = name.resolve() == "start";
                 // Literal named args (`:key(val)` / `key => val` with a
                 // compile-time-known key) travel out-of-band: only the VALUE
@@ -1798,7 +1796,6 @@ impl Compiler {
                     // before; other calls mark only a closure literal.
                     let value_expr = Self::unwrap_named_arg_value(arg);
                     let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
-                    let thread_escaping = is_start;
                     if let Expr::Binary {
                         op: TokenKind::FatArrow,
                         left,
@@ -1817,10 +1814,8 @@ impl Compiler {
                         // in with_escape + with_suppress_pair_capture, under
                         // which the FatArrow compile is `left; right; MakePair`
                         // — so the value side is a plain compile_expr.
-                        self.with_thread_escape(thread_escaping, |s| {
-                            s.with_escape(escaping_args, |s| {
-                                s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
-                            })
+                        self.with_escape(escaping_args, |s| {
+                            s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
                         });
                     } else {
                         self.pending_immutable_topic_block = immutable_topic_cb && i == 0;
@@ -1830,9 +1825,7 @@ impl Compiler {
                         // list literal at argument 1.
                         self.pending_rw_arg_list_callee =
                             Self::relayed_rw_arg_callee(*name, args, i);
-                        self.with_thread_escape(thread_escaping, |s| {
-                            s.compile_call_arg_with_escape(arg, escaping_args)
-                        });
+                        self.compile_call_arg_with_escape(arg, escaping_args);
                         self.pending_rw_arg_list_callee = None;
                         self.pending_immutable_topic_block = false;
                         if i == 0

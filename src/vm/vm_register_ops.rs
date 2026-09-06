@@ -1239,7 +1239,7 @@ impl Interpreter {
     /// types (`int`/`num`/`str` families, `Int`/`UInt`/`Num`/`Str`/`Rat` with
     /// or without a `:D`/`:U` smiley) ARE boxable: their check also runs at
     /// the assignment op by name, so the write-through bypasses nothing extra
-    /// for them (see the historical `cas`/`thread_escaping` detail in
+    /// for them (see the historical `cas` detail in
     /// [`Self::box_captured_lexicals`], which does not apply to this shared
     /// predicate). Shared between closure-capture boxing
     /// (`box_captured_lexicals`) and mainline `my` capture at named-sub
