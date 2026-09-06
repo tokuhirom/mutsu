@@ -119,6 +119,37 @@ impl Registry {
                 "MUTSU_CHECK_METHOD_INDEX: method_entries[{key:?}] has live user_candidates but is missing from owner_method_names"
             );
         }
+        // The same invariant for the accessor half: `sync_accessor_entries`
+        // derives its stale set from `owner_accessor_names`, so an accessor row
+        // missing from the index would never be cleared on re-derivation.
+        for (owner, names) in &self.owner_accessor_names {
+            for name in names {
+                let live = self
+                    .method_entries
+                    .get(&MethodEntryKey {
+                        owner: *owner,
+                        name: *name,
+                    })
+                    .is_some_and(|entry| entry.accessor.is_some());
+                assert!(
+                    live,
+                    "MUTSU_CHECK_METHOD_INDEX: owner_accessor_names[{owner:?}] lists {name:?} but its row has no accessor"
+                );
+            }
+        }
+        for (key, entry) in &self.method_entries {
+            if entry.accessor.is_none() {
+                continue;
+            }
+            let indexed = self
+                .owner_accessor_names
+                .get(&key.owner)
+                .is_some_and(|names| names.contains(&key.name));
+            assert!(
+                indexed,
+                "MUTSU_CHECK_METHOD_INDEX: method_entries[{key:?}] has an accessor but is missing from owner_accessor_names"
+            );
+        }
     }
 
     #[cfg(not(debug_assertions))]
@@ -322,21 +353,21 @@ impl Registry {
     /// Re-derives `owner`'s `accessor` column from `ClassDef::attributes` --
     /// the "surviving half" of the old `sync_user_method_entries` (ADR-0019
     /// F4c design note (3)): type-structure metadata stays on `ClassDef` by
-    /// design, so this keeps its pre-existing O(total table) shape
-    /// (deliberately not index-accelerated -- accessor-only rows are not
-    /// covered by `owner_method_names`, which is scoped to the user-method
-    /// column only) rather than getting the O(names) treatment the method
-    /// half got. A later same-name attribute overrides an earlier one:
+    /// design. A later same-name attribute overrides an earlier one:
     /// iterating `ClassDef::attributes` in declaration order and letting
     /// each write clobber the last gives "most recent wins".
+    ///
+    /// The stale set comes from
+    /// [`owner_accessor_names`](Registry::owner_accessor_names), this
+    /// function's own reverse index, so the call is O(`owner`'s attributes)
+    /// rather than O(total table). It used to scan every row: `Interpreter::
+    /// new` runs it once per built-in class, which made interpreter
+    /// construction quadratic in the built-in table and cost 12.7% of
+    /// `benchmarks/bench-yaml-parse.raku` (whose regex paths build ~200
+    /// scratch interpreters per parse).
     pub(crate) fn sync_accessor_entries(&mut self, owner: Symbol) {
-        let stale: Vec<MethodEntryKey> = self
-            .method_entries
-            .iter()
-            .filter(|(key, entry)| key.owner == owner && entry.accessor.is_some())
-            .map(|(key, _)| *key)
-            .collect();
-        for key in stale {
+        for name in self.owner_accessor_names.remove(&owner).unwrap_or_default() {
+            let key = MethodEntryKey { owner, name };
             if let Some(entry) = self.method_entries.get_mut(&key) {
                 entry.accessor = None;
                 if !entry_is_live(entry) {
@@ -346,14 +377,19 @@ impl Registry {
         }
         if let Some(class_def) = self.classes.get(Symbol::resolve(&owner).as_str()) {
             let attributes = class_def.attributes.clone();
+            let mut names: Vec<Symbol> = Vec::with_capacity(attributes.len());
             for attr in &attributes {
+                let name = Symbol::intern(&attr.name);
                 self.method_entries
-                    .entry(MethodEntryKey {
-                        owner,
-                        name: Symbol::intern(&attr.name),
-                    })
+                    .entry(MethodEntryKey { owner, name })
                     .or_default()
                     .accessor = Some(attr.is_public);
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+            if !names.is_empty() {
+                self.owner_accessor_names.insert(owner, names);
             }
         }
         self.bump_method_generation();
