@@ -301,6 +301,19 @@ impl Interpreter {
     /// [`effective_dispatch_constraint`].  Pass an empty `args` slice when no
     /// call is in flight (ordering a `callsame` chain, say); coercion params
     /// then rank by the type they accept.
+    /// Whether a type-constraint base name is a `subset` — a user-declared one
+    /// in the registry, or one of the *core* subsets the setting declares.
+    ///
+    /// `UInt` is `subset UInt of Int where * >= 0` in rakudo, so
+    /// `multi f(UInt $x)` is narrower than `multi f(Int $x)` for `f(10)`.
+    /// mutsu implements `UInt` as a type-matching special case rather than a
+    /// registry entry, so without this it ranked as a plain nominal type and
+    /// lost every tie against `Int` (`t/inline-module-check-import.t`'s
+    /// `multi infix:<+>(UInt $a, UInt $b)`).
+    pub(crate) fn constraint_is_subset(&self, base: &str) -> bool {
+        base == "UInt" || self.registry().subsets.contains_key(base)
+    }
+
     pub(super) fn candidate_specificity_rank_for_args(
         &self,
         def: &FunctionDef,
@@ -335,7 +348,7 @@ impl Interpreter {
             .iter()
             .filter(|tc| {
                 tc.map(Self::constraint_base_name)
-                    .map(|base| self.registry().subsets.contains_key(base))
+                    .map(|base| self.constraint_is_subset(base))
                     .unwrap_or(false)
             })
             .count();
@@ -664,6 +677,39 @@ impl Interpreter {
                 _ => UNRELATED_DISTANCE,
             };
         }
+        // An enum value narrows in three steps: the value's own name
+        // (`multi f(e1)`, a definite-value constraint), then its enum type
+        // (`multi f(A $x)`), then the base type its values carry
+        // (`multi f(Int $x)`). Measured against rakudo:
+        // `enum A <e1 e2>; multi f(e1) {...}` beats `multi f(A $x)` beats
+        // `multi f(Int $x)` for `f(e1)`. `value_type_name` answers the base
+        // type (`Int`), so without this arm both narrower spellings scored the
+        // 500 "unrelated" distance and the base-typed candidate won every time.
+        if let ValueView::Enum {
+            enum_type,
+            key,
+            value,
+            ..
+        } = value.view()
+        {
+            if key.with_str(|k| k == base) {
+                return 0;
+            }
+            if enum_type.with_str(|n| n == base) {
+                return 1;
+            }
+            let ancestors: &[&str] = match value {
+                crate::value::EnumValue::Str(_) => &["Str", "Stringy", "Cool", "Any", "Mu"],
+                crate::value::EnumValue::Int(_) => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+                crate::value::EnumValue::Generic(_) => &["Any", "Mu"],
+            };
+            for (i, &ancestor) in ancestors.iter().enumerate() {
+                if ancestor == base {
+                    return i + 2;
+                }
+            }
+            return UNRELATED_DISTANCE;
+        }
         if base == value_type {
             return 0;
         }
@@ -800,7 +846,13 @@ impl Interpreter {
             "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
             "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
             "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Rat" | "FatRat" => &["Rat", "Numeric", "Real", "Cool", "Any", "Mu"],
+            // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
+            // True), and rakudo's core numeric operators dispatch on it rather
+            // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
+            // strictly narrower than the core `(Rational:D, Rational:D)`
+            // candidate. Without this row the role scored the 500 "unrelated"
+            // distance and every `Rational` candidate lost.
+            "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
             "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
             "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
             "Array" => &[

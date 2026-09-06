@@ -243,6 +243,14 @@ impl Interpreter {
         }
         let args = vec![left.clone(), right.clone()];
         if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
+            // The native implementation is a *candidate*, not a fallback
+            // (ADR-0071): a user `multi infix:<+>($a, $b)` joins the operator's
+            // candidate set and only takes the call when it out-narrows the
+            // core set. Reporting "no user candidate" here leaves the native
+            // path to run, which is exactly what rakudo's core candidate does.
+            if self.core_infix_candidate_wins(op_name, &def, left, right) {
+                return Ok(None);
+            }
             let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             return Ok(Some(result));
@@ -301,6 +309,13 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            // `infix:<%>` is a `multi` like every other operator, so a user
+            // candidate that out-narrows the core set takes the call — this was
+            // the only arithmetic opcode that never consulted one, so
+            // `multi infix:<%>(P $a, P $b)` was unreachable for `P.new % P.new`.
+            if let Some(result) = vm.try_user_infix("infix:<%>", &l, &r)? {
+                return Ok(result);
+            }
             // Duration % Real => Duration. Handle before numeric coercion strips
             // the Duration wrapper down to a bare number.
             if crate::builtins::arith::is_temporal_operand(&l) {
