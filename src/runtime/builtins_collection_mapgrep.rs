@@ -95,7 +95,12 @@ impl Interpreter {
             // container's per-slot metadata (`initialized` holes, element type)
             // — see the same gate in `methods_mut_dispatch.rs`.
             if wrote_back {
-                self.env.insert(var_name, Value::real_array(list_items));
+                // ADR-0039 slice 2: write the mutated elements THROUGH the
+                // source container's own node instead of dropping a fresh
+                // array into `env` under the bare name -- the owning frame's
+                // local slot (which `@a` now reads through) points at the
+                // original node, so a replacement would be invisible to it.
+                self.store_container_preserving_identity(&var_name, Value::real_array(list_items));
             }
             Ok(result)
         } else {

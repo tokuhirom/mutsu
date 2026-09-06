@@ -2094,14 +2094,21 @@ impl Interpreter {
                 if let Some(info) = self.container_type_metadata(&target) {
                     rebuilt = self.tag_container_metadata(rebuilt, info);
                 }
-                self.env.insert(key, rebuilt);
+                // ADR-0039 slice 2: preserve the source container's identity
+                // (see `store_container_preserving_identity`) -- the caller's
+                // local slot holds the original node and a bare-name env
+                // replacement never reaches it.
+                self.store_container_preserving_identity(&key, rebuilt);
             } else if let ValueView::Array(src, kind) = target.view() {
                 // Keep the source container's metadata (element type, default,
                 // `initialized` holes) across the rebuild.
                 let rebuilt = Value::array_data_like(&src, items);
-                self.env.insert(key, Value::array_with_kind(rebuilt, kind));
+                self.store_container_preserving_identity(
+                    &key,
+                    Value::array_with_kind(rebuilt, kind),
+                );
             } else {
-                self.env.insert(key, Value::real_array(items));
+                self.store_container_preserving_identity(&key, Value::real_array(items));
             }
             return Ok(result);
         }

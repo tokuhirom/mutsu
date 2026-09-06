@@ -11,10 +11,12 @@
   as well as a resolution preference, because a scalar write replaces a value —
   followed on 2026-08-25 through the same module's `our` cell; see
   `news/2026-08/our-scalar-bare-name-resolves-to-the-package-cell.md`.
-  Slice 2 (§4.2 — containers resolve by
-  slot/upvalue, not by name, retiring the by-name path at the compiler) is
-  still next and still the end state; it now carries no known open
-  correctness bug of its own.
+  Slice 2 (§4.2) is still next and still the end state. Its read side was
+  re-implemented and re-measured on 2026-09-06 and **withdrawn a second time**;
+  §10 records the full re-measurement (which found §4.1's exclusion list already
+  free of divergences), the four defects the flip exposed, the one fix that
+  shipped on its own, and the enumerated reason the flip is blocked — the
+  *write/capture* lane, not §9's store lane.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
@@ -799,3 +801,166 @@ different containers, which a by-name read papered over:
   `target_slot`), then flip the read. The read flip is the cheap last step and
   its acceptance is already written (§6's rows (a) and (b), plus the 12
   assertions above as the regression set).
+
+## 10. Slice 2 re-measured and re-withdrawn (2026-09-06); §4.1's exclusion list is already empty
+
+§9 measured §4.2's first bullet (container reads emit `GetLocal(slot)`), found 7
+`t/` files / 12 assertions of fallout, withdrew it, and concluded the blocker was
+§1.3 of `docs/lexical-scope-slot-campaign.md` — the *store* lane. That diagnosis
+was **half right**. Re-doing it end-to-end shows the store lane is a short,
+concrete list that can be fixed; what actually blocks the flip is a different
+lane the ADR had not enumerated.
+
+### 10.1 The re-measurement (do this before planning any more slice-2 work)
+
+Before writing code, §1.1/§1.2's repros, §6's two acceptance rows, §8.2's two
+cross-thread rows, and **one row per §4.1 exclusion-list entry** (`our`, `state`,
+`is export`, `$*dynamic`, `::`-qualified, type-constrained, anonymous container)
+in BOTH the module file-scope shape and the mainline named-sub shadow shape were
+run under `raku` v2026.07 and `target/debug/mutsu` on `2a9e06f91`.
+
+| row | shape | status |
+|---|---|---|
+| §1.1 | module file-scope `my @`/`my %` | agrees |
+| §1.2 | mainline named sub × shadowing block, `@`/`%` | agrees |
+| §1.2 3rd | `our @`/`our %`, module and mainline | agrees |
+| excl. `state` | module `state @`, mainline `state @` × shadow | agrees |
+| excl. `is export` | `our @exp is export` | agrees |
+| excl. `$*dynamic` | module routine mutating `@*dyn` under a nested re-declaration | agrees |
+| excl. `::`-qualified | `@Q::arr` mutated by a sub, with a same-named block `my @arr` | agrees |
+| excl. type-constrained | module `my Int @`/`my Int %`, mainline `my Int @` × shadow | agrees |
+| excl. anonymous | module `my $anon = [...]` vs consumer `my $anon` | **diverges** (scalar lane) |
+| §8.2 (a)/(b) | cross-thread container escape | agrees (closed by §8.6) |
+| §6 row (a) | closure's `@a.push` landing on an inner block's shadow | **diverges** |
+| §6 row (b) | closure-local `my @c` emptying the mainline `@c` | **diverges** |
+
+**§4.3's "slice 1's exclusion list is the list of things slice 2 must subsume"
+is stale: as measured, that list contains no divergences at all.** Those names
+were excluded from slice 1's *store*, and the bugs they used to carry were closed
+separately — the `our` container resolution fix (2026-08-23), its scalar twin
+(2026-08-25), and §8.6's lane lifetime (2026-08-22). Read the list as "shapes
+slice 1 deliberately did not put in `unit_lexicals`", not as open bugs. Anyone
+planning slice 2 should stop treating it as a work item.
+
+The one exclusion row that does diverge is a **scalar** lane bug: a module's
+`my $anon = [...]` colliding with a consumer's `my $anon` (the binding is
+`$`-sigiled; only its value is an Array). It reproduces identically without any
+slice-2 change and is context-sensitive rather than reducible to two lines —
+tracked in `todo/tickets/module-scalar-held-array-collides-with-caller-my.md`.
+
+### 10.2 The read flip, measured again
+
+The flip (`Expr::ArrayVar`/`Expr::HashVar` emit `GetLocal(slot)` when `local_map`
+holds the sigiled name) was implemented and measured on `2a9e06f91`. Fallout on
+`prove t/` was **8 files / 14 assertions** — §9's 7 files plus
+`t/closure-topic-readonly.t` 12 and `t/push-inline-array-decl.t` 3. Four distinct
+defects account for all of them, and each is a store site that leaves the slot and
+`env` naming different containers, which the by-name read had been hiding:
+
+1. **An expression-position container declaration allocates no slot.**
+   `compile_expr_stmt`'s `Stmt::VarDecl` arm (`compiler/expr_block.rs`) takes a
+   `decl_slot` only when the declaration shadows an outer binding; otherwise it
+   emits `MarkVarDeclContext; SetGlobal(name)`. `local_map` retains a *popped
+   sibling block's* slot for a first declaration, so `{ my @a = 5,7,9 } (my
+   @a).push: $_ for ^3` read that stale slot. Fix: any container declaration
+   whose name already has a reachable slot takes one. (6 of the 14.)
+2. **`try_fast_hash_element_assign` resolves its target by name.**
+   `vm/vm_var_assign_element.rs` used `find_local_slot` (`position`), which with
+   a same-named shadow (`code.locals == ["%h", "%h"]`) answers the OUTER entry:
+   the fast path nil'd and re-seeded the wrong binding while the inner
+   declaration's slot never saw the write. §9 attributed this to
+   `exec_index_assign_expr_named_op_inner` ignoring its baked `target_slot`; the
+   real culprit is this fast path, which is never handed the baked slot at all.
+   Fix: thread `target_slot` in and use `resolve_local_slot`. (1 of the 14.)
+3. **Whole-container rebuilds replace the node.** The `.map` rw element
+   writeback (both the `map` builtin and the `.map` method) and
+   `classify`/`categorize`'s `:into` target rebuilt the container and inserted
+   the fresh node into `env` under the bare name. (3 of the 14.)
+4. **A QuantHash re-tag rebuilds its data node.**
+   `register_var_container_type_metadata` (`runtime/runtime_container.rs`) tags
+   the env value and re-inserts it; a `Set`/`Bag`/`Mix` embeds its metadata in the
+   data node, so tagging builds a NEW node. `my %h is MixHash` therefore left the
+   declaring slot on the untagged original, and a later `%h<k> = w` from a nested
+   frame mutated a container the slot never saw. (5 of the 14.)
+
+With all four fixed, `prove t/` is fully green under the flip (3709 files, 38033
+tests), and §6's acceptance row (b) answers raku's `[1 7]`.
+
+### 10.3 Why it was withdrawn anyway: `make roast` names the real blocker
+
+The full whitelist (release, 1436 files) then failed **4 files**, and they are not
+more of the same:
+
+| file | shape | lane |
+|---|---|---|
+| `S32-list/classify.t` 25-27 | `:into(my %b := BagHash.new)` | fix 3's probe promoted a parent-tier env entry into the frame overlay — a genuine bug in the fix, corrected by probing read-only |
+| `S03-metaops/hyper.t` 18-19, 92-93 | `@r»++` with an outer same-named `my @r` | `write_back_hyper_target_var` resolves by `find_local_slot`/`locals_set_by_name` (`position` → the OUTER slot). Same class as fix 2; needs a baked slot on `HyperMethodCall` |
+| `S15-nfg/concat-stable.t` 4-7, 11-14, 18-21 | `my @n = @o.shift xx $_` — the `xx` LHS is an anon-sub thunk that mutates `@o` | **write/capture lane** |
+| `integration/advent2014-day05.t` 6 | `$supply.act: { @seen[$_] //= $_ }` | **write/capture lane** |
+
+The last two are the blocker, and they are one root cause: **a container mutated
+from a nested frame (an anon-sub thunk, a `.act`/`start` handler) propagates to
+its owner by NAME only.** The frame doing the mutation has no slot for the name,
+so the write lands in `env` and, when the write path *replaces* rather than
+mutates the node, the owner's slot goes stale. Today's by-name read hides this
+completely.
+
+The obvious repair — cell-box the container at its declaration so both halves
+alias one cell — is the route
+`docs/captured-outer-cell-sharing.md` §7.1d already records as tried and
+rejected: broader `@`/`%` decl-site boxing regressed ~12 files through decont
+leaks, which is why `register_container_ref_capture_if_free`
+(`compiler/expr_call.rs`) is restricted to plain `$` names to this day. Every
+"scalars only (containers share via Arc already)" comment in
+`vm/vm_env_helpers.rs`'s boxing helpers rests on the same premise — true for
+in-place mutation (§2), false the moment a path replaces the container.
+
+So **the read flip is gated on the write/capture lane, i.e. §4.2's SECOND
+bullet, not on §9's store lane.** They cannot be landed in the order §4.2 lists
+them, and they cannot be landed independently either.
+
+### 10.4 What shipped from this investigation
+
+Only the part that is correct and pinnable **without** the flip:
+
+- `Interpreter::store_container_preserving_identity` (`vm/vm_var_assign_ops.rs`)
+  and its three call sites (the `map` builtin's rw writeback, the `.map` method's
+  rw writeback, `classify`/`categorize`'s `:into`). It copies a rebuilt
+  container's contents into the existing backing node instead of replacing the
+  env entry. Two user-visible bugs fixed: `my $b := @a; map { $_ = 5 }, @a`
+  left `$b` at `[1 2 3]`, and `my $f := %into; @src.categorize(..., :into(%into))`
+  left `$f` empty. Pin: `t/container-rebuild-preserves-identity.t` (10
+  assertions, byte-identical under `raku`).
+
+Held back deliberately, because with by-name reads they are **not observable**
+and therefore cannot be pinned (measured: the same probes pass identically with
+and without them):
+
+- the expression-position declaration slot (fix 1) — worse, it *changes*
+  behaviour for the wrong reason without the flip, since the store then lands in
+  a slot nothing reads;
+- `try_fast_hash_element_assign`'s baked target slot (fix 2);
+- `Value::retag_quanthash_in_place` + `register_var_container_type_metadata`
+  (fix 4).
+
+They are described precisely enough in §10.2 to be re-derived; do not re-measure
+them from scratch.
+
+### 10.5 The order slice 2 should now take
+
+§9 said "store sites first, read flip last". Correct the middle:
+
+1. **The write/capture lane first** — make a container mutated from a nested
+   frame reach its owner's binding, without decl-site boxing (§7.1d). §6
+   acceptance row (a) is its acceptance test; `S15-nfg/concat-stable.t`'s `xx`
+   thunk and `integration/advent2014-day05.t`'s `.act` handler are two more, and
+   both are already in the whitelist so a regression is loud. This is adjacent to
+   ADR-0055's closure free-variable work and should be resourced with it.
+2. **Then the four store fixes of §10.2** together with the read flip, as one
+   change — none of them is separately pinnable.
+3. `HyperMethodCall` needs a baked target slot in that same change (the hyper.t
+   rows above), joining the S1-S17 slot-bake series in
+   `docs/lexical-scope-slot-campaign.md`.
+4. §4.2's third bullet (`is_plain_lexical_name`'s `@%&` exclusion) stays
+   independent and still open.
+

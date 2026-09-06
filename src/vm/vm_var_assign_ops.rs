@@ -690,6 +690,63 @@ impl Interpreter {
         });
     }
 
+    /// Store a REBUILT container back under `var_name` while preserving the
+    /// binding's container identity.
+    ///
+    /// ADR-0039 slice 2: a runtime helper that rebuilds a whole container from
+    /// scratch (the `.map` rw element writeback, `classify`/`categorize`'s
+    /// `:into` target, ...) used to drop the fresh node into `env` under the
+    /// bare name. That is only observable through a by-name read -- the owning
+    /// frame's local slot still points at the ORIGINAL node -- so once `@`/`%`
+    /// reads resolve through their slot the rebuild is silently lost. Copying
+    /// the rebuilt contents into the existing backing node instead makes the
+    /// update visible to every holder of that container (the slot, a by-value
+    /// capture, a `:=` alias), which is what Raku container identity means
+    /// (ADR-0039 §2/§3: in-place mutation needs no write handle, only the
+    /// right node).
+    ///
+    /// Falls back to a plain env insert when the name currently holds no
+    /// container of the same kind (autovivification, a type change, a `Bag`
+    /// replacing a `Hash`), which is a genuine rebinding rather than a
+    /// mutation.
+    pub(crate) fn store_container_preserving_identity(&mut self, var_name: &str, new_val: Value) {
+        // Probe READ-ONLY: `env_root_descended_mut` would promote a parent-tier
+        // entry into this frame's overlay, which is a real change in env shape
+        // for a `:=`-bound target (`:into(my %b := BagHash.new)`).
+        let current = self.env().get(var_name).map(|v| v.clone().into_deref());
+        let rebuilt = match &current {
+            Some(cur) => {
+                let old_view = cur.view();
+                let new_view = new_val.view();
+                match (&old_view, &new_view) {
+                    (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
+                        if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                    {
+                        Some(Self::array_inplace_reassign(old_gc, new_gc, *kind))
+                    }
+                    (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
+                        if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                    {
+                        Some(Self::hash_inplace_reassign(old_gc, new_gc))
+                    }
+                    _ => None,
+                }
+            }
+            None => None,
+        };
+        drop(current);
+        match rebuilt {
+            Some(updated) => {
+                if let Some(container) = self.env_root_descended_mut(var_name) {
+                    *container = updated;
+                }
+            }
+            None => {
+                self.env_mut().insert(var_name.to_string(), new_val);
+            }
+        }
+    }
+
     /// Container identity (§3, splice.t): copy `new_gc`'s array contents into the
     /// original backing `old_gc` in place — preserving the pointer identity every
     /// by-value holder of `old_gc` shares (an `@a` captured into a list `(0, @a)` /
