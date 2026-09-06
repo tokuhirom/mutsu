@@ -43,8 +43,12 @@ Which routines are candidates is made exact by machinery that already existed:
 namespace before the loaded body runs, so whatever occupies it afterwards was
 registered by that body. Its predicate already excludes `sub EXPORT`, multi
 candidate slots (additive across compunits by design) and package-qualified
-entries. Seclusion additionally skips exported names (the union of
-`exported_subs`, `unit_module_exported_subs` and `module_owned_exports` --
+entries. Seclusion additionally skips `our sub name {...}` -- in a package-less
+compunit that really IS a `GLOBAL` stash entry and the loading scope
+legitimately reaches it by bare name, which is exactly what the
+`my_scoped_package_items` marker the registration path already maintains records
+(`qualified_name_hidden_here`) -- exported names (the union of `exported_subs`,
+`unit_module_exported_subs` and `module_owned_exports` --
 conservative, so it can only under-fix), `PRELUDE_SUB_TRAIT` routines
 (NativeCall's `nativecast`/`nativesizeof`/..., deliberately ambient in every
 compunit that uses them, now recorded by name at their registration site), and
@@ -61,6 +65,11 @@ compunit that actually has private top-level routines: `Cro.rakumod`,
 private `greet-fr`/`greet-en`. All of them keep working: the `sub EXPORT` case
 in particular runs *after* seclusion and still reaches those helpers, because
 its body is compiled in the module's unit.
+
+The `t/` suite did not, however, contain an `our sub` in a package-less module;
+roast did (`roast/6.c/MISC/bug-coverage.t`'s `our sub module-transform`), and
+CI caught it. That is the one exclusion the audit missed, and it turned out to
+have an exact pre-existing discriminator rather than needing a new one.
 
 ## Two resolution gaps this surfaced
 

@@ -38,6 +38,12 @@
 //!
 //! Seclusion additionally skips:
 //!
+//! - **`our sub name {...}`**, which in a package-less compunit really IS a
+//!   `GLOBAL` stash entry and is legitimately reachable by bare name from the
+//!   loading scope (`roast/6.c/MISC/bug-coverage.t`'s `our sub
+//!   module-transform`). The `my_scoped_package_items` marker the registration
+//!   path already maintains is exactly this distinction -- see
+//!   `qualified_name_hidden_here` -- so it is the positive test, not a guess.
 //! - **exported routines** of any kind -- the very thing that is *supposed* to
 //!   reach the importer. Checked against the union of `exported_subs`,
 //!   `unit_module_exported_subs` and `module_owned_exports`, so a name any
@@ -81,6 +87,15 @@ impl Interpreter {
         let mut secluded: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
         for (key, name) in candidates {
             if name == "MAIN" || exported.contains(&name) {
+                continue;
+            }
+            // `our sub name {...}` in a package-less compunit IS a GLOBAL stash
+            // entry, which the loading scope legitimately reaches by bare name
+            // (`roast/6.c/MISC/bug-coverage.t`'s `our sub module-transform`).
+            // Only a lexical `sub`/`my sub` is compunit-private -- exactly the
+            // distinction `my_scoped_package_items` already records at
+            // registration time (see `qualified_name_hidden_here`).
+            if !self.is_my_scoped_package_item(&key.resolve()) {
                 continue;
             }
             let name_sym = Symbol::intern(&name);

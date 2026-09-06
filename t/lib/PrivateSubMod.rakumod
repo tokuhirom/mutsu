@@ -12,6 +12,11 @@ sub hidden-only($n) { $n * 7 }
 
 sub visible-hidden-only($n) is export { hidden-only($n) }
 
+# `our sub` in a package-less compunit IS a GLOBAL stash entry, so it stays
+# reachable by bare name from the loading scope even though it is not exported
+# (roast/6.c/MISC/bug-coverage.t relies on this).
+our sub our-scoped-helper($n) { $n * 11 }
+
 sub visible-helper($n) is export { secret-helper($n) }
 
 class PrivateSubBox is export {
