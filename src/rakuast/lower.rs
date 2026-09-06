@@ -449,6 +449,10 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         kind,
         body: lower_block(named_child_or_positional(node)?)?,
         condition: None,
+        // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
+        // its ENDs install where execution reaches them rather than at a
+        // source position of the main compunit.
+        end_index: None,
     })
 }
 

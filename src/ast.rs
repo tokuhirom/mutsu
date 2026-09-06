@@ -455,6 +455,23 @@ pub(crate) fn sub_registration_fingerprint(
     hasher.finish()
 }
 
+/// Hands out the source-order index stored in [`Stmt::Phaser::end_index`].
+///
+/// The parser is a strictly left-to-right recursive descent, so calling this
+/// as each `END` node is built numbers a compunit's ENDs in exactly the order
+/// rakudo's compiler would install them — including the ones nested inside a
+/// block, a sub, or a method, which is what a source-*line* key could not
+/// distinguish when several shared one physical line.
+///
+/// The counter is process-global and never reset: only the relative order of
+/// one compunit's indices matters, and never reusing a value means an index
+/// identifies one parsed `END` node uniquely, so a module's or an `EVAL`'s
+/// node can never be mistaken for a main-compunit slot.
+pub(crate) fn next_end_phaser_index() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum PhaserKind {
     Begin,
@@ -1462,6 +1479,24 @@ pub(crate) enum Stmt {
         /// has to be captured while the source slice is still in hand. `None`
         /// for every other phaser kind, which has no condition.
         condition: Option<Symbol>,
+        /// Source-order index of an `END` phaser, handed out by
+        /// [`next_end_phaser_index`] as the parser walks past it. rakudo
+        /// *installs* every END when its compunit is compiled, in source
+        /// order, and runs them in reverse, so this index — not the order in
+        /// which execution happens to reach the phaser — is what decides the
+        /// exit-time run order (see `runtime::end_order`). It is also the key
+        /// that lets the pre-registration pass (`runtime::end_phasers`)
+        /// recognise, at run time, which already-installed phaser this node
+        /// is. `None` for every non-`END` phaser and for the `END` nodes the
+        /// runtime synthesises rather than parses.
+        ///
+        /// Not serialized: the precompilation cache would otherwise replay one
+        /// process's index into another, where it names a completely different
+        /// declaration. A module's ENDs are ordered by load order anyway, never
+        /// by a main-compunit source index, so dropping it on a cache hit loses
+        /// nothing.
+        #[serde(skip)]
+        end_index: Option<u32>,
     },
     ProtoDecl {
         name: Symbol,

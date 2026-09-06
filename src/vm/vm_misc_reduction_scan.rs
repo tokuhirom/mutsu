@@ -425,25 +425,48 @@ impl Interpreter {
     }
 
     pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32, site_id: u64) {
-        // Only register each END phaser once (by site_id), even if the
-        // opcode is encountered multiple times inside a repeatedly-called closure.
+        let stmt = &code.stmt_pool[idx as usize];
+        let crate::ast::Stmt::Phaser {
+            body, end_index, ..
+        } = stmt
+        else {
+            return;
+        };
+        let end_index = *end_index;
+        // The main compunit's ENDs were all installed before the body ran (see
+        // `end_phasers`), so reaching one only records the scope it closes
+        // over — into the slot it already owns, which is what keeps its
+        // source-order install position. Re-reaching it re-captures, matching
+        // rakudo, where the last execution's frame is the one the END sees.
+        //
+        // Indices are unique per process, so a hit here is always this
+        // declaration and never a same-numbered one from a module. (The
+        // precompilation cache would break that, since it outlives the process
+        // whose counter produced the index — which is why `end_index` is
+        // `#[serde(skip)]` and a cache hit carries none.)
+        if loan_env!(self, capture_end_phaser_env(end_index)) {
+            return;
+        }
+        // No pre-installed slot: a module's END, an `EVAL`'s, an rvalue one, or
+        // a main-compunit one in a nesting form `end_phasers` did not walk
+        // into. Those install where execution reaches them, so register each
+        // site only once even when the opcode sits inside a repeatedly-called
+        // closure.
         if !self.register_end_phaser_site(site_id) {
             return;
         }
-        let stmt = &code.stmt_pool[idx as usize];
-        if let crate::ast::Stmt::Phaser { body, .. } = stmt {
-            // An `EVAL`'d snippet has its own line numbering, unrelated to the
-            // main compunit's, and rakudo compiles it at run time — so its ENDs
-            // install last rather than at a source position. Withhold the line
-            // for those; `push_end_phaser` then keeps them in the RUNTIME class.
-            let line = if self.env().get("__mutsu_in_eval").is_some() {
-                None
-            } else {
-                self.current_source_line()
-            };
-            let body = body.clone();
-            loan_env!(self, push_end_phaser(body, line));
-        }
+        // An `EVAL`'d snippet is compiled at run time in rakudo, so its ENDs
+        // install after everything the main compunit declared rather than at a
+        // source position. Withhold the index for those; `push_end_phaser`
+        // then keeps them in the RUNTIME class. (A module body needs no such
+        // treatment: `push_end_phaser` reads the load-order stack itself.)
+        let end_index = if self.env().get("__mutsu_in_eval").is_some() {
+            None
+        } else {
+            end_index
+        };
+        let body = body.clone();
+        loan_env!(self, push_end_phaser(body, end_index));
     }
 
     pub(super) fn exec_type_check_op(

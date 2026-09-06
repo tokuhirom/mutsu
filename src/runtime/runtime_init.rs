@@ -2883,6 +2883,8 @@ impl Interpreter {
             end_phaser_seq: 0,
             module_load_order: Vec::new(),
             end_phaser_sites: HashSet::new(),
+            main_end_slots: HashMap::new(),
+            end_phaser_capture_seq: 0,
             chroot_root: None,
             loaded_modules: HashSet::new(),
             module_registered_functions: HashSet::new(),

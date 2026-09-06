@@ -943,6 +943,7 @@ fn reorder_at_level(
             kind: PhaserKind::Check,
             body: body.clone(),
             condition: None,
+            end_index: None,
         });
     }
     // Extra CHECK from lifted phasers.
@@ -967,6 +968,7 @@ fn reorder_at_level(
             kind: PhaserKind::Init,
             body: body.clone(),
             condition: None,
+            end_index: None,
         });
     }
     stmts.extend(extra_init);

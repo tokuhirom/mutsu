@@ -480,34 +480,30 @@ impl Interpreter {
         Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
+        // Install EVERY END phaser this compunit declares — top-level, inside
+        // a block, inside a sub or a method — before the VM runs a single
+        // statement, in source order. That is what rakudo does (it installs at
+        // compile time), and it is what makes an END run both when the body
+        // dies before reaching it and when the block or sub that declares it
+        // is never entered at all. Reaching one of these declarations later
+        // does not install a second phaser; it only records the scope the body
+        // closes over. See `runtime::end_phasers`.
+        self.preregister_main_end_phasers(&stmts);
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
-        // Register END phasers eagerly (before VM execution) so they run
-        // even if the main body dies or throws an exception.
-        // Also filter them out of the body so they don't get registered again
-        // by the PhaserEnd opcode during VM execution.
-        // Track the `SetLine` markers while filtering: the END's own source
-        // line is what orders it against the compunit's other ENDs (rakudo
-        // installs each as its compiler walks past it), and the eager hoist
-        // below destroys the positional information otherwise.
-        let mut end_line: Option<u32> = None;
+        // A top-level END is dropped from the body outright: it is installed
+        // above, and it closes over the unit scope, which is still alive at
+        // exit — so there is nothing for the `PhaserEnd` opcode to capture.
         let body_main: Vec<Stmt> = body_main
             .into_iter()
             .filter(|stmt| {
-                if let Stmt::SetLine(n) = stmt {
-                    end_line = Some(*n as u32);
-                }
-                if let Stmt::Phaser {
-                    kind: crate::ast::PhaserKind::End,
-                    body,
-                    ..
-                } = stmt
-                {
-                    self.push_end_phaser_main(body.clone(), end_line);
-                    false
-                } else {
-                    true
-                }
+                !matches!(
+                    stmt,
+                    Stmt::Phaser {
+                        kind: crate::ast::PhaserKind::End,
+                        ..
+                    }
+                )
             })
             .collect();
         // Reorder phasers: BEGIN (forward), CHECK (reverse), INIT (forward)
@@ -526,6 +522,7 @@ impl Interpreter {
                             kind: crate::ast::PhaserKind::Enter,
                             body,
                             condition: None,
+                            end_index: None,
                         }
                     } else {
                         s

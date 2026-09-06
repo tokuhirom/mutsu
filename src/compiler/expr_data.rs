@@ -305,10 +305,14 @@ impl Compiler {
     pub(super) fn compile_expr_phaser(&mut self, kind: &PhaserKind, body: &[Stmt]) {
         match kind {
             crate::ast::PhaserKind::End => {
+                // `my $x = END { ... }` carries no source-order index: an
+                // rvalue phaser is not a statement the pre-registration pass
+                // walks past, so it installs when execution reaches it.
                 let end_stmt = Stmt::Phaser {
                     kind: crate::ast::PhaserKind::End,
                     body: body.to_vec(),
                     condition: None,
+                    end_index: None,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id =

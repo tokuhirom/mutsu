@@ -325,7 +325,7 @@ impl Interpreter {
         // so the return path freezes its capture. Only the main return path can
         // have registered one; the two early exits above it are argument-binding
         // failures that never run the body.
-        let end_phaser_count_before = self.end_phaser_count();
+        let end_phaser_mark_before = self.end_phaser_capture_mark();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         // Only resolved when the body has state variables, to keep the common
         // dispatch free of `sub_state_scope_id`'s env probe.
@@ -1625,14 +1625,14 @@ impl Interpreter {
         // unfrozen and keep reading live. This runs before the `_for_keys`
         // refresh below, which covers the complementary case (a *captured* outer
         // name the body mutated, which stays live in the caller).
-        if self.end_phaser_count() > end_phaser_count_before {
+        if self.end_phaser_capture_mark() > end_phaser_mark_before {
             let current = self.clone_env();
             let dying: crate::runtime::NameSet = current
                 .keys()
                 .filter(|k| !restored_env.contains_key_sym(**k))
                 .copied()
                 .collect();
-            self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+            self.update_end_phaser_envs(end_phaser_mark_before, &current, &dying);
         }
 
         // A by-name write whose target name only exists at run time (`$::($n) = v`,
@@ -1653,7 +1653,7 @@ impl Interpreter {
         // ensures END phasers see the final values rather than stale copies.
         // Only update keys matching the closure's captured variable names to
         // avoid overwriting unrelated captured lexicals in other END phasers.
-        if self.end_phaser_count() > 0 && !data.env.is_empty() {
+        if self.has_end_phasers() && !data.env.is_empty() {
             let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
             let captured_names: std::collections::HashSet<&str> =
                 captured_strs.iter().map(|s| s.as_str()).collect();

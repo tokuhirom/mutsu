@@ -311,10 +311,12 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             kind,
             body,
             condition,
+            end_index,
         } => Stmt::Phaser {
             kind,
             body: rewrite_supply_body(body, emitter_name),
             condition,
+            end_index,
         },
         Stmt::Label { name, stmt } => Stmt::Label {
             name,

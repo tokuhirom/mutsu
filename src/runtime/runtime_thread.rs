@@ -634,6 +634,8 @@ impl Interpreter {
             end_phaser_seq: 0,
             module_load_order: Vec::new(),
             end_phaser_sites: HashSet::new(),
+            main_end_slots: HashMap::new(),
+            end_phaser_capture_seq: 0,
             chroot_root: self.chroot_root.clone(),
             loaded_modules: self.loaded_modules.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
