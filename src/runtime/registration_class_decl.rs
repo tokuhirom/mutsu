@@ -186,6 +186,7 @@ impl Interpreter {
         } else {
             self.registry_mut().lexical_classes.remove(name);
         }
+        self.note_compound_declared_type(name);
 
         let (self_named_does_roles, deferred_custom_traits) =
             self.validate_class_parents(name, parents, does_parents, hidden_parents)?;

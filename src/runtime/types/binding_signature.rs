@@ -2070,6 +2070,16 @@ impl Interpreter {
                             // callee's freshly-blanked `_` and bound the Any type object
                             // — a plain `$x` param, which does not re-read, got the real
                             // value (`method m (K:D: Int \ch)` called as `$k.m($_)`).
+                            //
+                            // The re-read is for the *alias* only: `value` keeps
+                            // whatever the VM evaluated at the callsite. Replacing
+                            // it with the env entry made the parameter observe a
+                            // STALE copy of the caller's variable whenever the
+                            // live value lived in the caller's local slot and env
+                            // still held the declaration-time one — `my Positional
+                            // $a = <foo bar>; Mod::C.m($a)` bound the `Positional`
+                            // type object to `\c`. The two named exceptions below
+                            // were the same bug reached from other directions.
                             let is_compile_time_pseudo = source_name.starts_with('?');
                             let is_routine_reset_magic =
                                 matches!(source_name.as_str(), "_" | "!" | "@_" | "%_");
@@ -2078,9 +2088,7 @@ impl Interpreter {
                             if is_compile_time_pseudo || is_routine_reset_magic {
                                 self.env.remove(&alias_key);
                                 self.env.insert(readonly_key, Value::TRUE);
-                            } else if let Some(source_val) = self.env.get(&resolved_source).cloned()
-                            {
-                                value = source_val;
+                            } else if self.env.get(&resolved_source).is_some() {
                                 self.env.insert(alias_key, Value::str(resolved_source));
                                 self.env.insert(readonly_key, Value::FALSE);
                                 self.sigilless_alias_seen = true;

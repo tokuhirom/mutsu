@@ -57,6 +57,11 @@ impl Interpreter {
                 return None;
             }
             let key = format!("{}::{}", pkg.split("::&").next().unwrap_or(&pkg), name);
+            // `pkg` re-derived from a compound declared name is not a scope —
+            // see `Registry::compound_declared_types`.
+            if self.registry().compound_declared_types.contains(&key) {
+                return None;
+            }
             (self.has_class(&key) || self.has_role(&key)).then_some(key)
         })
     }

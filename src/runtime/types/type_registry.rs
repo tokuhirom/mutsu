@@ -61,6 +61,34 @@ impl Interpreter {
     pub(crate) fn is_role_type_name(&self, name: &str) -> bool {
         self.has_role(name) || is_builtin_role_name(name)
     }
+
+    /// Record whether `name` was declared with a **compound name** at a package
+    /// that is not its own parent prefix (`class Foo::List { ... }` at file
+    /// scope), as opposed to a simple name inside its enclosing package
+    /// (`unit module NL; class Searcher { ... }`). See
+    /// [`crate::runtime::Registry::compound_declared_types`]; the enclosing
+    /// package is only knowable here, at declaration time.
+    pub(crate) fn note_compound_declared_type(&mut self, name: &str) {
+        let Some((parent, _)) = name.rsplit_once("::") else {
+            return;
+        };
+        let enclosing = self.current_package();
+        if parent == enclosing {
+            self.registry_mut().compound_declared_types.remove(name);
+        } else {
+            self.registry_mut()
+                .compound_declared_types
+                .insert(name.to_string());
+        }
+    }
+
+    /// True when `qualified` is only reachable through `pkg` because `pkg` was
+    /// re-derived by splitting a compound declared name — i.e. `pkg` is not a
+    /// real lexical scope for it. See
+    /// [`crate::runtime::Registry::compound_declared_types`].
+    fn compound_name_segment_is_not_a_scope(&self, qualified: &str) -> bool {
+        self.registry().compound_declared_types.contains(qualified)
+    }
 }
 
 impl Interpreter {
@@ -628,7 +656,15 @@ impl Interpreter {
             // `resolve_lexical_type_key` tries the bare form FIRST (so a
             // `decl_id == 0` / non-lexical declaration is unaffected) and only
             // then scans for the mangled variant.
-            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+            // The `::` segments of a COMPOUND DECLARED NAME are not lexical
+            // scopes: inside a top-level `class Foo::Hash { ... }`, stripping
+            // to `Foo` and probing `Foo::Hash` made the class resolve its own
+            // short name `Hash`, shadowing CORE's `Hash` for its whole body
+            // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
+            // Real nesting (`unit module NL; class Hash`) still resolves.
+            if !self.compound_name_segment_is_not_a_scope(&qualified)
+                && let Some(key) = self.resolve_lexical_type_key(&qualified)
+            {
                 return Some(key);
             }
             match pkg.rsplit_once("::") {

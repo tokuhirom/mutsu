@@ -36,6 +36,19 @@ elsewhere is `✗ Crane error: associative key does not exist`, plus a hard pars
 error in `t/patch.rakutest` and a 90s timeout in
 `Config::TOML`'s `t/grammar/03-inline-tables.rakutest`.
 
+**Re-measured 2026-09-06** (fresh clone of both dists, each suite run from its
+own directory against a debug build): **`Config::TOML` 10/19, `Crane` 3/15**.
+The `0/19` above is stale — the `\UXXXXXXXX` escape (item 2's residue) and the
+`grammar/03-inline-tables` timeout (item 4) are both fixed, and half the
+`Config::TOML` suite passes now. `Crane` is unchanged at the file level but its
+assertion-level failures moved: the "Original container is unchanged" cluster in
+`t/add.rakutest` went 5 → 1 once two general bugs were fixed (a sigilless
+parameter re-read the caller's variable out of a stale `env` instead of using
+the argument; `.isa` answered False for every role type object). The current
+blocker list, with what is stale and what is still open, is in
+`todo/deep/config-toml-battery-core-blockers.md` — read that, not the
+2026-08-22 work list below.
+
 ```raku
 use Config::TOML;
 my %config = from-toml('example.toml'.IO.slurp);   # not yet runnable on mutsu
