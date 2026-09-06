@@ -811,7 +811,7 @@ impl Interpreter {
     /// (3 is not Even) and leave the variable untouched. Native int/num/str
     /// variables wrap instead of erroring, so they are skipped, as are
     /// container (`@`/`%`/`&`) variables whose constraint applies to elements.
-    pub(super) fn check_incdec_type_constraint(
+    pub(crate) fn check_incdec_type_constraint(
         &mut self,
         name: &str,
         new_val: &Value,

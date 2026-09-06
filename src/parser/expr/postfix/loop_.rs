@@ -3382,6 +3382,24 @@ fn postfix_expr_loop_from(
 
         // Postfix ++ and --
         if let Some((op, len)) = parse_postfix_update_op(rest) {
+            // A user-declared `postfix:<++>`/`postfix:<-->` makes the operator a
+            // multi whose candidate set includes the native implementation, so
+            // emit a call and let runtime dispatch rank the two (the native side
+            // is `core_increment_candidate_wins`). Without a user declaration
+            // there is nothing to rank and the dedicated opcode stays.
+            let symbol = if matches!(op, crate::parser::expr::operators::PostfixUpdateOp::Inc) {
+                "++"
+            } else {
+                "--"
+            };
+            if crate::parser::stmt::simple::is_user_declared_postfix_sub(symbol) {
+                rest = &rest[len..];
+                expr = Expr::Call {
+                    name: Symbol::intern(&format!("postfix:<{}>", symbol)),
+                    args: vec![expr],
+                };
+                continue;
+            }
             rest = &rest[len..];
             expr = Expr::PostfixOp {
                 op: op.token_kind(),
