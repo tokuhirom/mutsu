@@ -223,10 +223,23 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             } else {
-                let slurpy_index = data
-                    .params
-                    .iter()
-                    .position(|param| param.starts_with('@') || param.starts_with('%'));
+                // A `@`/`%`-sigiled generator parameter is a *slurpy* history
+                // window only when the signature actually says so
+                // (`-> *@history { ... }`). A plain `-> @row { ... }` is one
+                // ordinary Positional parameter that binds ONE previous element,
+                // exactly like `-> $x`. Only `param_defs` records that
+                // distinction; the bare `params` names do not, so consult the
+                // defs whenever they exist and keep the sigil heuristic for the
+                // defs-less legacy shapes (placeholders, WhateverCode).
+                let slurpy_index = if data.param_defs.is_empty() {
+                    data.params
+                        .iter()
+                        .position(|param| param.starts_with('@') || param.starts_with('%'))
+                } else {
+                    data.param_defs
+                        .iter()
+                        .position(|pd| pd.slurpy || pd.double_slurpy)
+                };
                 let args: Vec<Value> = if data.params.is_empty() {
                     // No declared params: sequence generators still receive history in @_.
                     history.to_vec()
@@ -283,7 +296,15 @@ impl Interpreter {
 
                     // Bind parameters
                     for (i, param) in data.params.iter().enumerate() {
-                        if param.starts_with('@') {
+                        // Same rule as `slurpy_index` above: only a genuinely
+                        // slurpy parameter swallows the rest of the history
+                        // window; a plain `@`/`%` parameter takes one argument.
+                        let slurps_rest = data
+                            .param_defs
+                            .get(i)
+                            .map(|pd| pd.slurpy || pd.double_slurpy)
+                            .unwrap_or(true);
+                        if param.starts_with('@') && slurps_rest {
                             let rest = if i < args.len() {
                                 args[i..].to_vec()
                             } else {
@@ -292,7 +313,7 @@ impl Interpreter {
                             self.env.insert(param.clone(), Value::array(rest));
                             break;
                         }
-                        if param.starts_with('%') {
+                        if param.starts_with('%') && slurps_rest {
                             let mut map = std::collections::HashMap::new();
                             for item in args.iter().skip(i) {
                                 if let ValueView::Pair(k, v) = item.view() {

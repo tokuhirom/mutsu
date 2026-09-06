@@ -600,6 +600,7 @@ impl Interpreter {
                                     }
                                     None => item.clone(),
                                 };
+                                vm.note_param_bound_aggregate(p, &bound);
                                 vm.env_mut().insert(p.clone(), bound);
                             }
                             bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
@@ -614,6 +615,7 @@ impl Interpreter {
                                         }
                                         None => item,
                                     };
+                                    vm.note_param_bound_aggregate(p, &bound);
                                     vm.env_mut().insert(p.clone(), bound);
                                 }
                             }
@@ -925,6 +927,7 @@ impl Interpreter {
                             }
                             None => call_item.clone(),
                         };
+                        vm.note_param_bound_aggregate(p, &bound);
                         vm.env_mut().insert(p.clone(), bound);
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);

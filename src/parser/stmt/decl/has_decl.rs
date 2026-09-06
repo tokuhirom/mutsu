@@ -745,18 +745,45 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         let rest = &rest[1..];
         let (rest, _) = ws(rest)?;
         let (rest, expr) = expression(rest)?;
-        // For @ and % sigils, parse comma-separated list of expressions
-        if (sigil == b'@' || sigil == b'%') && rest.starts_with(',') {
+        // For @ and % sigils, parse comma-separated list of expressions.
+        //
+        // This is a comma list like any other, so it obeys the same two rules the
+        // shared splitter in `stmt::assign::comma` implements: a comma with
+        // nothing after it is a TRAILING comma (an empty list slot), not a
+        // missing element (`has @.a = 1, 2,;`), and operators looser than the
+        // comma have to be re-lifted over the split elements
+        // (`has @.a = 1, 2 ... 6`).
+        let (rws, _) = ws(rest)?;
+        if (sigil == b'@' || sigil == b'%') && rws.starts_with(',') {
             let mut items = vec![expr];
-            let mut r = rest;
+            let mut r = rws;
+            let mut trailing_comma = false;
             while r.starts_with(',') {
-                r = &r[1..];
-                let (r2, _) = ws(r)?;
+                let (r2, _) = ws(&r[1..])?;
+                if crate::parser::stmt::assign::comma_list_ends_here(r2) {
+                    trailing_comma = true;
+                    r = r2;
+                    break;
+                }
                 let (r2, next_expr) = expression(r2)?;
                 items.push(next_expr);
+                let (r2, _) = ws(r2)?;
                 r = r2;
             }
-            (r, Some(Expr::ArrayLiteral(items)))
+            // A single element followed by a trailing comma is a one-slot list,
+            // and that slot stays unflattened: `has @.a = 1..5,` is `[1..5,]`,
+            // not `[1, 2, 3, 4, 5]`.
+            let list = if trailing_comma && items.len() == 1 {
+                Expr::ArrayLiteral(items)
+            } else {
+                let items = crate::parser::stmt::assign::normalize_comma_list_items(items);
+                if items.len() == 1 {
+                    items.into_iter().next().unwrap()
+                } else {
+                    Expr::ArrayLiteral(items)
+                }
+            };
+            (r, Some(list))
         } else {
             (rest, Some(expr))
         }
