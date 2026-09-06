@@ -582,9 +582,16 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
+        // The unit's own `sub`/`method`/`proto` declarations, kept apart from
+        // the rest of `declared`: every declared name suppresses the check
+        // (the safe direction), but only a *routine* may be offered as the
+        // routine the caller meant -- a `my $greeting` must never answer
+        // "Did you mean 'greeting'?", which rakudo never does.
+        let mut declared_routines: HashSet<String> = HashSet::new();
         let mut declared: HashSet<String> = HashSet::new();
         for s in stmts {
             Self::collect_declared_routine_names(s, &mut declared);
+            Self::collect_routine_decl_names(s, &mut declared_routines);
             Self::collect_declared_vars(s, &mut declared);
         }
         let extra: Vec<String> = declared
@@ -612,7 +619,14 @@ impl Interpreter {
             {
                 continue;
             }
-            let suggestions = self.suggest_routine_names(&name);
+            // Rakudo's suggestion candidates include the compilation unit's own
+            // routines, not just the registered/core ones -- and an EVAL'd
+            // snippet is a compilation unit like any other, so
+            // `EVAL 'sub greeting {}; greetng()'` must answer "Did you mean
+            // 'greeting'?" exactly as the mainline check does
+            // (`check_undeclared_routines_mainline`). The unit's subs are not in
+            // the registry at this point, so pass the ones just collected.
+            let suggestions = self.suggest_routine_names_including(&name, &declared_routines);
             return Err(Self::undeclared_routine_error(&name, 1, suggestions));
         }
         Ok(())
@@ -659,6 +673,31 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// The *routine* subset of [`Self::collect_declared_routine_names`]: only
+    /// `sub` / `method` / `proto` declarations, without the class, role, subset
+    /// and enum names that one also collects (those suppress the undeclared
+    /// check, but naming one is not "the routine you meant"). Mirrors the
+    /// CHECK-time walker's `Scan::declared_routines`
+    /// (`runtime/undeclared_routines.rs`), which draws the same distinction.
+    fn collect_routine_decl_names(stmt: &Stmt, out: &mut HashSet<String>) {
+        match stmt {
+            Stmt::SubDecl { name, .. }
+            | Stmt::MethodDecl { name, .. }
+            | Stmt::ProtoDecl { name, .. } => {
+                out.insert(name.resolve());
+            }
+            Stmt::ClassDecl { body, .. }
+            | Stmt::AugmentClass { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::SyntheticBlock(body) => {
+                for s in body {
+                    Self::collect_routine_decl_names(s, out);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn collect_declared_routine_names(stmt: &Stmt, out: &mut HashSet<String>) {

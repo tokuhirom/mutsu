@@ -19,7 +19,7 @@ use Test;
 # subset only, or a `my $greeting` would be offered as the routine you meant,
 # which rakudo never does.
 
-plan 4;
+plan 7;
 
 throws-like 'sub greeting() { 1 }; greetng()', X::Undeclared::Symbols,
     "a typo'd call suggests the unit's own sub",
@@ -42,3 +42,26 @@ try {
 }
 nok $message.contains('Did you mean'),
     'a same-named variable is not offered as the routine you meant';
+
+# The same must hold when the snippet is compiled through EVAL rather than as
+# the mainline: EVAL'd code is a compilation unit like any other, and its own
+# `sub` declarations are suggestion candidates. (`throws-like` reaches this
+# path only with the vendored upstream Test module, whose implementation EVALs
+# the string; these assertions exercise it under either provider.)
+sub eval-message($code) {
+    my $message = '';
+    try {
+        EVAL $code;
+        CATCH { default { $message = .message } }
+    }
+    $message;
+}
+
+ok eval-message('sub greeting() { 1 }; greetng()').contains("Did you mean 'greeting'"),
+    "an EVAL'd typo suggests the EVAL'd unit's own sub";
+
+ok eval-message('multi sub handle(Int) { 1 }; handel(1)').contains("Did you mean 'handle'"),
+    "an EVAL'd multi candidate is a suggestion candidate too";
+
+nok eval-message('my $greeting = 1; greetng()').contains('Did you mean'),
+    "an EVAL'd same-named variable is not offered as the routine you meant";

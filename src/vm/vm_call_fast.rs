@@ -66,17 +66,27 @@ impl Interpreter {
         // *overlay only* (the callee's actual writes) back, and discard
         // callee-local writes for free. Gated to bodies that never capture or
         // iterate the env for a full lexical view: no inner subs (no
-        // closure/thread/block creation) and no reflective by-name access
-        // (EVAL / CALLER:: / symbolic deref / pseudo-stash).
+        // closure/thread/block creation).
         // A routine with no compiled locals may still write implicit match
         // state by name. It needs the same boundary: in particular,
         // `reset_capture_env_vars` removes inherited `$<name>` keys, which
         // must become callee-local tombstones instead of deleting the caller's
         // binding directly. Ordinary no-write helpers retain the allocation-free
         // in-place path.
-        let use_scoped = (has_locals || (cf.code.is_routine && cf.code.has_env_writes))
-            && !cf.has_inner_subs
-            && !crate::opcode::reflective_name_access_possible();
+        //
+        // The pilot slice additionally required `!reflective_name_access_possible()`
+        // (docs/vm-dual-store.md Slice 6), but that flag is program-global and
+        // monotonic: one `EVAL` anywhere in the program — as in every file that
+        // loads the vendored upstream `Test` — turned the boundary off for EVERY
+        // zero-local routine in that program, and a routine that then reset its
+        // captures deleted its CALLER's `$<name>` (`t/match-vars-are-routine-scoped.t`).
+        // The safety invariant the gate stood in for is enforced structurally
+        // instead: every consumer that captures or iterates the env for a full
+        // lexical view flattens a scoped env first, which is why the
+        // positional-light path has always installed this overlay without
+        // consulting the flag.
+        let use_scoped =
+            (has_locals || (cf.code.is_routine && cf.code.has_env_writes)) && !cf.has_inner_subs;
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.
