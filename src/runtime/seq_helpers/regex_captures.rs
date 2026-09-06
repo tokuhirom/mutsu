@@ -16,23 +16,23 @@ impl Interpreter {
         // exposes this frame's overlay only), but they must still be shadowed
         // here. Removing an inherited named capture records an overlay
         // tombstone, so it cannot reach the caller when this frame is dropped.
-        let numeric_keys: Vec<Symbol> = self
-            .env
-            .visible_keys_where(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit()))
-            .into_iter()
-            .map(|key| Symbol::intern(&key))
-            .collect();
+        //
+        // Which keys those are is answered from the symbol table's
+        // capture-shape registry rather than by scanning the visible env: the
+        // registry is a superset of the capture keys any env can hold (a key
+        // must be interned before it can be a key), so probing each of its
+        // entries is O(capture names) -- a handful -- instead of O(env) with a
+        // `String` allocation per key, which was 40% of `bench-string`.
+        let (numeric_keys, angle_keys) = crate::symbol::capture_shaped_symbols();
         for key in numeric_keys {
-            self.env.insert_sym(key, Value::NIL);
+            if self.env.contains_key_sym(key) {
+                self.env.insert_sym(key, Value::NIL);
+            }
         }
-        let angle_keys: Vec<Symbol> = self
-            .env
-            .visible_keys_where(|s| s.len() > 2 && s.starts_with('<') && s.ends_with('>'))
-            .into_iter()
-            .map(|key| Symbol::intern(&key))
-            .collect();
         for key in angle_keys {
-            self.env.remove_sym(key);
+            if self.env.contains_key_sym(key) {
+                self.env.remove_sym(key);
+            }
         }
     }
 

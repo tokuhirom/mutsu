@@ -49,6 +49,65 @@ struct SymbolTable {
 
 static GLOBAL_TABLE: OnceLock<RwLock<SymbolTable>> = OnceLock::new();
 
+/// The two capture-variable name shapes the regex engine parks in the env.
+///
+/// `$0`, `$1`, ... are stored under all-digit keys and `$<name>` under
+/// `<name>` (angle-wrapped), sigil-less like every other env key.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CaptureShape {
+    /// An all-digit name: a positional capture (`$0`).
+    Numeric,
+    /// An angle-wrapped name (`<foo>`): a named capture (`$<foo>`).
+    Angle,
+}
+
+/// Classify a name by capture shape. Cheap enough to run once per *newly
+/// interned* string; never on a repeat intern (the caches short-circuit those).
+#[inline]
+fn capture_shape_of(s: &str) -> Option<CaptureShape> {
+    let bytes = s.as_bytes();
+    match bytes.first() {
+        Some(b'0'..=b'9') if bytes.iter().all(|b| b.is_ascii_digit()) => {
+            Some(CaptureShape::Numeric)
+        }
+        Some(b'<') if bytes.len() > 2 && bytes[bytes.len() - 1] == b'>' => {
+            Some(CaptureShape::Angle)
+        }
+        _ => None,
+    }
+}
+
+/// Every capture-shaped symbol the process has ever interned, split by shape.
+///
+/// `reset_capture_env_vars` has to shadow *stale* capture variables before a
+/// new match installs its own, and they may be inherited from a caller frame
+/// rather than declared in the callee's own overlay. Scanning the whole visible
+/// env for them is O(env) per match with a `String` allocation per key — it was
+/// measured at 40% of `bench-string` (5000 matches x ~75k instructions).
+///
+/// The env cannot hold a key that was never interned, so this registry is a
+/// superset of the capture keys any env can contain: iterating it and probing
+/// `contains_key_sym` is O(capture names), which is a handful in any real
+/// program, and costs no allocation per key. The table is append-only, so an
+/// entry recorded here stays valid for the life of the process.
+static CAPTURE_SHAPED: OnceLock<RwLock<(Vec<Symbol>, Vec<Symbol>)>> = OnceLock::new();
+
+fn capture_shaped() -> &'static RwLock<(Vec<Symbol>, Vec<Symbol>)> {
+    CAPTURE_SHAPED.get_or_init(|| RwLock::new((Vec::new(), Vec::new())))
+}
+
+/// Snapshot of the capture-shaped symbols interned so far, as
+/// `(numeric, angle)`.
+///
+/// Returns owned vectors rather than lending the guard out on purpose: the
+/// caller mutates the env while iterating, and any interning on that path takes
+/// the symbol-table write lock. Cloning two short vectors keeps the lock scope
+/// to this function and the lock order trivially acyclic.
+pub(crate) fn capture_shaped_symbols() -> (Vec<Symbol>, Vec<Symbol>) {
+    let guard = capture_shaped().read().unwrap();
+    guard.clone()
+}
+
 fn global_table() -> &'static RwLock<SymbolTable> {
     GLOBAL_TABLE.get_or_init(|| {
         RwLock::new(SymbolTable {
@@ -187,6 +246,25 @@ impl Symbol {
         let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
         table.id_to_str.push(leaked);
         table.str_to_id.insert(leaked, sym);
+        // Record the capture shape once, here, where a name becomes a symbol
+        // for the first time. Doing it at the intern choke point rather than at
+        // the (many) sites that insert a capture into the env is what makes the
+        // registry a guaranteed superset: no key can reach an env without
+        // passing through here first.
+        if let Some(shape) = capture_shape_of(leaked) {
+            // Push while the symbol-table write lock is STILL held, so no other
+            // thread can observe the name as interned before it is registered:
+            // a racing thread that saw the table entry first would use the
+            // symbol as an env key that `reset_capture_env_vars` then missed.
+            // Lock order is one-way (table write -> registry write; the reader
+            // takes the registry lock alone and releases it before touching an
+            // env), so there is no cycle to deadlock on.
+            let mut shaped = capture_shaped().write().unwrap();
+            match shape {
+                CaptureShape::Numeric => shaped.0.push(sym),
+                CaptureShape::Angle => shaped.1.push(sym),
+            }
+        }
         sym
     }
 
@@ -395,5 +473,67 @@ mod tests {
         let sym = Symbol::intern("hashkey_test");
         map.insert(sym, 42);
         assert_eq!(map.get(&sym), Some(&42));
+    }
+
+    #[test]
+    fn capture_shape_matches_the_old_env_scan_predicates() {
+        // These two must stay exactly equivalent to the predicates
+        // `reset_capture_env_vars` used to hand `Env::visible_keys_where`,
+        // since the registry replaced that scan.
+        let numeric = |s: &str| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit());
+        let angle = |s: &str| s.len() > 2 && s.starts_with('<') && s.ends_with('>');
+        for s in [
+            "",
+            "0",
+            "1",
+            "42",
+            "007",
+            "a",
+            "0a",
+            "a0",
+            "<>",
+            "<a>",
+            "<ab>",
+            "<",
+            ">",
+            "<a",
+            "a>",
+            "_",
+            "$/",
+            "<0>",
+            "1<2>",
+            "\u{3042}",
+            "<\u{3042}>",
+            "x<y>",
+        ] {
+            let shape = capture_shape_of(s);
+            assert_eq!(
+                matches!(shape, Some(CaptureShape::Numeric)),
+                numeric(s),
+                "numeric shape disagrees for {s:?}"
+            );
+            assert_eq!(
+                matches!(shape, Some(CaptureShape::Angle)),
+                angle(s),
+                "angle shape disagrees for {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn interning_a_capture_shaped_name_registers_it() {
+        // The registry is a superset of the capture keys an env can hold, and
+        // that only holds if `intern` records every capture-shaped name.
+        let num = Symbol::intern("31337");
+        let named = Symbol::intern("<capture_shape_registry_probe>");
+        let plain = Symbol::intern("capture_shape_registry_plain");
+        let (numeric, angle) = capture_shaped_symbols();
+        assert!(numeric.contains(&num), "all-digit name was not registered");
+        assert!(angle.contains(&named), "angle name was not registered");
+        assert!(!numeric.contains(&plain) && !angle.contains(&plain));
+        // Re-interning must not duplicate the entry.
+        let before = capture_shaped_symbols().0.len();
+        let _ = Symbol::intern("31337");
+        assert_eq!(capture_shaped_symbols().0.len(), before);
     }
 }
