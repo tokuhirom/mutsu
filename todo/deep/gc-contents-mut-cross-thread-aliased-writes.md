@@ -44,19 +44,31 @@ reachable while the name-keyed lane declines (ADR-0068 §2 lists five):
 - the container was never in a spawning frame's env;
 - the write is not name-keyed at all (`$obj.attr[$i]`, `%h<k>[$i]`, a container
   returned from a method);
-- mutating *methods* rather than element stores — `push`/`pop`/`splice`/`:delete`
-  and the `try_native_array_mut` / `try_native_hash_mut_bound` paths — which reach
-  their container through the same `env_root_descended_mut` chokepoint but do not
-  yet take the guard.
+- ~~mutating *methods* rather than element stores~~ — **done**, see above.
 
 Each wants its own oracle-classified probe and its own stress acceptance, per
-ADR-0068 §4 step 3 — not one 149-site sweep.
+ADR-0068 §4 step 3 — not one 149-site sweep. The evidence so far is that this
+class has **three funnels**, not 149 sites: the named element store, the
+attribute-rooted element store, and the mutating method. Expect a new route to
+arrive at one of them; probe before assuming it needs a fourth.
 
 Three specific loose ends from the route audit:
 
-- **Route 3 (object attributes, `has @.seen is rw`) is unclassified.** It reaches
-  none of the probed aliased-store sites, nor `gc_data_mut`, nor the computed-attr
-  sites. Trace it before calling it covered or exposed.
+- ~~**Route 3 (object attributes) is unclassified.**~~ **CLASSIFIED AND HALF
+  FIXED (2026-09-06, ADR-0068 §8).** It was the worst route in the ADR: an
+  element store through an array attribute corrupted the heap on **96 of 96**
+  runs. The earlier probe missed because it looked for the *aliased-store* sites
+  and this route uses none of them — `$obj.attr[$i] = v` lowers to
+  `__mutsu_index_assign_method_lvalue`, whose whole body writes through the
+  container the accessor hands back, so the exclusion goes on that container.
+  Element stores (array and hash) are now 0/240 at 24-way.
+
+  **A mutating METHOD on an attribute container was a third funnel**, also
+  fixed: `$obj.attr.push($v)` raced at 95/96 and goes through neither store
+  funnel. Four breakpoint probes came back cold; the ADR-0068 §1.2 oracle showed
+  it arriving as an ordinary VALUE dispatch (`exec_call_method_op` ->
+  `call_method_with_values`), and excluding a small allowlist of mutator method
+  names there takes it to 0/240 at 24-way.
 - **Route 5 (`Channel.Supply` tap captures)** is exposed on the path oracle but
   blocked behind a separate deterministic Channel-supply delivery bug that
   drops/misorders values on a single unloaded run. Fix that first.
