@@ -1246,6 +1246,35 @@ impl Interpreter {
     }
 
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
+    /// [`Self::invoke_grammar_actions`], but at most once per capture node
+    /// within one parent's child walk.
+    ///
+    /// `seen` memoizes `(node identity, updated Match)` for the siblings
+    /// dispatched so far. The one shape that repeats a node among siblings is
+    /// a non-suppressing alias (`<x=rule>` files the same node under `x` and
+    /// `rule`), where raku hands out one cursor — so the second slot must
+    /// receive the SAME updated Match (carrying the `.made` the single
+    /// dispatch produced), not a second dispatch of its own.
+    fn invoke_grammar_actions_once(
+        &mut self,
+        seen: &mut Vec<(usize, Value)>,
+        match_obj: Value,
+        actions: &mut Value,
+        rule_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        let identity = match_obj.match_node_identity();
+        if let Some(id) = identity
+            && let Some((_, updated)) = seen.iter().find(|(seen_id, _)| *seen_id == id)
+        {
+            return Ok(updated.clone());
+        }
+        let updated = self.invoke_grammar_actions(match_obj, actions, rule_name)?;
+        if let Some(id) = identity {
+            seen.push((id, updated.clone()));
+        }
+        Ok(updated)
+    }
+
     pub(crate) fn invoke_grammar_actions(
         &mut self,
         match_obj: Value,
@@ -1343,22 +1372,39 @@ impl Interpreter {
             // `match_from` is the non-materializing seam read — a lazy child
             // is not forced just to be sorted.
             children.sort_by_key(|(_, v)| v.match_from().unwrap_or(0));
+            // A non-suppressing alias (`<x=rule>`) files ONE capture node under
+            // both `x` and `rule`, so the same cursor appears twice among these
+            // siblings. Rakudo dispatches an action per reduced cursor, not per
+            // capture slot; dispatching per slot fired the whole subtree's
+            // actions twice per alias level, compounding to 2^depth (256x on
+            // `benchmarks/bench-yaml-parse.raku`). Dispatch once per node and
+            // give both slots the same updated child — which is also what
+            // `$<x> === $<rule>` means.
+            let mut seen: Vec<(usize, Value)> = Vec::new();
             for (child_name, child_match) in children {
                 // Probe Match first (non-materializing); only non-Match values
                 // (arrays of per-iteration Matches) go through `view()`.
                 if child_match.is_match_instance() {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child =
-                        self.invoke_grammar_actions(child_match, actions, &dispatch_name)?;
+                    let updated_child = self.invoke_grammar_actions_once(
+                        &mut seen,
+                        child_match,
+                        actions,
+                        &dispatch_name,
+                    )?;
                     updated_named.insert(child_name, updated_child);
                 } else if let ValueView::Array(items, meta) = child_match.view() {
                     let mut updated_items = Vec::with_capacity(items.len());
                     for item in items.as_ref() {
                         let dispatch_name =
                             Self::get_action_name(item).unwrap_or_else(|| child_name.clone());
-                        let updated_item =
-                            self.invoke_grammar_actions(item.clone(), actions, &dispatch_name)?;
+                        let updated_item = self.invoke_grammar_actions_once(
+                            &mut seen,
+                            item.clone(),
+                            actions,
+                            &dispatch_name,
+                        )?;
                         updated_items.push(updated_item);
                     }
                     updated_named.insert(
@@ -1371,8 +1417,12 @@ impl Interpreter {
                 } else {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child =
-                        self.invoke_grammar_actions(child_match, actions, &dispatch_name)?;
+                    let updated_child = self.invoke_grammar_actions_once(
+                        &mut seen,
+                        child_match,
+                        actions,
+                        &dispatch_name,
+                    )?;
                     updated_named.insert(child_name, updated_child);
                 }
             }

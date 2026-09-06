@@ -128,6 +128,21 @@ impl Value {
         }
     }
 
+    /// Identity of the capture node behind a still-lazy `Match`: two Match
+    /// values that present the SAME stored node compare equal here.
+    ///
+    /// A non-suppressing alias (`<x=rule>`) files one node under both names,
+    /// so `$<x>` and `$<rule>` are the same cursor (raku: `$<x> === $<rule>`).
+    /// The grammar action walk uses this to dispatch such a node's action once
+    /// per parent instead of once per slot — firing it per slot multiplied
+    /// exponentially through nested aliases. `None` once the Match has been
+    /// rebuilt into an eager `Instance` (no shared node to compare).
+    pub(crate) fn match_node_identity(&self) -> Option<usize> {
+        self.0
+            .as_match_node()
+            .map(|node| Arc::as_ptr(&node.cap) as usize)
+    }
+
     /// A Match equal to `self` with the given attributes replaced — the
     /// rebuild pattern every post-hoc attribute write (`.made`/`ast`,
     /// `actions`, `capture_alias_map`, `orig`, `named`, `list`) uses.
