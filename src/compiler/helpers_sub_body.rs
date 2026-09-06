@@ -214,7 +214,7 @@ impl Compiler {
         if let Some(err) = self.check_heredoc_scope_errors(body) {
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return None;
         }
         let sink_last_expr = return_type

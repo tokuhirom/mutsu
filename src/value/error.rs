@@ -86,6 +86,22 @@ pub enum Control {
 /// RuntimeError>` signatures no longer need `#[allow(clippy::result_large_err)]`
 /// (ANALYSIS §2.2 / §7-4). Every field is accessed through the getter/setter
 /// methods on `RuntimeError`; the box is allocated lazily on first write.
+/// ADR-0072: what an inline-run `CATCH` handler decided, carried on the error
+/// back to the region that owns the handler so it applies the outcome without
+/// running the handler a second time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatchInlineVerdict {
+    /// A `when`/`default` matched: the exception is handled and the region ends
+    /// normally (its value is `Nil`).
+    Handled,
+    /// The handler ran but matched nothing: the exception is still live and the
+    /// region disposes of it exactly as if the handler had run while unwinding.
+    Unhandled,
+    /// The handler threw (an explicit `die`, `.rethrow`): the carried error is
+    /// that *new* error and it propagates past the region.
+    Rethrown,
+}
+
 #[derive(Debug, Default)]
 pub struct RuntimeErrorCold {
     /// Parse-error classification (set only for parse failures).
@@ -118,6 +134,12 @@ pub struct RuntimeErrorCold {
     /// resume point (`resume_body_ip = ip + 1`), so statements after the take
     /// in the same iteration are not lost on coroutine resume.
     pub take_suspend_site: Option<(usize, usize)>,
+    /// ADR-0072: this exception's `CATCH` handler has ALREADY run, inline at the
+    /// throw site, and did not `.resume`. Carries the `CatchHandlerEntry::token`
+    /// of the region whose handler ran, plus whether a `when`/`default` inside it
+    /// matched. That region recognises its own token while unwinding and applies
+    /// the verdict instead of running the handler a second time.
+    pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
     /// Source text immediately before a parse failure's eject point (current
     /// line only, matching rakudo's `X::Comp.pre`). Set alongside `line`/
     /// `column` by `parse_program` when the full source and offset are known.
@@ -317,6 +339,14 @@ impl RuntimeError {
     }
     pub(crate) fn set_take_suspend_site(&mut self, v: Option<(usize, usize)>) {
         self.cold_mut().take_suspend_site = v;
+    }
+
+    /// See `RuntimeErrorCold::catch_inline_verdict` (ADR-0072).
+    pub(crate) fn catch_inline_verdict(&self) -> Option<(u64, CatchInlineVerdict)> {
+        self.cold.as_ref().and_then(|c| c.catch_inline_verdict)
+    }
+    pub(crate) fn set_catch_inline_verdict(&mut self, v: Option<(u64, CatchInlineVerdict)>) {
+        self.cold_mut().catch_inline_verdict = v;
     }
 
     /// `return` control signal (non-local return carrying `return_value`).

@@ -875,6 +875,8 @@ impl Interpreter {
             for_param_restore_stack: Vec::new(),
             call_frames: Vec::new(),
             control_handlers: Vec::new(),
+            catch_handlers: Vec::new(),
+            catch_handler_seq: 0,
             current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,

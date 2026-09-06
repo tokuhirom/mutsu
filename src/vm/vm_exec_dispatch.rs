@@ -3556,6 +3556,12 @@ impl Interpreter {
                 // so this only ever scans the arguments, not the invocant. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
+                // ADR-0072: `$ex.throw` is a resumable throw site. Remember where
+                // the receiver+arguments start so a handler that resumes inline
+                // can leave the call's single `Any` value in their place.
+                let throw_base = self
+                    .method_name_is_resumable_throw(code, *name_idx)
+                    .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
                 match self.exec_call_method_op(
                     code,
                     *name_idx,
@@ -3565,6 +3571,20 @@ impl Interpreter {
                     *arg_sources_idx,
                 ) {
                     Ok(()) => {}
+                    Err(e) if throw_base.is_some() && !e.is_resume() => {
+                        match self.try_catch_inline(e) {
+                            Ok(v) => {
+                                self.stack.truncate(throw_base.unwrap_or(0));
+                                self.stack.push(v);
+                            }
+                            Err(e) => {
+                                if self.resume_ip.is_none() {
+                                    self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
+                                }
+                                return Err(e);
+                            }
+                        }
+                    }
                     Err(e) => {
                         // Record a resume point so a method that throws can
                         // be resumed after the call site by .resume in CATCH.
@@ -4432,6 +4452,7 @@ impl Interpreter {
                 control_handles_take,
                 is_bare_block,
                 traps,
+                catch_resume_capable,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -4444,6 +4465,7 @@ impl Interpreter {
                     *control_handles_take,
                     *is_bare_block,
                     *traps,
+                    *catch_resume_capable,
                     ip,
                     compiled_fns,
                 )?;
@@ -4466,7 +4488,8 @@ impl Interpreter {
                     return Err(err);
                 }
             }
-            OpCode::Die => {
+            OpCode::Die { user_throw } => {
+                let user_throw = *user_throw;
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support
@@ -4487,7 +4510,20 @@ impl Interpreter {
                 };
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
                 self.attach_backtrace_to_error_with_leading(&mut err, &["throw", "die"]);
-                return Err(err);
+                // ADR-0072: a resume-capable CATCH several frames up handles this
+                // INLINE, here, with every Rust frame between still live — so a
+                // `.resume` continues with the next statement of THIS body. A
+                // statement `die` is in sink position, so nothing is pushed.
+                if !user_throw {
+                    return Err(err);
+                }
+                match self.try_catch_inline(err) {
+                    Ok(_) => {
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             OpCode::Fail => {
                 self.sync_source_line(code, *ip);

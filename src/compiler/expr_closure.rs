@@ -62,7 +62,7 @@ impl Compiler {
             let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             true
         } else {
             false
@@ -123,7 +123,7 @@ impl Compiler {
             {
                 let idx = self.code.add_constant(err_val);
                 self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die);
+                self.code.emit(OpCode::Die { user_throw: false });
                 return;
             }
             let placeholders = crate::ast::collect_placeholders_shallow(body);
@@ -164,13 +164,13 @@ impl Compiler {
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         if let Some(err_val) = Self::check_native_readonly_param_assignment(param_defs, body) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         let compiled =
@@ -196,7 +196,7 @@ impl Compiler {
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         // Placeholders cannot appear in blocks/subs with explicit signatures.
@@ -250,7 +250,7 @@ impl Compiler {
                 );
                 let idx = self.code.add_constant(err);
                 self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die);
+                self.code.emit(OpCode::Die { user_throw: false });
                 return;
             }
         }
@@ -258,7 +258,7 @@ impl Compiler {
         if let Some(err_val) = Self::check_native_readonly_param_assignment(param_defs, body) {
             let idx = self.code.add_constant(err_val);
             self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die);
+            self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
         // Check if this is a pointy block (-> { }) vs a named anonymous sub.

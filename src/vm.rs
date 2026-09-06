@@ -148,6 +148,7 @@ mod vm_call_named;
 mod vm_call_named_inner;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
+mod vm_catch_dispatch;
 mod vm_closure_dispatch;
 mod vm_coerce_concat_ops;
 mod vm_comparison_container_ops;
@@ -305,6 +306,49 @@ pub(crate) struct ControlHandlerCode {
     pub code: std::sync::Arc<CompiledCode>,
     pub control_begin: usize,
     pub end: usize,
+    pub compiled_fns: CompiledFns,
+}
+
+/// ADR-0072: a region that would stop an exception from reaching an outer
+/// `CATCH` — one with its own `CATCH` block, or a genuine `try` — while its
+/// protected body runs. Pushed by `exec_try_catch_op_inner` and popped when the
+/// body finishes, so `catch_handlers.last()` is always the innermost such region
+/// on the dynamic (Rust) call stack.
+///
+/// A region that is *not* resume-capable still pushes an entry (with `handler:
+/// None`), because the throw site must not skip it in favour of a resuming
+/// handler further out — it only takes the inline path when the INNERMOST entry
+/// can resume.
+pub(crate) struct CatchHandlerEntry {
+    /// Identifies this activation of the region. The throw site stamps it into
+    /// the error it returns after running the handler inline, and the region
+    /// recognises its own stamp and applies the recorded verdict instead of
+    /// running the handler a second time. A fresh id per *activation* (not per
+    /// op) so a recursive routine's nested regions never collide.
+    pub token: u64,
+    /// `Interpreter::current_code` of the frame that installed this region — the
+    /// address of its live `CompiledCode`. A throw raised while that same code
+    /// object is executing is NOT routed inline: the handler's bytecode addresses
+    /// exactly the slots `self.locals` already holds, and the pre-existing
+    /// frame-local `resume_ip` mechanism resumes it correctly. Taking the inline
+    /// path there would swap `self.locals` for an env reconstruction of the very
+    /// same frame and drop the handler's writes to the live slots on restore.
+    pub installing_code: usize,
+    /// Present only when this region's CATCH can resume: the bytecode + range +
+    /// function table needed to run the handler INLINE at a deep throw site.
+    pub handler: Option<CatchHandlerCode>,
+}
+
+/// Self-contained bytecode for running a resume-capable `CATCH` handler inline,
+/// the CATCH twin of [`ControlHandlerCode`].
+pub(crate) struct CatchHandlerCode {
+    pub code: std::sync::Arc<CompiledCode>,
+    /// The handler's own op range. The owning region's disposition (`explicit_catch`
+    /// / `traps` / `end`) is NOT carried here: the inline runner only reports a
+    /// verdict, and the region — which still sees the tagged error while unwinding
+    /// — applies it with the values it already has.
+    pub catch_begin: usize,
+    pub control_begin: usize,
     pub compiled_fns: CompiledFns,
 }
 

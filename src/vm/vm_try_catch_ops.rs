@@ -14,6 +14,7 @@ impl Interpreter {
         control_handles_take: bool,
         is_bare_block: bool,
         traps: bool,
+        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -65,6 +66,7 @@ impl Interpreter {
             resume_safe,
             control_handles_take,
             traps,
+            catch_resume_capable,
             ip,
             compiled_fns,
         );
@@ -96,6 +98,7 @@ impl Interpreter {
         resume_safe: bool,
         control_handles_take: bool,
         traps: bool,
+        catch_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -133,6 +136,34 @@ impl Interpreter {
                 handles_take: control_handles_take,
             });
         }
+        // ADR-0072: register this region as an exception-absorbing boundary for
+        // the duration of the protected body. Any region that would *stop* an
+        // exception from reaching an outer CATCH — one with its own CATCH block,
+        // or a genuine `try` — pushes an entry, even when it cannot resume, so a
+        // deep throw never skips a nearer handler in favour of a resuming one
+        // further out. Only a resume-capable CATCH carries the bytecode needed to
+        // run inline; everything else is a cheap blocking marker.
+        let has_catch = catch_begin < control_begin;
+        let registers_catch = has_catch || traps;
+        let catch_token = if registers_catch {
+            self.catch_handler_seq += 1;
+            let token = self.catch_handler_seq;
+            let handler =
+                (has_catch && catch_resume_capable).then(|| crate::vm::CatchHandlerCode {
+                    code: std::sync::Arc::new(code.clone()),
+                    catch_begin,
+                    control_begin,
+                    compiled_fns: compiled_fns.clone(),
+                });
+            self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+                token,
+                installing_code: self.current_code,
+                handler,
+            });
+            Some(token)
+        } else {
+            None
+        };
         // Saved so a `succeed` this try absorbs (below) can reset the flag:
         // an enclosing `given`'s body breaks early on `when_matched()` after
         // every statement, and without the reset it would wrongly treat a
@@ -147,6 +178,9 @@ impl Interpreter {
         if has_control {
             self.control_handler_depth -= 1;
             self.control_handlers.pop();
+        }
+        if catch_token.is_some() {
+            self.catch_handlers.pop();
         }
         match body_result {
             Ok(()) => {
@@ -244,6 +278,7 @@ impl Interpreter {
                             end,
                             explicit_catch,
                             traps,
+                            catch_token,
                             saved_depth,
                             ip,
                             compiled_fns,
@@ -418,8 +453,28 @@ impl Interpreter {
                                     handles_take: control_handles_take,
                                 });
                             }
+                            // ADR-0072: the resumed body is still this region's
+                            // protected body, so re-register the catch boundary
+                            // for it exactly as the control handler is above.
+                            if let Some(token) = catch_token {
+                                let handler = (catch_begin < control_begin && catch_resume_capable)
+                                    .then(|| crate::vm::CatchHandlerCode {
+                                        code: std::sync::Arc::new(code.clone()),
+                                        catch_begin,
+                                        control_begin,
+                                        compiled_fns: compiled_fns.clone(),
+                                    });
+                                self.catch_handlers.push(crate::vm::CatchHandlerEntry {
+                                    token,
+                                    installing_code: self.current_code,
+                                    handler,
+                                });
+                            }
                             let body_result =
                                 self.run_range(code, resume_point, catch_begin, compiled_fns);
+                            if catch_token.is_some() {
+                                self.catch_handlers.pop();
+                            }
                             if has_control {
                                 self.control_handler_depth -= 1;
                                 self.control_handlers.pop();
@@ -471,6 +526,7 @@ impl Interpreter {
                             end,
                             explicit_catch,
                             traps,
+                            catch_token,
                             saved_depth,
                             ip,
                             compiled_fns,
@@ -506,147 +562,12 @@ impl Interpreter {
                     end,
                     explicit_catch,
                     traps,
+                    catch_token,
                     saved_depth,
                     ip,
                     compiled_fns,
                 )
             }
         }
-    }
-
-    /// Route an exception to this region's `CATCH` handler (the bytecode range
-    /// `catch_begin..control_begin`) and decide what happens to it afterwards:
-    /// handled by a matching `when`/`default`, re-thrown, or swallowed into `$!`.
-    ///
-    /// Reached both from the ordinary exception path and from a `CONTROL` block
-    /// that *declined* an illegal control signal (`next` with no enclosing loop),
-    /// which Raku turns into a catchable `X::ControlFlow` here.
-    #[allow(clippy::too_many_arguments)]
-    fn dispatch_to_catch_handler(
-        &mut self,
-        code: &CompiledCode,
-        e: RuntimeError,
-        catch_begin: usize,
-        control_begin: usize,
-        end: usize,
-        explicit_catch: bool,
-        traps: bool,
-        saved_depth: usize,
-        ip: &mut usize,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(), RuntimeError> {
-        if catch_begin >= control_begin {
-            return Err(e);
-        }
-        self.stack.truncate(saved_depth);
-        // Build a Backtrace object from the string for legacy errors
-        // that only have a string backtrace.
-        //
-        // A *compile-time* diagnosis (anything doing `X::Comp`) reaches here
-        // with no backtrace at all, which used to leave `.backtrace` answering
-        // the empty-string placeholder — a `Str`, so `.is-runtime` could not be
-        // asked of it. rakudo always hands back a real `Backtrace` there, with
-        // `is-runtime` False; synthesize one from the live stack of the code
-        // that triggered the compilation (an `EVAL`, a `use`), which is exactly
-        // the non-setting frame rakudo's own compile-time backtrace ends with.
-        let is_comp = e
-            .exception
-            .as_deref()
-            .is_some_and(|ex| self.type_matches_value("X::Comp", ex));
-        let bt_value = match e.backtrace() {
-            Some(bt) => Some(Self::backtrace_value_from_string_with_runtime(bt, !is_comp)),
-            None if is_comp => Some(self.build_backtrace_value_with_runtime(false)),
-            None => None,
-        };
-        let err_val = e.exception_value_with_backtrace(bt_value);
-        let saved_topic = self.env().get("_").cloned();
-        // Per Raku semantics `$!` is only *updated* to the exception when it
-        // propagates out of the `try` unhandled (swallowed by the implicit
-        // trap). A CATCH that handles the exception (a matching
-        // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
-        // before the `try`. Remember that prior value so the handled paths
-        // below can restore it.
-        let prior_bang = self.env().get("!").cloned();
-        // The CATCH block gets its own `$!`, which starts out `Nil`: inside
-        // the handler the exception is the *topic* (`$_`), and the enclosing
-        // scope's `$!` has not been written yet. It is only updated below,
-        // once the handler is done and the exception turns out to be
-        // unhandled (an implicit `try` trap swallows it into `$!`).
-        self.env_mut().insert("!".to_string(), Value::NIL);
-        self.env_mut().insert("_".to_string(), err_val.clone());
-        let saved_when = self.when_matched();
-        loan_env!(self, set_when_matched(false));
-        let catch_stack_base = self.stack.len();
-        let when_handled = match self.run_range(code, catch_begin, control_begin, compiled_fns) {
-            Ok(()) => self.when_matched(),
-            // succeed from `when` inside CATCH means exception was handled
-            Err(catch_err) if catch_err.is_succeed() => {
-                // Truncate values left by default body, then push Nil
-                // (Raku: try { die; CATCH { default { "caught" } } } returns Nil)
-                self.stack.truncate(catch_stack_base);
-                self.stack.push(Value::NIL);
-                true
-            }
-            // .resume called inside CATCH: resume execution after the die
-            Err(catch_err) if catch_err.is_resume() => {
-                self.stack.truncate(catch_stack_base);
-                loan_env!(self, set_when_matched(saved_when));
-                if let Some(v) = saved_topic {
-                    self.env_mut().insert("_".to_string(), v);
-                } else {
-                    self.env_mut().remove("_");
-                }
-                // A resumed exception is handled: restore `$!` to its
-                // pre-`try` value so the resumed body and the code after
-                // the `try` see the prior `$!`, not the handled exception.
-                self.env_mut()
-                    .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
-                // Resume from the instruction after die
-                if let Some(resume_point) = self.take_resume_ip_for(code) {
-                    // Run from the resume point to the end of the try body
-                    match self.run_range(code, resume_point, catch_begin, compiled_fns) {
-                        Ok(()) => {}
-                        Err(resume_err) => return Err(resume_err),
-                    }
-                }
-                *ip = end;
-                return Ok(());
-            }
-            Err(catch_err) => return Err(catch_err),
-        };
-        // Propagate when_handled upward so an enclosing CATCH region
-        // can detect that this nested CATCH (e.g., a CATCH inside a
-        // CATCH) handled the exception.
-        self.set_when_matched(saved_when || when_handled);
-        if let Some(v) = saved_topic {
-            self.env_mut().insert("_".to_string(), v);
-        } else {
-            self.env_mut().remove("_");
-        }
-        // A handled exception (a matching `when`/`default`) leaves `$!` at
-        // its pre-`try` value. When nothing matched, `$!` keeps the
-        // exception: an explicit CATCH re-throws (below), and an implicit
-        // `try` trap swallows it with the exception left in `$!`.
-        if when_handled {
-            self.env_mut()
-                .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
-        } else {
-            // Nothing matched: the exception is still live, so publish it in
-            // the enclosing `$!` now that the handler (which saw `Nil`) is
-            // done. An explicit CATCH re-throws just below; an implicit
-            // `try` trap swallows it with the exception left in `$!`.
-            self.env_mut().insert("!".to_string(), err_val);
-        }
-        // Nothing matched, so the exception is still live. Only a
-        // genuine `try` without a CATCH swallows it into `$!`: an
-        // explicit CATCH re-throws what it did not handle, and an
-        // implicit wrapper around a block that merely *contains* a
-        // CATCH/CONTROL phaser is not a trap at all, so
-        // `{ die "x"; CONTROL { } }` must propagate.
-        if !when_handled && (explicit_catch || !traps) {
-            return Err(e);
-        }
-        *ip = end;
-        Ok(())
     }
 }
