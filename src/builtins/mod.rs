@@ -13,6 +13,7 @@ pub(crate) mod iterator_construct;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod methods_0arg;
 mod methods_narg;
+pub(crate) mod mix_weight;
 pub(crate) mod native_method_row;
 mod native_method_row_table;
 pub(crate) mod pack;

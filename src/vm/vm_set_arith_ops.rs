@@ -47,7 +47,7 @@ impl Interpreter {
                 let b = Self::coerce_to_mix(&right, &mut originals);
                 for (k, v) in b {
                     let e = a.entry(k).or_insert(0.0);
-                    *e += v;
+                    *e = crate::builtins::mix_weight::add(*e, v);
                 }
                 Value::mix_with_original_keys(a, originals)
             }
@@ -157,13 +157,15 @@ impl Interpreter {
         match item.view() {
             ValueView::Pair(k, v) => {
                 let weight = v.to_f64();
-                *result.entry(str_elem_key(k)).or_insert(0.0) += weight;
+                let e = result.entry(str_elem_key(k)).or_insert(0.0);
+                *e = crate::builtins::mix_weight::add(*e, weight);
             }
             ValueView::ValuePair(k, v) => {
                 let weight = v.to_f64();
                 let (key, elem) = quanthash_elem_entry(k);
                 record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_insert(0.0) += weight;
+                let e = result.entry(key).or_insert(0.0);
+                *e = crate::builtins::mix_weight::add(*e, weight);
             }
             _ => {
                 let (key, elem) = quanthash_elem_entry(item);
