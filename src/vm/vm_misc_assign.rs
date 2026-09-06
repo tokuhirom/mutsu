@@ -52,6 +52,63 @@ impl Interpreter {
         Ok(val)
     }
 
+    /// `$.attr = v` inside a method assigns through the attribute's *public
+    /// accessor*, not to the attribute slot: raku evaluates `self.attr` and then
+    /// assigns to what it hands back. A non-`rw` scalar accessor hands back a
+    /// bare value, so the assignment dies with
+    /// `X::Assignment::RO: Cannot modify an immutable Int (5)`.
+    ///
+    /// mutsu compiles `$.attr = v` as an ordinary *named* assignment to the
+    /// variable `.attr` (`Compiler::compile_expr_assign` only calls the accessor
+    /// to check that it exists, then discards the result), which wrote the
+    /// attribute directly and never consulted `is rw` at all. This is that
+    /// missing check, placed at the store rather than in the compiler because
+    /// rw-ness is a property of the *invocant's class*, which only the runtime
+    /// knows.
+    ///
+    /// Deliberately scoped to the `$` sigil. Measured against raku v2026.07: for
+    /// a non-`rw` `has @.a` / `has %.h`, `@.a = 7,8`, `@.a[0] = 99` and
+    /// `%.h<k> = 99` all SUCCEED, because those accessors hand back the container
+    /// itself and assigning into a container is a `STORE`, not a modification of
+    /// an immutable value. Only the scalar case refuses.
+    fn check_dot_twigil_accessor_writable(&mut self, name: &str) -> Result<(), RuntimeError> {
+        let Some(attr) = name.strip_prefix('.') else {
+            return Ok(());
+        };
+        if attr.is_empty() || attr.starts_with(['@', '%', '&']) {
+            return Ok(());
+        }
+        let Some(self_val) = self.get_env_with_main_alias("self") else {
+            return Ok(());
+        };
+        let self_val = self_val.deref_container();
+        let ValueView::Instance { class_name, .. } = self_val.view() else {
+            return Ok(());
+        };
+        let class_name = class_name.resolve();
+        let is_readonly_public_scalar = self
+            .collect_class_attributes(&class_name)
+            .iter()
+            .find(|a| a.name == attr)
+            .is_some_and(|a| a.is_public && !a.is_rw && a.sigil == '$');
+        if !is_readonly_public_scalar {
+            return Ok(());
+        }
+        let current = match self_val.view() {
+            ValueView::Instance { attributes, .. } => {
+                [attr.to_string(), format!("${attr}"), format!("!{attr}")]
+                    .iter()
+                    .find_map(|k| attributes.as_map().get(k.as_str()).cloned())
+                    .unwrap_or(Value::NIL)
+            }
+            _ => Value::NIL,
+        };
+        Err(RuntimeError::assignment_ro_typename(
+            &crate::value::what_type_name(&current),
+            &current.to_string_value(),
+        ))
+    }
+
     pub(super) fn exec_assign_expr_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -62,6 +119,7 @@ impl Interpreter {
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
         self.check_readonly_for_modify(&name)?;
+        self.check_dot_twigil_accessor_writable(&name)?;
         // A whole-container reassignment breaks every `:=`-bound element, so drop
         // the read-only-element markers (`%h<i> := 137; %h = (...)` makes `%h<i>`
         // writable again). Covers the tied-STORE path below too.
