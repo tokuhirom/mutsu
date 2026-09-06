@@ -84,10 +84,29 @@ impl Interpreter {
         // for the element modify; the shared-Arc propagation below
         // (`overwrite_array_bindings_by_identity`, now cell-aware) reaches every
         // alias through the cell's inner Arc.
+        // ADR-0068 §4 step 3: an attribute-rooted element store
+        // (`$obj.attr[$i] = v`) is one of the routes the name-keyed cross-thread
+        // lane cannot cover -- it is not name-keyed at all -- and §3 left it
+        // "Unresolved" for want of a trace. Measured with the §1.1 harness:
+        // 96/96 runs corrupt the heap (`corrupted size vs. prev_size`,
+        // `double free or corruption (top)`, a NaN-box tag panic), with the lane
+        // never consulted. Every write below goes through the container the
+        // accessor just handed back, so excluding on that container covers them
+        // all at once. A no-op (one relaxed load) until a VM mutator thread is
+        // spawned; a thread holds at most one of these locks, so the accessor
+        // dispatches inside the region cannot deadlock against themselves.
+        let attr_cell_addr = match current.view() {
+            ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+            _ => None,
+        };
         let current = match current.view() {
             ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
             _ => current,
         };
+        let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
+            attr_cell_addr,
+            &current,
+        );
 
         // Package-level `is rw` accessors with arguments (for example
         // `Crane::At.at($root, @path)`) return the selected container itself.

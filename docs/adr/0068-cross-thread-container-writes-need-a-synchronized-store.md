@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 open)
+- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 started — see §8)
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
@@ -366,3 +366,46 @@ Two properties keep it deadlock-free and affordable, and both are load-bearing:
   mutex. §6 question 4 is answered by placement rather than measurement: the gate
   sits in `ContainerStructGuard`, not in `gc_contents_mut`, so the primitive's
   147 other call sites are untouched.
+
+## 8. Step 3, first slice (2026-09-06): route 3 is classified, and it was the worst one
+
+§3 left route 3 (an object attribute written from two threads) **Unresolved** —
+"the probe reached none of the aliased-store sites this session probed, nor
+`gc_data_mut`, nor the computed-attr sites". Re-probed with the §1.1 harness now
+that the harness is cheap (§7.1):
+
+| route | before | after |
+|---|---|---|
+| `$obj.attr[$i] = v` from 20 threads | **96 / 96** | **0 / 240** (24-way) |
+| `$obj.attr{$k} = v` from 20 threads | 0 / 96 | 0 / 240 (24-way) |
+| `$obj.attr.push($v)` from 20 threads | **95 / 96** | **95 / 96 — still racing** |
+
+So route 3 is not merely exposed: at 96/96 it is the highest rate any route in
+this ADR has shown, with `corrupted size vs. prev_size`,
+`double free or corruption (top)` and a NaN-box tag panic, and with the
+name-keyed lane never consulted — which is exactly right, because an
+attribute-rooted store is not name-keyed at all. §3's "Unresolved" was a probe
+that missed, not an absence.
+
+The reason the earlier probe found nothing is worth recording: it looked for the
+*aliased-store* sites, and this route does not use them. `$obj.attr[$i] = v`
+lowers to `__mutsu_index_assign_method_lvalue`, whose whole body writes through
+the container the accessor just handed back — so the exclusion goes on **that
+container**, once, and covers every write in the function regardless of which
+internal helper performs it. That is the same "find the funnel, not the sites"
+shape §2 used for the celled route.
+
+### Still open in step 3
+
+- **A mutating METHOD on an attribute container** (`$obj.attr.push`) races at
+  95/96. It does not go through `__mutsu_index_assign_method_lvalue`, and four
+  breakpoint probes (`call_method_mut_with_values`, `try_native_array_mut`,
+  `proxy_subclass_array_mutate`, `gc_data_mut`'s aliased branch) all came back
+  cold, so its write site is not yet located. Locating it is the next
+  measurement, and the §1.2 oracle is the tool.
+- The other lane-decline reasons from §2 (twigil'd names, a container never in a
+  spawning frame's env) are unprobed.
+- Route 5 is still blocked behind the Channel-supply delivery bug, and §3.1's
+  `S17-procasync/stress.t` SIGSEGV is still unexplained.
+
+Pinned by `t/concurrent-attribute-element-store.t` (3 rows, green under raku).

@@ -54,9 +54,20 @@ ADR-0068 §4 step 3 — not one 149-site sweep.
 
 Three specific loose ends from the route audit:
 
-- **Route 3 (object attributes, `has @.seen is rw`) is unclassified.** It reaches
-  none of the probed aliased-store sites, nor `gc_data_mut`, nor the computed-attr
-  sites. Trace it before calling it covered or exposed.
+- ~~**Route 3 (object attributes) is unclassified.**~~ **CLASSIFIED AND HALF
+  FIXED (2026-09-06, ADR-0068 §8).** It was the worst route in the ADR: an
+  element store through an array attribute corrupted the heap on **96 of 96**
+  runs. The earlier probe missed because it looked for the *aliased-store* sites
+  and this route uses none of them — `$obj.attr[$i] = v` lowers to
+  `__mutsu_index_assign_method_lvalue`, whose whole body writes through the
+  container the accessor hands back, so the exclusion goes on that container.
+  Element stores (array and hash) are now 0/240 at 24-way.
+
+  **A mutating METHOD on an attribute container still races at 95/96**
+  (`$obj.attr.push($v)`). It does not go through that builtin, and four
+  breakpoint probes (`call_method_mut_with_values`, `try_native_array_mut`,
+  `proxy_subclass_array_mutate`, `gc_data_mut`'s aliased branch) came back cold,
+  so its write site is not located yet. That is the next measurement.
 - **Route 5 (`Channel.Supply` tap captures)** is exposed on the path oracle but
   blocked behind a separate deterministic Channel-supply delivery bug that
   drops/misorders values on a single unloaded run. Fix that first.
