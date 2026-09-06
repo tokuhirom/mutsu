@@ -189,8 +189,10 @@ impl Interpreter {
                     new_caps.named.entry(k).or_default().merge(v);
                 }
                 new_caps.positional.append(&mut inner_caps.positional);
-                new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                 super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                new_caps
+                    .regex_vars
+                    .extend(std::mem::take(&mut inner_caps.regex_vars));
                 out.push((end, new_caps));
             }
         }
@@ -436,8 +438,10 @@ impl Interpreter {
                         new_caps.named.entry(k).or_default().merge(v);
                     }
                     new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                    new_caps
+                        .regex_vars
+                        .extend(std::mem::take(&mut inner_caps.regex_vars));
                     best = (end, new_caps);
                 }
             }

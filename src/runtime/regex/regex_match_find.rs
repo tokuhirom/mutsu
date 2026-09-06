@@ -10,15 +10,10 @@ impl Interpreter {
     /// Ranking key for selecting the best full (anchored) match: prefer the
     /// longest end, then more captures. Equal keys are left to the caller's
     /// STABLE sort, which preserves DFS priority order (highest priority first).
-    fn full_match_rank(m: &(usize, RegexCaptures)) -> (usize, usize, usize, usize) {
+    fn full_match_rank(m: &(usize, RegexCaptures)) -> (usize, usize, usize) {
         let (end, caps) = m;
         let total_named: usize = caps.named.values().map(|v| v.nodes.len()).sum();
-        (
-            *end,
-            caps.positional.len(),
-            total_named,
-            caps.code_blocks.len(),
-        )
+        (*end, caps.positional.len(), total_named)
     }
 
     /// Match `pattern` anchored at the start of `text` and require it to cover the

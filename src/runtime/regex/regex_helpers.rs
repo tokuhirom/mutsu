@@ -7,9 +7,6 @@ use unicode_segmentation::UnicodeSegmentation;
 
 thread_local! {
     pub(super) static PENDING_REGEX_GOAL_FAILURE: RefCell<Option<(String, usize)>> = const { RefCell::new(None) };
-    /// Collects plain (non-assertion) code blocks that should be executed eagerly
-    /// during regex matching, even if the overall match fails. Used by `comb` etc.
-    pub(crate) static EAGER_CODE_BLOCKS: RefCell<Option<Vec<CodeBlockContext>>> = const { RefCell::new(None) };
     /// Declarative-prefix (LTM) mode. While set, the matcher is measuring *how far
     /// a candidate declaratively matches*, not producing a match — so a code atom
     /// (`{ … }`, `<?{ … }>`, `<!{ … }>`) must NOT be executed. Rakudo builds its LTM
@@ -391,38 +388,6 @@ impl Drop for ReducedSubruleGuard {
 /// Look up a `$*` dynamic var in the reduce-time overlay (see
 /// `REGEX_DYNVAR_OVERLAY`). `name` is the env form without sigil (e.g. `*LEFT`).
 /// Returns `None` when the overlay is inactive or has no entry for the name.
-/// Must this regex `{ … }` block stay on the **reduce-time** path rather than
-/// running inline during the match?
-///
-/// One construct still needs the post-match bottom-up walk
-/// (`reduce_regex_captures_made`) and cannot be answered while matching: a
-/// **dynamic** variable (`$*x`), because a rule's `:my $*x` is one binding per
-/// match, installed and read back around each node's reduce step
-/// (`install_fresh_rule_dynvars` / `record_rule_dynvars`) so the node's action
-/// method sees its own match's value, and because the bindings a rule's `$*`
-/// parameters established travel with the block in `CodeBlockContext.dyn_params`.
-///
-/// Everything else — `make` included — runs inline, as raku does, so its writes
-/// are visible to the atoms that follow it in the same match. `make` used to
-/// defer as well, on the theory that a node's AST is built from its
-/// already-reduced children; measuring raku showed the opposite ordering: the
-/// child's `make` has run by the time the parent's cursor passes the subrule, so
-/// running the parent's block inline is what makes `make $<child>.made` work.
-/// See `news/2026-09/grammar-inline-code-block-order.md`.
-pub(crate) fn code_block_defers_to_reduce(code: &str) -> bool {
-    code_block_uses_dynamic_var(code)
-}
-
-/// Does the block mention a dynamic variable (`$*x`, `@*x`, `%*x`)?
-fn code_block_uses_dynamic_var(code: &str) -> bool {
-    let bytes = code.as_bytes();
-    bytes.windows(3).any(|w| {
-        matches!(w[0], b'$' | b'@' | b'%')
-            && w[1] == b'*'
-            && (w[2].is_ascii_alphabetic() || w[2] == b'_')
-    })
-}
-
 pub(crate) fn dynvar_overlay_get(name: &str) -> Option<Value> {
     REGEX_DYNVAR_OVERLAY.with(|slot| slot.borrow().as_ref().and_then(|m| m.get(name).cloned()))
 }
@@ -783,16 +748,6 @@ pub(super) fn current_match_target() -> Option<MatchTarget> {
     CURRENT_MATCH_TARGET.with(|s| s.borrow().last().cloned())
 }
 
-/// An owned subject for a Match builder: the given one, else the live engine
-/// scope's, else an empty subject (unreachable in practice — callers always
-/// run either with an explicit target or inside a live match).
-pub(in crate::runtime) fn target_or_empty(target: Option<&MatchTarget>) -> MatchTarget {
-    target
-        .cloned()
-        .or_else(current_match_target)
-        .unwrap_or_else(|| MatchTarget::new(""))
-}
-
 /// Map a position from stripped char space back to original char space.
 pub(super) fn map_pos(pos: usize, pos_map: &[usize], orig_len: usize) -> usize {
     if pos < pos_map.len() {
@@ -1028,7 +983,14 @@ pub(super) fn merge_regex_captures(
         dst.capture_alias_map.insert(k, v);
     }
     dst.positional.append(&mut src.positional);
-    dst.code_blocks.append(&mut src.code_blocks);
+    // Writes an inline `{ … }` made to the regex's own `:my`/`:let` lexicals are
+    // in the same lexical scope as the level being merged into (this helper only
+    // folds inline sub-patterns — a conjunction branch, a `~` goal), so they come
+    // with it. Without this a `[ … { $x = … } … ]` inside one of those shapes
+    // silently lost the write.
+    for (k, v) in src.regex_vars.drain() {
+        dst.regex_vars.insert(k, v);
+    }
     for (k, v) in src.hash_captures.drain() {
         dst.hash_captures.entry(k).or_default().extend(v);
     }
@@ -1184,9 +1146,8 @@ pub(super) fn fold_quantified_captures(
     caps.positional.extend(folded);
 }
 
-/// Materialize the positional slots' texts through the engine's subject —
-/// the snapshot a `CodeBlockContext` carries (ADR-0016 P4). Built at snapshot
-/// time from the same `chars` the spans were recorded against, so the
+/// Materialize the positional slots' texts through the engine's subject
+/// (ADR-0016 P4), from the same `chars` the spans were recorded against, so the
 /// semantics match the pre-P4 stored-text axis exactly.
 pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
     slots
@@ -1195,9 +1156,8 @@ pub(super) fn pos_slot_texts(slots: &[PosSlot], chars: &[char]) -> Vec<String> {
         .collect()
 }
 
-/// [`pos_slot_texts`] for the named axis: the per-name text lists a
-/// `CodeBlockContext` snapshot carries. Silent-action marker keys never had
-/// text entries pre-P4 and are skipped.
+/// [`pos_slot_texts`] for the named axis: the per-name text lists. Silent-action
+/// marker keys never had text entries pre-P4 and are skipped.
 pub(super) fn named_slot_texts(
     named: &HashMap<crate::symbol::Symbol, NamedSlot>,
     chars: &[char],

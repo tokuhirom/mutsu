@@ -59,7 +59,6 @@ pub(super) enum Undo {
         key: String,
         prev: Option<Value>,
     },
-    CodeBlocksLen(usize),
     CaptureStart(Option<usize>),
     CaptureEnd(Option<usize>),
     Sym(Option<String>),
@@ -157,7 +156,6 @@ impl CapStore {
                         caps.regex_vars.remove(&key);
                     }
                 },
-                Undo::CodeBlocksLen(len) => caps.code_blocks.truncate(len),
                 Undo::CaptureStart(prev) => caps.capture_start = prev,
                 Undo::CaptureEnd(prev) => caps.capture_end = prev,
                 Undo::Sym(prev) => caps.sym = prev,
@@ -200,7 +198,7 @@ impl CapStore {
     /// Apply a candidate delta (a `RegexCaptures` built relative to an empty
     /// baseline) to the store, recording undo. Merges exactly the fields the
     /// old by-value merge paths handled: named/named_subcaps/named_quantified,
-    /// capture_alias_map, the positional slots, code_blocks, hash_captures,
+    /// capture_alias_map, the positional slots, hash_captures,
     /// regex_vars, capture markers, and sym. `positional_slots` and the
     /// per-level metadata (from/to/match_from) are intentionally NOT merged.
     pub(super) fn merge_delta(&mut self, mut delta: RegexCaptures) {
@@ -216,11 +214,6 @@ impl CapStore {
         if !delta.positional.is_empty() {
             self.record_pos_lens();
             self.caps.positional.append(&mut delta.positional);
-        }
-        if !delta.code_blocks.is_empty() {
-            self.trail
-                .push(Undo::CodeBlocksLen(self.caps.code_blocks.len()));
-            self.caps.code_blocks.append(&mut delta.code_blocks);
         }
         for (k, v) in delta.hash_captures.drain() {
             self.record_hash_cap_key(&k);

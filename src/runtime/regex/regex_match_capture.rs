@@ -265,7 +265,6 @@ impl Interpreter {
                             new_caps.capture_alias_map.insert(k, v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
-                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
@@ -320,7 +319,6 @@ impl Interpreter {
                             new_caps.named.entry(k).or_default().merge(v);
                         }
                         new_caps.positional.append(&mut inner_caps.positional);
-                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
                         return Some((next, new_caps));
@@ -466,68 +464,35 @@ impl Interpreter {
                     }
                 }
                 let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
-                // raku runs a plain `{ … }` block inline, left-to-right, during
-                // matching: a write to an in-regex `:my` lexical is visible to the
-                // atoms that follow it (YAMLish's `root-block` computes its indent
-                // this way), a `make` is visible to a later block in the same rule
-                // as `$/.made`, and a subrule's `make` has already landed on the
-                // child node by the time the parent's next block reads
-                // `$<child>.made`. Run it here instead of recording it for the
-                // reduce-time replay — recording it as well would execute it twice.
-                // A block inside a later `||` branch is no longer a special case:
-                // `walk_seq_alternation` only evaluates that branch once raku's
-                // cursor would enter it, so reaching this point means the block
-                // really is on the cursor's path.
-                if !super::regex_helpers::code_block_defers_to_reduce(code) {
-                    let outcome =
-                        self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
-                    // The block `die`d: fail the match so the engine unwinds; the
-                    // parked pending error is re-raised at the match entry point.
-                    if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some())
-                    {
-                        return None;
-                    }
-                    let mut new_caps = RegexCaptures::default();
-                    new_caps.regex_vars.extend(outcome.writes);
-                    // The `make` belongs to the rule node being matched: it rides
-                    // the capture delta so the trail undoes it if this branch is
-                    // abandoned, and `build_named_candidates_from_inner` commits it
-                    // to the subrule's own node rather than the parent's.
-                    new_caps.ast = outcome.made;
-                    return Some((pos, new_caps));
+                // raku runs EVERY plain `{ … }` block inline, left-to-right,
+                // during matching: a write to an in-regex `:my` lexical is
+                // visible to the atoms that follow it (YAMLish's `root-block`
+                // computes its indent this way), a `make` is visible to a later
+                // block in the same rule as `$/.made`, and a subrule's `make` has
+                // already landed on the child node by the time the parent's next
+                // block reads `$<child>.made`. So does a block that mentions a
+                // `$*` dynamic variable: the rule's `:my $*x` declaration and its
+                // `$*` parameters are both live in `self.env` right here, and the
+                // per-match value the block writes travels onward on the capture
+                // delta's `regex_vars`, which `install_fresh_rule_dynvars` reads
+                // back at reduce time. A block inside a later `||` branch is not a
+                // special case either: `walk_seq_alternation` only evaluates that
+                // branch once raku's cursor would enter it, so reaching this point
+                // means the block really is on the cursor's path.
+                let outcome =
+                    self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
+                // The block `die`d: fail the match so the engine unwinds; the
+                // parked pending error is re-raised at the match entry point.
+                if super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow().is_some()) {
+                    return None;
                 }
-                // A dynamic-variable-bearing block needs the ordering the bottom-up
-                // reduce walk provides, so it stays on that path.
                 let mut new_caps = RegexCaptures::default();
-                let ctx = CodeBlockContext {
-                    code: code.clone(),
-                    named: super::regex_helpers::named_slot_texts(&current_caps.named, chars),
-                    matched_so_far,
-                    positional: super::regex_helpers::pos_slot_texts(
-                        &current_caps.positional,
-                        chars,
-                    ),
-                    // Lexicals only. A `:my $*x` is a dynamic variable owned by
-                    // the per-rule dynvar machinery, which deliberately leaves
-                    // its write installed for the action walk — snapshotting and
-                    // restoring it around the block would undo that
-                    // (t/grammar-per-match-dynvar-action.t).
-                    regex_vars: current_caps
-                        .regex_vars
-                        .iter()
-                        .filter(|(k, _)| !super::regex_helpers::is_dynamic_regex_var_key(k))
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect(),
-                    dyn_params: super::regex_dynparams::active_dynamic_params(),
-                };
-                // If eager code block collection is enabled, push immediately
-                // so the block is captured even if the overall match fails later.
-                super::regex_helpers::EAGER_CODE_BLOCKS.with(|slot| {
-                    if let Some(ref mut vec) = *slot.borrow_mut() {
-                        vec.push(ctx.clone());
-                    }
-                });
-                new_caps.code_blocks.push(ctx);
+                new_caps.regex_vars.extend(outcome.writes);
+                // The `make` belongs to the rule node being matched: it rides
+                // the capture delta so the trail undoes it if this branch is
+                // abandoned, and `build_named_candidates_from_inner` commits it
+                // to the subrule's own node rather than the parent's.
+                new_caps.ast = outcome.made;
                 return Some((pos, new_caps));
             }
             RegexAtom::ClosureInterpolation { code } => {

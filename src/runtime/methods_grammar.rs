@@ -594,17 +594,6 @@ impl Interpreter {
             // (e.g. fired a delimiter finalizer). Reset it so the real match
             // begins from the initial dynamic-var state in `self.env`.
             super::regex::regex_helpers::dynvar_overlay_reset_scan();
-            // Collect embedded `{ ... }` code blocks eagerly so their side effects
-            // (e.g. `regex TOP { x { $x = 42 } }` mutating an outer lexical) persist
-            // even when the OVERALL parse fails because the rule matched a prefix but
-            // not the whole string (`.parse('xxx')` on a rule matching one `x`).
-            // raku runs such blocks as the cursor reaches them, regardless of the
-            // final parse verdict.
-            let want_eager = (method == "parse" || method == "parsefile")
-                && self.has_code_block_in_prefix(&pattern);
-            if want_eager {
-                self.enable_eager_code_blocks();
-            }
             // When `.parse` fails because the start rule matched only a PREFIX,
             // that prefix's match tree is still what Rakudo dispatched actions
             // over at reduce time, so keep it instead of throwing it away.
@@ -624,23 +613,17 @@ impl Interpreter {
             } else {
                 self.regex_match_with_captures(&pattern, &text)
             };
-            // Always drain the eager buffer (resets the thread-local). Only run it
-            // on the FAILURE path; on success the winning `captures.code_blocks`
-            // (executed below) are authoritative — the eager buffer over-collects
-            // backtracked branches.
-            let eager_blocks = if want_eager {
-                self.drain_eager_code_blocks()
-            } else {
-                Vec::new()
-            };
             // Check for pending regex error (e.g., <sym> used outside proto regex)
             if let Some(err) = Self::take_pending_regex_error() {
                 return Err(err);
             }
             let Some(mut captures) = captures else {
-                if !eager_blocks.is_empty() {
-                    self.execute_regex_code_blocks(&eager_blocks);
-                }
+                // Embedded `{ … }` blocks already ran inline as the cursor
+                // reached them, so their side effects persist even though the
+                // OVERALL parse failed (`regex TOP { x { $x = 42 } }` against
+                // 'xxx') — raku runs them regardless of the final verdict, and
+                // nothing has to be replayed here to reproduce that.
+                //
                 // The parse failed, but subrules reduced along the way — raku
                 // already ran their actions. Dispatch the longest partial tree
                 // (which includes the start rule's own action) when there is one,

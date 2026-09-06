@@ -28,7 +28,6 @@ impl Value {
                 named: named.clone(),
                 capture_alias_map: HashMap::new(),
                 positional: positional.to_vec(),
-                code_blocks: Vec::new(),
                 regex_vars: HashMap::new(),
             })
         });

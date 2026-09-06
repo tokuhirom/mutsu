@@ -418,23 +418,15 @@ impl Interpreter {
             }
             Some(ValueView::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
-                // blocks that need eager execution (e.g. `{ take $/.Str }`).
+                // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
                 // For regular regexes, use the faster non-capturing path.
                 let has_code = self.has_code_block_in_prefix(&pat);
                 if has_code {
-                    self.enable_eager_code_blocks();
                     let mut matches = self.regex_find_all_with_caps(&pat, &text);
-                    let eager_blocks = self.drain_eager_code_blocks();
-                    if !eager_blocks.is_empty() {
-                        self.execute_regex_code_blocks(&eager_blocks);
-                    } else {
-                        for (_, _, caps) in &mut matches {
-                            if !caps.code_blocks.is_empty()
-                                || caps.named.values().any(|slot| !slot.nodes.is_empty())
-                            {
-                                let ct = caps.target_or_new(&text);
-                                self.reduce_regex_captures_made(caps, Some(&ct));
-                            }
+                    for (_, _, caps) in &mut matches {
+                        if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
+                            let ct = caps.target_or_new(&text);
+                            self.reduce_regex_captures_made(caps, Some(&ct));
                         }
                     }
                     if return_match {
