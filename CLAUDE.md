@@ -415,6 +415,24 @@ Agent worktrees under `.claude/worktrees/` and cargo caches under `target/` are 
 
 This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
 
+### Ephemeral containers self-provision via a SessionStart hook
+
+Sessions started from the Claude app / Claude Code on the web get a **fresh container** whose base
+image usually ships a rustc older than this repo compiles under and no `raku` at all. Both are fixed
+automatically by `.claude/hooks/session-start.sh`, registered as a `SessionStart` hook in
+`.claude/settings.json`: it installs the highest Rust version declared by the repo (the `ci.yml`
+toolchain pin, `Cargo.toml`'s `rust-version`, `.mise.toml`) via rustup, runs
+`.agents/skills/install-raku/install-raku.sh` when `raku` is missing, and warms the crate cache with
+`cargo fetch`. It is idempotent (~0.3s when everything is already in place) and does nothing on a
+local checkout unless `MUTSU_SETUP_FORCE=1` is set — a developer machine is pinned by `.mise.toml`
+and owns its own toolchain.
+
+So **do not hand-install rustc or rakudo at the start of a remote session** — it has already
+happened. If a build still fails with `E0658`, the hook did not run (check for its
+`session-start: environment ready` line) and `.claude/skills/rustc-too-old/SKILL.md` applies.
+Whenever a version pin moves, the hook follows it with no edit; only the *sources* of the pins are
+hardcoded, so add a new one there if the repo ever grows a `rust-toolchain.toml`.
+
 ## Test::Util function workout
 
 When the user says **"Test::Util workout"** (or similar), follow **`.agents/skills/test-util-workout/SKILL.md`**: pick one function from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, write `t/<function-name>.t`, fix the interpreter (in `src/runtime/test_functions.rs`, never as a core builtin) until it passes, and land it as a PR.

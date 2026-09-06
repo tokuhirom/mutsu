@@ -35,6 +35,10 @@ tmp-lock-test-*.txt
 
 target-local/
 .claude/worktrees/
+# The bare `hooks` rule above (a stray-git-dir artifact from tests) would
+# otherwise swallow the SessionStart provisioning hook, which is tracked.
+!.claude/hooks/
+!.claude/hooks/*
 .codex
 .codex/
 
