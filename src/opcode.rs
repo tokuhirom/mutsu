@@ -956,6 +956,41 @@ pub(crate) enum OpCode {
     /// identity. Consumed (and unconditionally cleared) at CallMethod entry, so
     /// it cannot leak past the one dispatch it was emitted for.
     MarkAccessorRefContext,
+    /// ADR-0067, the E6 producer: [`Self::MarkAccessorRefContext`] emitted
+    /// before the *invocant* of an lvalue method call (`$c.v.snitch = 9`), and
+    /// honoured only when the program could actually have a raw-invocant
+    /// callee.
+    ///
+    /// The compiler cannot decide that: rawness depends on the invocant's
+    /// runtime type and, for the dynamic spellings, on a runtime method-name
+    /// string, so the marker is emitted for every `$obj.acc.m = v`. But the
+    /// container it asks for is *only* consumed when the callee binds parameter
+    /// zero raw, and slice 3a already maintains exactly that question as its VM
+    /// gate's pre-filter — a set-only registration flag
+    /// (`Registry::any_raw_invocant_method`, read through slice 3b's lock-free
+    /// mirror `any_raw_invocant_method_possible`) or/ed with the native
+    /// raw-invocant table, keyed by the method's name. This op asks the same
+    /// pair before setting the flag (see the operand below), so an lvalue
+    /// invocant whose callee cannot be raw pays one predicate instead of an
+    /// attribute-slot promotion plus an MRO walk per iteration. Measured: on a
+    /// tight `$o.i.w = $n` loop the ungated marker cost ~14%; gated it is
+    /// within noise of not emitting it at all.
+    ///
+    /// Sharing `MarkAccessorRefContext`'s flag rather than adding a second one
+    /// is deliberate — the *consumer* (`try_fast_accessor_read`'s `want_ref`
+    /// branch) must stay one code path, or the container the `:=` bind gets and
+    /// the container the lvalue invocant gets could drift apart.
+    ///
+    /// The operand is the constant-pool index of the *outer* method's name — the
+    /// one whose invocant this is — or `None` for the dynamic spelling
+    /// (`$o.v."$name"() = v`), where the name is only a runtime string. With the
+    /// name in hand the gate is character-for-character slice 3a's own filter
+    /// (`any_raw_invocant_method || native_method_returns_raw_invocant(name)`),
+    /// evaluated one op earlier; without it the gate must pass, which is the
+    /// conservative direction. This is what keeps `$o.i.w = $n` free even under
+    /// 6.e, where the native `snitch` row exists and a name-blind gate would let
+    /// every lvalue invocant through.
+    MarkLvalueInvocantRefContext(Option<u32>),
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
     /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
     /// named source variable's container should be shared by reference. The

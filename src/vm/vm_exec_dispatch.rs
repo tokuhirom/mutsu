@@ -2291,6 +2291,29 @@ impl Interpreter {
                 self.accessor_ref_pending = true;
                 *ip += 1;
             }
+            OpCode::MarkLvalueInvocantRefContext(method_name_idx) => {
+                // ADR-0067's E6 producer: only a raw-invocant callee can consume
+                // the container this asks for, so ask slice 3a's filter first.
+                // See the opcode's doc comment.
+                let raw_callee_possible = match method_name_idx {
+                    Some(idx) => crate::runtime::raw_invocant::native_method_returns_raw_invocant(
+                        Self::const_str(code, *idx),
+                    ),
+                    // A dynamic method name is only knowable at run time; pass.
+                    None => true,
+                };
+                // The user half reads slice 3b's lock-free mirror of
+                // `Registry::any_raw_invocant_method` rather than the flag
+                // itself: both are raised by the same writer, and this op runs
+                // per `$obj.acc.m = v`, where a registry read-lock acquisition
+                // is not worth paying for a question that is almost always no.
+                if raw_callee_possible
+                    || crate::runtime::raw_invocant::any_raw_invocant_method_possible()
+                {
+                    self.accessor_ref_pending = true;
+                }
+                *ip += 1;
+            }
             OpCode::MarkArrayShareSource(name_idx) => {
                 self.array_share_context.set(true);
                 self.array_share_source

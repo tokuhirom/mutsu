@@ -45,7 +45,9 @@ pub use lib_paths::{
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
-pub(crate) use registry::{current_language_version, set_current_language_version};
+pub(crate) use registry::{
+    current_language_version, current_language_version_starts_with, set_current_language_version,
+};
 pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
 pub(crate) use slang_modes::{
     apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes, slang_modes,

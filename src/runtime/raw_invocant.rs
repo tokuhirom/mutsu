@@ -80,7 +80,7 @@ pub(crate) fn native_method_returns_raw_invocant(method: &str) -> bool {
         // `method snitch(\snitchee: &snitcher = &note)` — 6.e only, so the
         // method simply is not there below that version (rakudo reports
         // `No such method`), and neither is the lvalue shape.
-        "snitch" => crate::parser::current_language_version().starts_with("6.e"),
+        "snitch" => crate::parser::current_language_version_starts_with("6.e"),
         _ => false,
     }
 }

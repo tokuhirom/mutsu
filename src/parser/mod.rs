@@ -92,6 +92,12 @@ pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
 }
 
+/// `current_language_version().starts_with(prefix)` without the `String` clone —
+/// for VM hot paths. See the implementation's doc comment.
+pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
+    stmt::simple::current_language_version_starts_with(prefix)
+}
+
 pub(crate) fn set_current_language_version(version: &str) {
     stmt::simple::set_current_language_version(version);
 }

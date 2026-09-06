@@ -1,12 +1,12 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
 - Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05, Slice 3b
-  2026-09-06; Slice 3 was re-scoped into 3a/3b on 2026-09-05 after measurement,
-  and 3a's E6 row split off again into the rw-attribute-accessor producer;
-  Slice 4 absorbed two of Slice 5's three acceptance rows, again after
-  measurement; Slice 3b shipped the *named-receiver* half of the arrival
-  direction and split its subscript-receiver rows (I3/K3) off into a producer
-  slice of their own; the E6 producer and that subscript producer remain open)
+  and the E6 rw-attribute-accessor producer 2026-09-06; Slice 3 was re-scoped
+  into 3a/3b on 2026-09-05 after measurement, and 3a's E6 row split off again
+  into that producer; Slice 4 absorbed two of Slice 5's three acceptance rows,
+  again after measurement; Slice 3b shipped the *named-receiver* half of the
+  arrival direction and split its subscript-receiver rows (I3/K3) off into a
+  producer slice of their own, which is the only slice still open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -640,6 +640,16 @@ slice. The mutation discriminator, not `.VAR`, is what settled this: `$c.v`
 produces a container for a `:=` bind but not in argument position
 (`sub g($y is rw) {...}; g($c.v)` dies with "expects a writable container").
 
+> **Correction (2026-09-06, from the E6 producer's own re-measurement).** That
+> last parenthesis attributes **mutsu's** diagnostic to raku. raku answers `9`
+> for `sub g($y is rw) { $y = 9 }; g($c.v)`; it is mutsu that dies with
+> "expects a writable container". The conclusion the row was cited for — that
+> E6 is a producer question and `.VAR` is not the discriminator — is unaffected,
+> but argument position is a *third* consumer that is still broken, and its
+> `is raw` twin (`sub f(\x) is raw { x }; f($c.v) = 9`) is **silently wrong**
+> (`42` where raku says `9`), not merely a copy as the non-goals section says.
+> Recorded as `todo/tickets/attribute-accessor-container-lost-in-argument-position.md`.
+
 **Also still refusing after 3a, all loudly (not silently wrong), all out of
 scope:** `@a.snitch = (7,8)` and `%h.snitch = (b=>2)` (aggregate invocants —
 route 4's scalar restriction declines them), `$a.list = 5` (list assignment, see
@@ -823,6 +833,137 @@ before replacing it, and five regression rows — the two non-raw invocant
 controls, an ordinary method whose value semantics must survive the
 program-wide pre-filter being on, and a read-only raw-invocant method that
 must stay a plain rvalue call.
+
+#### The E6 producer — IMPLEMENTED 2026-09-06
+
+The slice 3a paragraph above split this row off with a prescription: emit
+`MarkAccessorRefContext` before an lvalue invocant, pair it with the
+decontainerize chokepoint, re-measure every `$obj.acc.m = v` shape. Every row of
+the Correction-3 and slice-3a tables plus a fresh 29-row `$obj.acc.m = v` survey
+was re-measured against raku v2026.07 and a debug `mutsu` built from `main` at
+`30d6754f5` before any code was written. The prescription held; two things
+around it did not.
+
+**What shipped.**
+
+- **The emission** (`Compiler::lvalue_invocant_wants_accessor_ref`,
+  `src/compiler/expr_call.rs`), in the generic `CallFunc` argument loop: when a
+  `__mutsu_assign_method_lvalue` call's argument 0 is an argument-less,
+  unmodified, unquoted `Expr::MethodCall`, insert the marker before that call's
+  trailing `CallMethod`/`CallMethodMut`. The insertion helper is slice 4's
+  existing `mark_trailing_method_call_as_accessor_ref`, refactored to take the
+  marker so both spellings share one site.
+- **The op is `MarkLvalueInvocantRefContext`, not `MarkAccessorRefContext`** —
+  a *runtime-gated* twin. See the cost note below for why. It sets the same
+  `accessor_ref_pending` flag, deliberately: the consumer
+  (`try_fast_accessor_read`'s `want_ref` branch) must stay one code path, or the
+  container a `:=` bind gets and the container an lvalue invocant gets could
+  drift apart.
+- **No new consumer.** Slice 3a's `try_raw_invocant_container_lvalue` already
+  writes through a `ContainerRef` invocant, and its gate
+  (`box_raw_lvalue_invocant`) already returns early when `args[0]` is one, so
+  the container is neither double-boxed nor re-derived. This is part 4 of the
+  ADR working exactly as claimed: three producers now, one consumer.
+
+**The narrowness is in the consumer, not the emission — which is what makes an
+unconditional compile-side change safe.** Rawness is not statically known, so
+the marker is emitted for every `$obj.acc.m = v`. But
+`try_fast_accessor_read` hands back a container only for a zero-argument read of
+a **public `is rw` scalar** attribute accessor (`rw_accessor_type_constraint`
+is `Some` only for those, and `Array`/`Hash`/`Mixin` values are excluded), and
+ignores the flag entirely otherwise. Verified with `--dump-bytecode`:
+`benchmarks/method-call.raku`, `benchmarks/bench-class.raku` and a
+`$p.x = $i` loop compile **byte-identically** with and without the change.
+
+**Slice 3a's "single chokepoint" claim was not actually true, and E6 is what
+exposed it.** 3a records that the target is decontainerized "at a single
+chokepoint right after the branch declines", which "keeps the boxing invisible
+to the other ~40 branches". One `Instance`-matching branch sat *above* it: the
+IO::Path `.SPEC`/`.CWD` read-only guard. With a container invocant
+(`class C { has IO::Path $.p is rw }; $c.p.SPEC = 5`) it stopped matching and the
+diagnostic degraded from `Cannot modify an immutable IO::Spec::Unix
+((IO::Spec::Unix))` to a bare `No matching candidates for method: SPEC`. The
+guard now sits **below** the chokepoint, where the ADR's own rule always said it
+belonged; neither branch above it cares (the type-object half requires a
+`Package`, the raw-invocant half requires a raw-invocant declaration, and
+`.SPEC` is neither).
+
+**A cost that was measured, and designed out rather than paid — in three
+steps, each of which the previous step's measurement forced.** All numbers are
+same-binary env-switch A/B on a release build (comparing two binaries is not
+reliable), min-of-N with the two arms **interleaved** so load drift hits both.
+
+1. **The plain `MarkAccessorRefContext` cost ~14%** on a tight `$o.i.w = $n`
+   loop (`class I { has $.w is rw }; class O { has $.i is rw }`). The extra
+   opcode is not the cost: the `want_ref` branch runs
+   `rw_accessor_type_constraint` (a `collect_class_attributes` plus an MRO walk)
+   and `promote_attr_to_container` on every iteration, to mint a container the
+   chokepoint then throws away because `.w` is not raw.
+2. **A name-blind gate was not enough, and cost a heap allocation.** Gating on
+   "could *any* callee be raw" (`Registry::any_raw_invocant_method` plus the
+   native table) fixed the 6.d case but left 6.e paying the full price, because
+   the native `snitch` row exists there for every method name. Worse, asking the
+   native table called `current_language_version()`, which **clones a `String`**
+   — a heap allocation per iteration, measured at ~29%. That is now
+   `current_language_version_starts_with`, a non-allocating prefix check on the
+   same thread-local.
+3. **The gate carries the outer method's name**, which the compiler does know in
+   every spelling but the dynamic one. The runtime test is then
+   character-for-character slice 3a's own filter
+   (`native_method_returns_raw_invocant(name) || any_raw_invocant_method`),
+   evaluated one op earlier, and `$o.i.w = $n` declines even under 6.e —
+   confirmed under `rust-gdb` by breaking on the flag-setting line and observing
+   it never fire.
+
+**Final numbers** (min of 15 interleaved pairs, on a box under sibling load):
+`$o.i.w = $n` under 6.e **+1.9%**, the same loop under 6.d **-4.4%**. The noise
+floor is calibrated by the control: `$p.x = $i` compiles **byte-identically** in
+both arms (`--dump-bytecode` diff, as do `benchmarks/method-call.raku` and
+`benchmarks/bench-class.raku`) and still measured **+6.3%**, so both figures are
+inside the noise. `method-call.raku` and `bench-class.raku` measured 0.0%.
+
+**What went green.** E6 itself (`$c.v.snitch = 9` -> `42` then `9`), its typed,
+`Str`-valued, unset, inherited, role-composed and `self`-rooted twins, the
+depth-2 accessor chain (`$o.i.w.snitch = 9`), and the *user*-declared
+raw-invocant callees over the same producer — all three rw-capable spellings
+(`is raw`, `is rw`, `return-rw`) reached through `augment class Any`.
+
+**Still refusing after the E6 producer, all loudly, all measured:** the three
+contract controls (a non-rw attribute accessor, a raw-invocant routine that is
+not rw-capable, and an rw-capable routine whose invocant is not raw) plus a
+raw-invocant body that returns a value rather than a location; `.self` over a
+container invocant (an ADR non-goal); a computed invocant
+(`method thing { 42 }`); `$c.a[0].snitch = 9` (an lvalue invocant that is an
+*element* of an attribute-held array, whose compiled tail is `Index`, not a
+method call, so no marker is inserted); and everything slice 3a already listed.
+
+**Two rows the ADR's tables did not contain, both recorded rather than fixed:**
+
+- An `is rw` **method** (not an attribute accessor) as the lvalue invocant —
+  `class C { has $.v is rw; method acc is rw { $!v } }; $c.acc.snitch = 9` — is
+  out of reach, because `try_fast_accessor_read` bails as soon as the name
+  resolves to a `UserMethod` rather than an `Accessor`. The `:=` spelling of the
+  same read is broken too (`my $x := $c.acc` dies), so this is a missing
+  producer, not a missing consumer:
+  `todo/tickets/rw-method-result-is-not-a-container-for-bind-or-invocant.md`.
+- Argument position is a third consumer that still loses the container, and its
+  `is raw` twin is **silently wrong**:
+  `todo/tickets/attribute-accessor-container-lost-in-argument-position.md`. This
+  is also where slice 3a's discriminator row was misattributed — see the
+  correction note above.
+
+**Pinned by** `t/lvalue-invocant-attribute-accessor-container.t` (25 tests) and
+`t/lvalue-invocant-user-raw-method.t` (8 tests), both byte-identical under
+`mutsu` and `raku`. `.snitch` is given an explicit snitcher throughout so the
+observation lands in a variable rather than on stderr, which keeps the
+comparison over stdout alone. Between them they cover every green row above, the
+six controls, the runtime method-name spelling (the one shape whose marker
+carries no name, so its gate must pass), and the shapes that had to stay
+untouched: the plain `$c.v = 9`
+store, the `:=` bind producer, an rvalue accessor read still copying, a nested
+non-rw attribute store (and the object still rendering as itself, since the
+producer promotes attribute slots to shared cells), array- and hash-valued
+attribute element stores, and an argument-carrying rw accessor invocant.
 
 ### Slice 4 — the chain walk steps through an object
 
