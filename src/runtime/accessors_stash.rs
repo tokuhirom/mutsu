@@ -475,7 +475,17 @@ impl Interpreter {
                         continue;
                     }
                     let fq = format!("{module}::{name}");
-                    symbols.insert(format!("&{name}"), self.resolve_code_var(&fq));
+                    // A natively-provided module's routines are registered
+                    // under their BARE name (there is no `Mod::name`
+                    // `FunctionDef` to find), so the package-qualified lookup
+                    // yields Nil and the stash entry would exist with no value
+                    // behind it -- `::("Test::EXPORT::DEFAULT::&ok")` resolved
+                    // the path and then answered Nil.
+                    let mut code = self.resolve_code_var(&fq);
+                    if code.is_nil() {
+                        code = self.resolve_code_var(name);
+                    }
+                    symbols.insert(format!("&{name}"), code);
                 }
             }
             if let Some(vars) = self.exported_vars.get(module) {

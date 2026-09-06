@@ -352,6 +352,18 @@ impl Interpreter {
         if module == "NativeCall" {
             self.register_nativecall_exports();
         }
+        // The other native providers need the same treatment, and for the same
+        // reason: their exports are a real introspectable surface
+        // (`Mod::EXPORT::DEFAULT`), and nothing else populates `exported_subs`
+        // for a module that runs no `is export` declarations.
+        // Only `Test` for now: `JSON::Fast`/`JSON::Tiny`'s `to-json`/`from-json`
+        // are native builtins with no code-var form, so registering their names
+        // would build a stash whose entries resolve to `Nil` -- worse than not
+        // having it. See the ticket for that residue.
+        if module == "Test" && !Self::real_test_module_enabled() {
+            let names = crate::runtime::TEST_MODULE_EXPORTS.to_vec();
+            self.register_native_provider_exports("Test", &names);
+        }
         let result = if (module == "Test" && !Self::real_test_module_enabled())
             || matches!(
                 module,

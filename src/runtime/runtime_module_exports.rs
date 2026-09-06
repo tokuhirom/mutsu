@@ -166,6 +166,28 @@ impl Interpreter {
     /// The list is Rakudo's `NativeCall.rakumod` / `NativeCall::Types` export
     /// set: the trait that makes a sub native, the four helper routines, and the
     /// C type objects.
+    /// Record a NATIVELY-PROVIDED module's export list in `exported_subs`, so
+    /// its `EXPORT::DEFAULT` namespace is a real, symbolically navigable
+    /// package like any other module's.
+    ///
+    /// A module loaded from source populates `exported_subs` as its `is export`
+    /// declarations are registered, and `package_stash_value` builds
+    /// `Mod::EXPORT`/`Mod::EXPORT::<tag>` stashes from that table -- measured,
+    /// that whole path already matches raku for a user module, down to
+    /// `Mod.WHO.keys` listing `EXPORT`. A native provider runs no such
+    /// declarations, so its table stayed empty and
+    /// `::("Test::EXPORT::DEFAULT::&ok")` answered "No such symbol" where raku
+    /// resolves it. Same shape as `register_nativecall_exports` below, which is
+    /// why NativeCall never had the gap.
+    pub(crate) fn register_native_provider_exports(&mut self, module: &str, names: &[&str]) {
+        if self.exported_subs.contains_key(module) {
+            return;
+        }
+        for name in names {
+            self.register_exported_sub(module.to_string(), (*name).to_string(), Vec::new());
+        }
+    }
+
     pub(crate) fn register_nativecall_exports(&mut self) {
         const SUBS: [&str; 6] = [
             "trait_mod:<is>",
