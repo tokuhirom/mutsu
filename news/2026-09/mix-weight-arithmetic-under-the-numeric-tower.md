@@ -94,6 +94,26 @@ that needs `MixData` to hold `Value` weights, which reaches roughly 474
 one. The tower fix is exact for every weight the storage can represent, which is
 every decimal literal.
 
+**The same storage limit has a second face, found while verifying this change
+against raku on 2026-09-06: a weight whose value is integral loses its
+`Rat`-ness.** The decoding is `Int` first, so any `Rat` that happens to be a
+whole number decodes as an `Int`:
+
+```raku
+say (a => 6.0).Mix<a>.^name;                        # raku: Rat   mutsu: Int
+my $m = (a => 2.5).Mix (+) (a => 3.5).Mix;
+say $m<a>.^name;                                    # raku: Rat   mutsu: Int
+say (a => 2.5, b => 3.5).Mix.total.^name;           # raku: Rat   mutsu: Int
+```
+
+The *values* are right in every row (`6`), and the numeric tower itself is right
+— `(2.5 + 3.5).^name` is `Rat` in both. It is only the round trip through the
+`f64` that forgets which side of the tower the weight came from, exactly as the
+`1/3` row above does; this face was simply not visible until the arithmetic
+started producing exact sums. Both close together when `MixData` holds `Value`
+weights, and neither is worth a partial fix that would make the decoding depend
+on which operation produced the double.
+
 ## Pin
 
 `t/mix-weight-numeric-tower.t` — 40 tests covering `(+)`/`(-)`/`(.)`/`(^)` and
