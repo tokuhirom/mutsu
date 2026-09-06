@@ -243,6 +243,14 @@ impl Interpreter {
                 // If so, construct the QuantHash from those values instead of creating
                 // an empty one. This handles `my %h is Bag = <a b b c>`.
                 let current_val = self.read_local_slot_or_name(code, eff_slot, &name_str);
+                // ADR-0058: `my %r is SetHash = %h.map: {...}` binds the Seq
+                // into the slot BEFORE this trait runs (the declaration emits
+                // `MarkBindContext; SetLocal`, so `exec_set_local_op_inner`'s
+                // `@`/`%` reify is skipped), and the coercion below reads the
+                // elements through pure code. Run the callback first.
+                if let Some(v) = current_val.as_ref() {
+                    self.reify_map_grep_seq(v)?;
+                }
                 let has_init_values = match current_val.as_ref().map(Value::view) {
                     Some(ValueView::Hash(h)) => !h.is_empty(),
                     Some(ValueView::Array(a, _)) => !a.is_empty(),

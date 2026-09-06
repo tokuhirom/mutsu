@@ -24,6 +24,13 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // ADR-0058: a native method reads its ARGUMENTS' elements through pure
+        // Rust (the receiver is already handled by
+        // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
+        // `600.polymod((1..3).map(* * 3))` — must run its callback first.
+        if let Err(e) = self.reify_map_grep_seq_args(args) {
+            return Some(Err(e));
+        }
         let result = self.try_native_method_raw(target, method_sym, args);
         if let Some(Err(e)) = &result
             && e.is_warn()
@@ -650,6 +657,13 @@ impl Interpreter {
             {
                 return Some(result);
             }
+        }
+        // ADR-0058: `crate::builtins::native_function` is pure Rust that reads
+        // its arguments' elements directly, so a still-deferred `.map` Seq has
+        // to be pulled first (otherwise `join`/`say`/... read its empty seed).
+        // No-op for every other value and every other `SeqSource`.
+        if let Err(e) = self.reify_map_grep_seq_args(args) {
+            return Some(Err(e));
         }
         if args
             .iter()

@@ -299,6 +299,9 @@ impl Interpreter {
                 "Must specify a Promise or list of Promises to await",
             ));
         }
+        // ADR-0058: `await (^10).map({ start { … } })` hands us a Seq whose
+        // callback has not run yet — the Promises only exist once it does.
+        self.reify_map_grep_seq_args(args)?;
         let mut await_targets: Vec<Value> = Vec::new();
         for arg in args {
             self.await_collect_targets(arg.clone(), &mut await_targets)?;

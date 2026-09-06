@@ -65,6 +65,9 @@ impl Interpreter {
             return self.exec_scan_shortcircuit_reduction(sc_op, negate, scan, thunks);
         }
         let list_value = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0058: `[+] (2..N).map({...})` folds over the mapped elements, so
+        // a still-deferred `.map` operand has to run its callback first.
+        self.reify_map_grep_seq(&list_value)?;
         let input_is_lazy = crate::builtins::methods_0arg::is_value_lazy(&list_value);
         // For scan (triangle reduce) on infinite/lazy inputs, handle lazily
         // to avoid materializing the entire infinite range.

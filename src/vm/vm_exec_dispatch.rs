@@ -875,6 +875,18 @@ impl Interpreter {
                     Some(s) => s,
                     None => unreachable!("SetGlobal name must be a string constant"),
                 };
+                // ADR-0058: assigning a Seq to an `@`/`%` target reifies it
+                // (raku list semantics) -- the same rule `exec_set_local_op_inner`
+                // applies. An anonymous `my @ = EXPR` inside a nested block
+                // compiles to SetGlobal, not SetLocal, so without this a
+                // deferred `.map` initializer stored an empty array.
+                if !is_bind_ctx
+                    && !is_rebind
+                    && (name_str.starts_with('@') || name_str.starts_with('%'))
+                    && let Some(top) = self.stack.last().cloned()
+                {
+                    self.reify_map_grep_seq(&top)?;
+                }
                 // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
                 // `__ANON_STATE__` is a synthetic internal name that can never be a
                 // private attribute, package/class, sigilless-bound alias, or strict-
@@ -3140,7 +3152,18 @@ impl Interpreter {
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }
-                        ValueView::Seq(body) if body.needs_touch() => {
+                        // ADR-0058: a `.map`/`.grep` Seq assigned into a
+                        // container is itemized by that store, so the
+                        // statement's sink must NOT force it — measured
+                        // against raku: `my %h; %h<f> = (1..3).map({die});
+                        // say "alive"` prints "alive" and only `%h<f>.elems`
+                        // afterwards throws. A local `$x = SEQ` gets the same
+                        // exemption through `SeqBody::mark_itemized`; an
+                        // ELEMENT store has no equivalent hook, so recognise
+                        // the source kind here instead.
+                        ValueView::Seq(body)
+                            if body.needs_touch() && !body.is_map_grep_source() =>
+                        {
                             let body = std::sync::Arc::clone(&body);
                             self.sink_seq_body(&body)?;
                         }

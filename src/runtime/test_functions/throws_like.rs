@@ -27,7 +27,18 @@ impl Interpreter {
                 let saved_last_value = self.last_value.take();
                 let r = self.eval_test_block_value(&data.body, Some(data.id));
                 self.last_value = saved_last_value;
-                r
+                // ADR-0058: `throws-like` runs its block in SINK context (see
+                // the `last_value` force below for the `gather` twin), so a
+                // deferred `.map`/`.grep` the block returned must run its
+                // callback here — that is where the exception under test comes
+                // from (`throws-like { use fatal; "a".map: *.Int }`).
+                match r {
+                    Ok(val) => match self.sink_map_grep_seq(&val) {
+                        Ok(()) => Ok(val),
+                        Err(e) => Err(e),
+                    },
+                    err => err,
+                }
             }
             ValueView::Str(code) => {
                 let mut nested = Interpreter::new();
@@ -275,6 +286,12 @@ impl Interpreter {
                                     && ll.coroutine.is_some()
                                     && let Err(e) = nested.force_lazy_list_vm(&ll)
                                 {
+                                    Err(e)
+                                // ADR-0058: same sink contract for a deferred
+                                // `.map`/`.grep` Seq — its callback only runs
+                                // when the value is sunk, which is exactly what
+                                // `throws-like` is simulating here.
+                                } else if let Err(e) = nested.sink_map_grep_seq(&last_val) {
                                     Err(e)
                                 } else {
                                     Self::sink_failure_to_error(last_val)

@@ -7,6 +7,11 @@ impl Interpreter {
         right: Value,
         f: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0058: every binary operator below reads its operands' elements
+        // through pure code (set ops, comparison, `~`, ...), so a
+        // still-deferred `.map` operand has to run its callback first.
+        self.reify_map_grep_seq(&left)?;
+        self.reify_map_grep_seq(&right)?;
         // Auto-FETCH Proxy containers in binary operations
         let left = loan_env!(self, auto_fetch_proxy(&left))?;
         let right = loan_env!(self, auto_fetch_proxy(&right))?;

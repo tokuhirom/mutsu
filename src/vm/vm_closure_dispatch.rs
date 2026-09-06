@@ -112,6 +112,12 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0058: a slurpy/`@_` parameter FLATTENS a `Seq` argument
+        // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements), and the
+        // binder reads them through pure code -- so pull a still-deferred
+        // `.map`/`.grep` argument before binding. A `MapGrep` source is always
+        // finite, so this cannot hang.
+        self.reify_map_grep_seq_args(&args)?;
         // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores pragma state on drop -- including on a Rust panic unwind
         // through `call_compiled_closure_with_topic` below -- rather than a

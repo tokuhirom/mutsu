@@ -9,6 +9,15 @@ impl Interpreter {
         idx: u32,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // ADR-0058: assigning a Seq to an `@`/`%` target reifies it (raku list
+        // semantics) — the same rule `exec_set_local_op_inner` applies to the
+        // `my @a = SEQ` declaration form. This is the plain reassignment form
+        // (`(@p = (^5).map: {...}).tail`).
+        if (code.locals[idx].starts_with('@') || code.locals[idx].starts_with('%'))
+            && let Some(top) = self.stack.last().cloned()
+        {
+            self.reify_map_grep_seq(&top)?;
+        }
         // A whole `%`/`@` reassignment breaks every `:=`-bound element — drop the
         // read-only-element markers so a later `%h<k> = v` is writable again.
         if crate::env::elem_index_meta_possible() {

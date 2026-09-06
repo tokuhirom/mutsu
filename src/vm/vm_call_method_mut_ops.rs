@@ -684,6 +684,10 @@ impl Interpreter {
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
         let target = self.reify_or_consume_seq_target(target, method.as_str())?;
+        // ADR-0058: a mutating method reads its ARGUMENTS' elements through
+        // pure code (`@a.splice(1, 1, (7,8).map({...}))` flattens the Seq into
+        // the array), so a still-deferred `.map` argument has to run first.
+        self.reify_map_grep_seq_args(&args)?;
         // Mutating methods reached through `.VAR` must retain the underlying
         // cell so the established container writeback paths can update it.
         let target = if !matches!(method.as_str(), "WHAT" | "^name" | "VAR")

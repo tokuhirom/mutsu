@@ -2226,6 +2226,11 @@ impl Interpreter {
                 if let Some(is_hyper) = hyper_race_wrap
                     && let Some(result) = self.stack.pop()
                 {
+                    // ADR-0058: a large HyperSeq/RaceSeq `.map`/`.grep` falls
+                    // through to the ordinary array dispatch, which now returns
+                    // a Seq whose callback has not run; `value_to_list` below
+                    // reads it through pure code.
+                    self.reify_map_grep_seq(&result)?;
                     let result_items = crate::runtime::value_to_list(&result);
                     let wrapped = if is_hyper {
                         Value::hyper_seq(result_items)

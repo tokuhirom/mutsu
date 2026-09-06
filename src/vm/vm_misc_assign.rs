@@ -120,6 +120,15 @@ impl Interpreter {
         };
         self.check_readonly_for_modify(&name)?;
         self.check_dot_twigil_accessor_writable(&name)?;
+        // ADR-0058: assigning a Seq to an `@`/`%` target reifies it (raku list
+        // semantics) — the same rule `exec_set_local_op_inner` /
+        // `exec_assign_expr_local_op_inner` apply. This is the by-name
+        // reassignment form (an `@a = SEQ` inside a loop body).
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(top) = self.stack.last().cloned()
+        {
+            self.reify_map_grep_seq(&top)?;
+        }
         // A whole-container reassignment breaks every `:=`-bound element, so drop
         // the read-only-element markers (`%h<i> := 137; %h = (...)` makes `%h<i>`
         // writable again). Covers the tied-STORE path below too.

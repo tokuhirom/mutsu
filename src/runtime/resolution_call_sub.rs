@@ -267,6 +267,15 @@ impl Interpreter {
         args: Vec<Value>,
         merge_all: bool,
     ) -> Result<Value, RuntimeError> {
+        // ADR-0058: a slurpy parameter FLATTENS a `Seq` argument
+        // (`{ [+] @_ } o *.map(* * 2)` sums the mapped elements, not the Seq),
+        // and the binder reads those elements through pure code. Pull a
+        // still-deferred `.map`/`.grep` argument here rather than teaching
+        // every binding shape about it. A `MapGrep` source is always finite
+        // (its items were materialized at the `.map` call), so this cannot
+        // hang; it costs raku's argument-position laziness, which mutsu never
+        // had for `.map` anyway.
+        self.reify_map_grep_seq_args(&args)?;
         let func = Self::unwrap_callable_mixin(func);
         // Upgrade WeakSub to Sub transparently
         let func = match func.view() {
@@ -527,6 +536,11 @@ impl Interpreter {
                 data.env.get("__mutsu_compose_right").cloned(),
             ) {
                 let right_result = self.call_sub_value(right, call_args, false)?;
+                // ADR-0058: `composed_result_to_args` spreads a `Seq` result
+                // into the left callable's arguments by reading its elements
+                // through pure code, so a still-deferred `.map`/`.grep` result
+                // (`{ [+] @_ } o *.map(* * 2)`) has to run its callback first.
+                self.reify_map_grep_seq(&right_result)?;
                 let (left_params, left_param_defs) = self.callable_signature(&left);
                 let left_variadic = left_param_defs.iter().any(|pd| pd.slurpy && !pd.named);
                 let left_expects_single = match left.view() {

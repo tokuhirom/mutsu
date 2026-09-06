@@ -135,6 +135,12 @@ impl Interpreter {
     }
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
+        // ADR-0058: `"x" (elem) @xs.map({...})` tests membership in the MAPPED
+        // elements, which `as_list_items` below reads through pure code.
+        // Membership is a Bool, so a callback that throws here is reported as
+        // "not a member" rather than propagated -- the same shape every other
+        // pure predicate in this file uses.
+        let _ = self.reify_map_grep_seq(container);
         // ADR-0040 slices 1-2: the container is the RECEIVER of this membership
         // test, so its own element-itemization is not part of the question --
         // `my @e = 2, 1..2` makes `@e[1]` a `Scalar(Range)`, and

@@ -563,6 +563,15 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
+        // ADR-0058: a builtin reads its arguments as plain Rust values, so a
+        // still-deferred `.map` Seq (`SeqSource::MapGrep`) has to be pulled
+        // first or `say`/`join`/`await`/... would read its empty seed. Only
+        // the builtin funnel does this -- a USER routine must keep receiving
+        // an unforced Seq, which is why the pass is gated on the name being a
+        // real builtin rather than applied to every call.
+        if Self::is_builtin_function(name) {
+            self.reify_map_grep_seq_args(&args)?;
+        }
         crate::trace::trace_log!("call", "call_function: {} ({} args)", name, args.len());
         // The `nqp::` namespace is reserved: no user routine can ever be
         // declared in it, so an `nqp::` name needs none of the builtin match
