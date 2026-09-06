@@ -131,13 +131,35 @@ turning the frame's O(writes) return merge into an O(whole env) scan. Any fix
 should be measured against the merge loop's `with_str` count, not just against
 `env_deep_copies`.
 
-Two cheaper sub-fixes, if the full "move the flatten to the consumers" change
-stays too risky:
+### Both cheap sub-fixes are DONE; the flatten itself is what is left
 
-* `Env::flattened()` can return `parent.flattened()` directly when the overlay
-  is empty and there are no tombstones — provably identical (`scoped_child`
-  already derives an empty child's `file_sym` from the parent), and O(1) when
-  the parent is flat.
-* the merge loop's `k.with_str(is_routine_scoped_implicit_var)` runs for every
-  key; the names it tests are a fixed handful, so interning them once and
-  comparing `Symbol` ids removes a thread-local round trip per key.
+`news/2026-09/scoped-overlay-return-merge-stops-paying-for-a-flattened-env.md`
+landed the two cheaper halves plus one more:
+
+* `Env::flattened()` now short-circuits an empty overlay to
+  `parent.flattened()`;
+* the merge loop's three per-key string predicates are one memoized
+  `Symbol::flags()` byte;
+* a key the callee never rebound (`Value::same_binding`) is no longer
+  re-inserted.
+
+Together: 658 k -> 535 k instructions per assertion. So **the merge is no
+longer the expensive half of the compounding** - what remains is the flatten's
+own whole-map clone and the fact that it happens at all.
+
+Re-measure before resuming: the "17% of the `ok` loop" figure above was taken
+BEFORE these three, so the flatten's remaining share is smaller than that now.
+Redo the `MUTSU_NO_FLATTEN` kill-switch experiment on the current tree first,
+and only then decide whether the "move the flatten to the consumers" refactor
+is worth its blast radius.
+
+The audit that refactor needs is smaller than the doc's "~80 env-iteration
+consumers" suggests: `remove` is already tombstone-aware and `get_mut` already
+COW-promotes a parent key into the overlay, so the genuinely overlay-only
+operations are `iter`/`keys`/`values`/`len`/`values_mut`, and a grep finds
+**13** direct `self.env().iter()/keys()/values()` sites in the VM. The biggest
+of them - the return merge in `vm_call_named_inner.rs` - *wants* overlay-only
+and is correct either way, so it is not a blocker. The hazard is an env cloned
+into a local (`let e = self.env().clone(); e.iter()`), which keeps the parent
+chain and iterates overlay-only; those have to be found by reading, not by
+grepping for `env().iter()`.

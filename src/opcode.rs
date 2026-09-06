@@ -8900,8 +8900,15 @@ impl CompiledFunction {
         // is frame state: merging it back into the caller env would re-create
         // the cross-frame constraint leak through the env store (see
         // `news/2026-09/type-constraint-global-side-table-retired.md`).
+        //
+        // Gated on the memoized flag rather than resolving the symbol to a
+        // `&str` and `strip_prefix`-ing it: this runs for every key of the
+        // return merge, and almost none of them are metadata keys.
+        if sym.flags() & crate::symbol::flags::TYPE_META == 0 {
+            return false;
+        }
         sym.with_str(|s| {
-            s.strip_prefix("__mutsu_type::")
+            s.strip_prefix(crate::symbol::TYPE_META_PREFIX)
                 .is_some_and(|base| self.is_callee_local_sym_direct(Symbol::intern(base)))
         })
     }
