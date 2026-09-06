@@ -109,10 +109,41 @@ to — not "section B":
 
    So `.list.map` is a ONE-path difference inside `map`, not a `.list` problem:
    three of the four cells already work, and `grep` handles the same receiver
-   correctly. This is the cheapest row in the section, and the likely mechanism
-   is `overwrite_array_bindings_by_identity` (`runtime/methods_mut.rs`), which
-   matches an env variable by `Gc::ptr_eq` on the backing `ArrayData` — a
-   detached `.list` node never matches.
+   correctly.
+
+   **Located 2026-09-07** (breakpoint counts on the three candidate paths, per
+   probe):
+
+   - `@a.map({$_=5})` is served by **`try_native_array_map`**
+     (`vm/vm_native_map.rs`), which does the rw writeback itself. Its receiver
+     gate is `ValueView::Array(items, ArrayKind::Array)` — a *plain concrete*
+     array only.
+   - `@a.list` is `ArrayKind::List`, so that gate **declines** (deliberately —
+     the comment there says `List` "has its own one-arg-rule / Seq-returning
+     semantics"), and the call falls through to `dispatch_map_method`.
+   - Since ADR-0058 step 2, `dispatch_map_method` returns
+     `Value::seq_deferred(SeqSource::MapGrep { items: Arc<Vec<Value>>, .. })`,
+     and the pull arm (`vm/vm_helpers_lazy.rs`) runs **`eval_map_over_items`**,
+     the NON-rw evaluator, over that flat snapshot. There is no source node left
+     to write back to, so the write has nowhere to land.
+   - `.list.grep` works because grep does not go through any of that: it
+     promotes the matched elements to `ContainerRef` cells and writes the
+     promoted array back with `overwrite_array_bindings_by_identity`
+     (`runtime/methods_collection_ops/grep.rs`), which is **node-based** rather
+     than kind-gated.
+
+   So the fix has two candidate shapes, and both touch ADR-0058 machinery that
+   landed 2026-09-07 — read ADR-0058 §8 first:
+
+   - carry the source's backing node (not just an `Arc<Vec<Value>>` snapshot)
+     into `SeqSource::MapGrep`, use `eval_map_over_items_rw` at pull time, and
+     call `overwrite_array_bindings_by_identity` when it reports `wrote_back`; or
+   - adopt grep's shape at `.map` time: promote the source elements to cells and
+     write the promoted array back by identity before deferring. Structural
+     promotion runs no user code, so it is compatible with the deferral — but
+     grep promotes only the *matched* indices, and promoting every `.map`
+     source's elements is an ADR-0036/ADR-0040-sized decision about what an
+     element is, not a local change.
 
 2. **A SLICE hands out bare values.** `for @a[0..1] { $_ = 5 }` and
    `for @a[0,1] { $_ = 5 }` both lose the write, while `for @a { $_ = 5 }` and
