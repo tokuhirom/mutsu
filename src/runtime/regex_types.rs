@@ -388,9 +388,11 @@ mod cap_node_tests {
     /// A leaf conversion must not allocate a child payload.
     #[test]
     fn into_cap_node_leaf_has_no_children() {
-        let mut caps = RegexCaptures::default();
-        caps.from = 3;
-        caps.to = 4;
+        let caps = RegexCaptures {
+            from: 3,
+            to: 4,
+            ..Default::default()
+        };
         let node = caps.into_cap_node();
         assert!(node.children.is_none());
         assert_eq!((node.from, node.to), (3, 4));

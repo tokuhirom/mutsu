@@ -223,10 +223,10 @@ mod tests {
     fn spaced_private_methodop_off_unchanged() {
         // Stock grammar: `self!ready` is a no-arg private call; the
         // parenthesized list does not attach to it as arguments.
-        if let Ok(stmts) = parse_with_modes(SlangModes::default(), "self!ready (0, 2);") {
-            if let Expr::MethodCall { args, .. } = first_expr(&stmts) {
-                assert!(args.len() < 2, "stock parse must not bind the spaced args");
-            }
+        if let Ok(stmts) = parse_with_modes(SlangModes::default(), "self!ready (0, 2);")
+            && let Expr::MethodCall { args, .. } = first_expr(&stmts)
+        {
+            assert!(args.len() < 2, "stock parse must not bind the spaced args");
         }
     }
 

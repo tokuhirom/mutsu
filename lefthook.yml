@@ -3,5 +3,9 @@ pre-commit:
     fmt:
       run: cargo fmt && git add -u
     clippy:
-      run: cargo clippy -- -D warnings
+      # `--all-targets` matches CI's required Clippy step: without it the hook
+      # lints only the library and lets a warning in a `#[cfg(test)]` module
+      # through to a red CI. `make lint` additionally covers the jit-off and
+      # wasm32 configurations, which CI lints in the `lint-configs` job.
+      run: cargo clippy --all-targets -- -D warnings
 

@@ -878,6 +878,7 @@ impl Interpreter {
             method_dispatch_pure: false,
             in_regex_code_block: false,
             resume_ip: None,
+            #[cfg(feature = "jit")]
             jit_error: None,
             bind_context: Box::new(std::cell::Cell::new(false)),
             scalar_bind_context: Box::new(std::cell::Cell::new(false)),

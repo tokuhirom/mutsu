@@ -35,6 +35,9 @@ pub(crate) enum MetaAssignIdentity {
     NoZeroArgMod,
 }
 
+/// The JIT is the only consumer of this conversion pair: the interpreter
+/// matches on the enum directly.
+#[cfg(feature = "jit")]
 impl MetaAssignIdentity {
     /// Discriminant, so the JIT can pass the identity to its shim as a plain
     /// `u32` argument instead of re-reading the opcode.

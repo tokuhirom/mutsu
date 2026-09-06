@@ -223,46 +223,50 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_chmod(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let mode_value = args
-            .first()
-            .cloned()
-            .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
-        let mode_int = match mode_value.view() {
-            ValueView::Int(i) => i as u32,
-            // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
-            // already-evaluated integer in the inner value; coerce through it.
-            ValueView::Mixin(..) | ValueView::BigInt(_) => {
-                crate::runtime::to_int(&mode_value) as u32
-            }
-            ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "Invalid mode: {}",
-                    mode_value.to_string_value()
-                )));
-            }
-        };
-        let mut changed = Vec::new();
-        for path_value in args.iter().skip(1) {
-            let path = path_value.to_string_value();
-            let path_buf = self.resolve_path(&path);
-            #[cfg(unix)]
-            {
+        // Permission bits are a unix concept; the gate is up here rather than
+        // inside the per-path loop so the rest of the body compiles only where
+        // it can run (wasm32 is not unix).
+        #[cfg(not(unix))]
+        {
+            let _ = args;
+            return Err(RuntimeError::new("chmod not supported on this platform"));
+        }
+        #[cfg(unix)]
+        {
+            let mode_value = args
+                .first()
+                .cloned()
+                .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
+            let mode_int = match mode_value.view() {
+                ValueView::Int(i) => i as u32,
+                // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
+                // already-evaluated integer in the inner value; coerce through it.
+                ValueView::Mixin(..) | ValueView::BigInt(_) => {
+                    crate::runtime::to_int(&mode_value) as u32
+                }
+                ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
+                _ => {
+                    return Err(RuntimeError::new(format!(
+                        "Invalid mode: {}",
+                        mode_value.to_string_value()
+                    )));
+                }
+            };
+            let mut changed = Vec::new();
+            for path_value in args.iter().skip(1) {
+                let path = path_value.to_string_value();
+                let path_buf = self.resolve_path(&path);
                 let perms = PermissionsExt::from_mode(mode_int);
                 fs::set_permissions(&path_buf, perms).map_err(|err| {
                     RuntimeError::new(format!("Failed to chmod '{}': {}", path, err))
                 })?;
+                changed.push(path_value.clone());
             }
-            #[cfg(not(unix))]
-            {
-                return Err(RuntimeError::new("chmod not supported on this platform"));
-            }
-            changed.push(path_value.clone());
+            Ok(Value::array_with_kind(
+                crate::value::Value::array_arc(changed),
+                ArrayKind::List,
+            ))
         }
-        Ok(Value::array_with_kind(
-            crate::value::Value::array_arc(changed),
-            ArrayKind::List,
-        ))
     }
 
     pub(super) fn builtin_mkdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {

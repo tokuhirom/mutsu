@@ -4712,6 +4712,7 @@ pub(crate) struct CompiledCode {
     /// closure creation; the `Arc` is built once per slot instead.
     pub(crate) stmt_pool_bodies: std::sync::OnceLock<StmtPoolBodies>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
+    #[cfg(feature = "jit")]
     pub(crate) jit: JitCodeState,
 }
 
@@ -4781,6 +4782,7 @@ pub(crate) type StmtPoolBodies = Box<[std::sync::OnceLock<std::sync::Arc<Vec<Stm
 /// contains an unsupported opcode (never retry), any other value = the native
 /// function pointer. Cloning a chunk resets the state — a clone is a distinct
 /// compilation identity (the global fingerprint cache still avoids recompiles).
+#[cfg(feature = "jit")]
 #[derive(Debug, Default)]
 pub(crate) struct JitCodeState {
     pub(crate) calls: std::sync::atomic::AtomicU32,
@@ -4805,18 +4807,21 @@ pub(crate) struct JitCodeState {
 }
 
 /// The per-chunk range table: `(start, end)` keys to shared range states.
+#[cfg(feature = "jit")]
 pub(crate) type JitRangeTable = Vec<((u32, u32), std::sync::Arc<JitRangeState>)>;
 
 /// Hotness counter and compiled-entry cache for one `[start, end)` opcode
 /// sub-range (a compound loop's body/cond), same encoding as the chunk-level
 /// `JitCodeState` (`entry`: 0 = cold, `JIT_ENTRY_BAILOUT` = rejected, other =
 /// native function pointer).
+#[cfg(feature = "jit")]
 #[derive(Debug, Default)]
 pub(crate) struct JitRangeState {
     pub(crate) calls: std::sync::atomic::AtomicU32,
     pub(crate) entry: std::sync::atomic::AtomicU64,
 }
 
+#[cfg(feature = "jit")]
 impl Clone for JitCodeState {
     fn clone(&self) -> Self {
         Self::default()
@@ -5108,6 +5113,7 @@ impl CompiledCode {
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
+            #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
     }

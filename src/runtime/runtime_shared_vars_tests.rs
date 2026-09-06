@@ -42,7 +42,7 @@ fn thread_param_mask_guard_restores_on_panic_unwind() {
     let mut interp = Interpreter::new();
     interp.shared_vars_active = true;
 
-    let param_defs = vec![scalar_param("$desc")];
+    let param_defs = [scalar_param("$desc")];
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
@@ -86,7 +86,7 @@ fn thread_param_mask_guard_restores_on_normal_drop() {
     let mut interp = Interpreter::new();
     interp.shared_vars_active = true;
 
-    let param_defs = vec![scalar_param("$desc")];
+    let param_defs = [scalar_param("$desc")];
 
     {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
@@ -118,7 +118,7 @@ fn thread_param_mask_guard_does_not_disturb_an_ancestor_mask() {
         .borrow_mut()
         .insert("desc".to_string());
 
-    let param_defs = vec![scalar_param("$desc")];
+    let param_defs = [scalar_param("$desc")];
     {
         let _guard = crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(
             &mut interp,

@@ -1,4 +1,4 @@
-.PHONY: test roast check-roast-whitelist check-value-wall check-flaky-list
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list
 
 CARGO_TARGET_DIR ?= target
 MUTSU_BIN ?= $(CARGO_TARGET_DIR)/release/mutsu
@@ -36,6 +36,17 @@ PROVE_JOBS ?= 4
 test: check-value-wall check-flaky-list
 	@mkdir -p tmp
 	(cargo build && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/debug/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+
+# Every configuration mutsu ships, linted the way CI lints it. A warning only
+# exists in the configuration you actually compile, so the default host build
+# (the `test` job) misses both the Cranelift-less feature set the Miri job and
+# the release fallback use, and the wasm32 lib the npm package is built from
+# (the `lint-configs` job). Needs the wasm target:
+#   rustup target add wasm32-unknown-unknown
+lint:
+	cargo clippy --workspace --all-targets -- -D warnings
+	cargo clippy --no-default-features --features native --all-targets -- -D warnings
+	cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
 check-value-wall:
 	scripts/check-value-wall.sh

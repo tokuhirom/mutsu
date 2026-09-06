@@ -64,8 +64,7 @@ fn timer_state() -> &'static TimerState {
         // `wasm_fire_next_timer` from the cooperative scheduler's pump, which
         // jumps the virtual clock to the earliest deadline rather than
         // sleeping until it.
-        #[cfg(target_arch = "wasm32")]
-        return state;
+        //
         // One long-lived driver thread for the whole process. Actions may
         // clone/drop `Gc` values (a kept promise handle), so the driver is a
         // registered GC mutator; it parks quiescent while waiting.

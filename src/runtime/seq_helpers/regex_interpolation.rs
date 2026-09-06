@@ -65,6 +65,7 @@ impl Interpreter {
         out
     }
 
+    #[cfg(feature = "pcre2")]
     fn p5_pattern_to_rust_regex(pattern: &str) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut i = 0usize;
@@ -107,6 +108,7 @@ impl Interpreter {
         out
     }
 
+    #[cfg(feature = "pcre2")]
     fn expand_p5_interpolation(&self, pattern: &str) -> String {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();

@@ -320,6 +320,9 @@ pub(crate) const DEADLOCK_MESSAGE: &str = "deadlock: nothing left to run while w
      thread, so a `start` block that blocks on a value sent only after it began \
      can never be woken";
 
+/// wasm32 has no other mutator to stop the world for: `wait_until` pumps the
+/// cooperative scheduler instead of parking, so this never gets called there.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn stw_aware_wait<'a, T>(
     cvar: &Condvar,
     mut guard: MutexGuard<'a, T>,

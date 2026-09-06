@@ -385,6 +385,10 @@ impl Interpreter {
 
     /// Build a `Failure` carrying an `X::IO::Lock` exception (returned, not
     /// thrown — `.lock` soft-fails so callers can `~~ Failure` test it).
+    ///
+    /// Advisory record locks are `fcntl`-only, so only the unix build ever
+    /// reports a lock failure this way; elsewhere `.lock` refuses outright.
+    #[cfg(unix)]
     fn io_lock_failure(message: &str) -> Value {
         let mut ex_attrs = HashMap::new();
         ex_attrs.insert("message".to_string(), Value::str_from(message));

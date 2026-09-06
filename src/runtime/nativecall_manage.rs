@@ -34,6 +34,8 @@ use super::Interpreter;
 pub(crate) const EXPLICITLY_MANAGE: &str = "__mutsu_explicitly_manage";
 
 /// The class an explicitly-managed string is wrapped in, matching Rakudo.
+/// Only the libffi marshaller looks for it (see `explicitly_managed_address`).
+#[cfg(feature = "libffi")]
 pub(crate) const CSTR_CLASS: &str = "NativeCall::CStr";
 
 impl Interpreter {
@@ -101,6 +103,7 @@ fn leak_c_string(bytes: &[u8]) -> usize {
 /// The stable `char*` behind an explicitly-managed string, or `None` when `v` is
 /// not one. Used by the `Str` parameter marshaller so
 /// `f(explicitly-manage($s))` hands C the leaked buffer rather than a temporary.
+#[cfg(feature = "libffi")]
 pub(crate) fn explicitly_managed_address(v: &Value) -> Option<usize> {
     use crate::value::ValueView;
     match v.view() {

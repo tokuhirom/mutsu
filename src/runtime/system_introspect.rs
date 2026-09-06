@@ -262,10 +262,14 @@ impl Interpreter {
             .or_else(|| env::var("USERNAME").ok())
     }
 
-    pub(super) fn send_signal(pid: i64, signal: i64) -> bool {
+    pub(super) fn send_signal(
+        pid: i64,
+        #[cfg_attr(not(unix), allow(unused_variables))] signal: i64,
+    ) -> bool {
         if pid == 0 {
             return false;
         }
+        #[cfg(any(unix, windows))]
         let pid_str = pid.to_string();
         #[cfg(unix)]
         {

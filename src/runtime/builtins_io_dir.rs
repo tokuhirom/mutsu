@@ -284,44 +284,53 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_symlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let target = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("symlink requires a target"))?;
-        let link = args
-            .get(1)
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
-        // The target path is passed to the OS as-is (relative stays relative).
-        // The link path is resolved to handle CWD.
-        let target_buf = std::path::PathBuf::from(&target);
-        let link_buf = self.resolve_path(&link);
-        #[cfg(unix)]
-        {
-            match unix_fs::symlink(&target_buf, &link_buf) {
-                Ok(()) => Ok(Value::TRUE),
-                Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
-            }
-        }
-        #[cfg(windows)]
-        {
-            let metadata = fs::metadata(&target_buf);
-            let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
-                windows_fs::symlink_dir(&target_buf, &link_buf)
-            } else {
-                windows_fs::symlink_file(&target_buf, &link_buf)
-            };
-            match result {
-                Ok(()) => Ok(Value::TRUE),
-                Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
-            }
-        }
+        // Platforms with no symlink syscall refuse before touching the args, so
+        // the rest of the body compiles only where it can run.
         #[cfg(not(any(unix, windows)))]
         {
-            Err(RuntimeError::new("symlink not supported on this platform"))
+            let _ = args;
+            return Err(RuntimeError::new("symlink not supported on this platform"));
+        }
+        #[cfg(any(unix, windows))]
+        {
+            let target = args
+                .first()
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("symlink requires a target"))?;
+            let link = args
+                .get(1)
+                .map(|v| v.to_string_value())
+                .ok_or_else(|| RuntimeError::new("symlink requires a link name"))?;
+            // The target path is passed to the OS as-is (relative stays relative).
+            // The link path is resolved to handle CWD.
+            let target_buf = std::path::PathBuf::from(&target);
+            let link_buf = self.resolve_path(&link);
+            #[cfg(unix)]
+            {
+                match unix_fs::symlink(&target_buf, &link_buf) {
+                    Ok(()) => Ok(Value::TRUE),
+                    Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
+                }
+            }
+            #[cfg(windows)]
+            {
+                let metadata = fs::metadata(&target_buf);
+                let result = if metadata.map(|meta| meta.is_dir()).unwrap_or(false) {
+                    windows_fs::symlink_dir(&target_buf, &link_buf)
+                } else {
+                    windows_fs::symlink_file(&target_buf, &link_buf)
+                };
+                match result {
+                    Ok(()) => Ok(Value::TRUE),
+                    Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
+                }
+            }
         }
     }
 
+    /// Only the platforms that can actually create a symlink report a failure
+    /// this way; elsewhere `symlink` refuses outright.
+    #[cfg(any(unix, windows))]
     pub(super) fn make_symlink_failure(target: &str, link: &str, err: &std::io::Error) -> Value {
         use crate::symbol::Symbol;
         let msg = format!(

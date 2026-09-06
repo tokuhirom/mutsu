@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Classifies the change as documentation-only so the four heavy jobs below
+  # Classifies the change as documentation-only so the five build jobs below
   # can skip themselves. Roughly one in six commits here touches only docs/,
   # news/, todo/, TODO_roast/ or a top-level *.md, and each one was paying for
   # two full cargo builds plus three roast sweeps.
@@ -76,8 +76,9 @@ jobs:
     # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
     # job was hitting the limit and getting canceled even when every test
     # passed (roast printing "Result: PASS" immediately before cancellation).
-    # 25 min gives headroom for a cold/partial cargo cache.
-    timeout-minutes: 25
+    # 25 min gave headroom for a cold/partial cargo cache; 30 since the Clippy
+    # step grew `--all-targets` (a measured 21 min run had only 4 to spare).
+    timeout-minutes: 30
     # Link with mold across every cargo invocation in this job — linking a
     # binary this size dominates edit->rebuild latency, and mold is far faster
     # than GNU ld. mold is installed in the "Install prove" step below.
@@ -130,7 +131,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        # `--all-targets`, not a bare `cargo clippy`: without it the lint only
+        # sees the library, so every `#[cfg(test)]` module in `src/`, the
+        # `tests/` integration targets and the `mzef` bin are linted by nobody
+        # (the mutsu-lsp step below has always passed `--all-targets` for
+        # exactly this reason). Nine warnings had accumulated in test code
+        # under that blind spot by 2026-09-06.
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Unit tests
         # `--test-threads=1` for the same reason the gc-stress job below
@@ -361,6 +368,51 @@ jobs:
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
+
+  # Warnings only exist in the configuration you actually compile, and the
+  # `test` job compiles exactly one: the default feature set on the host. The
+  # two OTHER configurations mutsu ships were linted by nobody, and both had
+  # rotted by 2026-09-06 -- 12 dead-code warnings with `jit` off (the Miri
+  # job's feature set, and the release matrix's Cranelift-less fallback) and 35
+  # on wasm32 (the published npm package), none of them visible to any check.
+  # Cheap to keep honest: one clippy pass each, in parallel with the heavy jobs
+  # so it costs no critical path.
+  #
+  # Skipped on a documentation-only change -- see the `changes` job.
+  lint-configs:
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+
+      # Its own cache: neither feature set matches the "ci-linux" jobs' build
+      # artifacts (no cranelift in one, a different target triple in the
+      # other), so sharing their key would only evict entries they still need.
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: "ci-lint-configs"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Clippy (jit off)
+        # Everything the JIT owns is `#[cfg(feature = "jit")]`, so a new
+        # JIT-only item that forgets the gate shows up here as dead code.
+        run: cargo clippy --no-default-features --features native --all-targets -- -D warnings
+
+      - name: Clippy (wasm32 browser build)
+        # `--lib` because that is all the browser package builds (see
+        # scripts/build-npm-package.sh). This is the configuration where the
+        # platform-gated paths (`#[cfg(unix)]` filesystem calls, the worker
+        # pool, PCRE2) compile out, and where unused locals and dead helpers
+        # pile up unseen.
+        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
   # ADR-0013 §4 phase 4: the acceptance gate for the GC's aliased-write
   # soundness. What ADR-0013 shipped is an *argument* about borrow provenance —

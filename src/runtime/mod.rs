@@ -2940,6 +2940,7 @@ pub struct Interpreter {
     /// helper cannot return a `RuntimeError` by value across the native-code
     /// boundary, so it parks the error here and returns a nonzero status; the
     /// JIT entry wrapper takes it back out. Always `None` outside a JIT call.
+    #[cfg(feature = "jit")]
     pub(crate) jit_error: Option<RuntimeError>,
     /// The following ten fields (through `vardecl_context`) back
     /// `vm_call_state_guard::MarkContextGuard`. They are `Box<Cell<_>>`-backed
