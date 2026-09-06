@@ -45,14 +45,58 @@ Raku's rule is that `$x ~~ $y` returns whatever `$y.ACCEPTS($x)` returns — a
 `Regex` returns its `Match`. Something on the `$_` path is instead asking for a
 boolean.
 
+## Root cause — found 2026-09-06, and it is not a special case for `$_`
+
+**The RHS is evaluated with `$_` already overwritten by the LHS**, so
+`"ab" ~~ $_` really evaluates `"ab" ~~ "ab"` — a string-vs-string smartmatch,
+which is correctly `True`. Nothing is coercing a `Match` to a `Bool`; the match
+that would produce the `Match` never happens.
+
+`exec_smart_match_expr_op` (`src/vm/vm_smartmatch_ops.rs`) does this before
+running the RHS instruction range:
+
+```rust
+if topic_cell.is_none() {
+    self.env_mut().insert("_".to_string(), left.clone());
+}
+...
+let rhs_run = self.run_range(code, rhs_start, rhs_end, compiled_fns);
+```
+
+The two bytecode streams are otherwise identical — the working spelling's RHS is
+`GetLocal(0)` and the broken one's is `GetGlobal("_")`, and both run under the
+same `SmartMatchExpr` with the same flags. Confirmed by elimination: reading the
+topic into a name *first* (`my $r2 = $_; "ab" ~~ $r2`) answers `Match`, and
+`$_.WHAT.^name` outside the match is `Regex`, so the topic holds the right value
+right up to the moment the RHS runs.
+
+## Why the overwrite is there, and why the fix needs a decision
+
+It is deliberate and load-bearing: `$x ~~ s///` must topicalize `$x` so the
+substitution has something to write through, and the surrounding code has a
+careful `topic_cell` / `topic_ro_override` dance for the aliasing cases
+(`t/smartmatch-subst-topic.t`, ADR-0045). Raku's own rule is the other way
+round for a *value* RHS — `$x ~~ EXPR` evaluates `EXPR` and then calls
+`EXPR.ACCEPTS($x)`, with the topicalization happening inside `ACCEPTS`, not
+around the evaluation.
+
+So the fix is to separate the two: an RHS that must run *as* the match
+(`s///`, `tr///`, a regex literal, a block) needs the topic installed first; an
+RHS that is merely an expression to be evaluated must see the enclosing topic.
+The opcode already carries `rhs_is_match_regex` / `rhs_pure_regex` flags, so the
+compiler may already know enough to make that distinction — check what they mean
+before adding a third flag.
+
+Both spellings in the table above compile to `rhs_pure_regex: false`, so those
+existing flags do **not** currently separate these two cases.
+
 ## Where to look
 
-The smartmatch implementation (`src/vm/vm_smart_match.rs`,
-`src/vm/vm_smartmatch_ops.rs`) and, specifically, whatever distinguishes a
-topic-valued right operand — a compile-time special case for `~~ $_`, or a
-runtime path that reads the topic and coerces it. Confirm with a `rust-gdb`
-breakpoint on the arm that produces the `Bool` rather than guessing which of the
-two it is.
+`src/vm/vm_smartmatch_ops.rs` (`exec_smart_match_expr_op`, the `env_mut().insert("_")`
+above and the `saved_topic` restore after it), the compiler's `SmartMatchExpr`
+emission and what `rhs_is_match_regex` / `rhs_pure_regex` are set from, and
+`t/smartmatch-subst-topic.t` — the pin that the overwrite exists to satisfy and
+that any fix must keep green.
 
 ## Neighbourhood to check when fixing
 
