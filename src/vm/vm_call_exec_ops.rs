@@ -219,6 +219,7 @@ impl Interpreter {
         };
         // Try compiled function dispatch first
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "compiled");
             let pkg = self.current_package().to_string();
             let v = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             // Slice F: drain any `is rw` param writeback into the caller's slots.
@@ -233,6 +234,7 @@ impl Interpreter {
         }
         // Try native function (env-pure: no env_dirty mark).
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "native");
             let v = native_result?;
             if keep_value {
                 self.stack.push(v);
@@ -241,6 +243,7 @@ impl Interpreter {
             }
             return Ok(());
         }
+        crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "carrier");
         // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
         // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
         // builtins are not name-trackable and dropping the net corrupts cell
