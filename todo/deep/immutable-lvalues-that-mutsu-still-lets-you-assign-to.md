@@ -138,6 +138,23 @@ One near-miss in the same family: `my $x := $(1,2,3); $x = 5` throws `X::AdHoc`
 in both, but rakudo words it "Cannot assign to a readonly variable or a value"
 where mutsu says "Cannot assign to an immutable value".
 
+### C2. Subscripting an existing non-container element autovivifies instead of dying
+
+```
+my @a = 1,2,3; @a[1][0] = 9
+    # raku:  X::Assignment::RO, "Cannot modify an immutable Int (2)"
+    # mutsu: silently succeeds, @a becomes [1 [9] 3]
+```
+
+Noticed 2026-09-06 while fixing
+`news/2026-09/chained-index-autoviv-tracks-holes.md`. Subscripting an element
+that already holds a plain value is an error in raku, not an autovivification —
+the chained-index walk's `needs_viv` test treats "not an Array/Hash/ContainerRef"
+as "vivify me", and a defined `Int` falls into that bucket. The nested handler
+already has the right shape for the ROOT (`root_needs_viv` deliberately excludes
+a *defined* value, with a comment saying raku dies there and that papering over
+it would clobber the value); the same distinction is missing one level down.
+
 ### D. A `gather` sequence's element store
 
 ```

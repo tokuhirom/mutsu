@@ -3196,7 +3196,7 @@ impl Interpreter {
                     };
                     // Container identity (§3): write through a shared node.
                     let arr = crate::value::gc_data_mut(outer_arr);
-                    Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
+                    Self::autoviv_resize_tracking(arr, inner_i, native_fill.clone())?;
                     // A Buf/Blob-shaped Instance in the slot (`@a[0]` holding a
                     // `Buf[uint64]`) carries its element storage in a shared
                     // attribute cell, not as a raw Array/Hash payload, so the
@@ -3226,8 +3226,11 @@ impl Interpreter {
                         // `arr`, so it itemizes just like any other Array/Hash
                         // element store (`@a[5][0] = 1` autovivifies `@a[5]`,
                         // and `@a[5].raku` is `$[1]` in raku, not `[1]`).
+                        // A brand-new autovivified row: every slot is an
+                        // unassigned gap until a write below marks its index,
+                        // so `@a[0][1] = 5` leaves `@a[0][0]:exists` False.
                         arr[inner_i] = (if outer_positional {
-                            Value::real_array(Vec::new())
+                            Value::real_array_unassigned(Vec::new())
                         } else {
                             Value::hash(std::collections::HashMap::new())
                         })
@@ -3249,7 +3252,7 @@ impl Interpreter {
                                 // shared inner node (a `ContainerRef` cell
                                 // alias, a by-value holder).
                                 let inner = crate::value::gc_data_mut(inner_arr);
-                                Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
+                                Self::autoviv_resize_tracking(inner, j, native_fill.clone())?;
                                 Value::assign_element_slot(&mut inner[j], val.clone());
                             }
                             Ok(())
@@ -3303,8 +3306,10 @@ impl Interpreter {
                     // ADR-0040 slice 1: itemized at the store, same as the
                     // array-outer-container arm above.
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
+                        // See the array-outer arm: a brand-new autovivified
+                        // row tracks its gaps from birth.
                         (if outer_positional {
-                            Value::real_array(Vec::new())
+                            Value::real_array_unassigned(Vec::new())
                         } else {
                             Value::hash(std::collections::HashMap::new())
                         })
@@ -3383,12 +3388,50 @@ impl Interpreter {
     /// backing `Gc` — and therefore the `&mut` the caller takes into the slot
     /// to keep descending — is untouched.
     pub(crate) fn fresh_autoviv_container(positional: bool) -> Value {
+        // A brand-new autovivified row tracks its gaps from birth
+        // (`real_array_unassigned`, an empty `initialized` set), so a slot the
+        // walk never writes reads back as `:exists == False`. A plain
+        // `real_array` would mean "bulk-constructed, no gaps" and report every
+        // untouched slot as existing.
         let fresh = if positional {
-            Value::real_array(Vec::new())
+            Value::real_array_unassigned(Vec::new())
         } else {
             Value::hash(std::collections::HashMap::new())
         };
         fresh.itemize_for_element_store()
+    }
+
+    /// Grow `arr` so index `idx` exists, and record that `idx` was written, so
+    /// `:exists` on a sibling slot the write never touched still answers
+    /// `False`.
+    ///
+    /// `ArrayData::initialized` is `None` for a bulk-constructed array ("no
+    /// gaps") and `Some(set)` for one that tracks them (ADR-0049 §1.6). Growing
+    /// an untracked array turns the freshly-appended tail into gaps, so the
+    /// pre-existing prefix has to be marked explicitly at that moment or it
+    /// would be swallowed by the same set. A write that does NOT grow the array
+    /// leaves an untracked array untracked: seeding a set there would declare
+    /// every other slot a hole.
+    ///
+    /// The `;`-separated multidim path got this treatment in
+    /// `news/2026-08/multidim-exists-adverb-canonical-hole-predicate.md`; the
+    /// chained-bracket form (`@a[i][j] = v`) is compiled to an entirely
+    /// different opcode and never ran any of those sites, so `@a[0][1] = 5`
+    /// left `@a[0][0]:exists` answering `True`.
+    fn autoviv_resize_tracking(
+        arr: &mut crate::value::ArrayData,
+        idx: usize,
+        fill: Value,
+    ) -> Result<(), RuntimeError> {
+        let old_len = arr.len();
+        Self::autoviv_resize(arr, idx + 1, fill)?;
+        if arr.len() > old_len && arr.initialized.is_none() {
+            arr.initialized = Some((0..old_len).collect());
+        }
+        if let Some(tracked) = arr.initialized.as_mut() {
+            tracked.insert(idx);
+        }
+        Ok(())
     }
 
     pub(crate) fn assign_into_nested_container(
@@ -3414,7 +3457,7 @@ impl Interpreter {
                 let fill = Value::package(crate::symbol::Symbol::intern("Any"));
                 // Container identity (§3): write through a shared node.
                 let a = crate::value::gc_data_mut(arr);
-                Self::autoviv_resize(a, i + 1, fill)?;
+                Self::autoviv_resize_tracking(a, i, fill)?;
                 Value::assign_element_slot(&mut a[i], val.clone());
             }
             Ok(())
@@ -3868,7 +3911,7 @@ impl Interpreter {
                         cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = crate::value::gc_data_mut(arr_arc);
-                                Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
+                                Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
@@ -3912,9 +3955,9 @@ impl Interpreter {
                             cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
                                 if let Ok(i) = key.parse::<usize>() {
                                     let arr = crate::value::gc_data_mut(arr_arc);
-                                    Self::autoviv_resize(
+                                    Self::autoviv_resize_tracking(
                                         arr,
-                                        i + 1,
+                                        i,
                                         Value::package(Symbol::intern("Any")),
                                     )?;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
@@ -3951,7 +3994,7 @@ impl Interpreter {
                     if let Some(r) = cur.with_array_mut(|arr_arc, _| -> Result<(), RuntimeError> {
                         if let Ok(i) = key.parse::<usize>() {
                             let arr = crate::value::gc_data_mut(arr_arc);
-                            Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
+                            Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
                             if bind_cell.is_some() {
                                 arr[i] = leaf_val.clone();
                             } else {
