@@ -506,6 +506,25 @@ impl Interpreter {
                 }
                 continue;
             }
+            // A named `:$scalar` param bound from an `@`/`%` SOURCE THAT IS
+            // ITSELF AN ATTRIBUTE EXPRESSION (`f(:%!plugin-config)`) encodes
+            // that attribute's twigil form as `source_name` -- the CALLEE's
+            // (well, the calling method's) own attribute key, not a lexical
+            // belonging to the caller. Writing it into the caller's env plants
+            // a pseudo-key that an unrelated later method call's
+            // `reconcile_attrs` candidate scan can mistake for a `:=` binding
+            // and adopt as its own attribute override, silently overwriting a
+            // different instance's same-named attribute. The shared
+            // `ContainerRef` cell this writeback exists for already keeps
+            // content mutations visible without the insert. This is the sub-call
+            // twin of the guard `vm_method_dispatch.rs`'s `rw_writeback` loop
+            // already applies (`is_attr_twigil_shaped`); it became reachable
+            // when module/plan-compiled subs started taking the cached dispatch,
+            // which is exactly the regression
+            // `t/sub-rw-writeback-attr-source-no-leak.t` was written to catch.
+            if crate::value::attr_twigil_base(source_name).is_some() {
+                continue;
+            }
             if let Some(updated) = self.env.get(param_name).cloned() {
                 // When the caller's variable already holds a shared `ContainerRef`
                 // cell (e.g. an inner `$a := $arg` re-bound the rw param into the

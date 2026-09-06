@@ -363,9 +363,9 @@ impl Interpreter {
         let name = def.name.resolve();
         let pkg = def.package.resolve();
 
-        let (cf, compiled_from_plan) = match &def.compiled {
-            Some(compiled) => (Arc::clone(compiled), true),
-            None => (self.otf_compile_function_def(def), false),
+        let cf = match &def.compiled {
+            Some(compiled) => Arc::clone(compiled),
+            None => self.otf_compile_function_def(def),
         };
 
         // Cache by name for fast lookup in exec_call_func_op — but never for a
@@ -373,7 +373,23 @@ impl Interpreter {
         // candidate under the bare name would make a later call with different
         // argument types wrongly reuse it. Multi candidates are still cached by
         // body fingerprint in `otf_compile_cache` above (safe, per-candidate).
-        if !compiled_from_plan && !self.has_multi_candidates_cached(&name) {
+        //
+        // A *plan-compiled* def (`def.compiled` already set — the shape every
+        // sub imported from a module takes) is cached on exactly the same
+        // terms. Excluding it meant an imported module sub could never reach a
+        // cached dispatch at all: every call re-ran the whole resolution chain
+        // (`find_compiled_function` → `user_function_matches_call` →
+        // `resolve_function_with_types`, three full registry walks per call, plus
+        // the key `format!` probes that all miss because the sub is not in the
+        // caller's `compiled_fns`). Measured at 14.7 us per call against 0.75 us
+        // for an identical sub declared in the calling file, and it is the
+        // dominant per-assertion cost of the vendored upstream `Test` module
+        // (`todo/deep/vendor-real-test-module.md`), whose `proclaim` alone paid
+        // three of those walks on every assertion. The entry is guarded exactly
+        // as the OTF one is — callsite package, `fn_resolve_gen`, and the multi
+        // exclusion above — and a hit runs the body under the routine's own
+        // nested-sub table, as this function does below.
+        if !self.has_multi_candidates_cached(&name) {
             let name_sym = Symbol::intern(&name);
             // Keyed to the *callsite* package, not `def.package`: the cache
             // answers "what does this bare name mean here", and a module's

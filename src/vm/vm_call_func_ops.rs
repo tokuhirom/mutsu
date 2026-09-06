@@ -744,6 +744,15 @@ impl Interpreter {
                             .any(|v| matches!(v.view(), ValueView::Junction { .. }));
                         let mainline_capture_blocked =
                             self.light_call_blocked_by_mainline_capture(name_str);
+                        // Run the body against the routine's OWN nested-sub
+                        // table when it carries one, exactly as the uncached
+                        // `compile_and_call_function_def` does (ADR-0019
+                        // C6e-3c): the caller's table cannot resolve a nested
+                        // `RegisterSub` key of a routine compiled elsewhere,
+                        // which a plan-compiled module sub reaching this cache
+                        // routinely is.
+                        let body_fns = cf.compiled_fns.clone();
+                        let compiled_fns = body_fns.as_deref().unwrap_or(compiled_fns);
                         let result = if !share_into_scalar
                             && !named_share
                             && !has_junction
