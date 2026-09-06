@@ -35,10 +35,18 @@
 //! across the write (`Gc::clone`, `Gc::as_ptr`, `strong_count`/`ptr_eq`, and a
 //! raw pointer derived *before* a later `Deref` read).
 //!
-//! What remains deferred, by decision rather than omission, is the **narrow
-//! cross-thread race** on a genuinely shared node (ADR-0013 §1.3-2 → ADR-0001
-//! layer 3c): concurrent structural mutation must stay routed through the
-//! synchronized shared-store lanes, and nothing mechanically checks that.
+//! The **cross-thread race** on a genuinely shared node is no longer a pure
+//! deferral. ADR-0013 §1.3-2's premise — that the aliased-write sites are
+//! overwhelmingly same-thread — was measured wrong for any program that shares
+//! one container across `.tap` / `Promise.then` / `Thread.start` callbacks:
+//! ADR-0068 §3 reproduced `double free or corruption` and lost updates through
+//! three such routes, all landing on one element-store site. The exclusion now
+//! exists at the store, as `value::container_lock::ContainerStructGuard` (a
+//! stripe lock keyed by the container node's address, a no-op until a VM
+//! mutator thread is spawned). It is NOT applied at every aliased-write site:
+//! ADR-0068 §4 step 3 widens it lane by lane, so a new site reached from more
+//! than one thread still has to take the guard, or a synchronized lane,
+//! itself — and nothing mechanically checks that.
 //!
 //! # No container is `Arc`-backed for an aliased write any more
 //!

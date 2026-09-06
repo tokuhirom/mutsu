@@ -80,6 +80,14 @@ impl Interpreter {
         // see `todo/deep/nested-whenever-registration-clobbers-sibling-event-
         // aggregate-writes.md`). Let the general assignment path write through
         // the cell instead.
+        //
+        // ADR-0068 §2: "already visible and mutable through every alias via the
+        // Mutex" is about *reaching* the container, NOT about excluding a
+        // concurrent writer. The cell's `Mutex` guards its `Value`; the general
+        // path releases it and then mutates the container that `Value` points
+        // at. The missing mutual exclusion is supplied at the store instead, by
+        // `value::container_lock::ContainerStructGuard` -- do not read this
+        // bail-out as "the cell already makes it thread-safe".
         if matches!(
             self.env.get(key).map(|v| v.view()),
             Some(ValueView::ContainerRef(_))
@@ -176,8 +184,10 @@ impl Interpreter {
             return None;
         }
         // See `assign_hash_elem_to_shared_var`: an array already boxed into a
-        // shared `ContainerRef` cell is already shared through the Mutex; let
-        // the general assignment path write through it.
+        // shared `ContainerRef` cell is reachable through the Mutex from every
+        // alias; let the general assignment path write through it. That path
+        // does NOT inherit the cell's lock (ADR-0068 §2) -- it takes the
+        // container-node exclusion in `value::container_lock` instead.
         if matches!(
             self.env.get(key).map(|v| v.view()),
             Some(ValueView::ContainerRef(_))

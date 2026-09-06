@@ -211,6 +211,7 @@ pub(crate) struct MixData {
 mod aliased_mut;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
+pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;

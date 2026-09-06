@@ -2221,7 +2221,35 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-                if let Some(container) = self.env_root_descended_mut(&var_name) {
+                let mut root_cell_addr: Option<usize> = None;
+                if let Some(container) =
+                    self.env_root_descended_mut_tracked(&var_name, &mut root_cell_addr)
+                {
+                    // ADR-0068 §2/§4 step 2: this is the element store the
+                    // name-keyed cross-thread lane hands the write to when the
+                    // container is boxed into a shared `ContainerRef` cell, on
+                    // the false premise that the cell's `Mutex` protects what
+                    // the cell's `Value` points at. It does not: the descent
+                    // above took that lock only long enough to derive a raw
+                    // pointer into the cell's slot and then released it, so two
+                    // threads reaching one celled container both hold a `&mut`
+                    // into the SAME slot and both mutate the container behind
+                    // it through `gc_contents_mut`.
+                    //
+                    // The exclusion is therefore keyed on the CELL, not on the
+                    // container node: measured, threads sharing one cell reach
+                    // 13 different node addresses (`Gc::make_mut` copies when
+                    // the node is aliased), so a node-keyed lock excludes
+                    // nothing. The node address is the fallback for an uncelled
+                    // root, which two threads can still share.
+                    //
+                    // A no-op (one relaxed load) until a VM mutator thread is
+                    // spawned; the guarded region calls no user Raku code.
+                    let _struct_guard =
+                        crate::value::container_lock::ContainerStructGuard::acquire_for(
+                            root_cell_addr,
+                            container,
+                        );
                     let handled_as_hash = container
                         .with_hash_mut(|hash| {
                             let is_self_hash_ref = matches!(
@@ -3419,13 +3447,35 @@ impl Interpreter {
     /// Hash/Array (the loop stops immediately); only a cell-holding-cell chain
     /// can loop. Bound the descent depth and stop on overflow so a cyclic bind
     /// terminates instead of hanging.
-    pub(crate) unsafe fn descend_container_ref(mut current: *mut Value) -> *mut Value {
+    pub(crate) unsafe fn descend_container_ref(current: *mut Value) -> *mut Value {
+        unsafe { Self::descend_container_ref_tracked(current, &mut None) }
+    }
+
+    /// [`descend_container_ref`](Self::descend_container_ref), additionally
+    /// reporting the address of the OUTERMOST `ContainerRef` cell it stepped
+    /// through (`None` when the root was not celled).
+    ///
+    /// That address is the identity two threads reaching one container have in
+    /// common (ADR-0068 §2): each thread's env holds its own clone of the
+    /// `Value`, and the container node behind it is copied by `Gc::make_mut`
+    /// the moment it is aliased — but the cell is one `Gc<ContainerCell>`
+    /// shared by every alias. Since this function derives a raw pointer INTO
+    /// the cell's mutex data and then drops the guard, that shared slot is
+    /// exactly what a concurrent writer races on, so it is also exactly what
+    /// the store-side exclusion must be keyed on.
+    pub(crate) unsafe fn descend_container_ref_tracked(
+        mut current: *mut Value,
+        first_cell: &mut Option<usize>,
+    ) -> *mut Value {
         const MAX_DESCENT: usize = 256;
         for _ in 0..MAX_DESCENT {
             let cell = match unsafe { &*current }.view() {
                 ValueView::ContainerRef(cell) => cell.clone(),
                 _ => return current,
             };
+            if first_cell.is_none() {
+                *first_cell = Some(crate::gc::Gc::as_ptr(&cell) as usize);
+            }
             let mut guard = cell.lock().unwrap();
             current = &mut *guard as *mut Value;
         }
@@ -3453,9 +3503,21 @@ impl Interpreter {
     /// borrow into that data may be live while it is held (see
     /// `descend_container_ref`).
     pub(crate) fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
+        self.env_root_descended_mut_tracked(var_name, &mut None)
+    }
+
+    /// [`env_root_descended_mut`](Self::env_root_descended_mut), additionally
+    /// reporting the outermost `ContainerRef` cell the descent stepped through.
+    /// See [`descend_container_ref_tracked`](Self::descend_container_ref_tracked)
+    /// for why a caller that is about to mutate the container wants it.
+    pub(crate) fn env_root_descended_mut_tracked(
+        &mut self,
+        var_name: &str,
+        cell_addr: &mut Option<usize>,
+    ) -> Option<&mut Value> {
         if let Some(root) = self.unit_lexical_slot_mut(var_name) {
             let root = root as *mut Value;
-            let descended = unsafe { Self::descend_container_ref(root) };
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
         }
         // An `our @a`/`our %h` of the running routine's own package lives under
@@ -3466,7 +3528,7 @@ impl Interpreter {
         // own container. See `vm_our_package_vars`.
         if let Some(root) = self.our_package_container_mut(var_name) {
             let root = root as *mut Value;
-            let descended = unsafe { Self::descend_container_ref(root) };
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
         }
         // The sigil-less twin of the redirect above: an `our $a = [...]` is a
@@ -3477,11 +3539,11 @@ impl Interpreter {
         // chokepoint now mirrors the read chokepoint exactly.
         if let Some(root) = self.our_package_scalar_mut(var_name) {
             let root = root as *mut Value;
-            let descended = unsafe { Self::descend_container_ref(root) };
+            let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
             return Some(unsafe { &mut *descended });
         }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
-        let descended = unsafe { Self::descend_container_ref(root) };
+        let descended = unsafe { Self::descend_container_ref_tracked(root, cell_addr) };
         Some(unsafe { &mut *descended })
     }
 

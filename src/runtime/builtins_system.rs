@@ -57,6 +57,11 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    // ADR-0068 §4 step 1: from here on, an aliased container can be structurally
+    // mutated by more than one thread, so the store-side exclusion in
+    // `value::container_lock` stops being a no-op. Sticky and process-global: a
+    // container this worker wrote can still be aliased after the worker exits.
+    crate::value::container_lock::note_mutator_thread_spawned();
     // Register a mutator worker with the GC: the worker count is the
     // cooperative stop-the-world's quiescence target (trial deletion must not
     // race this thread's `Gc` mutations; see `gc::stw`). Raised here on the
