@@ -181,15 +181,18 @@ impl Interpreter {
         role_fail: PhaseFail,
         class_fail: PhaseFail,
     ) -> Result<Result<(), Value>, RuntimeError> {
+        crate::alloc_scope!("phase-steps");
         let Some(cell) = Self::self_instance_attrs(inv) else {
             return Ok(Ok(()));
         };
         let plan = self.native_ctor_plan(class_name);
+        crate::alloc_scope_named!(_sc_steps, "phase-steps:clone-steps");
         let steps = if method_name == "BUILD" {
             plan.build_steps.clone()
         } else {
             plan.tweak_steps.clone()
         };
+        crate::alloc_scope_end!(_sc_steps);
         if steps.is_empty() {
             return Ok(Ok(()));
         }
@@ -200,6 +203,7 @@ impl Interpreter {
         let mut probe_owned: Option<AttrMap> = None;
         let cn = class_name.resolve();
         for step in steps.iter() {
+            crate::alloc_scope!("phase-steps:step");
             if live_has_alias {
                 probe_owned = Some(cell.to_map());
             }

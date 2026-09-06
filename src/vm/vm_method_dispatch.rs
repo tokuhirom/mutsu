@@ -19,6 +19,7 @@ impl Interpreter {
         invocant: Option<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        crate::alloc_scope!("call-compiled-method");
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
         // only this call's sources. Clear any leftover from a sibling whose call
@@ -413,28 +414,36 @@ impl Interpreter {
             self.set_current_package(owner_class.to_string());
         }
 
-        // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
-        self.env_mut().insert("self".to_string(), base.clone());
+        // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods).
+        // Symbol-keyed: these fixed per-call keys are pre-interned well-known
+        // symbols (`symbol::wk`), so a method entry no longer allocates a
+        // `String` per key just to hand it to `Symbol::intern`. None of them is
+        // a `note_env_key`-tracked metadata name (a `^` placeholder or one of
+        // the `__mutsu_bound::`-style families), so skipping that latch — which
+        // `insert_sym` does not run — is sound here.
         self.env_mut()
-            .insert("__ANON_STATE__".to_string(), base.clone());
+            .insert_sym(crate::symbol::wk::self_(), base.clone());
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::anon_state(), base.clone());
 
         // In Raku, methods do NOT set $_ to the invocant by default.
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
         // will set $_ back to self if the invocant param is named "_".
-        self.env_mut().insert(
-            "_".to_string(),
-            Value::package(crate::symbol::Symbol::intern("Any")),
+        self.env_mut().insert_sym(
+            crate::symbol::wk::topic(),
+            Value::package(crate::symbol::wk::any()),
         );
 
         // Raku: $! is scoped per routine — fresh Nil on entry
-        self.env_mut().insert("!".to_string(), Value::NIL);
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
 
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
         let method_callable_id = crate::value::next_instance_id();
-        self.env_mut().insert(
-            "__mutsu_callable_id".to_string(),
+        self.env_mut().insert_sym(
+            crate::symbol::wk::callable_id(),
             Value::int(method_callable_id as i64),
         );
 
@@ -1404,6 +1413,22 @@ impl Interpreter {
     /// profiles); the returned map is `Some` only when the `:=` reconcile
     /// adjusted it beyond the cell contents.
     #[allow(clippy::too_many_arguments)]
+    /// Insert the fast path's bound parameters into `env`.
+    ///
+    /// Symbol-keyed so a call does not allocate a `String` per parameter just
+    /// to hand it to `Symbol::intern` (the name is already a `&str` borrowed
+    /// from the method def). A parameter name IS name-derived, so unlike the
+    /// fixed well-known keys around it this must still run
+    /// [`crate::env::note_env_key`] — a placeholder parameter (`$^a`) is stored
+    /// under a `^`-prefixed key, and dropping that latch would leave
+    /// `placeholder_var_possible()` reading false while such a key is live.
+    fn insert_fast_param_values(env: &mut crate::env::Env, param_values: &[(&str, Value)]) {
+        for (param_name, param_val) in param_values {
+            crate::env::note_env_key(param_name);
+            env.insert_sym(crate::symbol::Symbol::intern(param_name), param_val.clone());
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn call_compiled_method_fast(
         &mut self,
@@ -1417,6 +1442,8 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         can_skip_merge: bool,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        crate::alloc_scope!("mfast");
+        crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
         let attrs_cell = match base.view() {
             ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
@@ -1519,6 +1546,8 @@ impl Interpreter {
         // arguments the way the slow binder does; named params match Pair args
         // by key (rightmost wins), and attributive named params write through
         // the invocant's live attribute cell exactly like `bind_param_value`.
+        crate::alloc_scope_end!(_sc_pro);
+        crate::alloc_scope_named!(_sc_bind, "mfast:param-bind");
         let mut param_values: Vec<(&str, Value)> = Vec::new();
         let mut arg_idx = 0;
         for (idx, param_name) in method_def.params.iter().enumerate() {
@@ -1630,6 +1659,8 @@ impl Interpreter {
             }
         }
 
+        crate::alloc_scope_end!(_sc_bind);
+        crate::alloc_scope_named!(_sc_env, "mfast:env-setup");
         // Build class value for ?CLASS
         let class_val = Value::package(crate::symbol::Symbol::intern(owner_class));
         let method_callable_id = crate::value::next_instance_id();
@@ -1647,50 +1678,48 @@ impl Interpreter {
         self.inject_class_body_statics(owner_class);
         if skip_env_setup {
             let env = self.env_mut();
-            env.insert("self".to_string(), base.clone());
-            env.insert("__ANON_STATE__".to_string(), base.clone());
-            env.insert("?CLASS".to_string(), class_val.clone());
-            env.insert("_".to_string(), any_val.clone());
+            env.insert_sym(crate::symbol::wk::self_(), base.clone());
+            env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
+            env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
+            env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
             if let Some(ref role_name) = role_context {
-                env.insert(
-                    "?ROLE".to_string(),
+                env.insert_sym(
+                    crate::symbol::wk::role_decl(),
                     Value::package(crate::symbol::Symbol::intern(role_name)),
                 );
             } else {
-                env.remove("?ROLE");
+                env.remove_sym(crate::symbol::wk::role_decl());
             }
-            for (param_name, param_val) in &param_values {
-                env.insert(param_name.to_string(), param_val.clone());
-            }
+            Self::insert_fast_param_values(env, &param_values);
         } else {
             let env = self.env_mut();
-            env.insert("self".to_string(), base.clone());
-            env.insert("__ANON_STATE__".to_string(), base.clone());
-            env.insert("?CLASS".to_string(), class_val.clone());
-            env.insert("_".to_string(), any_val.clone());
-            env.insert("!".to_string(), Value::NIL);
-            env.insert(
-                "__mutsu_callable_id".to_string(),
+            env.insert_sym(crate::symbol::wk::self_(), base.clone());
+            env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
+            env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
+            env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
+            env.insert_sym(crate::symbol::wk::error_var(), Value::NIL);
+            env.insert_sym(
+                crate::symbol::wk::callable_id(),
                 Value::int(method_callable_id as i64),
             );
             if let Some(ref role_name) = role_context {
-                env.insert(
-                    "?ROLE".to_string(),
+                env.insert_sym(
+                    crate::symbol::wk::role_decl(),
                     Value::package(crate::symbol::Symbol::intern(role_name)),
                 );
             } else {
-                env.remove("?ROLE");
+                env.remove_sym(crate::symbol::wk::role_decl());
             }
             // Array/hash attribute env copies are no longer materialized here:
             // reads are cell-direct (Stage 2b) and the mutating ops refresh
             // env/locals from the live cell pre-op (`array_hash_attr_env_snapshot`),
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
-            for (param_name, param_val) in &param_values {
-                env.insert(param_name.to_string(), param_val.clone());
-            }
+            Self::insert_fast_param_values(env, &param_values);
         }
 
+        crate::alloc_scope_end!(_sc_env);
+        crate::alloc_scope_named!(_sc_loc, "mfast:slurpy-captures-locals");
         // Bind the method's implicit `*%_` slurpy (a Hash of the leftover named
         // args, empty when none). The compiler adds a `*%_` param to every method;
         // the slow `bind_function_args_values` path fills it, but this fast path
@@ -1715,7 +1744,8 @@ impl Interpreter {
         // lookup -- it strips the sigil and searches "_" -- can't resolve, falling
         // back to the topic `$_`).
         if let Some(slurpy) = &implicit_named_slurpy {
-            self.env_mut().insert("%_".to_string(), slurpy.clone());
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::named_slurpy(), slurpy.clone());
         }
 
         // A method can carry its defining lexical environment either from an
@@ -1846,6 +1876,8 @@ impl Interpreter {
             }
         }
 
+        crate::alloc_scope_end!(_sc_loc);
+        crate::alloc_scope_named!(_sc_body, "mfast:body");
         self.push_method_routine_with_location(
             Symbol::intern(owner_class),
             Symbol::intern(&method_def.lexical_package),
@@ -1972,6 +2004,8 @@ impl Interpreter {
             loan_env!(self, set_state_var(scoped_key, val));
         }
         self.state_scope_id.set(saved_state_scope);
+        crate::alloc_scope_end!(_sc_body);
+        crate::alloc_scope!("mfast:epilogue");
 
         if !can_skip_merge {
             // Non-can_skip_merge: AssignExpr may have written attribute values to

@@ -1,3 +1,4 @@
+pub mod alloc_stats;
 pub mod analysis;
 pub mod anon_names;
 mod ast;
@@ -38,7 +39,16 @@ pub use value::{RuntimeError, RuntimeErrorCode, Value};
 /// progress on decoupling the bytecode VM from the tree-walking interpreter.
 pub fn dump_vm_stats() {
     vm::vm_stats::dump();
+    alloc_stats::dump();
 }
+
+/// Count every allocation the process makes, so `alloc_scope!` regions can
+/// report exact per-scope allocation counts. Only compiled in under the
+/// measurement-only `alloc-stats` feature; a default build uses the system
+/// allocator unwrapped. See `src/alloc_stats.rs`.
+#[cfg(feature = "alloc-stats")]
+#[global_allocator]
+static ALLOC: alloc_stats::CountingAllocator = alloc_stats::CountingAllocator;
 
 /// Register the calling thread as the interpreter's main mutator thread for
 /// the GC's cooperative stop-the-world accounting (`gc::stw`). The CLI entry

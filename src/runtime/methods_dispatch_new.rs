@@ -314,6 +314,7 @@ impl Interpreter {
 
     /// Handle the "bless" method: creates a new instance with attributes from named args.
     fn dispatch_bless(&mut self, target: &Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        crate::alloc_scope!("bless");
         // self.bless(:attr1($val1), :attr2($val2), ...)
         // Creates a new instance of the invocant's class with attributes from named args
         let class_name = match target.view() {
@@ -351,6 +352,7 @@ impl Interpreter {
         // (shape-only data, invalidated with the dispatch caches) instead of
         // being re-collected on every bless.
         let plan = self.native_ctor_plan(class_name);
+        crate::alloc_scope_named!(_sc_defaults, "bless:attr-defaults");
         let cn_resolved = class_name.as_str();
         let mut attributes = AttrMap::with_capacity(plan.class_attrs.len());
         let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
@@ -453,6 +455,8 @@ impl Interpreter {
             }
             attributes.insert(attr_sym, val);
         }
+        crate::alloc_scope_end!(_sc_defaults);
+        crate::alloc_scope_named!(_sc_named, "bless:named-args");
         // Override with named args from bless call. A key that names a declared
         // attribute reuses its pre-interned Symbol (the common case — `|%_`
         // passthrough in a user `new`); anything else interns as before.
@@ -486,6 +490,8 @@ impl Interpreter {
                 deferred_defaults.retain(|d| d.name.as_str() != &**key);
             }
         }
+        crate::alloc_scope_end!(_sc_named);
+        crate::alloc_scope_named!(_sc_container, "bless:container-subclass");
         // Array-subclass construction: an `is Array` subclass reaches the base
         // `Array.new(1, 2, 3)` semantics through `nextwith(|@values)` in its own
         // `new`, which lands here as `bless` with positional (non-Pair) args.
@@ -559,17 +565,21 @@ impl Interpreter {
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
+        crate::alloc_scope_end!(_sc_container);
         // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared
         // attribute cell through them (raku semantics: `self` inside BUILD/TWEAK
         // IS the constructed object — same identity, mutations through a stored
         // `self` alias stay visible). This also drops the former per-phase-step
         // AttrMap clones + phantom intermediate instances (each of which was
         // queued for DESTROY).
+        crate::alloc_scope_named!(_sc_mk, "bless:make-instance");
         let inv = Value::make_instance(class_name, attributes);
+        crate::alloc_scope_end!(_sc_mk);
         // Run BUILD/TWEAK submethods in MRO order (base-first). The whole BUILD
         // walk (per-MRO-class registry probes + role-submethod ordering) is
         // skipped when the plan says no class or composed role declares one.
         if plan.has_build {
+            crate::alloc_scope!("bless:build-phase");
             self.push_build_write_frame(&inv);
             let build_result = self.run_bless_build_phase(class_name, &inv, &args);
             let build_writes = self.pop_build_write_frame();
@@ -591,6 +601,7 @@ impl Interpreter {
         // parameter binds -- the args are also pre-folded into `attributes` above
         // for the common no-explicit-BUILD case.
         if plan.has_tweak {
+            crate::alloc_scope!("bless:tweak-phase");
             match self.run_tweak_phase(class_name, &inv, &args)? {
                 Ok(()) => {}
                 // `fail` inside TWEAK: return the Failure instead of the instance.
@@ -616,18 +627,17 @@ impl Interpreter {
         instance: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
-        let has_user = |zelf: &mut Self, m: &str| {
-            zelf.class_mro(class_key).iter().any(|c| {
-                zelf.registry()
-                    .user_method_overloads(c.as_str(), m)
-                    .is_some()
-            })
-        };
-        let method = if has_user(self, "BUILDALL") {
-            "BUILDALL"
-        } else if has_user(self, "POPULATE") {
-            "POPULATE"
-        } else {
+        // The MRO x {BUILDALL, POPULATE} probe this used to run per
+        // construction is pure class shape, so it is precomputed once per class
+        // in the `NativeCtorPlan` (`user_buildall`) next to `has_build` /
+        // `has_tweak`. Answering `None` — the overwhelmingly common case — is
+        // now a cached-plan field read instead of an MRO walk of registry
+        // lookups that interned both the class and the method name at every
+        // level.
+        let Some(method) = self
+            .native_ctor_plan(crate::symbol::Symbol::intern(class_key))
+            .user_buildall
+        else {
             return Ok(());
         };
         self.call_method_with_values(instance.clone(), method, args.to_vec())?;

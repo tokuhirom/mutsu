@@ -160,3 +160,76 @@ round 2 swapped: new 1.13s / base 1.21s). `t/*constant*.t` (18 files) and the fu
 
 Landed as a second commit on the same PR as the `AttrMap` pre-sizing fix (both are G3-investigation
 findings from this session; see the PR for the combined test plan).
+
+## 2026-09-06: the tooling blocker is gone — `alloc_scope!` answers the attribution question
+
+The "Next steps for a dedicated perf session" list above offered two routes past the dead
+`perf --call-graph`: fix the debug store, or "build a debug/instrumented binary with a counting
+`#[global_allocator]` wrapper ... deterministic, environment-independent, and answers 'how many
+allocations does constructing a 20-attr object cost' without needing symbolized call graphs at
+all". The second route was taken and landed (see
+`news/2026-09/alloc-scope-accounting-and-method-entry-symbol-keys.md`).
+
+`src/alloc_stats.rs` + the `alloc-stats` cargo feature give exact, load-independent per-region
+allocation counts:
+
+```
+cargo build --release --features alloc-stats
+MUTSU_ALLOC_STATS=1 ./target/release/mutsu benchmarks/bench-ctor.raku
+```
+
+`alloc_scope!("label")` (and `alloc_scope_named!`/`alloc_scope_end!` for sequential phases) reports
+allocations and bytes both inclusive and exclusive of nested scopes. With the feature off it expands
+to nothing, so the call sites now marking up the construction and method-dispatch paths cost an
+ordinary build nothing. **Use this, not `perf`, for any further work on this ticket** — the
+`/root/.debug` build-id problem was never solved and does not need to be.
+
+`callgrind` also turned out to work in this container (`valgrind` and `callgrind_annotate` are both
+installed), and `callgrind_annotate --tree=caller` gives the caller attribution `perf` could not.
+Run it on a reduced-iteration copy of the benchmark; it is ~50x slower than native.
+
+### What the attribution actually says
+
+Per 5000 `bench-ctor` constructions, 1,646,587 allocations. **The premise this ticket was written
+under is wrong: `bless` is not where the cost is.**
+
+| region | allocations / construction |
+| --- | --- |
+| `bless` body + attribute-default seeding + instance build | ~21 |
+| `bless`'s TWEAK phase (2 MRO levels) | ~111 |
+| **`call_compiled_method`, exclusive of everything it calls** | **~70 per method call, 64% of the entire program** |
+
+Of that ~70, roughly 29 are call-*frame* overhead — paid identically by `submethod TWEAK(:$!spec) { }`,
+which has an empty body. The `AttrMap::with_capacity` pre-sizing from the 2026-08-17 session had
+already flattened the map-growth cost it targeted; what remained was never in `bless` at all.
+
+Two fixes landed from this (details in the news entry): the fixed per-method-call env keys are now
+pre-interned `symbol::wk` symbols written with `insert_sym` instead of a `String` allocated per key
+per call (`mfast:env-setup` 9.0 -> 2.7 allocations/call; whole program -6.7%), and the
+`BUILDALL`/`POPULATE` MRO probe moved into `NativeCtorPlan::user_buildall` (no allocations, but it
+removes ~16 `Symbol::intern` thread-local lookups per construction on a path `callgrind` showed
+spending 6.5% of the program in that function).
+
+Order-swapped min-of-9 A/B, `MUTSU_JIT=off`: `bench-ctor` -3.5%, `bench-class` -4.6%.
+
+### Next step (specified, not speculative): the implicit `*%_` slurpy
+
+The largest single remaining item the tool identifies is `mfast:slurpy-captures-locals` at **10.3
+allocations per method call (~10% of `bench-ctor`'s total)**, and essentially all of it is
+`implicit_method_named_slurpy` (`src/runtime/types/binding_helpers.rs`). Every compiled method call
+materializes the implicit `*%_` — a `HashMap` grown incrementally, a `String` per leftover named
+key, and a `Value` hash — **whether or not the body can ever observe `%_`**. `submethod TWEAK(:$!spec) { }`
+builds a 7-key hash and throws it away.
+
+The fix is a compile-time gate, in the shape of the existing `uses_dispatcher` flag (added for
+precisely this reason: "so a plain method call that never defers pays no per-call String/Vec
+clone"). Compute, once per `CompiledCode`, whether the body *or any nested closure body* mentions
+`%_` — over-approximating is fine and safe, since a false positive only keeps today's behavior — and
+skip both the `%_` env insert and the hash construction when it definitely does not. The escape
+hatches to over-approximate on are `EVAL` and dynamic-name lookup (`::('%_')`), which can reach a
+lexical without naming it in the constant pool.
+
+This is a compiler-analysis slice rather than a dispatch one, which is why it was not folded into
+the PR above. Remaining smaller items, in order: `bless:named-args` (11 allocations per bless, the
+sigil-coercion clone loop), `mfast:epilogue` (5.1/call), and the `format!("{}\0{}")` qualified
+private-attribute key built per private-attribute local per call in the fast path's locals-init loop.
