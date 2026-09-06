@@ -34,7 +34,7 @@ impl Interpreter {
         let mut result = sub_val;
         for role_name in roles {
             result = self
-                .compose_role_on_value(result.clone(), &role_name, &[])
+                .compose_role_on_value(result.clone(), &role_name, &[], false)
                 .unwrap_or(result);
         }
         result
@@ -252,8 +252,8 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Some(application) = self.extract_role_application(&right)
-            && let Some(reblessed) = self.does_rebless_instance(&left, &[application])?
+        if let Some((role_name, args, _)) = self.extract_role_application(&right)
+            && let Some(reblessed) = self.does_rebless_instance(&left, &[(role_name, args)])?
         {
             return Ok(reblessed);
         }
@@ -269,6 +269,7 @@ impl Interpreter {
         let applications: Vec<(String, Vec<Value>)> = roles
             .iter()
             .filter_map(|role| self.extract_role_application(role))
+            .map(|(name, args, _)| (name, args))
             .collect();
         if applications.len() == roles.len()
             && let Some(reblessed) = self.does_rebless_instance(&left, &applications)?
@@ -283,8 +284,8 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Some((role_name, args)) = self.extract_role_application(&right) {
-            let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
+        if let Some((role_name, args, is_param)) = self.extract_role_application(&right) {
+            let result = self.compose_role_on_value(left.clone(), &role_name, &args, is_param)?;
             // Call BUILD submethods from the composed role
             let result = self.call_role_build_submethods(result, &role_name)?;
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
@@ -312,8 +313,8 @@ impl Interpreter {
         let mut result = left.clone();
         let mut composed_role_names = Vec::new();
         for role_value in roles {
-            if let Some((role_name, args)) = self.extract_role_application(role_value) {
-                result = self.compose_role_on_value(result, &role_name, &args)?;
+            if let Some((role_name, args, is_param)) = self.extract_role_application(role_value) {
+                result = self.compose_role_on_value(result, &role_name, &args, is_param)?;
                 composed_role_names.push(role_name);
             }
         }
@@ -368,7 +369,20 @@ impl Interpreter {
         self.extract_role_application(rhs).is_some()
     }
 
-    fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
+    /// Decompose a `does`/`but` right-hand side into `(role name, arguments,
+    /// is_parameterisation)`.
+    ///
+    /// The last field separates the two spellings that both arrive here with
+    /// arguments and mean opposite things: `R[Int]` PARAMETERISES the role (the
+    /// arguments belong in the composed name and bind its type parameters),
+    /// while `R(42)` INITIALISES the single public attribute of an
+    /// unparameterised role (the argument is a value and must not appear in the
+    /// name). They are distinguishable here and nowhere later: the bracketed
+    /// form arrives as a `ParametricRole` view, or -- for the built-in
+    /// parametric roles, which have no `RoleDef` -- as a `Package` whose name is
+    /// already bracketed; the call form arrives as a `Pair` of the role name and
+    /// its argument list.
+    fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>, bool)> {
         // A *built-in* role (`Positional`, `Associative[Int,Int]`, ...) has no
         // `RoleDef` in the registry — mutsu models its behaviour natively — but
         // it is still a role and still composes, so every arm below accepts it
@@ -381,16 +395,18 @@ impl Interpreter {
             ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } if is_role(&base_name.resolve()) => Some((base_name.resolve(), type_args.clone())),
+            } if is_role(&base_name.resolve()) => {
+                Some((base_name.resolve(), type_args.clone(), true))
+            }
             ValueView::Pair(name, boxed) if is_role(name) => {
                 if let ValueView::Array(args, ..) = boxed.view() {
-                    Some((name.clone(), args.as_ref().clone().into_items()))
+                    Some((name.clone(), args.as_ref().clone().into_items(), false))
                 } else {
                     None
                 }
             }
             ValueView::Package(name) if is_role(&name.resolve()) => {
-                Some((name.resolve(), Vec::new()))
+                Some((name.resolve(), Vec::new(), false))
             }
             // A parameterised role that arrives as a bracketed *type object*
             // name rather than a `ParametricRole` view — which is how the
@@ -406,15 +422,18 @@ impl Interpreter {
                     args.iter()
                         .map(|arg| self.type_arg_value_from_name(arg))
                         .collect(),
+                    true,
                 ))
             }
             // An INDIVIDUAL parametric role (what a `role` declaration
             // expression evaluates to) applies as its group: composition is
             // group-keyed throughout. See `types/role_candidate.rs`.
             ValueView::Package(name) if self.role_candidate_group(&name.resolve()).is_some() => {
-                Some((self.role_group_name(&name.resolve()), Vec::new()))
+                Some((self.role_group_name(&name.resolve()), Vec::new(), false))
             }
-            ValueView::Str(name) if is_role(name.as_str()) => Some((name.to_string(), Vec::new())),
+            ValueView::Str(name) if is_role(name.as_str()) => {
+                Some((name.to_string(), Vec::new(), false))
+            }
             // A module-scoped role referenced by its short name at runtime
             // (`$a does NamedAttribute` inside `module NameTrait`'s
             // trait_mod:<is>, where the role registered as
@@ -431,18 +450,18 @@ impl Interpreter {
     /// form: the current package's `{pkg}::{name}` first (the sub executing a
     /// `does` runs with its defining module as the current package), then the
     /// general declared-type resolution. None when neither names a role.
-    fn resolve_short_role_name(&self, name: &str) -> Option<(String, Vec<Value>)> {
+    fn resolve_short_role_name(&self, name: &str) -> Option<(String, Vec<Value>, bool)> {
         if !name.contains("::") {
             let qualified = format!("{}::{}", self.current_package(), name);
             if self.registry().roles.contains_key(&qualified) {
-                return Some((qualified, Vec::new()));
+                return Some((qualified, Vec::new(), false));
             }
         }
         let resolved = self.resolve_declared_type_name(name);
         self.registry()
             .roles
             .contains_key(&resolved)
-            .then(|| (resolved, Vec::new()))
+            .then(|| (resolved, Vec::new(), false))
     }
 
     /// Bind a parameterised role's type parameters to their DEFAULTS, for a
@@ -535,6 +554,7 @@ impl Interpreter {
         left: Value,
         role_name: &str,
         role_args: &[Value],
+        is_parameterisation: bool,
     ) -> Result<Value, RuntimeError> {
         let role = self.registry().roles.get(role_name).cloned();
         if role.is_none()
@@ -607,8 +627,20 @@ impl Interpreter {
             format!("__mutsu_role_seq__{}", role_name),
             Value::int(crate::value::next_instance_id() as i64),
         );
+        // The role's type parameters, bound to the values this composition
+        // supplies (or to their declared defaults). Recorded in the mixin map
+        // for dispatch-time constraint resolution, and injected into the env
+        // below so an attribute default may reference one.
+        let mut param_bindings: Vec<(String, Value)> = Vec::new();
         // Store the type arguments so that `.does(Role[args])` can check them.
-        if !role_args.is_empty() {
+        // ONLY for the bracketed spelling: `R(42)` initialises an attribute and
+        // its argument is not a type argument (see `extract_role_application`).
+        // Recording every argument here stamped the argument's TYPE into the
+        // name of every attribute-initialised mixin (`Int+{R[Int]}` for
+        // `1 but R(42)`) and -- because the ADR-0060 composition key includes
+        // the type arguments -- also made
+        // `(1 but R(2)).WHAT =:= (1 but R(3)).WHAT` False.
+        if is_parameterisation && !role_args.is_empty() {
             mixins.insert(
                 format!("__mutsu_role_typeargs__{}", role_name),
                 Value::array(role_args.to_vec()),
@@ -627,6 +659,7 @@ impl Interpreter {
                     format!("__mutsu_role_param__{}", param_name),
                     type_arg.clone(),
                 );
+                param_bindings.push((param_name.clone(), type_arg.clone()));
             }
         } else if role.is_some() {
             // No explicit arguments: instantiate the role at its defaults. The
@@ -634,7 +667,8 @@ impl Interpreter {
             // but the parameters ARE bound — and a default that raises rejects
             // the composition right here.
             for (param_name, value) in self.role_default_type_param_bindings(role_name)? {
-                mixins.insert(format!("__mutsu_role_param__{}", param_name), value);
+                mixins.insert(format!("__mutsu_role_param__{}", param_name), value.clone());
+                param_bindings.push((param_name, value));
             }
         }
         // Store the role's unique ID so that different lexical roles with the
@@ -656,14 +690,9 @@ impl Interpreter {
         if let Some(role) = role {
             // Supplying an initialization value (`$x but R(v)`) is only legal
             // when the role has exactly one public attribute. Type parameters
-            // (`R[T]`) are not initialization values, so skip the check when the
-            // role is parameterized.
-            let has_type_params = self
-                .registry()
-                .role_type_params
-                .get(role_name)
-                .is_some_and(|params| !params.is_empty());
-            if !role_args.is_empty() && !has_type_params {
+            // (`R[T]`) are not initialization values, so skip the check for the
+            // bracketed spelling.
+            if !role_args.is_empty() && !is_parameterisation {
                 let public_attr_count =
                     role.attributes.iter().filter(|attr| attr.is_public).count();
                 if public_attr_count != 1 {
@@ -671,13 +700,32 @@ impl Interpreter {
                 }
             }
             // Temporarily merge captured environment from the role definition
-            // so that attribute defaults can reference closure variables.
-            let saved_env = if let Some(captured) = &role.captured_env {
+            // so that attribute defaults can reference closure variables, and
+            // bind the role's own type parameters so a default may reference
+            // one: `role R[$v] { has $.attr = $v }` composed as `R[42]` must
+            // evaluate `$v` to 42, and `role R[$v = 7] { ... }` composed bare
+            // must evaluate it to 7. Before the parameterisation/initialisation
+            // split above, `R[42]` reached the attribute through the
+            // initialiser path by accident and never needed the binding; the
+            // defaulted spelling had no path at all.
+            let saved_env = if role.captured_env.is_some() || !param_bindings.is_empty() {
                 let saved = self.env.clone();
-                for (k, v) in captured {
-                    if !self.env.contains_key(k) {
-                        self.env.insert(k.clone(), v.clone());
+                if let Some(captured) = &role.captured_env {
+                    for (k, v) in captured {
+                        if !self.env.contains_key(k) {
+                            self.env.insert(k.clone(), v.clone());
+                        }
                     }
+                }
+                for (name, value) in &param_bindings {
+                    // A declared parameter may be spelled with a sigil (`$v`) or
+                    // without (`T`, `::T`); env keys are sigil-less, so record
+                    // every spelling rather than guessing which the body reads.
+                    let bare = name
+                        .trim_start_matches(':')
+                        .trim_start_matches(['$', '@', '%', '&']);
+                    self.env.insert(name.clone(), value.clone());
+                    self.env.insert(bare.to_string(), value.clone());
                 }
                 Some(saved)
             } else {
@@ -687,17 +735,25 @@ impl Interpreter {
                 let attr_name = &attr.name;
                 let default_expr = &attr.default;
                 let sigil = &attr.sigil;
-                let value = if let Some(arg) = role_args.get(idx) {
+                let value = if let Some(arg) = role_args.get(idx).filter(|_| !is_parameterisation) {
+                    // Only the `R(v)` spelling initialises an attribute; on
+                    // `role Q[::T] { has $.y }`, `Q[Str]` binds the type
+                    // parameter and leaves `$.y` at its default (raku:
+                    // `(1 but Q[Str]).y` is `Any`, not `Str`).
                     arg.clone()
                 } else if let Some(default_arg) = default_expr {
                     let raw = self.eval_decl_trait_arg(default_arg)?;
                     Self::coerce_attr_value_by_sigil(raw, *sigil)
                 } else {
-                    // Default value based on sigil: @ -> [], % -> {}, $ -> Nil
+                    // Default value based on sigil: @ -> [], % -> {}, $ -> the
+                    // type object. An uninitialised scalar attribute is `Any`
+                    // in raku (`(1 but role { has $.x }).x` is `Any`, not
+                    // `Nil`), narrowed to the declared type by the accessor for
+                    // a typed `has Int $.x`.
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash_with_data(Value::hash_arc(HashMap::new())),
-                        _ => Value::NIL,
+                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
                     }
                 };
                 mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
