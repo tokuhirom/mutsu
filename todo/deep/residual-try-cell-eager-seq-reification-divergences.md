@@ -42,8 +42,42 @@ The two rows are pinned as the only remaining `todo`s in
 an enclosing `try` returns a Failure instead of throwing"). Un-`todo`ing them is
 this ticket's completion signal.
 
+## Measured 2026-09-07: the discriminator is `try` specifically, and only the exit status differs
+
+Re-run on a fresh build. **Only ONE assertion of the two `todo` rows actually
+fails**: the exit status. `unlike $out, /'reached-tail'/` already passes in
+mutsu -- the statement after the `try` does not run there either. So the
+divergence is narrower than "returns a Failure instead of throwing": both
+implementations abandon the rest of `ee`; rakudo lets the exception reach the
+top and exits 1, mutsu returns a `Failure` from `ee` and the caller's
+`.^name` (which does not force it) leaves the program alive at exit 0.
+
+The discriminator is `try` **specifically**, not "a block between the `fail` and
+the routine". Measured, with `sub ee { BLOCK; say "T"; 99 }` and a stub-map
+inside:
+
+| the block between | rakudo |
+|---|---|
+| `try { ... }` | **throws**, `T` unreached |
+| `{ ... }` (bare block) | `fail` returns a Failure from `ee`, alive |
+| `do { ... }` | same as the bare block |
+| no block at all | same as the bare block |
+
+and when the Seq is forced INSIDE the `try` (`try { my @z = map ... }`, or
+`try { eager map ... }`) rakudo and mutsu already agree: the `try` catches it,
+`$!` is `X::StubCode`, execution continues. So this is not about where the force
+lands -- `t/try-sink-semantics.t` pins that correctly -- it is about what a
+`fail` raised at a statement sink does when a `try` sits lexically between it
+and the routine. Nobody has explained rakudo's rule here yet, and a fix keyed on
+"the sink of a `try` statement's value" would be an ad-hoc special case; the
+rule has to be understood first.
+
 ## Not part of this ticket
 
-ADR-0058 steps 3 (extend the deferral to `builtin_map` and both `grep` entry
-points) and 4 (retire the `body_contains_return`/`is_stub_routine_body`
-deferral predicate and `create_lazy_map_list`) are tracked in the ADR, not here.
+ADR-0058 step 3 (the listop `map` form, then grep) was attempted on 2026-09-07
+and parked behind a step-2 hole -- see ADR-0058 §9 and
+`todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`. It would
+not move these two rows either way: they use a pure `...` stub body, which the
+older `create_lazy_map_list` deferral already handles. Step 4 (retire the
+`body_contains_return`/`is_stub_routine_body` predicate and
+`create_lazy_map_list`) is tracked in the ADR, not here.
