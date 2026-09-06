@@ -875,20 +875,12 @@ impl Interpreter {
 
     /// Resolve WhateverCode (e.g., *-1) or numeric coercion for a dimension index.
     fn resolve_whatever_code_index(&mut self, dim: &Value, target: &Value) -> Option<Value> {
-        if let ValueView::Sub(data) = dim.view() {
-            let len = match target.view() {
-                ValueView::Array(items, ..) => items.len() as i64,
-                _ => 0,
-            };
-            let mut sub_env = data.env.clone();
-            for p in &data.params {
-                sub_env.insert(p.to_string(), Value::int(len));
-            }
-            let saved_env = std::mem::take(self.env_mut());
-            *self.env_mut() = sub_env;
-            let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-            *self.env_mut() = saved_env;
-            return Some(result);
+        let len = match target.view() {
+            ValueView::Array(items, ..) => items.len() as i64,
+            _ => 0,
+        };
+        if let Some(resolved) = self.eval_whatever_code_index(dim, len) {
+            return Some(resolved);
         }
         if let ValueView::Rat(n, d) = dim.view() {
             return Some(Value::int(n / d));

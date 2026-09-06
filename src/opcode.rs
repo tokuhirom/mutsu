@@ -1604,6 +1604,25 @@ pub(crate) enum OpCode {
     Index {
         is_positional: bool,
     },
+    /// [`OpCode::Index`] emitted as the *receiver* of a method call
+    /// (`@a[0].mut`, `%h<a>.mut`) — ADR-0067's subscript-receiver producer.
+    ///
+    /// A raw invocant parameter binds the caller's container, but a subscript
+    /// receiver has no name for slice 3b's arrival gate to box and `Index` has
+    /// already read the element's *value* onto the stack by the time
+    /// `CallMethod` runs. This variant hands over the element's own `Scalar`
+    /// cell instead, which `CallMethod`'s existing decontainerize chokepoint
+    /// makes invisible to every callee that does not bind its invocant raw.
+    ///
+    /// Rawness is not statically known (it depends on the element's runtime
+    /// type), so the compiler emits this unconditionally for every
+    /// `<subscript>.method(...)`. The runtime gate is the same set-only
+    /// process-global mirror slice 3b uses: a program that declares no
+    /// raw-invocant method anywhere pays one relaxed atomic load and then runs
+    /// `Index` verbatim.
+    IndexInvocantRef {
+        is_positional: bool,
+    },
     /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone

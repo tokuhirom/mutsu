@@ -3557,13 +3557,24 @@ impl Interpreter {
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                match self.exec_call_method_dynamic_op(
+                // ADR-0067's subscript-receiver producer, dynamic spelling:
+                // `@a[0]."$name"()` reaches the same raw-invocant contract, and
+                // the receiver is already a container when `IndexInvocantRef`
+                // produced one. Armed here rather than inside the op because
+                // that function returns from a dozen places.
+                let armed_raw_invocant = self.arm_raw_invocant_arrival_from_dynamic_receiver(
+                    *arity,
+                    modifier_idx.map(|idx| Self::const_str(code, idx)),
+                );
+                let dynamic_result = self.exec_call_method_dynamic_op(
                     code,
                     *arity,
                     *modifier_idx,
                     *quoted,
                     *arg_sources_idx,
-                ) {
+                );
+                self.disarm_raw_invocant_arrival(armed_raw_invocant);
+                match dynamic_result {
                     Ok(()) => {}
                     Err(e) => {
                         // Record a resume point so a method that raises a
@@ -3827,6 +3838,10 @@ impl Interpreter {
             // -- Indexing --
             OpCode::Index { is_positional } => {
                 self.exec_index_op_with_positional(*is_positional)?;
+                *ip += 1;
+            }
+            OpCode::IndexInvocantRef { is_positional } => {
+                self.exec_index_invocant_ref_op(*is_positional)?;
                 *ip += 1;
             }
             OpCode::IndexAutovivifyLazy { is_positional } => {

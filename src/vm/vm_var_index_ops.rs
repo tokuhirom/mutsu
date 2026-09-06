@@ -402,6 +402,30 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate a `WhateverCode` subscript (`*-1`, `*-3`, `* div 2`) against the
+    /// container's element count, or `None` when the index is not one.
+    ///
+    /// The closure's own parameters are bound to `len` — that is what `*` means
+    /// in subscript position — and it runs in its captured environment. Every
+    /// subscript path that has to resolve a `*` index reads this one function:
+    /// the single-dimension slice walk below, the multi-dimension walk
+    /// (`resolve_whatever_code_index`, which adds numeric coercion around it),
+    /// and ADR-0067's subscript-receiver producer.
+    pub(crate) fn eval_whatever_code_index(&mut self, idx: &Value, len: i64) -> Option<Value> {
+        let ValueView::Sub(data) = idx.view() else {
+            return None;
+        };
+        let mut sub_env = data.env.clone();
+        for p in &data.params {
+            sub_env.insert(p.to_string(), Value::int(len));
+        }
+        let saved_env = std::mem::take(self.env_mut());
+        *self.env_mut() = sub_env;
+        let result = loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
+        *self.env_mut() = saved_env;
+        Some(result)
+    }
+
     /// Backward-compatible wrapper: defaults to associative indexing.
     pub(super) fn exec_index_op(&mut self) -> Result<(), RuntimeError> {
         self.exec_index_op_with_positional(false)
@@ -997,20 +1021,7 @@ impl Interpreter {
                     let len = items.len() as i64;
                     for idx in indices.iter() {
                         // Resolve WhateverCode indices (e.g. *-1, *-3)
-                        let resolved_idx = if let ValueView::Sub(data) = idx.view() {
-                            let mut sub_env = data.env.clone();
-                            for p in &data.params {
-                                sub_env.insert(p.to_string(), Value::int(len));
-                            }
-                            let saved_env = std::mem::take(self.env_mut());
-                            *self.env_mut() = sub_env;
-                            let result =
-                                loan_env!(self, eval_block_value(&data.body)).unwrap_or(Value::NIL);
-                            *self.env_mut() = saved_env;
-                            Some(result)
-                        } else {
-                            None
-                        };
+                        let resolved_idx = self.eval_whatever_code_index(idx, len);
                         let effective_idx = resolved_idx.as_ref().unwrap_or(idx);
                         // Nested list index: @a[0,(1,2)] => (a[0], (a[1], a[2]))
                         // A `LazyList` sublist (`@a[1,(lazy 3,4,5)]`) recurses too,
