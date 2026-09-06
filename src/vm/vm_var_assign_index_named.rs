@@ -3469,6 +3469,17 @@ impl Interpreter {
             let descended = unsafe { Self::descend_container_ref(root) };
             return Some(unsafe { &mut *descended });
         }
+        // The sigil-less twin of the redirect above: an `our $a = [...]` is a
+        // scalar-held container whose mutating methods reach here under the
+        // bare name `a`, which `our_package_container_mut` skips (it gates on
+        // an `@`/`%` sigil). Same position and same reason as the read side's
+        // `our_package_scalar` (`get_env_with_main_alias`), so the write
+        // chokepoint now mirrors the read chokepoint exactly.
+        if let Some(root) = self.our_package_scalar_mut(var_name) {
+            let root = root as *mut Value;
+            let descended = unsafe { Self::descend_container_ref(root) };
+            return Some(unsafe { &mut *descended });
+        }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };
         Some(unsafe { &mut *descended })

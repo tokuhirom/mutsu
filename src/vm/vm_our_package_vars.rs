@@ -227,6 +227,22 @@ impl Interpreter {
         self.get_our_var_mut(&key)
     }
 
+    /// The `our_vars` slot holding a bare `our` SCALAR's `ContainerRef` cell,
+    /// for the same container-mutation chokepoint. This is the sigil-less twin
+    /// of [`Self::our_package_container_mut`], and it exists for exactly the
+    /// case [`Self::our_package_scalar`] covers on the read side: `our $a =
+    /// [...]` in a module is a scalar-held container, so the module's own
+    /// `$a.push(...)` reaches the chokepoint under the BARE, sigil-less name
+    /// `a` — a key the container redirect above deliberately ignores (it gates
+    /// on an `@`/`%` sigil). Without this arm the mutation fell through to
+    /// `env["a"]`, i.e. the loading scope's own `my $a`. The caller descends
+    /// the returned cell, so a mutation lands on the very node the read side
+    /// hands out.
+    pub(crate) fn our_package_scalar_mut(&mut self, name: &str) -> Option<&mut Value> {
+        let (key, _) = self.our_package_scalar_cell(name)?;
+        self.get_our_var_mut(&key)
+    }
+
     /// Store `val` into the `our` mirror at `key`, writing THROUGH the
     /// container node the mirror already holds rather than swapping it for a
     /// fresh one.

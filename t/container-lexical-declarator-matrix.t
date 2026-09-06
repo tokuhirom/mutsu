@@ -21,7 +21,7 @@ use ContainerSlotLexical;
 # a `my` inside a block is a different (block) binding, and the shapes under
 # test are specifically about a mainline lexical seen from a named sub.
 
-plan 41;
+plan 43;
 
 # --- module file scope: the module's own containers are not the caller's -----
 
@@ -55,11 +55,16 @@ typed-push(9);
 is typed-peek(), '1,2,9', 'module type-constrained @ sees its own binding';
 is @ti.join(","), 'x,y,z', "consumer's same-named untyped @ is untouched";
 
-# (The module's anonymous scalar-held container -- `my $anon = [...]` -- is
-# deliberately NOT pinned here: it collides with a consumer's same-named `my
-# $anon` through the SCALAR unit-lexical lane, a pre-existing divergence
-# unrelated to container resolution. See
-# todo/tickets/module-scalar-held-array-collides-with-caller-my.md.)
+# The module's scalar-held container (`my $anon = [...]`) belongs here too: it
+# takes the SCALAR unit-lexical lane (ADR-0024) rather than the `@`/`%` one, and
+# it used to collide with a consumer's same-named `my $anon` because the
+# sigil-less array mutators wrote the raw `env` entry instead of going through
+# `env_root_descended_mut`. The full mutator matrix for that lane lives in
+# `t/module-scalar-held-container-lexical.t`.
+my $anon = [<x y z>];
+anon-push("c");
+is anon-peek(), 'a,b,c', 'module my $-held array sees its own binding';
+is $anon.join(","), 'x,y,z', "consumer's same-named my \$ array is untouched";
 
 my @*csldyn = <a b>;
 sub dyn-wrapper() {

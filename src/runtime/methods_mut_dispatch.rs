@@ -1732,6 +1732,20 @@ impl Interpreter {
         }
 
         // Handle push/append/pop/shift/unshift on sigilless array bindings
+        //
+        // Every slot access below goes through `env_root_descended_mut`, NOT a
+        // raw `self.env.get(&key)`. `key` here is a SIGIL-LESS scalar name, and
+        // the bare env key under it belongs to whatever scope loaded the
+        // compunit that is running: a module's own file-scope `my $a = [...]`
+        // (or `state $a`) lives in `unit_lexicals`, and a `our $a` in the `our`
+        // mirror. Reading `env` directly made a module routine's `$a.push($v)`
+        // extend the CONSUMER's same-named `my $a` array and leave the module's
+        // own untouched -- the `@`/`%` arms above were given this chokepoint by
+        // ADR-0039 slice 1, the sigil-less lane never was. (It only surfaced
+        // once the loading scope actually mirrored its `my $a` into `env`,
+        // which a mainline named-sub declaration is enough to trigger, so the
+        // two-line repro looked fine while the same program with one extra
+        // `sub` in it silently wrote to the wrong array.)
         if !target_var.starts_with('@') && matches!(target.view(), ValueView::Array(..)) {
             let key = target_var.to_string();
             let empty_what = match self.var_type_constraint(&key) {
@@ -1743,7 +1757,7 @@ impl Interpreter {
                 }
                 _ => "Array".to_string(),
             };
-            let array_flag = match self.env.get(&key).map(Value::view) {
+            let array_flag = match self.env_root_descended_mut(&key).map(|v| v.view()) {
                 Some(ValueView::Array(_, kind)) => kind,
                 _ => match target.view() {
                     ValueView::Array(_, kind) => kind,
@@ -1771,7 +1785,7 @@ impl Interpreter {
                         .map(|v| self.wrap_native_int_for_var(&key, v))
                         .collect();
                     let slot_is_array = matches!(
-                        self.env.get(&key).map(Value::view),
+                        self.env_root_descended_mut(&key).map(|v| v.view()),
                         Some(ValueView::Array(..))
                     );
                     if slot_is_array {
@@ -1781,8 +1795,7 @@ impl Interpreter {
                             normalized_args
                         };
                         return Ok(self
-                            .env
-                            .get_mut(&key)
+                            .env_root_descended_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, kind| {
                                 let kind = *kind;
@@ -1848,20 +1861,19 @@ impl Interpreter {
                             args.len() + 1
                         )));
                     }
-                    if let Some(v) = self.env.get(&key)
+                    if let Some(v) = self.env_root_descended_mut(&key)
                         && let ValueView::Array(_, kind) = v.view()
                         && kind.is_lazy()
                     {
                         return Err(RuntimeError::cannot_lazy("pop"));
                     }
                     let slot_is_array = matches!(
-                        self.env.get(&key).map(Value::view),
+                        self.env_root_descended_mut(&key).map(|v| v.view()),
                         Some(ValueView::Array(..))
                     );
                     if slot_is_array {
                         let out = self
-                            .env
-                            .get_mut(&key)
+                            .env_root_descended_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
                                 // Shared backing array: in-place interior mutation (see `push`).
@@ -1904,7 +1916,7 @@ impl Interpreter {
                         "sigilless-unshift",
                     );
                     let normalized_args = Self::normalize_push_unshift_args(args);
-                    if let Some(slot) = self.env.get_mut(&key)
+                    if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
                             // Shared backing array: mutate the interior in place so
@@ -1944,7 +1956,7 @@ impl Interpreter {
                         "sigilless-prepend",
                     );
                     let flat_values = flatten_append_args(args);
-                    if let Some(slot) = self.env.get_mut(&key)
+                    if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
                             // Shared backing array: in-place interior mutation (see `push`).
@@ -1993,13 +2005,12 @@ impl Interpreter {
                         )));
                     }
                     let slot_is_array = matches!(
-                        self.env.get(&key).map(Value::view),
+                        self.env_root_descended_mut(&key).map(|v| v.view()),
                         Some(ValueView::Array(..))
                     );
                     if slot_is_array {
                         let out = self
-                            .env
-                            .get_mut(&key)
+                            .env_root_descended_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
                                 // Shared backing array: in-place interior mutation (see `push`).
