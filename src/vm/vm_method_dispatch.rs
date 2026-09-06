@@ -961,6 +961,12 @@ impl Interpreter {
                     || attr_twigil_local(attributes, s)
                     || (has_attr_aliases && attr_alias_local(attributes, s))
             };
+            let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
+                method_def.captured_env.as_ref().is_some_and(|c| {
+                    c.get_sym(sym)
+                        .is_some_and(|captured| cheaply_unchanged(captured, v))
+                })
+            };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
@@ -988,8 +994,12 @@ impl Interpreter {
             }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
-            let (mut merged_env, wrote_caller, changed_caller_locals) =
-                merge_method_env(frame.saved_env, current_env, &is_method_local);
+            let (mut merged_env, wrote_caller, changed_caller_locals) = merge_method_env(
+                frame.saved_env,
+                current_env,
+                &is_method_local,
+                &is_unwritten_capture,
+            );
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
             // caller-visible write (captured-outer var, global, &sub) or wrote
@@ -2051,11 +2061,21 @@ impl Interpreter {
                             .as_ref()
                             .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
                 };
+                let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
+                    method_def.captured_env.as_ref().is_some_and(|c| {
+                        c.get_sym(sym)
+                            .is_some_and(|captured| cheaply_unchanged(captured, v))
+                    })
+                };
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
-                let (merged, wrote_caller, changed_caller_locals) =
-                    merge_method_env(frame.saved_env, current_env, &is_method_local);
+                let (merged, wrote_caller, changed_caller_locals) = merge_method_env(
+                    frame.saved_env,
+                    current_env,
+                    &is_method_local,
+                    &is_unwritten_capture,
+                );
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.method_dispatch_pure = !wrote_caller;
@@ -2250,10 +2270,24 @@ fn merge_method_env(
     mut saved: Env,
     current: Env,
     is_method_local: &dyn Fn(&str) -> bool,
+    is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
 ) -> (Env, bool, Vec<Symbol>) {
     let writes: Vec<(Symbol, Value)> = current
         .overlay_iter()
         .filter_map(|(k, v)| {
+            // A key the frame received from `method_def.captured_env` (the
+            // method's own DEFINING lexical scope) and never wrote is frame
+            // setup, not a caller-visible write. An authoritative capture
+            // overwrites the caller's same-named env entry on entry, so merging
+            // it back rebound the caller's variable to the method's defining
+            // scope: a `unit module M` with `my @arr` and a `class C is export`
+            // whose method merely READS `@arr` permanently repointed the
+            // consumer's own `my @arr` at the module's array. A key the method
+            // actually wrote still merges, so the "class declared in a routine
+            // mutates its captured outer lexical" propagation is untouched.
+            if is_unwritten_capture(*k, v) {
+                return None;
+            }
             // Skip keys introduced by the method frame (params, self, attributes,
             // locals) -- these must not leak back into the caller. The membership
             // test is a call-site predicate over the frame's params/locals/attr
