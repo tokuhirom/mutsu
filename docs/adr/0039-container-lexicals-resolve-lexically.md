@@ -22,7 +22,10 @@
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
   ADR-0025 (cell boxing must be value-kind-blind — slice 3 defers `@`/`%`),
   ADR-0010 (cross-thread lexical sharing scope — the `__mutsu_atomic_*` lanes)
-- Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`,
+- Addresses: `news/2026-09/nested-frame-container-mutation-reaches-its-owner.md`
+  (originally `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`;
+  closed 2026-09-06, see §11) and its successor work item
+  `todo/deep/adr0039-slice2-container-reads-compile-to-a-slot.md`,
   `news/2026-08/shared-store-bare-name-collision-across-unrelated-frames.md`
   (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20;
   closed 2026-08-22, see §8.6)
@@ -964,3 +967,48 @@ them from scratch.
 4. §4.2's third bullet (`is_plain_lexical_name`'s `@%&` exclusion) stays
    independent and still open.
 
+
+## 11. §10.3's blocker is closed (2026-09-06); slice 2 is re-attemptable
+
+§10.3 withdrew the read flip for one reason: `make roast` failed two whitelisted
+files (`S15-nfg/concat-stable.t`, `integration/advent2014-day05.t`) on a single
+root cause — *a container mutated from a nested frame propagates to its owner by
+NAME only*, so a replacing write leaves the owner's slot stale. §6's acceptance
+row (a) is the two-line form of it.
+
+**That root cause no longer reproduces.** It was closed by `da8e94252` (ADR-0055
+slice 1b, "an escaping container capture the frame cannot vouch for gets a
+cell"), which boxes the container into a shared `ContainerRef` cell at its
+declaration so a closure holds the *binding* rather than the *name*. Note this
+lands *after* §10's measurements, which were all taken on `2a9e06f91`.
+
+Verified by building at `da8e94252^` and running six probe shapes there and at
+HEAD:
+
+| shape | `da8e94252^` | HEAD | raku |
+|---|---|---|---|
+| §6 row (a): `.push` from a nested sub with a live shadow | `inner=[3 9]`, owner `[1 2]` | `inner=[3]`, owner `[1 2 9]` | matches HEAD |
+| whole-container replace (`@a = 7,8`) | owner `[1 2]` | owner `[7 8]` | `[7 8]` |
+| shrinking `.shift` | owner `[1 2 3]` | owner `[2 3]` | `[2 3]` |
+| hash key add | owner `(a)` | owner `(a b)` | `(a b)` |
+| hash replace | owner `(a)` | owner `(z)` | `(z)` |
+| `.=` rebuild | owner `[3 1 2]` | owner `[1 2 3]` | `[1 2 3]` |
+
+Both named roast files pass on HEAD. Pinned as
+`t/nested-frame-container-mutation-reaches-owner.t` so the blocker cannot
+silently return, and closed out in
+`news/2026-09/nested-frame-container-mutation-reaches-its-owner.md`.
+
+**Consequences for the ADR.** §10.3's conclusion — "the read flip is gated on
+the write/capture lane, i.e. §4.2's SECOND bullet, and they cannot be landed in
+the order §4.2 lists them" — is spent: the second bullet arrived on its own, from
+ADR-0055, and §4.2's first bullet is now unblocked. §4.2's ordering claim stands
+as history, not as guidance.
+
+What is *not* claimed here: that the flip will now pass. §10.2's four store-side
+defects and §10.3's two remaining roast files (`S32-list/classify.t`,
+`S03-metaops/hyper.t`) were also measured on `2a9e06f91` and must be re-measured
+before being planned around — the same rule that caught this blocker. The work
+item now lives at
+`todo/deep/adr0039-slice2-container-reads-compile-to-a-slot.md`, with those
+defects carried forward and flagged as pre-`da8e94252` measurements.
