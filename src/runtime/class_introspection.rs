@@ -576,7 +576,7 @@ impl Interpreter {
         matches!(name, "pos" | "orig" | "target" | "from" | "to")
     }
 
-    pub(super) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
+    pub(crate) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
         for cn in mro.iter().rev() {
