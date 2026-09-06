@@ -35,6 +35,20 @@ impl Interpreter {
                 ValueView::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
                 }
+                // Rakudo's `first` reads its adverbs out of `%_` and *validates*
+                // them rather than letting the implicit slurpy swallow an
+                // unknown one, so an undeclared named is an `X::Adverb` -- a
+                // soft `fail`, unlike `grep`'s throw. Without this the Pair fell
+                // into the positional vector and became the matcher
+                // (`(1,2,3).first(:zzz)` answered `Nil`) or was silently ignored
+                // (`(1,2,3).first(* > 1, :zzz)` answered `2`).
+                ValueView::Pair(key, _) => {
+                    return Ok(RuntimeError::unexpected_adverb_failure(
+                        &[key.to_string()],
+                        "first",
+                        crate::runtime::utils::value_type_name(&target),
+                    ));
+                }
                 _ => positional.push(arg.clone()),
             }
         }

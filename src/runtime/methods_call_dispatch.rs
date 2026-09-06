@@ -3266,10 +3266,20 @@ impl Interpreter {
             args.len(),
         );
         let method_sym = crate::symbol::Symbol::intern(method);
+        // Named-blind arity cascade -- the interpreter-side twin of the guard in
+        // `vm_native_dispatch::try_native_method_raw`. The arity cascade selects
+        // its arm by argument *count*, so a named argument the method does not
+        // accept must not be in the list; `builtins::accepted_nameds` states
+        // which names each surveyed method reads. The stripped list is used ONLY
+        // for this cascade: if it declines, the original `args` (nameds intact)
+        // go on to the by-name dispatchers, the constructors and the user
+        // method, none of which may lose a named.
+        let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
+        let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
         let native_result = if bypass_native_fastpath {
             None
         } else {
-            match args.as_slice() {
+            match cascade_args {
                 [] => crate::builtins::native_method_0arg(&target, method_sym),
                 [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
                 [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
@@ -3281,7 +3291,7 @@ impl Interpreter {
                 "methods_call_dispatch::call_method_with_values",
                 &target,
                 method_sym.as_str(),
-                args.len(),
+                cascade_args.len(),
             );
         }
         if !bypass_native_fastpath {
@@ -4220,10 +4230,20 @@ impl Interpreter {
                 _ => false,
             };
 
+        // Named-blind by-name dispatch, the slow-path twin of the arity-cascade
+        // guard above. These three handlers read `args[0]`/`args[1]` positionally
+        // just as the cascade does (`10.polymod(3, :zzz)` read the Pair as a
+        // second modulus; `(1,2,3).rotor(2, :zzz)` as a second cycle spec), so a
+        // named argument the method does not accept is dropped here too. The
+        // filtered list reaches ONLY these three: `dispatch_new_and_constructors`
+        // and everything after it below still sees the call's own `args`.
+        let by_name_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
+        let by_name_args: &[Value] = by_name_stripped.as_deref().unwrap_or(&args);
+
         // Primary method dispatch by name (group 1: string, IO, coercion, misc)
         if !shadows_builtin
             && let Some(result) =
-                self.dispatch_method_by_name_1(target.clone(), method, args.clone())
+                self.dispatch_method_by_name_1(target.clone(), method, by_name_args.to_vec())
         {
             return result;
         }
@@ -4231,7 +4251,7 @@ impl Interpreter {
         // Primary method dispatch by name (group 2: collection/iteration)
         if !shadows_builtin
             && let Some(result) =
-                self.dispatch_method_by_name_2(target.clone(), method, args.clone())
+                self.dispatch_method_by_name_2(target.clone(), method, by_name_args.to_vec())
         {
             return result;
         }
@@ -4239,7 +4259,7 @@ impl Interpreter {
         // Primary method dispatch by name (group 3: Supply, network, temporal, misc)
         if !shadows_builtin
             && let Some(result) =
-                self.dispatch_method_by_name_3(target.clone(), method, args.clone())
+                self.dispatch_method_by_name_3(target.clone(), method, by_name_args.to_vec())
         {
             return result;
         }

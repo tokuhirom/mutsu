@@ -398,6 +398,18 @@ impl Interpreter {
                 ValueView::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
                 }
+                // `first` validates its adverbs instead of letting an unknown
+                // one be swallowed, in the sub form too: rakudo answers
+                // `first(* > 1, (1,2,3), :zzz)` with an `X::Adverb` Failure.
+                // The method-form twin of this arm is in
+                // `methods_collection_ops/first_polymod_tree.rs`.
+                ValueView::Pair(key, _) => {
+                    return Ok(RuntimeError::unexpected_adverb_failure(
+                        &[key.to_string()],
+                        "first",
+                        "List",
+                    ));
+                }
                 _ => positional.push(arg.clone()),
             }
         }
