@@ -658,6 +658,7 @@ impl Interpreter {
             recorded_free_var_writes: Vec::new(),
             pending_runtime_name_writes: Vec::new(),
             predictive_seq_iters: self.predictive_seq_iters.clone(),
+            user_io_read_buffers: self.user_io_read_buffers.clone(),
             protect_block_cache: HashMap::new(),
             lock_async_recursion: Vec::new(),
             lock_async_deferred: Vec::new(),
