@@ -223,6 +223,7 @@ mod vm_native_subst;
 mod vm_native_test;
 mod vm_our_package_vars;
 mod vm_range_int_bounds;
+pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;
 mod vm_react_loop;
 mod vm_react_subscriptions;

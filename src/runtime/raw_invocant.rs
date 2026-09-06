@@ -25,6 +25,33 @@
 //! `assign_method_lvalue_with_values`, silently skipping all of them.
 
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Lock-free mirror of [`Registry::any_raw_invocant_method`], raised at the
+/// same instant by the same writer ([`Registry::note_raw_invocant_methods`]).
+///
+/// Slice 3a's gate runs on `$obj.attr = v` and can afford
+/// `self.registry().any_raw_invocant_method`; slice 3b's runs on **every**
+/// `$var.method(...)`, where an `RwLock` read acquisition per call is not
+/// affordable. Same soundness argument as `env.rs`'s `CLOSURE_META_KEY_SEEN`:
+/// monotone, set-only, and an over-set only makes the (correct) resolve run.
+/// Process-global rather than per-interpreter for the same reason that flag is
+/// — a second interpreter in the same process merely inherits a conservative
+/// `true`.
+static ANY_RAW_INVOCANT_METHOD: AtomicBool = AtomicBool::new(false);
+
+/// Raise the mirror. Called only from `Registry::note_raw_invocant_methods`, so
+/// the two flags cannot drift apart.
+pub(crate) fn note_any_raw_invocant_method() {
+    ANY_RAW_INVOCANT_METHOD.store(true, Ordering::Relaxed);
+}
+
+/// Whether any registered method anywhere declares a raw invocant. The cheap
+/// pre-gate of the slice 3b arrival path.
+#[inline]
+pub(crate) fn any_raw_invocant_method_possible() -> bool {
+    ANY_RAW_INVOCANT_METHOD.load(Ordering::Relaxed)
+}
 
 /// Native methods that Rakudo declares `is raw` on their invocant *and* which
 /// hand that invocant straight back, so `$a.NAME = v` writes through `$a`.
@@ -64,7 +91,7 @@ pub(crate) fn native_method_returns_raw_invocant(method: &str) -> bool {
 /// Three spellings, all verified against raku v2026.07: the sigilless `\SELF:`
 /// (which the parser records as `sigilless`), `$s is raw:`, and `$s is rw:`. A
 /// plain `Any:D $s:` is *not* raw, which is the E2 regression control.
-fn param_is_raw_invocant(pd: &crate::ast::ParamDef) -> bool {
+pub(crate) fn param_is_raw_invocant(pd: &crate::ast::ParamDef) -> bool {
     pd.is_invocant
         && (pd.sigilless
             || pd
@@ -109,6 +136,44 @@ impl Interpreter {
             return Self::method_is_rw_capable(&def) && method_def_has_raw_invocant(&def);
         }
         native_method_returns_raw_invocant(method)
+    }
+
+    /// The ADR-0067 slice 3b **arrival** oracle: does `target.method(args)`
+    /// resolve to a routine that binds its invocant raw, so mutation *through*
+    /// the invocant inside the body must reach the caller's variable?
+    ///
+    /// This is deliberately a weaker question than
+    /// [`Self::method_returns_raw_invocant`], and the difference was measured
+    /// against raku v2026.07 rather than inherited from the ADR text, which
+    /// asserted that both halves of the contract apply to slice 3b too:
+    ///
+    /// ```raku
+    /// class C { method m(\S:)          { S = 7 } }; C.new.m   # raku: 7
+    /// class C { method m($s is raw:)   { $s = 7 } }; C.new.m  # raku: 7
+    /// class C { method m($s:)          { $s = 7 } }; C.new.m  # raku: dies
+    /// ```
+    ///
+    /// No `is raw` on the *routine* anywhere — that trait governs the outbound
+    /// direction (whether the call is an lvalue), which is slice 3a's question.
+    /// Inbound, only the invocant *parameter*'s own rawness matters, so this
+    /// oracle drops the `method_is_rw_capable` conjunct and keeps the
+    /// [`method_def_has_raw_invocant`] one. Both oracles read that same
+    /// predicate, so the two halves cannot disagree about what "raw invocant"
+    /// means.
+    ///
+    /// There is deliberately no native fallback row: no native method mutates
+    /// its invocant through parameter zero (`.snitch`, the one row of
+    /// [`native_method_returns_raw_invocant`], only hands it back).
+    pub(crate) fn method_binds_raw_invocant(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+    ) -> bool {
+        let class_name = Self::raw_invocant_class_name(target);
+        self.resolve_method(&class_name, method, method_args)
+            .as_ref()
+            .is_some_and(method_def_has_raw_invocant)
     }
 
     /// The class name a method is resolved against for an lvalue invocant.

@@ -1,10 +1,12 @@
 # ADR-0067: A routine hands back the container it was *given* — raw arguments, raw invocants, and the subscript step through an object
 
-- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05; Slice 3 was
-  re-scoped into 3a/3b on the same day after measurement, and 3a's E6 row split
-  off again into the rw-attribute-accessor producer; Slice 4 absorbed two of
-  Slice 5's three acceptance rows, again after measurement; Slices 3b and the E6
-  producer open)
+- Status: Proposed (Slices 1, 2, 3a, 4 and 5 implemented 2026-09-05, Slice 3b
+  2026-09-06; Slice 3 was re-scoped into 3a/3b on 2026-09-05 after measurement,
+  and 3a's E6 row split off again into the rw-attribute-accessor producer;
+  Slice 4 absorbed two of Slice 5's three acceptance rows, again after
+  measurement; Slice 3b shipped the *named-receiver* half of the arrival
+  direction and split its subscript-receiver rows (I3/K3) off into a producer
+  slice of their own; the E6 producer and that subscript producer remain open)
 - Date: 2026-09-05
 - Related: [ADR-0059](0059-is-rw-routines-return-a-container.md) (an `is rw`
   routine returns a container), [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md)
@@ -644,6 +646,183 @@ route 4's scalar restriction declines them), `$a.list = 5` (list assignment, see
 above), `$a.snitch.snitch = 5` (a chained lvalue invocant),
 `@n[0][1].mutsuRawInv = 8` (a depth-2 subscript invocant, which is slice 4's
 walker), and `42.snitch = 5` (raku also dies, with a different message).
+
+#### Slice 3b — IMPLEMENTED 2026-09-06
+
+Every row of the I/E/F/G families above was re-measured against raku v2026.07
+and a debug `mutsu` built from `main` at `30d6754f5` before any code was
+written, along with a new L/M/N/O/Q/R/S family built to find the *edges* of the
+contract. Two of this ADR's own claims about 3b did not survive that.
+
+**Correction A — `is raw` on the routine is not part of the arrival contract,
+and E1/E2 are not regression controls for this half.** The slice 3 text says
+"E1/E2 stay regression controls for both: raku needs the invocant raw **and**
+the routine `is raw`/`is rw`, and dropping either must keep refusing". Measured,
+that conjunction is the *outbound* (lvalue-return) contract only:
+
+| # | Program | raku |
+|---|---|---|
+| L1 | `class C { method m(\S:) { S = 7 } }; my $c = C.new; $c.m; say $c` | `7` |
+| L2 | the same with `method m($s is raw:)` | `7` |
+| L3 | the same with `method m($s is rw:)` | `7` |
+| L4 | the same with `method m($s:)` | dies, `Cannot assign to a readonly variable or a value` |
+| L5 | the same with `method m(C $s:)` | dies, `Cannot assign to an immutable value` |
+
+No `is raw` on the routine anywhere in L1-L3. `is raw`/`is rw` on the *routine*
+answers "is this call an lvalue"; rawness of the *invocant parameter* answers
+"does the body's write reach the caller". They are independent, and 3b needs
+only the second. So the shipped oracle is
+`Interpreter::method_binds_raw_invocant` — the same resolve as slice 3a's
+`method_returns_raw_invocant` with the `method_is_rw_capable` conjunct dropped.
+Both read the one `method_def_has_raw_invocant` predicate, so the two halves
+cannot disagree about what "raw invocant" means. E1/E2 remain slice 3a's
+controls and are re-verified unchanged; L4/L5 are 3b's own controls.
+
+**Correction B — the recorded call chain was the wrong one, and the transport
+the ADR predicted is not the transport that shipped.** The ADR's `rust-gdb`
+trace has `call_compiled_method_fast <- call_compiled_method <-
+dispatch_compiled_method <- try_dispatch_compiled_method_direct_as`, and
+concludes 3b "is a signature change across that whole chain". Re-traced on I1
+and L2, the chain above `call_compiled_method` is **two** different chains and
+neither is the recorded one at its top:
+
+```
+$c.m, Instance receiver:
+  exec_call_method_mut_op_impl (vm_call_method_mut_ops.rs)   target_name = "c"
+    -> try_compiled_method_mut_or_interpret_sym              target_name = "c"
+      -> call_compiled_method            (:581,  slow binder, `$s is raw:`)
+        -> call_compiled_method_fast     (:1512, fast binder, `\S:`)
+
+$a.mut, `augment class Int` receiver:
+  exec_call_method_mut_op_impl                               target_name = "a"
+    -> try_compiled_method_mut_or_interpret_sym
+      -> vm_call_method_mut_with_values -> call_method_mut_with_values
+        -> call_method_with_values -> call_method_with_values_inner
+          -> try_dispatch_compiled_method_direct_as -> dispatch_compiled_method
+            -> call_compiled_method -> call_compiled_method_fast
+```
+
+The second chain runs through `call_method_with_values`, which takes
+`target: Value` and no source channel and is called from ~everywhere, so the
+signature change the ADR imagined would have been far wider than "that whole
+chain". What both chains *do* share is their single origin, the `CallMethodMut`
+opcode, which is the only place that has the receiver's source name at all.
+So the shipped transport is a **one-slot channel armed at that opcode and
+consumed at the binder**, not a parameter: `pending_raw_invocant`
+(`src/vm/vm_raw_invocant_arrival.rs`), armed immediately before the dispatch,
+disarmed immediately after, and consumed only by a binder that both agrees on
+the method name and is looking at a `ParamDef` that really is a raw invocant.
+That last re-check is what makes a nested dispatch in the window (a `where`
+clause, a multi tie-break) unable to mis-bind it — and it is also the
+authority when multi-dispatch lands on a different candidate than the gate
+resolved.
+
+The ADR *was* right that both binders must learn the container, and right about
+which is which: `binds_caller_container()` is true for `$s is raw:` / `$s is rw:`
+(the traits arm), which routes those to the slow binder, while a sigil-less
+`\S:` is excluded by that predicate's own `!pd.is_invocant` and lands on the
+fast one. The shipped pin exercises both spellings for exactly this reason.
+
+**What shipped.**
+
+- **`Interpreter::method_binds_raw_invocant`** (`src/runtime/raw_invocant.rs`),
+  the arrival oracle described above. No native fallback row: no native method
+  mutates its invocant through parameter zero (`.snitch`, slice 3a's one row,
+  only hands it back).
+- **The arrival channel and its arm/disarm pair**
+  (`src/vm/vm_raw_invocant_arrival.rs`), wired into `CallMethodMut`'s two
+  user-method dispatch sites through one helper so the pair can never be split,
+  and into `CallMethodDynamicMut` for the runtime method-name spelling.
+- **No new producer.** The container comes from slice 3a's
+  `capture_lvalue_invocant_cell`, reused verbatim — which is the point: its
+  route order (an existing frame cell, then an existing env container, then a
+  direct slot box, then a minted cell) is the thing slice 3a had to learn the
+  hard way, and reusing it is what makes `for @a <-> $e { $e.m }` and
+  `for @a -> $e is rw { $e.m }` bind the element's *already promoted* cell
+  instead of a second, disconnected one. Both are pinned.
+- **The binder change is two lines in each binder**: bind parameter zero to the
+  channel's cell when it holds one, and leave `base` alone. `base` stays the
+  plain value, so `self`, the attribute seeding, the dispatch frame and the
+  ~40 downstream `target.view()` branches see exactly what they see today —
+  the 3a hazard ("boxing every invocant would hand a `ContainerRef` to branches
+  that match `Instance`/`Array`/`Hash` directly") does not arise here at all,
+  because only the *parameter* is boxed, never the invocant value.
+- **Write-through needs no new consumer either.** A local slot holding a
+  `ContainerRef` already stores through the cell (`vm_var_assign_set_local.rs`,
+  `vm_var_assign_local.rs`) and `GetLocal` already derefs one, so `S = 7` inside
+  the body reaches the caller with no writeback machinery. Slice 3b adds no
+  writeback path, no `pending_rw_writeback_sources` entry, and no new opcode.
+
+**The cost, measured.** The gate runs on **every** `$var.method(...)`, an
+order of magnitude more traffic than slice 3a's `$obj.attr = v`. Slice 3a's
+pre-filter is `self.registry().any_raw_invocant_method`, which is an `RwLock`
+read acquisition — affordable there, not here. So the flag is mirrored into a
+process-global, set-only `AtomicBool` raised by the *same* writer
+(`Registry::note_raw_invocant_methods`), the pattern `env.rs`'s
+`CLOSURE_META_KEY_SEEN` already uses, and a `debug_assert` in
+`debug_verify_owner_method_names_index` fails the debug `t/` suite if a future
+writer of the registry field ever bypasses that one writer. With the mirror,
+the whole gate for a program that declares no raw-invocant method is one relaxed
+atomic load and an `is_empty()`.
+
+Same-binary env-switch A/B on a release build (`MUTSU_SKIP_RAW_INVOCANT_ARRIVAL`
+short-circuits the gate), 4M iterations of `$p.bump` on a `has $.x is rw` class,
+`taskset -c 2`, min of 11: **15.15s with the gate against 15.49s with it
+skipped**, and 16.88s against 17.14s on a second interleaved round taken under
+heavier machine load. The gate is *faster* in both rounds, which is the honest
+reading of "below the noise floor": the sign is meaningless, and the
+between-round drift (15.2s -> 16.9s on the same binary at the same switch
+position) is an order of magnitude larger than the difference being measured.
+Compare slice 3a, whose un-filtered gate showed a clean, repeatable **+13%** on
+the same kind of A/B — a real cost is visible in this harness when there is one.
+
+**What still refuses or is still wrong, all measured, all deliberately out of
+scope.**
+
+- **I3/K3 — a *subscript* receiver (`@a[0].mut`, `%h<a>.mut`) is unchanged.**
+  This is the row the ADR named as 3b acceptance, and it is not reachable from
+  this mechanism: `--dump-bytecode` shows `@a[0].mut` compiling to
+  `GetArrayVar; LoadConst; Index; CallMethod` — a plain `CallMethod`, which
+  carries **no** `target_name_idx`, and whose receiver arrives as a value the
+  `Index` op has already read out of the array. There is no name to box and no
+  location on the stack. What it needs is a *producer* — the subscript handing
+  over the element's own cell, which `array_slot_ref` can already mint — and
+  emitting that is an **unconditional compile-side change** to a very common
+  shape (every `<subscript>.method(...)` in every program), so it must be
+  paired with a decontainerize-at-the-chokepoint guard in `CallMethod` and
+  re-measured, exactly as the E6 producer must. That is its own slice, recorded
+  as `todo/tickets/subscript-receiver-raw-invocant-producer.md`. These rows are
+  *unchanged*, not newly wrong: mutsu silently dropped the write before this
+  slice and still does.
+- **N1 — an attribute-accessor receiver (`$d.v.mut`) is unchanged**, for the
+  same reason and by the same missing producer as 3a's E6 row
+  (`MarkAccessorRefContext`). It belongs to that slice, not this one.
+- **O1 — an aggregate receiver (`@a.mut` with `S = [7,8]`) is unchanged.**
+  `capture_lvalue_invocant_cell` declines every route for an `@`/`%` name by
+  design (route 4's scalar restriction), because a cell over an aggregate would
+  disagree with its identity-shared storage. raku answers `[7 8]`; mutsu
+  silently answers `[1 2]`, as before.
+- **L4/L5/J5 — a non-raw invocant assigned to inside the body.** raku dies;
+  mutsu silently drops the write, unchanged. This is a readonly-parameter
+  enforcement gap, not an arrival gap: the gate correctly declines these, and
+  the *observable* half of the contract (the caller's variable is not modified)
+  already matches, which is what the pin asserts.
+- **M1/M2 — an rvalue invocant (`42.mut`, `($a + 1).mut`).** raku dies with
+  `Cannot modify an immutable Int`; mutsu silently succeeds doing nothing.
+  Unchanged: there is no location, so the gate declines and nothing is boxed.
+
+**Pinned by** `t/raw-invocant-arrives-as-container.t` (26 tests, byte-identical
+output under `mutsu` and `raku`): the three raw-invocant spellings over both
+binders, the routine-rw-capability independence (Correction A's B1/B2 rows),
+`augment class Int`/`Str` receivers with a repeated mutation that proves the
+container survives, each frame shape a receiver name can have (a `<->` and an
+`is rw` loop parameter, a captured-outer scalar written from a closure, an
+`is rw` sub parameter, a `:=`-bound alias), `multi` candidate selection, role
+composition, the runtime method-name spelling, a body that reads its invocant
+before replacing it, and five regression rows — the two non-raw invocant
+controls, an ordinary method whose value semantics must survive the
+program-wide pre-filter being on, and a read-only raw-invocant method that
+must stay a plain rvalue call.
 
 ### Slice 4 — the chain walk steps through an object
 

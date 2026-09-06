@@ -161,7 +161,11 @@ impl Interpreter {
     /// `capture_var_cell_inner`'s own `is_reference` guard: boxing an
     /// `Array`/`Hash`/`Instance` env entry would produce a cell that disagrees
     /// with the aggregate's own identity-shared storage.
-    fn capture_lvalue_invocant_cell(
+    ///
+    /// Slice 3b (`vm_raw_invocant_arrival.rs`) reuses this same routine for the
+    /// *arrival* direction, so the "reuse an existing location before minting
+    /// one" ordering above is enforced once for both halves.
+    pub(super) fn capture_lvalue_invocant_cell(
         &mut self,
         code: &CompiledCode,
         name: &str,

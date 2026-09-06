@@ -71,6 +71,18 @@ impl Registry {
     pub(super) fn debug_verify_owner_method_names_index(&self) {
         use std::sync::OnceLock;
         static ENABLED: OnceLock<bool> = OnceLock::new();
+        // The slice 3b mirror must never lag the registry flag: the arrival gate
+        // reads only the mirror, so a `true` here with a `false` there would
+        // silently turn the feature off. Checked unconditionally (one relaxed
+        // atomic load) rather than behind MUTSU_CHECK_METHOD_INDEX, because it
+        // is the invariant that a future writer of `any_raw_invocant_method`
+        // could plausibly break.
+        debug_assert!(
+            !self.any_raw_invocant_method
+                || crate::runtime::raw_invocant::any_raw_invocant_method_possible(),
+            "Registry::any_raw_invocant_method is set but its lock-free mirror is not -- \
+             a writer bypassed note_raw_invocant_methods"
+        );
         if !*ENABLED.get_or_init(|| std::env::var_os("MUTSU_CHECK_METHOD_INDEX").is_some()) {
             return;
         }
@@ -122,6 +134,10 @@ impl Registry {
                 .any(crate::runtime::raw_invocant::method_def_has_raw_invocant)
         {
             self.any_raw_invocant_method = true;
+            // Slice 3b's gate runs on every method call and cannot take the
+            // registry read lock, so it reads a lock-free mirror raised here —
+            // the one writer of both, so they cannot disagree.
+            crate::runtime::raw_invocant::note_any_raw_invocant_method();
         }
     }
 

@@ -578,7 +578,15 @@ impl Interpreter {
                         }
                     }
                 }
-                self.env_mut().insert(param_name.clone(), base.clone());
+                // ADR-0067 slice 3b: a raw invocant parameter binds the
+                // caller's container, not a copy of its contents, so
+                // `method m($s is raw:) { $s = 7 }` writes the caller's
+                // variable. `base` itself stays the plain value — it is what
+                // `self`, the attribute seeding and the dispatch frame use.
+                let invocant_value = self
+                    .take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx))
+                    .unwrap_or_else(|| base.clone());
+                self.env_mut().insert(param_name.clone(), invocant_value);
                 continue;
             }
             bind_params.push(param_name.clone());
@@ -1509,7 +1517,15 @@ impl Interpreter {
                 .map(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                 .unwrap_or(false);
             if is_invocant {
-                param_values.push((param_name, base.clone()));
+                // ADR-0067 slice 3b — see the twin in `call_compiled_method`.
+                // Which of the two binders runs is decided by the fast-path
+                // eligibility gate above (`has_rw_params`), and the sigil-less
+                // `\S:` spelling lands here while `$s is raw:` lands there, so
+                // both have to learn the container.
+                let invocant_value = self
+                    .take_raw_invocant_arrival(method_name, pd)
+                    .unwrap_or_else(|| base.clone());
+                param_values.push((param_name, invocant_value));
                 continue;
             }
             if let Some(pd) = pd.filter(|pd| pd.named) {

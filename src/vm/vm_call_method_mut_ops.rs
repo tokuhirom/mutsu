@@ -464,7 +464,14 @@ impl Interpreter {
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamicmut", "user");
-            self.vm_call_method_mut_with_values(&target_name, target, &method, args)
+            // ADR-0067 slice 3b: the runtime method-name spelling reaches the
+            // same binders, and rawness is only knowable here anyway, so the
+            // arrival channel is armed the same way the statically named
+            // dispatch arms it.
+            let armed = self.arm_raw_invocant_arrival(code, &target_name, &target, &method, &args);
+            let r = self.vm_call_method_mut_with_values(&target_name, target, &method, args);
+            self.disarm_raw_invocant_arrival(armed);
+            r
         };
         match saved_self {
             Some(s) => self.set_env_with_main_alias("self", s),
@@ -2814,9 +2821,11 @@ impl Interpreter {
                             args.len(),
                             false,
                         );
-                        self.try_compiled_method_mut_or_interpret_sym(
+                        self.dispatch_compiled_method_mut_with_raw_invocant(
+                            code,
                             &target_name,
                             target,
+                            &method,
                             method_sym,
                             args,
                         )
@@ -2830,9 +2839,11 @@ impl Interpreter {
                     // resolver's Native candidate against, unlike the genuine
                     // native/user completions above.
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-                    self.try_compiled_method_mut_or_interpret_sym(
+                    self.dispatch_compiled_method_mut_with_raw_invocant(
+                        code,
                         &target_name,
                         target,
+                        &method,
                         method_sym,
                         args,
                     )
