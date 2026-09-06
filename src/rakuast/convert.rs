@@ -240,6 +240,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             kind,
             body,
             condition,
+            ..
         } => {
             if condition.is_some() {
                 return Err(unsupported("PRE/POST phaser condition"));

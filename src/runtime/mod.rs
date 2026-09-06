@@ -442,6 +442,7 @@ mod dispatch_proto;
 mod dispatch_proto_call;
 mod dispatch_proto_rewrite;
 mod dispatch_resolve;
+mod end_phasers;
 mod eval_check;
 mod eval_routine_magicals;
 mod exception_message;
@@ -1474,10 +1475,22 @@ pub(crate) struct EndPhaser {
     pub(crate) dead_keys: NameSet,
     /// Install order, which is what decides the exit-time run order (END
     /// phasers run in reverse of it). It is NOT the registration order: mutsu
-    /// registers the main compunit's top-level ENDs *eagerly*, before the body
-    /// runs, so a `use` on line 1 registers the module's END after them even
-    /// though rakudo installs it first. See [`end_order`].
+    /// installs every one of the main compunit's ENDs *eagerly*, before the
+    /// body runs, so a `use` on line 1 registers the module's END after them
+    /// even though rakudo installs it first. See [`end_order`].
     pub(crate) order: u64,
+    /// Mark of the moment [`env`](Self::env) was captured, drawn from
+    /// `Interpreter::end_phaser_capture_seq`, or `None` for a phaser whose
+    /// declaration execution never reached.
+    ///
+    /// Every main-compunit END is *installed* before the body runs (rakudo
+    /// installs at compile time, so an END in a never-entered block still runs
+    /// at exit), which means "was this phaser registered inside the scope that
+    /// is now dying" can no longer be answered by comparing positions in
+    /// the `end_phasers` vector. This mark answers it instead: a scope records the
+    /// capture counter on entry and `update_end_phaser_envs` freezes exactly
+    /// the phasers that captured at or after it.
+    pub(crate) capture_seq: Option<u64>,
 }
 
 /// Install-order bases for [`EndPhaser::order`]; lowest = installed earliest =
@@ -1486,10 +1499,10 @@ pub(crate) struct EndPhaser {
 /// rakudo installs an END phaser when the compunit that declares it is
 /// *compiled*, so `use M` on line 1 installs `M`'s ENDs before any of the
 /// script's own, and the LIFO run order then puts the script's first. mutsu
-/// loads modules at run time and hoists the main compunit's top-level ENDs to
-/// before the body (so they still run when the body dies), which reverses the
-/// two. Sorting by these bases at exit restores rakudo's order without giving
-/// up the hoist.
+/// loads modules at run time but installs all of the main compunit's ENDs
+/// before its body (`runtime::end_phasers`, so one still runs when the body
+/// dies or never reaches it), which reverses the two. Sorting by these bases
+/// at exit restores rakudo's order without giving up the eager installation.
 pub(crate) mod end_order {
     /// A module's ENDs, in load order — a nested `use` installs the inner
     /// module's first, exactly as rakudo does.
@@ -1497,9 +1510,9 @@ pub(crate) mod end_order {
     /// The main compunit's ENDs, keyed by SOURCE POSITION — a top-level one
     /// and one inside a block or a sub share this class, because rakudo
     /// installs both as its compiler walks past them. Ordering them by
-    /// registration instead put every top-level END (mutsu hoists those) ahead
-    /// of every block-scoped one, so `{ END {…} } END {…}` ran the block's
-    /// first where rakudo runs the mainline's first.
+    /// registration instead put every top-level END (mutsu installs those
+    /// first) ahead of every block-scoped one, so `{ END {…} } END {…}` ran
+    /// the block's first where rakudo runs the mainline's first.
     pub(crate) const MAIN: u64 = 1 << 40;
     /// ENDs registered from inside an `EVAL`. rakudo compiles an EVAL'd snippet
     /// at RUN time, so its ENDs install after everything the main compunit
@@ -1508,13 +1521,16 @@ pub(crate) mod end_order {
     pub(crate) const RUNTIME: u64 = 2 << 40;
 
     /// Position of one END within its class. A main-compunit END is keyed by
-    /// its source LINE, with the monotonic registration sequence only breaking
-    /// ties (several ENDs on one line, or one line reached repeatedly); a
-    /// module's or an EVAL's END has no meaningful line in the main compunit's
-    /// numbering and is keyed by the sequence alone.
-    pub(crate) fn slot(line: Option<u32>, seq: u64) -> u64 {
-        match line {
-            Some(line) => ((line as u64) << 20) | (seq & 0xF_FFFF),
+    /// the source-order index the parser handed its declaration
+    /// (`ast::Stmt::Phaser::end_index`), which is exactly the order rakudo's
+    /// compiler installs them in — including several ENDs on one physical
+    /// line, which a source-LINE key could only tie. A module's or an EVAL's
+    /// END has no position in the main compunit's numbering and is keyed by
+    /// the monotonic registration sequence instead, which for those two
+    /// classes *is* the install order (load order, and EVAL-execution order).
+    pub(crate) fn slot(end_index: Option<u32>, seq: u64) -> u64 {
+        match end_index {
+            Some(index) => index as u64,
             None => seq,
         }
     }
@@ -1871,7 +1887,23 @@ pub struct Interpreter {
     /// is not `end_order::MODULE`.
     module_load_order: Vec<u64>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
+    /// Only consulted for phasers that were NOT pre-installed by
+    /// `preregister_main_end_phasers` (a module's, an `EVAL`'s, an rvalue
+    /// `END`): a pre-installed one owns a fixed slot in `end_phasers`, so
+    /// re-reaching its declaration re-captures into that slot rather than
+    /// adding a phaser.
     end_phaser_sites: HashSet<u64>,
+    /// `ast::Stmt::Phaser::end_index` -> position in `end_phasers`, for the
+    /// main compunit's ENDs, which `preregister_main_end_phasers` installs in
+    /// source order before the body runs. Reaching such a declaration updates the slot's
+    /// captured env instead of installing a second phaser; never reaching it
+    /// still leaves the phaser installed, which is what makes an END inside a
+    /// never-entered block (or a never-called sub) run at exit, as it does in
+    /// rakudo.
+    main_end_slots: HashMap<u32, usize>,
+    /// Monotonic counter stamped into `EndPhaser::capture_seq` each time a
+    /// phaser captures its declaring scope's env. See that field.
+    end_phaser_capture_seq: u64,
     chroot_root: Option<PathBuf>,
     loaded_modules: HashSet<String>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,

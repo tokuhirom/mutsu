@@ -362,12 +362,17 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         let consumed = condition_src.len() - rest.len();
         crate::symbol::Symbol::intern(&condition_src[..consumed])
     });
+    // rakudo installs an END when the compiler walks past its declaration, so
+    // the number it gets here — a strictly source-order counter — is what
+    // orders it against the compunit's other ENDs at exit.
+    let end_index = matches!(kind, PhaserKind::End).then(crate::ast::next_end_phaser_index);
     Ok((
         rest,
         Stmt::Phaser {
             kind,
             body,
             condition,
+            end_index,
         },
     ))
 }

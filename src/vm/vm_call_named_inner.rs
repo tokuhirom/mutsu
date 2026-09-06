@@ -40,7 +40,7 @@ impl Interpreter {
         // frozen into the phaser's capture before the env is restored. Recorded
         // here so the return path can tell "registered during this call" from
         // "registered earlier" with one integer compare.
-        let end_phaser_count_before = self.end_phaser_count();
+        let end_phaser_mark_before = self.end_phaser_capture_mark();
         // Inject callsite line BEFORE push_call_frame so the parent env
         // contains the updated ?LINE. This avoids triggering Arc::make_mut
         // deep clone after the env Arc is shared with the call frame.
@@ -753,14 +753,14 @@ impl Interpreter {
             // it — the captured copy is its last surviving binding. Names that
             // do propagate stay unfrozen, so a later mutation of the caller's
             // variable is still what the phaser reads.
-            if self.end_phaser_count() > end_phaser_count_before {
+            if self.end_phaser_capture_mark() > end_phaser_mark_before {
                 let current = self.clone_env();
                 let dying: crate::runtime::NameSet = current
                     .keys()
                     .filter(|k| !restored_env.contains_key_sym(**k))
                     .copied()
                     .collect();
-                self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+                self.update_end_phaser_envs(end_phaser_mark_before, &current, &dying);
             }
             // ADR-0019 C6e-2: re-apply the sigilless-alias writebacks collected
             // before the merge. The merge's callee-local exclusion drops an

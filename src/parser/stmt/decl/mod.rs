@@ -101,6 +101,7 @@ fn wrap_with_will_leave(
             kind,
             body: phaser_body,
             condition: None,
+            end_index: None,
         });
     }
     Stmt::SyntheticBlock(stmts)

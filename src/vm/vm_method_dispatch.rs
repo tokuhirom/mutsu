@@ -314,7 +314,7 @@ impl Interpreter {
         // See `call_compiled_function_named_inner`: an END registered inside
         // this method closes over a frame that dies on return, so the return
         // path freezes its capture against this frame's final env.
-        let end_phaser_count_before = self.end_phaser_count();
+        let end_phaser_mark_before = self.end_phaser_capture_mark();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         // A method gets a fresh, writable `$_` (Any) — it does NOT inherit the
         // caller's topic, so a caller `given`/`with`/`for` that marked `_`
@@ -994,7 +994,7 @@ impl Interpreter {
             // method, before `take_env` hands it to the merge. Gated on the
             // phaser count so an ordinary method call never pays the clone.
             let end_phaser_env =
-                (self.end_phaser_count() > end_phaser_count_before).then(|| self.clone_env());
+                (self.end_phaser_capture_mark() > end_phaser_mark_before).then(|| self.clone_env());
             // Take sole ownership of caller + callee envs (pop the frame for the
             // saved caller env, take the live callee env) so merge_method_env can
             // mutate the caller env in place without a deep copy.
@@ -1085,7 +1085,7 @@ impl Interpreter {
                     .filter(|k| !merged_env.contains_key_sym(**k))
                     .copied()
                     .collect();
-                self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+                self.update_end_phaser_envs(end_phaser_mark_before, &current, &dying);
             }
             *self.env_mut() = merged_env;
         }
@@ -1465,7 +1465,7 @@ impl Interpreter {
         self.push_light_call_frame();
         // See `call_compiled_function_named_inner`: an END registered inside this
         // method closes over a frame that dies on return.
-        let end_phaser_count_before = self.end_phaser_count();
+        let end_phaser_mark_before = self.end_phaser_capture_mark();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
         // A method gets a fresh, writable `$_` (Any) — clear any readonly mark
         // leaked from the caller's topic (see the slow path above). Journaled by
@@ -2037,7 +2037,7 @@ impl Interpreter {
         // env first — otherwise the phaser would keep the value the slot held
         // when it was registered. Gated on the phaser count, so an ordinary
         // method call pays one integer compare.
-        let end_phaser_env = (self.end_phaser_count() > end_phaser_count_before).then(|| {
+        let end_phaser_env = (self.end_phaser_capture_mark() > end_phaser_mark_before).then(|| {
             self.sync_env_from_locals(cc);
             self.clone_env()
         });
@@ -2139,7 +2139,7 @@ impl Interpreter {
                 .filter(|k| !caller.contains_key_sym(**k))
                 .copied()
                 .collect();
-            self.update_end_phaser_envs(end_phaser_count_before, &current, &dying);
+            self.update_end_phaser_envs(end_phaser_mark_before, &current, &dying);
         }
 
         let final_result = match result {

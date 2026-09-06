@@ -4058,13 +4058,18 @@ impl Compiler {
             Stmt::Phaser {
                 kind: PhaserKind::End,
                 body,
+                end_index,
                 ..
             } => {
-                // END: store body in stmt pool for deferred execution
+                // END: store body in stmt pool for deferred execution. The
+                // source-order index rides along: it is what the VM matches
+                // against the phaser slot `end_phasers` already installed
+                // for this declaration.
                 let end_stmt = Stmt::Phaser {
                     kind: PhaserKind::End,
                     body: body.clone(),
                     condition: None,
+                    end_index: *end_index,
                 };
                 let idx = self.code.add_stmt(end_stmt);
                 let site_id =
@@ -4075,6 +4080,7 @@ impl Compiler {
                 kind: PhaserKind::Pre,
                 body,
                 condition,
+                ..
             } => {
                 // PRE phaser inline: compile body, check truthiness
                 for (i, inner) in body.iter().enumerate() {
@@ -4100,6 +4106,7 @@ impl Compiler {
                 kind: PhaserKind::Post,
                 body,
                 condition,
+                ..
             } => {
                 // POST phaser inline: compile body, check truthiness
                 for (i, inner) in body.iter().enumerate() {
@@ -5015,6 +5022,7 @@ impl Compiler {
                 kind: PhaserKind::Pre,
                 body,
                 condition,
+                ..
             } = s
             {
                 // ADR-0048 Phase 2: `PRE {}` does not take a signature in
@@ -5057,6 +5065,7 @@ impl Compiler {
                 kind: PhaserKind::Post,
                 body,
                 condition,
+                ..
             } = s
             {
                 // ADR-0048 Phase 2: `POST {}` does not take a signature in

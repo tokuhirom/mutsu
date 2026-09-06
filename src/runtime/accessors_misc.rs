@@ -1,5 +1,7 @@
-//! Misc interpreter state: my-global-stash visibility, END phasers,
-//! routine-registry snapshot/restore, block-scope depth, and `let`-saves.
+//! Misc interpreter state: my-global-stash visibility, routine-registry
+//! snapshot/restore, block-scope depth, and `let`-saves. (The END-phaser
+//! accessors this file used to hold moved to `end_phasers`, next to the pass
+//! that installs them.)
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
@@ -44,129 +46,6 @@ impl Interpreter {
                 | "LEXICAL"
                 | "CLIENT"
         )
-    }
-
-    /// Register an END phaser found while *running*: inside a module body (in
-    /// which case rakudo would have installed it at the `use`, before anything
-    /// the main compunit declares) or inside a block/sub/`EVAL` of the main
-    /// compunit (installed as the compiler walked past it, after any `use`).
-    /// `line` is the END's source line in the MAIN compunit, used to order it
-    /// against the compunit's other ENDs; pass `None` when the registration is
-    /// not in the main compunit's line numbering (a module body, an `EVAL`).
-    pub(crate) fn push_end_phaser(&mut self, body: Vec<Stmt>, line: Option<u32>) {
-        match self.module_load_order.last().copied() {
-            // Inside a module body: install order is the load order, and the
-            // module's own line numbers say nothing about the main compunit.
-            Some(base) => self.push_end_phaser_ordered(body, base, None),
-            // Inside a block or a sub of the main compunit: rakudo installs it
-            // as the compiler walks past it, so it sorts by SOURCE POSITION
-            // among the compunit's ENDs — the same class as a top-level one.
-            // An `EVAL`'s ENDs are the exception: that snippet is compiled at
-            // run time, so they install after everything the compunit declared.
-            None => match line {
-                Some(line) => {
-                    self.push_end_phaser_ordered(body, super::end_order::MAIN, Some(line))
-                }
-                None => self.push_end_phaser_ordered(body, super::end_order::RUNTIME, None),
-            },
-        }
-    }
-
-    /// Register one of the main compunit's top-level END phasers. These are
-    /// registered eagerly, before the body runs, so that they still run when
-    /// the body dies — which is why they need an explicit install order rather
-    /// than the position they happen to land in.
-    pub(crate) fn push_end_phaser_main(&mut self, body: Vec<Stmt>, line: Option<u32>) {
-        self.push_end_phaser_ordered(body, super::end_order::MAIN, line);
-    }
-
-    fn push_end_phaser_ordered(&mut self, body: Vec<Stmt>, order_base: u64, line: Option<u32>) {
-        let captured_env = self.env.clone();
-        let package = self.current_package();
-        let order = order_base + super::end_order::slot(line, self.end_phaser_seq);
-        self.end_phaser_seq += 1;
-        self.end_phasers.push(super::EndPhaser {
-            body,
-            env: captured_env,
-            package,
-            dead_keys: crate::runtime::NameSet::default(),
-            order,
-        });
-    }
-
-    /// Return the number of currently registered END phasers.
-    pub(crate) fn end_phaser_count(&self) -> usize {
-        self.end_phasers.len()
-    }
-
-    /// Freeze the END phasers registered since `start_idx` against a scope that
-    /// is about to die: refresh their captured values from that scope's final
-    /// env, and record `dying` as the keys the scope takes with it.
-    ///
-    /// A frozen key is the *only* surviving binding of that name for this
-    /// phaser, so at exit it wins over any live same-named variable further out
-    /// (`{ my $a = 42; END { say $a } }`). A key that is not frozen still names
-    /// a live variable, and the live value — including mutations made after
-    /// registration — is what the phaser must see.
-    pub(crate) fn update_end_phaser_envs(
-        &mut self,
-        start_idx: usize,
-        current_env: &Env,
-        dying: &crate::runtime::NameSet,
-    ) {
-        for phaser in self.end_phasers[start_idx..].iter_mut() {
-            let captured = &mut phaser.env;
-            for (k, v) in current_env {
-                if captured.contains_key_sym(*k) {
-                    captured.insert_sym(*k, v.clone());
-                }
-            }
-            for k in dying {
-                if captured.contains_key_sym(*k) {
-                    phaser.dead_keys.insert(*k);
-                }
-            }
-        }
-    }
-
-    /// Update captured envs of ALL END phasers, but only for the specified
-    /// variable names.  Used after closure calls to propagate changes to
-    /// captured variables without overwriting unrelated variables.
-    ///
-    /// `keys` names the *calling closure's* own captured free variables, which
-    /// only coincidentally share a name with a phaser's captured entry — they
-    /// are not necessarily the same binding (a same-named `my` in a sibling
-    /// scope is a common case: `{ my $a = 42; END { say $a } }; my $a = 0;
-    /// callit { $a }` calls a closure that captured the SECOND `$a`, which must
-    /// not clobber the phaser's captured FIRST `$a`). A key already in
-    /// `phaser.dead_keys` (frozen at the moment its own declaring scope died —
-    /// see `update_end_phaser_envs`) is the phaser's authoritative surviving
-    /// binding for that name and must never be overwritten by an unrelated
-    /// same-named capture from elsewhere.
-    pub(crate) fn update_end_phaser_envs_for_keys(
-        &mut self,
-        keys: &std::collections::HashSet<&str>,
-        current_env: &Env,
-    ) {
-        for phaser in self.end_phasers.iter_mut() {
-            let captured = &mut phaser.env;
-            for k in keys {
-                if phaser.dead_keys.contains(&Symbol::intern(k)) {
-                    continue;
-                }
-                if captured.contains_key(k)
-                    && let Some(v) = current_env.get(k)
-                {
-                    captured.insert(k.to_string(), v.clone());
-                }
-            }
-        }
-    }
-
-    /// Register an END phaser site_id. Returns true if this is the first
-    /// registration (phaser should be pushed), false if already registered.
-    pub(crate) fn register_end_phaser_site(&mut self, site_id: u64) -> bool {
-        self.end_phaser_sites.insert(site_id)
     }
 
     /// Put back the routines a module load introduced that `snapshot` predates.
