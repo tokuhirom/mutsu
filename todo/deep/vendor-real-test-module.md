@@ -74,8 +74,13 @@ multi-resolution cache (the parser's callsite-line marker, the `:D`/`:U`
 smileys, and `VarRef` arguments). Fixing all three —
 `news/2026-09/multi-resolve-cache-keys-carry-definedness-and-declared-type.md` —
 took `roast/S03-buf/write-int.t` under the real module from **48.0 s to
-29.5 s** (median of three; 28.8-29.5 s), with 184 079 full resolves down to
-22 805 (all of them now per-*subtest*, not per-assertion).
+29.5 s**, with 184 079 full resolves down to 22 805 (all of them now
+per-*subtest*, not per-assertion). A second pass on the scoped-overlay return
+merge
+(`news/2026-09/scoped-overlay-return-merge-stops-paying-for-a-flattened-env.md`)
+took it further, to **27.4 s** (median of eight; 26.5-28.1 s with one 30.4 s
+outlier). In deterministic terms — callgrind, per assertion, baseline
+subtracted — the two together are **1.06 M -> 535 k instructions**.
 
 Calibration measured at the same time, same idle box, same output sink, all
 three running the file's identical 93 370 assertions / 2 530 subtests:
@@ -84,15 +89,16 @@ three running the file's identical 93 370 assertions / 2 530 subtests:
 | --- | --- | --- |
 | rakudo | 3.49 s | 37 us |
 | mutsu, native `Test` | 5.04 s | 54 us |
-| mutsu, vendored `Test` | 29.5 s | 316 us |
+| mutsu, vendored `Test` | 27.4 s | 293 us |
 
-The interpreter is at rakudo's rough parity on this file; the 8.5x is the cost
-of *running `Test.rakumod` as Raku code*.
+The interpreter is at rakudo's rough parity on this file; the remaining ~8x is
+the cost of *running `Test.rakumod` as Raku code*.
 
-**Completion criterion 2 is therefore NOT met.** 29.5 s against a 30 s per-file
-budget is at the budget, not under it: the file will still time out on a slower
-CI runner or under `prove -j4`. Do not read the sweep going green here as the
-class being closed -- re-measure on the reference machine and under contention. The next measured target is filed as
+**Completion criterion 2 is therefore still NOT met.** 27.4 s against a 30 s
+per-file budget is a ~9% margin on an idle box, and single samples reached
+30.4 s: the file can still time out on a slower CI runner or under `prove -j4`.
+Do not read the sweep going green here as the class being closed -- re-measure
+on the reference machine and under contention. The next measured target is filed as
 `todo/perf/listop-call-bypasses-every-compiled-call-cache.md`: a listop call
 (`ok 1, "x"` compiles to `ExecCallPairs`, not `CallFunc`) reaches none of the
 three name-keyed compiled-call caches and takes the carrier path — a whole-frame

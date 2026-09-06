@@ -620,6 +620,18 @@ impl Env {
     pub(crate) fn flattened(&self) -> Self {
         match &self.parent {
             None => self.clone(),
+            // An overlay that never received a write (and holds no tombstone)
+            // is invisible to lookups, so the parent's own flattening IS this
+            // env's -- including `file_sym`, which `scoped_child` copies from
+            // the parent for exactly this reason. Short-circuiting is not just
+            // cheaper than the merge below, it is *free* when the parent is
+            // already flat: an `Arc` bump instead of a whole-map clone, with
+            // the copy deferred to the first write via `cow_mut`. This is the
+            // same "empty tier is not a tier" rule `scoped_child` applies when
+            // it chains over an empty parent instead of stacking on it.
+            Some(parent) if self.inner.is_empty() && self.tombstones.is_none() => {
+                parent.flattened()
+            }
             Some(parent) => {
                 // Recursively collapse the parent chain to a flat overlay first
                 // (the base tier stays shared, never materialized), then layer

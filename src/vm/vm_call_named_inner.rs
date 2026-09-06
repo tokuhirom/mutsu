@@ -682,9 +682,40 @@ impl Interpreter {
                 if *k == "__mutsu_callable_id" {
                     continue;
                 }
+                // One memoized byte answers both string predicates this loop
+                // asks of every key. It used to resolve the symbol to a `&str`
+                // and re-scan it two or three times per key -- and a *flattened*
+                // callee env (any full method dispatch in the body collapses
+                // the overlay) makes "every key" the whole lexical scope, which
+                // is why this showed up as the single hottest thing in the
+                // vendored `Test`'s assertion loop. See `symbol::flags`.
+                let kflags = k.flags();
                 if bang_is_callee_private
-                    && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var)
+                    && kflags & crate::symbol::flags::ROUTINE_SCOPED_IMPLICIT != 0
                 {
+                    continue;
+                }
+                // Per-call-site index-rw temps are frame-internal; merging a
+                // callee's same-named entries corrupts the caller's pending
+                // post-call writeback compare.
+                if kflags & crate::symbol::flags::INDEX_RW_CALL_TEMP != 0 {
+                    continue;
+                }
+                // Only a key the caller already has can be merged back, and
+                // only if the callee actually REBOUND it: a key whose value is
+                // the same binding (same immediate, or the same heap
+                // allocation) is what the caller already holds, so re-inserting
+                // it is a hash write, a refcount bump and a drop for nothing.
+                // On a flattened callee env — which any full method dispatch in
+                // the body produces — that is the overwhelming majority of the
+                // keys walked here, because the flatten copied the caller's
+                // whole lexical scope in. An in-place container mutation leaves
+                // these bits unchanged too, and correctly so: the caller shares
+                // the allocation and already sees it.
+                let unchanged = restored_env
+                    .get_sym(*k)
+                    .is_some_and(|old| old.same_binding(v));
+                if unchanged {
                     continue;
                 }
                 if restored_env.contains_key_sym(*k)
@@ -694,13 +725,11 @@ impl Interpreter {
                     // the binding overwrote a same-named caller symbol for the
                     // rest of the program.
                     && !cf.code.my_declared_enum_sym.contains(k)
-                    && !k.with_str(|s| {
-                        rw_sources.contains(s)
-                            // Per-call-site index-rw temps are frame-internal;
-                            // merging a callee's same-named entries corrupts the
-                            // caller's pending post-call writeback compare.
-                            || crate::runtime::utils::is_index_rw_call_temp(s)
-                    })
+                    // The rw-source names are a per-call `HashSet<String>`, so
+                    // only resolve the key to a `&str` when there is one to
+                    // compare against -- the overwhelmingly common case is a
+                    // call with no `is rw` parameter at all.
+                    && (rw_sources.is_empty() || !k.with_str(|s| rw_sources.contains(s)))
                 {
                     restored_env.insert_sym(*k, v.clone());
                 }

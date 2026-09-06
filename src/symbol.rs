@@ -131,6 +131,56 @@ thread_local! {
     /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
     /// globally-shared `RwLock`.
     static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
+
+    /// Per-thread memo of [`SymFlags`], the pure string predicates the hot
+    /// merge/dispatch paths ask about a name. Same validity argument as
+    /// `RESOLVE_CACHE`: ids are append-only and a symbol's string never
+    /// changes, so a computed answer is good for the life of the process.
+    static FLAG_CACHE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Pure, string-derived properties of a symbol, computed once per symbol.
+///
+/// The scoped-overlay return merge (`call_compiled_function_named_inner`) asks
+/// three of these about *every* env key it walks, and did so by resolving the
+/// symbol to a `&str` and re-scanning the bytes each time — three
+/// thread-local + `RefCell` round trips plus several `memcmp`s per key, per
+/// call. A callgrind run of the vendored `Test`'s assertion loop put
+/// `LocalKey::with` at 11.8% of the whole program with that merge as its
+/// dominant caller (~556 accesses per named call). One memoized byte answers
+/// all of them with a single lookup.
+pub(crate) mod flags {
+    /// `$!` / `$/` and the capture views that belong to `$/` (`0`, `1`, ...,
+    /// `<name>`) — the names scoped per *routine*, which a return merge must
+    /// never copy back into the caller. Mirrors
+    /// `crate::runtime::utils::is_routine_scoped_implicit_var`.
+    pub(crate) const ROUTINE_SCOPED_IMPLICIT: u8 = 1 << 0;
+    /// A per-call-site index-rw / call-result temporary. Mirrors
+    /// `crate::runtime::utils::is_index_rw_call_temp`.
+    pub(crate) const INDEX_RW_CALL_TEMP: u8 = 1 << 1;
+    /// A `__mutsu_type::<name>` typed-lexical metadata key.
+    pub(crate) const TYPE_META: u8 = 1 << 2;
+    /// Set once the byte has been computed (so a symbol with no flags is not
+    /// recomputed on every lookup).
+    pub(crate) const COMPUTED: u8 = 1 << 7;
+}
+
+/// The `__mutsu_type::` prefix `flags::TYPE_META` marks. Kept next to the flag
+/// so the two cannot drift.
+pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
+
+fn compute_flags(s: &str) -> u8 {
+    let mut f = flags::COMPUTED;
+    if crate::runtime::utils::is_routine_scoped_implicit_var(s) {
+        f |= flags::ROUTINE_SCOPED_IMPLICIT;
+    }
+    if crate::runtime::utils::is_index_rw_call_temp(s) {
+        f |= flags::INDEX_RW_CALL_TEMP;
+    }
+    if s.starts_with(TYPE_META_PREFIX) {
+        f |= flags::TYPE_META;
+    }
+    f
 }
 
 /// Pre-interned symbols for names the VM resolves on hot paths.
@@ -318,6 +368,32 @@ impl Symbol {
             cache[idx] = Some(s);
             s
         })
+    }
+
+    /// This symbol's memoized [`flags`] byte — see that module for what the
+    /// bits mean and why the merge path needs them fused into one lookup.
+    ///
+    /// Computed on first ask and cached per thread. Test the result with the
+    /// `flags::*` constants, e.g.
+    /// `sym.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0`.
+    pub(crate) fn flags(self) -> u8 {
+        let idx = self.0 as usize;
+        if let Some(f) = FLAG_CACHE.with(|c| c.borrow().get(idx).copied())
+            && f & flags::COMPUTED != 0
+        {
+            return f;
+        }
+        // `as_str` takes the resolve cache's borrow, so compute the value
+        // before taking the flag cache's — never hold both.
+        let f = compute_flags(self.as_str());
+        FLAG_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            if cache.len() <= idx {
+                cache.resize(idx + 1, 0);
+            }
+            cache[idx] = f;
+        });
+        f
     }
 
     /// Resolve the symbol back to its string representation.

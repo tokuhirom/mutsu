@@ -1,5 +1,11 @@
 # Every full method dispatch rebuilds the whole lexical env
 
+> **Read "Update (2026-09-06b)" at the bottom before starting.** The obvious
+> fix -- removing the guard and moving it to the consumers that actually
+> iterate -- was implemented in full on 2026-09-06, validated clean over both
+> suites, and **measured neutral-to-negative**. Do not redo it without a
+> different plan.
+
 `exec_call_method_mut_op_impl` calls `flatten_scoped_env()` before dispatching
 any method that misses the pure-read accessor fast path. On a scoped env — which
 is what every enclosing call frame installs — `Env::flattened()` walks the parent
@@ -63,7 +69,9 @@ individually:
   with an empty env changed the 2000-assertion time by nothing (1.630 s -> 1.625 s
   for three runs). It IS an `Env::flattened()` per named call, but for a caller
   whose env is flat that is an `Arc` bump, and the workload's named calls are
-  mostly of that shape.
+  mostly of that shape. **(This finding is the key to the failed attempt below:
+  that `clone_env` is only cheap *because* the method-dispatch guard already
+  flattened it. Remove the guard and it becomes a real per-call flatten.)**
 - `push_caller_env()` — this is a plain `Env` clone (`Arc` bumps), not a flatten.
 
 So the fix belongs on the method path, not the sub path.
@@ -100,44 +108,129 @@ deterministic and optimization-independent, so the debug build is enough), then
 confirm on release with the padding table above: the cleanest success signal is
 that the per-assertion cost stops scaling with env size at all.
 
-## Update (2026-09-06): the flatten also destroys the return merge
+## Update (2026-09-06a): the flatten also destroys the return merge
 
-Re-measured after the multi-resolution cache started serving `Test`'s
-assertions
-(`news/2026-09/multi-resolve-cache-keys-carry-definedness-and-declared-type.md`),
-with the same unsound experiment (an env-var kill switch on
-`flatten_scoped_env`): the 20 000-assertion `ok` loop goes **3.58 s -> 2.96 s**,
-i.e. **17%** of what is left.
-
-Callgrind says why it is worth more than its own `HashMap` clone. The single
-largest self-cost item in the loop is `std::thread::local::LocalKey<T>::with`
-(11.8% of the loop), and its dominant caller is
-`call_compiled_function_named_inner` — **333 586 thread-local accesses across
-600 named calls**, ~556 per call. Those come from the scoped-overlay *return
-merge*:
+The scoped-overlay *return merge* in `call_compiled_function_named_inner` is
+O(callee writes) on a scoped env and O(whole scope) on a flat one:
 
 ```rust
 for (k, v) in self.env().iter() { ... k.with_str(...) ... }
 ```
 
-On a scoped env `iter()` is overlay-only, so that loop is O(callee writes) —
-which is the whole point of Slice 6. But the method-dispatch flatten runs
-*first* (`$output.say: $tap` inside `proclaim` is a full method dispatch), so by
-the time the callee returns its env is FLAT and the merge iterates every name in
-scope, calling `Symbol::with_str` two or three times per key.
+A full method dispatch in the callee body flattens the env, so by the time the
+callee returns the merge walks every name in scope. Callgrind put
+`std::thread::local::LocalKey<T>::with` at 11.8% of the assertion loop with this
+merge as its dominant caller (~556 thread-local accesses per named call).
 
-So the flatten costs twice: once to build the merged map, and once more by
-turning the frame's O(writes) return merge into an O(whole env) scan. Any fix
-should be measured against the merge loop's `with_str` count, not just against
-`env_deep_copies`.
+**That half is fixed** --
+`news/2026-09/scoped-overlay-return-merge-stops-paying-for-a-flattened-env.md`
+made the merge's per-key work a single memoized `Symbol::flags()` byte, skipped
+keys the callee never rebound (`Value::same_binding`), and short-circuited
+`Env::flattened()` for an empty overlay: 658 k -> 535 k instructions per
+assertion. The compounding is gone; the flatten's own cost is not.
 
-Two cheaper sub-fixes, if the full "move the flatten to the consumers" change
-stays too risky:
+## Update (2026-09-06b): the relocation fix was implemented, measured, REVERTED
 
-* `Env::flattened()` can return `parent.flattened()` directly when the overlay
-  is empty and there are no tombstones — provably identical (`scoped_child`
-  already derives an empty child's `file_sym` from the parent), and O(1) when
-  the parent is flat.
-* the merge loop's `k.with_str(is_routine_scoped_implicit_var)` runs for every
-  key; the names it tests are a fixed handful, so interning them once and
-  comparing `Symbol` ids removes a thread-local round trip per key.
+### What was built
+
+The full "move the flatten to the consumers that iterate" change, end to end:
+
+1. `Env::lexical_view()` -- the whole visible lexical view as a flat env
+   (`self.flattened()`; an `Arc` bump when already flat).
+2. `#[track_caller] debug_assert!(!self.is_scoped())` on `Env::iter` / `keys` /
+   `values` / `values_mut` / `len`, turning "a consumer sees a truncated scope"
+   from a silent wrong answer into a debug panic that names the *caller*.
+3. The three return merges (`vm_call_named_inner`, `vm_call_fast`,
+   `vm_closure_dispatch`) switched to `overlay_iter()` -- semantically
+   identical, since `iter()` on a scoped env already IS the overlay.
+4. All four `flatten_scoped_env()` call sites deleted, and the helper with them.
+5. Every site the assertion caught migrated to `lexical_view()`.
+
+### The site inventory (the reusable part)
+
+Renaming the accessors to force compile errors found **133** call sites -- far
+too many to hand-classify. The `#[track_caller]` assertion plus a sweep script
+narrowed that to the sites *actually* reached with a scoped env: **44**,
+converging over five rounds (35, 13, 9, 9, 1) across `t/` (3723 files) and the
+roast whitelist (1436 files) on the debug binary.
+
+Nearly all wanted the full view: pseudo-stashes (`MY::`/`OUTER::`/`LEXICAL::`),
+identity searches (`find_var_by_identity`, `find_instance_in_env`), the
+`__mutsu_sigilless_alias::` scan, operator-name collection, class-body and
+module-exit lexical snapshots, the END-phaser capture overlay. Only three wanted
+overlay-only (the return merges), plus the GC's `SubData`/`LazyList` traces,
+where overlay-only is positively *required*: a scoped env's parent tier is an
+`Arc<Env>` this node does not own, so tracing a flattened view would be exactly
+the edge over-claim `gc_overlay_uniquely_owned` exists to prevent.
+
+If this is retried, rebuild the sweep: run each test file, `awk` the
+`panicked at src/...` line together with the message line that follows it, and
+keep only the ones mentioning a scoped env -- a test that panics for an
+unrelated reason (`t/hyper-race-panic-boundary.t` deliberately overflows an
+index) must not show up as a target. Note that a snippet run in a SUBPROCESS
+(`is_run` / `run-snippet`) hides its panic from the sweep: two sites
+(`run.rs`'s END-phaser overlay, `accessors_stash.rs`'s
+`package_namespace_exists`) surfaced only as ordinary `make test` failures.
+
+### Correctness
+
+Clean. `make test` and the roast whitelist both passed with only the known
+environmental failures, and the debug-assert sweep was silent over both suites.
+
+### Performance: it does not pay
+
+Deterministic instruction counts (callgrind, 300 `ok 1, "x"` under
+`MUTSU_REAL_TEST=1`, one-assertion baseline subtracted) plus wall clock on an
+idle box. `pad-N` is a 2000-iteration `ok` loop with N unused `our` variables:
+
+| build | loop Ir | pad-0 | pad-900 | 20 k `ok` loop |
+| --- | --- | --- | --- | --- |
+| as committed (flatten present) | **158.8 M** | 0.326 s | 1.207 s | 2.945 s |
+| flatten removed, sites migrated | 163.8 M | 0.355 s | 1.047 s | 3.164 s |
+| unsound kill-switch (flatten never runs) | 144.4 M | -- | -- | -- |
+
+The size-scaling improves only from 3.7x to 2.9x, the base case gets ~9%
+*worse*, and the instruction count is 3% worse overall -- against a kill-switch
+that promised 10%.
+
+### Why it does not pay
+
+**The flatten relocates rather than disappears.** Every removal exposed another
+consumer that genuinely needs a full view *per call*:
+
+1. `Value::make_sub(..., self.clone_env())` for `callframe().code` -- cheap only
+   because the guard had already flattened (see "What was ruled out" above).
+   Capturing the scoped env unflattened is sound (a scoped env is already an
+   immutable snapshot: later caller writes un-share it via `cow_mut`) and
+   recovered part of it.
+2. `exec_block_local_scope_op`'s `env_had_before` key-set snapshot -- O(env) on
+   every block-scope opcode, twice per assertion, and now a flatten too.
+   Replacing it with an O(1) `Env` snapshot + `contains_key_sym` recovered a
+   little more.
+3. The `__mutsu_sigilless_alias::` reverse-alias scan on every named `SetLocal`.
+   Gating it on a new monotonic `sigilless_alias_possible()` latch recovered a
+   little more.
+
+Even with all three the total stayed above the committed baseline. And **tried
+on their own against the committed tree, (2) and (3) also measured neutral**
+(259.3 M vs 258.2 M): with the guard in place the env at those sites is already
+flat, so the O(env) walk they remove is the cheap kind. They are not
+independently shippable wins -- do not resurrect them in isolation.
+
+### What a real fix would have to be
+
+Not a relocation. Either:
+
+* **a representation change** that makes a full lexical view structurally free
+  -- a persistent/HAMT overlay map, where `flattened()` is O(overlay) with
+  sharing instead of O(scope) with a copy. That costs a slower `get`, which is
+  far hotter, so it needs its own measurement before anything else; or
+* **removing the per-call need for a full view** -- the three consumers above
+  are each avoidable in principle (a lazy `callframe().code` env, a block-scope
+  declaration list that never consults the env, an alias table that is not
+  env-resident). That is three separate, individually-measurable tickets, and
+  only after all of them is deleting the guard worth re-testing.
+
+Either way, re-run the `MUTSU_NO_FLATTEN` kill-switch experiment first: the
+prize was 17% when this ticket was filed, 10% after the return-merge fix, and it
+keeps shrinking as the per-call full-view consumers go away.
