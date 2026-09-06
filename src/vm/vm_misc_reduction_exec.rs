@@ -2,6 +2,17 @@ use super::vm_misc_ops::*;
 use super::*;
 
 impl Interpreter {
+    /// Whether `v` is a `Buf`/`Blob` instance. A `Blob` does NOT do `Iterable`
+    /// in rakudo, so a reduction keeps it whole (`[~] $blob` IS the blob) even
+    /// though list coercion (`for`, `.rotor`, `.list`) yields its bytes.
+    fn value_is_buf(v: &Value) -> bool {
+        matches!(
+            v.view(),
+            ValueView::Instance { attributes, .. }
+                if crate::value::value_buf::has_buf_elems(&attributes)
+        )
+    }
+
     pub(super) fn exec_reduction_op(
         &mut self,
         code: &CompiledCode,
@@ -60,16 +71,21 @@ impl Interpreter {
         if scan && input_is_lazy {
             return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
         }
-        // A Buf/Blob does NOT do Iterable in rakudo, so the reduction one-arg
-        // rule keeps it whole (`[~] $blob` IS the blob) even though list
-        // coercion (`for`, `.rotor`, `.list`) yields its bytes.
-        let operand_is_buf = matches!(
-            list_value.view(),
-            ValueView::Instance { attributes, .. }
-                if crate::value::value_buf::has_buf_elems(&attributes)
-        );
+        let operand_is_buf = Self::value_is_buf(&list_value);
+        // Nor does a Set/SetHash/Bag/BagHash/Mix/MixHash — `Set ~~ Iterable`
+        // is False in rakudo — so a QuantHash operand is likewise ONE operand
+        // that the one-arg rule then coerces, not a list of its pairs.
+        // `[~] Set.new("a","b")` is `~Set.new("a","b")` ("a b"), and
+        // `[+] bag(1,1,2)` is `bag(1,1,2).Numeric` (3); mutsu used to fold over
+        // the decomposed `:a`/`:b` pairs and answer `"a\tTrueb\tTrue"` / `0`.
+        // The deref matters: a `$`-lexical read yields a `ContainerRef`, which
+        // `is_quanthash_instance` (a view match) would not see through.
+        let derefed_operand = list_value.deref_container();
+        let operand_is_quanthash = runtime::is_quanthash_instance(&derefed_operand);
         let mut list = if operand_is_buf {
             vec![list_value.clone()]
+        } else if operand_is_quanthash {
+            vec![derefed_operand]
         } else if let ValueView::LazyList(ll) = list_value.view() {
             self.force_lazy_list_vm(&ll)?
         } else {
@@ -172,6 +188,9 @@ impl Interpreter {
             self.reduction_op_associativity(&base_op)
         };
 
+        // Computed before the scan branch: `[\(|)] <a>, <a>`'s FIRST element is
+        // `[(|)]("a")`, i.e. the same one-arg coercion the fold form applies.
+        let is_set_op = Self::is_set_reduction_op(&base_op);
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::seq(Vec::new()));
@@ -181,6 +200,8 @@ impl Interpreter {
                 let is_chain = runtime::is_chain_comparison_op(&base_op);
                 let val = if is_chain {
                     Value::TRUE
+                } else if is_set_op && callable.is_none() {
+                    self.set_reduction_one_arg(&base_op, list[0].clone())?
                 } else {
                     list[0].clone()
                 };
@@ -308,6 +329,8 @@ impl Interpreter {
                                     || (base_op.starts_with('X') && base_op.len() > 1);
                                 if zx_prefix {
                                     acc = Value::seq(vec![acc]);
+                                } else if is_set_op {
+                                    acc = self.set_reduction_one_arg(&base_op, acc)?;
                                 } else if base_op == "minmax" {
                                     // [minmax](x) = x..x for scalars,
                                     // or min(x)..max(x) for array/list x.
@@ -375,10 +398,6 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let is_set_op = matches!(
-            base_op.as_str(),
-            "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" | "(.)" | "⊍" | "(+)" | "⊎"
-        );
         // A set operator classifies its operands by their Set/Bag/Mix type, so it
         // must see the VALUE a `$`-lexical holds, not the container. The
         // `deitemize_element` pass above strips a `Scalar`, but a plain lexical
@@ -390,6 +409,15 @@ impl Interpreter {
         if is_set_op {
             for item in &mut list {
                 *item = item.deref_container();
+            }
+            // The one-arg rule: `[(|)] $x` is `infix:<(|)>($x)`, which for
+            // every set operator is a coercion (`[(|)] 3` is `Set.new(3)`,
+            // `[(+)] Set.new("a")` is `("a"=>1).Bag`) -- not the bare operand
+            // mutsu used to hand back.
+            if list.len() == 1 && callable.is_none() {
+                let coerced = self.set_reduction_one_arg(&base_op, list[0].clone())?;
+                self.stack.push(coerced);
+                return Ok(());
             }
         }
         // For set operators, promote all elements to the highest set type before reducing.
@@ -490,6 +518,29 @@ impl Interpreter {
                     // Numify via the additive identity so `[+] "2"` is Int 2,
                     // `[-] 5` is 5, and `[/] 5` is 5 (matching Rakudo).
                     let v = self.reduction_step_with_args("+", None, vec![Value::int(0), elem])?;
+                    let result = if negate { Value::truth(!v.truthy()) } else { v };
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                // `~` is the same rule on the string side --
+                // `multi sub infix:<~>(Any \a) { a.Str }` -- so `[~] 5` is the
+                // Str "5", not the Int 5, and `[~] Set.new("a","b")` is the
+                // set's `.Str` ("a b"). The one exception is `infix:<~>`'s own
+                // `Blob:D` candidate, which returns the operand unchanged. That
+                // is tested on the ELEMENT, not on the whole operand:
+                // `my @chunks = Blob.new; [~] @chunks` arrives here with an
+                // Array operand holding one Blob, so `operand_is_buf` is false
+                // while the single element still must not be stringified.
+                if list.len() == 1
+                    && callable.is_none()
+                    && base_op == "~"
+                    && !Self::value_is_buf(&list[0])
+                {
+                    let v = self.reduction_step_with_args(
+                        "~",
+                        None,
+                        vec![Value::str(String::new()), list[0].clone()],
+                    )?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());

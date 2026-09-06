@@ -208,6 +208,7 @@ pub(crate) mod vm_misc_coerce;
 pub(crate) mod vm_misc_ops;
 pub(crate) mod vm_misc_reduction_exec;
 pub(crate) mod vm_misc_reduction_scan;
+pub(crate) mod vm_misc_reduction_setop;
 pub(crate) mod vm_misc_scope;
 pub(crate) mod vm_misc_typecheck;
 pub(crate) mod vm_misc_typed_range;

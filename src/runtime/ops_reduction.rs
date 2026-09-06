@@ -167,30 +167,6 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
-        let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
-            match value.view() {
-                ValueView::Bag(items, _) => {
-                    Some(crate::runtime::utils::bag_counts_as_i64(&items.counts))
-                }
-                ValueView::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
-                ValueView::Hash(items) => Some({
-                    let mut counts = std::collections::HashMap::new();
-                    for (k, v) in items.iter() {
-                        let count = match v.view() {
-                            ValueView::Int(i) => i,
-                            ValueView::Num(n) => n as i64,
-                            ValueView::Rat(n, d) if d != 0 => n / d,
-                            ValueView::FatRat(n, d) if d != 0 => n / d,
-                            ValueView::Bool(b) => i64::from(b),
-                            _ => return None,
-                        };
-                        counts.insert(k.clone(), count);
-                    }
-                    counts
-                }),
-                _ => None,
-            }
-        };
         let to_complex = |v: &Value| -> Option<(f64, f64)> {
             let mut cur = v;
             while let ValueView::Mixin(inner, _) = cur.view() {
@@ -360,17 +336,11 @@ impl Interpreter {
             return Ok(Value::seq(out));
         }
         match op {
-            "+" => {
-                if let (Some(mut left_counts), Some(right_counts)) =
-                    (to_bag_counts(left), to_bag_counts(right))
-                {
-                    for (key, count) in right_counts {
-                        *left_counts.entry(key).or_insert(0) += count;
-                    }
-                    return Ok(Value::bag(left_counts));
-                }
-                crate::builtins::arith_add(left.clone(), right.clone())
-            }
+            // `+` is plain numeric addition even for QuantHash operands: the
+            // baggy sum is `(+)`, a DIFFERENT operator. `Set.new("a") + Set.new("b")`
+            // is `1 + 1` == 2 in rakudo, and `[+] $s1, $s2` must agree with the
+            // infix it folds (it used to answer `("a"=>1,"b"=>1).Bag`).
+            "+" => crate::builtins::arith_add(left.clone(), right.clone()),
             "-" => Ok(crate::builtins::arith_sub(left.clone(), right.clone())),
             // `×` (U+00D7) / `÷` (U+00F7) are the Unicode multiply/divide
             // operators; they fall back to the same arithmetic as `*` / `/` when a
