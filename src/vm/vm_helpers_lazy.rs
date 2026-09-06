@@ -23,6 +23,31 @@ impl Interpreter {
             SeqSource::IoLines { handle, words, kv } => {
                 self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
             }
+            // docs/adr/0058: a `.map`/`.grep` whose callback has not run yet.
+            // This IS `dispatch_map_method`'s old eager tail, just moved to
+            // first consumption — so a `die`/`fail` it raises surfaces at the
+            // consuming statement, outside a `try` that merely enclosed the
+            // `.map` call.
+            SeqSource::MapGrep { items, func, fatal } => {
+                // Same contract as `force_lazy_list_vm`: this force IS the
+                // effective call site for the callbacks it runs, so a
+                // captured-outer lexical the callback mutated (`LAST $ran =
+                // True`, `$count++`) has to be drained back into the consuming
+                // frame's local slots — the reify is not a call op, so nothing
+                // else would.
+                let caller_code = self.current_code;
+                // `use fatal` is lexical to the `.map` call site, not to
+                // whoever consumes the Seq — see `SeqSource::MapGrep::fatal`.
+                let saved_fatal = std::mem::replace(&mut self.fatal_mode, *fatal);
+                let result = self.eval_map_over_items(func.clone(), items.as_ref().clone());
+                self.fatal_mode = saved_fatal;
+                self.reconcile_caller_after_lazy_force(caller_code);
+                let result = result?;
+                Ok(match result.view() {
+                    ValueView::Array(items, _) => items.to_vec(),
+                    _ => crate::runtime::utils::value_to_list(&result),
+                })
+            }
         }
     }
 
@@ -209,6 +234,78 @@ impl Interpreter {
         body.sink(|source| self.pull_seq_source(source))
     }
 
+    /// Reify a not-yet-run `.map`/`.grep` Seq (`SeqSource::MapGrep`,
+    /// docs/adr/0058) before a **pure-value reader** touches it.
+    ///
+    /// ADR-0034 §2.1 deliberately made a `SeqBody` read through `Deref` return
+    /// the *empty seed* for a body nobody has pulled, so a read can never
+    /// re-enter the VM. That is safe while deferred bodies are rare
+    /// (`IO::Handle.lines`, `Seq.new($iterator)`), but ADR-0058 makes every
+    /// `.map` deferred, so the many `ValueView::Seq(items)` readers that cannot
+    /// pull would silently see an empty sequence. This is the one-line guard
+    /// those call sites use: it is a no-op for every other value (including
+    /// every other `SeqSource`, whose streaming semantics must NOT be forced at
+    /// an argument boundary), and a `MapGrep` source is always finite — its
+    /// `items` were materialized at the `.map` call — so forcing it can never
+    /// hang.
+    ///
+    /// Reification is non-consuming and idempotent: the body keeps its
+    /// identity and stays readable afterwards.
+    pub(crate) fn reify_map_grep_seq(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        // Tag-probed before `view()`: this guard sits on hot operand/argument
+        // paths, and `view()` on a lazy `Match` materializes every capture
+        // (ADR-0016 P5).
+        if !value.is_seq_value() {
+            return Ok(());
+        }
+        if let ValueView::Seq(body) = value.view()
+            && body.is_map_grep_source()
+        {
+            let body = Arc::clone(&body);
+            self.reify_seq_body(&body)?;
+        }
+        Ok(())
+    }
+
+    /// rakudo's sink of a *discarded* value, for the handful of native
+    /// handlers that call a user block and throw its result away
+    /// (`dies-ok`/`lives-ok`, whose `Test.rakumod` originals write `$code();`
+    /// as a STATEMENT, so rakudo sinks the block's Seq and the callback's
+    /// exception escapes). A no-op for every value that is not a not-yet-run
+    /// `.map`/`.grep` Seq (docs/adr/0058).
+    pub(crate) fn sink_map_grep_seq(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        if !value.is_seq_value() {
+            return Ok(());
+        }
+        if let ValueView::Seq(body) = value.view()
+            && body.is_map_grep_source()
+        {
+            let body = Arc::clone(&body);
+            self.sink_seq_body(&body)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::reify_map_grep_seq`] over a whole argument list.
+    ///
+    /// Looks through a `Pair`, because a NAMED argument's value is an argument
+    /// too: zef's `Any.new(:specs($spec.values[0].map: {...}))` binds the
+    /// mapped Seq to an `@.specs` attribute, and the binder reads its elements
+    /// through pure code.
+    pub(crate) fn reify_map_grep_seq_args(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
+        for arg in args {
+            self.reify_map_grep_seq(arg)?;
+            match arg.view() {
+                ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
+                    let v = v.clone();
+                    self.reify_map_grep_seq(&v)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     /// Pre-dispatch guard (ADR-0034 §2.3): if `target` is a `Seq` whose body
     /// needs touching before `method` can run — a deferred source
     /// (`Seq.new($iterator)`, `IO::Handle.lines` — formerly the separate
@@ -265,6 +362,40 @@ impl Interpreter {
         handle_iterator: bool,
     ) -> Result<Value, RuntimeError> {
         let ValueView::Seq(body) = target.view() else {
+            // A Seq read out of a container (`%h<k>`, `@a[0]`, a `$`-bound
+            // element) arrives wrapped in its Scalar cell, so the match above
+            // misses it and the method would read the body's empty seed. Reify
+            // THROUGH the cell: reification is in place on the shared
+            // `Arc<SeqBody>`, so the container keeps holding the same value and
+            // only the (previously unpulled) elements change. A genuinely
+            // CONSUMING method still has to see the stolen elements, so hand it
+            // the unwrapped replacement — matching what the direct-Seq path
+            // returns (docs/adr/0058).
+            let unwrapped = match target.view() {
+                // ADR-0040: a Seq stored into an `@`/`%` element is itemized
+                // into a `Scalar` box by `itemize_for_element_store`, so
+                // `%h<k>.elems` arrives here wrapped.
+                ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => {
+                    Some(inner.clone())
+                }
+                _ if target.is_container_ref()
+                    && matches!(target.deref_container().view(), ValueView::Seq(_)) =>
+                {
+                    Some(target.deref_container())
+                }
+                _ => None,
+            };
+            if let Some(inner) = unwrapped {
+                let inner_body = match inner.view() {
+                    ValueView::Seq(b) => Arc::as_ptr(&b) as usize,
+                    _ => 0,
+                };
+                let replaced =
+                    self.reify_or_consume_seq_target_inner(inner, method, handle_iterator)?;
+                let same_body = matches!(replaced.view(),
+                    ValueView::Seq(b) if Arc::as_ptr(&b) as usize == inner_body);
+                return Ok(if same_body { target } else { replaced });
+            }
             return Ok(target);
         };
         if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
@@ -422,7 +553,12 @@ impl Interpreter {
             // the SAME body (identity preserved either way) to build the
             // instance, so its `squish_iterator_meta`/`Deref`-based fallback
             // both see the correct, final data.
-            self.take_seq_body(&body)?;
+            let (items, _) = self.take_seq_body(&body)?;
+            // A genuinely deferred source (`SeqSource::MapGrep`,
+            // `IoLines`, `Iterator`) hands its elements to the caller rather
+            // than storing them, but `dispatch_iterator_method` reads THIS
+            // body back through `Deref` — see `SeqBody::store_taken_elements`.
+            body.store_taken_elements(items);
             return self.dispatch_iterator_method(target);
         }
         if crate::value::seq_method_consumes(method) {

@@ -343,6 +343,20 @@ impl Interpreter {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0058: a SLICE assignment (`@n[0,1] = (1,2).map({...})`) is a
+        // LIST assignment -- it distributes the Seq's elements across the
+        // targeted slots, so it is eager (`roast/S32-list/seq.t` #18, "Array
+        // slice assigned from Seq is eager"). A SINGLE-element assignment is
+        // not: it itemizes the Seq into that element's Scalar container and
+        // leaves it unforced (measured against raku: `my %h; %h<f> =
+        // (1..3).map({die}); say "alive"` prints "alive").
+        let idx_is_slice = matches!(
+            idx.view(),
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) | ValueView::Whatever
+        ) || idx.is_range();
+        if idx_is_slice && let Some(top) = self.stack.last().cloned() {
+            self.reify_map_grep_seq(&top)?;
+        }
         // A user-defined Associative/Positional object in a scalar
         // (`my $q = URI::Query.new(...); $q<baz> = v` / `$q[0] = v`) dispatches
         // the raku subscript protocol (ASSIGN-KEY/ASSIGN-POS) — without this

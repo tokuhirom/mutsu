@@ -219,7 +219,11 @@ impl Interpreter {
             "map" => Some(self.dispatch_map_method(target, args)),
             "flatmap" => {
                 // flatmap is equivalent to .map(...).flat
-                Some(self.dispatch_map_method(target, args).map(|mapped| {
+                Some(self.dispatch_map_method(target, args).and_then(|mapped| {
+                    // ADR-0058: `.map` now hands back a Seq whose callback has
+                    // not run; the flattening below reads its elements through
+                    // pure code, so pull it here.
+                    self.reify_map_grep_seq(&mapped)?;
                     let items = Self::value_to_list(&mapped);
                     let mut flat_items = Vec::new();
                     for item in items {
@@ -233,7 +237,7 @@ impl Interpreter {
                             _ => flat_items.push(item.clone()),
                         }
                     }
-                    Value::seq(flat_items)
+                    Ok(Value::seq(flat_items))
                 }))
             }
             "duckmap" => {
@@ -583,29 +587,29 @@ impl Interpreter {
                 }
             }
         };
-        // In Raku, `.map` returns a lazy Seq. mutsu evaluates map eagerly for
-        // performance, which is observationally equivalent except when the
-        // callback contains a `return`: that `return` targets the lexically
-        // enclosing routine, and if the Seq is forced after that routine has
-        // exited it must surface as `X::ControlFlow::Return` with
-        // out-of-dynamic-scope set. To get that right without making every map
-        // lazy (which perturbs list shape/context in many call sites), only
-        // defer evaluation when the callback body actually contains a `return`.
-        // A stub body (`...`) must likewise stay unevaluated until the Seq is
-        // forced: `map -> $x, $y { ... }, @list` lives in Raku as long as the
-        // result is never iterated.
+        // A `return`/stub callback keeps the older `LazyList` deferral for now
+        // (ADR-0058 step 4 retires it once `builtin_map`/`grep` defer too):
+        // that `return` targets the lexically enclosing routine, and if the
+        // Seq is forced after that routine has exited it must surface as
+        // `X::ControlFlow::Return` with out-of-dynamic-scope set, which the
+        // `LazyList` path already gets right.
         if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
             && (Self::body_contains_return(&sub_data.body)
                 || Self::is_stub_routine_body(&sub_data.body))
         {
             return Ok(self.create_lazy_map_list(items, &sub_data));
         }
-        let result = self.eval_map_over_items(args.first().cloned(), items)?;
-        // .map() returns a Seq per Raku spec
-        Ok(match result.view() {
-            ValueView::Array(items, _) => Value::seq(items.to_vec()),
-            _ => result.clone(),
-        })
+        // ADR-0058 step 2: `.map` returns a Seq whose callback has NOT run
+        // yet. The callback runs when something consumes the Seq, through
+        // ADR-0034's `reify`/`take`/`sink` split (`SeqSource::MapGrep`'s arm
+        // in `pull_seq_source`), which is rakudo's timing: a `die` in the
+        // callback escapes a `try` that merely encloses the `.map` call, and
+        // a plain side effect happens at first consumption rather than here.
+        Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+            items: std::sync::Arc::new(items),
+            func: args.first().cloned(),
+            fatal: self.fatal_mode,
+        }))
     }
 
     /// Create a `LazyList` that lazily maps `callback` over `items`.

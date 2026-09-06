@@ -76,7 +76,17 @@ impl Interpreter {
                 {
                     return result;
                 }
-                result.is_ok()
+                // ADR-0058: rakudo's `lives-ok` sinks the block's result (see
+                // the twin comment in `test_fn_dies_ok`), so a `.map` whose
+                // callback throws makes it fail rather than silently pass.
+                match &result {
+                    Ok(val) => match self.sink_map_grep_seq(val) {
+                        Err(e) if Self::is_live_nonlocal_control(&e) => return Err(e),
+                        Err(_) => false,
+                        Ok(()) => true,
+                    },
+                    Err(_) => false,
+                }
             }
             _ => true,
         };
@@ -120,8 +130,22 @@ impl Interpreter {
                 match &result {
                     Err(_) => true,
                     Ok(val) => {
-                        // A Failure value in sink context should throw
-                        Self::is_failure_value(val)
+                        // ADR-0058: rakudo's `dies-ok` writes `$code();` as a
+                        // STATEMENT, so the block's result is SUNK -- and a
+                        // `.map` whose callback throws only runs at that sink.
+                        // mutsu calls the block natively and discards the
+                        // value, so sink it explicitly here or
+                        // `dies-ok { (1,2,3).map({ $^a + $^b }) }` would report
+                        // "lived".
+                        if let Err(e) = self.sink_map_grep_seq(val) {
+                            if Self::is_live_nonlocal_control(&e) {
+                                return Err(e);
+                            }
+                            true
+                        } else {
+                            // A Failure value in sink context should throw
+                            Self::is_failure_value(val)
+                        }
                     }
                 }
             }

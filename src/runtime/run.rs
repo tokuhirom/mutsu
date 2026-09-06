@@ -669,6 +669,15 @@ impl Interpreter {
                 let _ = self.finish();
                 return Err(e);
             }
+            // ADR-0058: the same rule for a `.map`/`.grep` Seq whose callback
+            // has not run yet — `(1,2,3).map({ die "oh noes" })` as a whole
+            // program must die (`roast/integration/weird-errors.t`).
+            if let Some(v) = last_value.clone()
+                && let Err(e) = self.sink_map_grep_seq(&v)
+            {
+                let _ = self.finish();
+                return Err(e);
+            }
         }
         // Only store last_value if _ was actually set during this execution
         // (not inherited from a previous REPL line)

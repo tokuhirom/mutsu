@@ -209,6 +209,9 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // ADR-0058: rendering reads elements through pure code, so a
+        // still-deferred `.map` Seq must run its callback first.
+        self.reify_map_grep_seq_args(&values)?;
         // Slice F: a user `.gist`/`.Str` closure run below can mutate a
         // captured-outer caller lexical (`say $x but role { method gist {$seen=1} }`).
         // `say` is a dedicated op (no `code` param), so capture the caller frame's
@@ -243,6 +246,9 @@ impl Interpreter {
         } else {
             let start = self.stack.len() - n;
             let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+            // ADR-0058: rendering reads elements through pure code, so a
+            // still-deferred `.map` Seq must run its callback first.
+            self.reify_map_grep_seq_args(&values)?;
             // Slice F: see exec_say_op — reconcile after a user `.gist` closure.
             let caller_code = self.current_code;
             let mut parts = Vec::new();
@@ -266,6 +272,9 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // ADR-0058: rendering reads elements through pure code, so a
+        // still-deferred `.map` Seq must run its callback first.
+        self.reify_map_grep_seq_args(&values)?;
         // A lone Junction argument autothreads: each eigenstate is put on its
         // own line (`put 1|2` => "1\n2\n").
         if values.len() == 1 && matches!(values[0].view(), ValueView::Junction { .. }) {
@@ -304,6 +313,9 @@ impl Interpreter {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
+        // ADR-0058: rendering reads elements through pure code, so a
+        // still-deferred `.map` Seq must run its callback first.
+        self.reify_map_grep_seq_args(&values)?;
         // Slice F: see exec_put_op — reconcile after a user `.Str` closure.
         let caller_code = self.current_code;
         let mut content = String::new();

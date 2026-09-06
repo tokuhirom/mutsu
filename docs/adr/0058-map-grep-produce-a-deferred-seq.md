@@ -1,6 +1,6 @@
 # ADR-0058: `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call
 
-- **Status**: Proposed
+- **Status**: Accepted (step 2 shipped 2026-09-07; steps 3-4 open)
 - **Date**: 2026-08-22
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md)
@@ -268,7 +268,7 @@ callback `Value` already carries its own closure environment.
 | --- | --- | --- |
 | **0** | **Measure the read-path exposure** by flipping `dispatch_map_method`/`builtin_map` to always call `create_lazy_map_list` behind a temporary env gate, and running `t/` and the roast whitelist with it on. This is option 3's exposure without option 3's cost, and it produces the list of consumers that read a deferred sequence without forcing it. | Discard the gate afterwards; it is a measurement, not a slice. |
 | **1** | **Done (2026-08-22).** `t/map-callback-runs-at-consumption.t` — 23 rows, raku-verified 23/23, mutsu 12 passing and 11 `todo`. Un-`todo`ing the nine ADR-0058 rows is this ADR's completion signal; the other two `todo`s belong to §1.4's separate bug. | Same shape as ADR-0034 phase 1. |
-| **2** | Add `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method` only (not `builtin_map`, not `grep`). Fix the consumers step 0 found. | `map` method form alone is enough to un-`todo` most of phase 1. |
+| **2** | **Done (2026-09-07).** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method` only (not `builtin_map`, not `grep`), plus the read-path consumers S8 lists. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d; the two remaining `todo`s are S1.4's separate bug. |
 | **3** | Extend to `builtin_map` (the `map &f, @xs` function form) and to both `grep` entry points. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. | |
 | **4** | Retire the `body_contains_return` / `is_stub_routine_body` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. | The maintainability payout. |
 
@@ -353,3 +353,124 @@ make roast      # mandatory: this makes mutsu STRICTER in every ticket cell
   keeps growing one observable-eagerness bug at a time, and `map` keeps being
   the one core operation whose laziness mutsu decides by grepping the callback's
   AST.
+
+---
+
+## 8. Outcome of step 2 (2026-09-07)
+
+### 8.1 What step 0 actually measured
+
+The §4 step-0 probe was run as specified — `dispatch_map_method`/`builtin_map`
+flipped to always call `create_lazy_map_list` behind a throwaway
+`MUTSU_ADR0058_STEP0` env gate — against a current `main` build:
+
+| Suite | Files failing under the gate |
+| --- | --- |
+| `prove -j4 t/` (3735 files) | **59** |
+| roast whitelist, release binary (1436 files) | **55** |
+
+**The proxy over-reported, and its excess was systematic, not random.** Roughly
+half the `t/` hits were the `concurrent-*`/`thread-*`/`cas-*`/`shared-*` family,
+which fail under option 1 for a reason option 3 does not have: §3.2's
+per-`map` `let mut env = self.env.clone()` **snapshots** the captured lexicals,
+so a shared cell mutated by a `start` block inside the callback is lost. The
+real `SeqSource::MapGrep` implementation reuses the callback `Value`'s own
+closure environment and none of those files ever failed. Under the real
+mechanism the first full `t/` run showed **44** failures, converging to 0.
+
+So step 0's value was **not** the count: it was confirming that the exposure is
+a *bounded, enumerable list of element readers* rather than an open-ended one,
+and that the failures cluster into a handful of funnels. Recommendation for a
+future slice: run the exposure probe with the mechanism you intend to ship
+(behind an env gate), not with a proxy — the proxy's own defects dominate the
+signal, and the extra cost is zero because the mechanism has to be written
+anyway.
+
+### 8.2 The read-path consumers step 2 had to fix
+
+`Interpreter::reify_map_grep_seq` / `_args` / `sink_map_grep_seq`
+(`vm/vm_helpers_lazy.rs`) are the guard; they are tag-probed (`is_seq_value()`
+before `view()`, because `view()` on a lazy `Match` materializes it — ADR-0016
+P5) and no-op for every other `SeqSource`, whose streaming semantics must **not**
+be forced at an argument boundary. Call sites, by funnel:
+
+- **Argument boundaries** (a native/builtin reads elements as plain Rust
+  values): `Interpreter::call_function` (gated on `is_builtin_function`),
+  `try_native_function`, `try_native_method` (arguments only — the receiver is
+  ADR-0034's job), `exec_call_method_mut` args, `call_compiled_closure`
+  (a slurpy/`@_` parameter *flattens* a Seq), `call_sub_value`, `builtin_await`.
+- **Rendering / coercion**: `exec_say_op`/`note`/`put`/`print`,
+  `exec_str_coerce_op`, `exec_num_coerce_op`, `coerce_stringy_operand`.
+- **Operators**: `eval_binary_with_junctions` (the shared binary funnel),
+  `exec_meta_op` + `zip_iter_from_value` (`Z`/`X`), `exec_reduction_op`
+  (`[+] @xs.map(...)`), `set_contains` (`(elem)`), `vm_smart_match`.
+- **Assignment**: `SetGlobal` and `AssignExpr`/`AssignExprLocal` for an `@`/`%`
+  target (the `my @a = SEQ` reify already existed only on `SetLocal`), and
+  `IndexAssignExprNamed` **for a slice index only** — a single-element store
+  itemizes the Seq into that element's Scalar container and stays unforced
+  (measured: `my %h; %h<f> = (1..3).map({die}); say "alive"` prints "alive" in
+  raku, while `@n[0,1] = (1,2).map({...})` is eager,
+  `roast/S32-list/seq.t` #18). For the same reason `SinkPopAssign` no longer
+  sinks a `MapGrep` body at all.
+- **Composition / hyper**: the `__mutsu_compose_left/right` relay, the
+  `hyper_race_wrap` re-wrap for a >=1000-element `HyperSeq.map`, and the
+  per-element result push in `exec_hyper_method_call_op`.
+- **`Test` handlers that discard a block's value**: rakudo's `dies-ok`,
+  `lives-ok` and `throws-like` write `$code();` as a *statement*, so the block's
+  Seq is **sunk** and the callback's exception escapes. mutsu calls the block
+  natively and dropped the value, so those three now call `sink_map_grep_seq`
+  explicitly.
+- **The program's own tail statement** (`runtime/run.rs`), next to the existing
+  `LazyList` drain — `(1,2,3).map({ die "oh noes" })` as a whole program must
+  die (`roast/integration/weird-errors.t` #18).
+- **`flatmap`**, which is implemented as `.map(...)` plus a pure flatten.
+- **`ApplyVarTrait`**: `my %r is SetHash = %h.map: {...}` binds the Seq into the
+  slot *before* the trait runs (the declaration emits `MarkBindContext;
+  SetLocal`, which skips `exec_set_local_op_inner`'s `@`/`%` reify), and the
+  QuantHash coercion reads the elements purely.
+
+### 8.3 Premises that did not survive contact with the code
+
+- **§4's step-0 recipe is a proxy, and a lossy one** — see §8.1.
+- **`SeqBody::take` does not store what it pulls.** §3.4 assumed the existing
+  reify/consume machinery would cover the new source "for free". It does for
+  `reify`, but `take` on a genuinely deferred source hands the elements to the
+  caller and leaves `gens` empty — and two consumers (`.iterator`'s arm in
+  `reify_or_consume_seq_target_inner`, and `exec_hyper_method_call_op`) call
+  `take` and then read the *same body* back through `Deref`. That was a latent
+  ADR-0034 bug, invisible while only `IO::Handle.lines` produced deferred
+  bodies; `SeqBody::store_taken_elements` fixes it without reviving the source.
+  It is what made `method iterator() { self.pairs.iterator }` in a
+  `does Iterable` role iterate nothing.
+- **`use fatal` is lexical, so it cannot be read at pull time.**
+  `eval_map_over_items` consults `self.fatal_mode`; deferring the loop moved
+  that read from the `.map` call site to the *consumer's* dynamic context, which
+  retroactively made a soft Failure fatal (`t/try-fatal-does-not-retroactively-flag-closure-seq.t`)
+  and stopped a genuinely fatal one from throwing
+  (`t/whatever-code-fixes.t`). `SeqSource::MapGrep` therefore carries a `fatal`
+  field captured at the `.map` call and restored around the pull.
+- **A deferred body needs the same caller writeback a `LazyList` force does.**
+  The pull is the effective call site for the callbacks it runs, so it must call
+  `reconcile_caller_after_lazy_force` exactly as `force_lazy_list_vm` does, or a
+  captured-outer lexical the callback mutated (`LAST $ran = True`, `$count++`)
+  never reaches the consuming frame's local slot.
+- **`has_deferred_source()` must NOT include `MapGrep`.** Every call site of that
+  predicate reads it as "single-use, steal it" — most visibly
+  `reify_or_consume_seq_target_inner`'s `"list"` arm, whose entire compromise is
+  that a `.map`/`.grep` result stays re-readable through `@$s`
+  (`t/seq-array-context-reiterate.t`). `MapGrep` is deferred in *when the
+  callback runs*, not in whether the result is re-readable.
+- **A Seq read out of an `@`/`%` element arrives wrapped.** ADR-0040 itemizes it
+  into a `Value::Scalar` box, so `reify_or_consume_seq_target_inner`'s
+  `ValueView::Seq` match missed it entirely and `%h<k>.elems` answered 0. That
+  function now looks through a `Scalar`/`ContainerRef` wrapper.
+
+### 8.4 Known remaining holes (deliberately not closed here)
+
+The infallible set operators (`exec_set_diff_op`, `exec_set_sym_diff_op`,
+`exec_set_subset_op`/`superset`/`strict_*`) read their operands through pure
+code and cannot propagate a callback's exception without a signature change;
+they still read an unpulled `MapGrep` body's empty seed. `set_contains`
+(`(elem)`/`(cont)`) is fixed but has to swallow a throwing callback for the same
+reason. No test in `t/` or the roast whitelist exercises the remaining ones;
+step 3 (which makes `grep` deferred too) should revisit them.

@@ -3,6 +3,9 @@ use super::*;
 impl Interpreter {
     pub(super) fn exec_num_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // ADR-0058: numifying a Seq counts its elements, so a still-deferred
+        // `.map` has to run its callback first.
+        self.reify_map_grep_seq(&val)?;
         // Auto-FETCH Proxy containers
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Junction auto-threading for prefix:<+>
@@ -133,6 +136,9 @@ impl Interpreter {
 
     pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        // ADR-0058: stringifying a Seq renders its elements, so a
+        // still-deferred `.map` has to run its callback first.
+        self.reify_map_grep_seq(&val)?;
         // Auto-FETCH Proxy containers
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // A `ContainerRef` is transparent to string coercion: `~$x` renders

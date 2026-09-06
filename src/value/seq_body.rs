@@ -36,6 +36,22 @@ pub(crate) enum SeqSource {
         words: bool,
         kv: bool,
     },
+    /// `.map`/`.grep` over an already-materialized source (docs/adr/0058):
+    /// run `func` over `items` on first touch. This is rakudo's `Seq` from
+    /// `map`/`grep` — the callback runs at first consumption, not at the
+    /// `.map` call, so a `die`/`fail` inside it escapes a `try` that only
+    /// lexically encloses the `.map`.
+    MapGrep {
+        items: Arc<Vec<Value>>,
+        func: Option<Value>,
+        /// `use fatal` as it stood at the `.map` CALL, not at the pull.
+        /// `use fatal` is lexical, so a callback written outside a `use fatal`
+        /// scope must not become fatal merely because the Seq is consumed
+        /// inside one (`my &c = { "a".map: *.Int }; try { c() }` keeps the
+        /// Failure soft in rakudo — pinned by
+        /// `t/try-fatal-does-not-retroactively-flag-closure-seq.t`).
+        fatal: bool,
+    },
     /// The source was handed away by a consuming method (`.iterator`,
     /// `.list`, ...). A later attempt to reify or take again throws
     /// `X::Seq::Consumed`.
@@ -387,6 +403,31 @@ impl SeqBody {
         Ok((items, SeqTaken::Taken))
     }
 
+    /// Store elements a [`SeqBody::take`] just pulled back into this body's
+    /// generation graveyard WITHOUT reviving its (now `Taken`) source.
+    ///
+    /// `take` deliberately hands the pulled elements to the caller instead of
+    /// storing them — a consuming touch steals the single read. But
+    /// `.iterator` is the one consumer that must keep operating on the SAME
+    /// `Arc<SeqBody>` afterwards (`reify_or_consume_seq_target_inner`'s
+    /// `.iterator` arm explains why: `dispatch_iterator_method` looks up
+    /// `squish_iterator_meta` by this body's address), and it reads the
+    /// elements back through `Deref`. Without this the elements a genuinely
+    /// deferred source produced were pulled and then dropped, and the iterator
+    /// was built over the still-empty seed — invisible while only
+    /// `IO::Handle.lines` produced deferred bodies, and exposed the moment
+    /// ADR-0058 made every `.map` deferred (`self.pairs.iterator` in a
+    /// `does Iterable` role iterated nothing).
+    pub(crate) fn store_taken_elements(&self, items: Vec<Value>) {
+        if self.live_generation().len() == items.len() {
+            return;
+        }
+        // SAFETY: same reasoning as `pull_and_store` — no reference into
+        // `gens` is held across this push, and earlier generations are never
+        // rewritten, only superseded.
+        unsafe { (*self.core.gens.get()).push(Box::new(items)) };
+    }
+
     /// A `for`-loop's own single-use gate (`vm_for_loop_dispatch.rs`):
     /// unlike every other consumer, `for` does NOT go through `take` at all
     /// (it is not a `seq_method_consumes` entry — reading a bare `for $s {}`
@@ -437,7 +478,10 @@ impl SeqBody {
                 _ => std::mem::replace(&mut state.source, SeqSource::Taken),
             }
         };
-        if matches!(source, SeqSource::Iterator(_) | SeqSource::IoLines { .. }) {
+        if matches!(
+            source,
+            SeqSource::Iterator(_) | SeqSource::IoLines { .. } | SeqSource::MapGrep { .. }
+        ) {
             pull(&source)?;
         }
         Ok(())
@@ -481,10 +525,31 @@ impl SeqBody {
     /// Whether this body still has a source to pull from (an unreified
     /// `Seq.new($iterator)` or `IO::Handle.lines`) rather than being already
     /// reified or already taken.
+    ///
+    /// **`SeqSource::MapGrep` is deliberately NOT included** (docs/adr/0058
+    /// §step 2): every call site of this predicate treats "deferred" as
+    /// "single-use, steal it" — most visibly `reify_or_consume_seq_target`'s
+    /// `"list"` arm, whose whole compromise is that a `.map`/`.grep` result
+    /// must stay re-readable through `@$s` (`t/seq-array-context-reiterate.t`)
+    /// while an `IO::Handle.lines` Seq consumes. A `MapGrep` body is deferred
+    /// in *when the callback runs*, not in whether the result is re-readable,
+    /// so it keeps the eager map's behaviour at those sites. Use
+    /// [`SeqBody::needs_touch`] for "does this need reifying at all".
     pub(crate) fn has_deferred_source(&self) -> bool {
         matches!(
             self.core.state.lock().unwrap().source,
             SeqSource::Iterator(_) | SeqSource::IoLines { .. }
+        )
+    }
+
+    /// Whether this body is a not-yet-run `.map`/`.grep` (docs/adr/0058).
+    /// Read by the handful of pure-value read paths that cannot re-enter the
+    /// VM to pull (`Value::truthy`, `.gist`), which must not mistake an
+    /// un-pulled body's empty seed for a genuinely empty sequence.
+    pub(crate) fn is_map_grep_source(&self) -> bool {
+        matches!(
+            self.core.state.lock().unwrap().source,
+            SeqSource::MapGrep { .. }
         )
     }
 
@@ -656,6 +721,14 @@ impl SeqBody {
         match &state.source {
             SeqSource::Iterator(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),
+            SeqSource::MapGrep { items, func, .. } => {
+                for v in items.iter() {
+                    v.gc_trace(visit);
+                }
+                if let Some(f) = func {
+                    f.gc_trace(visit);
+                }
+            }
             SeqSource::Reified | SeqSource::Taken => {}
         }
     }

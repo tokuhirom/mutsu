@@ -164,6 +164,14 @@ impl Interpreter {
         if method == "WHICH" && args.is_empty() {
             self.warm_which_identity(&target);
         }
+        // ADR-0058: a slurpy parameter FLATTENS a `Seq` argument, and the
+        // binder reads its elements through pure code -- so a still-deferred
+        // `.map`/`.grep` argument has to run its callback before binding
+        // (zef's `self!depends2specs($deps)`, where `$deps` is a
+        // `.grep(...).map(...)` chain and the callee takes `*@depends`).
+        // The RECEIVER is handled separately, by
+        // `reify_or_consume_seq_target`.
+        self.reify_map_grep_seq_args(&args)?;
         // A user `IO::Handle` subclass that overrides `WRITE`/`READ`/`EOF` gets
         // the high-level text methods for free by routing them through those
         // overrides (`try_user_io_handle_method`). That hook was wired into the

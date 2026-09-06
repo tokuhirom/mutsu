@@ -675,6 +675,13 @@ impl Interpreter {
     }
 
     pub(super) fn vm_smart_match(&mut self, left: &Value, right: &Value) -> bool {
+        // ADR-0058: list matching reads a Seq's elements through pure code, so
+        // a still-deferred `.map`/`.grep` operand has to run its callback
+        // first. Smartmatch answers a Bool, so a callback that throws here is
+        // reported as "no match" — the same shape every other pure predicate
+        // reachable from this infallible signature uses.
+        let _ = self.reify_map_grep_seq(left);
+        let _ = self.reify_map_grep_seq(right);
         // Force finite lazy operands first so list matching sees their
         // elements (see reify_finite_lazy_for_match).
         if let Some(forced) = self.reify_finite_lazy_for_match(left) {

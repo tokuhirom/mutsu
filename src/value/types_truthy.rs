@@ -131,7 +131,14 @@ impl Value {
                 // reports `true` without peeking. Every other Seq (reified,
                 // or a not-yet-touched `Iterator` source reading its still-
                 // empty seed) uses the element count.
-                items.is_io_lines_source() || !items.is_empty()
+                // ADR-0058: a not-yet-run `.map`/`.grep` (`SeqSource::MapGrep`)
+                // reads its still-empty seed here, exactly like the IoLines
+                // case above — report `true` rather than "empty". The pure
+                // approximation is sound for `.map` (one result per source
+                // element, so a non-empty source cannot map to nothing unless
+                // the callback slips) and the VM forces the body at every
+                // boolean chokepoint it can reach with an `&mut Interpreter`.
+                items.is_io_lines_source() || items.is_map_grep_source() || !items.is_empty()
             }
             ValueView::LazyList(_) => true,
             ValueView::Promise(p) => p.is_resolved(),

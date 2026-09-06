@@ -320,7 +320,7 @@ impl Interpreter {
         (code, fns)
     }
 
-    pub(super) fn eval_map_over_items(
+    pub(crate) fn eval_map_over_items(
         &mut self,
         func: Option<Value>,
         list_items: Vec<Value>,

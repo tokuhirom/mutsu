@@ -12,10 +12,13 @@ use Test;
 # sink forces the Seq is uncaught. `t/try-sink-semantics.t` pins the
 # sink-placement half of this; the laziness half is docs/adr/0058.
 #
-# Part 2's rows are `todo` because mutsu evaluates a `.map` over a finite
-# source eagerly, at the `.map` call, so the callback has already thrown by the
-# time the `try` block's tail value exists. Un-`todo` them when ADR-0058 lands
-# --- they are that ADR's completion oracle.
+# Part 2's rows were `todo` until ADR-0058 step 2 landed: mutsu used to
+# evaluate a `.map` over a finite source eagerly, at the `.map` call, so the
+# callback had already thrown by the time the `try` block's tail value existed.
+# `.map` now hands back a `Seq` whose `SeqSource::MapGrep` body runs the
+# callback at first consumption, so these rows pass. The two remaining `todo`s
+# are Part 1's, and belong to the separate `fail`-under-an-enclosing-`try` bug
+# recorded in ADR-0058 S1.4.
 
 plan 23;
 
@@ -79,13 +82,11 @@ sub run-snippet($code) {
 
 {
     my ($rc, $out) = run-snippet('try { (1..3).map({die "boom"}) }; say "alive ", $!.defined');
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly', 2;
     isnt $rc, 0, 'P4: a dying map callback escapes a statement-position try';
     unlike $out, /'alive'/, 'P4: ... and the next statement never runs';
 }
 {
     my ($rc, $out) = run-snippet('sub f { (1..3).map({die "boom"}) }; try { f() }; say "alive"');
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly', 2;
     isnt $rc, 0, 'P5: same, through one level of call indirection';
     unlike $out, /'alive'/, 'P5: ... and the next statement never runs';
 }
@@ -93,25 +94,21 @@ sub run-snippet($code) {
     my ($rc, $out) = run-snippet(
         'sub f { (1..3).map({die "boom"}) }; sub ee { try { f() } }; say ee().^name; say "alive"');
     is $rc, 0, 'P18: the program survives a dying map Seq used as the try value';
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly';
     like $out, /^^ 'Seq'/, 'P18: ... and the unforced Seq is still a Seq';
 }
 {
     my ($rc, $out) = run-snippet(
         'try { (1..3).map({die "boom"}) }; CATCH { default { say "unit-caught" } }; say "alive"');
     is $rc, 0, 'Q9: the program survives an escape caught by the enclosing CATCH';
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly';
     like $out, /'unit-caught'/, 'Q9: ... and the enclosing block CATCH reports it';
 }
 {
     my ($rc, $out) = run-snippet('sub f { (1..3).map({ fail "x" }) }; try { f() }; say "alive"');
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly', 2;
     isnt $rc, 0, 'Q14: a failing map callback escapes the try too';
     unlike $out, /'alive'/, 'Q14: ... and the next statement never runs';
 }
 {
     my ($rc, $out) = run-snippet(
         'my $s = (1..3).map({ say "side $_"; $_ }); say "before"; say $s.List');
-    todo 'ADR-0058: a finite-source .map runs its callback eagerly';
     like $out, /^ 'before'/, 'the map callback runs after the statement following the .map';
 }

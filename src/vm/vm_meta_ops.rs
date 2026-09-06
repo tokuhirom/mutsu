@@ -3,6 +3,9 @@ use super::*;
 
 impl Interpreter {
     fn zip_iter_from_value(&mut self, val: &Value, needed: usize) -> Result<ZipIter, RuntimeError> {
+        // ADR-0058: `ZipIter::from_value` reads the elements through pure
+        // code, so a still-deferred `.map` operand has to run first.
+        self.reify_map_grep_seq(val)?;
         if let ValueView::LazyList(list) = val.view() {
             // A cache-only lazy value is already finite.  Pull-backed values
             // (map/grep pipes and sequences) need VM execution to populate the
@@ -50,6 +53,11 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0058: the meta-ops below read their operands' elements through
+        // pure helpers (`ZipIter::from_value`, `value_to_list`), so a
+        // still-deferred `.map` operand has to run its callback first.
+        self.reify_map_grep_seq(&left)?;
+        self.reify_map_grep_seq(&right)?;
         let meta = Self::const_str(code, meta_idx).to_string();
         let op = Self::const_str(code, op_idx).to_string();
         let result = match meta.as_str() {

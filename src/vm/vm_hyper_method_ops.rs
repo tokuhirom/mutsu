@@ -527,7 +527,12 @@ impl Interpreter {
         // source first if needed.
         if let ValueView::Seq(body) = target.view() {
             let body = std::sync::Arc::clone(&body);
-            self.take_seq_body(&body)?;
+            let (items, _) = self.take_seq_body(&body)?;
+            // ADR-0058: `hyper_source_items` below reads THIS body back
+            // through `Deref`, but `take` hands a genuinely deferred source's
+            // elements to the caller instead of storing them — see
+            // `SeqBody::store_taken_elements`.
+            body.store_taken_elements(items);
         }
         // A not-yet-forced lazy list (`gather { take 1 }`, a finite `.map` pipe)
         // carries an EMPTY cache, and `hyper_source_items` below is a static
@@ -956,6 +961,12 @@ impl Interpreter {
                         // `((2 3) (4 [5 6]))`, not a flattened `(2 3 4 [5 6])`
                         // (roast S03-metaops/hyper.t "`.Slip` is nodal"). Only a
                         // leaf application slips.
+                        // ADR-0058: a per-element `.map`/`.grep` hands back a
+                        // Seq whose callback has not run; the result vector is
+                        // read by pure code (`.gist`, the writeback below), so
+                        // pull it here (`[[2,3],[4,[5,6]]]».map(* + 1)`,
+                        // `roast/S03-metaops/hyper.t` ".map is nodal").
+                        self.reify_map_grep_seq(&val)?;
                         if is_list_native_method {
                             results.push(val);
                         } else {
