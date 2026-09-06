@@ -809,6 +809,29 @@ pub(crate) enum OpCode {
         name_idx: u32,
         tc_idx: u32,
     },
+    /// The block-entry PRE-registration of a `my TYPE $x` that appears later in
+    /// the same block (`Compiler::hoist_typed_var_decls`), implementing Raku's
+    /// "declarations are in effect at block start" rule. `scoped` selects the
+    /// same registration store [`Self::SetVarTypeScoped`] / [`Self::SetVarType`]
+    /// would.
+    ///
+    /// It differs from both in being **value-neutral**: the declaration has not
+    /// run, so its container/scalar does not exist yet and whatever is bound to
+    /// the name right now belongs to an ENCLOSING scope. Stamping that value —
+    /// seeding a Nil scalar with the type object, or writing `value_type` onto
+    /// the bound `ArrayData`/`HashData` — mutates the outer variable, and the
+    /// block-exit metadata restore cannot undo a write to the value itself
+    /// (`sub f { my @a; if True { my Int @a } ; @a.push("x") }` started
+    /// rejecting the outer push). So this op registers the constraint and
+    /// nothing else, except for seeding a name that is not bound at all — the
+    /// case the hoist exists for, where the declaration is the only binding
+    /// (roast S04-declarations/my-6e.t "unreached declaration in effect at
+    /// block start").
+    SetVarTypeHoisted {
+        name_idx: u32,
+        tc_idx: u32,
+        scoped: bool,
+    },
     SetTopic,
     SaveTopic,
     RestoreTopic,

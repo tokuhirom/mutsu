@@ -2451,13 +2451,43 @@ impl Compiler {
     /// `t/pair-typed-value-container.t`), and mainline declarations outside
     /// any block (no frame/scope to scope to).
     fn emit_set_var_type(&mut self, name: &str, name_idx: u32, tc_idx: u32, is_our: bool) {
+        self.emit_set_var_type_op(name, name_idx, tc_idx, is_our, false);
+    }
+
+    /// [`Self::emit_set_var_type`] for the block-entry pre-registration
+    /// (`hoist_typed_var_decls`): same store selection, value-neutral execution
+    /// (see `OpCode::SetVarTypeHoisted`).
+    pub(super) fn emit_hoisted_set_var_type(
+        &mut self,
+        name: &str,
+        name_idx: u32,
+        tc_idx: u32,
+        is_our: bool,
+    ) {
+        self.emit_set_var_type_op(name, name_idx, tc_idx, is_our, true);
+    }
+
+    fn emit_set_var_type_op(
+        &mut self,
+        name: &str,
+        name_idx: u32,
+        tc_idx: u32,
+        is_our: bool,
+        hoisted: bool,
+    ) {
         let scoped = !is_our
             && (self.is_routine || self.lexically_in_routine || self.lexically_in_block)
             && !name.starts_with('&')
             && !name.starts_with('*')
             && name != "__ANON_STATE__"
             && !name.contains("::");
-        if scoped {
+        if hoisted {
+            self.code.emit(OpCode::SetVarTypeHoisted {
+                name_idx,
+                tc_idx,
+                scoped,
+            });
+        } else if scoped {
             self.code
                 .emit(OpCode::SetVarTypeScoped { name_idx, tc_idx });
         } else {

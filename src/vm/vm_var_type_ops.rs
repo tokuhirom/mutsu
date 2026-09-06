@@ -3,11 +3,18 @@
 use super::*;
 
 impl Interpreter {
-    /// Execute a `SetVarType` / `SetVarTypeScoped` op. `scoped` selects the
-    /// env-only registration used for a scalar `my`/`state` lexically inside a
-    /// routine (see `OpCode::SetVarTypeScoped`); the registration store is the
-    /// ONLY difference between the two ops — the Nil→type-object seeding and
-    /// container tagging below are shared.
+    /// Execute a `SetVarType` / `SetVarTypeScoped` / `SetVarTypeHoisted` op.
+    /// `scoped` selects the env-only registration used for a scalar `my`/`state`
+    /// lexically inside a routine (see `OpCode::SetVarTypeScoped`); the
+    /// registration store is the ONLY difference between the first two ops — the
+    /// Nil→type-object seeding and container tagging below are shared.
+    ///
+    /// `hoisted` marks the block-entry pre-registration emitted by
+    /// `Compiler::hoist_typed_var_decls` (see `OpCode::SetVarTypeHoisted`): the
+    /// declaration has not run yet, so anything currently bound to the name
+    /// belongs to an enclosing scope and MUST NOT be written. It therefore only
+    /// registers the constraint, and seeds the type object solely for a name
+    /// that has no binding at all.
     pub(super) fn exec_set_var_type(
         &mut self,
         code: &CompiledCode,
@@ -15,6 +22,7 @@ impl Interpreter {
         name_idx: u32,
         tc_idx: u32,
         scoped: bool,
+        hoisted: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let raw_constraint = Self::const_str(code, tc_idx).to_string();
@@ -31,8 +39,10 @@ impl Interpreter {
         // was captured earlier in the signature).
         let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
         // Clear stale atomic CAS state when an @-variable is
-        // (re-)declared with a type constraint like atomicint.
-        if name.starts_with('@') && constraint == "atomicint" {
+        // (re-)declared with a type constraint like atomicint. Not on the
+        // hoist: the state belongs to whatever container is bound right now,
+        // which is the enclosing scope's, not this declaration's.
+        if !hoisted && name.starts_with('@') && constraint == "atomicint" {
             self.clear_atomic_array_state(&name);
         }
         if scoped {
@@ -44,10 +54,18 @@ impl Interpreter {
         // Exception: if the constraint is "Nil", keep the value as Nil
         // (the Nil type object is Nil itself, not the Package "Nil").
         if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
-            let is_nil = matches!(
-                self.env().get(&name).map(Value::view),
-                Some(ValueView::Nil) | None
-            );
+            // On the hoist an EXISTING binding is the enclosing scope's, and
+            // seeding it would overwrite the outer variable's value for good
+            // (the block-exit restore only puts the metadata back). Seed only a
+            // name nothing has bound — the shape the hoist exists for.
+            let is_nil = if hoisted {
+                self.env().get(&name).is_none()
+            } else {
+                matches!(
+                    self.env().get(&name).map(Value::view),
+                    Some(ValueView::Nil) | None
+                )
+            };
             // ... or the variable still holds a DEAD seed: a type object for a
             // name nothing has registered. `hoist_typed_var_decls` emits a
             // block-entry `SetVarType` for every top-level `my TYPE $x`, which
@@ -72,7 +90,10 @@ impl Interpreter {
                 self.set_env_with_main_alias(&name, init_val.clone());
                 self.update_local_if_exists(code, &name, &init_val);
             }
-        } else if let Some(value) = self.get_env_with_main_alias(&name) {
+        } else if let Some(value) = (!hoisted)
+            .then(|| self.get_env_with_main_alias(&name))
+            .flatten()
+        {
             let info = crate::runtime::ContainerTypeInfo {
                 value_type: loan_env!(self, var_type_constraint(&name)).unwrap_or(constraint),
                 key_type: if name.starts_with('%') {
