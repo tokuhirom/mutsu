@@ -57,6 +57,15 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // fate (terminate), same as a subrule that names it in any lookup form.
         RegexAtom::WsRule => LtmAtomMode::Terminate,
         RegexAtom::Named(name) if named_lookup_is_ws(name) => LtmAtomMode::Terminate,
+        // `<!>` — the always-fail assertion (parsed as `Named("!")`). Rakudo
+        // dispatches it as a Cursor method, so its NFA has no edge for it and it
+        // becomes a fate: the declarative prefix ends *before* it. Measuring it
+        // normally instead lets it fail the whole measurement, which reports the
+        // branch's prefix as 0 and mis-ranks it against its `|` siblings —
+        // `/ 'foo' | ( 'food' <!> || { ... } ) /` must rank the group first
+        // (prefix "food"), enter it, and reach the `||` branch after `<!>` fails
+        // for real (verified against `raku`).
+        RegexAtom::Named(name) if name == "!" => LtmAtomMode::Terminate,
         // Backreferences depend on a capture made so far in THIS match, not on
         // the pattern's declarative structure — Rakudo's NFA has no method for
         // them, so they terminate.
