@@ -123,6 +123,23 @@ pub(crate) struct Registry {
     /// block should go through [`owner_method_names`](Self::owner_method_names)
     /// rather than touching the field directly.
     pub(crate) owner_method_names: HashMap<Symbol, Vec<Symbol>>,
+    /// Reverse index for the OTHER half of the same table: owner -> every
+    /// `name` whose `(owner, name)` row currently carries an `accessor`
+    /// column. Maintained solely by
+    /// [`sync_accessor_entries`](Self::sync_accessor_entries), the only writer
+    /// of that column; no other mutator can drop such a row behind its back,
+    /// since `entry_is_live` keeps a row alive while its `accessor` is set.
+    ///
+    /// Exists to give `sync_accessor_entries` its stale set without scanning
+    /// every row in the table. `Interpreter::new` re-derives accessors for
+    /// each of the ~450 built-in classes, so the scan made construction
+    /// O(classes x rows) — 12.7% of `benchmarks/bench-yaml-parse.raku`, whose
+    /// regex paths build ~200 scratch interpreters per parse.
+    ///
+    /// `pub(crate)` for the same struct-update-syntax reason as
+    /// [`owner_method_names`](Self::owner_method_names); read and written only
+    /// through `registry_method_table.rs`.
+    pub(crate) owner_accessor_names: HashMap<Symbol, Vec<Symbol>>,
     /// Method-candidate wrap chains: `(owner class, method name, candidate
     /// index)` -> stack of `(handle_id, wrapper_sub)`, outermost (currently
     /// active) last. Populated by `.wrap()` on a Sub/Method obtained via
@@ -509,6 +526,10 @@ impl Registry {
         // `throws-like`/`fails-like`) would run the parent's `method_entries`
         // against its own `Interpreter::new()`'s empty `owner_method_names`.
         self.owner_method_names = source.owner_method_names.clone();
+        // Same reasoning for the accessor half of the table: a nested
+        // interpreter must not run the copied `method_entries` against its own
+        // (differently populated) accessor index.
+        self.owner_accessor_names = source.owner_accessor_names.clone();
         self.bump_method_generation();
     }
 

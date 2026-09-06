@@ -1,4 +1,75 @@
-# Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
+# Parsing YAML with the bundled `YAMLish`: now at/near raku, deeper documents still ~2x
+
+**Update (2026-09-06, round 10): the dominant cost was never the regex engine
+-- it was an exponential grammar-action bug plus 207 wasted interpreter
+constructions per parse. `benchmarks/bench-yaml-parse.raku` goes 1.14s ->
+0.138s (8.3x), which is 2.5x FASTER than rakudo on the same box; a 120-row
+document lands at 0.96s against rakudo's 0.44s (2.2x, measured after (a);
+its pre-round-10 time was not measured).** Three landed changes,
+each found by measurement rather than by reading code:
+
+**(a) An aliased capture's action fired 2^depth times (a correctness bug).**
+The round-7/8/9 sessions were chasing `Value::view()` materialization sites
+while the actual multiplier sat in the action walk. Counting how often each
+YAMLish action method runs -- on an instrumented copy of the module, under
+mutsu and under rakudo 2026.07 -- showed mutsu running **40115** action
+methods to rakudo's **997**, with `space` firing **256 times per matched
+space character** (2^8). Root cause: a non-suppressing alias `<x=rule>` files
+the capture under both names, and mutsu stored two INDEPENDENT nodes (the
+second a deep clone of the whole matched subtree), so the action walk
+dispatched each slot; nested aliases compounded. Both slots now share one
+`Arc<CapNode>` -- which is also what `$<x> === $<rule>` means, and mutsu now
+answers `True` there like raku -- and the walk dispatches at most once per
+capture node per parent. Pinned by `t/grammar-alias-action-fires-once.t`
+(verified against rakudo). Effect: 1.14s -> 0.34s; opcodes executed 75595 ->
+2877, `env_deep_copies` 41360 -> 580, `match_materializations` 1743 -> 69.
+Details: `news/2026-09/grammar-alias-action-exponential-firing.md`.
+
+**(b) Regex scratch interpreters built the whole built-in registry.** With
+(a) landed, a fresh callgrind profile put ~48% of the run in
+`Interpreter::new`, called **207 times per parse** from the regex paths
+(`eval_regex_expr_value` 102x, `resolve_token_patterns_with_args_in_pkg`
+56x, `regex_match_atom_in_pkg_inner` 36x, ...). Every one of those scratch
+interpreters had its registry replaced by the caller immediately afterwards,
+so building ~450 `ClassDef`s and seeding their method entries was pure waste.
+`copy_decl_registry_into` now shares the parent's copy-on-write
+`Arc<Registry>` (O(1), a strict superset of the four maps it used to clone),
+and `Interpreter::new` skips the built-in registry under the existing
+`BUILDING_SCRATCH` flag. Effect: 0.34s -> 0.138s, and the whole `t/` suite's
+CPU time drops ~11%. Details:
+`news/2026-09/scratch-interpreter-skips-builtin-registry.md`.
+
+**(c) `sync_accessor_entries` scanned the entire method table per call.**
+12.7% of the pre-(b) profile, because `Interpreter::new` calls it once per
+built-in class. Now index-accelerated via `Registry::owner_accessor_names`.
+Mostly subsumed by (b) for THIS benchmark (the calls themselves went away),
+but it is the general fix for any class-declaring program. Details:
+`news/2026-09/registry-accessor-column-index.md`.
+
+**Method note for future rounds -- this is the lesson of rounds 7-9 vs round
+10.** Three rounds of `MUTSU_VM_STATS` counter-diffing and gdb hit-count
+sweeps localized real inefficiencies but never found the multiplier, because
+every counter they compared was mutsu-against-mutsu. What found it in one
+step was comparing mutsu against **rakudo on the same workload**: instrument
+the module's own action methods with a counter hash, run both, and diff. A
+40x gap in "how many times does this user-visible callback run" is invisible
+to any internal counter and obvious in that comparison. Also: `valgrind
+--tool=callgrind` + `callgrind_annotate --tree=both` gives a deterministic,
+contention-proof caller-attributed profile, which is exactly what this
+ticket's own "measurement caveat" section says local wall-clock and `perf`
+sampling on this box could not.
+
+**What is left (in the round-10 profile of a 120-row document, 6.7 Bn Ir):**
+no single dominant site any more -- allocator traffic
+(`malloc`/`free`/`_int_malloc`) ~20%, `memcpy` 6.7%, `LocalKey::with` 5.7%
+(mostly `Symbol::intern`, ~1.3M calls), SipHash `Hasher::write` + `hash_one`
+8.1% (std `HashMap`s on regex-capture paths that could be `FxHashMap`), and
+the regex matcher's own `regex_match_ends_from_caps_in_pkg_impl` /
+`regex_match_atom_all_with_capture_in_pkg_inner` ~4.4%. The remaining ~2x
+against rakudo on larger documents is that flat allocation/hashing tail, not
+one call site. Items 3 (candidate enumeration) and 4 (per-leaf Match
+construction) below are the shape of that tail.
+
 
 **Update (2026-08-15, round 9): the three round-7-identified-but-unfixed unguarded
 `Value::view()` sites are now fixed** — `OpCode::GetGlobal` (`vm_exec_dispatch.rs`),

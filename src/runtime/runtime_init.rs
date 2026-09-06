@@ -57,27 +57,19 @@ impl Interpreter {
         regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take())
     }
 
-    pub fn new() -> Self {
-        let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::int(current_process_id()));
-        env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
-        env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
-        env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
-        // Populate %*ENV with all OS environment variables so that
-        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly. A scratch
-        // interpreter inherits the caller's env (which already carries %*ENV), so
-        // skip the OS-env sweep there.
-        if !Self::is_building_scratch() {
-            let env_hash = os_env_hash();
-            env.insert(
-                "%*ENV".to_string(),
-                Value::hash_with_data(Value::hash_arc(env_hash)),
-            );
-        }
-        env.insert(
-            "*SCHEDULER".to_string(),
-            Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
-        );
+    /// Build the built-in declaration registry: every built-in `ClassDef`,
+    /// the exception-class hierarchy, the composed-role seeds and the seeded
+    /// method table.
+    ///
+    /// Extracted from [`Self::new`] so a regex/grammar scratch interpreter can
+    /// SKIP it (see `BUILDING_SCRATCH`): a scratch interpreter has its whole
+    /// registry replaced by the caller's (`copy_decl_registry_into`) before it
+    /// runs anything, so building ~450 class definitions and seeding their
+    /// method entries first was pure waste — and a grammar parse builds one
+    /// scratch interpreter per subrule-with-arguments call and per embedded
+    /// code block (207 of them on `benchmarks/bench-yaml-parse.raku`, where a
+    /// callgrind profile attributed ~48% of the whole run to this work).
+    fn build_builtin_registry() -> Registry {
         let mut classes = rustc_hash::FxHashMap::default();
         classes.insert(
             "Mu".to_string(),
@@ -2420,6 +2412,397 @@ impl Interpreter {
         register_x("X::Worry::P5::BackReference", "X::Worry::P5", &[]);
         register_x("X::Worry::P5::LeadingZero", "X::Worry::P5", &[]);
         register_x("X::Worry::P5::Reference", "X::Worry::P5", &[]);
+        // Built-in class definitions (PR-A slice 3: `classes` now lives in the
+        // shared Registry instead of an Interpreter field).
+        // Field-by-field init rather than `Registry { .. }` struct
+        // update: `proto_subs`/`proto_gen` are private (their
+        // mutations must flow through the gen-bumping accessors).
+        let mut registry = Registry::default();
+        registry.classes = classes;
+        registry.seed_builtin_method_entries();
+        // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
+        // now lives in the shared Registry instead of an Interpreter field).
+        let ccr = &mut registry.class_composed_roles;
+        ccr.insert(
+            "CompUnit::Repository::FileSystem".to_string(),
+            vec!["CompUnit::Repository".to_string()],
+        );
+        // Built-in type role composition
+        ccr.insert(
+            "Int".to_string(),
+            vec!["Real".to_string(), "Numeric".to_string()],
+        );
+        ccr.insert(
+            "Num".to_string(),
+            vec!["Real".to_string(), "Numeric".to_string()],
+        );
+        ccr.insert(
+            "Rat".to_string(),
+            vec![
+                "Rational[Int,Int]".to_string(),
+                "Real".to_string(),
+                "Numeric".to_string(),
+            ],
+        );
+        ccr.insert(
+            "FatRat".to_string(),
+            vec![
+                "Rational[Int,Int]".to_string(),
+                "Real".to_string(),
+                "Numeric".to_string(),
+            ],
+        );
+        ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
+        ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
+        // Built-in role definitions (PR-A slice 4: roles now live in the
+        // shared Registry instead of an Interpreter field).
+        registry.roles = {
+            let mut roles = rustc_hash::FxHashMap::default();
+            roles.insert(
+                "Encoding".to_string(),
+                RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    is_stub_role: false,
+                    is_hidden: false,
+                    is_rw: false,
+                    captured_env: None,
+                    wildcard_handles: Vec::new(),
+                    role_id: 0,
+                    attribute_conflicts: Vec::new(),
+                    own_attribute_names: std::collections::HashSet::new(),
+                    deferred_body: Vec::new(),
+                    deferred_custom_traits: Vec::new(),
+                },
+            );
+            roles.insert(
+                "Iterator".to_string(),
+                RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    is_stub_role: false,
+                    is_hidden: false,
+                    is_rw: false,
+                    captured_env: None,
+                    wildcard_handles: Vec::new(),
+                    role_id: 0,
+                    attribute_conflicts: Vec::new(),
+                    own_attribute_names: std::collections::HashSet::new(),
+                    deferred_body: Vec::new(),
+                    deferred_custom_traits: Vec::new(),
+                },
+            );
+            roles.insert(
+                "PredictiveIterator".to_string(),
+                RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    is_stub_role: false,
+                    is_hidden: false,
+                    is_rw: false,
+                    captured_env: None,
+                    wildcard_handles: Vec::new(),
+                    role_id: 0,
+                    attribute_conflicts: Vec::new(),
+                    own_attribute_names: std::collections::HashSet::new(),
+                    deferred_body: Vec::new(),
+                    deferred_custom_traits: Vec::new(),
+                },
+            );
+            roles.insert(
+                "Iterable".to_string(),
+                RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    is_stub_role: false,
+                    is_hidden: false,
+                    is_rw: false,
+                    captured_env: None,
+                    wildcard_handles: Vec::new(),
+                    role_id: 0,
+                    attribute_conflicts: Vec::new(),
+                    own_attribute_names: std::collections::HashSet::new(),
+                    deferred_body: Vec::new(),
+                    deferred_custom_traits: Vec::new(),
+                },
+            );
+            roles.insert(
+                "X::Control".to_string(),
+                RoleDef {
+                    attributes: Vec::new(),
+                    methods: HashMap::new(),
+                    is_stub_role: false,
+                    is_hidden: false,
+                    is_rw: false,
+                    captured_env: None,
+                    wildcard_handles: Vec::new(),
+                    role_id: 0,
+                    attribute_conflicts: Vec::new(),
+                    own_attribute_names: std::collections::HashSet::new(),
+                    deferred_body: Vec::new(),
+                    deferred_custom_traits: Vec::new(),
+                },
+            );
+            // ADR-0029: role-shaped `X::` exception "namespaces".
+            // Measured against real rakudo (2026-08-17), 59% of the
+            // `X::` classes mutsu raises or tests against compose one
+            // or more of these marker roles rather than inheriting
+            // from a same-named class -- `X::Comp`, `X::Syntax`,
+            // `X::IO`, and `X::OS` are the heavily-used ones (135/69/
+            // 22/22 classes respectively), the rest are 1-7 each. All
+            // are empty-bodied here, as they are in rakudo too: mutsu's
+            // exception machinery supplies the behaviour, these exist
+            // purely so `.^roles`, `.^does`, and `~~` agree with
+            // rakudo about which classes compose them. Registering
+            // them as roles (not classes) also satisfies
+            // `type_matching.rs`'s `resolve_role_key` gate for
+            // type-object `~~` (e.g. `X::Comp::FailGoal ~~ X::Comp`).
+            // `X::Nominalizable` / `X::Role::Attribute` (Slice 3) were
+            // not in the ADR's original 14 -- its corpus was a 303-name
+            // roast/t sample; Slice 3's broader capture (roast/t plus
+            // every `X::...` string literal in mutsu's own source)
+            // surfaced these two additional roles the same way.
+            for role_name in [
+                "X::Comp",
+                "X::Syntax",
+                "X::IO",
+                "X::OS",
+                "X::Trait",
+                "X::Proc::Async",
+                "X::BadType",
+                "X::Temporal",
+                "X::MOP",
+                "X::Encoding",
+                "X::Pod",
+                "X::Wrapper",
+                "X::RoleApplier",
+                "X::RoleApplier::Method",
+                "X::Nominalizable",
+                "X::Role::Attribute",
+                // Not a marker role like the rest: rakudo mixes
+                // `X::Promise::Broken` into the *cause* exception that
+                // `Promise.result` rethrows, producing the anonymous
+                // mixin type `X::AdHoc+{X::Promise::Broken}`. It is
+                // registered here so `eval_does_values` can compose it
+                // and `~~ X::Promise::Broken` answers correctly.
+                "X::Promise::Broken",
+                // Also not a marker role: rakudo's
+                // `X::AdHoc.from-slurpy(...)` mixes this into the
+                // `Capture` it stores as `.payload`, so the payload's
+                // `.^name` is `Capture+{X::AdHoc::SlurpySentry}` and
+                // `.Str` knows to concatenate rather than render the
+                // capture. Registered here so the composition can
+                // happen at all.
+                "X::AdHoc::SlurpySentry",
+            ] {
+                roles.insert(
+                    role_name.to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods: HashMap::new(),
+                        is_stub_role: false,
+                        is_hidden: false,
+                        is_rw: false,
+                        captured_env: None,
+                        wildcard_handles: Vec::new(),
+                        role_id: 0,
+                        attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
+                        deferred_body: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
+                    },
+                );
+            }
+            // CompUnit::Repository role with required stub methods
+            {
+                let stub_body = vec![Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_stub_die"),
+                    args: vec![],
+                })];
+                let stub_method = |body: Vec<Stmt>| MethodDef {
+                    lexical_package: "GLOBAL".to_string(),
+                    params: Vec::new(),
+                    param_defs: Vec::new(),
+                    body: std::sync::Arc::new(body),
+                    is_rw: false,
+                    is_raw: false,
+                    is_private: false,
+                    is_multi: false,
+                    is_my: false,
+                    role_origin: None,
+                    original_role: None,
+                    return_type: None,
+                    compiled_code: None,
+                    compiled_fns: None,
+                    delegation: None,
+                    is_default: false,
+                    deprecated_message: None,
+                    is_submethod: false,
+                    captured_env: None,
+                    source_file: None,
+                    role_param_bindings: None,
+                };
+                let mut methods = HashMap::new();
+                // Rakudo's CompUnit::Repository role requires exactly
+                // `id`, `need`, and `loaded` (a class doing the role must
+                // implement those three). `load` is NOT a required method.
+                for name in ["id", "need", "loaded"] {
+                    methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
+                }
+                roles.insert(
+                    "CompUnit::Repository".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods,
+                        is_stub_role: false,
+                        is_hidden: false,
+                        is_rw: false,
+                        captured_env: None,
+                        wildcard_handles: Vec::new(),
+                        role_id: 0,
+                        attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
+                        deferred_body: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
+                    },
+                );
+            }
+            // `Distribution` built-in interface role. Real Rakudo defines
+            // it with required stub methods `meta` and `content`; user
+            // distribution classes (e.g. `Zef::Distribution does
+            // Distribution`) supply the implementations. Registering the
+            // role lets such classes compose and lets `~~ Distribution`
+            // recognize them.
+            {
+                let stub_body = vec![Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("__mutsu_stub_die"),
+                    args: vec![],
+                })];
+                let stub_method = |body: Vec<Stmt>| MethodDef {
+                    lexical_package: "GLOBAL".to_string(),
+                    params: Vec::new(),
+                    param_defs: Vec::new(),
+                    body: std::sync::Arc::new(body),
+                    is_rw: false,
+                    is_raw: false,
+                    is_private: false,
+                    is_multi: false,
+                    is_my: false,
+                    role_origin: None,
+                    original_role: None,
+                    return_type: None,
+                    compiled_code: None,
+                    compiled_fns: None,
+                    delegation: None,
+                    is_default: false,
+                    deprecated_message: None,
+                    is_submethod: false,
+                    captured_env: None,
+                    source_file: None,
+                    role_param_bindings: None,
+                };
+                let mut methods = HashMap::new();
+                for name in ["meta", "content"] {
+                    methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
+                }
+                roles.insert(
+                    "Distribution".to_string(),
+                    RoleDef {
+                        attributes: Vec::new(),
+                        methods,
+                        is_stub_role: false,
+                        is_hidden: false,
+                        is_rw: false,
+                        captured_env: None,
+                        wildcard_handles: Vec::new(),
+                        role_id: 0,
+                        attribute_conflicts: Vec::new(),
+                        own_attribute_names: std::collections::HashSet::new(),
+                        deferred_body: Vec::new(),
+                        deferred_custom_traits: Vec::new(),
+                    },
+                );
+            }
+            roles
+        };
+        // ADR-0029: role-to-role composition among the 16 `X::` marker
+        // roles above, re-verified against real rakudo (2026-08-19,
+        // see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
+        // R1) -- exactly three edges exist; the other thirteen compose
+        // nothing. (Slice 3 grew the marker-role list from the ADR's
+        // original 14 to 16 without re-running this measurement, which
+        // is how `X::Role::Attribute does X::RoleApplier` was missed.)
+        registry
+            .role_parents
+            .insert("X::Syntax".to_string(), vec!["X::Comp".to_string()]);
+        registry
+            .role_parents
+            .insert("X::IO".to_string(), vec!["X::OS".to_string()]);
+        registry.role_parents.insert(
+            "X::Role::Attribute".to_string(),
+            vec!["X::RoleApplier".to_string()],
+        );
+        // ADR-0029: write `register_x`'s collected `does` lists into the
+        // composed-role registries that `.^roles`, `~~`, qualified
+        // `self.Role::meth` dispatch, and method-candidate collection
+        // already read (`class_composed_roles` /
+        // `class_direct_composed_roles` / `class_does_only_roles`).
+        // `class_composed_roles` is documented as the FLATTENED set, so
+        // walk `role_parents` here to pull in roles reached
+        // transitively through a composed role's own `does` (a class
+        // doing `X::Syntax` also does `X::Comp`).
+        for (class_name, does) in &register_x_does {
+            let mut flattened: Vec<String> = does.clone();
+            let mut seen: HashSet<String> = flattened.iter().cloned().collect();
+            let mut i = 0;
+            while i < flattened.len() {
+                if let Some(parents) = registry.role_parents.get(&flattened[i]).cloned() {
+                    for p in parents {
+                        if seen.insert(p.clone()) {
+                            flattened.push(p);
+                        }
+                    }
+                }
+                i += 1;
+            }
+            registry
+                .class_composed_roles
+                .insert(class_name.clone(), flattened);
+            registry
+                .class_direct_composed_roles
+                .insert(class_name.clone(), does.clone());
+            registry
+                .class_does_only_roles
+                .insert(class_name.clone(), does.clone());
+        }
+        let class_names: Vec<String> = registry.classes.keys().cloned().collect();
+        for class_name in class_names {
+            registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
+        }
+        registry
+    }
+
+    pub fn new() -> Self {
+        let mut env = HashMap::new();
+        env.insert("*PID".to_string(), Value::int(current_process_id()));
+        env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
+        env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
+        env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
+        // Populate %*ENV with all OS environment variables so that
+        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly. A scratch
+        // interpreter inherits the caller's env (which already carries %*ENV), so
+        // skip the OS-env sweep there.
+        if !Self::is_building_scratch() {
+            let env_hash = os_env_hash();
+            env.insert(
+                "%*ENV".to_string(),
+                Value::hash_with_data(Value::hash_arc(env_hash)),
+            );
+        }
+        env.insert(
+            "*SCHEDULER".to_string(),
+            Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
+        );
 
         let mut interpreter = Self {
             user_declared_classes: std::collections::HashSet::new(),
@@ -2482,376 +2865,11 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
-            registry: {
-                // Built-in class definitions (PR-A slice 3: `classes` now lives in the
-                // shared Registry instead of an Interpreter field).
-                // Field-by-field init rather than `Registry { .. }` struct
-                // update: `proto_subs`/`proto_gen` are private (their
-                // mutations must flow through the gen-bumping accessors).
-                let mut registry = Registry::default();
-                registry.classes = classes;
-                registry.seed_builtin_method_entries();
-                // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
-                // now lives in the shared Registry instead of an Interpreter field).
-                let ccr = &mut registry.class_composed_roles;
-                ccr.insert(
-                    "CompUnit::Repository::FileSystem".to_string(),
-                    vec!["CompUnit::Repository".to_string()],
-                );
-                // Built-in type role composition
-                ccr.insert(
-                    "Int".to_string(),
-                    vec!["Real".to_string(), "Numeric".to_string()],
-                );
-                ccr.insert(
-                    "Num".to_string(),
-                    vec!["Real".to_string(), "Numeric".to_string()],
-                );
-                ccr.insert(
-                    "Rat".to_string(),
-                    vec![
-                        "Rational[Int,Int]".to_string(),
-                        "Real".to_string(),
-                        "Numeric".to_string(),
-                    ],
-                );
-                ccr.insert(
-                    "FatRat".to_string(),
-                    vec![
-                        "Rational[Int,Int]".to_string(),
-                        "Real".to_string(),
-                        "Numeric".to_string(),
-                    ],
-                );
-                ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
-                ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
-                // Built-in role definitions (PR-A slice 4: roles now live in the
-                // shared Registry instead of an Interpreter field).
-                registry.roles = {
-                    let mut roles = rustc_hash::FxHashMap::default();
-                    roles.insert(
-                        "Encoding".to_string(),
-                        RoleDef {
-                            attributes: Vec::new(),
-                            methods: HashMap::new(),
-                            is_stub_role: false,
-                            is_hidden: false,
-                            is_rw: false,
-                            captured_env: None,
-                            wildcard_handles: Vec::new(),
-                            role_id: 0,
-                            attribute_conflicts: Vec::new(),
-                            own_attribute_names: std::collections::HashSet::new(),
-                            deferred_body: Vec::new(),
-                            deferred_custom_traits: Vec::new(),
-                        },
-                    );
-                    roles.insert(
-                        "Iterator".to_string(),
-                        RoleDef {
-                            attributes: Vec::new(),
-                            methods: HashMap::new(),
-                            is_stub_role: false,
-                            is_hidden: false,
-                            is_rw: false,
-                            captured_env: None,
-                            wildcard_handles: Vec::new(),
-                            role_id: 0,
-                            attribute_conflicts: Vec::new(),
-                            own_attribute_names: std::collections::HashSet::new(),
-                            deferred_body: Vec::new(),
-                            deferred_custom_traits: Vec::new(),
-                        },
-                    );
-                    roles.insert(
-                        "PredictiveIterator".to_string(),
-                        RoleDef {
-                            attributes: Vec::new(),
-                            methods: HashMap::new(),
-                            is_stub_role: false,
-                            is_hidden: false,
-                            is_rw: false,
-                            captured_env: None,
-                            wildcard_handles: Vec::new(),
-                            role_id: 0,
-                            attribute_conflicts: Vec::new(),
-                            own_attribute_names: std::collections::HashSet::new(),
-                            deferred_body: Vec::new(),
-                            deferred_custom_traits: Vec::new(),
-                        },
-                    );
-                    roles.insert(
-                        "Iterable".to_string(),
-                        RoleDef {
-                            attributes: Vec::new(),
-                            methods: HashMap::new(),
-                            is_stub_role: false,
-                            is_hidden: false,
-                            is_rw: false,
-                            captured_env: None,
-                            wildcard_handles: Vec::new(),
-                            role_id: 0,
-                            attribute_conflicts: Vec::new(),
-                            own_attribute_names: std::collections::HashSet::new(),
-                            deferred_body: Vec::new(),
-                            deferred_custom_traits: Vec::new(),
-                        },
-                    );
-                    roles.insert(
-                        "X::Control".to_string(),
-                        RoleDef {
-                            attributes: Vec::new(),
-                            methods: HashMap::new(),
-                            is_stub_role: false,
-                            is_hidden: false,
-                            is_rw: false,
-                            captured_env: None,
-                            wildcard_handles: Vec::new(),
-                            role_id: 0,
-                            attribute_conflicts: Vec::new(),
-                            own_attribute_names: std::collections::HashSet::new(),
-                            deferred_body: Vec::new(),
-                            deferred_custom_traits: Vec::new(),
-                        },
-                    );
-                    // ADR-0029: role-shaped `X::` exception "namespaces".
-                    // Measured against real rakudo (2026-08-17), 59% of the
-                    // `X::` classes mutsu raises or tests against compose one
-                    // or more of these marker roles rather than inheriting
-                    // from a same-named class -- `X::Comp`, `X::Syntax`,
-                    // `X::IO`, and `X::OS` are the heavily-used ones (135/69/
-                    // 22/22 classes respectively), the rest are 1-7 each. All
-                    // are empty-bodied here, as they are in rakudo too: mutsu's
-                    // exception machinery supplies the behaviour, these exist
-                    // purely so `.^roles`, `.^does`, and `~~` agree with
-                    // rakudo about which classes compose them. Registering
-                    // them as roles (not classes) also satisfies
-                    // `type_matching.rs`'s `resolve_role_key` gate for
-                    // type-object `~~` (e.g. `X::Comp::FailGoal ~~ X::Comp`).
-                    // `X::Nominalizable` / `X::Role::Attribute` (Slice 3) were
-                    // not in the ADR's original 14 -- its corpus was a 303-name
-                    // roast/t sample; Slice 3's broader capture (roast/t plus
-                    // every `X::...` string literal in mutsu's own source)
-                    // surfaced these two additional roles the same way.
-                    for role_name in [
-                        "X::Comp",
-                        "X::Syntax",
-                        "X::IO",
-                        "X::OS",
-                        "X::Trait",
-                        "X::Proc::Async",
-                        "X::BadType",
-                        "X::Temporal",
-                        "X::MOP",
-                        "X::Encoding",
-                        "X::Pod",
-                        "X::Wrapper",
-                        "X::RoleApplier",
-                        "X::RoleApplier::Method",
-                        "X::Nominalizable",
-                        "X::Role::Attribute",
-                        // Not a marker role like the rest: rakudo mixes
-                        // `X::Promise::Broken` into the *cause* exception that
-                        // `Promise.result` rethrows, producing the anonymous
-                        // mixin type `X::AdHoc+{X::Promise::Broken}`. It is
-                        // registered here so `eval_does_values` can compose it
-                        // and `~~ X::Promise::Broken` answers correctly.
-                        "X::Promise::Broken",
-                        // Also not a marker role: rakudo's
-                        // `X::AdHoc.from-slurpy(...)` mixes this into the
-                        // `Capture` it stores as `.payload`, so the payload's
-                        // `.^name` is `Capture+{X::AdHoc::SlurpySentry}` and
-                        // `.Str` knows to concatenate rather than render the
-                        // capture. Registered here so the composition can
-                        // happen at all.
-                        "X::AdHoc::SlurpySentry",
-                    ] {
-                        roles.insert(
-                            role_name.to_string(),
-                            RoleDef {
-                                attributes: Vec::new(),
-                                methods: HashMap::new(),
-                                is_stub_role: false,
-                                is_hidden: false,
-                                is_rw: false,
-                                captured_env: None,
-                                wildcard_handles: Vec::new(),
-                                role_id: 0,
-                                attribute_conflicts: Vec::new(),
-                                own_attribute_names: std::collections::HashSet::new(),
-                                deferred_body: Vec::new(),
-                                deferred_custom_traits: Vec::new(),
-                            },
-                        );
-                    }
-                    // CompUnit::Repository role with required stub methods
-                    {
-                        let stub_body = vec![Stmt::Expr(Expr::Call {
-                            name: Symbol::intern("__mutsu_stub_die"),
-                            args: vec![],
-                        })];
-                        let stub_method = |body: Vec<Stmt>| MethodDef {
-                            lexical_package: "GLOBAL".to_string(),
-                            params: Vec::new(),
-                            param_defs: Vec::new(),
-                            body: std::sync::Arc::new(body),
-                            is_rw: false,
-                            is_raw: false,
-                            is_private: false,
-                            is_multi: false,
-                            is_my: false,
-                            role_origin: None,
-                            original_role: None,
-                            return_type: None,
-                            compiled_code: None,
-                            compiled_fns: None,
-                            delegation: None,
-                            is_default: false,
-                            deprecated_message: None,
-                            is_submethod: false,
-                            captured_env: None,
-                            source_file: None,
-                            role_param_bindings: None,
-                        };
-                        let mut methods = HashMap::new();
-                        // Rakudo's CompUnit::Repository role requires exactly
-                        // `id`, `need`, and `loaded` (a class doing the role must
-                        // implement those three). `load` is NOT a required method.
-                        for name in ["id", "need", "loaded"] {
-                            methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
-                        }
-                        roles.insert(
-                            "CompUnit::Repository".to_string(),
-                            RoleDef {
-                                attributes: Vec::new(),
-                                methods,
-                                is_stub_role: false,
-                                is_hidden: false,
-                                is_rw: false,
-                                captured_env: None,
-                                wildcard_handles: Vec::new(),
-                                role_id: 0,
-                                attribute_conflicts: Vec::new(),
-                                own_attribute_names: std::collections::HashSet::new(),
-                                deferred_body: Vec::new(),
-                                deferred_custom_traits: Vec::new(),
-                            },
-                        );
-                    }
-                    // `Distribution` built-in interface role. Real Rakudo defines
-                    // it with required stub methods `meta` and `content`; user
-                    // distribution classes (e.g. `Zef::Distribution does
-                    // Distribution`) supply the implementations. Registering the
-                    // role lets such classes compose and lets `~~ Distribution`
-                    // recognize them.
-                    {
-                        let stub_body = vec![Stmt::Expr(Expr::Call {
-                            name: Symbol::intern("__mutsu_stub_die"),
-                            args: vec![],
-                        })];
-                        let stub_method = |body: Vec<Stmt>| MethodDef {
-                            lexical_package: "GLOBAL".to_string(),
-                            params: Vec::new(),
-                            param_defs: Vec::new(),
-                            body: std::sync::Arc::new(body),
-                            is_rw: false,
-                            is_raw: false,
-                            is_private: false,
-                            is_multi: false,
-                            is_my: false,
-                            role_origin: None,
-                            original_role: None,
-                            return_type: None,
-                            compiled_code: None,
-                            compiled_fns: None,
-                            delegation: None,
-                            is_default: false,
-                            deprecated_message: None,
-                            is_submethod: false,
-                            captured_env: None,
-                            source_file: None,
-                            role_param_bindings: None,
-                        };
-                        let mut methods = HashMap::new();
-                        for name in ["meta", "content"] {
-                            methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
-                        }
-                        roles.insert(
-                            "Distribution".to_string(),
-                            RoleDef {
-                                attributes: Vec::new(),
-                                methods,
-                                is_stub_role: false,
-                                is_hidden: false,
-                                is_rw: false,
-                                captured_env: None,
-                                wildcard_handles: Vec::new(),
-                                role_id: 0,
-                                attribute_conflicts: Vec::new(),
-                                own_attribute_names: std::collections::HashSet::new(),
-                                deferred_body: Vec::new(),
-                                deferred_custom_traits: Vec::new(),
-                            },
-                        );
-                    }
-                    roles
-                };
-                // ADR-0029: role-to-role composition among the 16 `X::` marker
-                // roles above, re-verified against real rakudo (2026-08-19,
-                // see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
-                // R1) -- exactly three edges exist; the other thirteen compose
-                // nothing. (Slice 3 grew the marker-role list from the ADR's
-                // original 14 to 16 without re-running this measurement, which
-                // is how `X::Role::Attribute does X::RoleApplier` was missed.)
-                registry
-                    .role_parents
-                    .insert("X::Syntax".to_string(), vec!["X::Comp".to_string()]);
-                registry
-                    .role_parents
-                    .insert("X::IO".to_string(), vec!["X::OS".to_string()]);
-                registry.role_parents.insert(
-                    "X::Role::Attribute".to_string(),
-                    vec!["X::RoleApplier".to_string()],
-                );
-                // ADR-0029: write `register_x`'s collected `does` lists into the
-                // composed-role registries that `.^roles`, `~~`, qualified
-                // `self.Role::meth` dispatch, and method-candidate collection
-                // already read (`class_composed_roles` /
-                // `class_direct_composed_roles` / `class_does_only_roles`).
-                // `class_composed_roles` is documented as the FLATTENED set, so
-                // walk `role_parents` here to pull in roles reached
-                // transitively through a composed role's own `does` (a class
-                // doing `X::Syntax` also does `X::Comp`).
-                for (class_name, does) in &register_x_does {
-                    let mut flattened: Vec<String> = does.clone();
-                    let mut seen: HashSet<String> = flattened.iter().cloned().collect();
-                    let mut i = 0;
-                    while i < flattened.len() {
-                        if let Some(parents) = registry.role_parents.get(&flattened[i]).cloned() {
-                            for p in parents {
-                                if seen.insert(p.clone()) {
-                                    flattened.push(p);
-                                }
-                            }
-                        }
-                        i += 1;
-                    }
-                    registry
-                        .class_composed_roles
-                        .insert(class_name.clone(), flattened);
-                    registry
-                        .class_direct_composed_roles
-                        .insert(class_name.clone(), does.clone());
-                    registry
-                        .class_does_only_roles
-                        .insert(class_name.clone(), does.clone());
-                }
-                let class_names: Vec<String> = registry.classes.keys().cloned().collect();
-                for class_name in class_names {
-                    registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
-                }
-                Arc::new(RwLock::new(Arc::new(registry)))
-            },
+            registry: Arc::new(RwLock::new(Arc::new(if Self::is_building_scratch() {
+                Registry::default()
+            } else {
+                Self::build_builtin_registry()
+            }))),
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,

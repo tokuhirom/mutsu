@@ -1010,19 +1010,16 @@ impl Interpreter {
                 // `<name=&subrule>`) installs the capture under BOTH the alias name
                 // AND the subrule's own name, matching Rakudo (e.g. `<x=num>` yields
                 // `$<x>` and `$<num>`; repeated `<num>`/`<offset=count>` aggregate
-                // into a list under the rule name). Snapshot the subcap/text before
-                // the alias push consumes them so we can also store under the original.
+                // into a list under the rule name). Both slots share ONE node
+                // (see the `shared_under_original` push below).
                 let also_under_original = spec.capture_name.is_some()
                     && !spec.alias_replaces_original
                     && capture_name != spec.lookup_name;
-                let original_subcap = also_under_original.then(|| subcap.clone());
                 // For an aliased capture (`<x=rule>`), record the original rule
                 // name for grammar action dispatch BEFORE the node is wrapped in
                 // an Arc and shared (`record_reduced_subrule` clones the handle):
                 // writing it afterwards through `Arc::make_mut` deep-copied the
                 // whole descendant subtree for every aliased subrule capture.
-                // The alias copy carries it; the original-name copy (cloned just
-                // above) keeps `action_name: None`, same as before.
                 let is_alias = spec.capture_name.is_some() && capture_name != spec.lookup_name;
                 let mut subcap = subcap;
                 if is_alias {
@@ -1033,6 +1030,16 @@ impl Interpreter {
                 // overall can still run its action, the way Rakudo (which
                 // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+                // Both slots reference the SAME node, the way Rakudo stores the
+                // same cursor under both names (`$<x> === $<num>` is `True`).
+                // Cloning the node here instead — as this did until the
+                // exponential-action fix — deep-copied the whole matched
+                // subtree per aliased capture AND made the grammar action walk
+                // dispatch that subtree twice, once per slot; nested aliases
+                // then multiplied, firing a leaf's action 2^depth times (256x
+                // on `benchmarks/bench-yaml-parse.raku`).
+                let shared_under_original =
+                    also_under_original.then(|| std::sync::Arc::clone(&subcap));
                 new_caps
                     .named
                     .entry(Symbol::intern(capture_name))
@@ -1044,13 +1051,13 @@ impl Interpreter {
                         .capture_alias_map
                         .insert(capture_name.to_string(), spec.lookup_name.clone());
                 }
-                if let Some(orig_subcap) = original_subcap {
+                if let Some(orig_subcap) = shared_under_original {
                     new_caps
                         .named
                         .entry(Symbol::intern(&spec.lookup_name))
                         .or_default()
                         .nodes
-                        .push(std::sync::Arc::new(orig_subcap.into_cap_node()));
+                        .push(orig_subcap);
                 }
             } else if !inner_caps.named.is_empty() {
                 // Silent subrule (`<.foo>`) that contains nested captures. The
