@@ -514,7 +514,16 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
     ) -> (Value, Value) {
         let mut right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
+        // Rakudo's `infix:<< => >>` binds the key as a plain `Mu $key` and the
+        // value as `Mu alue`, so only the VALUE keeps a container: with
+        // `my $s = $(1, 2)`, `($s => "x").key.raku` is `(1, 2)` and
+        // `.key.VAR.^name` is `List`, not `Scalar`. mutsu handed the key
+        // through whole, so an itemized key stayed itemized (`$(1, 2) => "x"`)
+        // -- and a `List:D`-keyed object hash then saw a `Scalar`, not a
+        // `List`. The value side is unchanged: `("k" => $t).value.raku` is
+        // still `$(8, 9)` for an itemized `$t`, and the write-through capture
+        // below still applies to it.
+        let left = self.stack.pop().unwrap().deitemize_element();
         if let ValueView::VarRef {
             name: source_name,
             value: inner,

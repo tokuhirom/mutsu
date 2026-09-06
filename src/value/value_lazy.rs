@@ -271,6 +271,16 @@ impl LazyList {
                 .as_ref()
                 .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
+            // A triangle reduce over a lazy source (`[\~] 1..*`). This needs no
+            // finiteness test the way the pipe above does: a scan only becomes a
+            // `LazyList` at all when its input is already lazy
+            // (`exec_reduction_op`'s `scan && input_is_lazy` gate), so a finite
+            // `[\+] 1..10` never reaches here. It is the same unconditional
+            // `scan_spec` arm `is_genuinely_lazy` already carries -- without it
+            // the two disagreed, and `my @n = [\+] 1..*` reified 200_000
+            // elements and answered `.is-lazy` False. For `[\~]` the same
+            // forcing is quadratic in bytes and never finished at all.
+            || self.scan_spec.is_some()
     }
 
     /// Whether this list is genuinely *infinite / unreifiable* — an infinite
