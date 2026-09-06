@@ -84,7 +84,7 @@ impl Interpreter {
         group
     }
 
-    fn is_pure_code_block_alt(alt: &RegexPattern) -> bool {
+    pub(super) fn is_pure_code_block_alt(alt: &RegexPattern) -> bool {
         alt.tokens.len() == 1
             && matches!(alt.tokens[0].quant, RegexQuant::One)
             && alt.tokens[0].separator.is_none()
@@ -374,33 +374,15 @@ impl Interpreter {
             return out;
         }
         if let RegexAtom::Group(pattern) = atom {
-            let mut out = Vec::new();
-            for (end, mut inner_caps) in
-                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
-            {
-                let mut new_caps = RegexCaptures::default();
-                for (k, v) in inner_caps.named.drain() {
-                    new_caps.named.entry(k).or_default().merge(v);
-                }
-                new_caps.positional.append(&mut inner_caps.positional);
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                // A write an inline `{ … }` made to the regex's own `:my`/`:let`
-                // lexicals belongs to the SAME lexical scope as the enclosing
-                // pattern, so it leaves the group with it — the single-candidate
-                // twin in `regex_match_capture.rs` has always done this.
-                new_caps
-                    .regex_vars
-                    .extend(std::mem::take(&mut inner_caps.regex_vars));
-                // A `<(` / `)>` capture marker inside the group sets the match
-                // boundaries for the whole pattern; propagate it out of the group.
-                if inner_caps.capture_start.is_some() {
-                    new_caps.capture_start = inner_caps.capture_start;
-                }
-                if inner_caps.capture_end.is_some() {
-                    new_caps.capture_end = inner_caps.capture_end;
-                }
-                out.push((end, new_caps));
-            }
+            // The delta shape lives in `regex_match_lazy.rs` so this eager
+            // producer and the demand-driven driver cannot drift (ADR-0073).
+            let mut out: Vec<(usize, RegexCaptures)> = self
+                .regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+                .into_iter()
+                .map(|(end, inner_caps)| {
+                    (end, super::regex_match_lazy::group_merge_delta(inner_caps))
+                })
+                .collect();
             // Reverse inner match order so LIFO stack respects frugal/greedy priority.
             out.reverse();
             return out;
@@ -454,31 +436,20 @@ impl Interpreter {
             return out;
         }
         if let RegexAtom::CaptureGroup(pattern) = atom {
-            let mut out = Vec::new();
-            for (end, inner_caps) in
-                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
-            {
-                let mut new_caps = RegexCaptures::default();
-                let mut inner_caps = inner_caps;
-                // Named captures appearing inside a positional capture group belong
-                // to that group's sub-Match (`$/[0]<name>`), NOT to the parent
-                // Match's top-level named captures (`$/<name>`). They are preserved
-                // only in `positional_subcaps` below and are intentionally NOT
-                // merged into the parent `named` / `named_subcaps` maps.
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
-                new_caps.regex_vars.extend(inner_caps.regex_vars.clone());
-                // Store inner captures as subcaptures of this group
-                let mut subcap = inner_caps;
-                subcap.from = pos;
-                subcap.to = end;
-                new_caps.positional.push(PosSlot {
-                    from: pos,
-                    to: end,
-                    subcap: Some(std::sync::Arc::new(subcap.into_cap_node())),
-                    ..Default::default()
-                });
-                out.push((end, new_caps));
-            }
+            // Named captures appearing inside a positional capture group belong
+            // to that group's sub-Match (`$/[0]<name>`), NOT to the parent
+            // Match's top-level named captures (`$/<name>`) — see
+            // `capture_group_delta`, shared with the demand-driven driver.
+            let mut out: Vec<(usize, RegexCaptures)> = self
+                .regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+                .into_iter()
+                .map(|(end, inner_caps)| {
+                    (
+                        end,
+                        super::regex_match_lazy::capture_group_delta(pos, end, inner_caps),
+                    )
+                })
+                .collect();
             // Reverse the inner match order so the outer LIFO stack
             // correctly respects frugal (shortest-first) vs greedy (longest-first).
             out.reverse();

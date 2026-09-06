@@ -33,6 +33,42 @@ struct WalkCtx<'a> {
 /// variable-length alternation (mirrors the old 20k candidate bound).
 const QUANT_ALT_BUDGET: u32 = 20_000;
 
+/// A continuation invoked at every completed match of one pattern level.
+/// Returns `true` to stop the walk that produced it — the same
+/// "unwind the whole DFS" signal `walk_tokens` returns.
+pub(super) type WalkCont<'f> = dyn FnMut(&mut Interpreter, usize, RegexCaptures) -> bool + 'f;
+
+/// Where a pattern walk reports its completed matches (ADR-0073).
+///
+/// `Collect` is the historical behaviour: accumulate every end the walk finds
+/// into a vector and let the caller pick. `Cont` hands each end straight to the
+/// enclosing walk's continuation instead, so the *next* candidate of this level
+/// is only ever computed when the continuation rejected the current one — which
+/// is what keeps an embedded `{ ... }` block from running on a path raku's
+/// cursor never takes.
+pub(super) enum MatchSink<'a> {
+    Collect(&'a mut Vec<(usize, RegexCaptures)>),
+    Cont(&'a mut WalkCont<'a>),
+}
+
+impl MatchSink<'_> {
+    /// Report one completed match. Returns `true` when the walk should stop.
+    pub(super) fn accept(
+        &mut self,
+        interp: &mut Interpreter,
+        end: usize,
+        caps: RegexCaptures,
+    ) -> bool {
+        match self {
+            MatchSink::Collect(out) => {
+                out.push((end, caps));
+                false
+            }
+            MatchSink::Cont(f) => f(interp, end, caps),
+        }
+    }
+}
+
 impl Interpreter {
     /// Collect all named capture names inside a regex atom (recursively).
     fn collect_named_captures_in_atom(atom: &RegexAtom, out: &mut HashSet<String>) {
@@ -235,6 +271,39 @@ impl Interpreter {
             }
             return results;
         }
+        let mut matches = Vec::new();
+        self.regex_walk_ends_in_pkg(
+            pattern,
+            chars,
+            start,
+            pkg,
+            first_only,
+            stop_at_full,
+            &mut MatchSink::Collect(&mut matches),
+        );
+        matches
+    }
+
+    /// The pattern walk itself, reporting each completed match to `sink`
+    /// (ADR-0073). `regex_match_ends_from_caps_in_pkg_impl` is the collecting
+    /// wrapper; a `MatchSink::Cont` sink instead hands every end straight to
+    /// the enclosing walk's continuation, so this level's next candidate is
+    /// only computed once the continuation has rejected the current one.
+    ///
+    /// `:m` (ignoremark) is not routed through here — it needs the whole
+    /// result vector to remap positions back into unstripped subject space, so
+    /// it stays on the collecting path.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn regex_walk_ends_in_pkg(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        start: usize,
+        pkg: &str,
+        first_only: bool,
+        stop_at_full: bool,
+        sink: &mut MatchSink<'_>,
+    ) -> bool {
         let mut store = CapStore::new(RegexCaptures {
             match_from: start,
             // Inline sub-patterns (lookaround/group/alternative) inherit the
@@ -247,7 +316,6 @@ impl Interpreter {
             outer_backref: super::regex_helpers::take_inline_outer_caps_seed(),
             ..Default::default()
         });
-        let mut matches = Vec::new();
         let ctx = WalkCtx {
             pattern,
             chars,
@@ -255,13 +323,14 @@ impl Interpreter {
             first_only,
             stop_at_full,
         };
-        self.walk_tokens(&ctx, 0, start, &mut store, &mut matches);
-        for m in &mut matches {
-            // The link is a read-only view of the *parent* walk; it must not
-            // travel out with this level's captures.
-            m.1.outer_backref = None;
-        }
-        matches
+        // The outer-backref link is a read-only view of the *parent* walk; it
+        // must not travel out with this level's captures, so strip it from
+        // every reported match on the way to the caller's sink.
+        let mut strip = |interp: &mut Interpreter, end: usize, mut caps: RegexCaptures| -> bool {
+            caps.outer_backref = None;
+            sink.accept(interp, end, caps)
+        };
+        self.walk_tokens(&ctx, 0, start, &mut store, &mut MatchSink::Cont(&mut strip))
     }
 
     /// Apply a `$<name>=` / `$N=` capture alias for `token` to the store.
@@ -454,7 +523,7 @@ impl Interpreter {
         base_len: usize,
         stride: usize,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         let mf = store.mark();
         if stride > 0 {
@@ -480,7 +549,7 @@ impl Interpreter {
         idx: usize,
         pos: usize,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         // A code atom ended the declarative prefix (LTM measurement, ADR-0009):
         // record how far we got and stop walking. Checked before the end-of-pattern
@@ -490,12 +559,16 @@ impl Interpreter {
         if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
             && super::regex_helpers::LTM_PREFIX_TERMINATED.with(std::cell::Cell::get)
         {
-            matches.push((pos, store.snapshot()));
+            let snap = store.snapshot();
+            matches.accept(self, pos, snap);
             return true;
         }
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
-                matches.push((pos, store.snapshot()));
+                let snap = store.snapshot();
+                if matches.accept(self, pos, snap) {
+                    return true;
+                }
                 if ctx.first_only || (ctx.stop_at_full && pos == ctx.chars.len()) {
                     return true;
                 }
@@ -517,7 +590,8 @@ impl Interpreter {
             && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
         {
             super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-            matches.push((pos, store.snapshot()));
+            let snap = store.snapshot();
+            matches.accept(self, pos, snap);
             return true;
         }
         let pos_base = store.caps().positional.len();
@@ -525,30 +599,31 @@ impl Interpreter {
         // match the atom with the separator interleaved between iterations,
         // accumulating each side's captures into its own (folded) group.
         if token.separator.is_some() {
-            // Cloned because the matcher takes `&mut self` while `store` is
-            // borrowed; the separated quantifier only READS it (backrefs, and the
-            // `:my` lexicals its atom sub-patterns inherit).
-            let current_caps = store.caps().clone();
-            let cands = self.match_separated_quantifier(
+            // Chain candidates are produced on demand, highest priority first
+            // (ADR-0073): the DFS extends past this node only when the
+            // continuation has rejected everything it found so far, so an
+            // embedded block inside the repeated atom runs once per iteration
+            // raku's cursor actually takes.
+            let mut descend = |interp: &mut Interpreter,
+                               store: &mut CapStore,
+                               next: usize,
+                               delta: RegexCaptures| {
+                let m = store.mark();
+                store.merge_delta(delta);
+                Self::store_apply_named_capture(store, token, pos, next, pos_base);
+                let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
+                store.rewind(m);
+                stop
+            };
+            return self.for_each_separated_candidate(
                 token,
                 ctx.chars,
                 pos,
                 ctx.pkg,
                 ctx.pattern,
-                &current_caps,
+                store,
+                &mut descend,
             );
-            // Candidates come lowest-priority first; try highest first.
-            for (next, delta) in cands.into_iter().rev() {
-                let m = store.mark();
-                store.merge_delta(delta);
-                Self::store_apply_named_capture(store, token, pos, next, pos_base);
-                let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
-                store.rewind(m);
-                if stop {
-                    return true;
-                }
-            }
-            return false;
         }
         // Ordered alternation (`||`) is driven from here, against the real
         // continuation of this pattern — see `walk_seq_alternation`. The eager
@@ -563,37 +638,34 @@ impl Interpreter {
         }
         match token.quant {
             RegexQuant::One => {
-                let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
-                    &token.atom,
-                    ctx.chars,
-                    pos,
-                    store.caps(),
-                    ctx.pkg,
-                    ctx.pattern.ignore_case,
-                );
-                if token.ratchet && candidates.len() > 1 {
-                    // Ratchet (`:`) commits to the atom's highest-priority match
-                    // and forbids backtracking into it. Candidates are returned in
-                    // "lowest priority first, highest priority last" order, so the
-                    // atom's preferred match is the last element: for `||` it is the
-                    // first alternative, for `|`/greedy quantifiers it is the longest
-                    // match — both already sit last. Keep only that one. (Sorting by
-                    // length here was wrong: it picked the longest match even for `||`,
-                    // letting `( ab || abc ): de` backtrack into the group.)
-                    candidates.drain(..candidates.len() - 1);
-                }
-                for (next, delta) in candidates.into_iter().rev() {
+                // Candidates are produced on demand, highest priority first
+                // (ADR-0073): the next one is only computed once the
+                // continuation below has rejected the current one, so an
+                // embedded `{ ... }` block runs exactly where raku's cursor
+                // reaches it. Ratchet (`:`) commits to the first candidate and
+                // forbids backtracking into the atom.
+                let mut descend = |interp: &mut Interpreter,
+                                   store: &mut CapStore,
+                                   next: usize,
+                                   delta: RegexCaptures| {
                     let m = store.mark();
                     store.merge_delta(delta);
                     Self::store_apply_named_capture(store, token, pos, next, pos_base);
                     Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
-                    let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
+                    let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
                     store.rewind(m);
-                    if stop {
-                        return true;
-                    }
-                }
-                false
+                    stop
+                };
+                self.for_each_atom_candidate(
+                    &token.atom,
+                    ctx.chars,
+                    pos,
+                    store,
+                    ctx.pkg,
+                    ctx.pattern.ignore_case,
+                    token.ratchet,
+                    &mut descend,
+                )
             }
             RegexQuant::ZeroOrOne => {
                 // An unmatched `(x)?` reserves `zo_stride` Nil positional slots
@@ -614,73 +686,69 @@ impl Interpreter {
                 // no-op when `token.named_capture` is unset, so this is safe
                 // to call unconditionally for non-CaptureGroup atoms.
                 let named_zero_capture = !matches!(token.atom, RegexAtom::CaptureGroup(_));
-                let mut candidates = self.regex_match_atom_all_with_capture_in_pkg(
-                    &token.atom,
-                    ctx.chars,
-                    pos,
-                    store.caps(),
-                    ctx.pkg,
-                    ctx.pattern.ignore_case,
-                );
-                if token.ratchet {
-                    if candidates.is_empty() {
-                        // Atom didn't match — commit to "zero" (no match).
-                        let m = store.mark();
-                        store.reserve_nil(zo_stride);
-                        if named_zero_capture {
-                            Self::store_apply_named_capture(store, token, pos, pos, pos_base);
-                        }
-                        for n in &zo_list_names {
-                            store.insert_named_quantified(n.clone());
-                        }
-                        let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
-                        store.rewind(m);
-                        return stop;
-                    }
-                    // Atom matched — commit to the highest-priority match.
-                    candidates.drain(..candidates.len() - 1);
-                } else if token.frugal {
+                if token.frugal && !token.ratchet {
                     // Frugal: prefer zero matches — try zero first.
-                    let m = store.mark();
-                    store.reserve_nil(zo_stride);
-                    if named_zero_capture {
-                        Self::store_apply_named_capture(store, token, pos, pos, pos_base);
-                    }
-                    for n in &zo_list_names {
-                        store.insert_named_quantified(n.clone());
-                    }
-                    let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
-                    store.rewind(m);
-                    if stop {
+                    if self.walk_zero_or_one_zero_arm(
+                        ctx,
+                        idx,
+                        pos,
+                        zo_stride,
+                        &zo_list_names,
+                        pos_base,
+                        named_zero_capture,
+                        store,
+                        matches,
+                    ) {
                         return true;
                     }
                 }
-                for (next, delta) in candidates.into_iter().rev() {
-                    let m = store.mark();
-                    store.merge_delta(delta);
-                    Self::store_apply_named_capture(store, token, pos, next, pos_base);
-                    Self::store_apply_hash_capture(store, ctx.chars, token, pos, next, pos_base);
-                    let stop = self.walk_tokens(ctx, idx + 1, next, store, matches);
-                    store.rewind(m);
-                    if stop {
-                        return true;
-                    }
+                // Demand-driven candidates (ADR-0073), highest priority first.
+                let mut any_candidate = false;
+                let stop = {
+                    let any = &mut any_candidate;
+                    let mut descend = |interp: &mut Interpreter,
+                                       store: &mut CapStore,
+                                       next: usize,
+                                       delta: RegexCaptures| {
+                        *any = true;
+                        let m = store.mark();
+                        store.merge_delta(delta);
+                        Self::store_apply_named_capture(store, token, pos, next, pos_base);
+                        Self::store_apply_hash_capture(
+                            store, ctx.chars, token, pos, next, pos_base,
+                        );
+                        let stop = interp.walk_tokens(ctx, idx + 1, next, store, matches);
+                        store.rewind(m);
+                        stop
+                    };
+                    self.for_each_atom_candidate(
+                        &token.atom,
+                        ctx.chars,
+                        pos,
+                        store,
+                        ctx.pkg,
+                        ctx.pattern.ignore_case,
+                        token.ratchet,
+                        &mut descend,
+                    )
+                };
+                if stop {
+                    return true;
                 }
-                if !token.ratchet && !token.frugal {
-                    // Greedy: the zero candidate is tried last.
-                    let m = store.mark();
-                    store.reserve_nil(zo_stride);
-                    if named_zero_capture {
-                        Self::store_apply_named_capture(store, token, pos, pos, pos_base);
-                    }
-                    for n in &zo_list_names {
-                        store.insert_named_quantified(n.clone());
-                    }
-                    let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
-                    store.rewind(m);
-                    if stop {
-                        return true;
-                    }
+                // Greedy: the zero candidate is tried last. A ratcheted `?`
+                // takes it only when the atom did not match at all.
+                if (!token.ratchet && !token.frugal) || (token.ratchet && !any_candidate) {
+                    return self.walk_zero_or_one_zero_arm(
+                        ctx,
+                        idx,
+                        pos,
+                        zo_stride,
+                        &zo_list_names,
+                        pos_base,
+                        named_zero_capture,
+                        store,
+                        matches,
+                    );
                 }
                 false
             }
@@ -722,7 +790,8 @@ impl Interpreter {
                     && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
                 {
                     super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    matches.push((pos, store.snapshot()));
+                    let snap = store.snapshot();
+                    matches.accept(self, pos, snap);
                     return true;
                 }
                 let (min, max) = match &token.quant {
@@ -752,6 +821,37 @@ impl Interpreter {
         }
     }
 
+    /// The zero-width arm of a `?`-quantified token: reserve the atom's
+    /// positional slots as Nil, render the nested list-quantified names as
+    /// empty lists, and descend to the next token. Shared by the greedy,
+    /// frugal and "ratcheted `?` whose atom did not match" cases.
+    #[allow(clippy::too_many_arguments)]
+    fn walk_zero_or_one_zero_arm(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        pos: usize,
+        zo_stride: usize,
+        zo_list_names: &HashSet<String>,
+        pos_base: usize,
+        named_zero_capture: bool,
+        store: &mut CapStore,
+        matches: &mut MatchSink<'_>,
+    ) -> bool {
+        let token = &ctx.pattern.tokens[idx];
+        let m = store.mark();
+        store.reserve_nil(zo_stride);
+        if named_zero_capture {
+            Self::store_apply_named_capture(store, token, pos, pos, pos_base);
+        }
+        for n in zo_list_names {
+            store.insert_named_quantified(n.clone());
+        }
+        let stop = self.walk_tokens(ctx, idx + 1, pos, store, matches);
+        store.rewind(m);
+        stop
+    }
+
     /// Try the zero-width arm of a `[ A || B ]?` token: reserve the group's
     /// positional slots as Nil, render the nested list-quantified names as
     /// empty lists, and descend to the next token.
@@ -765,7 +865,7 @@ impl Interpreter {
         zo_list_names: &HashSet<String>,
         pos_base: usize,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let m = store.mark();
@@ -802,7 +902,7 @@ impl Interpreter {
         pos: usize,
         alternatives: &[RegexPattern],
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let pos_base = store.caps().positional.len();
@@ -899,7 +999,7 @@ impl Interpreter {
         pos: usize,
         min: usize,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> Option<bool> {
         let token = &ctx.pattern.tokens[idx];
         if !token.ratchet || token.named_capture.is_some() {
@@ -1094,7 +1194,7 @@ impl Interpreter {
         max: Option<usize>,
         hash_per_iter: bool,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let pos_base = store.caps().positional.len();
@@ -1176,7 +1276,7 @@ impl Interpreter {
         pos: usize,
         min: usize,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         let token = &ctx.pattern.tokens[idx];
         let pos_base = store.caps().positional.len();
@@ -1238,7 +1338,7 @@ impl Interpreter {
         frugal: bool,
         budget: &mut u32,
         store: &mut CapStore,
-        matches: &mut Vec<(usize, RegexCaptures)>,
+        matches: &mut MatchSink<'_>,
     ) -> bool {
         if *budget == 0 {
             return false;

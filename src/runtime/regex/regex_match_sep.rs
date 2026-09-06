@@ -135,7 +135,7 @@ impl Interpreter {
     /// atom/separator into groups with several same-end candidates (a 6-pair
     /// JSON object under `rule pairlist { <pair> * % \, }` took ~8s to parse;
     /// this scan parses it in microseconds).
-    fn match_separated_quantifier_ratchet(
+    pub(super) fn match_separated_quantifier_ratchet(
         &mut self,
         token: &RegexToken,
         chars: &[char],
@@ -398,7 +398,7 @@ impl Interpreter {
 
     /// Append captures from a separated quantifier into `caps`, folding each
     /// side into its own positional/named group lists.
-    fn append_separated_captures(
+    pub(super) fn append_separated_captures(
         caps: &mut RegexCaptures,
         atom_caps: &[RegexCaptures],
         sep_caps: &[RegexCaptures],
