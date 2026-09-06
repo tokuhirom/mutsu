@@ -3652,6 +3652,16 @@ impl Default for Interpreter {
 /// `has_user_custom_traits` in `registration_sub`.
 pub(crate) const PRELUDE_SUB_TRAIT: &str = "__mutsu_prelude";
 
+/// Rakudo's default `$*TOLERANCE`, the relative tolerance `infix:<=~=>`/`≅`
+/// (and `Complex`'s real-coercion check) compare against. Declared in
+/// `PROCESS::` by the setting, so a program that never touches it still reads
+/// `1e-15` from `$*TOLERANCE` — mutsu materializes it lazily in
+/// `Interpreter::lazy_magic_dynamic_var`. This constant is the *same* value,
+/// used by the operator implementations as the fallback for the case where the
+/// dynamic lookup cannot see it (e.g. `get_dynamic_var`, which walks only the
+/// caller stack and never the lazy magic table).
+pub(crate) const DEFAULT_TOLERANCE: f64 = 1e-15;
+
 /// Reserved pseudo-unit key mainline's own captured `my` lexicals are stored
 /// under in `Interpreter::unit_lexicals` (ADR-0024). Contains `<`/`>`, which
 /// cannot appear in a real Raku package name, so no user `package`/`module`/

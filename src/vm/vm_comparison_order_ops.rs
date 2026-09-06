@@ -486,7 +486,7 @@ impl Interpreter {
             let tolerance = loan_env!(self, get_dynamic_var("$*TOLERANCE"))
                 .ok()
                 .and_then(|v| runtime::to_float_value(&v))
-                .unwrap_or(1e-15);
+                .unwrap_or(crate::runtime::DEFAULT_TOLERANCE);
             let re_abs = re.abs();
             if re_abs != 0.0 && im.abs() / re_abs <= tolerance {
                 Ok(Value::num(re))

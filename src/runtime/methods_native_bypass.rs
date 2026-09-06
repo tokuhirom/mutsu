@@ -825,7 +825,7 @@ impl Interpreter {
                 ValueView::Int(n) => Some(n as f64),
                 _ => None,
             })
-            .unwrap_or(1e-15);
+            .unwrap_or(crate::runtime::DEFAULT_TOLERANCE);
         if im.abs() > tolerance {
             let msg = format!(
                 "Cannot convert {}{}{}i to Num: imaginary part not zero",
