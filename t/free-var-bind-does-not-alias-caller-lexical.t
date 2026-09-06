@@ -2,25 +2,28 @@ use Test;
 
 # A named sub's free variable must resolve to its LEXICAL declaration scope,
 # not to whatever an intervening caller happens to have declared under the same
-# name. `todo/deep/free-var-read-in-callee-resolves-through-dynamic-caller-chain.md`
-# describes this as a general failure of free-variable resolution ("mutsu's Env
-# is a dynamic chain, so a free read walks g -> f -> mainline").
+# name.
 #
-# Measured against raku v2026.07 on 2026-09-06, that is NOT what happens: a
-# plain read, a plain write, and two levels of intervening callers all answer
-# exactly as raku. The divergence is confined to a `:=` BIND whose source is a
-# free variable and whose target is also free -- and its shape is an ALIASING,
-# not a stale read: afterwards the caller's own lexical and the compunit's are
-# one container (rows N1/N2).
+# Measured against raku v2026.07: a plain read, a plain write, and two levels of
+# intervening callers all answer exactly as raku. The divergence this file was
+# written for was confined to a `:=` BIND whose source is a free variable, and
+# its shape was an ALIASING, not a stale read: afterwards the caller's own
+# lexical and the compunit's were one container (rows N1/N2).
+#
+# Root cause (fixed 2026-09-07): the `:=` handlers carried the bind's shared
+# cell to the source by TWO by-name routes -- a bare `env` insert that the
+# call-return merge copies into the caller's tier, and the
+# `propagate_bind_to_ancestor_frames` splice -- even when the source's home is
+# the compunit / mainline file-scope lexical store (ADR-0024), which owns the
+# name outright. Both routes deposited the cell in an intervening caller's own
+# env tier, where its same-named `my` adopted it through the `GetLocal`
+# lazy-sync. See `news/2026-09/free-var-bind-aliased-caller-lexical.md`.
 #
 # Everything is declared at file scope on purpose. The shapes below behave
 # differently inside a bare block, which is a separate surface, so keeping this
 # file flat is what makes it measure the thing it names.
-#
-# The rows that already agree are pinned so the correct half cannot regress
-# while the remaining three are worked; the three that do not are `todo`.
 
-plan 19;
+plan 22;
 
 # A: a callee reads a free variable while a caller shadows the name.
 my $va = 1;
@@ -57,7 +60,6 @@ is f-bind-last(), 5, 'G1: a bind as the callee\'s last statement leaves the call
 my $vg2 = 1;
 sub g-bind-then-stmt() { my $t := $vg2; 0 }
 sub f-bind-then-stmt() { my $vg2 = 5; g-bind-then-stmt(); $vg2 }
-todo 'ANY statement after the bind makes it reach the caller';
 is f-bind-then-stmt(), 5, 'G2: a statement after the bind must not change that';
 
 # I: the same bind performed in the mainline instead of in a callee.
@@ -95,26 +97,38 @@ sub f-both() { my $vu = 5; g-both(); $vu = 7; $vu }
 is f-both(), 7, 'U1: the two writes stay independent';
 is $vu, 99, 'U2: each landing in its own scope';
 
-# The three that still diverge. All three are ONE mechanism: the bind aliases
-# the caller's lexical to the source's container.
+# The rows that used to diverge. All of them were ONE mechanism: the bind
+# aliased the caller's lexical to the source's container.
 my $vh = 1;
 my $ah;
 sub g-bind() { $ah := $vh }
 sub f-bind() { my $vh = 5; g-bind(); $vh }
-todo 'a free-variable := bind aliases an intervening caller lexical';
 is f-bind(), 5, 'H: the caller keeps its own lexical across a binding callee';
+# ... and the bind itself must STILL alias the compunit lexical it named. This
+# is the half the fix has to preserve: not writing the cell into the caller's
+# tier must not cost the binding its source.
+$vh = 9;
+is $ah, 9, 'H2: the alias still tracks the lexical the callee actually bound';
 
 my $vn = 1;
 my $an;
 sub g-alias() { $an := $vn }
 sub f-alias() { my $vn = 5; g-alias(); $vn = 7; $vn }
 is f-alias(), 7, 'N1: the caller can still write its own name';
-todo 'the write reaches the compunit lexical too -- they became one container';
 is $vn, 1, 'N2: but that write must not reach the compunit lexical';
 
 my $vo = 1;
 my $ao;
 sub g-lex() { $ao := $vo }
 my sub f-lex() { my $vo = 5; g-lex(); $vo }
-todo 'same mechanism; not specific to a mainline-scoped caller';
 is f-lex(), 5, 'O: a lexical `my sub` caller is affected identically';
+
+# Q: the G2 spelling (a statement after the bind, so it compiles through the
+# `SetLocal` scalar-bind path rather than `SetGlobal`) must keep its alias too.
+my $vq = 1;
+my $aq;
+sub g-q() { $aq := $vq; 0 }
+sub f-q() { my $vq = 5; g-q(); $vq }
+is f-q(), 5, 'Q1: same, for the bind-then-statement spelling';
+$vq = 8;
+is $aq, 8, 'Q2: and its alias still tracks the source';

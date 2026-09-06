@@ -806,6 +806,32 @@ impl Interpreter {
         false
     }
 
+    /// Bind companion of [`Self::unit_scope_lexical_write`]: a `:=` installs a
+    /// whole new binding for `name`, so it must REPLACE the store's cell rather
+    /// than store a value through the existing one. Reports `true` when `name`
+    /// is a file-scope lexical of the running routine's own compunit (or a
+    /// mainline lexical that routine captured, ADR-0024), so the caller skips
+    /// the bare `env` store entirely.
+    ///
+    /// Skipping it is the point, not an optimisation. `env`'s key for such a
+    /// name belongs to whatever scope is *calling* us -- that collision is the
+    /// very thing this store exists to end -- and a `:=` cell written there
+    /// lands in the callee's own overlay, from which the call-return merge
+    /// copies every non-callee-local entry into the caller's tier. When the
+    /// caller shadows the name with a `my` of its own kept in a local slot (so
+    /// nothing in its env contradicts the merge), its next `GetLocal` adopts
+    /// the cell through the lazy-sync in `exec_get_local_op_inner` and the two
+    /// independent lexicals become one container: the caller's later writes
+    /// reach the compunit's variable and vice versa
+    /// (`t/free-var-bind-does-not-alias-caller-lexical.t`).
+    pub(crate) fn unit_scope_lexical_bind(&mut self, name: &str, container: &Value) -> bool {
+        let Some(slot) = self.unit_lexical_slot_mut(name) else {
+            return false;
+        };
+        *slot = container.clone();
+        true
+    }
+
     /// Resolve an `OUR::`-qualified *variable* read (scalar/array/hash) scoped
     /// to the current package. `OUR::` names the `our` variables of the current
     /// package: `$OUR::x` inside `package A {}` is `A::x`; at file scope
