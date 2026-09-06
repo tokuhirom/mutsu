@@ -171,6 +171,13 @@ impl Interpreter {
             "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
             "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
             "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
+            // `$*TOLERANCE` is a plain `Num` constant, not an expensive instance,
+            // but it belongs here rather than in the `Interpreter::new` env seed
+            // for the same reason: a program that never compares with `=~=`
+            // shouldn't carry the entry in every per-frame env overlay. A
+            // `my $*TOLERANCE = ...` still shadows it — the env hit is checked
+            // before this fallback.
+            "$*TOLERANCE" | "*TOLERANCE" => Value::num(crate::runtime::DEFAULT_TOLERANCE),
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,

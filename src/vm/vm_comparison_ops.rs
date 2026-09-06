@@ -609,7 +609,7 @@ impl Interpreter {
                 ValueView::Int(n) => Some(n as f64),
                 _ => None,
             })
-            .unwrap_or(1e-15);
+            .unwrap_or(crate::runtime::DEFAULT_TOLERANCE);
         // Extract Complex components, treating Real as Complex with im=0
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);

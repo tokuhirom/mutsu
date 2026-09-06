@@ -121,25 +121,11 @@ impl Interpreter {
                 }
                 "=:=" => crate::runtime::utils::values_identical(&left, &right),
                 "=~=" | "\u{2245}" => {
-                    // =~= / ≅ approximately equal
-                    let (lr, li) = match left.view() {
-                        ValueView::Complex(r, i) => (r, i),
-                        _ => (super::super::to_float_value(&left).unwrap_or(0.0), 0.0),
-                    };
-                    let (rr, ri) = match right.view() {
-                        ValueView::Complex(r, i) => (r, i),
-                        _ => (super::super::to_float_value(&right).unwrap_or(0.0), 0.0),
-                    };
-                    let tol = 1e-15;
-                    let approx = |a: f64, b: f64| {
-                        let max = a.abs().max(b.abs());
-                        if max == 0.0 {
-                            true
-                        } else {
-                            (a - b).abs() / max <= tol
-                        }
-                    };
-                    approx(lr, rr) && approx(li, ri)
+                    // `cmp-ok $a, '=~=', $b` resolves the real `infix:<=~=>` in
+                    // rakudo, so it must observe `$*TOLERANCE` (including a
+                    // caller's `my $*TOLERANCE = ...`) and the operator's exact
+                    // zero/Inf/NaN handling. Delegate rather than re-deriving it.
+                    self.approx_eq_values(left.clone(), right.clone())?.truthy()
                 }
                 _ => {
                     return Err(RuntimeError::new(format!(
