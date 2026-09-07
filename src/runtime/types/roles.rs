@@ -286,6 +286,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args, is_param)) = self.extract_role_application(&right) {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args, is_param)?;
+            let result =
+                self.stamp_role_application_group(result, std::slice::from_ref(&role_name));
             // Call BUILD submethods from the composed role
             let result = self.call_role_build_submethods(result, &role_name)?;
             if let Some(target_name) = Self::var_target_name_from_value(&left) {
@@ -318,6 +320,7 @@ impl Interpreter {
                 composed_role_names.push(role_name);
             }
         }
+        let mut result = self.stamp_role_application_group(result, &composed_role_names);
         // Call BUILD submethods for all composed roles
         for role_name in &composed_role_names {
             result = self.call_role_build_submethods(result, role_name)?;
@@ -326,6 +329,58 @@ impl Interpreter {
             self.set_var_meta_value(&target_name, result.clone());
         }
         Ok(result)
+    }
+
+    /// Stamp every role composed by ONE `but`/`does` application with a shared
+    /// group id (`__mutsu_role_group__{name}`).
+    ///
+    /// raku brackets the name by application, not by role: `1 but (R1, R2)` is
+    /// `Int+{R1,R2}` while `(1 but R1) but R2` is `Int+{R1}+{R2}`, and the two
+    /// are different types (`=:=` is False). The per-role
+    /// `__mutsu_role_seq__` stamp cannot tell them apart -- both give R1 and R2
+    /// consecutive stamps -- so the grouping is recorded separately. Only
+    /// stamped when absent, mirroring the seq marker, so a rebuilt mixin map
+    /// keeps the grouping it was first given.
+    fn stamp_role_application_group(&mut self, value: Value, role_names: &[String]) -> Value {
+        if role_names.is_empty() {
+            return value;
+        }
+        let ValueView::Mixin(inner, existing) = value.view() else {
+            return value;
+        };
+        let mut mixins = (**existing).clone();
+        // A group left open by `open_role_application_group` (the compiler
+        // split ONE `but (R1, R2)` into an op per element) is joined rather
+        // than replaced, so every element of that tuple shares one id.
+        let group = match self.open_role_group {
+            Some(g) => g,
+            None => crate::value::next_instance_id() as i64,
+        };
+        for name in role_names {
+            mixins
+                .entry(format!("__mutsu_role_group__{name}"))
+                .or_insert_with(|| Value::int(group));
+        }
+        Value::mixin(inner.as_ref().clone(), mixins)
+    }
+
+    /// Open an application group that the next runs of
+    /// `stamp_role_application_group` join, instead of each minting its own.
+    /// Used by `ButMixinTupleElem`'s leading element: the compiler splits one
+    /// `but (R1, R2)` into an op per element, but raku composes them as a
+    /// single application (`Int+{R1,R2}`).
+    ///
+    /// Closed by the next `ButMixin` / bare `does`, not by a count: the split
+    /// ops are consecutive by construction, and a nested `but` inside an
+    /// element expression would open (and close) its own.
+    pub(crate) fn open_role_application_group(&mut self) {
+        self.open_role_group = Some(crate::value::next_instance_id() as i64);
+    }
+
+    /// Close any open application group, so the next composition mints a fresh
+    /// one. Called by the ordinary single-role `but`/`does` op.
+    pub(crate) fn close_role_application_group(&mut self) {
+        self.open_role_group = None;
     }
 
     fn var_target_name_from_value(value: &Value) -> Option<String> {

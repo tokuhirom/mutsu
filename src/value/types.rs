@@ -120,7 +120,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
                 // An allomorph with a role composed onto it keeps both halves:
                 // `<42> but R` is `IntStr+{R}` in raku.
                 match role_mixin_suffix_excluding(mixins, &name) {
-                    Some(suffix) => format!("{name}+{{{suffix}}}"),
+                    Some(suffix) => format!("{name}{suffix}"),
                     None => name,
                 }
             } else {
@@ -131,7 +131,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
                 // a suffix entry that merely repeats the base type. A role mixed
                 // onto a different base still gets the suffix (`W but R` -> `W+{R}`).
                 match role_mixin_suffix_excluding(mixins, &base) {
-                    Some(suffix) => format!("{base}+{{{suffix}}}"),
+                    Some(suffix) => format!("{base}{suffix}"),
                     None => base,
                 }
             }
@@ -204,24 +204,99 @@ pub(crate) fn role_mixin_suffix_excluding(
     mixins: &std::collections::HashMap<String, Value>,
     base: &str,
 ) -> Option<String> {
-    let mut names: Vec<String> = mixins
+    // APPLICATION order, not alphabetical: raku gives each composition its own
+    // bracket and shows them in the order they were applied, which is the
+    // property that distinguishes `(1 but A) but B` (`Int+{A}+{B}`) from
+    // `(1 but B) but A` (`Int+{B}+{A}`). Sorting the names instead -- which is
+    // what this did, for a stable name over a non-deterministic `HashMap`
+    // iteration order -- rendered both as `Int+{A,B}` and threw the
+    // distinction away. `__mutsu_role_seq__` is the same monotonic stamp
+    // `mixin_roles_applied_last_first` and `mixin_identity_key` order by, so
+    // the name is still deterministic.
+    let mut entries: Vec<(i64, i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .filter(|n| *n != base)
-        .map(|n| role_mixin_suffix_entry(mixins, n))
+        .map(|n| {
+            let seq = role_application_seq(mixins, n);
+            (
+                role_application_group(mixins, n, seq),
+                seq,
+                role_mixin_suffix_entry(mixins, n),
+            )
+        })
         .collect();
+    entries.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    // One bracket per APPLICATION, roles within it comma-joined in written
+    // order: raku writes `1 but (R1, R2)` as `Int+{R1,R2}` and
+    // `(1 but R1) but R2` as `Int+{R1}+{R2}`, and the two are different types.
+    let mut names: Vec<String> = Vec::new();
+    let mut last_group: Option<i64> = None;
+    for (group, _, entry) in entries {
+        match names.last_mut() {
+            Some(last) if Some(group) == last_group => last.push_str(&format!(",{entry}")),
+            _ => {
+                names.push(entry);
+                last_group = Some(group);
+            }
+        }
+    }
     // `but`-mixing a plain value composes an anonymous role too, recorded under
     // its own marker rather than as a `__mutsu_role__` entry (see
     // `Interpreter::apply_single_mixin`); it still shows in the name suffix.
+    // It carries no sequence stamp of its own, so it goes last -- right for
+    // `(1 but A) but "x"`, and the same place `mixin_roles_applied_last_first`
+    // puts it. See `todo/tickets/` for the residual ordering case.
     if let Some(anon) = mixins.get(VALUE_MIXIN_MARKER) {
         names.push(crate::value::user_facing_type_name(&anon.to_string_value()).into_owned());
     }
     if names.is_empty() {
         return None;
     }
-    // HashMap iteration order is non-deterministic; sort for a stable name.
-    names.sort_unstable();
-    Some(names.join(","))
+    Some(
+        names
+            .into_iter()
+            .map(|n| format!("+{{{n}}}"))
+            .collect::<Vec<_>>()
+            .join(""),
+    )
+}
+
+/// The id of the `but`/`does` application that composed `role_name`
+/// (`__mutsu_role_group__{name}`), used to bracket the name by application.
+/// Falls back to the role's own sequence stamp when absent, which puts it in a
+/// group of its own -- the pre-stamp behaviour and the right answer for every
+/// single-role application.
+fn role_application_group(
+    mixins: &std::collections::HashMap<String, Value>,
+    role_name: &str,
+    fallback: i64,
+) -> i64 {
+    mixins
+        .get(&format!("__mutsu_role_group__{role_name}"))
+        .and_then(|v| match v.view() {
+            ValueView::Int(i) => Some(i),
+            _ => None,
+        })
+        .unwrap_or(fallback)
+}
+
+/// The monotonic application-order stamp recorded for `role_name` at
+/// composition time (`__mutsu_role_seq__{name}`), or `i64::MIN` when the marker
+/// is absent (a value built before the stamp existed, or by a path that does
+/// not record one) so such entries sort first and stay deterministic.
+fn role_application_seq(mixins: &std::collections::HashMap<String, Value>, role_name: &str) -> i64 {
+    mixins
+        .get(&format!("__mutsu_role_seq__{role_name}"))
+        .and_then(|v| match v.view() {
+            ValueView::Int(i) => Some(i),
+            _ => None,
+        })
+        .unwrap_or(i64::MIN)
 }
 
 /// Render one `+{...}` suffix entry for the composed role `role_name`.
@@ -289,7 +364,7 @@ pub(crate) fn mixin_composition_key(
     base_type_name: &str,
     mixins: &std::collections::HashMap<String, Value>,
 ) -> String {
-    let mut parts: Vec<String> = mixins
+    let mut parts: Vec<(i64, i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .map(|role_name| {
@@ -313,12 +388,49 @@ pub(crate) fn mixin_composition_key(
             // typearg display string, so they are safe field/entry
             // separators for a key that must not collide across differently
             // -split components.
-            format!("{role_name}\u{0}{role_id}\u{0}{typeargs}")
+            // The GROUP is part of the key, not just the order: `1 but
+            // (R1, R2)` and `(1 but R1) but R2` compose the same two roles in
+            // the same order but are different types in raku (`Int+{R1,R2}` vs
+            // `Int+{R1}+{R2}`, `=:=` False). Its absolute value is not in the
+            // key -- only the partition it induces, rendered as the group's
+            // rank among this composition's groups.
+            let seq = role_application_seq(mixins, role_name);
+            (
+                role_application_group(mixins, role_name, seq),
+                seq,
+                format!("{role_name}\u{0}{role_id}\u{0}{typeargs}"),
+            )
         })
         .collect();
-    // HashMap iteration order is non-deterministic; sort for a stable key.
-    parts.sort_unstable();
-    format!("{base_type_name}\u{1}{}", parts.join("\u{1}"))
+    // Ordered by the APPLICATION stamp, not sorted: composition order is part
+    // of the composed type in raku -- `(1 but A) but B` and `(1 but B) but A`
+    // have different `.WHAT`s there -- and sorting normalized that away, so the
+    // two shared one cache node and `=:=` answered True. The stamp's VALUE
+    // stays out of the key (two separately-built instances of the same
+    // composition have different stamps and must still share a `.WHAT`; that
+    // is the punned-role identity invariant `roast/S14-roles/instantiation.t`
+    // pins, and is why an earlier attempt to include the stamp itself was
+    // reverted -- see ADR-0060). Only the order it encodes is kept, exactly as
+    // `mixin_identity_key` does for `===`.
+    parts.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    // Rank the groups 0, 1, 2, ... so the key records the PARTITION without
+    // the ids' absolute values, which differ between two separately-built
+    // instances of the same composition (the punned-role identity invariant).
+    let mut rendered: Vec<String> = Vec::new();
+    let mut last_group: Option<i64> = None;
+    let mut rank = 0usize;
+    for (group, _, part) in parts {
+        if last_group.is_some_and(|g| g != group) {
+            rank += 1;
+        }
+        last_group = Some(group);
+        rendered.push(format!("{rank}\u{0}{part}"));
+    }
+    format!("{base_type_name}\u{1}{}", rendered.join("\u{1}"))
 }
 
 /// Build the identity key for a role-mixed value's `===` (`.WHICH`) —
@@ -349,7 +461,7 @@ pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Valu
     // Roles in application order (`__mutsu_role_seq__` ascending, name as the
     // tie-break for a marker that carries no stamp), each with the same
     // (name, role_id, typeargs) triple `mixin_composition_key` uses.
-    let mut roles: Vec<(i64, String)> = mixins
+    let mut roles: Vec<(i64, i64, String)> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
         .map(|role_name| {
@@ -376,10 +488,37 @@ pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Valu
                     _ => v.to_string_value(),
                 })
                 .unwrap_or_default();
-            (seq, format!("{role_name}\u{0}{role_id}\u{0}{typeargs}"))
+            (
+                role_application_group(mixins, role_name, seq),
+                seq,
+                format!("{role_name}\u{0}{role_id}\u{0}{typeargs}"),
+            )
         })
         .collect();
-    roles.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    roles.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    // The grouping is part of the composed type (`1 but (R1, R2)` is a
+    // different type from `(1 but R1) but R2`), so it is in the key -- but as
+    // the PARTITION it induces, ranked 0, 1, 2, ..., not as the raw ids, which
+    // differ between two separately-built instances of the same composition.
+    // That is the same treatment `mixin_composition_key` gives them, and the
+    // reason `__mutsu_role_group__*` is excluded from `rest` below.
+    let roles: Vec<(i64, String)> = {
+        let mut out = Vec::with_capacity(roles.len());
+        let mut last_group: Option<i64> = None;
+        let mut rank = 0i64;
+        for (group, seq, part) in roles {
+            if last_group.is_some_and(|g| g != group) {
+                rank += 1;
+            }
+            last_group = Some(group);
+            out.push((seq, format!("{rank}\u{0}{part}")));
+        }
+        out
+    };
 
     // Every remaining key/value pair, sorted (HashMap order is not stable).
     let mut rest: Vec<String> = mixins
@@ -389,6 +528,7 @@ pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Valu
                 && !k.starts_with("__mutsu_role_seq__")
                 && !k.starts_with("__mutsu_role_id__")
                 && !k.starts_with("__mutsu_role_typeargs__")
+                && !k.starts_with("__mutsu_role_group__")
                 && !k.starts_with("__mutsu_attr__")
         })
         .map(|(k, v)| format!("{k}\u{0}{}", v.to_string_value()))
@@ -427,6 +567,16 @@ pub(crate) fn filter_composition_markers(
                 || k.starts_with("__mutsu_role_id__")
                 || k.starts_with("__mutsu_role_typeargs__")
                 || k.starts_with("__mutsu_role_param__")
+                // The application-order stamps are part of the composition:
+                // without them the shared node cannot render its own name in
+                // order, so `((1 but B) but A).WHAT.^name` came out
+                // `Int+{A}+{B}`. Their VALUES are not in the composition key
+                // (see `mixin_composition_key`), so the node a key resolves to
+                // simply keeps whichever instance created it -- and every
+                // instance sharing that key applied its roles in the same
+                // order, which is the only thing read back from them here.
+                || k.starts_with("__mutsu_role_seq__")
+                || k.starts_with("__mutsu_role_group__")
         })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
