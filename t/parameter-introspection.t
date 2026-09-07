@@ -28,7 +28,11 @@ sub j(*@i) {
 
 # Trait-modified params
 {
-    sub b(:x($a) is rw, :$y is raw, :$z is copy) { };
+    # `!`-required: rakudo refuses `is rw` on an OPTIONAL parameter, and a
+    # named one is optional without it ("Cannot use 'is rw' on optional
+    # parameter '$a'"). Every assertion below is unchanged under the required
+    # spelling -- measured against rakudo.
+    sub b(:x($a)! is rw, :$y is raw, :$z is copy) { };
     my @l = &b.signature.params;
     is j(@l>>.readonly), '0 0 0', '(second sig) none are read-only';
     is j(@l>>.rw),       '1 0 0', '... one rw';
