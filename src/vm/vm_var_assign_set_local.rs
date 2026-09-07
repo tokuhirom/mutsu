@@ -1224,6 +1224,17 @@ impl Interpreter {
                 // `my @a = $iterable` reifies `.iterator` into the array),
                 // rather than storing the object as a single element.
                 runtime::coerce_to_array(Value::real_array(items))
+            } else if let ValueView::Instance { attributes, .. } = raw_popped.view()
+                && let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned()
+            {
+                // An `is Array`/`is List` subclass instance is Positional, so
+                // list assignment distributes its ELEMENTS: rakudo's
+                // `my @b = @vec` is `[3, 2, 1, 4]`, not a one-element array
+                // holding the instance. (The `iterator`-override spelling was
+                // taken by the branch above.)
+                runtime::coerce_to_array(Value::real_array(crate::runtime::utils::value_to_list(
+                    &storage,
+                )))
             } else {
                 match raw_popped.view() {
                     ValueView::LazyList(list) => {

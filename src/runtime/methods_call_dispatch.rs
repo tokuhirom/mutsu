@@ -331,6 +331,12 @@ impl Interpreter {
         if self.delegates_to_array_storage(&target, method)
             && let ValueView::Instance { attributes, .. } = target.view()
         {
+            // A subclass that overrides `iterator` decides every method raku
+            // defines through the Iterable protocol, so those delegate to what
+            // the override yields rather than to the raw storage.
+            if let Some(source) = self.positional_subclass_iteration_source(&target, method) {
+                return self.call_method_with_values(source?, method, args);
+            }
             let storage = attributes
                 .as_map()
                 .get("__mutsu_array_storage")

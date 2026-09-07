@@ -2594,6 +2594,26 @@ impl Interpreter {
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {
+                        // A subclass that overrides `iterator` decides every
+                        // method raku defines through the Iterable protocol, so
+                        // those answer from what the override yields (twins in
+                        // `vm_call_method_ops.rs` and `methods_call_dispatch.rs`).
+                        // Returned directly rather than by substituting
+                        // `storage` below: that binding is also what the mut
+                        // path WRITES BACK, and persisting a reordered view as
+                        // the instance's storage would move `[0]`/`.join`/`|`
+                        // too -- which rakudo keeps on the reified elements.
+                        if let Some(source) =
+                            self.positional_subclass_iteration_source(&target, &method)
+                        {
+                            let r = self.call_method_with_values(source?, &method, args);
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "user",
+                            );
+                            self.stack.push(r?);
+                            return Ok(());
+                        }
                         let mut storage = attributes
                             .as_map()
                             .get("__mutsu_array_storage")

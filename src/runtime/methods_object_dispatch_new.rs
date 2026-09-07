@@ -2046,8 +2046,9 @@ impl Interpreter {
                     && !attrs.contains_key("__mutsu_array_storage")
                     && !positional_ctor_args.is_empty()
                 {
-                    let storage =
-                        self.positional_base_storage(class_key, positional_ctor_args.clone());
+                    let elems =
+                        self.positional_new_onearg_spread(class_key, positional_ctor_args.clone());
+                    let storage = self.positional_base_storage(class_key, elems);
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
                 if class_mro.iter().any(|name| name == "Int")

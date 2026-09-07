@@ -423,13 +423,30 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        if attributes.contains_key("__mutsu_array_storage") {
-            return Ok(None);
-        }
         let cn = class_name.as_str().to_string();
-        if !(self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "iterator")) {
+        if !self.has_user_method(&cn, "iterator") {
             return Ok(None);
         }
+        // An `is Array`/`is List` subclass is Iterable by inheritance, and its
+        // OWN `iterator` override wins over the backing storage exactly as a
+        // user method wins anywhere else: `class SortedArray is Array { method
+        // iterator() { self.sort.iterator } }` iterates sorted in rakudo.
+        // Without such an override the storage is still the answer, so the
+        // `has_user_method` gate above is what keeps the ordinary subclass on
+        // the `value_to_list` path.
+        if !attributes.contains_key("__mutsu_array_storage")
+            && !self.class_does_role(&cn, "Iterable")
+        {
+            return Ok(None);
+        }
+        self.drive_user_iterator_items(iterable).map(Some)
+    }
+
+    /// Drain a value's user-defined `iterator` method into its elements.
+    pub(crate) fn drive_user_iterator_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Vec<Value>, RuntimeError> {
         let iterator =
             self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
         // Drive `pull-one` through a temp *variable*, not a bare value: a user
@@ -462,6 +479,6 @@ impl Interpreter {
             }
         }
         result?;
-        Ok(Some(items))
+        Ok(items)
     }
 }
