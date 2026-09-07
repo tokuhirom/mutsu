@@ -47,13 +47,19 @@ impl Interpreter {
                 return Ok(false);
             }
             *progressed = true;
-            for (key, event) in events {
+            for (key, event, seq) in events {
                 if key >= react_subs.len() || react_subs[key].done {
                     continue;
                 }
-                if react_subs[key]
+                // A closed tap stops FUTURE deliveries only: an event sequenced
+                // at or before the `Tap.close` was emitted while the tap was
+                // still live and Rakudo still delivers it (measured: two emits
+                // then a close delivers both). Only a later event retires the
+                // subscription.
+                if let Some(closed_at) = react_subs[key]
                     .whenever_id
-                    .is_some_and(crate::runtime::native_methods::is_whenever_closed)
+                    .and_then(crate::runtime::native_methods::whenever_closed_seq)
+                    && seq > closed_at
                 {
                     react_subs[key].done = true;
                     continue;
@@ -386,14 +392,6 @@ impl Interpreter {
             && matches!(items[1].view(), ValueView::Sub(_))
     }
 
-    fn whenever_marker_is_closed(marker: &Value) -> bool {
-        let ValueView::Array(items, ..) = marker.view() else {
-            return false;
-        };
-        matches!(items.get(4).map(Value::view), Some(ValueView::Int(id)) if id >= 0
-            && crate::runtime::native_methods::is_whenever_closed(id as u64))
-    }
-
     /// Adopt any `whenever` subscription registered while the drive loop was
     /// running (a `whenever` inside another `whenever`'s body) and wire its
     /// source into this loop's waker. Returns `Ok(true)` when building the
@@ -407,10 +405,14 @@ impl Interpreter {
         if self.pending_react_subscriptions.is_empty() {
             return Ok(false);
         }
-        let pending: Vec<Value> = std::mem::take(&mut self.pending_react_subscriptions)
-            .into_iter()
-            .filter(|marker| !Self::whenever_marker_is_closed(marker))
-            .collect();
+        // A marker whose tap was already closed is adopted like any other: the
+        // close is a position in the global event sequence, and the source's
+        // backlog can hold values emitted before it (a `whenever` registered,
+        // fed and closed inside a sibling `whenever`'s body). Building the
+        // subscription registers its sink, which replays those with their real
+        // sequences; the drive loop's ordered retirement then retires it as soon
+        // as it owes nothing. Dropping the marker outright discarded them.
+        let pending: Vec<Value> = std::mem::take(&mut self.pending_react_subscriptions);
         for marker in &pending {
             if let ValueView::Array(items, ..) = marker.view()
                 && items.len() >= 2
@@ -478,10 +480,16 @@ impl Interpreter {
             if self.adopt_newly_registered_subscriptions(react_subs, waker, sink_regs)? {
                 break 'react_loop;
             }
-            for sub in react_subs.iter_mut() {
-                if sub
+            // Retire closed subscriptions -- but only once they owe nothing.
+            // The close is a position in the global event sequence, so an event
+            // already queued from before it is still due (`dispatch_waker_events`
+            // delivers it); retiring here unconditionally is what used to
+            // discard the whole pending batch.
+            for (key, sub) in react_subs.iter_mut().enumerate() {
+                if let Some(closed_at) = sub
                     .whenever_id
-                    .is_some_and(crate::runtime::native_methods::is_whenever_closed)
+                    .and_then(crate::runtime::native_methods::whenever_closed_seq)
+                    && !waker.has_event_upto(key, closed_at)
                 {
                     sub.done = true;
                 }

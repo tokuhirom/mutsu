@@ -1,8 +1,9 @@
 # ADR-0053: `do whenever` produces a `Tap` on the stack — retiring the source-variable name bridge
 
-- Status: Proposed (design complete; **partially implemented** — see §8)
+- Status: Accepted (D1-D4 implemented; residue in §8)
 - Date: 2026-08-20
 - Origin: `todo/deep/whenever-expression-position-needs-real-design.md`
+  (closed out to `news/2026-09/whenever-tap-close-is-ordered-against-the-emit.md`)
   (re-verified against `main` @ `16a7def3e`, 2026-08-20). The investigation
   **disproves that file's primary premise** — see §1.1 — and relocates the whole
   defect from the parser to the compiler/runtime value path.
@@ -333,34 +334,80 @@ already performs. The drive loop gains one set lookup per subscription per
 poll round; it already performs per-round per-subscription source polling.
 No steady-state emit-path cost is added.
 
-## 8. Status reconciliation (2026-09-06)
+## 8. Status reconciliation (2026-09-07)
 
-The header said "implementation not started" for two and a half weeks after it
-stopped being true. Measured on `main`:
+**Slice 1 (D1, D2, D4) and slice 2 (D3) have both landed; slice 3 is measured
+away except for one refactor question.**
 
-- **`.WHAT` already answers `Tap`** for both legal shapes,
-  `my $tap = do whenever $s.Supply -> $x {…}` and `do { whenever $s {…} }`. The
-  `Str "whenever"` / `Supply` / `Any` answers this ADR was written against are
-  gone, and so is the source-variable name bridge's visible symptom.
-- **The subscription identity half is not done**, and it is worse than the
-  originating ticket recorded. `Tap.close` does not merely drop the value
-  emitted immediately before it: it discards **every event the react loop has
-  not yet processed**. With two emits followed by a close — no ordering
-  ambiguity at all — raku delivers both and mutsu delivers neither.
+`.WHAT` answers `Tap` for both legal shapes, `my $tap = do whenever
+$s.Supply -> $x {…}` and `do { whenever $s {…} }`; the source-variable name
+bridge is gone.
 
-The site is `Interpreter::drain_waker_events`
-(`src/vm/vm_react_subscriptions.rs`): it calls `waker.drain()`, which hands back
-the whole FIFO batch, and *then* consults `is_whenever_closed` per event. The
-close is a bit in a process-global set with no position in the event order, so
-that check cannot distinguish an event queued before the close from one queued
-after, and drops both.
+### The §8 diagnosis of 2026-09-06 was wrong about the site
 
-Closing this needs an ordering between the close and the queued emits — either
-enqueue the close as an event on the same waker queue (closest to raku, but
-`close_whenever` is a free function with no waker in scope), or stamp events with
-an emit counter and give the close an epoch (less invasive, but adds a counter to
-the hot emit path). The global bit stays as the steady-state "this subscription is
-retired" check; only the in-batch test changes.
+That revision blamed `Interpreter::drain_waker_events` — "it calls
+`waker.drain()`, which hands back the whole FIFO batch, and *then* consults
+`is_whenever_closed` per event". A `rust-gdb -batch` run with breakpoints on
+both that per-event check and the drive loop's top-of-round retirement shows
+the **per-event check never fires**. Two blanket retirements ran first:
 
-Pinned by `t/whenever-tap-close-ordering.t` — four rows, all green under raku, the
-two close rows `todo` under mutsu.
+- `drive_react_subscriptions_loop` marked `sub.done = true` at the top of every
+  round for any closed id, and the dispatcher skips a `done` subscription's
+  events wholesale;
+- `adopt_newly_registered_subscriptions` filtered out a pending marker whose id
+  was already closed, so a `whenever` registered, fed and closed inside a
+  sibling's body never got a sink and never replayed its backlog.
+
+Underneath both, the real fault is the one this ADR's D3 chose: the close was a
+*timeless* bit in a process-global set, and a bit has no position in the event
+order.
+
+### What landed
+
+The ADR's own two candidate shapes were "make the close an event" or "give the
+close an epoch"; the second was taken, and the counter it needed already
+existed. The supplier registry's `next_emit_seq` — which stamps buffered values
+so sibling supplies replay merged in true emit order — moved to
+`value::waker::next_event_seq` and became the single global order for emits,
+terminal events and closes alike:
+
+- `ReactWaker` queues `(key, event, seq)`; `push_at` preserves a sequence
+  allocated earlier (a producer stamping under its own registry lock, a backlog
+  replayed to a late sink) instead of minting a fresh one at push time;
+- `close_whenever(id)` records the sequence it was called at, exposed as
+  `whenever_closed_seq(id)`;
+- `dispatch_waker_events` delivers an event sequenced at or before the close and
+  retires the subscription only on a later one; the top-of-round retirement
+  fires only once `ReactWaker::has_event_upto` reports nothing pre-close is
+  still queued;
+- the marker filter is **deleted**, not made order-aware, so exactly one
+  ordered rule decides when a closed subscription goes away.
+
+Measured rule, agreeing with rakudo v2026.07 across a twelve-row table
+(`t/whenever-tap-close-control-table.t`): a value is delivered iff it was
+emitted before `.close` was *called*. Deferred delivery does not move that
+boundary — a self-close on the first of three already-emitted values still
+delivers all three.
+
+### Slice 3 residue
+
+- **`.closed` on a whenever Tap: moot.** Rakudo's `Tap` has no such method
+  (`.^methods` gives `BUILD POPULATE close new`).
+- **Does an explicit `.close` fire the subscription's `LAST` phasers?**
+  Measured: no, in rakudo and in mutsu alike.
+- **Still open:** whether the non-react `Supply` arm at `runtime/subtest.rs`
+  still has a caller now that every arm mints a Tap. That is a dead-code
+  question, not a behavioural one.
+
+Not owned by this ADR, but adjacent and now visible: mutsu's `Channel.send`
+eagerly emits into the bridged Supply, so a channel value counts as emitted at
+`send` time where rakudo still has it in the channel
+(`todo/tickets/channel-supply-bridge-emits-at-send-time.md`). Per-subscriber
+`Tap.close` on a channel-backed Supply remains
+[ADR-0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md)'s deliberate
+exclusion.
+
+Pinned by `t/whenever-tap-close-control-table.t`,
+`t/whenever-tap-close-ordering.t` (its two `todo` markers removed) and
+`t/react-whenever-tap-close.t` — the last of which had been pinning the *wrong*
+answers: run verbatim under `raku` its two original assertions both fail.

@@ -16,8 +16,25 @@
 //! registries while holding it.
 use crate::value::Value;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
+
+/// Global monotonic sequence stamped on every queued supply event **and** read
+/// by every `Tap.close`, so the two are totally ordered against each other.
+///
+/// Delivery inside a `react` is deferred to the drive loop's pump, so by the
+/// time a close is processed the queue may already hold values that were
+/// emitted *before* it. Rakudo delivers exactly those and drops only what was
+/// emitted afterwards; without a shared order a consumer can only see "this
+/// subscription is closed" and has to drop the whole batch. One counter serves
+/// both because the supplier registry already stamped its buffered values from
+/// it (`native_methods::state::next_emit_seq`), so a replayed backlog keeps the
+/// sequence it was really emitted at.
+pub(crate) fn next_event_seq() -> u64 {
+    static EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
+    EVENT_SEQ.fetch_add(1, Ordering::Relaxed)
+}
 
 /// One event delivered to a consumer. `key` (stored alongside in the queue)
 /// identifies which subscription of the consumer the event belongs to.
@@ -30,7 +47,8 @@ pub(crate) enum SinkEvent {
 
 #[derive(Debug, Default)]
 struct WakerState {
-    events: VecDeque<(usize, SinkEvent)>,
+    /// `(subscription key, event, sequence)` — see [`next_event_seq`].
+    events: VecDeque<(usize, SinkEvent, u64)>,
     /// Set by `notify()` (a bare wake-up with no event payload, e.g. a
     /// promise resolving or a channel send). Cleared by the next wait.
     poked: bool,
@@ -52,12 +70,29 @@ impl ReactWaker {
         Arc::as_ptr(&self.inner) as usize
     }
 
-    /// Queue an event for subscription `key` and wake the consumer.
+    /// Queue an event for subscription `key` and wake the consumer, stamping it
+    /// with a fresh sequence.
     pub(crate) fn push(&self, key: usize, event: SinkEvent) {
+        self.push_at(key, event, next_event_seq());
+    }
+
+    /// [`Self::push`] with an already-allocated sequence — used when the event
+    /// was ordered earlier than the push (a producer that stamped it under its
+    /// own registry lock, or a backlog replayed to a late-registered sink).
+    pub(crate) fn push_at(&self, key: usize, event: SinkEvent, seq: u64) {
         let (lock, cvar) = &*self.inner;
         let mut state = lock.lock().unwrap();
-        state.events.push_back((key, event));
+        state.events.push_back((key, event, seq));
         cvar.notify_all();
+    }
+
+    /// Is an event queued for `key` that was sequenced at or before `seq`?
+    /// Answers "this closed subscription still owes deliveries" without
+    /// consuming the queue.
+    pub(crate) fn has_event_upto(&self, key: usize, seq: u64) -> bool {
+        let (lock, _) = &*self.inner;
+        let state = lock.lock().unwrap();
+        state.events.iter().any(|(k, _, s)| *k == key && *s <= seq)
     }
 
     /// Bare wake-up: no event payload, just make the current/next
@@ -70,8 +105,8 @@ impl ReactWaker {
         cvar.notify_all();
     }
 
-    /// Take all queued events (non-blocking).
-    pub(crate) fn drain(&self) -> Vec<(usize, SinkEvent)> {
+    /// Take all queued events (non-blocking), each with its sequence.
+    pub(crate) fn drain(&self) -> Vec<(usize, SinkEvent, u64)> {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.events.drain(..).collect()
@@ -129,7 +164,7 @@ impl ReactWaker {
     pub(crate) fn visit_roots(&self, visitor: &mut dyn crate::gc::RootVisitor) {
         let (lock, _) = &*self.inner;
         if let Ok(state) = lock.lock() {
-            for (_, ev) in &state.events {
+            for (_, ev, _) in &state.events {
                 match ev {
                     SinkEvent::Emit(v) | SinkEvent::Quit(v) => visitor.visit_value(v),
                     SinkEvent::Done => {}
