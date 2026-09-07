@@ -183,8 +183,17 @@ impl Interpreter {
         let ll = crate::gc::Gc::new(ll);
         // Pre-compute an initial batch so that eager consumers (e.g. .Slip,
         // .join) that read the cache directly get a useful prefix.
+        //
+        // NOT over a lazy pipe (`(1..*).map(...)`, `.grep(...)`, a `gather`):
+        // stepping the scan 1000 times runs the pipe's user closure 1000
+        // times, which is observable — `([\+] (1..*).map({ die if $_ > 5; $_
+        // }))[^3]` must answer `[1 3 6]`, not explode. A `Range` source has no
+        // such body, and every consumer that needs more than the cache holds
+        // goes back through `force_scan_lazy_list` for it.
         const INITIAL_BATCH: usize = 1_000;
-        self.force_scan_lazy_list(&ll, INITIAL_BATCH)?;
+        if !matches!(list_value.view(), ValueView::LazyList(_)) {
+            self.force_scan_lazy_list(&ll, INITIAL_BATCH)?;
+        }
         self.stack.push(Value::lazy_list(ll));
         Ok(())
     }

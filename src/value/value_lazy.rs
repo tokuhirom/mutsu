@@ -240,14 +240,22 @@ impl LazyList {
     }
 
     /// Gate for the VM force/incremental-pull dispatch block: a gather-sourced
-    /// list (eager or `lazy`), an infinite sequence/closure spec, or a lazy
-    /// `WALK(method)()` candidate-invocation list.
+    /// list (eager or `lazy`), an infinite sequence/closure spec, a lazy
+    /// `WALK(method)()` candidate-invocation list, or a triangle reduce.
+    ///
+    /// A triangle reduce (`[\op] SOURCE`) belongs here because its elements
+    /// come from an accumulator walk that only `force_scan_lazy_list` knows how
+    /// to run: without it, `.head(n)` read the (empty) element cache directly
+    /// and answered `()`. It used to be masked by an eager 1000-element
+    /// pre-compute at construction, which a lazy-pipe source cannot afford —
+    /// that would run the pipe's user closure a thousand times.
     pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
         self.is_from_gather()
             || self.is_infinite_spec()
             || self.closure_seq.is_some()
             || self.walk_pending.is_some()
             || self.cat_pull.is_some()
+            || self.scan_spec.is_some()
     }
 
     /// Whether `my @a = <this list>` keeps the list as a reify-on-demand lazy

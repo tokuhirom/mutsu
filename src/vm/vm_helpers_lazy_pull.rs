@@ -16,6 +16,15 @@ impl Interpreter {
             }
         }
 
+        // A triangle reduce (`[\op] SOURCE`) produces its elements through its
+        // own accumulator walk, not through any of the pull shapes below —
+        // `force_lazy_list_vm_inner` already routes the unbounded force here,
+        // and a BOUNDED pull (`.head(n)`) must do the same or it reads an
+        // empty cache and answers `()`.
+        if list.scan_spec.is_some() {
+            return self.force_scan_lazy_list(list, needed);
+        }
+
         // Lazy `WALK(method)()`: invoke the next MRO-level candidate(s) on demand,
         // one method call per pulled element (Rakudo's lazy WALK semantics).
         if list.walk_pending.is_some() {

@@ -220,6 +220,19 @@ impl Interpreter {
                     .map(Value::int)
                     .collect()
             }
+            // A lazy pipe (`(1..*).map(...)`, `.grep(...)`, a `gather`) is a
+            // `LazyList`, and `value_to_list` declines to materialise one that
+            // has no bound — it answered an EMPTY list, so the scan stepped
+            // `needed` times over nothing and produced that many `Nil`s
+            // (`([\~] (1..*).map(* + 1))[^4]` was `(Nil Nil Nil Nil)`). Pull
+            // exactly the prefix this batch needs instead, the same bounded
+            // pull every other lazy consumer uses; a finite pipe simply runs
+            // out and the scan ends with it.
+            ValueView::LazyList(inner) => {
+                let inner = inner.clone();
+                let items = self.force_lazy_list_vm_n(&inner, needed)?;
+                items.into_iter().skip(already).take(remaining).collect()
+            }
             _ => {
                 let items = crate::runtime::utils::value_to_list(&source);
                 items.into_iter().skip(already).take(remaining).collect()
