@@ -169,7 +169,22 @@ impl Interpreter {
         let non_transitive = args[1..]
             .iter()
             .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "transitive" && !v.truthy()));
-        let roles = self.collect_roles_for_class(&class_name, local, non_transitive, is_instance);
+        let mut roles =
+            self.collect_roles_for_class(&class_name, local, non_transitive, is_instance);
+        // A `but`-mixed value's own roles come FIRST, most-recently-applied
+        // first, ahead of whatever the base type composes:
+        // `((1 but A) but B).^roles` is `(B, A, Real, Numeric)`. They were
+        // missing entirely — `.^roles` answered for the base type alone and
+        // never looked at the `__mutsu_role__{name}` markers, even though
+        // `.^name`, `.does` and `~~` all read them. raku does NOT dedupe
+        // (`(C.new but A).^roles` where `class C does A` is `(A, A)`), so
+        // neither does this.
+        if let ValueView::Mixin(_, mixins) = args[0].view() {
+            let mut mixed =
+                crate::value::types::mixin_roles_applied_last_first(&mixins, &class_name);
+            mixed.append(&mut roles);
+            roles = mixed;
+        }
         Ok(Value::array(
             roles
                 .into_iter()
