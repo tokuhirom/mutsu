@@ -611,7 +611,28 @@ impl Interpreter {
         role_args: &[Value],
         is_parameterisation: bool,
     ) -> Result<Value, RuntimeError> {
-        let role = self.registry().roles.get(role_name).cloned();
+        // Declaring one role name twice with different parameter lists forms a
+        // role GROUP, and `registry().roles` holds only ONE `RoleDef` per name --
+        // whichever candidate registered last. `class C does Z[Str]` already
+        // selects the right member (`resolve_role_candidate_with_args`); the
+        // mixin path used the bare lookup, so `1 but Z[Str]` composed the
+        // unparameterised `Z` and the parameterised candidate's attributes and
+        // methods never existed. Route it through the same resolution, and keep
+        // the bare lookup for everything the resolver declines (an unknown name,
+        // a builtin role, an initialiser argument rather than a type argument).
+        let resolved = if is_parameterisation && !role_args.is_empty() {
+            self.resolve_role_candidate_with_args(role_name, Some(role_args))?
+        } else {
+            None
+        };
+        // The selected candidate's OWN parameter names: `role W[::T]` and
+        // `role W[::T, ::U]` bind different lists, and `role_type_params` records
+        // only one of them per name.
+        let candidate_type_params = resolved.as_ref().map(|(_, names, _)| names.clone());
+        let role = match &resolved {
+            Some((role_def, _, _)) => Some(role_def.clone()),
+            None => self.registry().roles.get(role_name).cloned(),
+        };
         if role.is_none()
             && !matches!(role_name, "Cool" | "Any" | "Mu")
             && !super::type_registry::is_builtin_role_name(role_name)
@@ -703,12 +724,13 @@ impl Interpreter {
             // Store per-parameter bindings so that methods with type-parameterized
             // constraints (e.g. `method hi(vartype $foo)`) can resolve the type
             // variables during dispatch.
-            let param_names = self
-                .registry()
-                .role_type_params
-                .get(role_name)
-                .cloned()
-                .unwrap_or_default();
+            let param_names = candidate_type_params.clone().unwrap_or_else(|| {
+                self.registry()
+                    .role_type_params
+                    .get(role_name)
+                    .cloned()
+                    .unwrap_or_default()
+            });
             for (param_name, type_arg) in param_names.iter().zip(role_args.iter()) {
                 mixins.insert(
                     format!("__mutsu_role_param__{}", param_name),
@@ -730,11 +752,10 @@ impl Interpreter {
         // same name (e.g. two `my role A { }` in different scopes) produce
         // distinct mixin maps, making `===` return False for values mixed with
         // different role instances.
-        let role_id = self
-            .registry()
-            .roles
-            .get(role_name)
-            .map_or(0, |r| r.role_id);
+        // The SELECTED candidate's id, not the name's last-registered one --
+        // `1 but Z[Str]` and `1 but Z` are different compositions and `===`
+        // must see that.
+        let role_id = role.as_ref().map_or(0, |r| r.role_id);
         if role_id != 0 {
             mixins.insert(
                 format!("__mutsu_role_id__{}", role_name),
