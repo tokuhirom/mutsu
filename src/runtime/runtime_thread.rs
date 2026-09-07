@@ -594,6 +594,7 @@ impl Interpreter {
             pending_call_arg_sources: None,
             pending_raw_invocant: None,
             pending_call_topic_bare: false,
+            pending_call_topic_source: None,
             require_propagates_missing_module: false,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),

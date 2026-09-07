@@ -208,42 +208,92 @@ impl Interpreter {
         }
     }
 
-    fn array_element_producer(&mut self, target: &Value, method: &str) -> Option<Value> {
-        let len = match target.view() {
-            ValueView::Array(data, kind) => {
-                // Only a real, mutable, plain array. `List`/`ItemList` are
-                // immutable sequences whose items must stay bare items.
-                if !matches!(
-                    kind,
-                    crate::value::ArrayKind::Array
-                        | crate::value::ArrayKind::ItemArray
-                        | crate::value::ArrayKind::Shaped
-                ) || data.native_storage_node().is_some()
-                {
-                    return None;
-                }
-                // A MULTI-dimensional shaped array keeps its leaves in nested
-                // inner arrays, so they are not this array's own slots and
-                // `array_slot_ref` would hand out the rows. `.pairs` over it is
-                // keyed by index tuple and takes the recursive path below; the
-                // other producers keep whatever they do today. A ONE-dimensional
-                // shape stores its leaves flat, so it needs nothing special.
-                if data.shape.as_ref().is_some_and(|s| s.len() > 1) {
-                    return match method {
-                        "pairs" => self.shaped_multidim_pairs(target),
-                        _ => None,
-                    };
-                }
-                data.len()
-            }
-            _ => return None,
+    /// The element count of an array whose slots this interpreter may hand out
+    /// as live containers, or `None` for every source whose elements are not
+    /// its own writable slots.
+    ///
+    /// The single gate every element-container producer shares: a real, mutable,
+    /// plain array with ordinary (non-native) storage and at most one dimension.
+    /// `List`/`ItemList` are immutable sequences whose items must stay bare
+    /// items — promoting one would turn raku's refusal into a silent success —
+    /// a native-storage array has no `Value` slots to promote, and a MULTI-
+    /// dimensional shaped array keeps its leaves in nested inner arrays, so
+    /// `array_slot_ref` would hand out the rows rather than the elements.
+    pub(crate) fn promotable_array_len(target: &Value) -> Option<usize> {
+        let ValueView::Array(data, kind) = target.view() else {
+            return None;
         };
-        // Promotion is in-place and idempotent (`array_slot_ref` returns an
-        // existing cell rather than allocating a second one), so re-running a
-        // producer over the same array costs nothing after the first pass.
-        let cells: Vec<Value> = (0..len)
+        if !matches!(
+            kind,
+            crate::value::ArrayKind::Array
+                | crate::value::ArrayKind::ItemArray
+                | crate::value::ArrayKind::Shaped
+        ) || data.native_storage_node().is_some()
+            || data.shape.as_ref().is_some_and(|s| s.len() > 1)
+        {
+            return None;
+        }
+        // The list-destructuring staging temp is NOT a user Array -- it IS the
+        // RHS list, and every target reads a VALUE out of it (see the note in
+        // `parser/stmt/decl/destructure.rs`; ADR-0040 slice 2 already suppresses
+        // element itemization for it for the same reason). Handing out its slots
+        // would make a `%`/`@` slurpy target -- `my ($g, %rest) = f(...)`,
+        // compiled as `@__destructure_tmp__[1..*]` -- receive containers where it
+        // needs the values behind them, and a `ContainerRef` holding a `Hash` is
+        // indistinguishable from the `$`-scalar itemization mutsu spells the same
+        // way, so the hash initializer cannot decontainerize it safely.
+        if data
+            .descriptor_name
+            .as_deref()
+            .is_some_and(Self::is_destructure_staging_temp)
+        {
+            return None;
+        }
+        Some(data.len())
+    }
+
+    /// Every element container of a promotable array, in order. Promotion is
+    /// in-place and idempotent (`array_slot_ref` returns an existing cell rather
+    /// than allocating a second one), so re-running this over the same array
+    /// costs nothing after the first pass.
+    pub(crate) fn array_element_cells(target: &Value) -> Option<Vec<Value>> {
+        let len = Self::promotable_array_len(target)?;
+        (0..len)
             .map(|i| target.array_slot_ref(i, true))
-            .collect::<Option<_>>()?;
+            .collect::<Option<_>>()
+    }
+
+    /// One element's own container for a hash key, for a source that reads a
+    /// *subset* of a hash's slots (an associative slice). `None` for an
+    /// immutable `Map` (whose elements are not assignable) and for a key the
+    /// hash does not have — `hash_slot_ref` hands back a lazy `HashEntryRef`
+    /// vivification path there, which is a path token rather than an alias.
+    pub(crate) fn hash_element_cell_at(target: &Value, key: &str) -> Option<Value> {
+        let ValueView::Hash(data) = target.view() else {
+            return None;
+        };
+        if data.declared_type.as_deref() == Some("Map") {
+            return None;
+        }
+        let cell = target.hash_slot_ref(key, true)?;
+        matches!(cell.view(), ValueView::ContainerRef(_)).then_some(cell)
+    }
+
+    fn array_element_producer(&mut self, target: &Value, method: &str) -> Option<Value> {
+        // `.pairs` over a multi-dimensional shaped array is keyed by index tuple
+        // and takes the recursive path, which walks down to the leaves itself;
+        // the other producers keep whatever they do today.
+        let Some(cells) = Self::array_element_cells(target) else {
+            return match (target.view(), method) {
+                (ValueView::Array(data, crate::value::ArrayKind::Shaped), "pairs")
+                    if data.native_storage_node().is_none()
+                        && data.shape.as_ref().is_some_and(|s| s.len() > 1) =>
+                {
+                    self.shaped_multidim_pairs(target)
+                }
+                _ => None,
+            };
+        };
         Some(match method {
             // `.Seq` has the same element-producing contract as the derived
             // sequence methods below: it preserves an Array element's Scalar

@@ -317,6 +317,14 @@ impl Compiler {
                     i as u32,
                     arg,
                 );
+            } else if matches!(arg, Expr::Index { .. }) {
+                let name_idx = self.code.add_constant(Value::str(mname.clone()));
+                self.mark_arg_index_as_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Method { name_idx },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
             }
             if pair_value_capture
                 && i == 1
@@ -757,6 +765,14 @@ impl Compiler {
                     i as u32,
                     arg,
                 );
+            } else if matches!(arg, Expr::Index { .. }) {
+                let name_idx = self.code.add_constant(Value::str(mname.clone()));
+                self.mark_arg_index_as_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Method { name_idx },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
             }
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
@@ -852,6 +868,11 @@ impl Compiler {
                 dwim_right: true,
             };
             self.compile_expr(target); // OLD slice values (post-increment result)
+            // Snapshot them to plain VALUES: a slice of a mutable array or hash
+            // hands out the elements' own containers, which the mutation below
+            // writes through — the "old" result would otherwise read back as the
+            // NEW values.
+            self.code.emit(OpCode::DecontListElems);
             self.compile_expr(&mutate); // mutate in place, pushes NEW
             self.code.emit(OpCode::Pop); // discard NEW, keep OLD
             return;

@@ -31,9 +31,12 @@ Every *ordinary* store to such an element is already refused correctly, so that
 one is a method-call-path gap rather than a store-path gap, and it belongs to
 ADR-0067's L4/L5/M1/M2 readonly-enforcement rows.
 
-Section B below was re-measured on **2026-09-06**: all seven rows still diverge
-exactly as recorded. Section C was re-measured the same day (all seven rows
-diverged) and then closed; sections A, B, D, E and F are what is left.
+Section B was re-measured on **2026-09-07** and three of its four producers
+were closed the same day
+(`news/2026-09/slice-first-and-block-topic-element-containers.md`); only
+producer 1 (`.list` feeding `map`) survives. Section C was re-measured on
+2026-09-06 (all seven rows diverged) and then closed; sections A, B(1), D, E and
+F are what is left.
 
 **Read the "how the surviving rows differ" section below before designing
 anything**: two successive stated blockers for the closure-topic rows (first
@@ -76,30 +79,21 @@ it is".
 
 Not immutability rows at all — rakudo performs these writes and mutsu silently
 loses them, which is the *opposite* failure and must not be "fixed" by teaching
-the marking to reject them:
+the marking to reject them.
+
+Re-measured 2026-09-07 on a fresh build; **producers 2, 3 and 4 are CLOSED**
+(`news/2026-09/slice-first-and-block-topic-element-containers.md`, pinned by
+`t/slice-hands-out-element-containers.t`,
+`t/first-scans-element-containers.t` and `t/block-call-binds-topic-raw.t`).
+What remains is producer 1:
 
 ```
 my @a=1,2,3; @a.list.map({$_=7}).eager; @a      raku [7 7 7]   mutsu [1 2 3]
-my @a=1,2,3; @a[0..1].map({$_=5}).eager; @a     raku [5 5 3]   mutsu [1 2 3]
 my $x=[1,2,3]; $x.map({$_=5}).eager; $x         raku [5 5 5]   mutsu [1 2 3]
-my @a=1,2,3; @a.first({$_=5}); @a               raku [5 2 3]   mutsu [1 2 3]
-my $v=1; my $b={$_=9}; $b($v); $v               raku 9         mutsu 1
-my @a=1,2,3; my $b={$_=9}; $b(@a[0]); @a        raku [9 2 3]   mutsu [1 2 3]
-my @a=1,2,3; for @a[0..1] { $_ = 5 }; @a        raku [5 5 3]   mutsu [1 2 3]
 ```
 
-These are the real ADR-0036/ADR-0040 surface: the element handed to the topic is
-a bare value, not a cell, so the write has nowhere to land. Note that mutsu
-*does* hand out cells for `@a.values` and `%h.values` (those rows write through
-correctly today), so the gap is per-producer, not universal.
-
-#### Re-measured 2026-09-06: all seven rows stand, and they are FOUR producers, not one
-
-Every row above still reproduces exactly. Widening the probe around them splits
-the family into four independent producers, which is what a fix should be scoped
-to — not "section B":
-
-1. **`.list` feeding `map` specifically.** Measured across the cross-product:
+1. **`.list` (and an itemized `$[...]`) feeding `map` specifically.** Measured
+   across the cross-product:
 
    | receiver | `.map({$_=5})` | `.grep({$_=5})` |
    |---|---|---|
@@ -132,8 +126,10 @@ to — not "section B":
      (`runtime/methods_collection_ops/grep.rs`), which is **node-based** rather
      than kind-gated.
 
-   So the fix has two candidate shapes, and both touch ADR-0058 machinery that
-   landed 2026-09-07 — read ADR-0058 §8 first:
+   The fix has two candidate shapes, and both touch ADR-0058 machinery — read
+   ADR-0058 §8/§9 and
+   `todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md` first,
+   because another change is in flight on exactly this path:
 
    - carry the source's backing node (not just an `Arc<Vec<Value>>` snapshot)
      into `SeqSource::MapGrep`, use `eval_map_over_items_rw` at pull time, and
@@ -142,33 +138,100 @@ to — not "section B":
      write the promoted array back by identity before deferring. Structural
      promotion runs no user code, so it is compatible with the deferral — but
      grep promotes only the *matched* indices, and promoting every `.map`
-     source's elements is an ADR-0036/ADR-0040-sized decision about what an
-     element is, not a local change.
+     source's elements is a decision about what an element is, not a local
+     change. (Note the promotion primitives now exist and are shared:
+     `Interpreter::array_element_cells` / `array_element_cell_at` /
+     `hash_element_cell_at`, `vm/vm_element_producers.rs`.)
 
-2. **A SLICE hands out bare values.** `for @a[0..1] { $_ = 5 }` and
-   `for @a[0,1] { $_ = 5 }` both lose the write, while `for @a { $_ = 5 }` and
-   `for $v { $_ = 9 }` both work. The plain-array `for` writes back by SOURCE
-   NAME (`vm_loop_writeback.rs`), which a slice has no equivalent of; closing
-   this means carrying the source name *and the index list* to the writeback.
-   `@a[0..1].map(...)` is the same producer reached through `map`.
+2. **A SLICE hands out bare values.** The **associative** half is CLOSED
+   (2026-09-07): `%h<a b>` promotes its elements and `for %h<a b> { $_ = 5 }`
+   writes through. The **positional** half is **PARKED**, and its five rows in
+   `t/slice-hands-out-element-containers.t` are `todo`-marked.
 
-3. **A block called with an argument does not alias `$_` to it.**
-   `my $b = {$_=9}; $b($v)` leaves `$v` at 1 (raku: 9), and the same with
-   `$b(@a[0])`. `for $v { $_ = 9 }` works, so the topic machinery can alias — the
-   gap is the block-CALL path (`call_compiled_closure_with_topic`), not the
-   topic.
+   The diagnosis is right and was verified: raku's slice IS the containers
+   (`@a[0..1]` is the two `Scalar`s), so the gap is the *producer*, not the
+   writeback — the file's original proposal to carry the source name and the
+   index list to `vm_loop_writeback.rs` would not have covered
+   `@a[0..1].map(...)`, `%h<a b>`, or a slice element passed as an argument.
+   A `slice_array_entry` that promotes each in-bounds element of a mutable
+   Array on the read path (`vm/vm_var_index_ops.rs`) closes every row.
 
-4. **`.first`** never reaches the topic marking at all (already recorded above).
+   **What blocks it**: that promotion corrupts `Text::CSV`. Its whitelisted
+   `t/90_csv.t` test 503 ("AOA parse out") fails because
+   `csv(in => $aoa.iterator, out => $fno)` leaves every row of `$aoa` as
+   `IterationEnd` — the source array's own slots are written through by the
+   consuming loop (`gather while $in.pull-one () -> \r { ... }` in
+   `Text/CSV.rakumod`). Measured on a clean run against a `main` baseline that
+   passes the file; the associative half, `.first` and the block-call topic are
+   all innocent (each was disabled in turn, alone).
 
-One row that is NOT in this section but shares producer 2, and gives it a loud
-witness: `my $b = -> $x is rw { $x = 9 }; $b(@a[0])` dies with
-`Parameter '$x' expects a writable container (variable) as an argument, but got
-'1' (Int) as a value without a container` — the same missing element-container
-producer, refusing instead of losing the write. That one is tracked as
-`todo/tickets/subscript-argument-container-producer.md` (ADR-0067 residue: the
-producer for an `Expr::Index` argument is wired into `CallFunc` only). Fixing
-that producer is likely to close producer 2's `map`/`for` rows as a side effect,
-so do it first.
+   Two exclusions a future producer must inherit, both found by the local suite:
+   a HOLE that reads as the container's `is default(...)` value is not promoted
+   (`@a[3]:delete` then `@a[2,3,4]` must read the default, not the marker), and
+   the list-destructuring staging temp is excluded from the shared gate
+   entirely — see
+   `todo/deep/containerref-holding-a-hash-is-indistinguishable-from-itemization.md`
+   for why the alternative (decontainerizing in the hash initializer) is blocked
+   by a representation ambiguity. A third is now required: whatever the
+   `Text::CSV` shape needs, which has to be understood before the positional
+   half can land.
+
+   Two exclusions a future producer must inherit, both found by the local suite:
+   a HOLE that reads as the container's `is default(...)` value is not promoted
+   (`@a[3]:delete` then `@a[2,3,4]` must read the default, not the marker), and
+   the list-destructuring staging temp is excluded from the shared gate
+   entirely — see
+   `todo/deep/containerref-holding-a-hash-is-indistinguishable-from-itemization.md`
+   for why the alternative (decontainerizing in the hash initializer) is blocked
+   by a representation ambiguity.
+
+3. ~~**A block called with an argument does not alias `$_` to it.**~~ **CLOSED
+   2026-09-07**, in two halves. A plain scalar argument goes through
+   `Interpreter::pending_call_topic_source`, the exact sibling of
+   `pending_call_topic_bare` (same producer, same one-call lifecycle), and binds
+   the topic through the shared-cell recipe `binding_signature.rs` already uses
+   for an `is rw` parameter. A subscript argument needed the missing producer
+   below.
+
+   Gated on `CompiledCode::writes_topic` (set in `compute_free_vars` when the
+   body writes `_` by name), because the alias is not free: it installs a cell
+   in the CALLER's env under the argument's source name and registers an exit
+   writeback. Firing it for every block call broke `Log::Timeline` — its nested
+   `Task.log: { ... }` blocks never touch `$_`, and the writeback re-published
+   an outer task's state over the inner one's, so `logging.rakutest` reported
+   the OUTER task's id for the inner task's end entry.
+
+4. ~~**`.first`** never reaches the topic marking at all.~~ **CLOSED
+   2026-09-07 — and the stated diagnosis was wrong.** "Only the two map loops and
+   the grep loop consult `CompiledCode::immutable_topic`" is the *immutability*
+   question (section A). Section B's `.first` row was the same producer gap:
+   `@a.values.first({$_=5})` and `@a.Seq.first({$_=5})` already wrote through, so
+   the topic path was fine — `@a.first(...)` simply scanned bare items.
+   `vm/vm_native_first.rs` (the path that actually serves it; `dispatch_first` is
+   only reached for the adverb forms) now scans the element containers and
+   decontainerizes its answer.
+
+The row that was NOT in this section but shared producer 2's missing piece —
+`my $b = -> $x is rw { $x = 9 }; $b(@a[0])` dying with "expects a writable
+container" — is closed with it, and so is the headline of
+`todo/tickets/subscript-argument-container-producer.md`, by `OpCode::IndexArgRef`
+(ADR-0067's subscript-ARGUMENT producer, the twin of `IndexInvocantRef` one
+position over). That ticket's two asides remain open, plus one new row it
+records.
+
+#### Two more rows found while measuring producer 3 (2026-09-07)
+
+Both belong with section A, not here — they are silent successes where rakudo
+refuses, and neither is fixed:
+
+```
+my $v=1; my $b={$^x=9}; $b($v); $v
+    # raku: X::Assignment "Cannot assign to a readonly variable or a value"
+    # mutsu: silently assigns the placeholder local, $v stays 1
+my $c = class { has $.n = 1 }.new; my $b={$_=9}; $b($c.n); $c.n
+    # raku: X::AdHoc "Cannot assign to an immutable value"
+    # mutsu: silently succeeds, $c.n stays 1
+```
 
 ### How the surviving rows differ from what was fixed (measured, do not skip)
 
@@ -188,6 +251,10 @@ oracle grows (a compile-time notion of "this variable is `:=`-bound to an
 immutable Positional" / "this variable holds a `Seq`", which the compiler already
 tracks partially in `scalar_bind_*`), or section B is closed first — once an
 element really is a cell, `is_container_ref()` becomes a sound oracle for both.
+Three of section B's four producers hand out cells as of 2026-09-07, so that
+second route is now most of the way there for a *slice* and for `.first`; it is
+still false for a plain `@a[0]` read and for `@a`'s own elements outside a
+producer, so the runtime rule is not yet sound.
 Closing B first is the architecturally cleaner order.
 
 ### C. A `$` bind of a MUTABLE container is still assignable — **CLOSED 2026-09-06**

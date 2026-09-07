@@ -114,11 +114,24 @@ impl Interpreter {
 
         // A Blob/Buf iterates as its element bytes (unlike list assignment, which
         // keeps it as a single element), so `.first` scans the bytes.
+        //
+        // A mutable array is scanned through its element CONTAINERS, so the
+        // matcher's topic aliases the element rather than a copy of its value:
+        // `@a.first({ $_ = 5 })` writes `@a`, exactly as `.grep`/`.map` and
+        // `@a.values.first(...)` already do. Every other receiver (a `List`, a
+        // `Seq`, a native or multi-dimensional array) keeps the bare-item scan.
         let items = Self::buf_as_byte_items(&target)
+            .or_else(|| Self::array_element_cells(&target))
             .unwrap_or_else(|| crate::runtime::utils::value_to_list(&target));
         if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
             return Ok(super::super::builtins_collection::format_first_result(
-                idx, value, has_k, has_kv, has_p,
+                idx,
+                // `.first` answers the element's VALUE; the container above is
+                // the matcher's binding, not the result.
+                value.deref_container(),
+                has_k,
+                has_kv,
+                has_p,
             ));
         }
         Ok(Value::NIL)

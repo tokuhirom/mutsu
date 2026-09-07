@@ -1666,6 +1666,29 @@ pub(crate) enum OpCode {
     IndexInvocantRef {
         is_positional: bool,
     },
+    /// ADR-0067's subscript-ARGUMENT producer: the twin of
+    /// [`Self::IndexInvocantRef`] one position over. `$b(@a[0])`,
+    /// `$obj.m(@a[0])` and `&g(@a[0])` must hand the element's own container to
+    /// a callee that binds that argument to the caller's location — an
+    /// `is rw`/`is raw`/sigil-less parameter, or a bare block's implicit `$_`.
+    ///
+    /// The named-callee spelling `g(@a[0])` does not need this: `CallFunc`
+    /// carries the copy-in/copy-out temp protocol
+    /// (`Compiler::emit_index_rw_writebacks`). The three nameless-callee
+    /// spellings have no such protocol, and a plain `Index` has already read the
+    /// element's *value* by the time the call op runs, so there is nothing left
+    /// to write back — the write was silently dropped, or (for an explicit
+    /// `is rw`) refused with "expects a writable container".
+    ///
+    /// Gated at run time on the real callee, exactly as
+    /// [`Self::MarkRwArgRefContextCallee`] is — a signature is not knowable at
+    /// compile time, and promoting an element slot is a real mutation of the
+    /// container's storage, so the producer must not fire for an ordinary
+    /// argument. `RwArgCalleeMark::stack_offset` counts the argument values
+    /// already above the callee; this op runs with the subscript's own target
+    /// and index still on the stack, so the callee sits one slot deeper than it
+    /// does for the accessor marker.
+    IndexArgRef(Box<IndexArgRefMark>),
     /// Auto-vivifying index that does NOT create the hash entry if missing.
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
@@ -4323,6 +4346,18 @@ pub(crate) struct CompiledCode {
     /// `call_compiled_closure_with_topic`), never as a body prologue — see
     /// `pointy_alias_param` above for why a prologue leaks the mark.
     pub(crate) immutable_topic: bool,
+    /// This body writes the implicit topic BY NAME (`$_ = ...`, `$_++`, ...).
+    ///
+    /// Read by `call_compiled_closure_with_topic`, which only aliases a bare
+    /// block's `$_` to the caller's container when the block can actually
+    /// write it. Aliasing installs a cell in the caller's env under the
+    /// argument's source name and registers an exit writeback, so doing it for
+    /// every block call is both wasted work and observable: `Log::Timeline`'s
+    /// nested `Task.log: { ... }` blocks never touch `$_`, and the writeback
+    /// re-published an outer task's state over the inner one's (its
+    /// `logging.rakutest` reported the OUTER task's id for the inner task's
+    /// end entry).
+    pub(crate) writes_topic: bool,
     /// Whether this code contains opcodes that write to env (SetGlobal,
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
@@ -5205,6 +5240,7 @@ impl CompiledCode {
             is_pointy_block: false,
             pointy_alias_param: false,
             immutable_topic: false,
+            writes_topic: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
@@ -7417,6 +7453,13 @@ impl CompiledCode {
                     | OpCode::Note(_)
             );
         }
+        if !self.writes_topic
+            && let Some(idx) = self.op_name_write_const_idx(&op)
+            && let Some(ValueView::Str(name)) = self.constants.get(idx as usize).map(Value::view)
+            && name.as_ref() == "_"
+        {
+            self.writes_topic = true;
+        }
         if !self.has_env_writes {
             self.has_env_writes = matches!(
                 op,
@@ -8336,6 +8379,17 @@ pub(crate) struct RwArgCalleeMark {
     pub(crate) stack_offset: u32,
     /// How to reach the callee from there.
     pub(crate) callee: RwArgCallee,
+}
+
+/// Payload of [`OpCode::IndexArgRef`]. Boxed so the variant costs one pointer
+/// and the `opcode_size_guard` budget is untouched.
+#[derive(Clone, Debug)]
+pub(crate) struct IndexArgRefMark {
+    /// Which callee, and which of its positional parameters this argument binds
+    /// to.
+    pub(crate) mark: RwArgCalleeMark,
+    /// Mirrors [`OpCode::Index`]: true for `[...]`, false for `{...}`/`<...>`.
+    pub(crate) is_positional: bool,
 }
 
 /// Where [`RwArgCalleeMark`]'s callee comes from.

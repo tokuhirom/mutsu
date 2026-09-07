@@ -61,6 +61,31 @@ impl Interpreter {
         self.exec_index_op_with_positional(is_positional)
     }
 
+    /// `Index` in ARGUMENT position ([`OpCode::IndexArgRef`]). Produces the
+    /// element's container when the callee this argument is being compiled for
+    /// binds it to the caller's location, and is `Index` otherwise.
+    ///
+    /// The producer is the same one the receiver half uses, so `$b(@a[0])` and
+    /// `@a[0].mut` promote the same slot to the same cell; only the gate
+    /// differs, because rawness here is a property of the *callee's signature*
+    /// (or of its bare-block-ness) rather than of the element's type.
+    pub(crate) fn exec_index_arg_ref_op(
+        &mut self,
+        code: &CompiledCode,
+        mark: &crate::opcode::IndexArgRefMark,
+    ) -> Result<(), RuntimeError> {
+        if self.index_arg_callee_binds_container(code, mark)
+            && let Some(cell) = self.take_subscript_element_cell(mark.is_positional)
+        {
+            // Scoped to ONE subscript dispatch; consume it here too so producing
+            // a cell instead cannot leak the suppression onto the next one.
+            self.skip_postcircumfix_overload = false;
+            self.stack.push(cell);
+            return Ok(());
+        }
+        self.exec_index_op_with_positional(mark.is_positional)
+    }
+
     /// The element cell for a subscript receiver, or `None` for every shape
     /// that is not a direct hit on an existing element of a real `Array`/`Hash`.
     ///

@@ -69,6 +69,7 @@ impl Interpreter {
         // `call_compiled_closure_with_topic` reads it before pushing its frame;
         // clearing it here stops it reaching any deeper block call.
         self.pending_call_topic_bare = false;
+        self.pending_call_topic_source = None;
         self.call_frames.push(frame);
     }
 

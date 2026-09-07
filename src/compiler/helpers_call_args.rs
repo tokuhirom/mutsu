@@ -684,6 +684,62 @@ impl Compiler {
         )));
     }
 
+    /// ADR-0067's subscript-ARGUMENT producer: swap the just-compiled
+    /// argument's trailing `Index` for [`OpCode::IndexArgRef`], so `$b(@a[0])`
+    /// / `$obj.m(@a[0])` / `&g(@a[0])` can hand the element's own container to a
+    /// callee that binds that argument to the caller's location.
+    ///
+    /// A *replacement* rather than an inserted marker, for the same reason
+    /// [`Self::mark_trailing_index_as_invocant_ref`] is one: the location has to
+    /// be produced by the subscript itself — once `Index` has run, the element's
+    /// value is on the stack and nothing can reach back for its slot.
+    ///
+    /// No-op unless the argument really is a subscript whose compiled tail is a
+    /// plain `Index`. The mutating/autovivifying subscript emitters
+    /// (`IndexElemAutoviv`, `IndexAutovivifyLazy`) are left alone: they hand
+    /// back a shared node or a deferred path, which is a different contract.
+    pub(super) fn mark_arg_index_as_container_candidate_callee(
+        &mut self,
+        callee: crate::opcode::RwArgCallee,
+        positional: Option<u32>,
+        stack_offset: u32,
+        arg: &Expr,
+    ) {
+        let Some(positional) = positional else {
+            return;
+        };
+        if !matches!(arg, Expr::Index { .. }) {
+            return;
+        }
+        // Skip back over the post-read ops the argument compile may have
+        // appended, the same way `insert_accessor_ref_marker` does — the method
+        // arg emitter puts a `ContainerizePair` after the subscript.
+        let mut last = self.code.ops.len();
+        while last > 0 {
+            match self.code.ops[last - 1] {
+                OpCode::Decont | OpCode::ContainerizePair => last -= 1,
+                _ => break,
+            }
+        }
+        if last == 0 {
+            return;
+        }
+        last -= 1;
+        let OpCode::Index { is_positional } = self.code.ops[last] else {
+            return;
+        };
+        let line = self.code.op_lines[last];
+        self.code.ops[last] = OpCode::IndexArgRef(Box::new(crate::opcode::IndexArgRefMark {
+            mark: crate::opcode::RwArgCalleeMark {
+                positional,
+                stack_offset,
+                callee,
+            },
+            is_positional,
+        }));
+        self.code.op_lines[last] = line;
+    }
+
     /// The signature-positional index of each syntactic argument, or `None`
     /// where there is none to name: a named argument (`:k(v)` / `k => v`)
     /// consumes no positional slot, and a `|EXPR` slip spreads an unknown
