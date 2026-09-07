@@ -1,7 +1,9 @@
 # ADR-0073: Regex atom candidates are produced on demand, driven by the continuation
 
-- Status: Proposed (Slices 1 and 3 implemented 2026-09-07; Slice 2 — the `<subrule>`
-  boundary — open, tracked in `todo/deep/ordered-alternation-eager-candidate-enumeration.md`)
+- Status: Proposed (Slices 1 and 3 implemented 2026-09-07; Slice 2's ratcheted
+  half implemented 2026-09-07; Slice 2's non-ratcheted half — a `regex` caller
+  that really can backtrack into the subrule — open, tracked in
+  `todo/deep/ordered-alternation-eager-candidate-enumeration.md`)
 - Date: 2026-09-07
 - Supersedes: nothing
 - Related: [ADR-0009](0009-regex-code-assertion-execution-model.md) (a code assertion runs
@@ -158,7 +160,7 @@ C1 is the control: raku genuinely enters both branches there (the LTM winner
 | --- | --- | --- | --- | --- |
 | E1 | `regex TOP { <part> 'c' }` / `regex part { \w* {B} }` | `aaac` | 2 | 5 |
 | E2 | `regex TOP { <a> 'c' }` / `regex a { <b> }` / `regex b { \w* {B} }` | `aaac` | 2 | 5 |
-| E3 | `token TOP { <part> 'c' }` / `regex part { \w* {B} }` | `aaac` | 1 | 5 |
+| E3 | `token TOP { <part> 'c' }` / `regex part { \w* {B} }` | `aaac` | 1 | 5 (now 1) |
 | E4 | `regex TOP { <part> 'c' }` / `token part { \w* {B} }` | `aaac` | 1 | 1 |
 | E5 | `token`/`token` twin of E1 | `aaac` | 1 | 1 |
 | E6 | `regex part { 'a' [ 'b' {one} \|\| 'bc' {two} ] }` under `regex TOP { <part> 'cd' }` | `abcd` | `one` | `one,two` |
@@ -263,7 +265,8 @@ it can be adopted incrementally.
 | C2-C5 | fixed | fixed |
 | A14, A15 (`:g` / `subst`) | not addressed by either — the scan is the mechanism | not addressed |
 | A16 (conjunction) | fixed | needs a `Conjunction` arm; not in Slice 1 |
-| E1-E3, E6 | fixed only if the subrule boundary is also replayed | fixed by Slice 2 |
+| E3 | fixed only if the subrule boundary is also replayed | fixed by Slice 2's ratcheted half |
+| E1, E2, E6 | fixed only if the subrule boundary is also replayed | needs Slice 2's non-ratcheted half |
 | F1, F2 | fixed | fixed by Slice 3 |
 | F6 | not a count bug at all — a pre-existing wrong *match* | unchanged, filed separately |
 | C1, D1-D3 (controls) | at risk (suppression can mute a needed block) | unchanged by construction |
@@ -279,23 +282,46 @@ it can be adopted incrementally.
   (`regex_match_sep_lazy.rs`) — the CPS form of `enumerate_separated_chains` /
   `extend_separated_chain`, which additionally stops recording every
   intermediate DFS node as its own candidate. Fixes F1 and F2 (17 -> 3).
-- **Slice 2 — OPEN.** The `Named` subrule boundary. Its producer arm carries
-  the left-recursion growing-seed loop and the proto rank-then-match dispatch,
-  both of which genuinely want a candidate *set*: the seed loop decides whether
-  a rule is left-recursive at this position by *evaluating* the candidates and
-  then checking whether the seed was consulted, so it cannot know before it has
-  run the blocks. The separable case is "no arguments, no proto, one resolved
-  candidate, this key not LR-active", and it is the one E1-E3/E6 need. Its
-  cheapest half is E3: a ratcheted caller cannot backtrack into the subrule at
-  all, so the subrule can be walked with `first_only`.
+- **Slice 2 (ratcheted half) — IMPLEMENTED 2026-09-07.**
+  `regex_match_atom_all_with_capture_opts`' `subrule_first_only` knob, fed by
+  the calling token's `ratchet` flag from `for_each_atom_candidate`, plus
+  `regex_subrule_lazy::pattern_is_rule_call_free`. A ratcheted caller cannot
+  backtrack into the subrule at all, so only the subrule's highest-priority end
+  can ever be used and each candidate body is walked with `first_only` instead
+  of having its whole end set collected and then discarded. Fixes E3
+  (`token TOP { <part> 'c' }` / `regex part { \w* {B} }`: 5 -> raku's 1).
+
+  The guard is the load-bearing part. The `Named` arm's growing-seed loop
+  discovers left recursion by *evaluating* candidates and then asking whether
+  the seed was consulted; a `first_only` walk can return before it ever enters
+  the branch that re-enters the rule, and the loop would then wrongly conclude
+  "not left-recursive". Measured, not hypothetical:
+  `token expr { <term> | <expr> '+' <term> }` ranks `<term>` first, so an
+  unguarded `first_only` stops on `1` and `.parse('1+2+3')` fails.
+  `pattern_is_rule_call_free` is the sound precondition — a body that cannot
+  invoke a named rule cannot re-enter its own key — and it lists the safe
+  `RegexAtom` variants explicitly so a new variant is excluded by default. It is
+  an over-approximation (leaf rules only); tightening it to "not part of a call
+  cycle" needs a rule-call-graph analysis and is residue. The seed loop keeps a
+  runtime fallback (redo the iteration with the full set) for the case a `{ … }`
+  block re-enters the rule by hand.
+- **Slice 2 (non-ratcheted half) — OPEN.** A `regex` caller really can backtrack
+  into the subrule, so truncation is wrong there and the arm has to *stream*
+  through a `MatchSink::Cont` — which means threading the continuation through
+  the seed loop, the proto rank-then-match dispatch (ADR-0046) and the three
+  `Vec`-returning escape hatches (`try_regex_subrule_as_method`,
+  `try_custom_how_subrule_dispatch`, `<::(EXPR)>`). The separable case is "no
+  arguments, no proto, one resolved candidate, this key not LR-active", and it
+  is the one E1/E2/E6 need.
 
 Two rows are deliberately **out of this ADR's scope** and have their own ticket
 files, because their mechanism is not candidate production: the `:g` / `subst`
 start-position scan (A14/A15), and a pre-existing wrong *match* for a
 non-capturing group carrying a block under a counted separator (F6). The
-`Conjunction` arm is in scope but not implemented (A16); it is a small addition
-to `for_each_atom_candidate` — drive the first branch lazily and probe the other
-branches per candidate.
+`Conjunction` arm (A16) was in scope and landed the same day
+(`news/2026-09/regex-conjunction-candidates-are-demand-driven.md`): the first
+branch is driven lazily and the other branches keep the eager per-candidate
+yes/no probe.
 
 ## Consequences
 
@@ -310,7 +336,7 @@ branches per candidate.
   bookkeeping instead of one batched vector. `make roast` and
   `scripts/battery-testsuite.sh` (every bundled battery is grammar-driven:
   `YAMLish`, `JSON::Fast`, `Cro::HTTP`, `TOML`, the vendored `zef`) are the gate.
-- `t/regex-lazy-candidate-enumeration.t` pins 60 rows — every row of the table
+- `t/regex-lazy-candidate-enumeration.t` pins every row of the table
   above, including the Family B and C1/D controls and the still-unfixed rows as
   `todo` — so a future laziness change cannot quietly move a row that already
   agreed, and closing a residue row shows up as a test that starts passing

@@ -182,6 +182,34 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        self.regex_match_atom_all_with_capture_opts(
+            atom,
+            chars,
+            pos,
+            current_caps,
+            pkg,
+            ignore_case,
+            false,
+        )
+    }
+
+    /// [`Self::regex_match_atom_all_with_capture_in_pkg`] with ADR-0073's
+    /// Slice-2 knob. `subrule_first_only` says the caller cannot backtrack into
+    /// this atom (it is ratcheted), so a `<subrule>` atom needs only its
+    /// highest-priority end and its body may be walked with `first_only` — see
+    /// `regex_subrule_lazy`. It is ignored by every other atom kind, whose
+    /// candidates the demand-driven driver already produces one at a time.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn regex_match_atom_all_with_capture_opts(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: &str,
+        ignore_case: bool,
+        subrule_first_only: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
         let mut dyn_saved = None;
         let out = self.regex_match_atom_all_with_capture_in_pkg_inner(
             atom,
@@ -190,6 +218,7 @@ impl Interpreter {
             current_caps,
             pkg,
             ignore_case,
+            subrule_first_only,
             &mut dyn_saved,
         );
         if let Some(saved) = dyn_saved {
@@ -207,6 +236,7 @@ impl Interpreter {
         current_caps: &RegexCaptures,
         pkg: &str,
         ignore_case: bool,
+        subrule_first_only: bool,
         dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Vec<(usize, RegexCaptures)> {
         // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
@@ -380,7 +410,7 @@ impl Interpreter {
                 .regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
                 .into_iter()
                 .map(|(end, inner_caps)| {
-                    (end, super::regex_match_lazy::group_merge_delta(inner_caps))
+                    (end, super::regex_match_delta::group_merge_delta(inner_caps))
                 })
                 .collect();
             // Reverse inner match order so LIFO stack respects frugal/greedy priority.
@@ -446,7 +476,7 @@ impl Interpreter {
                 .map(|(end, inner_caps)| {
                     (
                         end,
-                        super::regex_match_lazy::capture_group_delta(pos, end, inner_caps),
+                        super::regex_match_delta::capture_group_delta(pos, end, inner_caps),
                     )
                 })
                 .collect();
@@ -491,13 +521,14 @@ impl Interpreter {
                 };
                 let dyn_name = val.to_string_value();
                 let dyn_atom = RegexAtom::Named(dyn_name);
-                return self.regex_match_atom_all_with_capture_in_pkg(
+                return self.regex_match_atom_all_with_capture_opts(
                     &dyn_atom,
                     chars,
                     pos,
                     current_caps,
                     pkg,
                     ignore_case,
+                    subrule_first_only,
                 );
             }
             let arg_values = if spec.arg_exprs.is_empty() {
@@ -612,6 +643,18 @@ impl Interpreter {
                 // Left-recursion escape hatch for the rank-then-match path — see
                 // the `seed_was_consulted` handling below.
                 let mut lr_match_all = false;
+                // ADR-0073 Slice 2: a ratcheted caller cannot backtrack into
+                // this subrule, so only its highest-priority end can ever be
+                // used and its body may be walked with `first_only` — which is
+                // what stops an embedded `{ … }` block from firing once per end
+                // the engine merely computed. The guard keeps the growing-seed
+                // loop sound: a body that cannot invoke a named rule cannot
+                // re-enter this key, so no cut-short walk can hide a
+                // left-recursive re-entry (`regex_subrule_lazy`).
+                let mut first_only = subrule_first_only
+                    && candidates.iter().all(|(parsed, _, _)| {
+                        super::regex_subrule_lazy::pattern_is_rule_call_free(parsed)
+                    });
 
                 loop {
                     // Evaluate all candidates' patterns directly (unwrapped).
@@ -653,8 +696,8 @@ impl Interpreter {
                         for (idx, _) in ranked {
                             let (parsed, sub_pkg, sym_key) = &candidates[idx];
                             let sym_key = sym_key.clone();
-                            let all_matches =
-                                self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
+                            let all_matches = self
+                                .subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
                             if all_matches.is_empty() {
                                 continue;
                             }
@@ -675,8 +718,8 @@ impl Interpreter {
                         }
                     } else {
                         for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                            let all_matches =
-                                self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
+                            let all_matches = self
+                                .subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
                             // all_matches: HIGHEST FIRST.
                             let matches_to_use: Vec<_> = if sym_key.is_some() {
                                 all_matches.into_iter().take(1).collect()
@@ -740,6 +783,16 @@ impl Interpreter {
                     if !seed_was_consulted {
                         best_raw = deduped_raw;
                         break;
+                    }
+
+                    // The rule-call-free guard says this cannot happen — but a
+                    // `{ … }` block is user code and could re-enter the rule by
+                    // hand. If it did, the first-only walk's single end is not a
+                    // sound basis for the growing-seed loop's max-end growth
+                    // test, so redo the iteration with the full candidate set.
+                    if first_only {
+                        first_only = false;
+                        continue;
                     }
 
                     // Left-recursive at this key. ADR-0046 Slice 4: the
@@ -811,6 +864,33 @@ impl Interpreter {
             .into_iter()
             .collect()
         }
+    }
+
+    /// One subrule candidate's end positions, HIGHEST PRIORITY FIRST.
+    ///
+    /// `first_only` stops the body's walk at its highest-priority complete
+    /// match (ADR-0073 Slice 2). It is only ever set when the calling token is
+    /// ratcheted, i.e. when no later end could be reached by backtracking
+    /// anyway: the eager path's dedup keeps the first end per position and the
+    /// atom driver then drains everything but the highest-priority candidate,
+    /// so the surviving candidate is the same one either way — the difference
+    /// is that the discarded ends are no longer *computed*, and the `{ … }`
+    /// blocks inside them no longer run.
+    fn subrule_candidate_ends(
+        &mut self,
+        parsed: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        sub_pkg: &str,
+        first_only: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
+        if first_only {
+            return self
+                .regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+                .into_iter()
+                .collect();
+        }
+        self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
     }
 
     /// Dispatch a subrule that names a plain grammar METHOD (not a token/regex/rule).
