@@ -57,6 +57,7 @@ impl Interpreter {
             package,
             lexicals: Vec::new(),
             depth: 0,
+            package_path: Vec::new(),
         };
         walker.stmts(stmts);
     }
@@ -324,6 +325,11 @@ struct EndWalker<'a> {
     /// since it closes over the still-live unit scope), so it must not be
     /// seeded — a seed would be the only binding it ever gets.
     depth: u32,
+    /// The NESTED package path (`["D1", "D2"]`), as distinct from `package`,
+    /// which is the innermost name an `END` runs under. Only
+    /// [`EndWalker::install_our_symbol`] reads it -- see
+    /// [`EndWalker::in_package`].
+    package_path: Vec<String>,
 }
 
 impl EndWalker<'_> {
@@ -351,16 +357,126 @@ impl EndWalker<'_> {
         self.lexicals.truncate(mark);
     }
 
-    /// Record the lexical a statement declares, if it declares one.
+    /// Record the lexical a statement declares, if it declares one — and
+    /// install the package SYMBOL of an `our` declaration.
     fn declare(&mut self, stmt: &Stmt) {
-        if let Stmt::VarDecl {
-            name,
-            is_our: false,
-            is_dynamic: false,
-            ..
-        } = stmt
+        match stmt {
+            Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                ..
+            } => self.push_lexical(name),
+            Stmt::VarDecl {
+                name,
+                is_our: true,
+                type_constraint,
+                ..
+            } => {
+                self.install_our_symbol(name, type_constraint.as_deref());
+                // An `our` inside a nested block also creates a LEXICAL alias
+                // there, so a never-reached `END` in that block reads it as
+                // unassigned exactly like a `my` would. Seeding it through the
+                // same scoped `lexicals` stack is what keeps the alias
+                // block-scoped: putting the bare name in the env instead would
+                // make `{ our $sa2 = 42 }; $sa2` resolve, where raku reports
+                // `X::Undeclared`.
+                //
+                // A UNIT-TOP-LEVEL `our` (depth 1) is skipped: it always runs,
+                // so its package symbol holds a real value at exit and a
+                // never-reached `END` must read THAT, not a seed
+                // (`our $pkg = 7; if False { END { say $pkg } }` is `7`).
+                if self.depth > 1 {
+                    self.push_lexical(name);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Install an `our` declaration's package symbol, bound to its type object.
+    ///
+    /// rakudo installs a package symbol when the compunit is COMPILED, so the
+    /// slot exists (undefined) even when the declaration sits in a branch that
+    /// never runs: `if False { our $o = 4 }; say OUR::<$o>.^name` is `Any`.
+    /// mutsu installs the symbol when execution REACHES the declaration, so a
+    /// dead branch installed nothing and a later read found no binding (`Nil`).
+    ///
+    /// Only the symbol is installed, never a value: an assignment that DOES run
+    /// overwrites the type object through the ordinary declaration path, and a
+    /// name that already has a binding is left alone, so this cannot disturb a
+    /// reached declaration or a symbol some earlier compunit set.
+    fn install_our_symbol(&mut self, name: &str, type_constraint: Option<&str>) {
+        // Same key the compiler's `qualify_our_variable_name` produces: the
+        // walker's `package` is the ENCLOSING package (it descends into
+        // `class`/`role`/`module` bodies but not into sub bodies), which is
+        // exactly what that function qualifies an `our` declaration against.
+        let Some(key) = Self::our_symbol_key(&self.our_package(), name) else {
+            return;
+        };
+        if self.interp.get_our_var(&key).is_some() {
+            return;
+        }
+        // An `@`/`%` `our` is a container, and rakudo gives it an EMPTY one
+        // rather than a type object (`if False { our @a }; OUR::<@a>` is `[]`).
+        let value = match name.chars().next() {
+            Some('@') => crate::value::Value::real_array(Vec::new()),
+            Some('%') => crate::value::Value::hash(std::collections::HashMap::new()),
+            // `&` names are routines, which are installed by their own
+            // declaration walk; leave them alone.
+            Some('&') => return,
+            _ => crate::value::Value::package(Symbol::intern(type_constraint.unwrap_or("Any"))),
+        };
+        // Never the BARE name in the env: the env is the lexical store here,
+        // and an `our`'s lexical alias belongs to its declaring block, so
+        // writing the bare name there would leak it out (`{ our $sa2 = 42 };
+        // $sa2` must still be `X::Undeclared`). The block-scoped half of the
+        // declaration is the `push_lexical` in `declare`.
+        //
+        // A package-qualified key (`$Bar::c`) is not a bare name and cannot
+        // leak, and the env IS where `package_stash_value` looks for a named
+        // package's symbols -- so that is where it goes. A GLOBAL-scope `our`
+        // has no qualified spelling, and its stash (`OUR::`, `GLOBAL::.<>`)
+        // reads the flat `our_vars` store instead.
+        // The `our_vars` package store, never the env. The env is also the
+        // LEXICAL store, and an `our`'s lexical alias belongs to its declaring
+        // block: writing a bare name there leaks it out of the block
+        // (`{ our $sa2 = 42 }; $sa2` must stay `X::Undeclared`), and writing a
+        // qualified one perturbs the declaration path that later runs for a
+        // reached declaration. `our_vars` is exactly the package-symbol store
+        // the stash reads, and every consumer that could mistake this entry for
+        // a live variable (`our_package_scalar_cell`) requires it to be a
+        // `ContainerRef`, which a type object is not.
+        self.interp.set_our_var(key, value);
+    }
+
+    /// The env key an `our NAME` declared in `package` is stored under, or
+    /// `None` for a name that is not a package variable at all (a twigil, a
+    /// positional capture, an already-qualified name).
+    fn our_symbol_key(package: &str, name: &str) -> Option<String> {
+        if name.is_empty() || name.contains("::") {
+            return None;
+        }
+        let first = name.chars().next().unwrap();
+        if matches!(first, '_' | '/' | '!' | '?' | '*' | '.' | '=')
+            || (first.is_ascii_digit() && name.chars().all(|c| c.is_ascii_digit()))
         {
-            self.push_lexical(name);
+            return None;
+        }
+        if matches!(first, '$' | '@' | '%' | '&') && name.len() > 1 {
+            let twigil = name[1..].chars().next();
+            if matches!(twigil, Some('_' | '/' | '!' | '?' | '*' | '.' | '=')) {
+                return None;
+            }
+        }
+        if package == "GLOBAL" || package.contains("::&") {
+            return Some(name.to_string());
+        }
+        match first {
+            '$' | '@' | '%' | '&' if name.len() > 1 => {
+                Some(format!("{first}{package}::{}", &name[1..]))
+            }
+            _ => Some(format!("{package}::{name}")),
         }
     }
 
@@ -402,8 +518,27 @@ impl EndWalker<'_> {
 
     fn in_package(&mut self, name: &str, body: &[Stmt]) {
         let saved = std::mem::replace(&mut self.package, name.to_string());
+        // The NESTED path is tracked separately from `package`: an `END`'s
+        // package is the innermost name (what it runs under), while an `our`
+        // declaration's storage key is qualified against the full path the
+        // compiler's `current_package` carries -- `package D1 { package D2 {
+        // our $d3 } }` stores `D1::D2::d3`, and keying the pre-install on the
+        // bare `D2` instead shadowed the real symbol for `$D2::d3`.
+        self.package_path.push(name.to_string());
         self.stmts(body);
+        self.package_path.pop();
         self.package = saved;
+    }
+
+    /// The package an `our` declared at this point qualifies against: the
+    /// nested path, empty at the unit's top level (where the compiler collapses
+    /// to `GLOBAL`).
+    fn our_package(&self) -> String {
+        if self.package_path.is_empty() {
+            self.package.clone()
+        } else {
+            self.package_path.join("::")
+        }
     }
 
     fn stmt(&mut self, stmt: &Stmt) {
