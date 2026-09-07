@@ -2012,6 +2012,21 @@ impl Compiler {
                         if scalar_bind_decont {
                             self.code.emit(OpCode::MarkScalarBindContext);
                         }
+                        // `my @a is SomeType = RHS` / `my %h is SomeType = RHS`:
+                        // if SomeType turns out to be a custom container (a class
+                        // or role with its own `STORE`), Raku feeds the RHS *as
+                        // written* to `STORE` — `= 'x'` passes `'x'`, `= 'x','y'`
+                        // passes the List. The `SetLocal` below coerces both into
+                        // a 1-/2-element Array, so stash the raw value first; only
+                        // `ApplyVarTrait`'s custom-container branches read it.
+                        if has_explicit_initializer
+                            && (name.starts_with('@') || name.starts_with('%'))
+                            && custom_traits.iter().any(|(t, _)| {
+                                t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                            })
+                        {
+                            self.code.emit(OpCode::StashVarDeclInit);
+                        }
                         self.code.emit(OpCode::SetLocal(slot));
                         // A `constant` that shadows an outer constant of the same name
                         // (in an enclosing block or closure) is a fresh lexical binding,

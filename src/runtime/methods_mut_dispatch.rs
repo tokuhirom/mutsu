@@ -176,6 +176,17 @@ impl Interpreter {
             ) {
                 return Ok(target);
             }
+            // A tied `@`/`%` variable (`my @a is DNA`, `my %h is Tk`) IS its own
+            // container: raku answers `@a.VAR.^name` with the tie's class, not
+            // `Array`/`Hash`. Without this the generic container-object
+            // construction below reported the base container type and erased the
+            // tie from every `.VAR`-based reflection.
+            if (target_var.starts_with('@') || target_var.starts_with('%'))
+                && Self::tied_instance_type_name(&target).is_some()
+                && self.instance_is_tied(&target)
+            {
+                return Ok(target);
+            }
             // A `@`/`%` parameter's container descriptor carries its BINDING
             // source name, not the param's syntactic name: "element" for the
             // fresh anonymous container an unsupplied param binds (tagged in
