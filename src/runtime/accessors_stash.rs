@@ -224,23 +224,13 @@ impl Interpreter {
         (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
     }
 
-    /// Build a real `Stash` view over one caller frame.  Values are snapshotted
-    /// for read-only stash operations, while `STASH_CALLER_DEPTH_ATTR` preserves
-    /// the address needed by container operations.
+    /// Build a `Stash` view that retains the address of one caller frame for
+    /// container operations without exposing the hidden pad through iteration.
     pub(crate) fn caller_stash_value(&self, name: &str, depth: usize) -> Value {
-        let mut symbols = HashMap::new();
-        if depth != 0 && depth <= self.caller_env_stack.len() {
-            let idx = self.caller_env_stack.len() - depth;
-            let merged = self.caller_env_stack[idx].filtered_flat(&|_, _| true);
-            for (key, value) in merged.iter() {
-                let key = key.resolve();
-                if self.should_hide_from_my_global_stash(&key) {
-                    continue;
-                }
-                symbols.insert(Self::add_sigil_prefix(&key), value.clone());
-            }
-        }
-        let stash = Self::make_stash_instance(name, symbols);
+        // CALLER stash enumeration is intentionally empty in mutsu.  Existing
+        // EVAL-context behavior depends on that reflection surface; the hidden
+        // depth below is enough for addressed container operations.
+        let stash = Self::make_stash_instance(name, HashMap::new());
         if let ValueView::Instance { attributes, .. } = stash.view() {
             attributes.insert(
                 Self::STASH_CALLER_DEPTH_ATTR.to_string(),
@@ -303,19 +293,24 @@ impl Interpreter {
         };
 
         if let Some(depth) = caller_depth {
-            if depth == 0 || depth > self.call_frames.len() {
+            if depth == 0 || depth > self.caller_env_stack.len() {
                 return Err(RuntimeError::new(
                     "Cannot bind through CALLER stash: frame is gone",
                 ));
             }
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
-            let frame_idx = self.call_frames.len() - depth;
-            self.call_frames[frame_idx]
-                .saved_env
-                .insert(name.clone(), binding.clone());
-            if depth <= self.caller_env_stack.len() {
-                let env_idx = self.caller_env_stack.len() - depth;
-                self.caller_env_stack[env_idx].insert(name.clone(), binding.clone());
+            let env_idx = self.caller_env_stack.len() - depth;
+            self.caller_env_stack[env_idx].insert(name.clone(), binding.clone());
+            // The VM and reflection call stacks do not have a guaranteed
+            // one-to-one depth mapping (light/inlined call paths differ).
+            // Patch the nearest saved VM frame that actually owns this name.
+            if let Some(frame) = self
+                .call_frames
+                .iter_mut()
+                .rev()
+                .find(|frame| frame.saved_env.contains_key_own_tier(&name))
+            {
+                frame.saved_env.insert(name.clone(), binding.clone());
             }
             self.record_caller_var_writeback(&name);
         } else {
