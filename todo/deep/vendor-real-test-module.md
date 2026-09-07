@@ -57,6 +57,110 @@ For an `exit 124` roast row, re-run the individual file with a larger timeout
 before classifying it as a correctness bug. The vendored provider executes
 assertions as Raku code and is therefore slower than the Rust-native provider.
 
+## Current state (2026-09-07, fourth pass -- five callgrind-driven slices)
+
+The per-assertion budget was attacked again with callgrind only (the box has
+no `perf`), on the protocol below: 300 `ok 1, "x"` under `MUTSU_REAL_TEST=1`
+minus the one-assertion baseline, release build. Every slice landed as its
+own PR with the deterministic before/after in its description; nothing was
+special-cased for `Test`.
+
+| slice | per assertion | PR |
+| --- | --- | --- |
+| start of the session | 492,188 Ir | -- |
+| a literal parameter default binds directly (`proclaim`'s `$unescaped-prefix = ''` was an `eval_block_value` per call) | 454,016 | #7457 |
+| named-call path: `Symbol == &str` compares in the return merge, per-call re-interning, `int`/`num`/`str` in the tag fast-accept, `is_native_method` before the numeric-bridge probes, byte-scan `function_key_base_name` | 397,305 | #7459 |
+| free-variable reads stop cloning `current_package()`; `PackageKeyed<V>` (`FxHashMap`) for the unit/package lexical stores | 378,452 | #7460 |
+| `pop_caller_env_with_writeback` skipped when nothing is `is dynamic`; `Mu` accepted up front; `__mutsu_type::` meta keys memoized as symbols | 352,748 | #7463 |
+| a multi's dispatch-frame candidate list memoized per (name, package, lexical package, registry generation); `Env::flattened` clones a chain's root once | 333,577 | #7465 |
+
+**-32.2% in instructions per assertion.** Wall clock on this box (which is
+~2x the reference machine: `write-int.t` under the real module took 13.8 s
+here at the start of the session against the 27.4 s the third pass
+recorded): the 20,000-assertion `ok` loop 1.33 s -> 0.86 s,
+`roast/S03-buf/write-int.t` under the real module 13.8 s -> 9.6-9.9 s
+(median of three). Wall clock moved less than the instruction count because
+`write-int.t`'s assertions carry Buf work the `ok` loop does not.
+
+### What the profile looks like now (per assertion, 333.6k)
+
+Inclusive, after #7465; the rows are what a sixth slice would have to take
+on, and each is a structural change rather than a local one:
+
+| row | Ir | what it is |
+| --- | --- | --- |
+| `bind_function_args_values` | 41.3k | the general binder: `filtered_args`/`plain_args` clones, the `@_` array per call, `check_and_coerce_param_type` for `Bool(Mu)` (6.4k), `type_matches_value` (7.2k), `bind_param_type_constraint` |
+| `exec_call_method_mut_op` | 37.0k | `$output.say` through the user path (`dispatch_compiled_method_mut_with_raw_invocant` 11.3k + `try_native_io_handle_output` 9.8k) and `$desc.Str`; the scoped-env flatten is 8.8k of it now |
+| free-variable reads/writes | ~30k | `unit_lexical_slot` 12.3k + `get_env_with_main_alias` 11.5k + `package_scope_lexical` 5.9k: ~12 reads of `$num_of_tests_run`, `$indents`, `$output`, ... at ~2.5k each, every one re-resolving the package chain |
+| the `callframe().code` Sub | ~20k | `Value::make_sub(.., cf.params.clone(), cf.param_defs.clone(), .., clone_env())` in `call_compiled_function_named_inner`, twice per assertion: `Vec<ParamDef>` clone (`String::clone` 2.9k + `Vec::clone` 4.9k), `drop_in_place<Gc<SubData>>` 7.7k. Sharing `SubData.params`/`param_defs` behind an `Arc` touches ~315 `.param_defs` sites; a lazily materialized block-stack entry needs the registry key of the running candidate. Either is a real refactor |
+| `Symbol::intern` | 21.3k | ~195 interns per assertion, diffuse: `type_meta_key_sym` (15), the binder (7), `native_lever_a_user_override` (6), `fn_keys_for_base` (11), `exec_set_local_op_inner` (8), `user_method_overloads` (7) |
+| `exec_atomic_compound_var_op` + `store_named_scalar_rmw_result` | 17.6k | ONE `$num_of_tests_run = $num_of_tests_run + 1`: the read resolves through four fallbacks to the unit-lexical cell, then the store re-resolves it |
+| `exec_set_local_op` | 15.9k | four `SetLocal`s (`my $tap`, `$tap ~=` x2, `my $ok`) at ~4k each |
+| `Env::flattened` + env drops | ~27k | 15.9k flatten (one whole-scope clone per assertion, for `$output.say`) + `drop_in_place<Env>` 11.7k. The relocation attempt below is still the record on why this is not a local fix |
+| `call_nqp_op` + `normalize_call_args_for_target` | 13.3k | five `nqp::` ops per assertion, each building a `Vec<Value>` |
+
+The env flatten remains the one item this ticket has measured twice and
+not solved; #7465's single-pass chain flatten took the cost of *being*
+scoped two frames deep, not the cost of the flatten itself.
+
+### Sweeps (2026-09-07, after #7465)
+
+Both sweeps were re-run on the binaries carrying all five slices (#7465's
+tree; #7457-#7463 had merged by then).
+
+Roast sweep (release, whitelist, 3 jobs):
+
+```
+pass under both:                   1432
+regressed under the real Test:     0
+passes only under the real Test:   0
+fail under both (pre-existing):    4
+```
+
+**`roast/S03-buf/write-int.t` no longer times out**: this is the first sweep
+since the real-module mode was opened that reports zero regressions on the
+roast side. The four fail-under-both rows are the same environmental four
+as every earlier sweep (`6.c/S32-io/file-tests.t`,
+`S10-packages/precompilation.t`, `S16-filehandles/filetest.t`,
+`S32-io/IO-Socket-Async.t`).
+
+`t/` sweep (debug, all 3775 files, 4 jobs):
+
+```
+pass under both:                   3753
+regressed under the real Test:     0
+passes only under the real Test:   0
+fail under both (pre-existing):    22
+```
+
+### Completion criterion 2, re-measured under contention
+
+The third pass warned that a sweep going green on an idle box does not close
+the timeout class, and asked for a measurement on the reference machine and
+under `prove -j4`. The reference machine is not available from this session;
+the contention half was measured here. `write-int.t` under the real module,
+run through `scripts/run-roast-test.sh` with `prove -j4 --timer` alongside
+the five next-heaviest real-`Test` files (`S03-buf/read-write-bits.t`,
+`S32-str/sprintf{,-b,-e,-x}.t`):
+
+| condition | this box | scaled to the reference machine (x2) |
+| --- | --- | --- |
+| idle, median of three | 9.6-9.9 s | ~19.5 s |
+| `prove -j4`, six heavy files | 13.4 s | ~27 s |
+
+The idle margin against the 30 s budget went from ~9% (third pass) to ~35%.
+Under `-j4` contention the scaled figure is still only ~10% under the budget,
+so criterion 2 is **closer but not met**: `make roast` runs `-j4` on the CI
+runner, and one more slice of the size of #7459 (-12%) would be needed
+before the contended figure has the margin the idle one has. The rows in the
+profile table above are where that slice has to come from; none of them is a
+local fix any more.
+
+Criterion 1 (no real-provider correctness regressions in either sweep) holds
+as of this pass. Criterion 3 (`Test::Util` still composes) is exercised by
+the roast sweep, which loads it from `roast/packages/Test-Helpers/` under both
+providers.
+
 ## Current state (2026-09-06, third pass — the perf blocker)
 
 `todo/tickets/eval-assign-loses-a-later-block-declarations-type.md`, which the
