@@ -261,6 +261,37 @@ impl Interpreter {
                             });
                             continue;
                         }
+                        // A `Channel.Supply` carries the channel itself. Drain
+                        // it here rather than through the send-time supplier
+                        // bridge: rakudo's `Channel.Supply` is pumped, so values
+                        // sent BEFORE the tap existed are still on the queue and
+                        // must be delivered, and a value sent after the tap does
+                        // not count as emitted until the loop actually runs.
+                        if let Some(ValueView::Channel(ch)) =
+                            attributes.as_map().get("channel").map(Value::view)
+                        {
+                            let last_callbacks = items
+                                .get(2)
+                                .and_then(crate::runtime::Interpreter::value_array_items)
+                                .unwrap_or_default();
+                            let quit_callbacks = items
+                                .get(3)
+                                .and_then(crate::runtime::Interpreter::value_array_items)
+                                .unwrap_or_default();
+                            react_subs.push(ReactSubscription {
+                                whenever_id,
+                                channel: Some(ch.clone()),
+                                close_callbacks: Self::extract_supply_on_close_callbacks(
+                                    &(attributes).as_map(),
+                                ),
+                                last_callbacks,
+                                quit_callbacks,
+                                is_lines,
+                                head_limit,
+                                ..ReactSubscription::new(callback)
+                            });
+                            continue;
+                        }
                         if let Some(ValueView::Int(supplier_id)) =
                             attributes.as_map().get("supplier_id").map(Value::view)
                         {
