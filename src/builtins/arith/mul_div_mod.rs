@@ -2,8 +2,8 @@
 
 use super::range::{mixin_range_arith, mixin_range_arith_val, range_divide, range_scale};
 use super::rat::{
-    as_bigint, float_mod_floor, is_fat_rat_like, make_fat_rat, needs_bigrat_path, rat_mul_checked,
-    real_to_rat, to_big_rat_parts,
+    as_bigint, big_int_mul, float_mod_floor, is_fat_rat_like, make_fat_rat, needs_bigrat_path,
+    rat_mul_checked, real_to_rat, to_big_rat_parts,
 };
 use super::temporal::{instance_duration_raw_value, make_duration_from_value};
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
@@ -12,6 +12,11 @@ use num_traits::Zero;
 
 pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
     let (left, right) = (left.into_deref(), right.into_deref());
+    // Fast path: a pair of plain integers with at least one big operand — see
+    // the matching note in `arith_add`; no Range/Duration guard below applies.
+    if let Some(product) = big_int_mul(&left, &right) {
+        return product;
+    }
     // Mixin-wrapped Range * Real: perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_mul)
         .or_else(|| mixin_range_arith_val(right.clone(), left.clone(), arith_mul))
@@ -28,10 +33,8 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::complex(ar * br - ai * bi, ar * bi + ai * br)
-    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
-        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
-    {
-        Value::from_bigint(a * b)
+    } else if let Some(product) = big_int_mul(&l, &r) {
+        product
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
         && needs_bigrat_path(&l, &r)
     {

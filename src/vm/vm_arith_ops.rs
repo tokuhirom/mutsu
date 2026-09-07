@@ -133,6 +133,17 @@ impl Interpreter {
             self.stack.push(Value::num(a + b));
             return Ok(());
         }
+        // Fast path: big-integer addition. Two `Int`/`BigInt` operands can be
+        // neither a junction, a temporal value, a numeric type object nor a
+        // numeric-looking string, so the junction/coercion wrapper below has
+        // nothing to contribute for them, and its per-op cost is not small: on
+        // the growing-Fibonacci loop of
+        // `news/2026-09/bigint-arith-borrowed-operands.md` it was ~180M of the
+        // 560M instructions this opcode spent over 100k iterations.
+        if !has_override && let Some(result) = crate::builtins::arith::big_int_add(&left, &right) {
+            self.stack.push(result);
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
@@ -169,6 +180,11 @@ impl Interpreter {
             && let Some(b) = right.as_num()
         {
             self.stack.push(Value::num(a - b));
+            return Ok(());
+        }
+        // Fast path: big-integer subtraction -- see the note in `exec_add_op`.
+        if !has_override && let Some(result) = crate::builtins::arith::big_int_sub(&left, &right) {
+            self.stack.push(result);
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
@@ -278,6 +294,11 @@ impl Interpreter {
             && let Some(b) = right.as_num()
         {
             self.stack.push(Value::num(a * b));
+            return Ok(());
+        }
+        // Fast path: big-integer multiplication -- see the note in `exec_add_op`.
+        if !has_override && let Some(result) = crate::builtins::arith::big_int_mul(&left, &right) {
+            self.stack.push(result);
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
