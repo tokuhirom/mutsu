@@ -282,6 +282,24 @@ impl Interpreter {
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
                     .detach_shared_container()
+            } else if matches!(init_val.view(), ValueView::Nil)
+                && let Some(tc) = &scalar_type_constraint
+            {
+                // A typed scalar declared with NO initializer reads as its type
+                // object, not Nil (`state Int $u; $u.^name` is `Int`).
+                // `SetVarType` seeds exactly that, for `state` as much as for
+                // `my` -- but this op then installs the state store's value
+                // over the seed, which is `Nil` on the first entry and the
+                // persisted `Nil` on every later one, so the seed never
+                // survived a single call. Applying it here instead makes the
+                // PERSISTED value the type object from the start.
+                //
+                // A `state Int $x = 0` initializer is not Nil and still wins;
+                // an untyped `state $s` has no constraint and stays Nil (read
+                // back as `Any`); `state Int @a` / `%h` are handled by the
+                // container tagging below, which this arm does not reach.
+                let tc = tc.clone();
+                self.typed_scalar_nil_seed_value(name, &tc)
             } else {
                 init_val
             };
