@@ -349,13 +349,13 @@ impl Interpreter {
         if resolved_constraint != constraint {
             return self.try_coerce_value_for_constraint(&resolved_constraint, value);
         }
-        let subset = self
-            .registry()
-            .subsets
-            .get(resolved_constraint.as_str())
-            .cloned();
+        // A registry with no subsets (most programs) has nothing to walk.
+        if self.registry().subsets.is_empty() {
+            return Ok(value);
+        }
+        let subset = self.registry().subsets.get(&*resolved_constraint).cloned();
         if let Some(subset) = subset
-            && subset.base != resolved_constraint
+            && subset.base != *resolved_constraint
         {
             return self.try_coerce_value_for_constraint(&subset.base, value);
         }

@@ -986,6 +986,9 @@ impl Interpreter {
                         }
                     }
                 }
+                // Interned once: the typed-lexical probes below run several
+                // times per store and each `&str` probe re-hashed the name.
+                let name_sym = crate::symbol::Symbol::intern(&name);
                 // A `%h = ...` / `@a = ...` where the env slot holds a *tied*
                 // instance (`my %h is Foo` closed over into a block, so the store
                 // reaches SetGlobal instead of a local slot) must route through the
@@ -1119,7 +1122,7 @@ impl Interpreter {
                 // Only when the variable has an explicit immutable type constraint
                 // (e.g., `my %h is Mix`), not for regular scalar variables holding
                 // an immutable value.
-                if let Some(constraint) = loan_env!(self, var_type_constraint(&name)) {
+                if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym)) {
                     let base = constraint.split('[').next().unwrap_or(&constraint);
                     if matches!(base, "Mix" | "Set" | "Bag")
                         && let Some(existing) = self.env().get(&name)
@@ -1392,7 +1395,7 @@ impl Interpreter {
                     // non-Array input falls through to a generic
                     // `coerce_to_array` wrap and loses the custom class.
                 } else if name.starts_with('%')
-                    && (loan_env!(self, var_type_constraint(&name)).is_some()
+                    && (loan_env!(self, var_type_constraint_sym(name_sym)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = self.coerce_typed_container_assignment(&name, val, false)?;
@@ -1421,7 +1424,7 @@ impl Interpreter {
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
                 val = self.apply_attr_container_element_type(&name, val)?;
-                if let Some(constraint) = loan_env!(self, var_type_constraint(&name))
+                if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
                     && !name.starts_with('%')
                     && !name.starts_with('@')
                 {

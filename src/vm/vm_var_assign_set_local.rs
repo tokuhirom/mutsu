@@ -854,6 +854,8 @@ impl Interpreter {
         self.resolve_pending_alias_binds(code);
 
         let name = &code.locals[idx];
+        // The slot's symbol, so the typed-lexical probes below hash no string.
+        let name_sym = code.locals_sym.get(idx).copied();
         // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
         // ...;` as a statement): the local's OWN elements are shared
         // `ContainerRef` cells (from the bind-time slice promotion, §4
@@ -963,7 +965,7 @@ impl Interpreter {
                 && !is_constant
                 && !is_bind
                 && raw_popped.is_nil()
-                && let Some(constraint) = loan_env!(self, var_type_constraint(name))
+                && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
             {
                 return Err(runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -1010,7 +1012,7 @@ impl Interpreter {
                 && !is_constant
                 && !is_bind
                 && raw_popped.is_nil()
-                && let Some(constraint) = loan_env!(self, var_type_constraint(name))
+                && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
             {
                 // A bare Nil assigned to a typed `@` array reverts to the element
                 // type's default. A definite (`:D`) element type has no default
@@ -1031,7 +1033,7 @@ impl Interpreter {
             // Native typed arrays cannot store lazy sequences — check before
             // eager evaluation so the error is raised even if the sequence is
             // infinite.
-            if let Some(constraint) = loan_env!(self, var_type_constraint(name))
+            if let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
                 && crate::runtime::native_types::is_native_array_element_type(&constraint)
             {
                 let is_lazy_value = match raw_popped.view() {
@@ -1492,7 +1494,7 @@ impl Interpreter {
         // slot write and before the mirror into `self`'s cell. Skipped for a
         // Nil assignment, which resets the attribute to its own type object via
         // `reset_nil_untyped_scalar` in the `else` arm below.
-        let constraint = loan_env!(self, var_type_constraint(name)).or_else(|| {
+        let constraint = loan_env!(self, var_type_constraint_for(name, name_sym)).or_else(|| {
             (!is_bind && !val.is_nil())
                 .then(|| self.scalar_attr_type_constraint(name))
                 .flatten()
@@ -2113,7 +2115,7 @@ impl Interpreter {
             && (name.starts_with('%') || name.starts_with('@'))
             && !name.contains('.')
             && !name.contains('!')
-            && loan_env!(self, var_type_constraint(name)).is_none()
+            && loan_env!(self, var_type_constraint_for(name, name_sym)).is_none()
             && self.container_type_metadata(&val).is_some()
         {
             // Clear the embedded container type metadata in place so an
@@ -2175,7 +2177,7 @@ impl Interpreter {
         // updates the Arc-pointer side table. Done before the value is cloned
         // and propagated to env/aliases below, so every copy carries it.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(value_type) = loan_env!(self, var_type_constraint(name))
+            && let Some(value_type) = loan_env!(self, var_type_constraint_for(name, name_sym))
         {
             let info = crate::runtime::ContainerTypeInfo {
                 declared_type: if name.starts_with('@')
@@ -2247,7 +2249,7 @@ impl Interpreter {
                     | ValueView::Bag(..)
                     | ValueView::Mix(..)
             )
-            && let Some(constraint) = loan_env!(self, var_type_constraint(name))
+            && let Some(constraint) = loan_env!(self, var_type_constraint_for(name, name_sym))
             // Only a binding with a same-named lexical shadow needs a cell to
             // retain its own constraint.  Keeping ordinary typed locals in
             // their existing representation preserves specialized CAS and
