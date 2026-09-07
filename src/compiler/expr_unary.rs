@@ -205,6 +205,7 @@ impl Compiler {
                     name_idx,
                     arity: 1,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             }
         }

@@ -1403,6 +1403,22 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        /// Bitmask of argument positions written as a LITERAL, one bit per
+        /// position (bit 0 = first argument; positions past 31 are never
+        /// marked). A literal has no source variable, so
+        /// `unwrap_varref_for_dispatch` finds no `var_type` for it and multi
+        /// dispatch ranked the boxed candidate at distance 0 — `multi d(int)`
+        /// / `multi d(Int)` called as `d(5)` answered `Int` where rakudo
+        /// answers `int`. Literal-ness is a compile-time fact about the call
+        /// SITE (rakudo agrees: `"7".Int` is an in-range boxed `Int` at
+        /// runtime and correctly picks `Int`), so it has to be baked here.
+        /// A plain `u32` rather than a fifth `arg_sources` entry shape: the
+        /// arg-sources constant is elided whenever every position is `NIL`,
+        /// which is nearly every call site, so marking literals there would
+        /// materialize it — and pay its per-call decode — crate-wide, to serve
+        /// a ranking step that only runs when a `multi` declares both a native
+        /// and a boxed candidate.
+        literal_native_args: u32,
     },
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
@@ -1415,6 +1431,22 @@ pub(crate) enum OpCode {
         arity: u32,
         spec_idx: u32,
         arg_sources_idx: Option<u32>,
+        /// Bitmask of argument positions written as a LITERAL, one bit per
+        /// position (bit 0 = first argument; positions past 31 are never
+        /// marked). A literal has no source variable, so
+        /// `unwrap_varref_for_dispatch` finds no `var_type` for it and multi
+        /// dispatch ranked the boxed candidate at distance 0 — `multi d(int)`
+        /// / `multi d(Int)` called as `d(5)` answered `Int` where rakudo
+        /// answers `int`. Literal-ness is a compile-time fact about the call
+        /// SITE (rakudo agrees: `"7".Int` is an in-range boxed `Int` at
+        /// runtime and correctly picks `Int`), so it has to be baked here.
+        /// A plain `u32` rather than a fifth `arg_sources` entry shape: the
+        /// arg-sources constant is elided whenever every position is `NIL`,
+        /// which is nearly every call site, so marking literals there would
+        /// materialize it — and pay its per-call decode — crate-wide, to serve
+        /// a ranking step that only runs when a `multi` declares both a native
+        /// and a boxed candidate.
+        literal_native_args: u32,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {

@@ -2617,6 +2617,54 @@ impl Compiler {
         }
     }
 
+    /// Bitmask of the argument positions written as a LITERAL of a type that
+    /// has a native counterpart (`Int`, `Num`, `Str`), for
+    /// `OpCode::CallFunc`'s `literal_native_args`. A literal carries no source
+    /// variable, so multi dispatch had no `var_type` to rank a native candidate
+    /// with and `multi d(int)` / `multi d(Int)` called as `d(5)` answered `Int`
+    /// where rakudo answers `int`.
+    ///
+    /// The test is on the SHAPE, not on the runtime value: rakudo agrees that
+    /// `d("7".Int)` -- an in-range boxed `Int` produced at runtime -- picks
+    /// `Int`. Positions past 31 are never marked (a call with 32+ positional
+    /// arguments and a native `multi` candidate is not worth a wider carrier);
+    /// leaving a bit clear only preserves the old ranking for that position.
+    fn literal_native_args_mask(args: &[Expr]) -> u32 {
+        let mut mask = 0u32;
+        for (i, arg) in args.iter().enumerate().take(32) {
+            if Self::is_native_literal_arg(arg) {
+                mask |= 1 << i;
+            }
+        }
+        mask
+    }
+
+    /// One position's test for `literal_native_args_mask`. A NEGATED numeric
+    /// literal counts: `-3` parses as `Unary { Minus, Literal(3) }` rather than
+    /// a negative literal, and rakudo ranks `d(-3)` on `int` exactly as it ranks
+    /// `d(3)`.
+    fn is_native_literal_arg(arg: &Expr) -> bool {
+        match arg {
+            Expr::Literal(v) => matches!(
+                v.view(),
+                crate::value::ValueView::Int(_)
+                    | crate::value::ValueView::Num(_)
+                    | crate::value::ValueView::Str(_)
+            ),
+            Expr::Unary {
+                op: TokenKind::Minus,
+                expr,
+            } => matches!(
+                expr.as_ref(),
+                Expr::Literal(v) if matches!(
+                    v.view(),
+                    crate::value::ValueView::Int(_) | crate::value::ValueView::Num(_)
+                )
+            ),
+            _ => false,
+        }
+    }
+
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
         let mut entries = Vec::with_capacity(args.len());
         for arg in args {

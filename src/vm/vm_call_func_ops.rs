@@ -261,7 +261,32 @@ impl Interpreter {
     /// materializes the Pairs in place on the stack and delegates to the
     /// ordinary `exec_call_func_op`, so behavior off the fast path is
     /// byte-identical to the old MakePair form.
+    /// See `exec_call_func_op` for the `literal_native_args` save/restore.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_func_named_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        spec_idx: u32,
+        arg_sources_idx: Option<u32>,
+        literal_native_args: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let r = self.exec_call_func_named_op_inner(
+            code,
+            name_idx,
+            arity,
+            spec_idx,
+            arg_sources_idx,
+            compiled_fns,
+        );
+        self.literal_native_args = saved;
+        r
+    }
+
+    fn exec_call_func_named_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -347,10 +372,34 @@ impl Interpreter {
                 *slot = Value::pair(e.key.clone(), val);
             }
         }
-        self.exec_call_func_op(code, name_idx, arity, arg_sources_idx, compiled_fns)
+        // `_inner`, not the wrapper: this frame's mask is already published by
+        // `exec_call_func_named_op`, and re-entering the wrapper would
+        // overwrite it with a zero it was never given.
+        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns)
     }
 
+    /// Publish the call site's literal-argument mask for the duration of the
+    /// call, so multi-candidate ranking can give a literal the native
+    /// `var_type` a source variable would have carried (see the opcode field's
+    /// doc and `unwrap_varref_for_dispatch`). Save/restore rather than a Drop
+    /// guard: the guard would hold a `&mut self` borrow the whole body needs,
+    /// and the wrapper restores on the error path too.
     pub(super) fn exec_call_func_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        arg_sources_idx: Option<u32>,
+        literal_native_args: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let r = self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns);
+        self.literal_native_args = saved;
+        r
+    }
+
+    fn exec_call_func_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
