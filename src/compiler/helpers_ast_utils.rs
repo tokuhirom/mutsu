@@ -542,10 +542,18 @@ impl Compiler {
     /// still performs the actual (re-)initialization.
     pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
+            // `state TYPE $x` hoists exactly like `my TYPE $x`: Raku's
+            // block-start declaration visibility does not distinguish the two.
+            // It is safe on `state` because `SetVarTypeHoisted` is
+            // value-neutral (see its opcode doc) — it registers the constraint
+            // and seeds ONLY a name nothing has bound, so a `state` container
+            // that survives from a previous entry is never reset.
+            //
+            // `our TYPE $x` is not here because it does not exist: the parser
+            // rejects the combination outright, as rakudo does.
             if let Stmt::VarDecl {
                 name,
                 type_constraint: Some(tc),
-                is_state: false,
                 is_our: false,
                 custom_traits,
                 ..
