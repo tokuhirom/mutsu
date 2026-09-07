@@ -2365,6 +2365,26 @@ fn merge_method_env(
             }) {
                 return None;
             }
+            // An entry the callee overlay merely *inherited* would merge back a
+            // value the caller already holds. A nested method call flattens the
+            // scoped overlay, copying every parent lexical/global into the
+            // callee's (the same reason the `changed_caller_locals` scan below
+            // exists), so `submethod TWEAK(:$!spec) { }` -- an empty body --
+            // collected 26 of these on every call: `%*ENV`, `@*ARGS`, `$*OUT`,
+            // `$*CWD`, the type names in scope, `=pod`, and the caller's own
+            // lexicals. Re-inserting a value `cheaply_unchanged` proves identical
+            // is a no-op, so drop it here instead: it keeps the `writes` Vec
+            // empty and spares the caller env's `cow_mut` overlay clone.
+            //
+            // This cannot change `changed_caller_locals`: that scan pushes a key
+            // only when `saved.get_sym(k)` is absent or `cheaply_unchanged` is
+            // false, i.e. exactly the entries this test keeps.
+            if saved
+                .get_sym(*k)
+                .is_some_and(|old| cheaply_unchanged(old, v))
+            {
+                return None;
+            }
             let keep = saved.contains_key_sym(*k)
                 || (k.starts_with("&") && !k.starts_with("&?"))
                 || k.starts_with("__mutsu_method_value::")

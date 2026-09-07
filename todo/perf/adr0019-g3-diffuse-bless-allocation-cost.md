@@ -248,21 +248,37 @@ The `alloc_scope!` report on `benchmarks/bench-ctor.raku` after that fix reads:
 | `mfast:body` (exclusive) | 40.7 per method call |
 | `bless:named-args` | 11.0 per bless |
 | `bless:attr-defaults` | 5.0 per bless |
-| `mfast:epilogue` | 4.9 per method call |
+| `mfast:epilogue` | 4.9 per method call (now 2.2) |
 | `mfast:slurpy-captures-locals` | 4.0 per method call |
 | `mfast:env-setup` | 2.7 per method call |
 | `mfast:param-bind` | 2.3 per method call |
 | `mfast:prologue` | 1.7 per method call |
 
-- **`bless:named-args`, 11 allocations per bless** (`dispatch_bless`'s override loop in
-  `runtime/methods_dispatch_new.rs`). Each supplied named argument does a linear
-  `plan.class_attrs.iter().position(...)` scan and then a `coerce_provided_attr_value_by_sigil`
-  clone. The scan is O(attrs x args) on a 20-attribute class; an index on the plan would make it
-  O(args), and the clone is worth checking for a no-op sigil case that can skip it.
-- **`mfast:epilogue`, 4.9 per method call.**
+- ~~**`bless:named-args`, 11 allocations per bless**~~ — **misdiagnosed, closed out.** The guess
+  recorded here was an O(attrs x args) linear scan over `plan.class_attrs` wanting an index.
+  Sub-scoping the loop attributes all 11 allocations to the `%`-sigil attribute coercions and
+  **zero** to the scan, the `attributes.insert` or the `deferred_defaults.retain`; indexing would
+  have bought nothing. The real cause is that `HashData::map` is a `HashMap<String, Value>`, so a
+  hash copy allocates one `String` per key (verified by scaling: +1 allocation per extra key per
+  copy). That is structural, not a `bless` problem — filed as
+  `todo/deep/hash-copy-allocates-a-string-per-key.md`.
+- ~~**`mfast:epilogue`, 4.9 per method call**~~ — **fixed** (2026-09-06,
+  `news/2026-09/method-env-merge-skips-unchanged-inherited-entries.md`). A probe on the merged key
+  set showed `submethod TWEAK(:$!spec) { }` merging 26 entries back into its caller on every call —
+  `%*ENV`, `@*ARGS`, `$*OUT`, `$*CWD`, type names, `=pod`, the caller's own lexicals — none of them
+  a write; a nested call flattens the scoped overlay, so the callee's overlay carries every parent
+  global. `merge_method_env` now drops an entry `cheaply_unchanged` proves identical to what the
+  caller already holds, which keeps the `writes` Vec empty and spares the caller env's `cow_mut`
+  overlay clone. `mfast:epilogue` 4.9 -> 2.2 allocations per call (815 -> 205 bytes); whole program
+  -2.8% allocations, -8.2% bytes.
 - **The residual 4.0 in `mfast:slurpy-captures-locals`**, which is now the locals-init loop alone:
   the `vec![Value::NIL; cc.locals.len()]` plus a `format!("{}\0{}", owner_class, attr_name)`
   built per private-attribute local per call. The format could reuse one scratch `String` across
-  the loop.
+  the loop. Note the lesson above before assuming this is where the cost is: **sub-scope the region
+  with `alloc_scope!` first**, both remaining guesses in this list were checked that way and one was
+  wrong.
+- **`mfast:body`, 40.7 per method call exclusive** — now by far the largest region, and entirely
+  unexamined. It is the bytecode execution itself, so it needs sub-scoping by opcode family before
+  anything can be said about it.
 - Re-run the 7/31-vs-HEAD A/B from the top of this ticket, or read the bench-CI trend, to see how
   much of the original drift these have now closed.
