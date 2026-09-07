@@ -171,7 +171,7 @@ impl TapState {
 
     /// Enter a subtest: stash the parent `TestState`, install a fresh one, and
     /// push onto the subtest stack (defaulting the callable kind to Sub).
-    /// Returns the parent state to be restored by [`set_state`] on exit.
+    /// Returns the parent state to be restored by [`Self::set_state`] on exit.
     pub(crate) fn begin_subtest(&mut self) -> Option<TestState> {
         let inherits_todo = self.next_test_is_todo() || self.subtest_todo_active();
         let parent = self.state.take();
@@ -183,8 +183,8 @@ impl TapState {
         parent
     }
 
-    /// Pop the subtest stack on exit (mirrors [`begin_subtest`]). The caller is
-    /// responsible for restoring the parent `TestState` via [`set_state`].
+    /// Pop the subtest stack on exit (mirrors [`Self::begin_subtest`]). The caller is
+    /// responsible for restoring the parent `TestState` via [`Self::set_state`].
     pub(crate) fn end_subtest(&mut self) {
         self.subtest_depth = self.subtest_depth.saturating_sub(1);
         self.subtest_callable_is_sub.pop();

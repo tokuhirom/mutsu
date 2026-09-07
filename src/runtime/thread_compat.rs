@@ -1,6 +1,6 @@
 //! One façade over "run this concurrently", "wait", and "what time is it" —
 //! OS threads and real clocks natively, the cooperative queue and virtual clock
-//! of [`crate::runtime::wasm_sched`] on `wasm32`.
+//! of `crate::runtime::wasm_sched` on `wasm32`.
 //!
 //! Every spawn site in the interpreter goes through
 //! [`crate::runtime::builtins_system::spawn_user_thread`] /

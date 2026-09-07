@@ -670,7 +670,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
 /// A colonpair `:name(value)` parses to the same `Binary { Str => value }` AST as
 /// the fatarrow `name => value`, so the only way to recover the original syntax
 /// for the warning is the consumed `source`. Mirroring
-/// [`super::wrap_divergent_literal`], this is applied ONLY at the bare
+/// [`wrap_divergent_literal`](crate::parser::primary::number::wrap_divergent_literal), this is applied ONLY at the bare
 /// expression-statement level (the sink-warn position) and only to a
 /// fully-constant colonpair, so the `LiteralSrc` never leaks into named-argument
 /// binding, hashes, or signatures, where downstream passes pattern-match the

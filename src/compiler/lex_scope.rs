@@ -2,7 +2,7 @@
 //!
 //! `OUTER::` is a *lexical* construct, so which binding it names is settled by
 //! the shape of the source, not by anything the VM can observe while running:
-//! the compiler owns the answer (see [`Compiler::emit_outer_var_access`]). That
+//! the compiler owns the answer (see [`Compiler::emit_outer_var_access`](crate::compiler::Compiler::emit_outer_var_access)). That
 //! works only as long as the pseudo-package is spelled literally. The indirect
 //! form `$::($name)::x` computes the very same lookup from a string that does
 //! not exist until run time, so the *decision* must be reachable from the VM

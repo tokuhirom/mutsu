@@ -11,11 +11,11 @@
 //! from an earlier generation stays valid across a later push through the
 //! same shared `&self`. A plain `Seq` (backed by `SeqSource::Iterator`/
 //! `IoLines`) reifies **at most once** (seed -> reified), so
-//! [`first_reference_survives_a_later_reify`] below exercises that single
+//! `first_reference_survives_a_later_reify` below exercises that single
 //! push. The `IO::Handle.lines`/`.words` streaming-subscript path
 //! (`SeqBody::pull_io_lines_prefix`) is the one place a body's graveyard
 //! grows past one real (non-seed) generation, so
-//! [`retired_generations_are_never_overwritten_in_place`] drives that path
+//! `retired_generations_are_never_overwritten_in_place` drives that path
 //! directly to get two genuinely distinct, non-empty generations alive at
 //! once — the stronger shape docs/adr/0034 phase 5 (b) asks for.
 

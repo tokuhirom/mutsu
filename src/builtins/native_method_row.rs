@@ -5,7 +5,7 @@
 //! method-name string whether a call is served by the pure native layer. Phase
 //! E's resolver needs to ask the same question ("does (owner, name) admit a
 //! native call, and at which arity?") WITHOUT invoking the cascade -- that is
-//! recognition metadata, not invocation, and it is what [`NativeMethodRow`]
+//! recognition metadata, not invocation, and it is what `NativeMethodRow`
 //! records. See `todo/deep/adr0019-e2-e4-resolver-core.md` decision 1.
 //!
 //! Invocation stays in the arity cascades until Phase F retires them.
@@ -114,7 +114,7 @@ impl NativeRowFlags {
 /// not just "does some row exist", but "does it exist at the call's own
 /// arity, on a cascade path a `Native` resolver candidate may stand for".
 /// `SPECIAL` and `MUTATES_RECEIVER` rows never qualify (both bypass the pure
-/// arity cascade, matching how [`super::super::runtime::receiver_class`]'s
+/// arity cascade, matching how `runtime::receiver_class`'s
 /// `record_native_row_coverage` treats them as unmodeled/mutator paths, not
 /// as "the plain cascade would serve this"); an indefinite (type-object)
 /// receiver additionally needs `TYPE_OBJECT_OK`. `owner` is retried through

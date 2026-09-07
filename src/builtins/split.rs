@@ -130,7 +130,7 @@ pub(crate) struct SplitMatch {
     pub match_obj: Option<Value>,
 }
 
-/// Split a string by a string splitter. Returns list of (segment, Option<match>).
+/// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
 fn split_by_string(
     text: &str,
     sep: &str,

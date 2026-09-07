@@ -447,7 +447,7 @@ impl Interpreter {
         }
     }
 
-    /// Like [`coerce_numeric_bridge_pair`], but additionally raises
+    /// Like [`Self::coerce_numeric_bridge_pair`], but additionally raises
     /// X::Str::Numeric when either operand is a non-numeric string. Used by the
     /// genuinely-numeric operators (`+ - * / % **`, `== != < > <= >= <=>`); the
     /// generic comparators (`cmp`, `before`/`after`) use the plain bridge so they

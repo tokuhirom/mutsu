@@ -417,6 +417,14 @@ jobs:
         # pile up unseen.
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
+      - name: Rustdoc (intra-doc links)
+        # A fourth configuration nothing else compiles: rustdoc resolves every
+        # `[`item`]` link and parses the prose as Markdown, so a stale link or
+        # Raku angle-bracket syntax written outside backticks (`%h<k>`,
+        # `Array[Type]`) only ever shows up here. `--document-private-items`
+        # because almost every item in this crate is `pub(crate)`.
+        run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
+
   # ADR-0013 §4 phase 4: the acceptance gate for the GC's aliased-write
   # soundness. What ADR-0013 shipped is an *argument* about borrow provenance —
   # a `Gc` payload lives in a `GcBox`'s `UnsafeCell`, so the aliased `&mut` that

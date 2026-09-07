@@ -9,7 +9,7 @@
 //! temporary receiver — the cursor is discarded, but the `push-*` family still
 //! mutates its array argument by identity).
 //!
-//! Spec: https://docs.raku.org/type/Iterator
+//! Spec: <https://docs.raku.org/type/Iterator>
 
 use crate::value::{Value, ValueView};
 

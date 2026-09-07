@@ -438,8 +438,8 @@ impl Interpreter {
         }
     }
 
-    /// Emit rakudo's "Use of uninitialized value[ element] of type X in string
-    /// context." warning for a bare type object used in string context, and
+    /// Emit rakudo's `Use of uninitialized value[ element] of type X in string
+    /// context.` warning for a bare type object used in string context, and
     /// resume with the empty string. `element` selects the interpolation
     /// wording (`... value element of type ...`) that Rakudo uses inside `"$x"`;
     /// prefix/infix `~` and the string comparators use the non-`element` form.

@@ -542,7 +542,7 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
     }
 }
 
-/// Parse a generic radix literal: :36<Unicodez>
+/// Parse a generic radix literal: `:36<Unicodez>`
 pub(super) fn generic_radix(input: &str) -> PResult<'_, Expr> {
     let Some(r) = input.strip_prefix(':') else {
         return Err(PError::expected("generic radix literal"));

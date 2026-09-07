@@ -93,7 +93,7 @@ pub(crate) fn int_to_subscript(n: i64) -> String {
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 /// Compute the nth roots of a number. Used by both the `.roots` method and the
-/// `roots()` builtin function. Handles edge cases: n <= 0 returns [NaN],
+/// `roots()` builtin function. Handles edge cases: n <= 0 returns `NaN`,
 /// NaN/Inf inputs with n=1 return the input as Complex.
 pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
     let n_int = match n_arg.view() {

@@ -80,7 +80,7 @@ impl Interpreter {
     }
 
     /// Container identity (§3.1): the `%`-sigil analogue of
-    /// [`array_container_writethrough_value`], for a whole-container
+    /// [`Self::array_container_writethrough_value`], for a whole-container
     /// reassignment of a `%` variable whose slot holds a shared
     /// `ContainerRef` cell (a `:=`-bound alias `my %b := %a`, a loop-var
     /// alias `for %src -> %a`, or a cell installed by the scalar-container-

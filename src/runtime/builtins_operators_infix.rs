@@ -533,7 +533,7 @@ impl Interpreter {
         )
     }
 
-    /// Subset of [`infix_uses_numeric_bridge`] for which a non-numeric string
+    /// Subset of [`Self::infix_uses_numeric_bridge`] for which a non-numeric string
     /// operand is an X::Str::Numeric error rather than a silent 0-coercion.
     /// Restricted to the arithmetic operators: numeric *comparison* (`==`/`<`/
     /// `<=>` …) is intentionally NOT strict because mutsu still models some

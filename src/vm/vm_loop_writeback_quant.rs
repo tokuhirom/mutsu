@@ -16,7 +16,7 @@ impl Interpreter {
         self.quanthash_set_weight_impl(code, source, key, None, value)
     }
 
-    /// Like [`quanthash_set_weight`] but keyed by the element OBJECT (the pair
+    /// Like [`Self::quanthash_set_weight`] but keyed by the element OBJECT (the pair
     /// key of a `.pairs`/`.kv` writeback): computes the `.WHICH` store key and
     /// records the element in `original_keys` on insert.
     pub(crate) fn quanthash_set_weight_elem(

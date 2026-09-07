@@ -85,7 +85,7 @@ impl Interpreter {
         }
     }
 
-    /// Implement :N[list] radix list notation.
+    /// Implement `:N[list]` radix list notation.
     /// First arg is the base (Int), remaining args are digit values or "." for fractional separator.
     pub(super) fn builtin_radix_list(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() < 2 {

@@ -19,7 +19,7 @@ impl Interpreter {
     /// so without it the method's own metadata-based check
     /// (`check_array_value_element_types` / the splice replacement check)
     /// must be able to see the declared type.
-    /// Stack: [container, key] → [element]
+    /// Stack: `[container, key] → [element]`
     pub(super) fn exec_index_elem_autoviv_op(
         &mut self,
         code: &CompiledCode,

@@ -1,6 +1,6 @@
 //! ADR-0019 Phase E box E9a: the flat deferral expansion.
 //!
-//! [`Interpreter::resolve_deferral_expansion`] replaces [`Self::resolve_all_methods_with_owner`]
+//! [`resolve_deferral_expansion`](crate::runtime::Interpreter::resolve_deferral_expansion) replaces [`resolve_all_methods_with_owner`](crate::runtime::Interpreter::resolve_all_methods_with_owner)
 //! as the ordering source for a method dispatch's `nextsame`/`callsame`/`nextwith`/`callwith`
 //! "remaining" candidate list. The two functions answer the same question (every candidate a
 //! deferral from `class_name.method_name` can still reach) but order it differently:
@@ -25,8 +25,8 @@
 //! argument values — the block is a structural fact of the class hierarchy, consulted the same
 //! way regardless of which args a later `nextwith`/`callwith` substitutes), with MRO depth
 //! (more-derived first) then declaration order breaking ties. Per-call argument matching still
-//! happens exactly where it always has — the caller of [`Self::resolve_deferral_expansion`]
-//! filters this list with [`Self::method_args_match_for_invocant`], same as it filtered
+//! happens exactly where it always has — the caller of [`resolve_deferral_expansion`](crate::runtime::Interpreter::resolve_deferral_expansion)
+//! filters this list with [`method_args_match_for_invocant`](crate::runtime::Interpreter::method_args_match_for_invocant), same as it filtered
 //! `resolve_all_methods_with_owner`'s output.
 //!
 //! The same candidate can legitimately occur more than once in the expansion (once per governing

@@ -130,7 +130,7 @@ impl Compiler {
     /// bare blocks, which are inlined and so have no `BlockScope`/`TryCatch`
     /// boundary to carry the `is_bare_block` flag. Synthesized blocks
     /// (`Stmt::SyntheticBlock`) and non-block inline bodies (do/sub/if-branch)
-    /// must keep using [`compile_block_inline`] directly — they are not frames.
+    /// must keep using [`Self::compile_block_inline`] directly — they are not frames.
     pub(super) fn compile_bare_block_inline(&mut self, stmts: &[Stmt]) {
         // A genuine source `{ … }` in tail (value) position is still a block
         // literal re-cloned every time its enclosing block runs, so its own

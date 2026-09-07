@@ -185,7 +185,7 @@ impl Interpreter {
     /// invocant itself — `self[EXPR]` (or `self{EXPR}`) — as happens in an
     /// `is Array` subclass accessor (`method z() is rw { self[2] }`). Returns
     /// `(index_expr, is_positional)`; the element lives in the instance's
-    /// backing `__mutsu_array_storage`, so `$obj.z = v` writes storage[2].
+    /// backing `__mutsu_array_storage`, so `$obj.z = v` writes `storage[2]`.
     pub(crate) fn rw_method_self_index_target(body: &[Stmt]) -> Option<(Expr, bool)> {
         let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
         let expr = match first {

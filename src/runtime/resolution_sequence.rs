@@ -33,7 +33,7 @@
 //! **E8a's own accepted divergence, found by the new deferral-list shadow
 //! check** ([`Interpreter::shadow_check_deferral_sequence`]), root-caused and
 //! fixed by `todo/tickets/e8a-deferral-shadow-sequence-is-role-blind.md`
-//! (2026-08-21): [`Self::resolve_sequence`]'s per-level lookup silently
+//! (2026-08-21): [`resolve_sequence`](crate::runtime::Interpreter::resolve_sequence)'s per-level lookup silently
 //! omitted every candidate owned by a **role** that had never been *punned*
 //! (used as a standalone type via `RoleName.new`), because it always read
 //! the plain `Registry::user_method_overloads` — `Registry::method_entries`
@@ -52,7 +52,7 @@
 //! with its own, or a role-qualified call `self.R::name()`). Full root-cause
 //! writeup in `news/2026-08/method-entries-never-covers-unpunned-roles.md`.
 //!
-//! The fix is the [`RoleFallback`] parameter: [`Self::resolve_sequence`] is
+//! The fix is the [`RoleFallback`] parameter: [`resolve_sequence`](crate::runtime::Interpreter::resolve_sequence) is
 //! *also* the candidate source for live winner selection
 //! ([`Interpreter::resolve_via_sequence_cache`]), and ADR-0019 F4a's rule is
 //! that winner selection must never consult the role fallback, so widening

@@ -829,7 +829,7 @@ pub(crate) enum Expr {
         dwim_left: bool,
         dwim_right: bool,
     },
-    /// Hyper operator with a function reference: >>[&func]<<, <<[&func]>>, etc.
+    /// Hyper operator with a function reference: `>>[&func]<<`, `<<[&func]>>`, etc.
     HyperFuncOp {
         func_name: String,
         left: Box<Expr>,

@@ -178,7 +178,7 @@ impl Interpreter {
         }
     }
 
-    /// [`clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
+    /// [`Self::clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
     /// `Promise.start`, `Thread.start`): the block's own captured scalars are
     /// excluded from the name-keyed shared store. See `block_captured_scalars`.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {

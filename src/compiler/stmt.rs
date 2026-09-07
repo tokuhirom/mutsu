@@ -464,9 +464,11 @@ impl Compiler {
     /// Rewrite `for <ELEM>.values { ... }`, where `<ELEM>` is a var-rooted
     /// `Index` lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`), into:
     ///
-    ///   my @tmp = <ELEM>;          # copy the element array into a temp
-    ///   for @tmp.values { ... };   # reuse the array-source per-element writeback
-    ///   <ELEM> = @tmp;             # write the temp back into the element
+    /// ```text
+    /// my @tmp = <ELEM>;          # copy the element array into a temp
+    /// for @tmp.values { ... };   # reuse the array-source per-element writeback
+    /// <ELEM> = @tmp;             # write the temp back into the element
+    /// ```
     ///
     /// Returns `None` for anything but this exact shape (plain `@a`/`%h` sources
     /// are already handled by `for_iterable_source_name`).
@@ -573,7 +575,7 @@ impl Compiler {
     /// (`1, 3`), or bare `Whatever` (`*`). This is only a *fast path*: an
     /// index that is not one of these shapes may still hold a `Range` or a
     /// list at runtime (`my $r := 0..2; @a[$r]`), which
-    /// [`desugar_for_scalar_element_source`] handles with a runtime guard.
+    /// [`Self::desugar_for_scalar_element_source`] handles with a runtime guard.
     fn for_index_is_slice(index: &Expr) -> bool {
         match index {
             Expr::Binary { op, .. } => matches!(
@@ -593,11 +595,13 @@ impl Compiler {
     /// Rewrite `for <ELEM> { ... }`, where `<ELEM>` is a var-rooted `Index`
     /// lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`) used *directly* as the loop
     /// source (no `.values`/similar wrapper — that shape is
-    /// [`desugar_for_element_source`]), into:
+    /// [`Self::desugar_for_element_source`]), into:
     ///
-    ///   my $tmp = <ELEM>;      # copy the element into a scalar temp
-    ///   for $tmp { ... };      # reuse the scalar-topic per-iteration write-back
-    ///   <ELEM> = $tmp;         # write the temp back into the element
+    /// ```text
+    /// my $tmp = <ELEM>;      # copy the element into a scalar temp
+    /// for $tmp { ... };      # reuse the scalar-topic per-iteration write-back
+    /// <ELEM> = $tmp;         # write the temp back into the element
+    /// ```
     ///
     /// Raku topicalizes such an element as a single rw-aliased item (`for
     /// @a[i] { .=Int }` mutates `@a[i]`) — the same aliasing `given @a[i] {
@@ -612,11 +616,13 @@ impl Compiler {
     /// slices. Only a literal index is statically known to be a single
     /// element; every other shape therefore gets the runtime-guarded form
     ///
-    ///   my $idx   = <INDEX>;            # evaluated exactly once
-    ///   my $slice = $idx ~~ Iterable;   # Rakudo's own slice/element rule
-    ///   my $tmp   = $slice ?? <ELEM>.Slip !! <ELEM>;
-    ///   for $tmp { ... };               # a Slip flattens, a plain value does not
-    ///   unless $slice { <ELEM> = $tmp } # aliasing writeback: element case only
+    /// ```text
+    /// my $idx   = <INDEX>;            # evaluated exactly once
+    /// my $slice = $idx ~~ Iterable;   # Rakudo's own slice/element rule
+    /// my $tmp   = $slice ?? <ELEM>.Slip !! <ELEM>;
+    /// for $tmp { ... };               # a Slip flattens, a plain value does not
+    /// unless $slice { <ELEM> = $tmp } # aliasing writeback: element case only
+    /// ```
     ///
     /// which iterates a slice element-wise while keeping the single-element
     /// rw aliasing. The slice branch deliberately skips the writeback: a
@@ -745,7 +751,7 @@ impl Compiler {
     /// `@a[2]` / `%h<k>`). Anything else — a variable, a call, an arithmetic
     /// expression — may evaluate to a `Range`/list and needs the runtime
     /// guard. A literal that *is* a range or a list never reaches here (the
-    /// syntactic [`for_index_is_slice`] fast path caught it already), but the
+    /// syntactic [`Self::for_index_is_slice`] fast path caught it already), but the
     /// check is kept explicit so a folded literal cannot slip through.
     fn for_index_is_definite_single(index: &Expr) -> bool {
         match index {
@@ -4978,7 +4984,7 @@ impl Compiler {
         self.code.emit(OpCode::SetTopic);
     }
 
-    /// Like [`compile_last_stmt_as_topic`], but leaves the statement's value on
+    /// Like [`Self::compile_last_stmt_as_topic`], but leaves the statement's value on
     /// the value stack instead of routing it through the topic. Used for the
     /// final statement of a block compiled in expression context (e.g. a `do`
     /// block), whose value the enclosing `DoBlockExpr` pops off the stack.

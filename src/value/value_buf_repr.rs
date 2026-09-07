@@ -20,7 +20,7 @@
 //! always 0) and that is the pointer C is given.
 //!
 //! mutsu does not *store* a buffer this way — its storage is a
-//! [`BufData`](super::BufData) node — so the block is **synthesised**: a
+//! [`BufData`] node — so the block is **synthesised**: a
 //! documented compatibility surface, described in
 //! [docs/nativecall-repr-bodies.md](../../docs/nativecall-repr-bodies.md), not
 //! an internal detail anyone else reads.

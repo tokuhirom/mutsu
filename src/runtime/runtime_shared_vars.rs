@@ -314,7 +314,7 @@ impl Interpreter {
     /// while it runs, regardless of whether `thread_redeclared_vars` already
     /// held the name, and tracks separately (per name) whether IT was the one
     /// that added each entry — so
-    /// [`unmask_thread_redeclared_params`](Self::unmask_thread_redeclared_params)
+    /// `unmask_thread_redeclared_params`
     /// removes exactly what this call added, from each set independently,
     /// without disturbing a still-active ancestor's own mask.
     pub(crate) fn mask_thread_redeclared_params<'a>(
@@ -494,7 +494,7 @@ impl Interpreter {
         self.set_shared_var_sym(key, None, value);
     }
 
-    /// [`set_shared_var`] with a pre-interned `Symbol` for `key`. The env is
+    /// [`Self::set_shared_var`] with a pre-interned `Symbol` for `key`. The env is
     /// Symbol-keyed, so the String-keyed entry point pays a `key.to_string()`
     /// allocation plus a `Symbol::intern` on *every* mirrored local store
     /// (`flush_local_to_env` runs on each `my $x = ...`). Callers that already

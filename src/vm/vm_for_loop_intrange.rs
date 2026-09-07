@@ -3,7 +3,7 @@ use super::*;
 
 impl Interpreter {
     /// Fast path for iterating over integer ranges (e.g., `for ^N`, `for 0..N`).
-    /// Avoids materializing the entire range as a Vec<Value> by using a counter.
+    /// Avoids materializing the entire range as a `Vec<Value>` by using a counter.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_for_loop_int_range(
         &mut self,

@@ -299,7 +299,7 @@ impl Interpreter {
 
     /// Add a rational step `num/den` to a sequence value, preserving the exact
     /// `Rat`/`Int` type (falling back to `Num` only on overflow). The rational
-    /// counterpart of [`seq_add`], used for arithmetic sequences whose step is a
+    /// counterpart of [`Self::seq_add`], used for arithmetic sequences whose step is a
     /// genuine fraction so exactness is not lost to float accumulation.
     pub(in crate::runtime) fn seq_add_rat(val: &Value, num: i64, den: i64) -> Value {
         match val.view() {

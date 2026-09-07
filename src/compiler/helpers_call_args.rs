@@ -319,7 +319,7 @@ impl Compiler {
 
     /// Strip a fat-arrow named-argument wrapper (`key => value`) down to the
     /// value expression, so a closure literal named argument (`now => { $x }`)
-    /// is recognized by [`is_closure_literal_arg`] the same way a positional
+    /// is recognized by [`Self::is_closure_literal_arg`] the same way a positional
     /// one is. Every call-argument-escaping check must unwrap through this
     /// (not just re-match `Expr::Binary { op: FatArrow, .. }` locally) so the
     /// function-call and method-call compile paths cannot drift apart again.
@@ -339,9 +339,9 @@ impl Compiler {
         self.compile_method_arg_with_escape(arg, false);
     }
 
-    /// Like [`compile_method_arg`] but lets the caller force the closure
+    /// Like [`Self::compile_method_arg`] but lets the caller force the closure
     /// argument into an escaping position (for supply-consuming methods; see
-    /// [`method_escapes_closure_args`]).
+    /// [`Self::method_escapes_closure_args`]).
     pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
         // A method argument is normally passed to the callee, not stored in the
         // caller frame, so a closure argument is conservatively NON-escaping

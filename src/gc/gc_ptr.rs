@@ -149,7 +149,7 @@ impl GcHeader {
 ///
 /// The payload lives in an [`UnsafeCell`] so the aliased, identity-preserving
 /// in-place container write ([`gc_contents_mut`]) can hand out a `&mut` with
-/// **valid provenance** even while shared `&` reads (via [`Gc`]'s [`Deref`]) into
+/// **valid provenance** even while shared `&` reads (via [`Gc`]'s [`Deref`](std::ops::Deref)) into
 /// the same node are live — the one thing the pre-ADR-0013 `Gc::as_ptr as *mut`
 /// cast could not give (a Stacked/Tree Borrows violation). This is the
 /// UnsafeCell-at-GcBox realization of ADR-0013's mechanism 2b: it makes **every**
@@ -391,7 +391,7 @@ impl<T: Trace + 'static> Gc<T> {
     }
 
     /// Machine-check (GC-soundness-tail Step 4, PLAN §2.1) the
-    /// `strong == 1 ⟹ unique` argument that [`Gc::make_mut`] / [`Gc::get_mut`]
+    /// `strong == 1 ⟹ unique` argument that [`Gc::make_mut`] / `Gc::get_mut`
     /// and the three bucket-(a) [`gc_contents_mut`] sites
     /// (`docs/gc-contents-mut-inventory.md`) rely on before handing out an
     /// aliased `&mut` into the node.
@@ -760,7 +760,7 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
 /// intermediate reference — rather than casting a `&T` away.
 ///
 /// **That is about how the pointer is derived, not about what callers may hold
-/// across the write.** [`Gc`]'s [`Deref`] hands out a real `&T`, and a write
+/// across the write.** [`Gc`]'s [`Deref`](std::ops::Deref) hands out a real `&T`, and a write
 /// through this `&mut` invalidates it exactly as it would for an `Arc`:
 /// measured on the gate's pinned nightly, a `&T` taken *before* the write and
 /// used *after* it is UB under both Stacked and Tree Borrows. An earlier

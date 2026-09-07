@@ -205,7 +205,7 @@ pub fn tclc_str(s: &str) -> String {
     result
 }
 
-/// Apply wordcase to a string: find words matching <ident>+ % <[ - ' ]>
+/// Apply wordcase to a string: find words matching `<ident>+ % <[ - ' ]>`
 /// and apply tclc to each word. Non-word characters pass through unchanged.
 pub fn wordcase_str(s: &str) -> String {
     wordcase_with(s, tclc_str)

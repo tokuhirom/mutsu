@@ -25,7 +25,7 @@ impl Interpreter {
         Some(self.io_path_fs_mutate(attributes, class_name, method, args))
     }
 
-    /// The fallible body of [`try_io_path_fs_mutate`] (the gate returns `Option`
+    /// The fallible body of [`Self::try_io_path_fs_mutate`] (the gate returns `Option`
     /// so it cannot use `?`). Behavior-invariant with the arms `native_io_path`
     /// previously held.
     fn io_path_fs_mutate(
@@ -256,7 +256,7 @@ impl Interpreter {
         Some(self.io_path_two_path_op(attributes, method, args))
     }
 
-    /// The fallible body of [`try_io_path_two_path_op`] (the gate returns `Option`
+    /// The fallible body of [`Self::try_io_path_two_path_op`] (the gate returns `Option`
     /// so it cannot use `?`). Behavior-invariant with the arms `native_io_path`
     /// previously held.
     fn io_path_two_path_op(

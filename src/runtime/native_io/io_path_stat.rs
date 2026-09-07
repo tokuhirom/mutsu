@@ -2,7 +2,7 @@ use super::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    /// `.absolute` / `.relative` on an `IO::Path`: like [`try_io_path_lexical`],
+    /// `.absolute` / `.relative` on an `IO::Path`: like [`try_io_path_lexical`](crate::runtime::Interpreter::try_io_path_lexical),
     /// these derive a string from the path, but additionally depend on the
     /// **cwd** (`$*CWD` / the instance `cwd` attribute / the process cwd) — read
     /// through `&self` (`resolve_path`/`get_cwd_path`/`apply_chroot`), which are
@@ -243,7 +243,7 @@ impl Interpreter {
         }
     }
 
-    /// Pure `stat`-based result for the [`try_io_path_fs_stat`] methods given an
+    /// Pure `stat`-based result for the [`Self::try_io_path_fs_stat`] methods given an
     /// already-resolved `path_buf` (and the original `p` for error/Failure
     /// messages). Factored out so both the VM-native path and `native_io_path`
     /// run the exact same filesystem queries and Failure shaping.

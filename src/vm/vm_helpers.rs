@@ -280,17 +280,17 @@ impl Interpreter {
     }
 
     /// Build a backtrace string from the interpreter's routine stack.
-    /// Each frame is formatted as "  in sub <name> at <file> line <N>".
+    /// Each frame is formatted as `  in sub <name> at <file> line <N>`.
     ///
     /// Each pushed frame stores the call-site (the line/file in the *caller*
     /// where this function was invoked).  To display "where each frame was
     /// executing when it called the next", we shift by one:
     ///   - innermost frame (i=0): use current ?LINE/?FILE (the die/error line)
     ///   - frame i>0: use the *next inner* frame's stored call-site
-    ///     (i.e. frame[i]'s displayed line = the line where frame[i] called
+    ///     (i.e. `frame[i]`'s displayed line = the line where `frame[i]` called
     ///     frame[i-1])
-    ///   - <unit> (outermost): use the outermost routine frame's stored
-    ///     call-site (where <unit> called the first function)
+    ///   - `<unit>` (outermost): use the outermost routine frame's stored
+    ///     call-site (where `<unit>` called the first function)
     pub(crate) fn build_backtrace_string(&self) -> String {
         let stack = self.routine_stack();
         let current_line = self.current_source_line();
@@ -556,7 +556,7 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Backtrace"), bt_attrs)
     }
 
-    /// Format a " at <file> line <N>" suffix for backtrace entries.
+    /// Format a `" at <file> line <N>"` suffix for backtrace entries.
     fn format_location(file: Option<&str>, line: Option<u32>) -> String {
         match (file, line) {
             (Some(f), Some(l)) => format!(" at {} line {}", f, l),

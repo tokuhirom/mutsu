@@ -487,7 +487,7 @@ impl Interpreter {
     /// so [`Self::dispatch_owner_chain`] correctly omits it too, and a plain
     /// chain walk can never find the folded owner's rows. The row catalog
     /// itself is generated keyed by this same folded owner (via
-    /// [`super::builtin_type_methods::builtin_method_entries`]), so without
+    /// [`builtin_method_entries`](crate::builtins::builtin_type_methods::builtin_method_entries)), so without
     /// this second lookup every Buf/Blob/FatRat-family method reads as
     /// permanently unmodeled no matter how many rows are added.
     pub(crate) fn record_native_row_coverage(
@@ -520,7 +520,7 @@ impl Interpreter {
     /// at ANY level of `target`'s dispatch chain -- the "does Raku consider
     /// this name a method on this type at all" existence question `.^can`
     /// asks. This is deliberately a DIFFERENT question from
-    /// [`crate::runtime::resolution_sequence::native_row_servable`]'s
+    /// [`native_row_servable`](crate::builtins::native_method_row::native_row_servable)'s
     /// call-shape-specific "is this row reachable for THIS call" (E4b's
     /// `Native` resolver candidate): unlike that function, this does NOT
     /// exclude `SPECIAL`/`MUTATES_RECEIVER` rows (a mutating method like

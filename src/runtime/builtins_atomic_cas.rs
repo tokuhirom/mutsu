@@ -349,7 +349,7 @@ impl Interpreter {
         }
     }
 
-    /// CAS on an array element: cas(@arr[idx], $expected, $new)
+    /// CAS on an array element: `cas(@arr[idx], $expected, $new)`
     /// Args: [array_name_str, index, expected, new_val]
     /// Uses shared_vars to store the whole array for atomic cross-thread access.
     /// The array in shared_vars is the single source of truth — reads via

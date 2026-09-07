@@ -1,7 +1,7 @@
 //! Shared IO handle table for the VM/Interpreter decoupling (PLAN.md ③).
 //!
 //! Holds the program's *open IO handles* — files, sockets, listeners and their
-//! buffering/encoding state ([`IoHandleState`](super::IoHandleState)) — keyed by
+//! buffering/encoding state ([`IoHandleState`]) — keyed by
 //! a small integer id that `IO::Handle` / `IO::Socket::INET` values carry. These
 //! used to live as `Interpreter.handles: HashMap<usize, IoHandleState>` plus a
 //! `next_handle_id: usize` counter, trapping native IO state inside the

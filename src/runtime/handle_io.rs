@@ -108,7 +108,7 @@ impl Interpreter {
     /// closure runs, the lock is released — no same-thread re-acquisition.
     ///
     /// Returns `Err("Expected IO::Handle" / "Invalid IO::Handle")` when the
-    /// value is not a usable handle. Use [`with_handle_mut_opt`] instead when a
+    /// value is not a usable handle. Use [`Self::with_handle_mut_opt`] instead when a
     /// missing handle should fall back to a default rather than error.
     pub(super) fn with_handle_mut<R>(
         &mut self,
@@ -130,7 +130,7 @@ impl Interpreter {
         f(state)
     }
 
-    /// Like [`with_handle_mut`], but yields `Ok(None)` when the value is not a
+    /// Like [`Self::with_handle_mut`], but yields `Ok(None)` when the value is not a
     /// live handle (instead of an error). Errors raised *inside* the closure
     /// still propagate as `Err`, so callers can distinguish "no such handle"
     /// (`Ok(None)`) from "the operation failed" (`Err`).

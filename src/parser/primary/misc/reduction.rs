@@ -290,7 +290,7 @@ fn is_callable_reduction_name(name: &str) -> bool {
     false
 }
 
-/// Parse a reduction operator: [+], [*], [~], [min], [[+]], [R[+]], etc.
+/// Parse a reduction operator: `[+]`, `[*]`, `[~]`, `[min]`, `[[+]]`, `[R[+]]`, etc.
 pub(crate) fn reduction_op(input: &str) -> PResult<'_, Expr> {
     if !input.starts_with('[') {
         return Err(PError::expected("reduction operator"));

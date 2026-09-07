@@ -401,7 +401,7 @@ pub struct Env {
     /// Number of parent tiers below this env (0 for a flat env). Used to bound
     /// the chain length: a recursive function would otherwise grow the chain one
     /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
-    /// depth. [`scoped_child`] flattens the parent once the chain reaches
+    /// depth. [`Self::scoped_child`] flattens the parent once the chain reaches
     /// [`MAX_OVERLAY_DEPTH`], so the chain length (hence lookup cost and `Drop`
     /// recursion) stays O(1) while shallow nesting (methods, ~2-5 deep) pays no
     /// flatten.
@@ -596,7 +596,7 @@ impl Env {
 
     /// Filter this env's overlay in place, keeping only entries `keep` accepts,
     /// and drop any tombstones. When the overlay ends up empty it is reset to
-    /// the shared empty singleton so the [`overlay_is_shared_empty`] latch
+    /// the shared empty singleton so the [`Self::overlay_is_shared_empty`] latch
     /// re-arms for the next frame-reuse call. Used by the light-call frame
     /// reuse unwind: with the caller's overlay known-empty at entry, every
     /// surviving entry is a callee write, so this is exactly the scoped-overlay
@@ -727,7 +727,7 @@ impl Env {
         self.inner.get(&Symbol::intern(key))
     }
 
-    /// Symbol-keyed twin of [`overlay_get`] — avoids re-interning on a hot
+    /// Symbol-keyed twin of [`Self::overlay_get`] — avoids re-interning on a hot
     /// per-opcode read that already has a pre-interned `Symbol` in hand (see
     /// `exec_get_local_op`'s lazy-sync check).
     pub(crate) fn overlay_get_sym(&self, key: Symbol) -> Option<&Value> {

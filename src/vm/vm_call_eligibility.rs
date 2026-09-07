@@ -33,7 +33,7 @@ impl Interpreter {
         Some(saved)
     }
 
-    /// Restore the package saved by [`enter_routine_package`].
+    /// Restore the package saved by [`Self::enter_routine_package`].
     #[inline]
     pub(super) fn leave_routine_package(&mut self, saved: Option<String>) {
         if let Some(s) = saved {

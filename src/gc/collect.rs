@@ -48,7 +48,7 @@ use super::gc_ptr::{
 };
 use crate::vm::vm_stats::record_gc_collection;
 
-/// Outcome of one [`collect_cycles`] run.
+/// Outcome of one `collect_cycles` run.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CollectStats {
     /// Candidate roots drained and scanned.

@@ -1,5 +1,5 @@
 //! Miri-checked probes for `ArrayData`'s native `array[T]` decode cache
-//! (docs/adr/0030), modeled directly on [`crate::gc::borrow_shapes`], which
+//! (docs/adr/0030), modeled directly on `crate::gc::borrow_shapes`, which
 //! exists for the same reason: the borrow checker offers no protection at a
 //! `SyncUnsafeCell` write site, so pin the shapes instead of reasoning about
 //! them.

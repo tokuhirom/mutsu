@@ -188,7 +188,7 @@ impl Interpreter {
     /// * a shaped, native-backed or lazy array, and an immutable `Map` — the
     ///   same carve-outs `vm_for_loop_alias.rs` documents;
     /// * a mutable `QuantHash` (`BagHash`/`MixHash`/`SetHash`), which is routed
-    ///   by [`try_quanthash_weight_pair_producer`] because a weight has distinct
+    ///   by [`Self::try_quanthash_weight_pair_producer`] because a weight has distinct
     ///   zero-removal semantics (ADR-0036 §5 Q2).
     pub(super) fn try_element_container_producer(
         &mut self,

@@ -577,7 +577,7 @@ impl Interpreter {
     }
 
     /// Assign a value into a nested multi-dimensional array structure.
-    /// `dims` contains the indices for each dimension, e.g. [2, 1] for @a[2;1].
+    /// `dims` contains the indices for each dimension, e.g. `[2, 1]` for `@a[2;1]`.
     /// Checks bounds against the shaped array dimensions.
     pub(super) fn multidim_assign_nested(
         container: Value,

@@ -915,7 +915,7 @@ impl Interpreter {
         )
     }
 
-    /// Write-back companion of [`read_package_scope_var`]: if a bare free
+    /// Write-back companion of [`Self::read_package_scope_var`]: if a bare free
     /// variable resolves to an existing package-scope store entry (`our` var
     /// or package-block `my` lexical), update it in place so a mutation made
     /// from inside a named sub persists across calls. Returns `true` when an
@@ -1226,7 +1226,7 @@ impl Interpreter {
         self.set_env_with_main_alias_inner(name, None, value, false);
     }
 
-    /// Like [`set_env_with_main_alias`] but for a genuinely FRESH binding — an
+    /// Like [`Self::set_env_with_main_alias`] but for a genuinely FRESH binding — an
     /// expression-position `my` declaration (`if (my $a = 0) {...}`) whose name
     /// happens to collide, by bare env key, with an outer captured lexical's
     /// shared `ContainerRef` cell (see `CompiledCode::expr_declared_syms`). Such
@@ -1243,7 +1243,7 @@ impl Interpreter {
 
     /// The by-name env write for a *plain lexical* (see
     /// [`CompiledCode::plain_locals`]): everything
-    /// [`set_env_with_main_alias_sym`] does minus the alias maintenance, every
+    /// [`Self::set_env_with_main_alias_sym`] does minus the alias maintenance, every
     /// branch of which is unreachable for such a name.
     ///
     /// The name has no sigil, so it cannot be a `Main::`/`GLOBAL::`/`OUR::`/`MY::`
@@ -1279,8 +1279,8 @@ impl Interpreter {
         self.set_env_with_main_alias_inner(name, name_sym, value, false);
     }
 
-    /// Shared body of [`set_env_with_main_alias`] / [`set_env_with_main_alias_sym`]
-    /// / [`set_env_with_main_alias_fresh_binding`]. `fresh_binding` distinguishes
+    /// Shared body of [`Self::set_env_with_main_alias`] / [`Self::set_env_with_main_alias_sym`]
+    /// / [`Self::set_env_with_main_alias_fresh_binding`]. `fresh_binding` distinguishes
     /// a genuinely new declaration (which must NOT write through a same-named
     /// outer cell) from every other by-name write (which must).
     fn set_env_with_main_alias_inner(

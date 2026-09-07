@@ -228,7 +228,7 @@ impl Interpreter {
         self.current_source_file()
     }
 
-    /// Current routine-stack depth. Paired with [`truncate_routine_stack`] so a
+    /// Current routine-stack depth. Paired with [`Self::truncate_routine_stack`] so a
     /// structured execution boundary (block scope, try/catch) can record its
     /// entry depth and restore it on exit, exception-safely.
     pub(crate) fn routine_stack_len(&self) -> usize {

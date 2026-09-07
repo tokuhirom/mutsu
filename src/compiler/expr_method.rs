@@ -99,7 +99,7 @@ impl Compiler {
         )
     }
 
-    /// Compile method call on indexed target: .VAR on @a[0] / %h<k> / @sh[0;0]
+    /// Compile method call on indexed target: `.VAR` on `@a[0]` / `%h<k>` / `@sh[0;0]`
     pub(super) fn compile_expr_method_var_on_index(&mut self, target: &Expr) {
         if let Some(source_name) = Self::var_on_index_source_name(target) {
             // Read the element with the ordinary subscript machinery and hand
@@ -370,7 +370,7 @@ impl Compiler {
     }
 
     /// Compile method call on indexed target with mutating method.
-    /// e.g., %hash<key>.push(4) or @array[0].push(5)
+    /// e.g., `%hash<key>.push(4)` or `@array[0].push(5)`
     ///
     /// Container identity (§3.2): the method mutates the element's shared
     /// node in place, so there is NO post-call writeback. push/append/

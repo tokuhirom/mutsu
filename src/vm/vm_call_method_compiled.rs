@@ -276,7 +276,7 @@ impl Interpreter {
         }
     }
 
-    /// Check if a method candidate has a wrap chain from ^lookup().candidates[N].wrap().
+    /// Check if a method candidate has a wrap chain from `^lookup().candidates[N].wrap()`.
     /// If so, dispatch through the wrapper and return Some(result).
     ///
     /// ADR-0019 E9b-2: builds a SINGLE `MethodDispatchFrame` (below-outermost

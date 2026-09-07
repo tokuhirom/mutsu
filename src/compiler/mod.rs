@@ -1139,7 +1139,7 @@ pub(crate) struct Compiler {
     /// Lexical scope stack for local-slot allocation (§1.4 groundwork). Pushed and
     /// popped at every block boundary (`push_dynamic_scope_lexical` /
     /// `pop_dynamic_scope_lexical`); each frame records the names declared in that
-    /// scope via [`declare_local`], the single declaration entry point.
+    /// scope via [`Self::declare_local`], the single declaration entry point.
     ///
     /// This is intentionally INERT today — `declare_local` still resolves slots
     /// like `alloc_local` (a nested `my $x` shares the outer `$x`'s slot), so there
@@ -1900,7 +1900,7 @@ impl Compiler {
     }
 
     /// Allocate a BRAND-NEW local slot for `name`, unconditionally (unlike
-    /// [`alloc_local`], which reuses an existing same-named slot). `local_map` is
+    /// [`Self::alloc_local`], which reuses an existing same-named slot). `local_map` is
     /// repointed at the new slot. The §1.4 shadow-allocation primitive: a nested
     /// `my $x` shadowing an active-ancestor `$x` gets its own slot.
     fn alloc_fresh_local(&mut self, name: &str) -> u32 {
@@ -2115,10 +2115,10 @@ impl Compiler {
     /// Designated entry point for a genuine `my`/`state`/`our` DECLARATION.
     ///
     /// **Groundwork, currently behavior-preserving.** It resolves the slot exactly
-    /// like [`alloc_local`] (get-or-create), so a nested-block `my $x` still shares
+    /// like [`Self::alloc_local`] (get-or-create), so a nested-block `my $x` still shares
     /// the outer `$x`'s slot — today's shadowing correctness continues to rely on
     /// the runtime env restore (`BlockScope`). The only new work is recording the
-    /// declared name in the innermost [`local_scopes`] frame.
+    /// declared name in the innermost [`local_scopes`](Self::local_scopes) frame.
     ///
     /// The real §1.4 fix — giving a shadow its own fresh slot and restoring the
     /// outer binding on scope exit — is deliberately NOT done here: it produces
@@ -2198,12 +2198,12 @@ impl Compiler {
 
     /// Declaration entry point for a routine/block PARAMETER.
     ///
-    /// Slot allocation is plain [`alloc_local`], exactly as before; the added work
-    /// is recording the name in the innermost [`local_scopes`] frame, because a
+    /// Slot allocation is plain [`Self::alloc_local`], exactly as before; the added work
+    /// is recording the name in the innermost [`local_scopes`](Self::local_scopes) frame, because a
     /// parameter *is* a declaration of its routine's scope. `OUTER::` resolution
     /// asks that question directly ("does the target scope declare this name?"),
     /// and a signature binding must answer yes: `sub f($p) { { $OUTER::p } }` sees
-    /// 42. Plain [`alloc_local`] deliberately does NOT record, since it is also how
+    /// 42. Plain [`Self::alloc_local`] deliberately does NOT record, since it is also how
     /// a *free* variable and compiler temporaries get a slot, and a free variable
     /// mentioned in a body is not a declaration of it (raku: `my $y = 7;
     /// sub f { say $y; { say $OUTER::y } }` prints 7 then Nil).
@@ -2309,7 +2309,7 @@ impl Compiler {
     /// resolve through the runtime env, which EVAL still shares with its caller, so
     /// `my $z = 3; { say EVAL(q{$z}) }` still prints 3.
     ///
-    /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`],
+    /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`](crate::runtime::Interpreter::push_eval_caller_frames),
     /// which already models the same layout on the caller axis for `CALLER::`.
     pub(crate) fn mark_as_eval_unit(&mut self) {
         self.push_local_scope();
@@ -2359,7 +2359,7 @@ impl Compiler {
     }
 
     /// Enter a nested lexical scope for local-slot allocation. Paired with
-    /// [`pop_local_scope`]; driven by the block-boundary hooks
+    /// [`Self::pop_local_scope`]; driven by the block-boundary hooks
     /// (`push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical`).
     fn push_local_scope(&mut self) {
         self.local_scopes.push(HashMap::new());
@@ -2368,7 +2368,7 @@ impl Compiler {
     /// Leave the innermost lexical scope. Behavior-preserving today: it only drops
     /// the scope frame. When the §1.4/§1.5/§1.3 campaign gives shadows distinct
     /// slots, this is where a `Some(prev)` entry will restore the outer binding in
-    /// `local_map` (see [`declare_local`]).
+    /// `local_map` (see [`Self::declare_local`]).
     fn pop_local_scope(&mut self) {
         let Some(frame) = self.local_scopes.pop() else {
             return;

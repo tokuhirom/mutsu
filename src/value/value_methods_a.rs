@@ -102,7 +102,7 @@ impl Value {
             named: Box::new(named),
         })
     }
-    /// A named variable reference (see [`ValueRepr::VarRef`]): the value `value`
+    /// A named variable reference (see `ValueRepr::VarRef`): the value `value`
     /// tagged with the name of the variable it was read from, so the binder can
     /// alias the caller's container for an `is rw` / `is raw` / `:=` target.
     pub fn varref(name: Symbol, value: Value, index: Option<u32>) -> Self {
@@ -125,11 +125,11 @@ impl Value {
             slot,
         })
     }
-    /// The `slot` recorded on a [`ValueRepr::VarRef`], or `None`.
+    /// The `slot` recorded on a `ValueRepr::VarRef`, or `None`.
     pub fn varref_slot(&self) -> Option<u32> {
         self.0.varref_slot()
     }
-    /// The `(name, value, index)` of a [`ValueRepr::VarRef`], or `None`.
+    /// The `(name, value, index)` of a `ValueRepr::VarRef`, or `None`.
     /// Tag-probe gated: runs once per bound parameter, and a `view()` on a
     /// lazy Match would materialize it just to see it is not a VarRef.
     pub fn as_varref(&self) -> Option<(Symbol, &Value, Option<u32>)> {
@@ -141,7 +141,7 @@ impl Value {
             _ => None,
         }
     }
-    /// The value a [`ValueRepr::VarRef`] wraps, or `self` when it is not one.
+    /// The value a `ValueRepr::VarRef` wraps, or `self` when it is not one.
     /// The binder strips the wrapper here once it has taken the name it needs.
     pub fn unwrap_varref(&self) -> &Value {
         if !self.0.is_varref() {
@@ -677,7 +677,7 @@ impl Value {
     }
 
     /// Hash element write chokepoint (Phase 2 Stage 0). The hash analogue of
-    /// [`assign_element_slot`]: if the existing entry at `key` is a
+    /// [`Self::assign_element_slot`]: if the existing entry at `key` is a
     /// `ContainerRef` cell, write *through* it (preserving any `:=` binding);
     /// otherwise insert or replace the entry as a bare value.
     ///
@@ -745,7 +745,7 @@ impl Value {
     }
 
     /// Autovivifying hash element access for bind descent — the hash analogue of
-    /// [`array_slot_ref`] (Phase 2). Instead of the stale `HashEntryRef`
+    /// [`array_slot_ref`](crate::value::Value::array_slot_ref) (Phase 2). Instead of the stale `HashEntryRef`
     /// back-reference, it returns a first-class value that survives COW:
     /// - an existing `ContainerRef` cell is returned as-is (already aliased);
     /// - an existing container leaf (Array/Hash) is returned by value — it shares
@@ -802,7 +802,7 @@ impl Value {
     }
 
     /// Bind to hash element `key`, promoting it to a first-class container
-    /// (Phase 2 Stage 1) — the hash analogue of [`array_slot_ref`]. An existing
+    /// (Phase 2 Stage 1) — the hash analogue of [`array_slot_ref`](crate::value::Value::array_slot_ref). An existing
     /// *scalar* leaf is replaced in place with a shared `ContainerRef` cell
     /// (reusing one if already present), and that same cell is returned so the
     /// binding aliases the element by **cell identity**, surviving COW clones of

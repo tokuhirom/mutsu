@@ -148,7 +148,7 @@ impl Interpreter {
     /// An ordinary `my $x = ...` owns a Scalar. A `:=` binding does not: the
     /// name *is* the bound thing, which is why `my $i := 42; $i.VAR.^name` is
     /// `Int` and not `Scalar`. mutsu records the three binding spellings
-    /// separately — a literal RHS as [`ReadonlyKind::Immutable`], another
+    /// separately — a literal RHS as [`ReadonlyKind::Immutable`](crate::ast::ReadonlyKind::Immutable), another
     /// variable in the `__mutsu_sigilless_alias::` chain — so all of them are
     /// consulted here. A readonly *alias* that does own a container (a
     /// non-`is rw` parameter, a `for @a -> $v` alias) is deliberately NOT

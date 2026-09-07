@@ -100,7 +100,7 @@ pub(crate) struct SubTraits {
     pub custom_traits: Vec<(String, Option<crate::ast::Expr>)>,
     /// Precedence trait: (trait_name, reference_operator).
     /// trait_name is one of "tighter", "looser", "equiv".
-    /// reference_operator is the operator symbol or full name (e.g. "*", "+", "infix:<+>", "prefix:<foo>").
+    /// reference_operator is the operator symbol or full name (e.g. `*`, `+`, `infix:<+>`, `prefix:<foo>`).
     pub precedence_trait: Option<(String, String)>,
     /// `handles` specifications on a method declaration, e.g.
     /// `method Str() handles 'uc' { ... }`.

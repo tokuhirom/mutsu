@@ -986,7 +986,7 @@ impl Interpreter {
             && self.env().contains_key_own_tier(resolved_source)
     }
 
-    /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any
+    /// The `Hash` analogue of [`Self::array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
     pub(super) fn hash_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::HashData>,

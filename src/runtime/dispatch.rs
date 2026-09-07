@@ -126,7 +126,7 @@ impl Interpreter {
             .map(|(pattern, _)| pattern))
     }
 
-    /// Like [`eval_token_call_values`], but the LTM candidate filter measures each
+    /// Like [`Self::eval_token_call_values`], but the LTM candidate filter measures each
     /// candidate's declarative prefix starting at character offset `start_pos`
     /// (for a `:pos(N)`/`:c(N)` subparse) rather than at the start of the subject.
     /// Returns the winning candidate's pattern together with its `:sym<...>`

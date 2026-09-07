@@ -215,7 +215,7 @@ impl Interpreter {
         self.regex_match_captures_impl(pattern, text, false)
     }
 
-    /// Like [`regex_match_all_with_captures`], but at each start position keeps
+    /// Like [`Self::regex_match_all_with_captures`], but at each start position keeps
     /// ONLY the highest-DFS-priority (canonical greedy/frugal) match end — the one
     /// the single-match engine would pick — instead of every possible end. Used by
     /// the plain `:g` path: collecting every end and then keeping the longest per
@@ -315,7 +315,7 @@ impl Interpreter {
             .map(|(from, to, pos, _named)| (from, to, pos))
     }
 
-    /// [`regex_find_first_from_with_captures`] including the NAMED capture
+    /// [`Self::regex_find_first_from_with_captures`] including the NAMED capture
     /// texts. A substitution needs these to bind `$<name>` in its replacement
     /// (and in the `$/` it leaves behind), which the positional-only variant
     /// cannot express.

@@ -34,7 +34,7 @@ impl Interpreter {
         }
     }
 
-    /// Reverse companion of [`sync_our_local_from_qualified`]: after a plain
+    /// Reverse companion of [`Self::sync_our_local_from_qualified`]: after a plain
     /// `SetLocal` into an `our`-linked slot (`our $x; ... $x = 1`), push the new
     /// value out to the package variable it aliases. `our` is an alias for a
     /// package var, so `$Foo::x` must see the write immediately — block-exit

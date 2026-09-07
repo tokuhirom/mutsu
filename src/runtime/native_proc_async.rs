@@ -77,7 +77,7 @@ impl ChunkSinks {
 /// `"cde"`, `"f"`, not `"abc"`, `"def"` — so mutsu holds it back too.
 ///
 /// It is held back only when something *could* extend it
-/// ([`final_grapheme_is_unextendable`]). UAX #29 GB4 breaks after LF and after
+/// ([`final_grapheme_is_unextendable`](crate::builtins::string_pos::final_grapheme_is_unextendable)). UAX #29 GB4 breaks after LF and after
 /// any Control unconditionally, so a chunk ending in a newline is delivered
 /// whole — which is what keeps line-oriented output streaming: a `.lines`
 /// consumer sees `Started\n` the moment the child writes it, instead of waiting

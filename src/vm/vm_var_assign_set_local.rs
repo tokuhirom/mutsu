@@ -63,7 +63,7 @@ impl Interpreter {
     /// interface. `my $x := @a; $x = 5` is a hard error there and used to
     /// overwrite `@a` here.
     ///
-    /// Separate from [`bind_source_has_no_container`] because the two say
+    /// Separate from [`Self::bind_source_has_no_container`] because the two say
     /// different things and are gated differently. That one is about
     /// immutability and applies to any `:=`; this one is about *which kind of
     /// container the name owns*, and its caller restricts it to a DECLARATION —

@@ -25,7 +25,7 @@ impl Interpreter {
         Some(self.io_path_content_read(attributes, method, args))
     }
 
-    /// The fallible body of [`try_io_path_content_read`] (the gate returns
+    /// The fallible body of [`Self::try_io_path_content_read`] (the gate returns
     /// `Option` so it cannot use `?`). Resolves the path then reads + splits /
     /// decodes the whole file. Behavior-invariant with the arms `native_io_path`
     /// previously held.
