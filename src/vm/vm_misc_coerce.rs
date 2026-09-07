@@ -186,6 +186,15 @@ impl Interpreter {
             self.stack.push(resumed);
             return Ok(());
         }
+        // `~/a/` warns and yields the empty string, like every other Str
+        // coercion of a Regex -- see `regex_str_coercion`.
+        if let Some(coerced) = self.regex_str_coercion(&val) {
+            let caller_code = self.current_code;
+            let resumed = coerced?;
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            self.stack.push(resumed);
+            return Ok(());
+        }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
             return Err(err);

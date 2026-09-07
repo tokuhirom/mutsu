@@ -713,6 +713,12 @@ impl Interpreter {
                 result.push_str(&resumed.to_string_value());
                 continue;
             }
+            // Interpolating a `Regex` warns and contributes NOTHING, rather
+            // than its source text -- see `regex_str_coercion`.
+            if let Some(coerced) = self.regex_str_coercion(&v) {
+                result.push_str(&coerced?.to_string_value());
+                continue;
+            }
             // Buf/Blob instances with element storage: call .Str, which throws
             // X::Buf::AsStr. Blob *type objects* have no storage (e.g.
             // `$*DISTRO.signature`) and stringify to "".

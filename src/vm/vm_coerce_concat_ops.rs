@@ -273,6 +273,11 @@ impl Interpreter {
                 Value::str(String::new()),
             );
         }
+        // A `Regex` in string context warns and yields the empty string, not
+        // its source text -- see `regex_str_coercion`.
+        if let Some(coerced) = self.regex_str_coercion(&v) {
+            return coerced;
+        }
         // A `Seq` whose source has not been pulled yet (an
         // `IO::Handle.lines`/`.words` read, or `Seq.new($iterator)`) reaches a
         // string context through THIS operand coercion, not through method

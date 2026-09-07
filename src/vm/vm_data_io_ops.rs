@@ -298,7 +298,12 @@ impl Interpreter {
             // Deep, for the reason `say` is — see ADR-0040 §9.2.
             let v = loan_env!(self, resolve_proxies_in_value(v))?;
             check_rat_divide_by_zero(&v)?;
-            if needs_method_dispatch(&v) {
+            // `put` stringifies via `.Str`, so a `Regex` warns and contributes
+            // nothing -- see `regex_str_coercion`, and the twin in
+            // `collect_str_threaded` that `print` goes through.
+            if let Some(coerced) = self.regex_str_coercion(&v) {
+                content.push_str(&coerced?.to_string_value());
+            } else if needs_method_dispatch(&v) {
                 content.push_str(&loan_env!(self, render_str_value(&v)));
             } else {
                 content.push_str(&v.to_str_context());
@@ -365,6 +370,15 @@ impl Interpreter {
                     Value::str(String::new()),
                 )?;
                 out.push_str(&resumed.to_string_value());
+            }
+            // `print`/`put` stringify via `.Str`, so a `Regex` warns and
+            // contributes nothing -- see `regex_str_coercion`. (`say` uses
+            // `.gist` and renders the source text with no warning.)
+            _ if Self::is_regex_like_value(v) => {
+                let coerced = self
+                    .regex_str_coercion(v)
+                    .expect("is_regex_like_value gates this")?;
+                out.push_str(&coerced.to_string_value());
             }
             ValueView::Junction { values, .. } => {
                 for elem in values.iter() {
