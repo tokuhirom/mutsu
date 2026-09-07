@@ -442,6 +442,12 @@ impl Interpreter {
         // never leaks onto a later, unrelated subscript.
         let core_subscript_call = std::mem::take(&mut self.skip_postcircumfix_overload);
         let mut index = self.stack.pop().unwrap();
+        // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
+        // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
+        // reader below takes its elements through pure code -- so the slice
+        // addressed NO slots and answered `()`. Tag-probed, so every other
+        // subscript shape pays one relaxed check.
+        self.reify_map_grep_seq(&index)?;
         // An *itemized* list/Range used as a subscript (`@a[$(7,8,9)]`,
         // `@a[my $ = ^2]`) is a SINGLE subscript, not a slice: itemization makes
         // it one item. (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)

@@ -271,7 +271,7 @@ callback `Value` already carries its own closure environment.
 | **2** | **Done (2026-09-07).** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method`, plus the read-path consumers S8 lists. Shipped covering only SOME receivers; the `@`-array hole it left is closed by step 3c below. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d. |
 | **3a** | **Done (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returns the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2. Attempted and reverted earlier the same day behind a step-2 hole (S9.1); that hole is closed (`news/2026-09/deferred-map-callback-frame.md`). The mandatory full `make roast` then found three more consumers, all fixed generally -- see S9.3. | `t/listop-map-defers.t`, and `t/nested-deferred-map-seq-is-pulled.t`'s listop row un-`todo`d. |
 | **3c** | **Done (2026-09-07).** The three EAGER `.map` loops keyed on an `@`-sigil receiver -- `call_method_mut_with_values`'s rw gate, `try_native_array_map`, and `builtin_map`'s `source_var` branch -- defer through the same `SeqSource::MapGrep`, which gains `rw_source` so the pull can publish the rw write-back in place. `is_stub_routine_body` drops out of both deferral predicates, and a `Control::Fail` raised under a captured `fatal` throws at the pull. Closes S9.4; the oracle is 37 rows with no `todo`s. | `news/2026-09/real-array-map-defers.md`. The mandatory full `make roast` + `make test` + battery run found EIGHT more general defects -- see S9.4. |
-| **3b** | Extend to both `grep` entry points. Measured 2026-09-07: grep is still fully eager and diverges from rakudo. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. **Its own slice, for a measured reason -- see S9.2.** | |
+| **3b** | **Done (2026-09-07).** Every `grep` entry point defers with the default `:v` adverb: the concrete-array arm, the range arm, the generic arm and the listop. `:k`/`:kv`/`:p` keep the eager path (they need positional indices over the whole result), the same exemption they already take from `make_lazy_pipe`. §9.5 records what the gates found. | `SeqSource::MapGrep`'s two `Option<Value>` fields collapsed into one `MapGrepMode` enum so the four shapes are mutually exclusive by construction. |
 | **4** | Retire the `body_contains_return` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. (`is_stub_routine_body` already dropped out of both predicates in step 3c: a `...` stub needs only "do not fire until iterated", which `MapGrep` gives, and unlike the `LazyList` route `MapGrep` carries the `fatal` a stub-as-`fail` needs.) | The maintainability payout. |
 
 ### Verification
@@ -616,6 +616,37 @@ EAGERNESS (it read the source after `.^name`, which does not consume); re-measur
 under `raku` it answers `[1, 2, 3]`, and the row now says so. The oracle is 37
 raku-verified rows with no `todo`s, its new Part 3 being the spelling audit.
 `news/2026-09/real-array-map-defers.md`.
+
+### 9.5 What step 3b found: deferring the SIBLING is what surfaces a read-path hole
+
+Step 3b's own diff is small. Its gates turned up **six** defects, and **five of
+them were already live on `main`** — holes in step 3c's `.map` deferral that
+`grep` had been masking simply by still being eager. Every one is the same
+shape: a consumer that reads a `Seq`'s elements through pure code, which cannot
+pull, and so sees ADR-0034's empty seed.
+
+| consumer | symptom | broken for `.map` too? |
+|---|---|---|
+| `+@a` single-argument-rule slurpy binder | `sub f(+@a) { @a }; f((1,2,3).map({$_}))` answered `()` | yes |
+| boolean context | an EMPTY result read as TRUE, so every `!...grep(...)` guard inverted | yes |
+| `[$p?, *@r]` destructuring binder | a recursive quicksort unpacked the empty seed at every level | yes |
+| `constant @x = …` (`OpCode::CoerceToList`) | the constant was FROZEN as the empty seed | yes |
+| slice index (`@f[SEQ]`) | the slice addressed no slots | yes |
+| itemized array through the promoting arm | `grep({…}, $(1,2,3))` greps its ELEMENTS | 3b's own |
+
+The boolean one is worth naming twice: `Value::truthy`'s `is_map_grep_source`
+arm carried a comment promising that "the VM forces the body at every boolean
+chokepoint it can reach with an `&mut Interpreter`". It did not — `eval_truthy`
+had no such force. The comment documented an invariant nobody had implemented.
+
+**The transferable lesson.** §5 already says a deferral step makes mutsu
+stricter in every consumer and mandates a full `make roast`. What 3b adds is
+that a *green* gate on the step that deferred is not evidence the consumers are
+covered: as long as a sibling operation is still eager, it keeps producing
+reified Seqs that hide the same holes. Deferring the sibling is the detector.
+Step 4 should expect the same, and the **bundled-library battery gate** is where
+two of these six surfaced (`Text::CSV` 78_fragment/90_csv) with `make test` and
+a full `make roast` both green.
 
 ### 9.3 What the mandatory roast run found when step 3 landed (2026-09-07)
 

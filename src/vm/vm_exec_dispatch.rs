@@ -2991,6 +2991,14 @@ impl Interpreter {
             OpCode::CoerceToList => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
+                // ADR-0058: `constant @x = (^5).grep(* > 2)` reaches here with a
+                // not-yet-run Seq, and the `Seq` arm below reads its elements
+                // through pure code -- so the constant was FROZEN as the empty
+                // seed and every later `@x[0]` / `@x.List` answered nothing
+                // (`roast/S04-declarations/constant.t` "constant @x caches
+                // Seq"). This op is the coercion that makes the constant's
+                // value, so it is where the body has to be run.
+                self.reify_map_grep_seq(&val)?;
                 let list_val = match val.view() {
                     // Explicit Arrays ([1,2,3]) are preserved as-is.
                     ValueView::Array(_, kind) if kind.is_real_array() => val,

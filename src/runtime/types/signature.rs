@@ -770,6 +770,13 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
     sub_params: &[ParamDef],
     value: &Value,
 ) -> Result<(), RuntimeError> {
+    // ADR-0058: a destructured argument can be a not-yet-run `.map`/`.grep`
+    // Seq (`fsort([$p?, *@r])` called as `fsort(@r.grep({...}))`, the recursive
+    // quicksort in `roast/S06-signature/unpack-array.t`), and
+    // `positional_values_from_unpack_target` reads its elements through pure
+    // code, which cannot pull -- so every recursion level unpacked the empty
+    // seed. Tag-probed, so every other argument shape pays one relaxed check.
+    interpreter.reify_map_grep_seq(value)?;
     let value = &interpreter.coerce_via_user_capture(value);
     let positional =
         drop_pairs_captured_as_named(value, positional_values_from_unpack_target(value));

@@ -32,7 +32,7 @@ impl Interpreter {
                 items,
                 func,
                 fatal,
-                rw_source,
+                mode,
             } => {
                 // Same contract as `force_lazy_list_vm`: this force IS the
                 // effective call site for the callbacks it runs, so a
@@ -66,14 +66,32 @@ impl Interpreter {
                     }
                     _ => None,
                 });
-                let result = match rw_source {
+                let result = match mode {
+                    // ADR-0058 step 3b: `@a.grep({...})` promotes every matched
+                    // source slot to a shared element cell and builds its result
+                    // out of the same cells, so a writeback loop mutates through
+                    // into `@a`. That whole arm runs here now instead of at the
+                    // `.grep` call. See `MapGrepMode::GrepArray`.
+                    crate::value::MapGrepMode::GrepArray(source) => match source.view() {
+                        ValueView::Array(source_items, _) => self.grep_over_array_promoting(
+                            source_items.clone(),
+                            func.clone(),
+                            &crate::runtime::methods_collection_ops::GrepAdverb::V,
+                        ),
+                        _ => self.eval_grep_over_items(func.clone(), items.as_ref().clone()),
+                    },
+                    crate::value::MapGrepMode::Grep => {
+                        self.eval_grep_over_items(func.clone(), items.as_ref().clone())
+                    }
                     // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
                     // element, so the callback's writes have to reach `@a`.
-                    // See `SeqSource::MapGrep::rw_source`.
-                    Some(source) => {
+                    // See `MapGrepMode::MapRw`.
+                    crate::value::MapGrepMode::MapRw(source) => {
                         self.pull_rw_map(func.clone(), items.as_ref().clone(), source.clone())
                     }
-                    None => self.eval_map_over_items(func.clone(), items.as_ref().clone()),
+                    crate::value::MapGrepMode::Map => {
+                        self.eval_map_over_items(func.clone(), items.as_ref().clone())
+                    }
                 };
                 self.fatal_mode = saved_fatal;
                 self.reconcile_caller_after_lazy_force(caller_code);

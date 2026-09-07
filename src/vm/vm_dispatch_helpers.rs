@@ -473,6 +473,15 @@ impl Interpreter {
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
     pub(super) fn eval_truthy(&mut self, val: &Value) -> bool {
+        // ADR-0058: `Value::truthy` cannot pull, so it reports a not-yet-run
+        // `.map`/`.grep` Seq as TRUE rather than reading its still-empty seed
+        // (see the `is_map_grep_source` arm there). This IS the boolean
+        // chokepoint that arm defers to -- it has an `&mut Interpreter` -- so
+        // force the body here and let the element count decide. Without it an
+        // EMPTY result read as true: `@a.grep(* == 9) ?? 't' !! 'f'` answered
+        // `t` where rakudo answers `f`, and every `!...grep(...)` guard
+        // inverted. Tag-probed, so every other value pays one relaxed check.
+        let _ = self.reify_map_grep_seq(val);
         match val.view() {
             ValueView::Package(name) => {
                 let class_name = name.resolve().to_string();

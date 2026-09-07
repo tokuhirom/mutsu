@@ -39,7 +39,7 @@ pub(crate) fn compute_grep_indices(original_items: &[Value], filtered: &Value) -
 }
 
 /// Adverb mode for grep: controls what is returned.
-enum GrepAdverb {
+pub(crate) enum GrepAdverb {
     /// :v (default) — return matching values
     V,
     /// :k — return indices of matching elements

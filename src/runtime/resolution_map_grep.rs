@@ -834,7 +834,7 @@ impl Interpreter {
     /// list elements, implementing Raku's rw binding semantics for map.
     /// Uses the same VM fast path as `eval_map_over_items` but checks for
     /// `__mutsu_rw_map_topic__` after each iteration to capture mutations.
-    pub(super) fn eval_grep_over_items(
+    pub(crate) fn eval_grep_over_items(
         &mut self,
         func: Option<Value>,
         list_items: Vec<Value>,

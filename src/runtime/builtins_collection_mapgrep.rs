@@ -101,7 +101,7 @@ impl Interpreter {
                 items: std::sync::Arc::new(list_items),
                 func,
                 fatal: self.fatal_mode,
-                rw_source: Some(args[1].clone()),
+                mode: crate::value::MapGrepMode::MapRw(args[1].clone()),
             }))
         } else {
             // Same deferral as dispatch_map_method: a callback containing
@@ -123,7 +123,7 @@ impl Interpreter {
                 items: std::sync::Arc::new(list_items),
                 func,
                 fatal: self.fatal_mode,
-                rw_source: None,
+                mode: crate::value::MapGrepMode::Map,
             }))
         }
     }
@@ -278,11 +278,36 @@ impl Interpreter {
             // The sub form returns a Seq like the method form (raku: `grep
             // *.so, @a` is a Seq, and a `--> Seq` return constraint on a sub
             // that ends in a grep call must pass).
-            let result = self.eval_grep_over_items(func, list_items)?;
-            Ok(match result.view() {
-                ValueView::Array(items, ..) => Value::seq(items.to_vec()),
-                _ => result,
-            })
+            // ADR-0058 step 3b: the listop `grep &f, @xs` defers exactly as the
+            // method form does -- the callback runs when something consumes the
+            // Seq. The adverbed forms above keep the eager path; they need
+            // positional indices over the whole result.
+            // A single concrete-array source takes the same promoting arm the
+            // method form does, so `grep({ $_ = 5 }, @a)` writes back through
+            // `$_` into `@a` (rakudo: `[5 5 5]`). `builtin_grep` had no
+            // `source_var` branch at all, which is why that row of ADR-0058
+            // §9.2's table was wrong before deferral and would have stayed
+            // wrong after it.
+            // ... but ONLY for a source whose elements this call actually
+            // greps over. An itemized array (`$(1,2,3)` / `$[1,2,3]`) is a
+            // single item under the single-argument rule, so it must keep the
+            // plain arm and grep the one already-built `list_items` entry --
+            // routing it through the promoting arm greps its ELEMENTS instead
+            // (`t/map-grep-itemized-arg.t`).
+            let mode = match args.get(1).map(Value::view) {
+                Some(ValueView::Array(_, kind))
+                    if args.len() == 2 && !kind.is_itemized() && single_arg_rule =>
+                {
+                    crate::value::MapGrepMode::GrepArray(args[1].clone())
+                }
+                _ => crate::value::MapGrepMode::Grep,
+            };
+            Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items: std::sync::Arc::new(list_items),
+                func,
+                fatal: self.fatal_mode,
+                mode,
+            }))
         }
     }
 
