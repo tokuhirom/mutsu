@@ -167,6 +167,11 @@ fn lower_hyper_assignment(target: Expr, value: Expr) -> Expr {
                 custom_traits: Vec::new(),
                 where_constraint: None,
             },
+            // A hyper assignment CYCLES its RHS across the targets, where a
+            // plain slice assignment pads a short one -- see
+            // `Stmt::MarkHyperSliceAssign`. The two are the same `IndexAssign`
+            // node by the time the VM sees them, so say which this is.
+            crate::ast::Stmt::MarkHyperSliceAssign,
             crate::ast::Stmt::Expr(lower_hyper_assign_target(target, Expr::Var(temp_name))),
         ],
         label: None,

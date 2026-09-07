@@ -1446,6 +1446,13 @@ impl Interpreter {
             // other route is still handled.)
             ValueView::Array(keys, kind) if is_positional || !kind.is_itemized() => {
                 let mut vals = self.assignment_rhs_values(&val)?;
+                // The value the slots past the end of the RHS get -- see
+                // `slice_pad_value`. Computed once here, before the `&mut
+                // self.env` borrows below.
+                let pad = self.slice_pad_value(&var_name);
+                // One-shot, consumed here whether or not this turns out to be a
+                // slice, so it cannot leak onto the next assignment.
+                let cycle_rhs = self.hyper_slice_assign.replace(false);
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
@@ -1501,9 +1508,10 @@ impl Interpreter {
                         }
                         let depth = Self::array_depth(container);
                         if depth <= 1 && keys.len() > 1 {
-                            // 1D shaped array with multiple indices: slice assignment
+                            // 1D shaped array with multiple indices: slice
+                            // assignment, padded like the flat one below.
                             for (i, key) in keys.iter().enumerate() {
-                                let v = vals.get(i).cloned().unwrap_or(Value::NIL);
+                                let v = Self::slice_rhs_value(&vals, i, cycle_rhs, &pad);
                                 Self::assign_array_multidim(
                                     container,
                                     std::slice::from_ref(key),
@@ -1565,9 +1573,14 @@ impl Interpreter {
                                 Ok(())
                             })
                             .transpose()?;
-                        // Assign each value to the corresponding index
+                        // Assign each value to the corresponding index. A slot
+                        // past the end of the RHS gets the container's
+                        // undefined value, not `Nil` -- raku's
+                        // `my @a; @a[0,1,2] = "z",` is `["z", Any, Any]`, and a
+                        // typed target pads with its element type
+                        // (`my Int @a` with `Int`, `my int @a` with `0`).
                         for (i, key) in keys.iter().enumerate() {
-                            let v = vals.get(i).cloned().unwrap_or(Value::NIL);
+                            let v = Self::slice_rhs_value(&vals, i, cycle_rhs, &pad);
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
                             initialized_marks.push(Self::encode_bound_index(key));
                         }
@@ -1801,7 +1814,15 @@ impl Interpreter {
                             let v = if bind_mode {
                                 vals.get(i).cloned().unwrap_or(Value::NIL)
                             } else {
-                                vals[i % vals.len()].clone()
+                                // A slice assignment ZIPS: a slot past the end
+                                // of the RHS gets the container's undefined
+                                // value, not a re-used RHS element. The
+                                // unconditional `vals[i % vals.len()]` this
+                                // replaced was HYPER semantics applied to every
+                                // slice, so `%h<a b> = 1` filled both keys and
+                                // `%j{1,2,3} = "z","y"` repeated `"z"`; the
+                                // hyper spelling keeps the cycle.
+                                Self::slice_rhs_value(&vals, i, cycle_rhs, &pad)
                             };
                             if bind_mode
                                 && let Some(Some((source_install, cell))) = slice_bind_cells.get(i)

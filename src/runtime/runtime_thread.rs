@@ -890,6 +890,7 @@ impl Interpreter {
             #[cfg(feature = "jit")]
             jit_error: None,
             bind_context: Box::new(std::cell::Cell::new(false)),
+            hyper_slice_assign: Box::new(std::cell::Cell::new(false)),
             scalar_bind_context: Box::new(std::cell::Cell::new(false)),
             param_raw_bind_context: Box::new(std::cell::Cell::new(false)),
             bound_decont_active: Box::new(std::cell::Cell::new(false)),

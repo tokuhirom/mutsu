@@ -1323,6 +1323,9 @@ impl Compiler {
             Stmt::MarkBind => {
                 // Handled by SyntheticBlock detection; no-op when compiled standalone.
             }
+            Stmt::MarkHyperSliceAssign => {
+                self.code.emit(OpCode::MarkHyperSliceAssign);
+            }
             Stmt::MarkSigilless(name) => {
                 // Track a sigilless local so BareWord compilation reads it from its
                 // slot (GetLocal), not via GetBareWord/env. Unlike
