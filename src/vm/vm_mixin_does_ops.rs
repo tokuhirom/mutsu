@@ -188,10 +188,28 @@ impl Interpreter {
             _ => std::collections::HashMap::new(),
         };
         mixins.insert(mixin_type, right);
+        let anon = crate::parser::next_anon_role_name();
+        // The flag half: its PRESENCE is what says "value mixin, not
+        // allomorph", which `allomorph_type_name` and the two type-match
+        // gates read. It still carries the latest name, so two separately-built
+        // `1 but "x"` values stay non-identical.
         mixins.insert(
             crate::value::types::VALUE_MIXIN_MARKER.to_string(),
-            Value::str(crate::parser::next_anon_role_name()),
+            Value::str(anon.clone()),
         );
+        // The per-application half: one key per composed anonymous role, with
+        // the same order/group stamps a named role carries, so two of them
+        // coexist (`(1 but "x") but "y"` is `Int+{<anon|1>}+{<anon|2>}`) and
+        // interleave with the named ones (`(1 but "x") but A` is
+        // `Int+{<anon|1>}+{A}`). Each `but` is its own application, so the
+        // group id is the sequence stamp itself.
+        let seq = crate::value::next_instance_id() as i64;
+        mixins.insert(
+            format!("{}{anon}", crate::value::types::ANON_ROLE_MARKER_PREFIX),
+            Value::TRUE,
+        );
+        mixins.insert(format!("__mutsu_role_seq__{anon}"), Value::int(seq));
+        mixins.insert(format!("__mutsu_role_group__{anon}"), Value::int(seq));
         match left.view() {
             ValueView::Mixin(inner, _) => Value::mixin(inner.as_ref().clone(), mixins),
             _ => Value::mixin(left, mixins),

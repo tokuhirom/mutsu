@@ -6,6 +6,39 @@ use super::*;
 /// `Interpreter::apply_single_mixin` for why raku needs the two apart.
 pub(crate) const VALUE_MIXIN_MARKER: &str = "__mutsu_value_mixin__";
 
+/// Prefix of the PER-APPLICATION record of an anonymous role minted by
+/// `but <non-role>` (`__mutsu_anon_role__<anon|3>`).
+///
+/// [`VALUE_MIXIN_MARKER`] alone could not carry these: it is one key, so a
+/// second `but "y"` overwrote the first's minted name (`(1 but "x") but "y"`
+/// reported a single `Int+{<anon|2>}`), and it holds no application stamp, so
+/// the anonymous role could only ever be rendered last (`(1 but "x") but A`
+/// came out `Int+{A}+{<anon|1>}` instead of raku's `Int+{<anon|1>}+{A}`).
+///
+/// One key per application fixes both: the name is IN the key, and the entry
+/// carries the same `__mutsu_role_seq__{name}` / `__mutsu_role_group__{name}`
+/// stamps a named role does, so the two orders interleave correctly. The
+/// marker stays as the flag whose mere PRESENCE says "this is a value mixin,
+/// not an allomorph" -- the one job it kept.
+pub(crate) const ANON_ROLE_MARKER_PREFIX: &str = "__mutsu_anon_role__";
+
+/// The anonymous roles recorded in `mixins`, as `(group, seq, display name)`.
+fn anon_role_entries(
+    mixins: &std::collections::HashMap<String, Value>,
+) -> impl Iterator<Item = (i64, i64, String)> + '_ {
+    mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix(ANON_ROLE_MARKER_PREFIX))
+        .map(|name| {
+            let seq = role_application_seq(mixins, name);
+            (
+                role_application_group(mixins, name, seq),
+                seq,
+                crate::value::user_facing_type_name(name).into_owned(),
+            )
+        })
+}
+
 /// Returns the Raku type name for a value (used in error messages).
 /// The name one argument of a CURRIED parametric role contributes to the
 /// role's own name. Rakudo names `R["x"]` after the argument's TYPE
@@ -184,17 +217,15 @@ pub(crate) fn mixin_roles_applied_last_first(
                 .unwrap_or(i64::MIN);
             (seq, role_mixin_suffix_entry(mixins, n))
         })
+        // `but`-mixing a plain value composes an anonymous role, recorded under
+        // its own per-application marker rather than a `__mutsu_role__` entry
+        // (see `Interpreter::apply_single_mixin`); raku lists those too, in the
+        // same last-first order — `((1 but "x") but "y").^roles` starts
+        // `<anon|8>, <anon|7>`.
+        .chain(anon_role_entries(mixins).map(|(_, seq, name)| (seq, name)))
         .collect();
     entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    let mut names: Vec<String> = entries.into_iter().map(|(_, name)| name).collect();
-    // `but`-mixing a plain value composes an anonymous role, recorded under its
-    // own marker rather than a `__mutsu_role__` entry (see
-    // `Interpreter::apply_single_mixin`); raku lists it too —
-    // `(1 but "x").^roles` is `(<anon|1>, Real, Numeric)`.
-    if let Some(anon) = mixins.get(VALUE_MIXIN_MARKER) {
-        names.push(crate::value::user_facing_type_name(&anon.to_string_value()).into_owned());
-    }
-    names
+    entries.into_iter().map(|(_, name)| name).collect()
 }
 
 /// [`role_mixin_suffix`], but skipping the role whose name equals `base` — the
@@ -225,6 +256,10 @@ pub(crate) fn role_mixin_suffix_excluding(
                 role_mixin_suffix_entry(mixins, n),
             )
         })
+        // An anonymous role from `but <non-role>` takes its place in the same
+        // order: `(1 but "x") but A` is `Int+{<anon|1>}+{A}`, which it could
+        // not be while the anon was appended after every named role.
+        .chain(anon_role_entries(mixins))
         .collect();
     entries.sort_by(|a, b| {
         a.0.cmp(&b.0)
@@ -244,15 +279,6 @@ pub(crate) fn role_mixin_suffix_excluding(
                 last_group = Some(group);
             }
         }
-    }
-    // `but`-mixing a plain value composes an anonymous role too, recorded under
-    // its own marker rather than as a `__mutsu_role__` entry (see
-    // `Interpreter::apply_single_mixin`); it still shows in the name suffix.
-    // It carries no sequence stamp of its own, so it goes last -- right for
-    // `(1 but A) but "x"`, and the same place `mixin_roles_applied_last_first`
-    // puts it. See `todo/tickets/` for the residual ordering case.
-    if let Some(anon) = mixins.get(VALUE_MIXIN_MARKER) {
-        names.push(crate::value::user_facing_type_name(&anon.to_string_value()).into_owned());
     }
     if names.is_empty() {
         return None;
@@ -577,6 +603,10 @@ pub(crate) fn filter_composition_markers(
                 // order, which is the only thing read back from them here.
                 || k.starts_with("__mutsu_role_seq__")
                 || k.starts_with("__mutsu_role_group__")
+                // An anonymous `but <non-role>` role is part of the composed
+                // type too, so the shared `.WHAT` node needs its markers to
+                // render `Int+{<anon|1>}` for itself.
+                || k.starts_with(ANON_ROLE_MARKER_PREFIX)
         })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect()
