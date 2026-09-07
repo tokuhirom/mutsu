@@ -102,6 +102,15 @@ static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
+// Parameter defaults. `PARAM_DEFAULT_EVALS` counts every default expression
+// the general binder had to EVALUATE (a re-entrant `eval_block_value` of the
+// default's AST, with the parameter shadowed by its own type object);
+// `PARAM_DEFAULT_CONSTS` the omitted parameters whose default was an
+// immutable scalar literal and so bound the literal itself. A routine whose
+// only default is `$desc = ''` should never appear in the first counter.
+static PARAM_DEFAULT_EVALS: AtomicU64 = AtomicU64::new(0);
+static PARAM_DEFAULT_CONSTS: AtomicU64 = AtomicU64::new(0);
+
 // Constant-pool interning (ADR-0006 §2.4). `CONST_POOL_ADDS` counts every
 // `CompiledCode::add_constant` call, `CONST_POOL_DEDUP_HITS` the ones that
 // reused an existing slot instead of pushing a copy. Compile-time counters:
@@ -923,6 +932,20 @@ pub(crate) fn record_env_deep_copy() {
     }
 }
 
+/// Record one parameter default the general binder bound: `evaluated` when
+/// the default's AST had to be run through `eval_block_value`, false when it
+/// was an immutable scalar literal bound directly.
+#[inline]
+pub(crate) fn record_param_default(evaluated: bool) {
+    if enabled() {
+        if evaluated {
+            PARAM_DEFAULT_EVALS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            PARAM_DEFAULT_CONSTS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Record a write-through mirror of a local slot into env (`flush_local_to_env`).
 /// Each call mirrors one name-observable slot, so `slots` is 1 per call.
 #[inline]
@@ -1029,6 +1052,11 @@ pub(crate) fn dump() {
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots}"
+    );
+    let default_evals = PARAM_DEFAULT_EVALS.load(Ordering::Relaxed);
+    let default_consts = PARAM_DEFAULT_CONSTS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] param-defaults: evaluated={default_evals} (eval_block_value of the default AST) constant={default_consts} (immutable literal bound directly)"
     );
     let const_adds = CONST_POOL_ADDS.load(Ordering::Relaxed);
     let const_hits = CONST_POOL_DEDUP_HITS.load(Ordering::Relaxed);

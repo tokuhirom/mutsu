@@ -36,6 +36,22 @@ impl Interpreter {
         pd: &ParamDef,
         default_expr: &Expr,
     ) -> Result<Value, RuntimeError> {
+        // An immutable scalar literal (`$desc = ''`, `$n = 1`) is its own
+        // value: nothing in the scoping below can change what it evaluates
+        // to, so bind it directly instead of paying a re-entrant
+        // `eval_block_value` -- topic save/restore, parameter shadow, a fresh
+        // compile of the one-statement block -- on every call that omits the
+        // parameter. The same shape the light call path fills from its
+        // registration-time table (`CompiledFunction::const_fill_for_param`);
+        // a container literal is deliberately NOT short-circuited, because the
+        // evaluation below hands every call a fresh container.
+        if let Expr::Literal(v) = default_expr
+            && crate::opcode::CompiledFunction::is_immutable_scalar_literal(v)
+        {
+            crate::vm::vm_stats::record_param_default(false);
+            return Ok(v.clone());
+        }
+        crate::vm::vm_stats::record_param_default(true);
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
         // Shadow the parameter with its undefined type object (or Nil) so a
