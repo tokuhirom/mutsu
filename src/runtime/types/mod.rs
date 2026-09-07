@@ -693,8 +693,15 @@ impl Interpreter {
     fn type_capture_marker_key(name: &str) -> String {
         format!("__type_capture__{}", name)
     }
+}
 
+/// Whether any `::T` type capture has ever been bound (`bind_type_capture`),
+/// process-wide and monotonic. Gates `has_type_capture_binding`.
+static TYPE_CAPTURE_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+impl Interpreter {
     pub(crate) fn bind_type_capture(&mut self, name: &str, value: &Value) {
+        TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         let captured = Self::captured_type_object(value);
         self.env.insert(name.to_string(), captured.clone());
         if self.current_package() != "GLOBAL"
@@ -709,6 +716,16 @@ impl Interpreter {
     }
 
     pub(crate) fn has_type_capture_binding(&self, name: &str) -> bool {
+        // No `::T` capture has ever been bound anywhere in the process, so no
+        // marker key can exist: skip the `format!` + interning env probe that
+        // every typed parameter binding otherwise paid, twice
+        // (`resolved_type_capture_name` asks for the constraint and for its
+        // base). Monotonic and process-global for the same reason
+        // `ENV_TYPE_CONSTRAINT_SEEN` is: a worker interpreter binds captures
+        // into the same env family the parent later reads.
+        if !TYPE_CAPTURE_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
+            return false;
+        }
         matches!(
             self.env
                 .get(&Self::type_capture_marker_key(name))

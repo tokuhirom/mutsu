@@ -904,6 +904,7 @@ impl Interpreter {
                     positional_idx = args.len();
                     if !pd.name.is_empty() {
                         if pd.sigilless {
+                            self.sigilless_alias_seen = true;
                             self.env
                                 .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
                             self.env.remove(&sigilless_alias_key(&pd.name));
@@ -996,6 +997,7 @@ impl Interpreter {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
                     // read-only List under the bare name, with no `@` sigil.
                     if !pd.name.is_empty() {
+                        self.sigilless_alias_seen = true;
                         self.env
                             .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
                         self.env.remove(&sigilless_alias_key(&pd.name));
@@ -1982,10 +1984,19 @@ impl Interpreter {
                         // alias chain (or reject the store outright), which can
                         // reach an immutable literal through an intermediate plain
                         // scalar parameter.
-                        self.env
-                            .remove(&crate::runtime::sigilless_alias_key(&pd.name));
-                        self.env
-                            .remove(&crate::runtime::sigilless_readonly_key(&pd.name));
+                        //
+                        // Both keys are only ever written by a sigilless
+                        // parameter binding, every one of which latches
+                        // `sigilless_alias_seen`; until one has run there is
+                        // nothing to remove, and the two `format!`s plus their
+                        // interning removes were a fixed cost on every `is copy`
+                        // parameter of every call.
+                        if self.sigilless_alias_seen {
+                            self.env
+                                .remove(&crate::runtime::sigilless_alias_key(&pd.name));
+                            self.env
+                                .remove(&crate::runtime::sigilless_readonly_key(&pd.name));
+                        }
                         value = value.detach_shared_container();
                         // The copy is a fresh container: its descriptor name is
                         // "element" in rakudo, not the source variable's name the
@@ -2013,6 +2024,11 @@ impl Interpreter {
                         }
                     }
                     if pd.sigilless {
+                        // Every arm below writes at least one of the two
+                        // sigilless meta keys; the latch is what lets an
+                        // `is copy` binding skip removing them when none can
+                        // exist (see there).
+                        self.sigilless_alias_seen = true;
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
                         if matches!(

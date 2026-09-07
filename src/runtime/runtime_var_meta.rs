@@ -83,6 +83,24 @@ impl Interpreter {
         sym
     }
 
+    /// The env key for `name`'s placeholder-parameter twin, `^<name>`, as a
+    /// pre-interned `Symbol`, memoized per name symbol exactly like
+    /// [`Self::type_meta_key_sym`] (the mapping never changes).
+    pub(crate) fn placeholder_key_sym(name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static PLACEHOLDER_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        if let Some(sym) = PLACEHOLDER_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym = name_sym.with_str(|name| Symbol::intern(&format!("^{name}")));
+        PLACEHOLDER_KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
     pub(crate) fn normalize_var_meta_name(name: &str) -> &str {
         name.trim_start_matches(['$', '@', '%', '&'])
     }

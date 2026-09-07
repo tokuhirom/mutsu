@@ -1258,10 +1258,18 @@ impl Interpreter {
             set.insert(name.to_string());
         }
         if crate::env::placeholder_var_possible() {
-            let placeholder = format!("^{name}");
-            if self.env().contains_key(&placeholder) {
-                loan_env!(self, set_shared_var(&placeholder, value.clone()));
-                self.env_mut().insert(placeholder, value);
+            // The `^name` key as a symbol: memoized per name symbol when the
+            // caller has one (every compiled `SetLocal` does), so a program
+            // that declares one placeholder parameter anywhere does not pay a
+            // `format!` + intern on every local store in the rest of it.
+            let placeholder_sym = match sym {
+                Some(sym) => Self::placeholder_key_sym(sym),
+                None => Symbol::intern(&format!("^{name}")),
+            };
+            if self.env().contains_key_sym(placeholder_sym) {
+                let placeholder: &str = placeholder_sym.as_str();
+                loan_env!(self, set_shared_var(placeholder, value.clone()));
+                self.env_mut().insert_sym(placeholder_sym, value);
                 return;
             }
         }
