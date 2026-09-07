@@ -234,3 +234,18 @@ Not a relocation. Either:
 Either way, re-run the `MUTSU_NO_FLATTEN` kill-switch experiment first: the
 prize was 17% when this ticket was filed, 10% after the return-merge fix, and it
 keeps shrinking as the per-call full-view consumers go away.
+
+## Update (2026-09-07): the chain flatten clones the root once; the guard is unchanged
+
+`Env::flattened` on a multi-tier chain used to recurse through
+`parent.flattened()` and then clone *that* result to layer the leaf overlay
+on top, so the method-dispatch guard in a routine two frames deep
+(`ok` -> `proclaim` -> `$output.say`) materialized the whole scope once per
+tier. #7465 walks to the flat root, clones its map once and layers every
+tier root-ward first (the single pass `filtered_flat` already used). On the
+real-`Test` assertion loop that took `Env::flattened` from 24.6k to 15.9k Ir
+per assertion and the guard's own row (`flatten_scoped_env`) from 18.1k to
+8.8k. That is the cost of being scoped two frames deep, not the cost of the
+guard: one whole-scope clone per method dispatch past the accessor fast path
+remains, and everything in "Update (2026-09-06b)" above still applies to
+removing it.
