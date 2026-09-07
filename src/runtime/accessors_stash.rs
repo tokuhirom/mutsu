@@ -221,8 +221,7 @@ impl Interpreter {
     pub(crate) fn caller_stash_depth(name: &str) -> Option<usize> {
         let trimmed = name.trim_end_matches("::");
         let parts: Vec<&str> = trimmed.split("::").collect();
-        (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER"))
-            .then_some(parts.len())
+        (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
     }
 
     /// Build a real `Stash` view over one caller frame.  Values are snapshotted
@@ -305,7 +304,9 @@ impl Interpreter {
 
         if let Some(depth) = caller_depth {
             if depth == 0 || depth > self.call_frames.len() {
-                return Err(RuntimeError::new("Cannot bind through CALLER stash: frame is gone"));
+                return Err(RuntimeError::new(
+                    "Cannot bind through CALLER stash: frame is gone",
+                ));
             }
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
             let frame_idx = self.call_frames.len() - depth;
