@@ -592,10 +592,33 @@ impl Interpreter {
                 // `method m($s is raw:) { $s = 7 }` writes the caller's
                 // variable. `base` itself stays the plain value — it is what
                 // `self`, the attribute seeding and the dispatch frame use.
-                let invocant_value = self
-                    .take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx))
-                    .unwrap_or_else(|| base.clone());
+                let arrival =
+                    self.take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx));
+                // A location either arrived boxed from the VM's gate, or `base`
+                // is itself the caller's container (the `$a.m = v` lvalue path
+                // hands one straight in).
+                let bound_to_container = arrival.is_some() || base.is_container_ref();
+                let invocant_value = arrival.unwrap_or_else(|| base.clone());
                 self.env_mut().insert(param_name.clone(), invocant_value);
+                // No container arrived: the invocant was an immutable value with
+                // no location (`(1, 2)[0]`, `42`, `$a + 1`). raku refuses the
+                // body's write to it -- "Cannot modify an immutable Int (1)" --
+                // where mutsu bound it by value and dropped the write silently.
+                // The same readonly marker a raw PARAMETER gets
+                // (`bind_function_args_values`, which already produces exactly
+                // that diagnostic for `sub g(\S) { S = 7 }; g(5)`) makes the
+                // invocant refuse identically.
+                if let Some(pd) = method_def.param_defs.get(idx)
+                    && crate::runtime::raw_invocant::param_is_raw_invocant(pd)
+                    && pd.sigilless
+                {
+                    let key = crate::runtime::sigilless_readonly_key(param_name);
+                    if bound_to_container {
+                        self.env_mut().remove(&key);
+                    } else {
+                        self.env_mut().insert(key, Value::TRUE);
+                    }
+                }
                 continue;
             }
             bind_params.push(param_name.clone());
@@ -1549,6 +1572,9 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_pro);
         crate::alloc_scope_named!(_sc_bind, "mfast:param-bind");
         let mut param_values: Vec<(&str, Value)> = Vec::new();
+        // (name, is-readonly) for a sigilless raw invocant, applied once the
+        // param values are installed below.
+        let mut raw_invocant_readonly: Option<(&str, bool)> = None;
         let mut arg_idx = 0;
         for (idx, param_name) in method_def.params.iter().enumerate() {
             let pd = method_def.param_defs.get(idx);
@@ -1561,10 +1587,18 @@ impl Interpreter {
                 // eligibility gate above (`has_rw_params`), and the sigil-less
                 // `\S:` spelling lands here while `$s is raw:` lands there, so
                 // both have to learn the container.
-                let invocant_value = self
-                    .take_raw_invocant_arrival(method_name, pd)
-                    .unwrap_or_else(|| base.clone());
+                let arrival = self.take_raw_invocant_arrival(method_name, pd);
+                let bound_to_container = arrival.is_some() || base.is_container_ref();
+                let invocant_value = arrival.unwrap_or_else(|| base.clone());
                 param_values.push((param_name, invocant_value));
+                // See the twin in `call_compiled_method`: with no container the
+                // invocant is an immutable value with no location, and the
+                // body's write to it must be refused rather than dropped.
+                if pd.is_some_and(|pd| {
+                    crate::runtime::raw_invocant::param_is_raw_invocant(pd) && pd.sigilless
+                }) {
+                    raw_invocant_readonly = Some((param_name.as_str(), !bound_to_container));
+                }
                 continue;
             }
             if let Some(pd) = pd.filter(|pd| pd.named) {
@@ -1716,6 +1750,15 @@ impl Interpreter {
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
             Self::insert_fast_param_values(env, &param_values);
+        }
+
+        if let Some((name, readonly)) = raw_invocant_readonly {
+            let key = crate::runtime::sigilless_readonly_key(name);
+            if readonly {
+                self.env_mut().insert(key, Value::TRUE);
+            } else {
+                self.env_mut().remove(&key);
+            }
         }
 
         crate::alloc_scope_end!(_sc_env);
