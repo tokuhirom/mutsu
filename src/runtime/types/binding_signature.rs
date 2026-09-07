@@ -926,6 +926,13 @@ impl Interpreter {
                 }
                 let items = if remaining_positional.len() == 1 {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
+                    // ADR-0058: a lone `.map`/`.grep` argument is a Seq whose
+                    // callback has not run, and the `Seq` arm below reads its
+                    // elements through pure code, which cannot pull -- so
+                    // `sub f(+@a) { @a }; f((1,2,3).map({$_}))` collected the
+                    // empty seed and answered `()`. Tag-probed, so this is one
+                    // relaxed check for every other argument shape.
+                    self.reify_map_grep_seq(&single)?;
                     match single.view() {
                         ValueView::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
                         ValueView::Slip(arr) => arr.to_vec(),

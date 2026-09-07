@@ -22,6 +22,30 @@ use super::sync_cell::SyncUnsafeCell;
 use super::{RuntimeError, Value};
 use std::sync::{Arc, Mutex};
 
+/// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
+#[derive(Clone)]
+pub(crate) enum MapGrepMode {
+    /// `.map` over already-materialized items.
+    Map,
+    /// `@a.map({ $_++ })`: Raku rw-binds `$_` to the source element, so the
+    /// callback's writes have to reach the container. The pull runs
+    /// `eval_map_over_items_rw` and publishes the write-back by mutating this
+    /// container's `ArrayData` IN PLACE, which is frame-independent — the pull
+    /// happens wherever the Seq is consumed, long after the frame whose `env`
+    /// held the source's name is gone.
+    MapRw(Value),
+    /// `.grep` over already-materialized items (the listop form, and every
+    /// receiver that is not a concrete array).
+    Grep,
+    /// `@a.grep({...})` on a concrete array: the pull promotes every MATCHED
+    /// source slot to a shared element cell and builds the result out of the
+    /// same cells, so a writeback loop (`for @a.grep(...) { $_++ }`) mutates
+    /// through into the source. Machinery `.map` has no equivalent of; sound
+    /// at pull time for the same reason `MapRw` is
+    /// (`news/2026-09/grep-promotion-is-published-in-place.md`).
+    GrepArray(Value),
+}
+
 /// What a `Seq` still has to do to produce its elements.
 #[derive(Clone)]
 pub(crate) enum SeqSource {
@@ -51,17 +75,12 @@ pub(crate) enum SeqSource {
         /// Failure soft in rakudo — pinned by
         /// `t/try-fatal-does-not-retroactively-flag-closure-seq.t`).
         fatal: bool,
-        /// The `@`-sigil source container a `.map` was called on, when the
-        /// callback may rw-write its elements back (`@a.map({ $_++ })` —
-        /// Raku rw-binds `$_` to each source element). `None` for every other
-        /// `.map`/`.grep`. The pull runs `eval_map_over_items_rw` instead of
-        /// `eval_map_over_items` and publishes any write-back by mutating
-        /// this container's `ArrayData` IN PLACE, which is frame-independent
-        /// — the pull happens wherever the Seq is consumed, long after the
-        /// frame whose `env` held the source's name is gone (the same
-        /// reasoning that moved `grep`'s element promotion in place, ADR-0058
-        /// §9.2).
-        rw_source: Option<Value>,
+        /// Which of the four `.map`/`.grep` shapes this body defers, and the
+        /// source container the two container-aware ones write through. One
+        /// field rather than two `Option<Value>`s so the shapes stay mutually
+        /// exclusive by construction — a body cannot be both an rw map and a
+        /// promoting grep.
+        mode: MapGrepMode,
     },
     /// The source was handed away by a consuming method (`.iterator`,
     /// `.list`, ...). A later attempt to reify or take again throws
@@ -782,10 +801,7 @@ impl SeqBody {
             SeqSource::Iterator(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),
             SeqSource::MapGrep {
-                items,
-                func,
-                rw_source,
-                ..
+                items, func, mode, ..
             } => {
                 for v in items.iter() {
                     v.gc_trace(visit);
@@ -793,8 +809,9 @@ impl SeqBody {
                 if let Some(f) = func {
                     f.gc_trace(visit);
                 }
-                if let Some(src) = rw_source {
-                    src.gc_trace(visit);
+                match mode {
+                    MapGrepMode::MapRw(src) | MapGrepMode::GrepArray(src) => src.gc_trace(visit),
+                    MapGrepMode::Map | MapGrepMode::Grep => {}
                 }
             }
             SeqSource::Reified | SeqSource::Taken => {}

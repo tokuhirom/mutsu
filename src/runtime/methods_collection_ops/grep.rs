@@ -304,105 +304,20 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             ValueView::Array(items, _arr_kind) => {
-                let (filtered, mutated_items, matched_indices) =
-                    self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
-                // Which source positions matched, so those slots can be shared
-                // with the result as first-class element containers. The grep
-                // loop reports them; they used to be re-derived here by scanning
-                // the source for a value `===` to each result element, which
-                // could not find a `Proxy` slot (the result holds the FETCHed
-                // value, the slot holds the Proxy). The miss then truncated the
-                // result below, because it is rebuilt from the located slots.
-                //
-                // `None` is a chunked grep (`grep -> $a, $b {...}`): no
-                // one-to-one element/slot mapping, so nothing is aliased.
-                let indices = matched_indices.unwrap_or_default();
-                // Promote each matched source slot to a shared `ContainerRef`
-                // cell and reference the SAME cells from the grep result. A
-                // writeback loop (`for @a.grep(...) { $_++ }` / `@a.grep(...)>>++`)
-                // then mutates THROUGH the cell into @a's slot via the ordinary
-                // element-cell write path — no GrepView side channel needed. A
-                // later `=` assignment (`my @g = @a.grep(...)`) decontainerizes the
-                // cells, so the named copy owns its values and never writes back.
-                let mut promoted = mutated_items;
-                let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
-                for &i in &indices {
-                    // A `:delete`d (or never-assigned) slot has no element
-                    // container to alias, and promoting it would *create* one:
-                    // `ArrayData::hole_at` recognises a hole by the gap marker
-                    // value (`Package("Any")`/the declared type) sitting in the
-                    // slot AND its absence from `initialized`, so wrapping that
-                    // marker in a `ContainerRef` makes the slot read as a live
-                    // element while `initialized` still calls it empty. The two
-                    // then disagree, and a later trailing-slot `:delete` stops
-                    // truncating the array (`@a[2]:delete; @a.grep({True});
-                    // @a[3]:delete` left 3 elements instead of 2). Hand the
-                    // grep result the raw marker instead — Raku yields `Any`
-                    // there, not an alias into a slot that does not exist.
-                    if items.hole_at(i) {
-                        shared_cells.push(promoted[i].clone());
-                        continue;
-                    }
-                    let cell = match promoted[i].view() {
-                        ValueView::ContainerRef(_) => promoted[i].clone(),
-                        _ => Value::container_ref(crate::gc::Gc::new(
-                            crate::value::ContainerCell::new(promoted[i].clone()),
-                        )),
-                    };
-                    promoted[i] = cell.clone();
-                    shared_cells.push(cell);
+                // ADR-0058 step 3b: with the default `:v` adverb the callback
+                // runs when the Seq is CONSUMED, not here. The adverbed forms
+                // (`:k`/`:kv`/`:p`) need positional indices over the whole
+                // result, so they keep the eager path -- the same exemption
+                // they already take from `make_lazy_pipe`.
+                if matches!(grep_adverb, GrepAdverb::V) {
+                    return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                        items: std::sync::Arc::new(Vec::new()),
+                        func: args.first().cloned(),
+                        fatal: self.fatal_mode,
+                        mode: crate::value::MapGrepMode::GrepArray(target.clone()),
+                    }));
                 }
-                // Publish the promotion by mutating the source `ArrayData` IN
-                // PLACE rather than building a replacement and re-binding every
-                // name that pointed at the old one. Both are visible to every
-                // alias, but the old route reached them through
-                // `overwrite_array_bindings_by_identity`, which walks the
-                // CURRENT frame's `env` — so it only ever found the aliases
-                // that happened to be lexically visible right here, and needed
-                // a `pending_rw_writeback_sources` drain to keep the caller's
-                // local slot from going stale behind it. Writing through the
-                // `Gc` (ADR-0013 §7 made this sound at the primitive) reaches
-                // every alias by construction, needs no drain, and does not
-                // depend on which frame is running — which is what ADR-0058
-                // step 3b needs, since a deferred grep promotes at PULL time,
-                // in a frame where the source's names are long gone.
-                {
-                    let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    let slots = data.items_mut();
-                    for (i, v) in promoted.into_iter().enumerate() {
-                        if i < slots.len() {
-                            slots[i] = v;
-                        }
-                    }
-                }
-                // Build the result array from the shared cells (default `:v`
-                // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
-                // `transform_result` from `indices`, which drops the aliasing (a
-                // keys/pairs copy owns its values).
-                //
-                // The cells replace the result's items wholesale, so there must
-                // be exactly one per matched element or the result would be
-                // silently truncated -- which is what the old identity scan did
-                // whenever it failed to locate a slot.
-                let filtered = if !indices.is_empty()
-                    && let ValueView::Array(filtered_items, fkind) = filtered.view()
-                {
-                    debug_assert_eq!(
-                        shared_cells.len(),
-                        filtered_items.len(),
-                        "grep aliasing must cover every matched element"
-                    );
-                    if shared_cells.len() != filtered_items.len() {
-                        Value::array_with_kind(filtered_items.clone(), fkind)
-                    } else {
-                        let mut data = (**filtered_items).clone();
-                        *data.items_mut() = shared_cells;
-                        Value::array_with_kind(crate::gc::Gc::new(data), fkind)
-                    }
-                } else {
-                    filtered
-                };
-                grep_adverb.transform_result(filtered, &indices)
+                self.grep_over_array_promoting(items.clone(), args.first().cloned(), &grep_adverb)
             }
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
@@ -417,6 +332,17 @@ impl Interpreter {
                     &target,
                     crate::runtime::utils::MAX_RANGE_EXPAND as usize,
                 );
+                // ADR-0058 step 3b: a range receiver has no source slots to
+                // promote, so it defers as a plain `Grep`. The adverbed forms
+                // stay eager -- they need indices over the whole result.
+                if matches!(grep_adverb, GrepAdverb::V) {
+                    return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                        items: std::sync::Arc::new(items),
+                        func: args.first().cloned(),
+                        fatal: self.fatal_mode,
+                        mode: crate::value::MapGrepMode::Grep,
+                    }));
+                }
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
             ValueView::GenericRange { .. } => {
@@ -547,5 +473,124 @@ impl Interpreter {
             None => compute_grep_indices(&original_items, &filtered),
         };
         adverb.transform_result(filtered, &indices)
+    }
+
+    /// The `.grep` over a concrete array: run the callback, promote every
+    /// MATCHED source slot to a shared element cell (so a writeback loop
+    /// mutates through into the source), and build the result out of the same
+    /// cells.
+    ///
+    /// Split out of `dispatch_grep`'s `ValueView::Array` arm for ADR-0058 step
+    /// 3b: with the default `:v` adverb the arm is now DEFERRED, so this body
+    /// runs at the pull instead of at the `.grep` call. That is only sound
+    /// because the promotion is published by mutating the source `ArrayData` in
+    /// place rather than by re-binding its name in the current frame -- the
+    /// pull happens wherever the Seq is consumed, long after that frame is gone
+    /// (`news/2026-09/grep-promotion-is-published-in-place.md`).
+    pub(crate) fn grep_over_array_promoting(
+        &mut self,
+        items: crate::gc::Gc<crate::value::ArrayData>,
+        func: Option<Value>,
+        grep_adverb: &GrepAdverb,
+    ) -> Result<Value, RuntimeError> {
+        let (filtered, mutated_items, matched_indices) =
+            self.eval_grep_over_items_with_mutated(func, items.to_vec())?;
+        // Which source positions matched, so those slots can be shared
+        // with the result as first-class element containers. The grep
+        // loop reports them; they used to be re-derived here by scanning
+        // the source for a value `===` to each result element, which
+        // could not find a `Proxy` slot (the result holds the FETCHed
+        // value, the slot holds the Proxy). The miss then truncated the
+        // result below, because it is rebuilt from the located slots.
+        //
+        // `None` is a chunked grep (`grep -> $a, $b {...}`): no
+        // one-to-one element/slot mapping, so nothing is aliased.
+        let indices = matched_indices.unwrap_or_default();
+        // Promote each matched source slot to a shared `ContainerRef`
+        // cell and reference the SAME cells from the grep result. A
+        // writeback loop (`for @a.grep(...) { $_++ }` / `@a.grep(...)>>++`)
+        // then mutates THROUGH the cell into @a's slot via the ordinary
+        // element-cell write path — no GrepView side channel needed. A
+        // later `=` assignment (`my @g = @a.grep(...)`) decontainerizes the
+        // cells, so the named copy owns its values and never writes back.
+        let mut promoted = mutated_items;
+        let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
+        for &i in &indices {
+            // A `:delete`d (or never-assigned) slot has no element
+            // container to alias, and promoting it would *create* one:
+            // `ArrayData::hole_at` recognises a hole by the gap marker
+            // value (`Package("Any")`/the declared type) sitting in the
+            // slot AND its absence from `initialized`, so wrapping that
+            // marker in a `ContainerRef` makes the slot read as a live
+            // element while `initialized` still calls it empty. The two
+            // then disagree, and a later trailing-slot `:delete` stops
+            // truncating the array (`@a[2]:delete; @a.grep({True});
+            // @a[3]:delete` left 3 elements instead of 2). Hand the
+            // grep result the raw marker instead — Raku yields `Any`
+            // there, not an alias into a slot that does not exist.
+            if items.hole_at(i) {
+                shared_cells.push(promoted[i].clone());
+                continue;
+            }
+            let cell = match promoted[i].view() {
+                ValueView::ContainerRef(_) => promoted[i].clone(),
+                _ => Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                    promoted[i].clone(),
+                ))),
+            };
+            promoted[i] = cell.clone();
+            shared_cells.push(cell);
+        }
+        // Publish the promotion by mutating the source `ArrayData` IN
+        // PLACE rather than building a replacement and re-binding every
+        // name that pointed at the old one. Both are visible to every
+        // alias, but the old route reached them through
+        // `overwrite_array_bindings_by_identity`, which walks the
+        // CURRENT frame's `env` — so it only ever found the aliases
+        // that happened to be lexically visible right here, and needed
+        // a `pending_rw_writeback_sources` drain to keep the caller's
+        // local slot from going stale behind it. Writing through the
+        // `Gc` (ADR-0013 §7 made this sound at the primitive) reaches
+        // every alias by construction, needs no drain, and does not
+        // depend on which frame is running — which is what ADR-0058
+        // step 3b needs, since a deferred grep promotes at PULL time,
+        // in a frame where the source's names are long gone.
+        {
+            let data = unsafe { crate::value::gc_contents_mut(&items) };
+            let slots = data.items_mut();
+            for (i, v) in promoted.into_iter().enumerate() {
+                if i < slots.len() {
+                    slots[i] = v;
+                }
+            }
+        }
+        // Build the result array from the shared cells (default `:v`
+        // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
+        // `transform_result` from `indices`, which drops the aliasing (a
+        // keys/pairs copy owns its values).
+        //
+        // The cells replace the result's items wholesale, so there must
+        // be exactly one per matched element or the result would be
+        // silently truncated -- which is what the old identity scan did
+        // whenever it failed to locate a slot.
+        let filtered = if !indices.is_empty()
+            && let ValueView::Array(filtered_items, fkind) = filtered.view()
+        {
+            debug_assert_eq!(
+                shared_cells.len(),
+                filtered_items.len(),
+                "grep aliasing must cover every matched element"
+            );
+            if shared_cells.len() != filtered_items.len() {
+                Value::array_with_kind(filtered_items.clone(), fkind)
+            } else {
+                let mut data = (**filtered_items).clone();
+                *data.items_mut() = shared_cells;
+                Value::array_with_kind(crate::gc::Gc::new(data), fkind)
+            }
+        } else {
+            filtered
+        };
+        grep_adverb.transform_result(filtered, &indices)
     }
 }

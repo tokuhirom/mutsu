@@ -632,7 +632,7 @@ impl Interpreter {
             items: std::sync::Arc::new(items),
             func: args.first().cloned(),
             fatal: self.fatal_mode,
-            rw_source: None,
+            mode: crate::value::MapGrepMode::Map,
         }))
     }
 
