@@ -1237,7 +1237,9 @@ impl Interpreter {
         // Collect ALL multi candidates regardless of arg matching. This is
         // needed because callwith() can re-dispatch with different args, so
         // candidates that don't match the original args may match the new ones.
-        let all_candidates = self.resolve_all_multi_candidates_indexed(name);
+        // Memoized per (name, package context, registry generation): the list
+        // is identical from one call of the same multi to the next.
+        let all_candidates = self.resolve_all_multi_candidates_cached(name);
         // A name with no multi candidates at all is a plain sub: it establishes
         // no dispatcher, so `nextsame` from its body correctly dies with
         // X::NoDispatcher (`roast/S06-multi/redispatch.t` test 10).
@@ -1283,11 +1285,12 @@ impl Interpreter {
             self.set_pending_dispatch_error(err);
         }
         let remaining: Vec<std::sync::Arc<super::FunctionDef>> = all_candidates
-            .into_iter()
+            .iter()
             .filter(|c| {
                 let fp = c.body_fingerprint();
                 Some(fp) != current_fp
             })
+            .cloned()
             .collect();
         // Capture the FIRST (winning) candidate's scalar rw params so a
         // nextsame+rw redispatch can chain the rw value through it (§D).

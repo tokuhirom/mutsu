@@ -10,6 +10,13 @@ pub(crate) type PackageKeyed<V> = rustc_hash::FxHashMap<String, rustc_hash::FxHa
 /// The compunit / package-block lexical stores (`unit_lexicals`,
 /// `package_lexicals`): see [`PackageKeyed`].
 pub(crate) type PackageLexicals = PackageKeyed<Value>;
+/// The full, specificity-sorted candidate list a multi dispatch frame carries
+/// (`push_multi_dispatch_frame`), shared between the frames that reuse it.
+pub(crate) type MultiCandidateList = std::sync::Arc<Vec<std::sync::Arc<FunctionDef>>>;
+/// `(name, current package, frame lexical package) -> candidate list`: see
+/// `Interpreter::multi_dispatch_candidates_memo`.
+pub(crate) type MultiDispatchCandidatesMemo =
+    rustc_hash::FxHashMap<(Symbol, Symbol, Option<Symbol>), MultiCandidateList>;
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -3217,6 +3224,18 @@ pub struct Interpreter {
     /// its generation bump fails CI rather than silently mis-dispatching).
     pub(crate) fn_keys_by_base: rustc_hash::FxHashMap<Symbol, std::sync::Arc<[Symbol]>>,
     pub(crate) fn_keys_by_base_gen: u64,
+    /// Memo of `resolve_all_multi_candidates_indexed` -- the FULL candidate
+    /// list a multi dispatch frame carries for `callsame`/`nextsame` -- keyed by
+    /// `(name, current package, frame lexical package)`, the three inputs the
+    /// gather reads besides the registry (`bare_name_packages`, the proto
+    /// owner). Dropped wholesale when either registry generation it depends on
+    /// moves: `fn_resolve_gen` (every function registration/removal) or the
+    /// registry's `proto_gen`. Without it every call of a `multi` re-ran the
+    /// gather -- package list, prefix strings, key filter, specificity sort --
+    /// to rebuild a list that had not changed since the previous call.
+    pub(crate) multi_dispatch_candidates_memo: MultiDispatchCandidatesMemo,
+    /// `(fn_resolve_gen, proto_gen)` the memo above was filled under.
+    pub(crate) multi_dispatch_candidates_memo_gen: (u64, u64),
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
     pub(crate) light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), (Symbol, u64)>,
