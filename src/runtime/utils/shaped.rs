@@ -239,8 +239,19 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
         (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
+        // `===` is `.WHICH eq .WHICH`: the BASE value's identity plus the
+        // composed type. Comparing the raw `overrides` maps could never answer
+        // True for two separately-built values, because every role application
+        // stamps its own `__mutsu_role_seq__` — `(1 but A) === (1 but A)` was
+        // False. `mixin_identity_key` drops that stamp (keeping only its order)
+        // and the per-instance `__mutsu_attr__*` values, and keeps everything
+        // else. The inner is compared by IDENTITY, not `eqv`: the base of
+        // `[1, 2] but A` is a reference type, so two of them are not `===`
+        // (raku agrees) even though they are `eqv`.
         (ValueView::Mixin(a_inner, a_mix), ValueView::Mixin(b_inner, b_mix)) => {
-            a_inner.eqv(b_inner) && a_mix == b_mix
+            values_identical(a_inner, b_inner)
+                && crate::value::types::mixin_identity_key(&a_mix)
+                    == crate::value::types::mixin_identity_key(&b_mix)
         }
         (ValueView::Mixin(_, _), _) | (_, ValueView::Mixin(_, _)) => false,
         (
