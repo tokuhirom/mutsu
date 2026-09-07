@@ -442,6 +442,13 @@ impl Interpreter {
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 attrs.insert("supplier_id".to_string(), Value::int(sid as i64));
+                // The channel itself, so a `whenever` on this Supply PUMPS it
+                // (draining the queue in the react drive loop) instead of
+                // relying on the eager send-time bridge. That is what makes the
+                // backlog visible -- values sent before anything tapped the
+                // channel are still on the queue -- and what keeps a `send`
+                // from counting as an emit before the loop has run.
+                attrs.insert("channel".to_string(), Value::channel(ch.clone()));
                 attrs.insert("live".to_string(), Value::TRUE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
