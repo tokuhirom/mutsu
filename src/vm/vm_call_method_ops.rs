@@ -693,6 +693,12 @@ impl Interpreter {
         // a Slip (`.method(@a.Slip)` stays one argument).
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        let bind_source = arg_sources
+            .as_ref()
+            .and_then(|sources| sources.get(1))
+            .and_then(|source| source.as_deref())
+            .filter(|source| !source.contains('\0'))
+            .map(str::to_string);
         self.set_pending_call_arg_sources(arg_sources);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
@@ -702,6 +708,28 @@ impl Interpreter {
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        if method == "BIND-KEY"
+            && args.len() == 2
+            && matches!(
+                target.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Stash"
+            )
+        {
+            let key = args[0].to_string_value();
+            let result = self.bind_stash_key(
+                code,
+                &target,
+                &key,
+                args[1].clone(),
+                bind_source.as_deref(),
+            )?;
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "stash-bind-key",
+            );
+            self.stack.push(result);
+            return Ok(());
+        }
         // `.VAR` of a first-class element cell must preserve the fact that the
         // cell was reflected. A bare `ContainerRef` is otherwise transparent to
         // dispatch, and returning it unchanged made a later `.WHAT`/`.^name`
