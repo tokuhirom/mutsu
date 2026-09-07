@@ -222,7 +222,11 @@ impl Interpreter {
     /// mirroring the `GetGlobal` bare-name read fallback so reads and writes
     /// resolve to the same canonical store.
     pub(super) fn package_qualified_candidate(name: &str, cur: &str) -> Option<String> {
-        if name.contains("::") || cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+        if crate::runtime::utils::has_double_colon(name)
+            || cur.is_empty()
+            || cur == "GLOBAL"
+            || crate::runtime::utils::has_routine_scope_marker(cur)
+        {
             return None;
         }
         let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
@@ -252,7 +256,7 @@ impl Interpreter {
     /// nested `use` made invisible under their bare name. Walks up the package
     /// chain like `resolve_type_in_current_package`.
     pub(super) fn resolve_enum_member_in_current_package(&self, name: &str) -> Option<Value> {
-        if name.is_empty() || name.contains("::") {
+        if name.is_empty() || crate::runtime::utils::has_double_colon(name) {
             return None;
         }
         let probe_chain = |root: &str| -> Option<Value> {
@@ -319,13 +323,14 @@ impl Interpreter {
     /// always wins. Never falls through to the bare (GLOBAL) name — the
     /// lexical alias for `our` is block-scoped.
     pub(super) fn package_chain_var_fallback(&self, name: &str) -> Option<Value> {
-        if name.contains("::") {
+        if crate::runtime::utils::has_double_colon(name) {
             return None;
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur: &str = self.current_package_sym().as_str();
-        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+        if cur.is_empty() || cur == "GLOBAL" || crate::runtime::utils::has_routine_scope_marker(cur)
+        {
             return None;
         }
         let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
@@ -375,10 +380,18 @@ impl Interpreter {
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
     pub(super) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
+        // Most programs never run a bare `package P { my $x; ... }` block, so
+        // the store is empty and nothing below can resolve: answer before the
+        // package probe and the two name scans, which every free-variable read
+        // in a routine body otherwise paid.
+        if self.package_lexicals.is_empty() {
+            return None;
+        }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur: &str = self.current_package_sym().as_str();
-        if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
+        if cur.is_empty() || cur == "GLOBAL" || crate::runtime::utils::has_routine_scope_marker(cur)
+        {
             return None;
         }
         // `package_lexicals` is keyed by the package's own env name for the
@@ -393,7 +406,7 @@ impl Interpreter {
         //     auto-qualifies free vars. Resolve ONLY when the qualifier is the
         //     current package, so `$Other::x` from outside never reaches another
         //     package's `my` lexical (Raku: `my` lexicals are not package-public).
-        let key: std::borrow::Cow<str> = if name.contains("::") {
+        let key: std::borrow::Cow<str> = if crate::runtime::utils::has_double_colon(name) {
             let (sigil, rest) = match name.as_bytes().first() {
                 Some(b @ (b'$' | b'@' | b'%' | b'&')) => (Some(*b as char), &name[1..]),
                 _ => (None, name),
@@ -502,10 +515,10 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
-        if name.contains("__ANON") {
+        if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
-        if !name.contains("::")
+        if !crate::runtime::utils::has_double_colon(name)
             && let Some(ValueView::ContainerRef(arc)) = self
                 .unit_lexicals
                 .get(crate::runtime::MAINLINE_UNIT_KEY)
@@ -579,7 +592,7 @@ impl Interpreter {
         }
         // Probed once: `str::contains` builds a searcher per call, and this
         // resolver asked it three times per free-variable read.
-        let qualified = name.contains("::");
+        let qualified = crate::runtime::utils::has_double_colon(name);
         // ADR-0024: a mainline named sub's free-variable read consults its own
         // captured cells first. Tried before the package-chain candidates
         // below, which all explicitly exclude `GLOBAL` — the running routine's
@@ -618,7 +631,10 @@ impl Interpreter {
             Some(cur),
         ];
         for candidate in candidates.into_iter().flatten() {
-            if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
+            if candidate.is_empty()
+                || candidate == "GLOBAL"
+                || crate::runtime::utils::has_routine_scope_marker(candidate)
+            {
                 continue;
             }
             if let Some(found) = Self::lookup_in_package_chain(&self.unit_lexicals, candidate, name)
@@ -650,7 +666,7 @@ impl Interpreter {
         // later immutable accessor calls in the same function does not
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
-        let qualified = name.contains("::");
+        let qualified = crate::runtime::utils::has_double_colon(name);
         let mainline_active = !qualified && self.mainline_lexical_frame_active();
         if mainline_active
             && self
@@ -699,7 +715,10 @@ impl Interpreter {
         .flatten()
         .collect();
         for candidate in candidates {
-            if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
+            if candidate.is_empty()
+                || candidate == "GLOBAL"
+                || crate::runtime::utils::has_routine_scope_marker(&candidate)
+            {
                 continue;
             }
             if Self::lookup_in_package_chain(&self.unit_lexicals, &candidate, name).is_some() {
@@ -997,7 +1016,7 @@ impl Interpreter {
     fn main_qualified_name(name: &str) -> Option<String> {
         for sigil in ["$", "@", "%", "&"] {
             if let Some(rest) = name.strip_prefix(sigil)
-                && !rest.contains("::")
+                && !crate::runtime::utils::has_double_colon(rest)
             {
                 return Some(format!("{sigil}Main::{rest}"));
             }
@@ -1855,7 +1874,7 @@ impl Interpreter {
             && !name.starts_with('!')
             && !name.starts_with('^')
             && name != "_"
-            && !name.contains("::")
+            && !crate::runtime::utils::has_double_colon(name)
             && !name.starts_with("__mutsu_")
     }
 

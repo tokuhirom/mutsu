@@ -25,7 +25,7 @@ impl Interpreter {
 
     #[inline(never)]
     fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<String> {
-        if cf.package.contains("::&") {
+        if crate::runtime::utils::has_routine_scope_marker(&cf.package) {
             return None;
         }
         let saved = self.current_package();
