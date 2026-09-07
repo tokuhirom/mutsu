@@ -176,7 +176,7 @@ impl Interpreter {
             {
                 let seq = Value::seq(Vec::new());
                 if let ValueView::Seq(items) = seq.view() {
-                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
+                    let seq_id = items.identity();
                     // Store off the scoped env so the association
                     // survives sub/block returns (see field docs).
                     self.predictive_seq_iters.insert(seq_id, iterator.clone());

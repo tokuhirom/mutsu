@@ -691,7 +691,10 @@ impl Interpreter {
             match body.view() {
                 crate::value::SeqView::List => Value::array(items),
                 crate::value::SeqView::ItemList => Value::array(items).item(),
-                crate::value::SeqView::Seq => Value::seq(items),
+                // `.sort` hands back a fresh `Seq`; the ITEMIZATION of the
+                // receiver's handle belongs to the container it was read from,
+                // not to the new sequence, so `ItemSeq` degrades to `Seq`.
+                crate::value::SeqView::Seq | crate::value::SeqView::ItemSeq => Value::seq(items),
             }
         } else {
             value

@@ -442,7 +442,7 @@ impl Value {
             ValueView::Seq(body) => match body.view() {
                 crate::value::SeqView::List => Some(Value::array(body.to_vec())),
                 crate::value::SeqView::ItemList => Some(Value::array(body.to_vec()).item()),
-                crate::value::SeqView::Seq => None,
+                crate::value::SeqView::Seq | crate::value::SeqView::ItemSeq => None,
             },
             _ => None,
         }

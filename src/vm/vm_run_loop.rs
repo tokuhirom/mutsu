@@ -1026,8 +1026,19 @@ impl Interpreter {
             // A deferred `.cache` result is a List-view handle rather than a
             // real Array. Retag the handle without pulling its source, exactly
             // as the Array arm changes List -> ItemList without copying data.
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => val,
             ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
                 Value::seq_body(body.as_item_list_view())
+            }
+            // A real `Seq` records the `$` container on the HANDLE (a second
+            // `SeqView` tag over the same reification core), not as a `Scalar`
+            // wrapper: rakudo's single-argument rule still flattens a `$`-held
+            // `Seq` into a `+@` slurpy (`my $s = (1,2,3).Seq; map {...}, $s`
+            // yields three elements, unlike a `$`-held `List`), so the value
+            // must stay a `Seq` to every consumer while `.raku` renders the
+            // container. Retagging pulls nothing, so a lazy source stays lazy.
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::Seq => {
+                Value::seq_body(body.as_item_seq_view())
             }
             // Unlike Arrays and Hashes, a Range has no itemized representation
             // of its own. A scalar container therefore keeps it as a Scalar

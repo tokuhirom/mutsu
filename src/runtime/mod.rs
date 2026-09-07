@@ -2052,8 +2052,11 @@ pub struct Interpreter {
     /// moment the main list drops them: when a frame that actually owns the slot
     /// has absorbed the value.
     pub(crate) pending_runtime_name_writes: Vec<String>,
-    /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the Seq's
-    /// Arc pointer (`seq_id`). Kept off the scoped `env` so the association
+    /// PredictiveIterator backing a `Seq.new(iterator)`, keyed by the
+    /// sequence's identity (`SeqBody::identity`, the shared reification
+    /// core's address — NOT one handle's `Arc`, so a retagged handle such as
+    /// `.cache`'s List view or a `$`-store's `ItemSeq` still finds it).
+    /// Kept off the scoped `env` so the association
     /// survives sub/block returns between Seq creation and `.tail`/`.Numeric`
     /// (an env-keyed side table was lost on scope exit).
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.

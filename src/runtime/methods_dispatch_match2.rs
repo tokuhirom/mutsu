@@ -345,7 +345,7 @@ impl Interpreter {
         // `reify_or_consume_seq_target` already claimed that and would have
         // thrown `X::Seq::Consumed` if it was already spent).
         if let ValueView::Seq(items) = target.view() {
-            let seq_id = std::sync::Arc::as_ptr(&items) as usize;
+            let seq_id = items.identity();
             if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
                 for key in meta.revert_remove {
                     self.env.remove(&key);
