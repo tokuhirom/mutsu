@@ -528,24 +528,32 @@ impl Interpreter {
         // `for 1, 2 { for @b { $_ = 1 } }` wrongly threw "Cannot assign to an
         // immutable value". Saved and restored on every exit path below.
         let saved_topic_readonly = binds_implicit_topic.then(|| self.readonly_kind("_"));
-        let topic_readonly = !spec.is_rw && binds_implicit_topic && {
-            spec.source_items_are_bare
-                || match &container_binding {
-                    None => false,
-                    Some(name) => {
-                        if let Some(val) = self.get_env_with_main_alias(name) {
-                            matches!(
-                                val.view(),
-                                ValueView::Mix(_, false)
-                                    | ValueView::Set(_, false)
-                                    | ValueView::Bag(_, false)
-                            )
-                        } else {
-                            false
-                        }
+        // An IMMUTABLE QuantHash source is readonly all the way down: nothing
+        // reachable through the topic may be written.
+        let topic_deep_readonly = !spec.is_rw
+            && binds_implicit_topic
+            && match &container_binding {
+                None => false,
+                Some(name) => {
+                    if let Some(val) = self.get_env_with_main_alias(name) {
+                        matches!(
+                            val.view(),
+                            ValueView::Mix(_, false)
+                                | ValueView::Set(_, false)
+                                | ValueView::Bag(_, false)
+                        )
+                    } else {
+                        false
                     }
                 }
-        };
+            };
+        // A provably-bare source is only SHALLOWLY readonly: the topic has no
+        // container of its own, so `$_ = ...` is refused, but the item OBJECT
+        // may still be mutable. `for %h { .value = 5 }` and `for %h.pairs {
+        // .value = 5 }` write the hash in raku even though `for %h { $_ = 5 }`
+        // throws, so the deep flag must NOT follow `source_items_are_bare`.
+        let topic_readonly = topic_deep_readonly
+            || (!spec.is_rw && binds_implicit_topic && spec.source_items_are_bare);
         let total_items = chunked_items.len();
         // `is copy` loop param (is_rw set, do_writeback suppressed): the param
         // owns a DISTINCT container per iteration. Mutations write through the
@@ -792,8 +800,12 @@ impl Interpreter {
                 // to an immutable value" (not the readonly-*variable* wording
                 // a named `-> $v` alias gets).
                 self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
-                self.env_mut()
-                    .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
+                if topic_deep_readonly {
+                    self.env_mut()
+                        .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
+                } else {
+                    self.env_mut().remove("__mutsu_deep_readonly::_");
+                }
             } else if binds_implicit_topic {
                 // See `saved_topic_readonly`: this loop's topic is writable, so
                 // an enclosing construct's mark must not carry into the body --

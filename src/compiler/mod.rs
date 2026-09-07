@@ -3351,9 +3351,17 @@ impl Compiler {
                 v.view(),
                 crate::value::ValueView::Array(..) | crate::value::ValueView::Hash(..)
             ),
-            // A list built entirely out of literals (`for 1, 2`, `for <a b>`).
+            // A LIST literal. raku builds a `List` whose elements are exactly
+            // the item expressions' containers, so an item that denotes a
+            // `Scalar` (`for $x, $y { $_ = 9 }`) keeps the topic writable while
+            // any item that is a bare value, an `Array` or a `Hash` has no
+            // `Scalar` behind it and makes `$_ = ...` an error at THAT item
+            // (`for $x, 2 { }`, `for @a, @b { }`, `for (@a,) { }`, `for 1, 2
+            // { }`). The mark is one per loop, not per item, so a literal with
+            // a mix answers `true`: raku throws on the bare item either way,
+            // and the only difference is how far the loop got first.
             Expr::ArrayLiteral(items) => {
-                !items.is_empty() && items.iter().all(|i| matches!(i, Expr::Literal(_)))
+                !items.is_empty() && items.iter().any(Self::list_literal_item_is_bare)
             }
             // A `Range` yields immutable endpoints-derived values and never
             // element containers, whatever its endpoints are -- `for $a..$b
@@ -3365,15 +3373,68 @@ impl Compiler {
                     | crate::token_kind::TokenKind::CaretDotDot
                     | crate::token_kind::TokenKind::CaretDotDotCaret
             ),
-            // `.keys` on a container yields freshly built keys, never the
-            // container's element cells. Restricted to `@`/`%` variables so a
-            // user-defined `keys` method returning containers is not affected.
+            // Iterating a `%` variable mints a fresh `Pair` per entry; the
+            // topic is that `Pair` itself, with no `Scalar` behind it, so raku
+            // rejects `for %h { $_ = 5 }` and `%h.map({ $_ = 9 })`. The Pair
+            // OBJECT stays mutable — `for %h { .value = 5 }` writes the hash —
+            // which is why this marking must stay SHALLOW (see
+            // `ForLoopSpec::source_items_are_bare`'s use site).
+            Expr::HashVar(_) => true,
+            // Coercers and views that build fresh items rather than handing out
+            // the container's element cells. Restricted to `@`/`%` variables so
+            // a user-defined method of the same name is not affected.
+            //
+            // `.List` copies into an immutable `List`; `.keys`/`.pairs`/
+            // `.antipairs`/`.kv` mint fresh keys and `Pair`s. Deliberately NOT
+            // here: `.list` and `.values`, which raku iterates through the
+            // source's own containers (`for @a.list { $_ = 5 }` and
+            // `for %h.values { $_ = 5 }` both write through).
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "keys" => {
+            } if args.is_empty()
+                && (*name == "keys"
+                    || *name == "List"
+                    || *name == "pairs"
+                    || *name == "antipairs"
+                    || *name == "kv") =>
+            {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
             }
             _ => false,
+        }
+    }
+
+    /// Whether one ITEM of a list literal is provably not a `Scalar` container
+    /// — see the `Expr::ArrayLiteral` arm of
+    /// [`Compiler::for_iterable_yields_bare_items`]. Conservative: an
+    /// unrecognised shape answers `false`, which only leaves today's writable
+    /// topic in place instead of inventing a throw raku does not have.
+    fn list_literal_item_is_bare(item: &Expr) -> bool {
+        match item {
+            Expr::Grouped(inner) => Self::list_literal_item_is_bare(inner),
+            // `(@a,)` / `(%h,)`: the item IS the Array/Hash, which is a
+            // container but not a `Scalar`, so `$_ = 5` is still refused.
+            Expr::ArrayVar(_) | Expr::HashVar(_) => true,
+            // A `Range` item yields the Range object itself here, and an
+            // arithmetic/string operator mints a fresh value whatever its
+            // operands are (`for $x + 1, $y { }`), so unlike
+            // `expr_yields_container_less_value` — which must stay conservative
+            // about what an operand denotes — the operands need no inspection.
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+                    | crate::token_kind::TokenKind::Plus
+                    | crate::token_kind::TokenKind::Minus
+                    | crate::token_kind::TokenKind::Star
+                    | crate::token_kind::TokenKind::Slash
+                    | crate::token_kind::TokenKind::Percent
+                    | crate::token_kind::TokenKind::StarStar
+                    | crate::token_kind::TokenKind::Tilde
+            ),
+            other => Self::expr_yields_container_less_value(other),
         }
     }
 

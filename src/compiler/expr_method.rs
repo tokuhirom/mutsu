@@ -551,8 +551,8 @@ impl Compiler {
         self.compile_expr_method_on_index(&final_target, name, args, modifier, quoted);
     }
 
-    /// Does a `.map`/`.grep` written directly against `target` bind its
-    /// callback's implicit `$_` to an item with no container of its own?
+    /// Does a `.map`/`.grep`/`.first` written directly against `target` bind
+    /// its callback's implicit `$_` to an item with no container of its own?
     ///
     /// Reuses the `for`-loop oracle
     /// ([`Compiler::for_iterable_yields_bare_items`]): `(1, 2).map({ $_ = 5 })`
@@ -561,7 +561,12 @@ impl Compiler {
     /// `@a.map({ $_ = 5 })` and every shape mutsu cannot prove bare keep
     /// today's writable topic. See [`crate::opcode::CompiledCode::immutable_topic`].
     pub(super) fn method_binds_immutable_topic(target: &Expr, mname: &str) -> bool {
-        matches!(mname, "map" | "grep") && Self::for_iterable_yields_bare_items(target)
+        // `.first` scans with the same topic binding `.grep` does — its matcher
+        // block reaches `vm_call_on_value`, which already consults
+        // `CompiledCode::immutable_topic` — so `(1, 2).first({ $_ = 5 })` is the
+        // same rejection. `@a.first({ $_ = 5 })` keeps writing through, because
+        // `@a` is not a provably-bare receiver.
+        matches!(mname, "map" | "grep" | "first") && Self::for_iterable_yields_bare_items(target)
     }
 
     /// A directly-written bare block argument (`{ ... }`), the only shape whose
