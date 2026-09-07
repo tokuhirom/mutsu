@@ -134,6 +134,17 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let mut result = self.exec_one_dispatch(code, ip, compiled_fns);
+        // Backstop for a `where`-constraint exception recorded during candidate
+        // matching (`pending_where_exception`). The dispatch funnels raise it
+        // before invoking a winner; this catches any matching path that has no
+        // funnel of its own, so the exception can never be silently dropped.
+        // It happened *before* whatever this instruction went on to do, so it
+        // wins over a later error too.
+        if self.pending_where_exception.is_some()
+            && let Some(e) = self.take_where_exception()
+        {
+            result = Err(e);
+        }
         // Only genuine runtime errors get a backtrace here: control-flow
         // signals (return/next/warn/fail/...) and parse errors (which carry
         // their own line/column and render as ===SORRY!===) are excluded.

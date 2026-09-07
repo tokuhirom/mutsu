@@ -7,6 +7,19 @@ use crate::value::ValueView;
 /// model).  Any real ancestor scores below this.
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
+/// The narrowness key a multi candidate is ranked by (see
+/// `Interpreter::candidate_rank_key`): specificity rank, type-hierarchy
+/// distance, whether it declares any named parameter, optional-positional
+/// count, required-named count, declaration order.
+type CandidateRankKey = (
+    (usize, usize, usize, usize, usize, usize),
+    usize,
+    usize,
+    usize,
+    usize,
+    u64,
+);
+
 /// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
 /// `Str()` is short for `Str(Any)`, so it accepts anything.
 fn coercion_accepted_constraint(constraint: &str) -> Option<&str> {
@@ -63,6 +76,34 @@ impl Interpreter {
         err
     }
 
+    /// The narrowness key a multi candidate is ranked by, in
+    /// `candidate_rank_cmp` order: specificity rank, type-hierarchy distance,
+    /// whether it declares any named parameter, optional-positional count,
+    /// required-named count, declaration order.
+    fn candidate_rank_key(&mut self, def: &Arc<FunctionDef>, args: &[Value]) -> CandidateRankKey {
+        let rank = self.candidate_specificity_rank_for_args(def, args);
+        let dist = self.candidate_type_distance(args, def);
+        let has_named = usize::from(Self::candidate_declares_named(def));
+        let opt = Self::candidate_optional_positional_count(def);
+        let req_named = Self::candidate_required_named_count(def);
+        (rank, dist, has_named, opt, req_named, def.decl_order)
+    }
+
+    /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher rank
+    /// first, then lower distance, then a candidate that declares nameds over
+    /// one that declares none, then fewer optional positionals (a required
+    /// param is narrower than an optional one), then higher required named,
+    /// and finally — for candidates tied on all of that — the one declared
+    /// first, which is what Rakudo runs.
+    fn candidate_rank_cmp(a: CandidateRankKey, b: CandidateRankKey) -> std::cmp::Ordering {
+        b.0.cmp(&a.0)
+            .then(a.1.cmp(&b.1))
+            .then(b.2.cmp(&a.2))
+            .then(a.3.cmp(&b.3))
+            .then(b.4.cmp(&a.4))
+            .then(a.5.cmp(&b.5))
+    }
+
     pub(super) fn choose_best_matching_candidate(
         &mut self,
         name: &str,
@@ -71,6 +112,17 @@ impl Interpreter {
     ) -> Option<Arc<FunctionDef>> {
         let mut matches = Vec::new();
         let mut seen = std::collections::HashSet::new();
+        // The first candidate whose `where` constraint THREW, together with
+        // the exception. Raku walks the candidates narrowest-first and stops at
+        // the first that binds, so such an exception escapes only when that
+        // candidate is one raku would actually have reached — i.e. when it is
+        // not out-ranked by a candidate that did match. Deciding that needs the
+        // winner, so the exception is parked here until the ranking below.
+        let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
+        // A `where` exception recorded OUTSIDE this dispatch (by a method match
+        // earlier in the same instruction, say) must not be mistaken for one of
+        // these candidates': park it and put it back below.
+        let outer_where_exception = self.pending_where_exception.take();
         for (_, def) in candidates {
             // For auto-param subs ($^a, $^b) with empty param_defs but
             // non-empty params, check arity against params.len() since
@@ -89,6 +141,14 @@ impl Interpreter {
             } else {
                 self.args_match_param_types(args, &def.param_defs)
             };
+            if let Some(e) = self.take_where_exception() {
+                if threw.is_none() {
+                    threw = Some((def.clone(), e));
+                }
+                // A candidate whose `where` died did not match; whether the
+                // exception escapes is settled after the winner is known.
+                continue;
+            }
             if type_ok {
                 let fingerprint = def.body_fingerprint();
                 if !seen.insert(fingerprint) {
@@ -97,6 +157,45 @@ impl Interpreter {
                 matches.push(def);
             }
         }
+        if let Some((thrower, e)) = threw {
+            // No candidate matched at all, or the thrower sorts at least as
+            // narrow as (or was declared before) the best match: raku would
+            // have reached the `where` and died there, so re-raise.
+            let reached = match matches.first() {
+                None => true,
+                Some(best) => {
+                    // Compare narrowness with the `where`-constraint component
+                    // ZEROED on both sides. Rakudo orders candidates by their
+                    // NOMINAL types first and only lets a `where` break a tie
+                    // between equally-nominal candidates, so a nominally
+                    // narrower candidate that matched (`multi bar(| (A $x))`)
+                    // is reached before a `where`-only one
+                    // (`multi bar(| where { ... })`) and that `where` never
+                    // runs. mutsu's own ranking weighs `where` above the
+                    // nominal shape, which is fine for picking a winner among
+                    // candidates that all matched but would wrongly claim the
+                    // thrower came first here.
+                    let mut a = self.candidate_rank_key(&thrower, args);
+                    let mut b = self.candidate_rank_key(best, args);
+                    a.0.1 = 0;
+                    b.0.1 = 0;
+                    Self::candidate_rank_cmp(a, b) != std::cmp::Ordering::Greater
+                }
+            };
+            if reached {
+                // Signal it the way an ambiguous dispatch is signalled: `None`
+                // plus a pending dispatch error, which every caller of the
+                // resolver already re-raises. A plain `pending_where_exception`
+                // stash would not survive the fallback path's deliberate
+                // re-resolve (it clears the pending error and resolves again),
+                // and the leftover would then be attributed to whichever
+                // candidate the second scan looked at first.
+                self.set_pending_dispatch_error(e);
+                self.pending_where_exception = outer_where_exception;
+                return None;
+            }
+        }
+        self.pending_where_exception = outer_where_exception;
         if matches.len() <= 1 {
             return matches.into_iter().next();
         }
@@ -112,30 +211,9 @@ impl Interpreter {
             let mut ranked: Vec<(usize, _)> = matches
                 .iter()
                 .enumerate()
-                .map(|(i, def)| {
-                    let rank = self.candidate_specificity_rank_for_args(def, args);
-                    let dist = self.candidate_type_distance(args, def);
-                    let has_named = usize::from(Self::candidate_declares_named(def));
-                    let opt = Self::candidate_optional_positional_count(def);
-                    let req_named = Self::candidate_required_named_count(def);
-                    (i, (rank, dist, has_named, opt, req_named, def.decl_order))
-                })
+                .map(|(i, def)| (i, self.candidate_rank_key(def, args)))
                 .collect();
-            ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance, then a candidate that
-                // declares nameds over one that declares none, then fewer
-                // optional positionals (a required param is narrower than an
-                // optional one), then higher required named, and finally — for
-                // candidates that are tied on all of that — the one declared
-                // first, which is what Rakudo runs.
-                b.1.0
-                    .cmp(&a.1.0)
-                    .then(a.1.1.cmp(&b.1.1))
-                    .then(b.1.2.cmp(&a.1.2))
-                    .then(a.1.3.cmp(&b.1.3))
-                    .then(b.1.4.cmp(&a.1.4))
-                    .then(a.1.5.cmp(&b.1.5))
-            });
+            ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.1, b.1));
             let sorted_matches: Vec<Arc<FunctionDef>> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
             matches = sorted_matches;

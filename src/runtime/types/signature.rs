@@ -422,25 +422,24 @@ fn where_constraint_matches(
                 interpreter.env.insert(key.clone(), candidate.clone());
                 interpreter.mark_readonly(key);
             }
-            let r = interpreter
-                .eval_block_value(body)
-                .map(|v| v.truthy())
-                .unwrap_or(false);
+            let r = {
+                let ev = interpreter.eval_block_value(body);
+                interpreter.where_truthy(ev)
+            };
             for key in &ph_keys {
                 interpreter.unmark_readonly(key);
             }
             r
         }
-        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-            interpreter
-                .eval_block_value(&[Stmt::Expr(where_expr.clone())])
-                .map(|v| v.truthy())
-                .unwrap_or(false)
+        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
+        {
+            let ev = interpreter.eval_block_value(&[Stmt::Expr(where_expr.clone())]);
+            interpreter.where_truthy(ev)
         }
-        expr => interpreter
-            .eval_block_value(&[Stmt::Expr(expr.clone())])
-            .map(|v| interpreter.smart_match(candidate, &v))
-            .unwrap_or(false),
+        expr => {
+            let ev = interpreter.eval_block_value(&[Stmt::Expr(expr.clone())]);
+            interpreter.where_smartmatch(candidate, ev)
+        }
     };
     interpreter.env = saved;
     ok
