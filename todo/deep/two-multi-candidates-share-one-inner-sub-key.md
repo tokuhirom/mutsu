@@ -5,8 +5,8 @@ A `sub` declared inside a routine body is registered as
 package that each declare a helper of the same name therefore write the same
 key, and one body ends up executing the other's helper. `Digest::SHA2` is the
 live case: `sha256` and `sha512` each declare `rotr`, `Σ0`, `Σ1`, `σ0`, `σ1`,
-and mutsu runs **sha256's 32-bit `Σ0`/`Σ1`/`σ0`/`σ1` inside sha512's 80-round
-compression**, so `sha512` returns a wrong digest.
+and mutsu runs **sha256's 32-bit `rotr` inside sha512's 80-round compression**,
+so `sha512` returns a wrong digest.
 
 This has nothing to do with the vendored `Test` module — it was found through
 that work (`todo/deep/vendor-real-test-module.md`) but reproduces in a plain
@@ -52,19 +52,21 @@ correct. Deterministic; identical under `MUTSU_JIT=off`, `MUTSU_GC=off` and
 
 ## Evidence
 
-Instrumenting the vendored `Digest::SHA2` so each helper announces itself
-(`note "512-BigS0"` / `note "256-BigS0"`, …) on the failing run:
+**The load-bearing collision is `rotr`, not the Greek names.** Renaming
+sha512's helpers *including* `rotr` makes the repro pass; renaming only the
+Greek four on either side does not. Instrumenting both `rotr`s (`note "R256"` /
+`note "R512"`) on the failing run, with sha256's Greek helpers renamed so the
+Σ/σ dispatch is provably clean:
 
 ```
-576 256-BigS0     576 256-BigS1     448 256-smS0     448 256-smS1
-320 512-BigS0     320 512-BigS1     256 512-smS0     256 512-smS1
+5248 R256      2944 R512
 ```
 
-The sha512 work is 8 blocks × 80 rounds = 640 `Σ0` calls, and only **320** of
-them reach sha512's own `Σ0`. The other 320 land in sha256's, which is exactly
-the 576 − 256 excess on the sha256 side (256 is subtest 1's honest sha256
-work). The `sha384` hmac gets its own helpers; the plain `sha512` hmac gets
-sha256's throughout — which is why `sha384` passes and `sha512` fails.
+sha512's own work is 8 blocks × 80 rounds × ~10 `rotr` calls ≈ 6400; it gets
+2944. The rest run sha256's `uint32` version, whose 32-bit `+<` produces a
+different digest. (With the Greek names left colliding too, the same
+instrumentation shows 320 of sha512's 640 `Σ0` rounds landing in sha256's `Σ0`
+— the collision is per name, and every shared name contributes.)
 
 Everything the routine is *handed* is right: instrumentation shows the correct
 `$data` bytes, the correct `$initial-hash` (`cbbb9d5dc1059ed8…` for sha384,
@@ -73,57 +75,65 @@ Everything the routine is *handed* is right: instrumentation shows the correct
 candidate with the right `&hash`. The per-block trace diverges at the *output*
 of the first block, with identical inputs.
 
-Registration logging (an `eprintln!` on the `functions` insert and the
-lexical-shadow `retain` in `registration_sub.rs`, filtered to names containing
-`Σ`) shows why:
+## The registration side
+
+Both declarations register under `format!("{}::{}", self.current_package(),
+name)` — `Digest::SHA2::rotr`, with nothing identifying the enclosing routine.
+Logging every entry to `register_sub_decl_with_metadata` for `rotr` shows 14
+registrations and only **2 inserts**:
 
 ```
-DBGREG shadow-remove Digest::SHA2::Σ0
-DBGREG insert key=Digest::SHA2::Σ0 pkg=Digest::SHA2
-DBGREG shadow-remove Digest::SHA2::Σ1
-DBGREG insert key=Digest::SHA2::Σ1 pkg=Digest::SHA2
-DBGREG shadow-remove Digest::SHA2::Σ0        <- the other candidate, same key
-DBGREG insert key=Digest::SHA2::Σ0 pkg=Digest::SHA2
-DBGREG shadow-remove Digest::SHA2::Σ1
-DBGREG insert key=Digest::SHA2::Σ1 pkg=Digest::SHA2
+enter depth=0 traits=["__lexical_hoist","__hoisted"]   insert Digest::SHA2::rotr
+enter depth=0 traits=["__lexical_hoist"]               unchanged
+enter depth=0 traits=["__lexical_hoist","__hoisted"]   unchanged
+enter depth=0 traits=["__lexical_hoist"]               unchanged
+enter depth=1 traits=["__lexical_hoist","__hoisted"]   insert Digest::SHA2::rotr
+enter depth=1 …                                        unchanged (×9)
 ```
 
-Both registrations happen at hoist time, before either body runs, and both use
-`format!("{}::{}", self.current_package(), name)` — the package, with nothing
-identifying the enclosing routine. Renaming sha512's four helpers makes the
-file pass; renaming sha256's does not, so the surviving entry is sha256's and
-sha512's body is the one that loses.
-
-## Why the registry is reached at all
-
-A body normally calls its own inner sub through a compiled/lexical path and
-never consults the package-keyed registry, which is why `sha256` stays correct
-and why a bare `sha224(...)` call before the sha512 work does **not** trigger
-the bug. It takes the `hmac` shape to knock sha512's body onto the registry
-fallback: `hmac` lives in a different module and calls its hash through a
-`:&hash` named-Callable parameter inside a `reduce` block. Neither
-`my &h = &sha224; h($blob)` nor `reduce -> $m, $i { h($m) }, $blob, 0` is
-enough on its own — both leave the file passing — so the trigger is that
-indirection combined with the two earlier hmacs.
-
-Finding which cache or fallback flips between the sha384 hmac and the sha512
-hmac is the remaining work. Start by logging the resolved def identity (not
-just the name) at the `Σ0` call site inside sha512's inner `reduce` block.
+The skips come from the site-fingerprint fast path in `registration_sub.rs`
+("if `registered_fn_fingerprints[fq_sym]` already equals this declaration's
+`site_fingerprint`, there is nothing to re-derive"). The fingerprints of the
+two `rotr`s do differ (`12908437786956835830` vs `11610335429252450779`), and
+the map is keyed by the shared `fq_sym` alone — so the entry tracks *whichever
+body registered last*, and the other body's calls resolve to it. Changing a
+helper's body does not help (the key is the name); adding a third body that
+declares the same names does not dislodge the winner either.
 
 ## The fix
 
 Key a routine-body-local `sub` by its enclosing routine, not by the package
 alone — it is not `our`, is not exported, and is not visible outside the body,
 so it has no business sharing a package-level name with a sibling candidate's
-helper. Related design gap:
+helper. `registered_fn_fingerprints` needs the same treatment: keyed by the
+shared name, it cannot express "this body's copy is installed".
+
+The cheaper-looking alternative — let a body's own in-sequence registration
+always reinstall, instead of being skipped by the fingerprint fast path — only
+narrows the window: two bodies would still fight over one key, and a closure
+that outlived its declaring frame would still resolve to whoever wrote last.
+Prefer the key change.
+
+Related design gap:
 `todo/deep/module-package-sub-invisible-from-method-body.md`, which is about
 the same key being *too narrow* from a method body; this is the same key being
 *too wide* across two bodies.
 
 It is filed deep rather than as a ticket because the key shape is load-bearing
 for a lot of dispatch, including the lexical-shadow removal at
-`registration_sub.rs`'s `allow_lexical_shadow` branch and every name-keyed
-resolution cache built on top of it.
+`registration_sub.rs`'s `allow_lexical_shadow` branch, the site-fingerprint
+fast path above, and every name-keyed resolution cache built on them.
+
+## Why it takes the `hmac` shape to surface
+
+A body normally reaches its own inner sub without a name lookup, which is why
+`sha256` stays correct and why neither a bare `sha224($blob)` nor
+`my &h = &sha224; reduce -> $m, $i { h($m) }, $blob, 0` triggers anything. It
+takes `hmac` — a different module calling its hash through a `:&hash` named
+Callable inside a `reduce` block — plus the two earlier hmacs to put sha512's
+body on the name-resolution path. Establishing exactly which resolution step
+that is, is the remaining diagnostic work; log the resolved def identity (not
+the name) at the `rotr` call site inside sha512's `Σ0`.
 
 ## Not a recent regression
 
