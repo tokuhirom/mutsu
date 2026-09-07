@@ -455,6 +455,14 @@ impl Interpreter {
         let container = self
             .gate_local_slot_value_at(code, slot, &name)
             .or_else(|| self.get_env_with_main_alias(&name));
+        // A `%h`/`@a` an escaping closure captured is held in a shared
+        // `ContainerCell` (ADR-0055's container lane), so every classification
+        // and read below has to look THROUGH the cell -- a celled `BagHash`
+        // that reads as a bare `ContainerRef` matches none of the QuantHash
+        // arms, and `%h<k>++` silently did nothing. The write side is handled
+        // separately, at the in-place writeback below.
+        let container_raw = container.clone();
+        let container = container.map(|c| c.deref_container());
         // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
         // against the container's length before using it as the key — otherwise
         // the raw closure stringifies to a bogus key and the increment is lost.
@@ -669,7 +677,15 @@ impl Interpreter {
         // only, so a raw cell would read `Nil` and discard the write. (Named
         // params resolve to a deref'd-but-Arc-shared plain container instead, which
         // the strong_count>1 in-place writeback below handles.)
-        if let Some(ValueView::ContainerRef(arc)) = container.as_ref().map(Value::view) {
+        if let Some(ValueView::ContainerRef(arc)) = container_raw.as_ref().map(Value::view)
+            // A celled QuantHash falls through to the generic path instead: its
+            // RO check, `original_keys` bookkeeping and SetHash Bool result all
+            // live there, and the writeback below reaches into the cell.
+            && matches!(
+                container.as_ref().map(Value::view),
+                Some(ValueView::Hash(..) | ValueView::Array(..))
+            )
+        {
             let inner = arc.lock().unwrap().clone();
             let current = match inner.view() {
                 ValueView::Hash(h) => h.get(&key).cloned().unwrap_or(Value::NIL),
@@ -882,9 +898,28 @@ impl Interpreter {
         let gate_slot = self
             .gate_local_slot_at(code, slot, &name)
             .filter(|&s| !self.locals[s].is_nil());
-        let modified_in_place = if let Some(container_value) = match gate_slot {
-            Some(s) => self.locals.get_mut(s),
-            None => self.env_mut().get_mut(&name),
+        // When the variable is held in a capture cell, the mutation has to land
+        // INSIDE the cell: the slot itself holds only the `ContainerRef`, and a
+        // deref'd clone would COW-detach on `gc_data_mut` and silently drop the
+        // write. Locking the cell hands out the same `&mut Value` the slot arm
+        // does, so every arm below is unchanged.
+        let cell = match gate_slot {
+            Some(s) => self.locals.get(s),
+            None => self.env().get(&name),
+        }
+        .and_then(|v| match v.view() {
+            ValueView::ContainerRef(cell) => Some(cell.clone()),
+            _ => None,
+        });
+        let mut cell_guard = cell
+            .as_ref()
+            .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()));
+        let modified_in_place = if let Some(container_value) = match &mut cell_guard {
+            Some(guard) => Some(&mut **guard),
+            None => match gate_slot {
+                Some(s) => self.locals.get_mut(s),
+                None => self.env_mut().get_mut(&name),
+            },
         } {
             if let Some(done) = container_value.with_hash_mut(|h| {
                 // Mirror the array arm below: when the hash Arc is shared

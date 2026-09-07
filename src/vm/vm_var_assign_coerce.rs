@@ -94,7 +94,10 @@ impl Interpreter {
     /// mutates the stale empty container and clobbers the slot on writeback).
     /// Falls through when the variable has no existing same-kind container.
     fn quanthash_store_preserving_identity(&mut self, name: &str, coerced: Value) -> Value {
-        let existing = self.env().get(name).cloned();
+        // Through the capture cell, like the caller: the existing QuantHash
+        // whose backing node the new contents are written into may be held
+        // inside a shared `ContainerCell`.
+        let existing = self.env().get(name).map(|v| v.deref_container());
         match (existing.as_ref().map(Value::view), coerced.view()) {
             (Some(ValueView::Set(old, mutable)), ValueView::Set(new, _))
                 if !crate::gc::Gc::ptr_eq(&old, &new) =>
@@ -193,10 +196,28 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.
-        let current = self.env().get(name).cloned();
+        // Through the capture cell: a `%h is BagHash` an escaping closure
+        // captured is held in a shared `ContainerCell`, and neither the
+        // embedded metadata probe nor the "is it already a QuantHash" check
+        // below can see a `ContainerRef`. Without this a whole-container
+        // re-assignment (`%h = <e e e f g>`) fell through to the plain-hash
+        // initializer and died on the odd element count.
+        let current = self.env().get(name).map(|v| v.deref_container());
+        // `declared_type` is where an `is BagHash`/`is SetHash`/`is MixHash`
+        // trait records the container's own type (`element_constraint_for`
+        // reports the ELEMENT type, and answers `None` for a QuantHash whose
+        // `value_type` is empty). Both spellings have to be consulted: which of
+        // the two survives on the container depends on whether the declaration
+        // store or the trait application tagged it last.
         if let Some(constraint) = current
             .as_ref()
             .and_then(|v| self.element_constraint_for(name, v))
+            .or_else(|| {
+                current
+                    .as_ref()
+                    .and_then(|v| self.container_type_metadata(v))
+                    .and_then(|i| i.declared_type)
+            })
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
             // Only coerce if the variable IS a QuantHash container (declared via `is`),

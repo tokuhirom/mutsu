@@ -18,7 +18,7 @@ use Test;
 #   * HIJACK    -- a same-named container in the calling frame wins, and
 #   * STALENESS -- the creator's post-capture mutation is invisible.
 
-plan 23;
+plan 24;
 
 # ---------------------------------------------------------------------------
 # 1-2. The headline defect, `@` and `%`. `@a.push(3)` is load-bearing: an
@@ -292,6 +292,23 @@ plan 23;
     my $i := (1, 2, 3, 2, 1, 0).squish(:$with).iterator;
     $i.pull-one;
     is @with.elems, 0, 'a squish :with accumulator reset before the iterator stays reset';
+}
+
+# ---------------------------------------------------------------------------
+# 24. An `is <Type>` container trait must not opt an UNRELATED same-named
+# container out of the capture cell. Same-named `my` locals share one slot, so
+# the exclusion `compute_free_vars` used to carry was by name across the whole
+# frame: one `my %h is BagHash` anywhere in a frame left every other `%h` in it
+# with neither defence -- no vouch (the closure writes) and no cell -- and a
+# same-named local in the CALLING frame won.
+# ---------------------------------------------------------------------------
+{
+    my %h = a => 1, b => 2, c => 3;
+    my $f = -> { %h<d> = 4; %h.elems };
+    sub cell_dichotomy_c1() { my %h = z => 9; $f.() }
+    is cell_dichotomy_c1(), 4,
+        'a mutating capture keeps its cell despite an is-BagHash %h elsewhere in the frame';
+    if False { my %h is BagHash = q => 1 }
 }
 
 done-testing;

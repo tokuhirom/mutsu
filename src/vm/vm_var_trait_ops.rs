@@ -37,6 +37,60 @@ impl Interpreter {
         }
     }
 
+    /// The declared value an `is <Type>` trait is about to coerce, read
+    /// THROUGH a capture cell.
+    ///
+    /// `my %h is BagHash = a => 1, b => 0, c => 2` stores a plain `Hash` at the
+    /// declaration and lets this op coerce it afterwards, reading the slot back
+    /// to find the initial values. When the same name is also captured by a
+    /// mutating closure the slot holds a `ContainerRef` instead, which is not
+    /// the `Hash` any branch below looks for — the initialiser was silently
+    /// dropped and `%h` came out with one key. `compute_free_vars` used to
+    /// avoid that by refusing the cell to every `%h` in the frame; seeing
+    /// through the cell here is what lets that blanket exclusion go.
+    fn read_var_trait_target(
+        &self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+    ) -> Option<Value> {
+        self.read_local_slot_or_name(code, slot, name)
+            .map(|v| v.deref_container())
+    }
+
+    /// Store the coerced value back, THROUGH the capture cell when the slot
+    /// holds one — replacing the slot outright would drop the cell and with it
+    /// every closure's view of the variable.
+    ///
+    /// Returns whether the write went through a cell. When it did, the caller
+    /// must NOT also `set_env_with_main_alias`: the env mirror is the same
+    /// `ContainerRef` and already sees the new contents, and overwriting it
+    /// with the bare value would leave env de-celled while the slot stayed
+    /// celled — the two halves then disagree about the variable's identity.
+    #[must_use]
+    fn write_var_trait_target(
+        &mut self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+        val: Value,
+    ) -> bool {
+        let mut through_cell = false;
+        if let Some(s) = self.resolve_local_slot(code, slot, name) {
+            if let ValueView::ContainerRef(cell) = self.locals[s].view() {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = val.clone();
+                through_cell = true;
+            } else {
+                self.locals[s] = val.clone();
+            }
+        }
+        if let Some(ValueView::ContainerRef(cell)) = self.env().get(name).map(Value::view) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
+            through_cell = true;
+        }
+        through_cell
+    }
+
     pub(super) fn exec_apply_var_trait_op(
         &mut self,
         code: &CompiledCode,
@@ -103,12 +157,13 @@ impl Interpreter {
             // otherwise be skipped and lost when the value flows out.
             if (name.starts_with('@') || name.starts_with('%'))
                 && let Some(container) = self
-                    .read_local_slot_or_name(code, eff_slot, &name)
+                    .read_var_trait_target(code, eff_slot, &name)
                     .or_else(|| self.get_env_with_main_alias(&name))
             {
                 let container = self.tag_container_default(container, default_value.clone());
-                self.write_local_slot_or_name(code, eff_slot, &name, container.clone());
-                self.set_env_with_main_alias(&name, container.clone());
+                if !self.write_var_trait_target(code, eff_slot, &name, container.clone()) {
+                    self.set_env_with_main_alias(&name, container.clone());
+                }
                 // Replace existing Nil and uninitialized (Package("Any"))
                 // elements with the default value (Raku container semantics:
                 // Nil/uninitialized slots in a defaulted container become
@@ -136,19 +191,20 @@ impl Interpreter {
                             kind,
                         );
                         let new_arr = self.tag_container_default(new_arr, default_value.clone());
-                        self.write_local_slot_or_name(code, eff_slot, &name, new_arr.clone());
-                        self.set_env_with_main_alias(&name, new_arr);
+                        if !self.write_var_trait_target(code, eff_slot, &name, new_arr.clone()) {
+                            self.set_env_with_main_alias(&name, new_arr);
+                        }
                     }
                 }
             }
             // If the variable is currently Nil (uninitialized scalar), set it to the default.
             if !name.starts_with('@') && !name.starts_with('%') {
-                let current = self.read_local_slot_or_name(code, eff_slot, &name);
+                let current = self.read_var_trait_target(code, eff_slot, &name);
                 if matches!(
                     current.as_ref().map(Value::view),
                     Some(ValueView::Nil) | None
-                ) {
-                    self.write_local_slot_or_name(code, eff_slot, &name, default_value.clone());
+                ) && !self.write_var_trait_target(code, eff_slot, &name, default_value.clone())
+                {
                     self.set_env_with_main_alias(&name, default_value);
                 }
             }
@@ -212,7 +268,7 @@ impl Interpreter {
                 // a Buf/Blob Instance (if SetLocal coerced through an old Buf
                 // container in the same slot, e.g. in a loop redeclaration).
                 let current = self
-                    .read_local_slot_or_name(code, eff_slot, name)
+                    .read_var_trait_target(code, eff_slot, name)
                     .unwrap_or(Value::NIL);
                 let items = match current.view() {
                     ValueView::Array(items, ..) => items
@@ -233,8 +289,9 @@ impl Interpreter {
                 };
                 let buf = self.try_compiled_method_or_interpret(buf_type, "new", items)?;
                 let name_str = name.to_string();
-                self.write_local_slot_or_name(code, eff_slot, &name_str, buf.clone());
-                self.set_env_with_main_alias(&name_str, buf);
+                if !self.write_var_trait_target(code, eff_slot, &name_str, buf.clone()) {
+                    self.set_env_with_main_alias(&name_str, buf);
+                }
                 return Ok(());
             }
         }
@@ -247,7 +304,7 @@ impl Interpreter {
             }
             let name_str = name.to_string();
             // Register container type metadata with declared_type "Map"
-            if let Some(container) = self.read_local_slot_or_name(code, eff_slot, &name_str) {
+            if let Some(container) = self.read_var_trait_target(code, eff_slot, &name_str) {
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,
@@ -256,8 +313,9 @@ impl Interpreter {
                 // Hashes embed metadata in `HashData`; store the tagged value
                 // back into both the local slot and env.
                 let tagged = self.tag_container_metadata(container, info);
-                self.write_local_slot_or_name(code, eff_slot, &name_str, tagged.clone());
-                self.set_env_with_main_alias(&name_str, tagged);
+                if !self.write_var_trait_target(code, eff_slot, &name_str, tagged.clone()) {
+                    self.set_env_with_main_alias(&name_str, tagged);
+                }
             }
             // Mark the variable read-only to prevent mutation
             self.mark_readonly_with(&name_str, crate::ast::ReadonlyKind::ImmutableValue);
@@ -281,7 +339,7 @@ impl Interpreter {
                 // Check if the variable already has initial values from the declaration.
                 // If so, construct the QuantHash from those values instead of creating
                 // an empty one. This handles `my %h is Bag = <a b b c>`.
-                let current_val = self.read_local_slot_or_name(code, eff_slot, &name_str);
+                let current_val = self.read_var_trait_target(code, eff_slot, &name_str);
                 // ADR-0058: `my %r is SetHash = %h.map: {...}` binds the Seq
                 // into the slot BEFORE this trait runs (the declaration emits
                 // `MarkBindContext; SetLocal`, so `exec_set_local_op_inner`'s
@@ -482,8 +540,9 @@ impl Interpreter {
                     declared_type: Some(trait_name.clone()),
                 };
                 let instance = self.tag_container_metadata(instance, info);
-                self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
-                self.set_env_with_main_alias(&name_str, instance.clone());
+                if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
+                    self.set_env_with_main_alias(&name_str, instance.clone());
+                }
                 // Set type constraint so future assignments are coerced correctly
                 self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
                 return Ok(());
@@ -560,7 +619,7 @@ impl Interpreter {
             // assigns the initializer before this trait op runs) as a flat
             // positional list, matching `Foo.new(|@values)`.
             let init_source = self
-                .read_local_slot_or_name(code, slot, &name_str)
+                .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
                 Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
@@ -574,8 +633,9 @@ impl Interpreter {
                 // Bind first, then STORE through the bound variable, so the
                 // mutating dispatch resolves `self` to the instance the variable
                 // now holds — the same ordering the `%`-sigil block below uses.
-                self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
-                self.set_env_with_main_alias(&name_str, instance.clone());
+                if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
+                    self.set_env_with_main_alias(&name_str, instance.clone());
+                }
                 let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
                 if let Some(list_arg) = store_arg {
                     let stored = self.try_compiled_method_or_interpret(
@@ -588,14 +648,16 @@ impl Interpreter {
                     } else {
                         instance
                     };
-                    self.write_local_slot_or_name(code, eff_slot, &name_str, bound.clone());
-                    self.set_env_with_main_alias(&name_str, bound);
+                    if !self.write_var_trait_target(code, eff_slot, &name_str, bound.clone()) {
+                        self.set_env_with_main_alias(&name_str, bound);
+                    }
                 }
                 return Ok(());
             }
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", init_values)?;
-            self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
-            self.set_env_with_main_alias(&name_str, instance);
+            if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
+                self.set_env_with_main_alias(&name_str, instance);
+            }
             return Ok(());
         }
 
@@ -643,15 +705,16 @@ impl Interpreter {
             // it before this trait op runs). Prefer the raw pre-coercion RHS the
             // compiler stashed; fall back to the coerced slot value.
             let init_source = self
-                .read_local_slot_or_name(code, slot, &name_str)
+                .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Bind the instance to the variable first, then STORE the initializer
             // through the bound variable so the mutating dispatch resolves `self`
             // to the same instance the variable now holds.
-            self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
-            self.set_env_with_main_alias(&name_str, instance.clone());
+            if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
+                self.set_env_with_main_alias(&name_str, instance.clone());
+            }
             if let Some(list_arg) = Self::custom_container_store_arg(stashed_init, init_source) {
                 // Pass the initializer as a single positional list (not as
                 // separate Pair args, which STORE's signature would bind as
@@ -672,8 +735,9 @@ impl Interpreter {
                 } else {
                     instance
                 };
-                self.write_local_slot_or_name(code, eff_slot, &name_str, bound.clone());
-                self.set_env_with_main_alias(&name_str, bound);
+                if !self.write_var_trait_target(code, eff_slot, &name_str, bound.clone()) {
+                    self.set_env_with_main_alias(&name_str, bound);
+                }
             }
             return Ok(());
         }
@@ -725,7 +789,7 @@ impl Interpreter {
         // (see `refeed_store_after_var_trait`), matching real Raku's
         // declaration-time dispatch.
         let init_source_for_store = self
-            .read_local_slot_or_name(code, slot, name)
+            .read_var_trait_target(code, slot, name)
             .or_else(|| self.get_env_with_main_alias(name));
         let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
         // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
@@ -753,8 +817,9 @@ impl Interpreter {
             Ok(_) => {
                 if let Some(mixed) = mixin_writeback {
                     let name_owned = name.to_string();
-                    self.write_local_slot_or_name(code, eff_slot, &name_owned, mixed.clone());
-                    self.set_env_with_main_alias(&name_owned, mixed);
+                    if !self.write_var_trait_target(code, eff_slot, &name_owned, mixed.clone()) {
+                        self.set_env_with_main_alias(&name_owned, mixed);
+                    }
                 }
                 self.refeed_store_after_var_trait(code, eff_slot, name, init_source_for_store)?;
                 Ok(())
@@ -818,7 +883,7 @@ impl Interpreter {
             return Ok(());
         }
         let current = self
-            .read_local_slot_or_name(code, eff_slot, name)
+            .read_var_trait_target(code, eff_slot, name)
             .or_else(|| self.get_env_with_main_alias(name));
         let Some(current) = current else {
             return Ok(());
@@ -842,8 +907,9 @@ impl Interpreter {
         )?;
         if Self::is_tie_bindable(&stored) {
             let name_owned = name.to_string();
-            self.write_local_slot_or_name(code, eff_slot, &name_owned, stored.clone());
-            self.set_env_with_main_alias(&name_owned, stored);
+            if !self.write_var_trait_target(code, eff_slot, &name_owned, stored.clone()) {
+                self.set_env_with_main_alias(&name_owned, stored);
+            }
         }
         Ok(())
     }

@@ -1896,7 +1896,7 @@ impl Interpreter {
                 // (handled by the store path), so it is excluded here to keep RO
                 // taking precedence over a bad-key coercion.
                 let quanthash_key_constraint: Option<String> = if key_constraint.is_none()
-                    && let Some(it) = index_target.as_ref()
+                    && let Some(it) = index_target_deref.as_ref()
                     && matches!(
                         it.view(),
                         ValueView::Set(_, true) | ValueView::Bag(_, true) | ValueView::Mix(_, true)
@@ -1940,10 +1940,10 @@ impl Interpreter {
                 // including the typed-autoviv case (`my SetHash $sh; $sh<k> = v`),
                 // where the target is still the bare type object.
                 let target_quanthash = matches!(
-                    index_target.as_ref().map(Value::view),
+                    index_target_deref.as_ref().map(Value::view),
                     Some(ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..))
                 ) || matches!(
-                    index_target.as_ref().map(Value::view),
+                    index_target_deref.as_ref().map(Value::view),
                     Some(ValueView::Package(sym))
                         if matches!(
                             sym.resolve().as_str(),
@@ -1987,7 +1987,7 @@ impl Interpreter {
                 // below), so it must not be element-type-checked against the
                 // container type.
                 let target_is_quanthash = matches!(
-                    index_target.as_ref().map(Value::view),
+                    index_target_deref.as_ref().map(Value::view),
                     Some(ValueView::Mix(..) | ValueView::Bag(..) | ValueView::Set(..))
                 );
                 // A parameterized QuantHash (`BagHash[Int]`, `MixHash[Str]`, ...)
@@ -1996,7 +1996,7 @@ impl Interpreter {
                 // is carried in the container metadata's `value_type` (e.g.
                 // "BagHash[Int]") for Bag/Mix/Set, falling back to `declared_type`.
                 if target_is_quanthash
-                    && let Some(meta) = index_target
+                    && let Some(meta) = index_target_deref
                         .as_ref()
                         .and_then(|c| self.container_type_metadata(c))
                     && let Some(declared) = meta
