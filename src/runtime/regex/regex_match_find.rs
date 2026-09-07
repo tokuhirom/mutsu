@@ -212,24 +212,35 @@ impl Interpreter {
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, false)
+        self.regex_match_captures_impl(pattern, text, false, false)
     }
 
-    /// Like [`Self::regex_match_all_with_captures`], but at each start position keeps
-    /// ONLY the highest-DFS-priority (canonical greedy/frugal) match end — the one
-    /// the single-match engine would pick — instead of every possible end. Used by
-    /// the plain `:g` path: collecting every end and then keeping the longest per
-    /// start (as `select_non_overlapping_matches` does) forces a top-level frugal
-    /// quantifier (`.*?`) to its greedy length, so `"aXbXcX".match(/.*?'X'/, :g)`
-    /// returned one match ("aXbXcX") instead of three ("aX","bX","cX"). The
-    /// `:overlap` / `:exhaustive` paths still need all ends and keep using
-    /// `regex_match_all_with_captures`.
-    pub(in crate::runtime) fn regex_match_canonical_per_start(
+    /// Like [`Self::regex_match_all_with_captures`], but at each start position
+    /// keeps ONLY the highest-DFS-priority (canonical greedy/frugal) match end —
+    /// the one the single-match engine would pick — instead of every possible
+    /// end, and skips a start a previously accepted match already covers.
+    ///
+    /// Both halves matter for the plain `:g` path. Collecting every end and then
+    /// keeping the longest per start (as `select_non_overlapping_matches` does)
+    /// forces a top-level frugal quantifier (`.*?`) to its greedy length, so
+    /// `"aXbXcX" ~~ m:g/.*?X/` answered one match ("aXbXcX") instead of three.
+    /// And running the pattern at a position that is discarded afterwards still
+    /// runs a `{ ... }` block inside it, so
+    /// `"aa bb" ~~ m:g/( \w* { $c++ } )/` left `$c` at 12 where raku leaves it
+    /// at 4 — raku finds one match, commits to it and resumes the scan after it.
+    ///
+    /// A zero-width match does not advance the barrier, so a `\w*` matching
+    /// empty right after a previous match is still reported — exactly the
+    /// `from >= last_end` test the post-filter applied.
+    ///
+    /// The `:overlap` / `:exhaustive` paths genuinely need every end at every
+    /// start and keep using [`Self::regex_match_all_with_captures`].
+    pub(in crate::runtime) fn regex_match_non_overlapping(
         &mut self,
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, true)
+        self.regex_match_captures_impl(pattern, text, true, true)
     }
 
     fn regex_match_captures_impl(
@@ -237,6 +248,7 @@ impl Interpreter {
         pattern: &str,
         text: &str,
         canonical_only: bool,
+        skip_covered: bool,
     ) -> Vec<RegexCaptures> {
         let Some(parsed) = self.parse_regex(pattern) else {
             return Vec::new();
@@ -257,18 +269,44 @@ impl Interpreter {
             } else {
                 starts.extend(0..=stripped_chars.len());
             }
+            let mut last_end = 0usize;
             for start in starts {
-                let ends = self.regex_match_ends_from_caps_in_pkg(
-                    &stripped_parsed,
-                    &stripped_chars,
-                    start,
-                    &pkg,
-                );
+                if skip_covered && start < last_end {
+                    continue;
+                }
+                // `canonical_only` keeps only the first end anyway, and the
+                // DFS walk finds it first -- so ask for one and let the walk
+                // stop, instead of exploring the whole backtracking tree and
+                // running a `{ ... }` block in the pattern once per discarded
+                // end.
+                let ends = if canonical_only {
+                    self.regex_match_end_from_caps_in_pkg(
+                        &stripped_parsed,
+                        &stripped_chars,
+                        start,
+                        &pkg,
+                    )
+                    .into_iter()
+                    .collect()
+                } else {
+                    self.regex_match_ends_from_caps_in_pkg(
+                        &stripped_parsed,
+                        &stripped_chars,
+                        start,
+                        &pkg,
+                    )
+                };
                 for (end, mut caps) in ends {
                     caps.from = caps.capture_start.unwrap_or(start);
                     caps.to = caps.capture_end.unwrap_or(end);
                     super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
                     caps.target = Some(target.clone());
+                    if skip_covered {
+                        if caps.from < last_end {
+                            break;
+                        }
+                        last_end = caps.to;
+                    }
                     out.push(caps);
                     if canonical_only {
                         break;
@@ -286,12 +324,33 @@ impl Interpreter {
         } else {
             starts.extend(0..=orig_chars.len());
         }
+        let mut last_end = 0usize;
         for start in starts {
-            let ends = self.regex_match_ends_from_caps_in_pkg(&parsed, orig_chars, start, &pkg);
+            if skip_covered && start < last_end {
+                continue;
+            }
+            // See the `ignore_mark` twin above: one end is all `canonical_only`
+            // keeps, and the walk finds it first.
+            let ends: Vec<_> = if canonical_only {
+                self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, &pkg)
+                    .into_iter()
+                    .collect()
+            } else {
+                self.regex_match_ends_from_caps_in_pkg(&parsed, orig_chars, start, &pkg)
+            };
             for (end, mut caps) in ends {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
                 caps.target = Some(target.clone());
+                // A capture group can report a span starting BEFORE this start
+                // position (`caps.capture_start`), so the barrier is re-tested
+                // against the reported span, not against `start`.
+                if skip_covered {
+                    if caps.from < last_end {
+                        break;
+                    }
+                    last_end = caps.to;
+                }
                 out.push(caps);
                 if canonical_only {
                     break;
