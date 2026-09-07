@@ -13,9 +13,13 @@ impl std::fmt::Debug for PromiseState {
 }
 
 impl SharedPromise {
-    /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
-    pub fn arc_ptr(&self) -> *const () {
-        crate::gc::Gc::as_ptr(&self.inner) as *const ()
+    /// This promise's never-reused `.WHICH` id. It replaces the inner
+    /// allocation's ADDRESS, which is unique only among live objects:
+    /// `Promise.new.WHICH eq Promise.new.WHICH` was `True` whenever the second
+    /// temporary landed on the first one's freed block.
+    pub(crate) fn which_id(&self) -> u64 {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().which_id.get()
     }
 
     pub(crate) fn new() -> Self {
@@ -26,6 +30,7 @@ impl SharedPromise {
         Self {
             inner: crate::gc::Gc::new((
                 Mutex::new(PromiseState {
+                    which_id: crate::value::which_id::WhichId::default(),
                     status: "Planned".to_string(),
                     result: Value::Nil,
                     output: String::new(),
@@ -45,6 +50,7 @@ impl SharedPromise {
         Self {
             inner: crate::gc::Gc::new((
                 Mutex::new(PromiseState {
+                    which_id: crate::value::which_id::WhichId::default(),
                     status: "Kept".to_string(),
                     result,
                     output: String::new(),
@@ -286,9 +292,10 @@ impl PartialEq for SharedPromise {
 }
 
 impl SharedChannel {
-    /// Returns a raw pointer to the inner Arc data, for use in WHICH identity.
-    pub fn arc_ptr(&self) -> *const () {
-        crate::gc::Gc::as_ptr(&self.inner) as *const ()
+    /// This channel's never-reused `.WHICH` id — see the `SharedPromise` twin.
+    pub(crate) fn which_id(&self) -> u64 {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().which_id.get()
     }
 
     pub(crate) fn new() -> Self {
@@ -296,6 +303,7 @@ impl SharedChannel {
         Self {
             inner: crate::gc::Gc::new((
                 Mutex::new(ChannelState {
+                    which_id: crate::value::which_id::WhichId::default(),
                     queue: std::collections::VecDeque::new(),
                     send_closed: false,
                     drained_closed: false,
