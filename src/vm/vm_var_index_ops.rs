@@ -2377,8 +2377,22 @@ impl Interpreter {
             // object returns Any per Raku spec (S09/autovivification): reading a
             // missing key does not autovivify and the result must be indistinct
             // from Any so that `%h<missing><b> === Any` holds.
-            (ValueView::Package(name), _) if !is_positional && name.resolve() == "Any" => {
-                Value::package(Symbol::intern("Any"))
+            (ValueView::Package(name), idx) if !is_positional && name.resolve() == "Any" => {
+                // A SLICE of keys answers a matching-length list of Any, exactly
+                // like the positional arm below: `my $h; $h<a b c>` is
+                // `(Any, Any, Any)` in raku, and collapsing it to a single `Any`
+                // lost the slice's arity — which a hyper assignment
+                // (`$h<a b c> »=» 42`) needs to know how many slots it is
+                // distributing over.
+                match idx {
+                    ValueView::Array(items, kind) if !kind.is_itemized() => Value::array(
+                        items
+                            .iter()
+                            .map(|_| Value::package(Symbol::intern("Any")))
+                            .collect(),
+                    ),
+                    _ => Value::package(Symbol::intern("Any")),
+                }
             }
             // Postcircumfix POSITIONAL index (`[idx]`) on the bare Any type object —
             // a runtime Any value (e.g. from a missing hash key: `my %h; %h<k>[0]`)

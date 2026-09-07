@@ -148,7 +148,27 @@ fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
     }
 }
 
-fn lower_hyper_assignment(target: Expr, value: Expr) -> Expr {
+fn lower_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right: bool) -> Expr {
+    // A literal list of lvalues destructures positionally, nested sublists
+    // included (`(($a, ($b, $c)), $d) »=« ((4, (5, 6)), 7)`), so it keeps the
+    // element-wise lowering below.
+    //
+    // Every other target is an ordinary hyper op: `=` distributes its RIGHT
+    // operand across the LEFT's shape, and the compiler's assignment-hyper-op
+    // write-back stores the resulting list — the same route `»+=»` takes.
+    // Lowering to a plain `target = value` instead made `@a »=» 7` store a
+    // ONE-element array, and left a slice target to be filled by the store
+    // path broadcasting its short RHS, which is not the same rule (a plain
+    // `@a[0,1,2] = 7` must pad, not broadcast).
+    if !matches!(target.peel_parens(), Expr::ArrayLiteral(_)) {
+        return Expr::HyperOp {
+            op: "=".to_string(),
+            left: Box::new(target),
+            right: Box::new(value),
+            dwim_left,
+            dwim_right,
+        };
+    }
     let temp_name = format!(
         "__mutsu_hyper_assign_{}",
         TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -167,11 +187,6 @@ fn lower_hyper_assignment(target: Expr, value: Expr) -> Expr {
                 custom_traits: Vec::new(),
                 where_constraint: None,
             },
-            // A hyper assignment CYCLES its RHS across the targets, where a
-            // plain slice assignment pads a short one -- see
-            // `Stmt::MarkHyperSliceAssign`. The two are the same `IndexAssign`
-            // node by the time the VM sees them, so say which this is.
-            crate::ast::Stmt::MarkHyperSliceAssign,
             crate::ast::Stmt::Expr(lower_hyper_assign_target(target, Expr::Var(temp_name))),
         ],
         label: None,
@@ -286,7 +301,7 @@ fn parse_hyper_rhs(input: &str, parent_prec: i32) -> PResult<'_, Expr> {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = if op == "=" {
-                lower_hyper_assignment(left, right)
+                lower_hyper_assignment(left, right, dwim_left, dwim_right)
             } else {
                 Expr::HyperOp {
                     op,
@@ -342,7 +357,7 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
             left = if op == "=" {
-                lower_hyper_assignment(left, right)
+                lower_hyper_assignment(left, right, dwim_left, dwim_right)
             } else {
                 Expr::HyperOp {
                     op,

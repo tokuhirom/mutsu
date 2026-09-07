@@ -2338,10 +2338,6 @@ impl Interpreter {
                 self.bind_context.set(true);
                 *ip += 1;
             }
-            OpCode::MarkHyperSliceAssign => {
-                self.hyper_slice_assign.set(true);
-                *ip += 1;
-            }
             OpCode::MarkParamRawBindContext => {
                 self.param_raw_bind_context.set(true);
                 *ip += 1;

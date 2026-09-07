@@ -307,6 +307,11 @@ impl Interpreter {
         // the assigned value (`$sh<k> = 2` is `Bool::True`); set in the Set store
         // arm and applied at the final result push.
         let mut setty_bool_result: Option<Value> = None;
+        // A hash slice assignment's rvalue is the list of values it actually
+        // stored (the RHS zipped against the keys, so truncated AND padded), not
+        // the raw RHS. Set by the hash-slice arm, which exits through the shared
+        // tail rather than returning early like its positional twin.
+        let mut slice_assigned_rvalue: Option<Value> = None;
         // §1.4 shadow-slot: the compiler-baked slot is valid only for the
         // target's own name (`original_var_name`). If a sigilless alias redirects
         // to a DIFFERENT variable, the baked slot no longer applies — fall back to
@@ -1471,14 +1476,11 @@ impl Interpreter {
             // made, so an `ItemList` that reaches here unnormalized by some
             // other route is still handled.)
             ValueView::Array(keys, kind) if is_positional || !kind.is_itemized() => {
-                let mut vals = self.assignment_rhs_values(&val)?;
+                let vals = self.assignment_rhs_values(&val)?;
                 // The value the slots past the end of the RHS get -- see
                 // `slice_pad_value`. Computed once here, before the `&mut
                 // self.env` borrows below.
                 let pad = self.slice_pad_value(&var_name);
-                // One-shot, consumed here whether or not this turns out to be a
-                // slice, so it cannot leak onto the next assignment.
-                let cycle_rhs = self.hyper_slice_assign.replace(false);
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
                 if var_name.starts_with('@')
@@ -1528,6 +1530,12 @@ impl Interpreter {
                         has_declared_shape || crate::runtime::utils::is_shaped_array(container);
                     let mut initialized_marks: Vec<String> = Vec::new();
                     let mut nested_result: Option<Value> = None;
+                    // The values a flat slice assignment actually stored, in slot
+                    // order -- the RHS zipped against the slots, so it is both
+                    // truncated (a long RHS drops its tail) and padded (a short
+                    // one contributes the element's undefined value). That list,
+                    // not the raw RHS, is the assignment's rvalue in raku.
+                    let mut assigned_values: Vec<Value> = Vec::new();
                     if is_shaped {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::assignment_ro(None));
@@ -1537,7 +1545,8 @@ impl Interpreter {
                             // 1D shaped array with multiple indices: slice
                             // assignment, padded like the flat one below.
                             for (i, key) in keys.iter().enumerate() {
-                                let v = Self::slice_rhs_value(&vals, i, cycle_rhs, &pad);
+                                let v = Self::slice_rhs_value(&vals, i, &pad);
+                                assigned_values.push(v.clone());
                                 Self::assign_array_multidim(
                                     container,
                                     std::slice::from_ref(key),
@@ -1606,7 +1615,8 @@ impl Interpreter {
                         // typed target pads with its element type
                         // (`my Int @a` with `Int`, `my int @a` with `0`).
                         for (i, key) in keys.iter().enumerate() {
-                            let v = Self::slice_rhs_value(&vals, i, cycle_rhs, &pad);
+                            let v = Self::slice_rhs_value(&vals, i, &pad);
+                            assigned_values.push(v.clone());
                             Self::assign_array_multidim(container, std::slice::from_ref(key), v)?;
                             initialized_marks.push(Self::encode_bound_index(key));
                         }
@@ -1625,6 +1635,8 @@ impl Interpreter {
                         nested
                     } else if idx_is_single_element {
                         Self::itemize_value(val)
+                    } else if !assigned_values.is_empty() {
+                        Value::array(assigned_values)
                     } else {
                         val
                     };
@@ -1641,9 +1653,6 @@ impl Interpreter {
                     }
                     self.stack.push(result);
                     return Ok(());
-                }
-                if vals.is_empty() {
-                    vals.push(Value::NIL);
                 }
                 // A mutable QuantHash (SetHash/BagHash/MixHash) slice assignment
                 // applies membership/count/weight semantics per key
@@ -1828,6 +1837,7 @@ impl Interpreter {
                     String,
                     crate::gc::Gc<crate::value::ContainerCell>,
                 )> = Vec::new();
+                let mut assigned_values: Vec<Value> = Vec::new();
                 if let Some(entry) = self.env_mut().get_mut(&var_name) {
                     let _ = entry.with_hash_mut(|hash| {
                         let h = crate::value::gc_data_mut(hash);
@@ -1848,8 +1858,9 @@ impl Interpreter {
                                 // slice, so `%h<a b> = 1` filled both keys and
                                 // `%j{1,2,3} = "z","y"` repeated `"z"`; the
                                 // hyper spelling keeps the cycle.
-                                Self::slice_rhs_value(&vals, i, cycle_rhs, &pad)
+                                Self::slice_rhs_value(&vals, i, &pad)
                             };
+                            assigned_values.push(v.clone());
                             if bind_mode
                                 && let Some(Some((source_install, cell))) = slice_bind_cells.get(i)
                             {
@@ -1880,6 +1891,9 @@ impl Interpreter {
                     let cell_val = Value::container_ref(cell);
                     self.set_env_with_main_alias(&source_name, cell_val.clone());
                     self.update_local_if_exists(code, &source_name, &cell_val);
+                }
+                if !assigned_values.is_empty() {
+                    slice_assigned_rvalue = Some(Value::array(assigned_values));
                 }
             }
             _ => {
@@ -2851,6 +2865,8 @@ impl Interpreter {
         // keeps a string-range hash subscript from being mis-itemized.
         let result = if let Some(bool_result) = setty_bool_result {
             bool_result
+        } else if let Some(assigned) = slice_assigned_rvalue {
+            assigned
         } else if idx_is_single_element && !var_name.starts_with('%') {
             Self::itemize_value(val)
         } else {

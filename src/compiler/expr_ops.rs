@@ -223,20 +223,33 @@ impl Compiler {
         let left = left.peel_parens();
         // Detect assignment hyper-ops (e.g. >>+=>>, >>~=>>)
         // These need to compute with the base op and then assign back.
-        let is_assign_op = op.ends_with('=')
-            && op.len() > 1
-            && !matches!(
-                op,
-                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:="
-            );
+        // `»=»` is one of them: its base op IS `=`, which yields its right
+        // operand, so the distributed list is what gets stored back.
+        let is_assign_op = op == "="
+            || (op.ends_with('=')
+                && op.len() > 1
+                && !matches!(
+                    op,
+                    "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:="
+                ));
+        // The base op of `»+=»` is `+`; the base op of `»=»` is `=` itself.
+        // Only computed for an assignment hyper-op: slicing off a trailing byte
+        // is safe there (every such op ends in the ASCII `=`), but not for an
+        // arbitrary op, which may end in a multi-byte char (`»×»`).
+        let base_op: &str = if !is_assign_op {
+            op
+        } else if op == "=" {
+            "="
+        } else {
+            &op[..op.len() - 1]
+        };
         // Hyper meta-assignment over a literal list of lvalues, e.g.
         // `($a, $b, $c) »~=» <pie tart>`: compute the element-wise result with
         // the base op, then distribute it back to each lvalue via the regular
         // list-assignment machinery so each scalar is mutated.
         if is_assign_op && matches!(left, Expr::ArrayLiteral(_)) {
-            let base_op = op[..op.len() - 1].to_string();
             let value_expr = Expr::HyperOp {
-                op: base_op,
+                op: base_op.to_string(),
                 left: Box::new(left.clone()),
                 right: Box::new(right.clone()),
                 dwim_left,
@@ -250,7 +263,6 @@ impl Compiler {
             return;
         }
         if is_assign_op {
-            let base_op = &op[..op.len() - 1];
             self.compile_expr(left);
             self.compile_expr(right);
             let op_idx = self.code.add_constant(Value::str(base_op.to_string()));

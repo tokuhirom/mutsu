@@ -170,7 +170,6 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         Stmt::MarkReadonly(..)
         | Stmt::MarkBoundContainer(_)
         | Stmt::MarkBind
-        | Stmt::MarkHyperSliceAssign
         | Stmt::MarkSigillessReadonly(_)
         | Stmt::MarkSigilless(_)
         | Stmt::ProtoToken { .. }
