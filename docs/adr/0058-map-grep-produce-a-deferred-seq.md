@@ -514,12 +514,21 @@ frame**, so `eval_map_over_items` runs the callback under whatever env is
 active at the pull; the pre-ADR-0058 `create_lazy_map_list` snapshots
 `self.env` at the `.map` call and gets the same program right.
 
-Step 3 is therefore parked behind that hole, which is recorded with its options
-(whole-env snapshot vs. capturing only `free_var_syms` vs. making the closure
-capture of a routine parameter work at deferral time) in
-`todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`. It also
-blocks step 4, which retires `create_lazy_map_list` -- the only deferral that
-currently gets the frame right.
+Step 3 was therefore parked behind that hole.
+
+**UNPARKED 2026-09-07** (`news/2026-09/deferred-map-callback-frame.md`). The
+hole is closed, and none of the three options recorded for it was the answer --
+all three revolved around *adding* a frame snapshot, and the callback's closure
+env already carried the right `@sizes`. It was being discarded:
+`eval_map_over_items` merges the captured env into the running frame with
+**caller priority**, excepting only `self` and a captured `ContainerRef` cell.
+The cell exception covers the lexicals `box_captured_lexicals` boxes -- in
+practice `$`-scalars -- so an `@`/`%` container free variable, captured by
+value, lost to the consuming frame's same-named lexical. The merge now lets a
+captured value for one of the block's own `free_var_syms` win, which is the same
+lexical-resolution rule the cell encodes, and costs a set lookup per captured
+key rather than an `Env` clone. So step 3 and step 4 are unblocked, and §5's
+mandatory full `make roast` is what still gates them.
 
 ### 9.2 grep is eager too, and is its own slice regardless
 
