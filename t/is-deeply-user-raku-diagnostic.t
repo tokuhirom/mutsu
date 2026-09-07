@@ -10,12 +10,16 @@ plan 2;
 # user-defined `.raku` override on an `Instance`, so the diagnostic silently
 # fell back to a generic stringification instead of the user's own `.raku`.
 # Verified against real raku 2026-08-14: it prints the user-defined `.raku`.
+#
+# The diagnostic for a non-TODO failure goes to `$failure_output` (STDERR), not
+# to STDOUT -- that is where `Test.rakumod` sends it, and running this file
+# under `raku` itself reproduces the same split. So assert on `:err`.
 
 is_run
     'use Test; class Foo { has $.x; method raku { "MyFoo(" ~ $.x ~ ")" } };'
     ~ 'is-deeply Foo.new(x=>1), Foo.new(x=>2);',
     {
-        :out(/'expected: MyFoo(2)' .+ 'got: MyFoo(1)'/),
+        :err(/'expected: MyFoo(2)' .+ 'got: MyFoo(1)'/),
         :1status,
     },
     'is-deeply diagnostic honors a user-defined .raku override';
@@ -25,7 +29,7 @@ is_run
     ~ 'class Bar { has $.y; method raku { "MyBar(" ~ $.y ~ ")" } };'
     ~ 'is-eqv Bar.new(y=>1), Bar.new(y=>2), "eqv check";',
     {
-        :out(/'expected: MyBar(2)' .+ 'got: MyBar(1)'/),
+        :err(/'expected: MyBar(2)' .+ 'got: MyBar(1)'/),
         :1status,
     },
     'is-eqv diagnostic honors a user-defined .raku override';

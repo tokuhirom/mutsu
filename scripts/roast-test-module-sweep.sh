@@ -1,14 +1,14 @@
 #!/bin/bash
 # The roast-side counterpart of scripts/test-module-sweep.sh: run every
-# WHITELISTED roast file twice -- once with mutsu's native TAP provider and once
-# with the vendored upstream Test.rakumod (MUTSU_REAL_TEST=1) -- and report which
-# files regress under the real module.
+# WHITELISTED roast file twice -- once with mutsu's native TAP provider
+# (MUTSU_REAL_TEST=) and once with the vendored upstream Test.rakumod
+# (MUTSU_REAL_TEST=1) -- and report which files regress under the real module.
 #
-# This is the measurement the roast half of
-# `todo/deep/vendor-real-test-module.md` runs on. That ticket's process note
-# asks for a fresh sweep at the start of every session that touches it, because
-# `MUTSU_REAL_TEST` is not gated in CI and nothing else detects a regression in
-# this mode.
+# The vendored module has been the DEFAULT provider since 2026-09-07
+# (news/2026-09/vendored-test-module-is-the-default-provider.md); CI therefore
+# covers the real half directly and this sweep's remaining job is to show the
+# native provider it replaces has nothing left that only it can do. It goes away
+# with that provider (`todo/deep/retire-the-native-test-provider.md`).
 #
 # Differences from the t/ sweep, all deliberate:
 #   * Files run IN PLACE from the repo root through scripts/run-roast-test.sh,

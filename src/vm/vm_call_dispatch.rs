@@ -386,7 +386,7 @@ impl Interpreter {
         // caller's `compiled_fns`). Measured at 14.7 us per call against 0.75 us
         // for an identical sub declared in the calling file, and it is the
         // dominant per-assertion cost of the vendored upstream `Test` module
-        // (`todo/deep/vendor-real-test-module.md`), whose `proclaim` alone paid
+        // (`news/2026-09/vendored-test-module-is-the-default-provider.md`), whose `proclaim` alone paid
         // three of those walks on every assertion. The entry is guarded exactly
         // as the OTF one is — callsite package, `fn_resolve_gen`, and the multi
         // exclusion above — and a hit runs the body under the routine's own

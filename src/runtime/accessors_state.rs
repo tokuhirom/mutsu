@@ -809,7 +809,7 @@ impl Interpreter {
         // and every call pays the full candidate walk. That is the shape of
         // rakudo's own `Test.rakumod` (`multi sub ok(Mu $cond, $desc = '')`),
         // where it was the single largest per-assertion cost
-        // (todo/deep/vendor-real-test-module.md). The value-dependency analysis
+        // (news/2026-09/vendored-test-module-is-the-default-provider.md). The value-dependency analysis
         // above is what makes a cached winner sound, and it does not care how
         // many candidates there are.
         let cacheable = !candidates.is_empty() && !value_dependent;

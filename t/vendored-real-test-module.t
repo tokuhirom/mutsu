@@ -5,11 +5,11 @@ use Test::Util;
 
 plan 10;
 
-# `MUTSU_REAL_TEST=1` makes `use Test` load the vendored upstream
-# `Test.rakumod` (modules/Rakudo-Core/lib/) instead of being recognized as a
-# no-op that leaves mutsu's native TAP provider in charge. Step 2 of
-# `todo/tickets/vendor-real-test-module.md`: exercise the real module without
-# yet swapping the foundation the whole suite stands on.
+# `use Test` loads the vendored upstream `Test.rakumod`
+# (modules/Rakudo-Core/lib/) by default. `MUTSU_REAL_TEST=0` selects mutsu's
+# native TAP provider instead, which is what the dual-provider sweeps
+# (`scripts/{test,roast-test}-module-sweep.sh`) compare against while that
+# provider is retired -- see `todo/deep/vendor-real-test-module.md`.
 
 my $vendored = $*PROGRAM.parent(2).add("modules/Rakudo-Core/lib/Test.rakumod");
 ok $vendored.e, 'the upstream Test.rakumod is vendored in the repository';
@@ -23,7 +23,7 @@ my $probe = 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "module export";';
 my $plain = 'use Test; plan 2; ok 1, "a"; is 1+1, 2, "b";';
 
 # --- switch off: the native provider answers ---
-%*ENV<MUTSU_REAL_TEST>:delete;
+%*ENV<MUTSU_REAL_TEST> = '0';
 
 is_run $plain, { status => 0, out => "1..2\nok 1 - a\nok 2 - b\n", err => '' },
     'the native provider emits plain TAP';
@@ -36,8 +36,8 @@ if $*RAKU.compiler.name eq 'mutsu' {
     skip 'no native Test provider to distinguish from', 1;
 }
 
-# --- switch on: the vendored upstream module answers ---
-%*ENV<MUTSU_REAL_TEST> = '1';
+# --- the default: the vendored upstream module answers ---
+%*ENV<MUTSU_REAL_TEST>:delete;
 
 is_run $plain, { status => 0, out => "1..2\nok 1 - a\nok 2 - b\n", err => '' },
     'the vendored module emits the same plain TAP';

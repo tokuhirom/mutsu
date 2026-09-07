@@ -5,24 +5,41 @@ impl Interpreter {
     /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
     /// no-op that leaves mutsu's native TAP provider in charge.
     ///
-    /// Step 2 of `todo/tickets/vendor-real-test-module.md` calls for exercising
-    /// the real module *without* removing the interception, because every `t/`
-    /// file and every roast file stands on `Test`: swapping the implementation
-    /// swaps the foundation of the whole suite, and a subtle difference in
-    /// `is`/`is-deeply`/`todo`/`subtest` shows up as thousands of diffs at once.
-    /// Until step 3 flips it for good, `MUTSU_REAL_TEST=1` is how the real module
-    /// is driven — the sweep tooling uses it, and it replaces the throwaway
-    /// `unit module Test2;` rename the exercise ran under before.
+    /// **This is the default.** `use Test` loads the real module; the native
+    /// TAP provider in `runtime/test_functions.rs` only answers when
+    /// `MUTSU_REAL_TEST=0` selects it.
+    ///
+    /// The switch was flipped once the dual-provider sweeps
+    /// (`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`)
+    /// reported no file that passes under the native provider and fails under
+    /// the vendored one, and the assertion cost was far enough under the
+    /// per-file roast budget that the timeout class was closed — see
+    /// `news/2026-09/vendored-test-module-is-the-default-provider.md` for the
+    /// measurements. Rung 2 of `BATTERIES.md` is the point: the unmodified
+    /// upstream module runs verbatim, so mutsu is measured against Raku's own
+    /// `Test`, not a private dialect of it.
+    ///
+    /// The escape hatch is deliberately kept for now so the sweeps can still
+    /// compare the two providers while the native one is retired
+    /// (`todo/deep/retire-the-native-test-provider.md`); it goes away with the
+    /// native provider itself.
     pub(crate) fn real_test_module_enabled() -> bool {
-        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '1'` set
-        // mid-run in a parent process (as `t/vendored-real-test-module.t` does)
-        // does NOT retroactively silence the native TAP provider already in
-        // charge of that process.
+        // Captured once at startup so that a mid-run `%*ENV<MUTSU_REAL_TEST>`
+        // write in a parent process (as `t/vendored-real-test-module.t` does,
+        // to steer its `is_run` children) does NOT retroactively swap the
+        // provider already in charge of that process.
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ENABLED.get_or_init(|| {
-            std::env::var("MUTSU_REAL_TEST")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false)
+            // Anything but an explicit off keeps the default. An *empty* value
+            // is an off too: `MUTSU_REAL_TEST= cmd` is how a shell spells
+            // "clear this", and the sweep scripts wrote it that way for the
+            // native half throughout the exercise.
+            !std::env::var("MUTSU_REAL_TEST").is_ok_and(|v| {
+                v.is_empty()
+                    || v == "0"
+                    || v.eq_ignore_ascii_case("false")
+                    || v.eq_ignore_ascii_case("no")
+            })
         })
     }
 

@@ -23,22 +23,26 @@ genuine upstream implementation instead of reimplementing it natively.
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
-### `Test` is vendored but not yet the default
+### `Test` is the default provider
 
-`Test` is here because it is measurably reachable
-(`todo/deep/vendor-real-test-module.md`), but `use Test` still resolves to
-mutsu's native TAP provider by default. Every `t/` file and every roast file
-stands on `Test`, so swapping the implementation swaps the foundation of the
-whole suite; step 3 of that ticket flips it once the residue is gone. Until
-then set **`MUTSU_REAL_TEST=1`** to load this file instead:
+`use Test` loads this file. mutsu's native TAP provider
+(`src/runtime/test_functions.rs`) is now only reachable through
+**`MUTSU_REAL_TEST=0`**, which exists so the dual-provider sweeps
+(`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`) can keep
+comparing the two while the native one is retired:
 
 ```
-MUTSU_REAL_TEST=1 mutsu t/some-test.t
+MUTSU_REAL_TEST=0 mutsu t/some-test.t      # the native provider
+mutsu t/some-test.t                        # this file
 ```
 
-The switch replaced the throwaway `unit module Test2;` rename the exercise ran
-under before, so the file under test is now the unmodified upstream one that
-ships in the repository. Pinned by `t/vendored-real-test-module.t`.
+Every `t/` file and every roast file stands on `Test`, so the switch was held
+until the sweeps reported no file that passes natively and fails here, and
+until the per-assertion cost was far enough under the roast per-file budget --
+see `news/2026-09/vendored-test-module-is-the-default-provider.md` for the
+measurements. The file under test is the unmodified upstream one that ships in
+the repository; it was never renamed or shimmed. Pinned by
+`t/vendored-real-test-module.t`.
 
 ## Why this directory exists
 

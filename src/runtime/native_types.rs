@@ -176,7 +176,7 @@ pub(crate) fn native_int_bounds_i128(type_name: &str) -> Option<(i128, i128)> {
 /// which the vendored `Test.rakumod` does once per assertion
 /// (`$num_of_tests_run = $num_of_tests_run + 1`) and which showed up as ~7k
 /// instructions of `num_bigint` division per assertion
-/// (`todo/deep/vendor-real-test-module.md`).
+/// (`news/2026-09/vendored-test-module-is-the-default-provider.md`).
 pub(crate) fn wrap_native_int_i128(type_name: &str, value: i128) -> Option<i128> {
     let bits = native_type_bits(type_name)?;
     let modulus = 1i128 << bits;
