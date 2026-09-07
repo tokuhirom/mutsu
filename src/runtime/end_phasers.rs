@@ -57,6 +57,7 @@ impl Interpreter {
             package,
             lexicals: Vec::new(),
             depth: 0,
+            package_path: Vec::new(),
         };
         walker.stmts(stmts);
     }
@@ -324,6 +325,11 @@ struct EndWalker<'a> {
     /// since it closes over the still-live unit scope), so it must not be
     /// seeded — a seed would be the only binding it ever gets.
     depth: u32,
+    /// The NESTED package path (`["D1", "D2"]`), as distinct from `package`,
+    /// which is the innermost name an `END` runs under. Only
+    /// [`EndWalker::install_our_symbol`] reads it -- see
+    /// [`EndWalker::in_package`].
+    package_path: Vec<String>,
 }
 
 impl EndWalker<'_> {
@@ -405,7 +411,7 @@ impl EndWalker<'_> {
         // walker's `package` is the ENCLOSING package (it descends into
         // `class`/`role`/`module` bodies but not into sub bodies), which is
         // exactly what that function qualifies an `our` declaration against.
-        let Some(key) = Self::our_symbol_key(&self.package, name) else {
+        let Some(key) = Self::our_symbol_key(&self.our_package(), name) else {
             return;
         };
         if self.interp.get_our_var(&key).is_some() {
@@ -512,8 +518,27 @@ impl EndWalker<'_> {
 
     fn in_package(&mut self, name: &str, body: &[Stmt]) {
         let saved = std::mem::replace(&mut self.package, name.to_string());
+        // The NESTED path is tracked separately from `package`: an `END`'s
+        // package is the innermost name (what it runs under), while an `our`
+        // declaration's storage key is qualified against the full path the
+        // compiler's `current_package` carries -- `package D1 { package D2 {
+        // our $d3 } }` stores `D1::D2::d3`, and keying the pre-install on the
+        // bare `D2` instead shadowed the real symbol for `$D2::d3`.
+        self.package_path.push(name.to_string());
         self.stmts(body);
+        self.package_path.pop();
         self.package = saved;
+    }
+
+    /// The package an `our` declared at this point qualifies against: the
+    /// nested path, empty at the unit's top level (where the compiler collapses
+    /// to `GLOBAL`).
+    fn our_package(&self) -> String {
+        if self.package_path.is_empty() {
+            self.package.clone()
+        } else {
+            self.package_path.join("::")
+        }
     }
 
     fn stmt(&mut self, stmt: &Stmt) {

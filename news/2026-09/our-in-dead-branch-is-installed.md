@@ -49,7 +49,12 @@ row).
 
 The two details the ticket flagged both fall out of that:
 
-- **The package qualification.** The walker's `package` is the *enclosing*
+- **The package qualification.** The walker tracks the NESTED package path
+  separately from the `package` an `END` runs under, because those are two
+  different things: `package D1 { package D2 { our $d3 } }` stores `D1::D2::d3`,
+  and keying the pre-install on the innermost `D2` alone shadowed the real
+  symbol for a later `$D2::d3` read (`roast/S04-declarations/our.t` 12/14/16).
+  Otherwise the walker's package is the *enclosing*
   package — it descends into `class`/`role`/`module` bodies but not into sub
   bodies — which is exactly what `Compiler::qualify_our_variable_name`
   qualifies an `our` declaration against (it deliberately uses
