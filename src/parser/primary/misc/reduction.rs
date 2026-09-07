@@ -351,14 +351,21 @@ pub(crate) fn reduction_op(input: &str) -> PResult<'_, Expr> {
         .chars()
         .next()
         .is_some_and(|c| c.is_alphabetic() || c == '_');
-    if r.is_empty()
-        || r.starts_with(';')
-        || r.starts_with('}')
-        || r.starts_with(')')
+    // The terminator may be separated from the `]` by horizontal whitespace:
+    // `try { [myop] }` and `say ([myop] )` are zero-operand reductions too, and
+    // without this they fell through to the array-literal reading (`[myop]`).
+    // Newlines are deliberately NOT skipped here -- the listop path below reads
+    // an operand across a line break, so consuming one would change which
+    // construct a following line belongs to.
+    let r_term = r.trim_start_matches([' ', '\t']);
+    if r_term.is_empty()
+        || r_term.starts_with(';')
+        || r_term.starts_with('}')
+        || r_term.starts_with(')')
         || (r.starts_with(',') && is_symbol_op)
     {
         return Ok((
-            r,
+            if r.starts_with(',') { r } else { r_term },
             Expr::Reduction {
                 op,
                 expr: Box::new(Expr::ArrayLiteral(vec![])),

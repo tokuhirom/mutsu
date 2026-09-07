@@ -185,7 +185,18 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let callable = self.reduction_callable_for_op(&base_op);
+        let mut callable = self.reduction_callable_for_op(&base_op);
+        // `my &op = &[+]; [[&op]] 5` is still a reduction with `infix:<+>`'s
+        // identity, so unwrap a callable that merely names a builtin operator
+        // back into that operator before any of the arity/associativity/
+        // identity decisions below are taken.
+        if let Some(op) = callable
+            .as_ref()
+            .and_then(|c| self.reduction_builtin_op_for_callable(c))
+        {
+            base_op = op;
+            callable = None;
+        }
         let arity = callable
             .as_ref()
             .map(|c| self.reduction_callable_arity(c))
@@ -467,6 +478,18 @@ impl Interpreter {
             return Ok(());
         }
         if list.is_empty() {
+            // A user-supplied operator has no identity element, so rakudo does
+            // not answer an empty reduction from a table: it CALLS the routine
+            // with no arguments and lets the binder complain ("Too few
+            // positionals passed; expected 2 arguments but got 0"). Only
+            // identity-bearing BUILTINS short-circuit -- and a callable that is
+            // really a builtin was already unwrapped above.
+            if let Some(c) = callable.clone() {
+                let v = self.reduction_step_with_args(&base_op, Some(&c), Vec::new())?;
+                let result = if negate { Value::truth(!v.truthy()) } else { v };
+                self.stack.push(result);
+                return Ok(());
+            }
             self.stack.push(
                 runtime::reduction_identity_opt(&base_op)
                     .unwrap_or_else(|| runtime::no_zero_arg_meaning_failure(&base_op)),
@@ -490,6 +513,21 @@ impl Interpreter {
                 }
                 self.stack.push(Value::truth(result));
             } else {
+                // The same rule for one element: `[myop] 5` is
+                // `infix:<myop>(5)` (which dies on arity), and an arity-1
+                // routine legitimately succeeds -- `[[&one]] 5` is `one(5)`.
+                // mutsu used to hand back the lone element for EVERY operator,
+                // which is only correct for the identity-bearing builtins
+                // handled further down.
+                if list.len() == 1
+                    && let Some(c) = callable.clone()
+                {
+                    let v =
+                        self.reduction_step_with_args(&base_op, Some(&c), vec![list[0].clone()])?;
+                    let result = if negate { Value::truth(!v.truthy()) } else { v };
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 if base_op == "o" {
                     let mut acc = list[0].clone();
                     for item in &list[1..] {

@@ -329,6 +329,33 @@ impl Interpreter {
         None
     }
 
+    /// When a `[[&op]]` reduction's callable is really a BUILTIN infix routine
+    /// (`my &op = &[+]`), the reduction still has that operator's identity and
+    /// its documented one-element answer: rakudo answers `[[&op]]` with `0` and
+    /// `[[&op]] 5` with `5`, exactly as `[+]` / `[+] 5` do. Report the operator
+    /// name so the caller can drop the callable and reduce with the builtin,
+    /// which is what `reduction_step_with_args` already does per step.
+    ///
+    /// A user declaration of the same name wins (`has_function`), so a
+    /// user-defined `infix:<+>` is still called as a user routine.
+    pub(super) fn reduction_builtin_op_for_callable(&self, callable: &Value) -> Option<String> {
+        let ValueView::Routine { name, .. } = callable.view() else {
+            return None;
+        };
+        let name = name.resolve();
+        if self.has_function(&name) {
+            return None;
+        }
+        let op = name
+            .strip_prefix("infix:<")
+            .and_then(|rest| rest.strip_suffix('>'))?;
+        if Self::is_builtin_reduction_op(op) {
+            Some(op.to_string())
+        } else {
+            None
+        }
+    }
+
     /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
     /// and their Unicode variants, returning the inner operator if found.
     fn strip_hyper_delimiters(s: &str) -> Option<&str> {
