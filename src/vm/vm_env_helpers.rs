@@ -2274,12 +2274,7 @@ impl Interpreter {
         code.locals.iter().position(|n| n == name)
     }
 
-    pub(crate) fn update_local_if_exists(
-        &mut self,
-        code: &CompiledCode,
-        name: &str,
-        val: &Value,
-    ) {
+    pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
             self.locals[slot] = val.clone();
         }
