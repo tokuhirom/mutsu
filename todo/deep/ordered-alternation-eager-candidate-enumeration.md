@@ -69,10 +69,13 @@ left-recursive grammar carrying a code block before it is asserted.
 
 ## Also still eager (measured, different mechanisms)
 
-- **Conjunction** (`( \w* {B} & \w* )` on `"aaa"`: raku 1, mutsu 4). The
-  `Conjunction` arm tries the first branch's candidate ends and requires every
-  other branch to end exactly there, so it wants the first branch's set. It is a
-  small, self-contained addition to `for_each_atom_candidate` — the first
-  branch can be driven lazily and the other branches probed per candidate.
+- ~~**Conjunction**~~ **DONE 2026-09-07**
+  (`news/2026-09/regex-conjunction-candidates-are-demand-driven.md`). The first
+  branch is now driven through a `MatchSink::Cont` and the other branches keep
+  the eager yes/no probe (`regex_match_branch_ending_at` asks about ONE end, so
+  there is no candidate set to stream, and raku evaluates them for the end under
+  test too). `( \w* {B} & \w* )` on `"aaa"` went 4 -> 1, matching raku; the
+  backtracking shape `( \w* {B} & \w* ) b` on `"aaab"` stays at raku's 2.
+  Pinned by rows A16-A16i of `t/regex-lazy-candidate-enumeration.t`.
 - The `:g` / `subst` scan and the counted-separator chain bug have their own
   ticket files (see the news entry's Residue section).
