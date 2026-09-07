@@ -91,7 +91,15 @@ impl Interpreter {
     /// Pop caller env and apply any dynamic variable writes back to the given env.
     /// Use this instead of `pop_caller_env()` at function return sites that restore `saved_env`.
     pub(crate) fn pop_caller_env_with_writeback(&mut self, restored_env: &mut Env) {
-        if let Some(popped) = self.caller_env_stack.pop() {
+        if let Some(popped) = self.caller_env_stack.pop()
+            // The walk below writes back only keys `is_var_dynamic` answers
+            // true for, and -- past the `$_`/`$/`/`$!` trio it skips first --
+            // that is exactly the `is dynamic` flag table. With no such
+            // declaration in the program the walk is a guaranteed no-op over
+            // every key of the caller's env (a whole lexical scope per return
+            // once a method dispatch has flattened it), so skip it outright.
+            && !self.var_dynamic_flags_is_empty()
+        {
             for (key, value) in &popped {
                 key.with_str(|key_str| {
                     // `$_`, `$/`, `$!` report as dynamic for `.VAR.dynamic` /

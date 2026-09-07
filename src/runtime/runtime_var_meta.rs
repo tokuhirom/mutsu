@@ -58,6 +58,31 @@ impl Interpreter {
         std::mem::take(&mut self.env)
     }
 
+    /// The env key for `name`'s type-constraint metadata, `__mutsu_type::<name>`,
+    /// as a pre-interned `Symbol`.
+    ///
+    /// Every typed-lexical probe (`var_type_constraint`, the bind/set writers)
+    /// used to `format!` the key and intern the fresh `String`; once any
+    /// program declares one typed lexical, that ran on every `SetLocal`,
+    /// `SetGlobal` and parameter bind in it. The `name -> key` mapping never
+    /// changes (symbols are append-only), so it is memoized per thread, keyed
+    /// by the name's own symbol.
+    pub(crate) fn type_meta_key_sym(name: &str) -> Symbol {
+        thread_local! {
+            static META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        let name_sym = Symbol::intern(name);
+        if let Some(sym) = META_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym = Symbol::intern(&format!("{}{}", crate::symbol::TYPE_META_PREFIX, name));
+        META_KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
     pub(crate) fn normalize_var_meta_name(name: &str) -> &str {
         name.trim_start_matches(['$', '@', '%', '&'])
     }
@@ -156,13 +181,13 @@ impl Interpreter {
     ) {
         if let Some(constraint) = constraint {
             let key = name.to_string();
-            let meta_key = format!("__mutsu_type::{}", key);
+            let meta_key = Self::type_meta_key_sym(name);
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
                 self.mark_atomic_var_seen();
             }
             self.env
-                .insert(meta_key, Value::str(info.value_type.clone()));
+                .insert_sym(meta_key, Value::str(info.value_type.clone()));
             Self::mark_env_type_constraint_seen();
             let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
             if let Some(key_type) = info.key_type.clone() {
@@ -252,14 +277,14 @@ impl Interpreter {
             self.set_var_type_constraint(name, constraint);
             return;
         }
-        let meta_key = format!("__mutsu_type::{}", name);
+        let meta_key = Self::type_meta_key_sym(name);
         match constraint {
             Some(c) => {
                 let info = Self::parse_container_constraint(name, &c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {
                     self.mark_atomic_var_seen();
                 }
-                self.env.insert(meta_key, Value::str(info.value_type));
+                self.env.insert_sym(meta_key, Value::str(info.value_type));
                 Self::mark_env_type_constraint_seen();
             }
             None => {
@@ -269,7 +294,7 @@ impl Interpreter {
                 // own entry lives in the caller's env and is restored with it,
                 // so the enclosing lexical keeps its enforcement after the
                 // callee returns.
-                self.env.remove(&meta_key);
+                self.env.remove_sym(meta_key);
             }
         }
     }
@@ -292,8 +317,8 @@ impl Interpreter {
         if !Self::env_type_constraint_seen() {
             return None;
         }
-        let meta_key = format!("__mutsu_type::{}", name);
-        match self.env.get(&meta_key).map(Value::view) {
+        let meta_key = Self::type_meta_key_sym(name);
+        match self.env.get_sym(meta_key).map(Value::view) {
             Some(ValueView::Str(tc)) => Some(tc.to_string()),
             _ => None,
         }
