@@ -627,7 +627,8 @@ impl Interpreter {
                 &def.package.resolve(),
                 &def.name.resolve(),
             );
-            self.block_stack.push(sub_val);
+            self.block_stack
+                .push(crate::runtime::CodeFrame::Ready(sub_val));
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
             let invocation_id = self.take_invocation_id();
             self.routine_stack.push(RoutineFrame {

@@ -214,22 +214,16 @@ impl Interpreter {
             .block_stack
             .iter()
             .rev()
-            .find(|v| {
-                let sd = match v.view() {
-                    ValueView::Sub(sd) => Some(sd),
-                    ValueView::Mixin(inner, _) => match inner.as_ref().view() {
-                        ValueView::Sub(sd) => Some(sd),
-                        _ => None,
-                    },
-                    _ => None,
+            .find(|code_frame| {
+                let Some((package, name)) = code_frame.routine_identity() else {
+                    return false;
                 };
-                let Some(sd) = sd else { return false };
-                sd.name == frame.name
-                    && (sd.package == frame.package
-                        || (frame.package == "GLOBAL" && sd.package.is_empty())
-                        || (sd.package == "GLOBAL" && frame.package.is_empty()))
+                name == frame.name
+                    && (package == frame.package
+                        || (frame.package == "GLOBAL" && package.is_empty())
+                        || (package == "GLOBAL" && frame.package.is_empty()))
             })
-            .cloned()
+            .map(|code_frame| self.code_frame_value(code_frame))
             .or_else(|| self.env.get(&format!("&{}", frame.name)).cloned())
             .or_else(|| self.env.get_sym(frame.name).cloned())
             .unwrap_or(Value::NIL);

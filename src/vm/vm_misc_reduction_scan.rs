@@ -210,7 +210,7 @@ impl Interpreter {
             // Anonymous subs are pushed with "<anon>" as the sentinel name.
             // Return the block_stack Sub directly so callers can invoke it.
             if frame.name.is_empty() || frame.name == "<anon>" {
-                if let Some(val) = self.block_stack_top().cloned()
+                if let Some(val) = self.block_stack_top()
                     && matches!(val.view(), ValueView::Sub(_))
                 {
                     self.stack.push(val);
@@ -227,7 +227,7 @@ impl Interpreter {
     }
 
     pub(super) fn exec_block_magic_op(&mut self) -> Result<(), RuntimeError> {
-        if let Some(val) = self.block_stack_top().cloned() {
+        if let Some(val) = self.block_stack_top() {
             if matches!(val.view(), ValueView::Sub(_)) {
                 self.stack.push(val);
             } else {

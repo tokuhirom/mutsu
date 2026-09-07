@@ -12,7 +12,9 @@ impl Interpreter {
         // file is the file the currently-executing routine was defined in.
         let file = self.executing_source_file().unwrap_or_default();
         let line = self.cur_source_line;
-        let code = code.or_else(|| self.block_stack.last().cloned());
+        let code = code
+            .map(CodeFrame::Ready)
+            .or_else(|| self.block_stack.last().cloned());
         self.callframe_stack.push(CallFrameEntry {
             file,
             line,
