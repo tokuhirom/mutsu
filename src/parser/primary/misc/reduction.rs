@@ -123,6 +123,14 @@ fn flatten_bracket_op(s: &str) -> String {
         return String::new();
     }
     let first = s.as_bytes()[0];
+    // Scan marker: `\[op]` → `\` + flatten(`[op]`), so `[\[+]]` reaches the
+    // same `\+` the un-bracketed `[\+]` produces and `[\[&f]]` reaches `\&f`.
+    // Without this the marker hid the inner bracket from the flattener and
+    // every bracketed scan spelling (`[\[+]]`, `[\R[+]]`, `[\[&f]]`) was
+    // rejected as an unknown reduction operator.
+    if first == b'\\' {
+        return format!("\\{}", flatten_bracket_op(&s[1..]));
+    }
     // Handle plain bracket: [op] → flatten(op)
     if first == b'['
         && let Some(end) = find_matching_bracket(s)
