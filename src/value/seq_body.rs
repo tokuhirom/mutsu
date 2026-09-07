@@ -146,6 +146,13 @@ pub(crate) enum SeqView {
     /// the handle (not the shared core), just like `ArrayKind::ItemList`, so
     /// itemizing the cached handle cannot change the original `Seq` handle.
     ItemList,
+    /// A `Seq`-view handle stored in a `$` Scalar container (`my $s =
+    /// (1, 2).Seq`). Raku still calls it a `Seq` — only `.raku` renders the
+    /// container, as `$((1, 2).Seq)` — so every type-facing consumer treats
+    /// this exactly like [`SeqView::Seq`]. It is a handle tag rather than a
+    /// `Scalar` wrapper because rakudo's single-argument rule still flattens
+    /// a `$`-held `Seq` into a `+@` slurpy, which a wrapper would hide.
+    ItemSeq,
 }
 
 /// The shared reification/consumption machinery a `Seq`, `HyperSeq`, or
@@ -269,6 +276,27 @@ impl SeqBody {
             core: Arc::clone(&self.core),
             view: SeqView::ItemList,
         })
+    }
+
+    /// Itemize a `Seq`-view handle without touching its deferred source — the
+    /// `SeqView::Seq` twin of [`Self::as_item_list_view`].
+    pub(crate) fn as_item_seq_view(self: &Arc<Self>) -> Arc<Self> {
+        Arc::new(SeqBody {
+            core: Arc::clone(&self.core),
+            view: SeqView::ItemSeq,
+        })
+    }
+
+    /// A process-unique identity for the SEQUENCE this handle refers to — the
+    /// address of the shared reification core, so every handle over one
+    /// sequence answers the same id. Keyed on the core rather than on the
+    /// handle `Arc` because a retag (`.cache`'s List view, a `$`-store's
+    /// `ItemSeq`) mints a fresh handle over the same core, and the
+    /// interpreter-side tables that hang off a `Seq` (the `PredictiveIterator`
+    /// carrier, the squish/unique iterator metadata) describe the sequence,
+    /// not the handle.
+    pub(crate) fn identity(self: &Arc<Self>) -> usize {
+        Arc::as_ptr(&self.core) as usize
     }
 
     /// Which Raku type this handle presents as — read by `value_type_name`

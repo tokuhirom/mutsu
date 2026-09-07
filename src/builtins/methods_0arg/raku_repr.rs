@@ -674,10 +674,18 @@ pub fn raku_value(v: &Value) -> String {
                 return "Seq.new()".to_string();
             }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
-            if items.len() == 1 {
+            let rendered = if items.len() == 1 {
                 format!("({},).Seq", inner)
             } else {
                 format!("({}).Seq", inner)
+            };
+            // A `Seq` read out of a `$` container renders the container too —
+            // rakudo's `Seq.raku` checks `nqp::iscont(SELF)`, so `my $s =
+            // (1, 2).Seq` shows `$((1, 2).Seq)` while a `:=`-bound one does not.
+            if items.view() == crate::value::SeqView::ItemSeq {
+                format!("$({})", rendered)
+            } else {
+                rendered
             }
         }
         ValueView::Slip(items) => {

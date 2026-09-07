@@ -377,7 +377,7 @@ impl Interpreter {
                     }
                 }
             }
-            let seq_id = std::sync::Arc::as_ptr(&items) as usize;
+            let seq_id = items.identity();
             self.squish_iterator_meta.insert(
                 seq_id,
                 super::super::SquishIteratorMeta {

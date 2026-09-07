@@ -423,8 +423,9 @@ impl Interpreter {
         let body = Arc::clone(&body);
         // `Seq.new($predictiveIterator)` (`try_native_seq_construct`) builds
         // an EMPTY already-`Reified` body and tracks its iterator out of
-        // band, in `self.predictive_seq_iters` keyed by this body's own
-        // `Arc` address — so `.tail`/`.Numeric` can use the count-only path
+        // band, in `self.predictive_seq_iters` keyed by this sequence's
+        // identity (`SeqBody::identity`, the shared reification core's
+        // address) — so `.tail`/`.Numeric` can use the count-only path
         // instead of eagerly draining. A `seq_method_consumes` touch (e.g.
         // `.tail` is one) must NOT steal this placeholder: `take` returning
         // `SeqTaken::Taken` would rebuild the result as a FRESH `Value::seq`
@@ -433,11 +434,7 @@ impl Interpreter {
         // matches anything). Leave it completely untouched here; the
         // specific dispatch handlers (`dispatch_tail`, `.Numeric`) do their
         // own `predictive_seq_iter_for` lookup against the UNCHANGED body.
-        if body.is_empty()
-            && self
-                .predictive_seq_iter_for(Arc::as_ptr(&body) as usize)
-                .is_some()
-        {
+        if body.is_empty() && self.predictive_seq_iter_for(body.identity()).is_some() {
             return Ok(target);
         }
         if method == "sink" {

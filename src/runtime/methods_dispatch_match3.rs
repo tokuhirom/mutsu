@@ -17,7 +17,7 @@ impl Interpreter {
                 // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
                 // Otherwise return the element count.
                 if let ValueView::Seq(items) = target.view() {
-                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
+                    let seq_id = items.identity();
                     if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
                     }
@@ -277,7 +277,7 @@ impl Interpreter {
             "Numeric" if args.is_empty() => {
                 if let ValueView::Seq(items) = target.view() {
                     // Check for PredictiveIterator-backed Seq (stored by Seq.new)
-                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
+                    let seq_id = items.identity();
                     if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         // Call count-only on the PredictiveIterator
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
