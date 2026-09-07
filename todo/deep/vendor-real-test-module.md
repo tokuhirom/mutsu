@@ -107,7 +107,19 @@ env snapshot plus a writeback diff — on **every assertion of every roast file*
 carrier arm is 1.2% of the run, and the profile's real 8.5% item (a
 registry-wide multi-candidate walk per dispatch) is now fixed, taking ~7.5% off
 the 20 000-assertion `ok` loop. Read its corrected budget table before picking
-up any of this. That, and the pre-existing
+up any of this.
+
+`todo/perf/defaulted-param-forfeits-the-light-call-path.md` is also closed
+(`news/2026-09/defaulted-params-reach-the-positional-light-path.md`), and its
+`Test`-module claim is measured stale too: constant defaults now fill from a
+registration-time table, but `ok` is a `multi` (multi names are excluded from
+the name-keyed cache by construction) and `proclaim` carries `is copy` and a
+`Bool(Mu)` coercion, so neither becomes light-eligible. `write-int.t` reports the
+same 22 805 full resolves before and after -- the 565 212 that ticket quoted had
+already been cut by the multi-resolve-cache fix. Ordinary defaulted subs gained
+13.8x; this file gained nothing.
+
+That, and the pre-existing
 `todo/perf/method-dispatch-flattens-the-env-on-every-call.md` (measured at 17%
 of the `ok` loop by an unsound flatten-removal experiment), are what remain.
 

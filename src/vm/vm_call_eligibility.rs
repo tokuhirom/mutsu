@@ -187,13 +187,18 @@ impl Interpreter {
                 .as_deref()
                 .is_none_or(Self::is_fast_type_name)
             && !cf.param_defs.is_empty()
+            // A defaulted / `?`-optional positional is admitted only when the
+            // precompute could reduce every one of them to a constant fill and
+            // they form a suffix (`light_required_positionals`). Without that,
+            // an omitted parameter would need `eval_param_default` — an
+            // arbitrary expression evaluated with the parameter shadowed — which
+            // only the general binder performs.
+            && cf.light_required_positionals.is_some()
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
                     && pd.where_constraint.is_none()
                     && !pd.slurpy
                     && !pd.double_slurpy
-                    && pd.default.is_none()
-                    && !pd.optional_marker
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant

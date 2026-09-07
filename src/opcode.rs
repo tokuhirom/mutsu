@@ -8542,7 +8542,7 @@ pub(crate) enum FastParamCheck {
 impl FastParamCheck {
     /// The plan for a `type_constraint` field, or `None` when the constraint is
     /// not one the light paths handle (such a routine never reaches them).
-    fn of(constraint: Option<&String>) -> Option<Self> {
+    pub(crate) fn of(constraint: Option<&String>) -> Option<Self> {
         match constraint {
             None => Some(Self::Unconstrained),
             Some(tc) => FastParamType::of(tc).map(|kind| Self::Fast {
@@ -8619,6 +8619,25 @@ pub(crate) struct CompiledFunction {
     /// the precompute has not run (a hand-built chunk), which falls back to
     /// re-deriving it from the `ParamDef`.
     pub(crate) param_itemize_on_bind: Vec<bool>,
+    /// The value each *omitted* trailing positional parameter binds, parallel to
+    /// `param_defs`. `Some(v)` when the parameter is optional AND its bound-when-
+    /// omitted value is a compile-time constant — a literal default (`''`, `1`,
+    /// `Nil`) or the type object a bare `?` binds. `None` for a mandatory
+    /// parameter, and also for an optional one whose default is an arbitrary
+    /// expression (which only the general binder can evaluate).
+    ///
+    /// [`Self::light_required_positionals`] is what distinguishes those two
+    /// `None` cases; consult it, not this vector, to decide eligibility.
+    pub(crate) param_const_fills: Vec<Option<Value>>,
+    /// How many leading positional parameters a light call MUST be given,
+    /// with every parameter past that point fillable from `param_const_fills`.
+    ///
+    /// `None` when the signature cannot be served that way — a non-constant
+    /// default, an optional parameter whose omitted value is not a constant, or
+    /// a mandatory parameter sitting after an optional one. The light paths then
+    /// stay off the routine entirely, exactly as they did before defaults were
+    /// admitted at all.
+    pub(crate) light_required_positionals: Option<usize>,
     /// The declared return type's precomputed plan (see [`FastParamCheck`]).
     /// `None` when there is no return type, or when it is not one the light
     /// return check handles by tag.
@@ -8933,6 +8952,13 @@ impl CompiledFunction {
             .iter()
             .map(crate::runtime::Interpreter::param_binds_itemized_scalar)
             .collect();
+        self.param_const_fills = self
+            .param_defs
+            .iter()
+            .map(Self::const_fill_for_param)
+            .collect();
+        self.light_required_positionals =
+            Self::compute_light_required_positionals(&self.param_defs, &self.param_const_fills);
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -9030,6 +9056,8 @@ mod compiled_fns_identity {
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),
             param_itemize_on_bind: Vec::new(),
+            param_const_fills: Vec::new(),
+            light_required_positionals: None,
             return_fast_type: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,

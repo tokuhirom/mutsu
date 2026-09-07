@@ -81,7 +81,14 @@ impl Interpreter {
         func_name_sym: Symbol,
     ) -> Result<Value, RuntimeError> {
         let args_base = self.stack.len();
-        self.stack.extend(args.iter().cloned());
+        // Drop the synthetic callsite-line marker (see the `_at` form's
+        // precondition). These callers hand over a drained argument vector that
+        // still carries it; the hot cached dispatch strips it itself.
+        self.stack.extend(
+            args.iter()
+                .filter(|v| !Self::is_callsite_line_marker(v))
+                .cloned(),
+        );
         self.call_compiled_function_positional_light_at(
             cf,
             args_base,
@@ -124,44 +131,65 @@ impl Interpreter {
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
         let actual_count = self.stack.len() - args_base;
+        // PRECONDITION: `stack[args_base..]` holds arguments only. The parser
+        // gives EVERY parenthesized zero-argument call a synthetic
+        // `__mutsu_test_callsite_line` Pair as its sole argument
+        // (`identifier_call.rs`, so `?LINE` / deprecation reporting has a line
+        // to quote), and it is NOT one. Every other bind path strips it
+        // (`sanitize_call_args_owned`, `peek_callsite_line`); this one never
+        // did, so `sub f($a) { $a }; f(1); f().^name` bound the marker and
+        // answered `Pair`. It stayed invisible while every light-eligible
+        // signature was all-mandatory, because a surplus marker otherwise
+        // failed the arity check; admitting optionals makes the same leak
+        // reachable for a merely-omitted parameter.
+        //
+        // The strip lives in the two callers rather than here: the cached
+        // dispatch already scans the arguments for the line and so knows
+        // whether there is one to drop, and paying a per-call probe here
+        // instead measured +1.3% on `bench-tak`.
+        debug_assert!(
+            actual_count == 0 || !Self::is_callsite_line_marker(&self.stack[self.stack.len() - 1]),
+            "positional light bind saw a callsite-line marker: its caller must strip it"
+        );
 
-        // Every positional-light-eligible parameter is a mandatory positional
-        // (no default, optional `?`, or slurpy -- see
-        // `is_positional_light_call_eligible`), so any shortfall is a "too few
-        // positionals" arity error. Report it as a typed X::TypeCheck::Argument
-        // carrying objname/signature/arguments, matching the interpreter path.
-        if actual_count < positional_count {
-            self.current_unit = saved_unit;
-            let err = positional_light_arity_error(
-                func_name,
-                &cf.param_defs,
-                &self.stack[args_base..],
-                positional_count,
-                actual_count,
-                false,
-            );
-            self.stack.truncate(args_base);
-            return Err(err);
-        }
-        // `is_positional_light_call_eligible` guarantees no slurpy/optional
-        // param exists on this signature, so a surplus argument is always an
-        // arity error, never a legitimate slurpy catch-all
-        // (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
-        // Report it the same way the general binder does
-        // (`binding_signature.rs`'s "Too many positionals passed" check) --
-        // several call sites pattern-match on this exact message.
-        if actual_count > positional_count {
-            self.current_unit = saved_unit;
-            let err = positional_light_arity_error(
-                func_name,
-                &cf.param_defs,
-                &self.stack[args_base..],
-                positional_count,
-                actual_count,
-                true,
-            );
-            self.stack.truncate(args_base);
-            return Err(err);
+        // A positional-light-eligible signature is either all-mandatory or a
+        // mandatory prefix followed by parameters the precompute reduced to a
+        // constant fill (`light_required_positionals`; no slurpy either way --
+        // see `is_positional_light_call_eligible`). A call short of the
+        // mandatory prefix is a "too few positionals" arity error; one short
+        // only of the fillable suffix binds the constants below. Report the
+        // error as a typed X::TypeCheck::Argument carrying
+        // objname/signature/arguments, matching the interpreter path -- and
+        // count `positional_count`, not the prefix, in its message, exactly as
+        // the general binder does.
+        //
+        // Nested under one `!=` so a call that supplies every parameter -- the
+        // overwhelmingly common shape, and the whole of `bench-fib`/`bench-tak`
+        // -- never loads `light_required_positionals` at all. Checking the
+        // prefix unconditionally instead measured +0.4% on those two.
+        if actual_count != positional_count {
+            // `is_positional_light_call_eligible` guarantees no slurpy param
+            // exists on this signature, so a surplus argument is always an
+            // arity error, never a legitimate slurpy catch-all
+            // (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
+            // Report it the same way the general binder does
+            // (`binding_signature.rs`'s "Too many positionals passed" check) --
+            // several call sites pattern-match on this exact message.
+            let too_many = actual_count > positional_count;
+            let required_count = cf.light_required_positionals.unwrap_or(positional_count);
+            if too_many || actual_count < required_count {
+                self.current_unit = saved_unit;
+                let err = positional_light_arity_error(
+                    func_name,
+                    &cf.param_defs,
+                    &self.stack[args_base..],
+                    positional_count,
+                    actual_count,
+                    too_many,
+                );
+                self.stack.truncate(args_base);
+                return Err(err);
+            }
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
@@ -348,7 +376,7 @@ impl Interpreter {
             return Err(err);
         }
         for (param_idx, slot) in param_slots.iter().enumerate() {
-            if param_idx < actual_count {
+            let val = if param_idx < actual_count {
                 // Move the argument out of its stack slot (the slots are
                 // discarded by the `truncate` below, so nothing observes the
                 // `Nil` left behind) rather than cloning it and dropping the
@@ -359,32 +387,46 @@ impl Interpreter {
                 // on its declaration, so it was settled at registration time
                 // (`param_itemize_on_bind`). Re-deriving it per bind scanned the
                 // parameter's `traits: Vec<String>` twice with string compares.
-                let val = Self::bind_itemize_param(cf, param_idx, val);
-                let param_name = &cf.param_defs[param_idx].name;
-                let needs_env = write_all_params
-                    || val.is_nil()
-                    || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
-                if needs_env {
-                    // The env mirror is keyed by the pre-interned param name
-                    // (`param_name_syms`), so this costs neither a `String`
-                    // clone nor a re-intern of the name on every call. The
-                    // key-shape bookkeeping `Env::insert` would have done is
-                    // still performed, on a borrow.
-                    crate::env::note_env_key(param_name);
-                    self.locals[*slot] = val.clone();
-                    match cf.param_name_syms.get(param_idx) {
-                        Some(sym) => self.env_mut().insert_sym(*sym, val),
-                        None => self.env_mut().insert(param_name.clone(), val),
-                    };
-                } else {
-                    // No env mirror: move the bound value straight into the
-                    // slot instead of cloning it and dropping the original.
-                    self.locals[*slot] = val;
+                Self::bind_itemize_param(cf, param_idx, val)
+            } else {
+                // Omitted: bind the constant the precompute reduced this
+                // parameter's default (or bare `?`) to. `required_count` above
+                // already rejected a call short of the mandatory prefix, and
+                // eligibility guarantees a fill exists for every parameter past
+                // it, so the `unwrap_or` is unreachable in practice and simply
+                // keeps a hand-built chunk binding what it used to.
+                //
+                // No type check: the fill was verified against this parameter's
+                // own constraint once, at precompute time.
+                match cf.param_const_fills.get(param_idx).and_then(|v| v.clone()) {
+                    Some(v) => v,
+                    None => continue,
                 }
+            };
+            let param_name = &cf.param_defs[param_idx].name;
+            let needs_env = write_all_params
+                || val.is_nil()
+                || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
+            if needs_env {
+                // The env mirror is keyed by the pre-interned param name
+                // (`param_name_syms`), so this costs neither a `String`
+                // clone nor a re-intern of the name on every call. The
+                // key-shape bookkeeping `Env::insert` would have done is
+                // still performed, on a borrow.
+                crate::env::note_env_key(param_name);
+                self.locals[*slot] = val.clone();
                 match cf.param_name_syms.get(param_idx) {
-                    Some(sym) => self.mark_readonly_sym(*sym),
-                    None => self.mark_readonly(&cf.param_defs[param_idx].name),
-                }
+                    Some(sym) => self.env_mut().insert_sym(*sym, val),
+                    None => self.env_mut().insert(param_name.clone(), val),
+                };
+            } else {
+                // No env mirror: move the bound value straight into the
+                // slot instead of cloning it and dropping the original.
+                self.locals[*slot] = val;
+            }
+            match cf.param_name_syms.get(param_idx) {
+                Some(sym) => self.mark_readonly_sym(*sym),
+                None => self.mark_readonly(&cf.param_defs[param_idx].name),
             }
         }
         // The arguments are consumed: drop their (now `Nil`) stack slots so the
@@ -797,7 +839,7 @@ impl Interpreter {
     /// re-inspects the value up to three times. The arms mirror that function
     /// exactly -- keep them in step.
     #[inline]
-    pub(super) fn fast_type_check_tagged(
+    pub(crate) fn fast_type_check_tagged(
         val: &Value,
         kind: crate::opcode::FastParamType,
         name_sym: Symbol,

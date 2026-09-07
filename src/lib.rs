@@ -13,6 +13,7 @@ pub(crate) mod gc;
 mod interpreter;
 pub(crate) mod method_signature_shared;
 mod opcode;
+mod opcode_param_fills;
 mod parse_dispatch;
 mod parser;
 mod placeholder_order;
