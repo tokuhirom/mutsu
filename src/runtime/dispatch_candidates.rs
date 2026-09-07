@@ -876,10 +876,25 @@ impl Interpreter {
             ],
             "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
             "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
+            // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
+            // spellings under `Any`, not subclasses of them, but they do the
+            // same roles — so each mutable name gets its own row rather than
+            // being folded into (or bridged to) the immutable one.
             "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
+            "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
             "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
+            "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
             "Mix" => &[
                 "Mix",
+                "Mixy",
+                "Baggy",
+                "QuantHash",
+                "Associative",
+                "Any",
+                "Mu",
+            ],
+            "MixHash" => &[
+                "MixHash",
                 "Mixy",
                 "Baggy",
                 "QuantHash",
