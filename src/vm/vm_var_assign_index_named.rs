@@ -3248,9 +3248,25 @@ impl Interpreter {
         {
             self.locals[slot] = Value::NIL;
         }
+        // ADR-0068 §4 step 3: a CHAINED subscript store (`%h<k>[$i] = v`,
+        // `@a[$i]<k> = v`) mutates the inner container through
+        // `gc_contents_mut` exactly as the single-subscript store below does,
+        // but it was on none of the three guarded funnels — measured with the
+        // §1.2 breakpoint oracle, `%h<k>[$i] = 1` from 20 threads hit zero of
+        // them and SIGSEGV'd on 24 of 24 runs where rakudo answers 1000. Take
+        // the same cell-keyed exclusion the named single-subscript store takes;
+        // `env_root_descended_mut_tracked` reports the outermost cell the
+        // descent stepped through, which is what makes the key shared between
+        // threads (a node-keyed lock excludes nothing — `Gc::make_mut` copies
+        // an aliased node, see ADR-0068 §7).
+        let mut nested_cell_addr: Option<usize> = None;
         if let Some(handled) = self
-            .env_root_descended_mut(&var_name)
+            .env_root_descended_mut_tracked(&var_name, &mut nested_cell_addr)
             .and_then(|container| {
+                let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
+                    nested_cell_addr,
+                    container,
+                );
                 container.with_array_mut(|outer_arr, _kind| -> Result<bool, RuntimeError> {
                     let Ok(inner_i) = inner_key.parse::<usize>() else {
                         return Ok(false);
@@ -3347,8 +3363,14 @@ impl Interpreter {
         if let Some(slot) = self.find_local_slot(code, &var_name) {
             self.locals[slot] = Value::NIL;
         }
-        self.env_root_descended_mut(&var_name)
+        // Same ADR-0068 §4 step 3 exclusion as the array-outer arm above.
+        let mut nested_cell_addr: Option<usize> = None;
+        self.env_root_descended_mut_tracked(&var_name, &mut nested_cell_addr)
             .and_then(|container| {
+                let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
+                    nested_cell_addr,
+                    container,
+                );
                 container.with_hash_mut(|outer_hash| -> Result<(), RuntimeError> {
                     // Container identity (§3): write in place via the raw
                     // pointer both when exclusively owned (`Arc::make_mut`

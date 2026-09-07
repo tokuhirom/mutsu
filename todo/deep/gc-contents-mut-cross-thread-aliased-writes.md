@@ -69,6 +69,34 @@ Three specific loose ends from the route audit:
   it arriving as an ordinary VALUE dispatch (`exec_call_method_op` ->
   `call_method_with_values`), and excluding a small allowlist of mutator method
   names there takes it to 0/240 at 24-way.
+- ~~**The chained-subscript store (`%h<k>[$i] = v`)**~~ **CLASSIFIED AND FIXED
+  (2026-09-07).** It is `OpCode::IndexAssignExprNested`, and the §1.2 breakpoint
+  oracle showed it hitting **zero** of the three guarded funnels: it mutates the
+  inner container through `gc_contents_mut` exactly as the single-subscript
+  store does, but took none of their exclusions. 20 threads writing 1000
+  elements **SIGSEGV'd on 24 of 24 runs** (rakudo: 1000). It now takes the same
+  cell-keyed guard the named single-subscript store takes, via
+  `env_root_descended_mut_tracked` — which already existed for exactly this
+  purpose and whose doc comment already said a caller about to mutate wants it.
+  0/24 after, both the hash-outer and array-outer arms. Pin:
+  `t/concurrent-nested-subscript-store.t`.
+
+- **An element store through a container returned by a USER method is still
+  open, and it is NOT a locking gap.** `class Holder { has @.items; method
+  bag() { @!items } }` with `$h.bag[$i] = 1` from 20 threads lands
+  **418 / 543 / 304 of 1000** writes (rakudo: 1000) — silent data loss, no
+  crash. The breakpoint oracle shows it DOES reach the attribute-lvalue funnel
+  (`builtin_index_assign_method_lvalue`), once per write, and keying that
+  funnel's guard on the shared invocant instead of the returned container was
+  implemented and measured: still 24/24 wrong. The reason is that the guard is
+  acquired *after* `current = self.call_method_with_values(...)` — the accessor
+  call, which is where each thread takes its own copy of the array
+  (`Gc::make_mut` on an aliased node), runs unguarded. So the exclusion has to
+  cover the accessor dispatch, which is what that funnel's own comment
+  deliberately kept outside the region ("the accessor dispatches inside the
+  region cannot deadlock against themselves"). Resolving that tension is the
+  next unit of work here, and it needs a decision, not a patch.
+
 - **Route 5 (`Channel.Supply` tap captures)** is exposed on the path oracle but
   blocked behind a separate deterministic Channel-supply delivery bug that
   drops/misorders values on a single unloaded run. Fix that first.
