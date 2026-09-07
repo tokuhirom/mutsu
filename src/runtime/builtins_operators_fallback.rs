@@ -482,7 +482,7 @@ impl Interpreter {
             // Collect remaining candidates for callsame/nextcallee/callwith.
             // Use all multi candidates (not just matching ones) because callwith()
             // can re-dispatch with different arguments.
-            let all_candidates = self.resolve_all_multi_candidates(name);
+            let all_candidates = self.resolve_all_multi_candidates_indexed(name);
             // Being a `multi` at all is what establishes a dispatcher, not
             // having somewhere to defer to: `nextsame`/`callsame` in the LAST
             // (or only) candidate is legal in rakudo and evaluates to Nil.

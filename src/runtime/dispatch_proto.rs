@@ -1,65 +1,6 @@
 use super::*;
 
 impl Interpreter {
-    /// Collect ALL multi dispatch candidates for a function name, regardless of
-    /// arity or type matching.  Used to build the full candidate list for
-    /// callwith(), which may re-dispatch with different arguments.
-    pub(crate) fn resolve_all_multi_candidates(&self, name: &str) -> Vec<Arc<FunctionDef>> {
-        let mut all: Vec<(String, Arc<FunctionDef>)> = Vec::new();
-        let mut packages = self.bare_name_packages();
-        // An imported proto is registered under the importing lexical scope,
-        // while its multi candidates remain in the defining module. Include
-        // that owner so a first-class `&name` can materialize the same
-        // candidates an ordinary `name(...)` call reaches. This matters for
-        // real Test's `proto sub skip(|)`: `.&skip` must invoke Test::skip,
-        // not the core list builtin of the same name.
-        if let Some(proto) = self.resolve_proto_function(name) {
-            let owner = proto.package.resolve();
-            if !packages.iter().any(|pkg| pkg == &owner) {
-                packages.insert(0, owner);
-            }
-        }
-        let prefixes: Vec<String> = packages
-            .iter()
-            .map(|pkg| format!("{}::{}/", pkg, name))
-            .collect();
-        let mut seen_fps = Vec::new();
-        for prefix in &prefixes {
-            // `as_str` (a `&'static str` out of the interner) rather than
-            // `resolve()`: the filter runs over every registry key on every
-            // multi call (`push_multi_dispatch_frame`), and `resolve()` copied
-            // each one into a fresh `String` just to test a prefix.
-            let candidates: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(k, _)| k.as_str().starts_with(prefix.as_str()))
-                .map(|(k, def)| (k.resolve(), def.clone()))
-                .collect();
-            for (key, def) in candidates {
-                let fp = def.body_fingerprint();
-                if !seen_fps.contains(&fp) {
-                    seen_fps.push(fp);
-                    all.push((key, def));
-                }
-            }
-        }
-        // Sort by dispatch specificity (most specific first). The callsame /
-        // nextsame consumers (`builtins_dispatch_next.rs`) pick the FIRST
-        // arg-matching candidate in this list's order, so it must reflect the
-        // real dispatch order rather than arbitrary HashMap iteration order.
-        // Without this, when several candidates match the same args — e.g.
-        // overlapping `where` constraints plus a generic fallback
-        // (`multi foo(Int $ where * > 0)`, `multi foo(Int $ where * < 10)`,
-        // `multi foo($)`) — a broader candidate appearing earlier in HashMap
-        // order is wrongly chosen before a narrower one, dropping the narrower
-        // candidate from the nextsame chain (hash-seed-dependent flake in
-        // S12-methods/defer-next.t `nextsame + multi + where`). Mirrors the
-        // deterministic winner resolution PR-4 added to `push_multi_dispatch_frame`.
-        self.sort_candidates_by_specificity(&mut all);
-        all.into_iter().map(|(_, def)| def).collect()
-    }
-
     pub(crate) fn has_proto(&self, name: &str) -> bool {
         // Same gate `resolve_proto_function` applies: a `my`-scoped (non-`our`)
         // proto is not in the package stash, so a package-qualified call must

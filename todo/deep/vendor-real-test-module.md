@@ -103,7 +103,11 @@ on the reference machine and under contention. The next measured target is filed
 (`ok 1, "x"` compiles to `ExecCallPairs`, not `CallFunc`) reaches none of the
 three name-keyed compiled-call caches and takes the carrier path — a whole-frame
 env snapshot plus a writeback diff — on **every assertion of every roast file**.
-That, and the pre-existing
+**That file was measured on 2026-09-06 and its cost estimate was wrong**: the
+carrier arm is 1.2% of the run, and the profile's real 8.5% item (a
+registry-wide multi-candidate walk per dispatch) is now fixed, taking ~7.5% off
+the 20 000-assertion `ok` loop. Read its corrected budget table before picking
+up any of this. That, and the pre-existing
 `todo/perf/method-dispatch-flattens-the-env-on-every-call.md` (measured at 17%
 of the `ok` loop by an unsound flatten-removal experiment), are what remain.
 

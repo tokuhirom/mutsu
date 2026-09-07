@@ -753,6 +753,17 @@ pub(crate) fn record_mainline_lexical_hit() {
 // order (3(i)) and the parity corpus for each cutover (3(iii)). Nothing reads
 // these counters to make a dispatch decision: measurement-only, zero behavior
 // change.
+//
+// The family is not method-only. The `execcallpairs` entry (`OpCode::ExecCallPairs`,
+// the shape every listop-with-named-args statement call takes — including every
+// roast assertion, whose callsite line the parser injects as a named argument)
+// records which of its three arms served the call: `compiled` (the caller's own
+// `CompiledFns` table answered), `native` (the Rust builtin cascade answered), or
+// `carrier` (the `exec_call` interpreter fallback, with its env snapshot and
+// writeback diff). It exists to make the size of that fallback measurable rather
+// than assumed -- see
+// `todo/perf/listop-call-bypasses-every-compiled-call-cache.md`, whose original
+// cost estimate it corrected.
 fn dispatch_entry_outcome_by_key() -> &'static Mutex<HashMap<String, u64>> {
     static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))

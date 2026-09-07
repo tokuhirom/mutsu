@@ -728,7 +728,7 @@ impl Interpreter {
         if let Some(&c) = self.func_multi_type_cacheable.get(&(pkg_sym, name_sym)) {
             return c;
         }
-        let candidates = self.resolve_all_multi_candidates(name);
+        let candidates = self.resolve_all_multi_candidates_indexed(name);
         let mut value_dependent = false;
         'outer: for def in &candidates {
             for pd in &def.param_defs {
@@ -1237,7 +1237,7 @@ impl Interpreter {
         // Collect ALL multi candidates regardless of arg matching. This is
         // needed because callwith() can re-dispatch with different args, so
         // candidates that don't match the original args may match the new ones.
-        let all_candidates = self.resolve_all_multi_candidates(name);
+        let all_candidates = self.resolve_all_multi_candidates_indexed(name);
         // A name with no multi candidates at all is a plain sub: it establishes
         // no dispatcher, so `nextsame` from its body correctly dies with
         // X::NoDispatcher (`roast/S06-multi/redispatch.t` test 10).

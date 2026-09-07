@@ -441,6 +441,7 @@ mod dispatch;
 mod dispatch_candidates;
 mod dispatch_proto;
 mod dispatch_proto_call;
+mod dispatch_proto_candidates;
 mod dispatch_proto_rewrite;
 mod dispatch_resolve;
 mod end_phasers;
