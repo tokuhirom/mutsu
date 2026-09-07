@@ -431,10 +431,15 @@ impl Interpreter {
             matches!(constraint, "Match" | "Any" | "Mu")
                 || constraint == value.match_dispatch_class()
         } else {
+            // The lowercase native aliases are accepted alongside the boxed
+            // names exactly as the general checker below does for them (an
+            // `int` constraint admits any Int; see `type_matches`): the
+            // vendored `Test.rakumod` counts its tests in `my int` lexicals,
+            // so every assertion paid the full gauntlet for `int` twice.
             match value.view() {
-                ValueView::Int(_) => constraint == "Int",
-                ValueView::Num(_) => constraint == "Num",
-                ValueView::Str(_) => constraint == "Str",
+                ValueView::Int(_) => constraint == "Int" || constraint == "int",
+                ValueView::Num(_) => constraint == "Num" || constraint == "num",
+                ValueView::Str(_) => constraint == "Str" || constraint == "str",
                 ValueView::Bool(_) => constraint == "Bool",
                 ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
                 // `LazyList` can present as `Array`, `List`, or `Seq` depending

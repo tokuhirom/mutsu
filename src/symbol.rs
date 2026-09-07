@@ -233,6 +233,11 @@ pub(crate) mod wk {
         callable_id => "__mutsu_callable_id";
         /// The implicit `*%_` named slurpy every method carries.
         named_slurpy => "%_";
+        /// The legacy `@_` positional slurpy every call binds.
+        positional_slurpy => "@_";
+        /// The routine-frame name a nameless compiled routine is pushed under
+        /// (so `&?ROUTINE` works inside an anonymous sub).
+        anon_routine => "<anon>";
     }
 
     /// Whether `key` is one of the fixed per-call env keys the well-known

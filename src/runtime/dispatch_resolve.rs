@@ -21,10 +21,18 @@ fn function_key_base_name(key: &str) -> &str {
         }
     }
     let head = &key[..end];
-    match head.rfind("::") {
-        Some(p) => &head[p + 2..],
-        None => head,
+    // A hand-rolled reverse scan for `::`: `str::rfind` builds a two-way
+    // searcher per call, which is most of what this function cost on the
+    // per-dispatch candidate walk that calls it once per registry key.
+    let hb = head.as_bytes();
+    let mut j = hb.len();
+    while j >= 2 {
+        if hb[j - 1] == b':' && hb[j - 2] == b':' {
+            return &head[j..];
+        }
+        j -= 1;
     }
+    head
 }
 
 impl Interpreter {
@@ -714,5 +722,28 @@ impl Interpreter {
         }
 
         all_matches
+    }
+}
+
+#[cfg(test)]
+mod base_name_tests {
+    use super::function_key_base_name;
+
+    /// The hand-rolled `::` scan must agree with the `rfind` it replaced on
+    /// every key shape the registry produces: bare, package-qualified, with
+    /// and without the `/arity` suffix, and degenerate short keys.
+    #[test]
+    fn base_name_strips_package_and_arity() {
+        assert_eq!(function_key_base_name("foo"), "foo");
+        assert_eq!(function_key_base_name("GLOBAL::foo"), "foo");
+        assert_eq!(function_key_base_name("A::B::foo"), "foo");
+        assert_eq!(function_key_base_name("A::B::foo/2"), "foo");
+        assert_eq!(function_key_base_name("foo/10"), "foo");
+        assert_eq!(function_key_base_name("A::B::infix:<+>/2"), "infix:<+>");
+        assert_eq!(function_key_base_name("::foo"), "foo");
+        assert_eq!(function_key_base_name(":"), ":");
+        assert_eq!(function_key_base_name("::"), "");
+        assert_eq!(function_key_base_name(""), "");
+        assert_eq!(function_key_base_name("a"), "a");
     }
 }
