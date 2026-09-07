@@ -632,6 +632,26 @@ impl Interpreter {
                     self.force_lazy_list_vm(&list)?
                 }
             }
+            // An `is Array`/`is List` subclass instance is Positional, so
+            // `my @b = $vec` distributes its ELEMENTS (rakudo: `[3, 2, 1, 4]`,
+            // not a one-element array holding the instance). Raku's list
+            // assignment reads the Iterable protocol, so a subclass that
+            // overrides `iterator` decides the order here too -- measured.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage") =>
+            {
+                match self.positional_subclass_iteration_source(val, "list") {
+                    Some(source) => crate::runtime::utils::value_to_list(&source?),
+                    None => {
+                        let storage = attributes
+                            .as_map()
+                            .get("__mutsu_array_storage")
+                            .cloned()
+                            .unwrap_or_else(|| Value::real_array(Vec::new()));
+                        crate::runtime::utils::value_to_list(&storage)
+                    }
+                }
+            }
             _ => vec![val.clone()],
         })
     }

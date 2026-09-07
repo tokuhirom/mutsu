@@ -146,6 +146,25 @@ impl Interpreter {
             {
                 crate::value::value_buf::buf_elems_or_empty(&attributes)
             }
+            // An `is Array`/`is List` subclass instance is Positional, so
+            // `|$vec` slips its ELEMENTS, not a one-item slip holding the
+            // instance (rakudo: `|SortedArray.new(3,2,1,4)` is
+            // `slip(3, 2, 1, 4)`). The elements are the backing storage even
+            // when the class overrides `iterator` -- measured: the override
+            // does NOT reach `|`, only the Iterable-protocol methods.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage") =>
+            {
+                let storage = attributes
+                    .as_map()
+                    .get("__mutsu_array_storage")
+                    .cloned()
+                    .unwrap_or_else(|| Value::real_array(Vec::new()));
+                crate::runtime::utils::value_to_list(&storage)
+                    .into_iter()
+                    .map(Self::containerize_pair_item)
+                    .collect()
+            }
             // Slipping a bare value (`|$pair`, `|Pair.new(...)`) always
             // produces a NAMED argument regardless of the Pair's own stored
             // flavour (I4) — this is the one case where the value itself,

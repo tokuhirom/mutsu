@@ -431,6 +431,32 @@ impl Interpreter {
         }
     }
 
+    /// `Array.new`'s one-argument rule, applied to an `is Array` subclass's
+    /// constructor arguments.
+    ///
+    /// `Array.new(|c)` slurps with `+@`, so a SINGLE non-itemized Positional
+    /// argument spreads into its elements: `SortedArray.new([3,2,1,4])` is four
+    /// elements, exactly as `Array.new([3,2,1,4])` is. Two arguments keep each
+    /// whole (`Array.new(@a, 3)` is 2 elements), an itemized `$[...]` is one
+    /// value, and `List.new` -- a `**@` slurpy -- never spreads, which is why
+    /// this is gated on `Array` being in the MRO rather than `List`. Same rule
+    /// as `try_native_array_construct`, which the subclass path used to miss.
+    pub(crate) fn positional_new_onearg_spread(
+        &mut self,
+        class_key: &str,
+        args: Vec<Value>,
+    ) -> Vec<Value> {
+        if args.len() != 1 || !self.class_mro(class_key).iter().any(|n| n == "Array") {
+            return args;
+        }
+        match args[0].view() {
+            crate::value::ValueView::Array(_, kind) if !kind.is_itemized() => {
+                crate::runtime::utils::value_to_list(&args[0])
+            }
+            _ => args,
+        }
+    }
+
     /// True for the two builtin bases whose subclasses keep their entries in
     /// the instance's `__mutsu_hash_storage` and delegate Associative
     /// methods to it: `Hash` and `Map`. Mirrors [`Self::is_positional_base`].

@@ -615,6 +615,47 @@ impl Interpreter {
                 .any(|n| Self::is_positional_base(n))
     }
 
+    /// True for the methods raku defines in terms of `.iterator`, so an
+    /// `is Array`/`is List` subclass's `iterator` OVERRIDE decides their answer
+    /// rather than the backing storage.
+    ///
+    /// Measured against rakudo with `class SortedArray is Array { method
+    /// iterator() { self.sort.iterator } }` over `3,2,1,4`: `map`, `grep`,
+    /// `list`, `Seq`, `eager`, `flat`, `raku` and `gist` all come back sorted,
+    /// while the index-and-length methods answer from the reified storage and
+    /// are deliberately NOT listed here -- `.List`, `.Array`, `.join`,
+    /// `.reverse`, `.head`, `.sum`, `.elems` and `[0]` all stay unsorted.
+    pub(crate) fn consumes_receiver_iterator(method: &str) -> bool {
+        matches!(
+            method,
+            "map" | "grep" | "list" | "Seq" | "eager" | "flat" | "raku" | "perl" | "gist"
+        )
+    }
+
+    /// The value an `is Array`/`is List` subclass instance presents to
+    /// [`Self::consumes_receiver_iterator`] methods: the elements its own
+    /// `iterator` override yields, or `None` when it has no override (then the
+    /// plain backing-storage delegation is right).
+    pub(crate) fn positional_subclass_iteration_source(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !Self::consumes_receiver_iterator(method) {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        if !self.has_user_method(&class_name.resolve(), "iterator") {
+            return None;
+        }
+        Some(
+            self.drive_user_iterator_items(target)
+                .map(Value::real_array),
+        )
+    }
+
     fn exec_call_method_op_impl(
         &mut self,
         code: &CompiledCode,
@@ -1821,11 +1862,20 @@ impl Interpreter {
                             .iter()
                             .any(|n| Self::is_positional_base(n))
                     {
-                        let storage = attributes
-                            .as_map()
-                            .get("__mutsu_array_storage")
-                            .cloned()
-                            .unwrap_or(Value::real_array(Vec::new()));
+                        // A subclass that overrides `iterator` decides every
+                        // method raku defines through the Iterable protocol, so
+                        // those delegate to what the override yields rather
+                        // than to the raw storage (the interpreter-entry twin
+                        // in `methods_call_dispatch.rs` does the same).
+                        let storage =
+                            match self.positional_subclass_iteration_source(&target, method) {
+                                Some(source) => source?,
+                                None => attributes
+                                    .as_map()
+                                    .get("__mutsu_array_storage")
+                                    .cloned()
+                                    .unwrap_or(Value::real_array(Vec::new())),
+                            };
                         // For mutating methods, delegate and return the result
                         // (the actual mutation is handled in the mut path)
                         if !skip_native
