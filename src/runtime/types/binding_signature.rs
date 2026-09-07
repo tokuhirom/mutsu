@@ -1223,6 +1223,20 @@ impl Interpreter {
                         positional_idx = args.len();
                         continue;
                     }
+                    // ADR-0058: a `.map`/`.grep`/`gather` argument is a Seq whose
+                    // callback has not run, and the flatten below reads its
+                    // elements through pure code, which cannot pull -- so
+                    // `sub f(*@a) { @a }; f((1,2,3).grep({$_}))` collected
+                    // ADR-0034's empty seed and answered `()`. This is the `*@`
+                    // twin of the `+@` reification above; step 3b added the `+@`
+                    // one and left this arm to the still-eager `.grep`, which is
+                    // why deferring `grep` regressed it. Tag-probed, so every
+                    // other argument shape pays one relaxed check. A genuinely
+                    // lazy source never reaches here -- the `single_lazy_value`
+                    // branch above binds it lazily and `continue`s.
+                    for arg in &args[positional_idx..] {
+                        self.reify_map_grep_seq(arg)?;
+                    }
                     while positional_idx < args.len() {
                         let raw_arg = args[positional_idx].clone();
                         // The source name comes from the varref capture the caller
