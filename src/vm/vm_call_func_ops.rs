@@ -1509,6 +1509,13 @@ impl Interpreter {
                 None
             };
             self.set_pending_call_arg_sources(None);
+            // A `where` constraint that threw while candidate matching ran is
+            // an exception of the *call*, not a "candidate does not match":
+            // raku propagates it out of the dispatch, so no candidate body may
+            // run. Raise it here, before the winner is invoked.
+            if let Some(e) = self.take_where_exception() {
+                return Err(e);
+            }
             if let Some(cf) = compiled {
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.

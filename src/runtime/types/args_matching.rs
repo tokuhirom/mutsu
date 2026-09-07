@@ -2,6 +2,43 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Record an exception thrown while evaluating a `where` constraint during
+    /// candidate matching, and report the constraint as unmatched. Raku
+    /// propagates such an exception out of the whole dispatch instead of
+    /// treating the candidate as a non-match, so the recorded error is
+    /// re-raised by the dispatch funnels (and, as a backstop, by `exec_one`).
+    /// A control-flow signal (`return`/`next`/`last`/...) is not an exception
+    /// and keeps the old "does not match" reading.
+    pub(crate) fn note_where_exception(&mut self, e: RuntimeError) -> bool {
+        if e.control.is_none() && self.pending_where_exception.is_none() {
+            self.pending_where_exception = Some(Box::new(e));
+        }
+        false
+    }
+
+    /// Truthiness of a `where` constraint body's result, recording an
+    /// exception rather than swallowing it.
+    pub(crate) fn where_truthy(&mut self, r: Result<Value, RuntimeError>) -> bool {
+        match r {
+            Ok(v) => v.truthy(),
+            Err(e) => self.note_where_exception(e),
+        }
+    }
+
+    /// As [`Self::where_truthy`], for a non-block `where` constraint, whose
+    /// value is smart-matched against the candidate argument.
+    pub(crate) fn where_smartmatch(&mut self, arg: &Value, r: Result<Value, RuntimeError>) -> bool {
+        match r {
+            Ok(v) => self.smart_match(arg, &v),
+            Err(e) => self.note_where_exception(e),
+        }
+    }
+
+    /// Drain a `where`-constraint exception recorded during candidate matching.
+    pub(crate) fn take_where_exception(&mut self) -> Option<RuntimeError> {
+        self.pending_where_exception.take().map(|e| *e)
+    }
+
     /// Verify that every `is rw` positional parameter in a subsignature is
     /// matched by a writable variable argument.  `args` is the full positional
     /// argument list of the enclosing call and `start` is the index of the
@@ -493,10 +530,26 @@ impl Interpreter {
                         return false;
                     }
                 }
+                // An unsupplied parameter that HAS a default is checked
+                // against the *default value* -- raku evaluates the default and
+                // then applies the `where`, which is how a multi can select a
+                // candidate purely on its defaulted parameter
+                // (`multi method message(Str:D $c where { $_ eq 'INTM' } = $.classifier)`).
+                // Skipping the check made every such candidate match, so the
+                // first one declared always won.
+                let where_default =
+                    if !arg_was_supplied && let Some(default_expr) = pd.default.as_ref() {
+                        self.eval_block_value(&[Stmt::Expr(default_expr.clone())])
+                            .ok()
+                    } else {
+                        None
+                    };
                 if let Some(where_expr) = &pd.where_constraint
-                    && (arg_was_supplied || !(pd.default.is_some() || pd.optional_marker))
+                    && (arg_was_supplied
+                        || where_default.is_some()
+                        || !(pd.default.is_some() || pd.optional_marker))
                 {
-                    let Some(arg) = arg_for_checks.as_ref() else {
+                    let Some(arg) = where_default.as_ref().or(arg_for_checks.as_ref()) else {
                         return false;
                     };
                     let saved = self.env.clone();
@@ -526,24 +579,25 @@ impl Interpreter {
                                 self.env.insert(key.clone(), arg.clone());
                                 self.mark_readonly(key);
                             }
-                            let r = self
-                                .eval_block_value(body)
-                                .map(|v| v.truthy())
-                                .unwrap_or(false);
+                            let r = {
+                                let ev = self.eval_block_value(body);
+                                self.where_truthy(ev)
+                            };
                             for key in &ph_keys {
                                 self.unmark_readonly(key);
                             }
                             r
                         }
-                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                                .map(|v| v.truthy())
-                                .unwrap_or(false)
+                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
+                        {
+                            let ev =
+                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                            self.where_truthy(ev)
                         }
-                        expr => self
-                            .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| self.smart_match(arg, &v))
-                            .unwrap_or(false),
+                        expr => {
+                            let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                            self.where_smartmatch(arg, ev)
+                        }
                     };
                     // Keep the where clause's dynamic-variable side effects
                     // across the bindings rollback (A01-limits/misc.t).
@@ -727,19 +781,20 @@ impl Interpreter {
                         self.env.insert(pd.name.clone(), val.clone());
                     }
                     let ok = match where_expr.as_ref() {
-                        Expr::AnonSub { body, .. } => self
-                            .eval_block_value(body)
-                            .map(|v| v.truthy())
-                            .unwrap_or(false),
-                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") => {
-                            self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())])
-                                .map(|v| v.truthy())
-                                .unwrap_or(false)
+                        Expr::AnonSub { body, .. } => {
+                            let ev = self.eval_block_value(body);
+                            self.where_truthy(ev)
                         }
-                        expr => self
-                            .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .map(|v| self.smart_match(&val, &v))
-                            .unwrap_or(false),
+                        Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
+                        {
+                            let ev =
+                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                            self.where_truthy(ev)
+                        }
+                        expr => {
+                            let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                            self.where_smartmatch(&val, ev)
+                        }
                     };
                     // Keep the where clause's dynamic-variable side effects
                     // across the bindings rollback (A01-limits/misc.t).

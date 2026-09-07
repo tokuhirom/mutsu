@@ -57,6 +57,17 @@ impl Interpreter {
                 }
             }
         }
+        // Candidate matching runs user code (a `where` constraint, and the
+        // default expression a `where` is checked against) before the method
+        // call installs its own environment, so `self` -- and hence `$.attr` --
+        // has to be reachable from here too. Without it a signature like
+        // `multi method message(Str:D $c where { $_ eq 'INTM' } = $.classifier)`
+        // could not be told apart from its sibling and the first candidate
+        // declared always won. The whole block runs inside the
+        // `saved_env`/restore window, so this binding is scoped to the match.
+        if let Some(inv) = invocant {
+            self.env.insert("self".to_string(), inv.clone());
+        }
         for pd in &def.param_defs {
             if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
                 continue;

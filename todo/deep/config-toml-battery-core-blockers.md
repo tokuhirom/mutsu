@@ -1,92 +1,116 @@
 # `Config::TOML` battery is blocked on core interpreter campaigns
 
-## Current measurement (2026-09-06)
+## Current measurement (2026-09-07)
 
 Both upstream suites re-fetched from GitHub (`raku-community-modules/Crane`,
 `raku-community-modules/Config-TOML`) and run from their own directories
 against a **debug** build; `Config::TOML` with `Crane/lib` on `MUTSULIB`.
 
-| Suite | raku | mutsu (2026-08-31) | mutsu (2026-09-06, before this round) | mutsu (2026-09-06, after) |
-| --- | --- | --- | --- | --- |
-| `Config::TOML` v0.1.3 | 19/19 files | 0/19 | **10/19** | **10/19** |
-| `Crane` v0.1.2 | 15/15 files | 3/15 | **3/15** | **3/15** |
+| Suite | raku | mutsu (2026-08-31) | mutsu (2026-09-06) | mutsu (2026-09-07, before) | mutsu (2026-09-07, after) |
+| --- | --- | --- | --- | --- | --- |
+| `Config::TOML` v0.1.3 | 19/19 files | 0/19 | 10/19 | 10/19 | **11/19** |
+| `Crane` v0.1.2 | 15/15 files | 3/15 | 3/15 | 3/15 | **4/15** |
 
-**The ticket's `Config::TOML 0/19` was badly stale: it is 10/19 today**, and two
-of the four listed blockers are gone. `Crane` is still 3/15 at the file level
-(`at`, `exists`, `test`) but its assertion-level failures moved a lot this
-round — `t/add.rakutest`'s "Original container is unchanged" cluster went 5 → 1.
+The 2026-09-06 numbers reproduced exactly, so that pass's re-measurement was
+sound. This pass fixed four general interpreter bugs (below) and moved both
+counts: `Config::TOML`'s `exceptions/01-parser.rakutest` went from 12 failing
+assertions to a clean 17/17, and `Crane`'s `get.rakutest` now passes.
 
-`Config::TOML` passing: `api/01`, `grammar/01-04`, `grammar-actions/03`,
-`special-cases/01`, `04`, `05`, `06`.
-`Config::TOML` failing: `dumper/01`, `exceptions/01-02`,
-`grammar-actions/01`, `02`, `04`, `special-cases/02`, `03`, `07`.
+`Config::TOML` passing: `api/01`, `exceptions/01`, `grammar/01-04`,
+`grammar-actions/03`, `special-cases/01`, `04`, `05`, `06`.
+`Config::TOML` failing: `dumper/01`, `exceptions/02`, `grammar-actions/01`,
+`02`, `04`, `special-cases/02`, `03`, `07`.
+`Crane` passing: `at`, `exists`, `get`, `test`.
 
-## Blocker status, re-checked 2026-09-06
+## Fixed 2026-09-07 (general interpreter bugs, all pinned)
 
-1. **Crane's array-path semantics.** Partly stale, partly still open.
-   - *Copy isolation* ("Original container is unchanged"): **mostly a
-     misdiagnosis.** The failures were not container aliasing at all. Two
-     general interpreter bugs produced them and are now fixed:
-     - A **sigilless parameter (`\c`) re-read the caller's variable out of
-       `env` by name** instead of using the argument the VM evaluated. When the
-       live value sat in the caller's local slot and `env` still held the
-       declaration-time one — what a cross-compunit method call leaves behind —
-       the parameter bound the variable's *type object*, and the exit writeback
-       stamped that back onto the caller. Repro needs no module machinery:
-       a `unit class C;` with `method m(\c) { 99 }`, called as
-       `my Positional $t = <foo bar>; C.m($t)`, left `$t` as `(Positional)`.
-       Pin: `t/sigilless-param-reads-argument-not-env.t`.
-     - `.isa` answered **False for every role type object** (`class_mro` on a
-       role name yields just that name), so Crane's `ok($t.isa(Any))` on an
-       undefined `Associative`/`Positional`-typed scalar failed. raku answers
-       from the role's pun's chain — exactly `Any` and `Mu`. A class whose only
-       declared parents are composed roles (`class K does A`) had the twin bug.
-       Pin: `t/isa-role-type-object-and-role-only-parent.t`.
-   - *`Crane::List`* (and every other `unit class Crane::X;` file): the `::`
-     segments of a **compound declared name** were treated as enclosing lexical
-     scopes, so `List.new(...)` inside `class Crane::List` constructed a
-     `Crane::List` ("Default constructor for 'Crane::List' only takes named
-     arguments") instead of a core `List`. Fixed by recording, at declaration
-     time, whether a registry key's segments came from a compound name or from
-     real nesting (`unit module NL; class Searcher`) and skipping the former in
-     the type-name walk. Pin: `t/compound-declared-name-is-not-a-scope.t`.
-     NOTE: bare *routine* lookup deliberately still crosses those segments —
-     mutsu also uses them to model a module compunit's file-scope lexicals
-     (`HTTP::HPACK`'s own `sub decode-int`, reached from
-     `HTTP::HPACK::Decoder`'s methods), and cutting that walk breaks bundled
-     modules. So `class Quux::User { method m { greet() } }` still prefers
-     `Quux::greet` over the file's own `greet`, where raku picks the file's.
-     That residual divergence is unfixed.
-   - *Positional-index classification* (`X::Crane::PositionalIndexInvalid`
-     raised by `Crane::Utils`' enum-value multis): **stale — this works.** The
-     whole `is-valid-positional-index` / `gen-classifier` chain, including
-     `WhateverCode` (`*-0`) steps, matches raku exactly on a standalone repro.
-     What still fails in `t/in.rakutest` is the *descent* around it, not the
-     classifier.
-   - *Still open:* the out-of-range / sparse-Positional exception family. Crane
-     wraps `splice` in a `CATCH { when X::OutOfRange { ... } }` and re-throws
-     `X::Crane::AddPathOutOfRange`; mutsu's `splice` does raise `X::OutOfRange`
-     with the right message on its own, so the gap is somewhere in the descent
-     or the `CATCH` mapping. Not bisected. This is now the dominant Crane
-     cluster: `add` 6× "code dies" + 5× wrong exception type, and the same
-     shape in `copy`, `move`, `remove`, `replace`, `set`, `patch`.
+1. **A container element's `++`/`--` seeded from `Int` 0 regardless of the
+   declared element type.** `my Bool:D %h; %h<a>++` died with
+   `Type check failed for an element of %h; expected Bool:D but got Int (1)`;
+   raku answers `True` (`postfix:<++>` is `.=succ`, and an uninitialized
+   `Bool` slot succs to `True`). The scalar path already seeded from the
+   declared type (`normalize_incdec_source_with_type`); the element path did
+   not. Now both share `incdec_seed_for_constraint`, which also strips a
+   `:D`/`:U`/`:_` smiley before the lookup.
+2. **An object hash's element `++`/`--` keyed by the display string.**
+   `my %h{Int}; %h{5}++; say %h{5}` read back the type object, because the
+   store used `idx.Str` while every read (and every `=` store) uses `.WHICH`;
+   and `.keys` handed back a `Str` because nothing recorded the key object in
+   `original_keys`. `exec_inc_dec_index_op` now detects the object hash the
+   same way the assign path does and takes the `.WHICH`/`original_keys` route.
+3. **An exception thrown by a `where` constraint was swallowed and read as
+   "this candidate does not match".** Raku propagates it out of the whole
+   dispatch. This is the mechanism the *whole* of `Crane` is built on -- its
+   `at`/`in`/`add`/`set` descent is a chain of
+   `multi sub at(Positional:D $c, @steps where { ... is-valid-positional-index(@steps[0]) ... })`
+   candidates whose `where` *dies* to classify a bad index. mutsu fell through
+   to the next candidate and reported the wrong exception type everywhere.
+   The matchers are `bool`-returning predicates, so the exception is stashed in
+   `Interpreter::pending_where_exception` and re-raised by the dispatch funnel
+   before any candidate body runs, with `exec_one` as the backstop that
+   guarantees it can never be dropped. A control-flow signal
+   (`return`/`next`/...) is not an exception and still reads as "no match".
+   The exception escapes only when raku would have *reached* that candidate:
+   mutsu evaluates every candidate's matcher to rank them, while rakudo walks
+   them narrowest-first and stops at the first that binds, so
+   `choose_best_matching_candidate` discards the stash when a nominally
+   narrower candidate matched. (Comparing NOMINAL narrowness -- mutsu's own
+   ranking weighs a `where` above the parameter shape, which is right for
+   picking a winner but would wrongly claim the thrower came first;
+   `roast/S06-multi/proto.t`'s `multi bar(| (A $x))` vs
+   `multi bar(| where { $_[0] == 42 })` pins exactly that.)
+4. **An unsupplied parameter with a DEFAULT skipped its `where` entirely**, so
+   every such candidate matched and the first one declared always won.
+   Raku evaluates the default and applies the `where` to it, which is how
+   `X::Crane::PositionalIndexInvalid`'s
+   `multi method message(Str:D $c where { $_ eq 'INTM' } = $.classifier)` pair
+   picks its message. Fixing it also required binding `self` during method
+   candidate matching -- a default (or a `where`) that reads `$.attr` had no
+   invocant in scope.
+
+Pins: `t/incdec-element-typed-seed-and-object-hash-key.t`,
+`t/where-clause-exception-and-defaulted-param-dispatch.t`.
+
+## Blocker status, re-checked 2026-09-07
+
+1. **Crane's array-path semantics.**
+   - *Positional-index classification* (`X::Crane::PositionalIndexInvalid`):
+     **closed** by fixes 3 + 4 above. `Crane.get(%data, :path<legumes foo>)`
+     now raises the right type *and* the right message.
+   - *Copy isolation* ("Original container is unchanged"): still 1 failure in
+     `add.rakutest` and the dominant cluster in `transform.rakutest`. The
+     2026-09-06 diagnosis (two general bugs, since fixed) accounted for most of
+     it; what is left is a genuine `is rw` / `return-rw` descent that mutates
+     the caller's container when Crane asked for a copy.
+   - *The `X::OutOfRange` / `CATCH` re-throw descent* was **not** a single
+     cluster and was **not** what the 2026-09-06 note guessed. Bisected this
+     pass: `splice` itself is correct (`@a.splice(*-2, 0, 'x')` on an empty
+     array raises `X::OutOfRange` with raku's exact message). Two separate
+     residues remain: (a) `$list.splice(...)` on an immutable `List` raises
+     `X::Immutable` where raku raises `X::Multi::NoMatch`, which Crane's
+     `CATCH` maps to `X::Crane::Add::RO` only in raku's spelling; (b) a
+     `splice` reached through Crane's `*-0` path inserts at index 0 instead of
+     at the end (`add.rakutest`'s two "Is expected value" failures show the
+     spliced `0..11` landing first, not last).
+   - *`Crane::List` / `Crane::Flatten`*: still the object-hash ticket, see 5.
 2. ~~`t/patch.rakutest` fails to parse.~~ Fixed 2026-08-31.
-3. ~~The 8-hex `\UXXXXXXXX` string escape.~~ **Fixed** — `grammar/04` and
-   `grammar-actions/04`'s grammar half both pass now; `grammar-actions/04`
-   still fails for an unrelated reason.
-4. ~~`t/grammar/03-inline-tables.rakutest` times out.~~ **Fixed** — it passes,
-   and so does `grammar-actions/03`.
-
-New this round, filed separately:
-
-5. `todo/tickets/object-hash-key-lost-when-pair-value-is-a-container.md` — the
-   whole remaining blocker for `Crane`'s `flatten` and `list` files.
-   `my Any:D %t{List:D} = (%h<path> => %h<value>,)` dies with a bogus
-   `expected List:D but got Str ("1 2")` because the Pair's *value* is a
-   write-through `ContainerRef` and the object hash then loses the key object.
-   Also records two smaller measured divergences (`=>` does not decontainerize
-   its key; an itemized list used as a hash subscript is flattened into a
-   slice).
+3. ~~The 8-hex `\UXXXXXXXX` string escape.~~ Fixed 2026-09-06.
+4. ~~`t/grammar/03-inline-tables.rakutest` times out.~~ Fixed 2026-09-06.
+5. `todo/tickets/object-hash-key-lost-when-pair-value-is-a-container.md` --
+   still the whole remaining blocker for `Crane`'s `flatten` and `list` files.
+6. **New this pass, unfixed:** `.WHICH` of an `Array` is mutsu's Gc pointer in
+   some paths and the content string (`Array|a b`) in others, so
+   `my %h{Array:D}; %h{$k} = 1` and a later `%h{$k}` read agree with each other
+   but neither agrees with a pointer-keyed write. Fix 2 above deliberately
+   keys `++` the way the read and `=` paths already key, so nothing regressed,
+   but an object hash keyed by a *mutable* container is still not identity-keyed
+   the way Rakudo keys it. Not worth a campaign for these two dists (neither
+   looks an `Array` key up by hash; `Config::TOML` compares with `eqv`).
+7. **New this pass, unfixed (`Config::TOML` residue):** `grammar-actions/01`
+   is 3 byte-for-byte string-equivalence failures plus an `Int` coercion
+   reporting `''` instead of `(Int)`; `grammar-actions/02` is one Rat/FatRat
+   precision digit (`9224617.445991228313` vs `9224617.445991227`);
+   `dumper/01` + `exceptions/02` are the TOML *dumper*, untouched this pass.
 
 ## What this ticket is
 
@@ -98,7 +122,7 @@ recorded in `BATTERIES.md` §7 as **Selected, not yet bundled**.
 
 This ticket is the **follow-up mechanical step** — vendoring + wiring it up as
 an actual battery — once its blockers clear. **Do not start the vendoring steps
-yet**: `Crane` at 3/15 is still too thin for a per-file whitelist to be worth
+yet**: `Crane` at 4/15 is still too thin for a per-file whitelist to be worth
 it, and `Config::TOML` builds every result through `Crane.set`/`Crane.exists`.
 
 ## Steps (once unblocked)
@@ -153,5 +177,7 @@ git clone --depth 50 https://github.com/raku-community-modules/Config-TOML.git
 ```
 
 Run every failing file under `raku` on the same checkout before calling
-anything a mutsu bug — three of this ticket's four listed blockers turned out
-to be already fixed or misdiagnosed when that was actually done.
+anything a mutsu bug — three of this ticket's four originally listed blockers
+turned out to be already fixed or misdiagnosed when that was actually done, and
+the 2026-09-07 pass found the "not bisected" `X::OutOfRange` cluster was two
+unrelated residues rather than one.

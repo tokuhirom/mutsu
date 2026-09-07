@@ -1757,6 +1757,17 @@ pub struct Interpreter {
     /// `X::Attribute::NoPackage`.
     pub(crate) defining_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
+    /// An exception thrown while *evaluating a `where` constraint* during
+    /// candidate matching. Raku propagates such an exception out of the whole
+    /// dispatch (the `where` block is ordinary code); mutsu's matchers are
+    /// `bool`-returning predicates, so they cannot return it directly. They
+    /// stash it here instead and the dispatch funnels
+    /// (`resolve_function_with_types`, `choose_best_matching_candidate`) stop
+    /// scanning; `Interpreter::exec_one` is the backstop that turns a stash no
+    /// funnel drained into the error it always was, so it can never be silently
+    /// dropped. Only genuine exceptions are recorded -- a control-flow signal
+    /// (`return`/`next`/...) is not an exception and still reads as "no match".
+    pub(crate) pending_where_exception: Option<Box<RuntimeError>>,
     /// ADR-0067 slice 3b: the caller's container for the invocant of the method
     /// call currently being dispatched, staged by
     /// `Interpreter::arm_raw_invocant_arrival` and consumed by whichever of the

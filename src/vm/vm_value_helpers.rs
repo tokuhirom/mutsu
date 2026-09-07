@@ -190,6 +190,26 @@ impl Interpreter {
         value
     }
 
+    /// The value an undefined `++`/`--` target starts from, given the declared
+    /// type of the container it lives in. Raku's `postfix:<++>` is `.=succ` on
+    /// the *current* value, and for an uninitialized slot that value is the
+    /// declared type's own zero — `Bool` increments to `True`, not to `Int` 1.
+    /// A definiteness/coercion smiley (`Bool:D`) names the same base type, so
+    /// it is stripped before the lookup.
+    pub(crate) fn incdec_seed_for_constraint(constraint: &str) -> Value {
+        let base = match constraint.find(':') {
+            Some(i) if matches!(&constraint[i..], ":D" | ":U" | ":_") => &constraint[..i],
+            _ => constraint,
+        };
+        match base {
+            "Num" | "num" => Value::num(0.0),
+            "Rat" => crate::value::make_rat(0, 1),
+            "Complex" => Value::complex(0.0, 0.0),
+            "Bool" => Value::FALSE,
+            _ => Value::int(0),
+        }
+    }
+
     /// Like normalize_incdec_source, but also checks the variable's type
     /// constraint when the value is Nil. This ensures that e.g. `my Num $v; ++$v`
     /// starts from Num(0.0) rather than Int(0).
@@ -200,13 +220,7 @@ impl Interpreter {
     ) -> Value {
         if value.is_nil() {
             if let Some(tc) = loan_env!(self, var_type_constraint(var_name)) {
-                match tc.as_str() {
-                    "Num" | "num" => Value::num(0.0),
-                    "Rat" => crate::value::make_rat(0, 1),
-                    "Complex" => Value::complex(0.0, 0.0),
-                    "Bool" => Value::FALSE,
-                    _ => Value::int(0),
-                }
+                Self::incdec_seed_for_constraint(&tc)
             } else {
                 Value::int(0)
             }

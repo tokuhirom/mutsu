@@ -483,9 +483,46 @@ impl Interpreter {
             declared_constraint_incdec.as_deref(),
             Some("SetHash" | "BagHash" | "MixHash")
         );
+        // An object hash (`my %h{Array:D}`, `has Bool:D %!seen{Array:D}`) is
+        // `.WHICH`-keyed exactly like a QuantHash: an element `++` has to select
+        // the same slot an `=` store does, and has to record the key *object* in
+        // `original_keys` so `.keys`/`.kv`/`.raku` report the object rather than
+        // its stringification. Keying it by the display string made `%h{$@p}++`
+        // and `%h{$@p} = 1` land in two different buckets and made every
+        // `.keys` read hand back a `Str`.
+        // The predicate is deliberately the SAME one the element-assign path
+        // uses (`vm_var_assign_index_named.rs`'s `is_object_hash`): the
+        // declared key constraint of this NAME. Deriving it from the
+        // container's own `key_type` instead would make `++` key by `.WHICH`
+        // in contexts where `=` still keys by the display string (a hash
+        // destructured into an anonymous `%a is raw` parameter, say), and the
+        // two would land in different buckets.
+        let object_hash_key_type: Option<String> = if name.starts_with('%') {
+            loan_env!(self, var_hash_key_constraint(&name))
+        } else {
+            None
+        };
+        // Declared *element* type of the container being subscripted, used to
+        // seed an absent element for `++`/`--` (see below). The value carried by
+        // the container wins over the name-keyed declaration so it also works
+        // for an attribute or a parameter.
+        let element_constraint_incdec: Option<String> = container
+            .as_ref()
+            .and_then(|c| self.container_type_metadata(c))
+            .map(|info| info.value_type)
+            .filter(|t| !t.is_empty() && t != "Any" && t != "Mu")
+            .or_else(|| {
+                if name.starts_with('@') || name.starts_with('%') {
+                    declared_constraint_incdec.clone()
+                } else {
+                    None
+                }
+            });
         let (key, quanthash_elem) = if quanthash_target {
             let (k, e) = crate::runtime::utils::quanthash_elem_entry(&idx_val);
             (k, Some(e))
+        } else if object_hash_key_type.is_some() {
+            (self.which_key(&idx_val), None)
         } else {
             (idx_val.to_string_value(), None)
         };
@@ -757,7 +794,16 @@ impl Interpreter {
                     .or_else(|| self.var_default(&name).cloned());
                 match def {
                     Some(d) if !d.is_nil() => d,
-                    _ => Value::int(0),
+                    // No `is default`: an absent element starts from its
+                    // container's declared *element* type's zero, the same way
+                    // `normalize_incdec_source_with_type` seeds a scalar. A
+                    // `Bool`-valued hash/array increments to `True`, so seeding
+                    // it with `Int` 0 both produced the wrong value and failed
+                    // the element type check (`my Bool:D %h; %h<a>++`).
+                    _ => match element_constraint_incdec.as_deref() {
+                        Some(c) => Self::incdec_seed_for_constraint(c),
+                        None => Value::int(0),
+                    },
                 }
             } else {
                 current.clone()
@@ -850,19 +896,22 @@ impl Interpreter {
                 // Container identity (§3): no sigil carve-out — a shared hash
                 // mutates through the backing node for every holder.
                 let use_inplace = crate::gc::Gc::strong_count_of(h) > 1;
-                if use_inplace {
+                let data: &mut crate::value::HashData = if use_inplace {
                     // SAFETY: aliased in-place mutation of a shared hash
                     // (strong_count > 1, the shared-cell case); mirrors the
                     // array arm's `gc_contents_mut` usage.
-                    let h = unsafe { crate::value::gc_contents_mut(h) };
-                    Value::hash_insert_through(&mut h.map, key.clone(), new_val.clone());
+                    unsafe { crate::value::gc_contents_mut(h) }
                 } else {
-                    Value::hash_insert_through(
-                        &mut crate::gc::Gc::make_mut(h).map,
-                        key.clone(),
-                        new_val.clone(),
-                    );
+                    crate::gc::Gc::make_mut(h)
+                };
+                // Object hash: remember the key object under its `.WHICH` store
+                // key so `.keys`/`.kv`/`.raku` recover it (`typed_key`).
+                if object_hash_key_type.is_some() {
+                    data.original_keys
+                        .get_or_insert_with(std::collections::HashMap::new)
+                        .insert(key.clone(), idx_val.clone());
                 }
+                Value::hash_insert_through(&mut data.map, key.clone(), new_val.clone());
                 true
             }) {
                 done
