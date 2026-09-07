@@ -250,8 +250,8 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         // (raku agrees) even though they are `eqv`.
         (ValueView::Mixin(a_inner, a_mix), ValueView::Mixin(b_inner, b_mix)) => {
             values_identical(a_inner, b_inner)
-                && crate::value::types::mixin_identity_key(&a_mix)
-                    == crate::value::types::mixin_identity_key(&b_mix)
+                && crate::value::types::mixin_identity_key(a_mix)
+                    == crate::value::types::mixin_identity_key(b_mix)
         }
         (ValueView::Mixin(_, _), _) | (_, ValueView::Mixin(_, _)) => false,
         (
