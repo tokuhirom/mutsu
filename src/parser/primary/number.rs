@@ -470,15 +470,25 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
             ));
         }
         let denom = 10i64.pow(frac_digits);
-        let int_val: i64 = int_clean.parse().unwrap_or(0);
-        let frac_val: i64 = frac_clean.parse().unwrap_or(0);
-        let numer = int_val
-            .checked_mul(denom)
-            .and_then(|v| v.checked_add(frac_val));
+        // The BigInt arm is selected by whether the parts FIT an i64, not by
+        // whether the arithmetic on them overflows. An integer part above
+        // `i64::MAX` fails `parse::<i64>()`, and the old `unwrap_or(0)` turned
+        // that into a 0 whose `0 * denom + frac` does not overflow — so the
+        // `Some` arm produced `0.5` for `1000000000000000000000000000000.5`
+        // and the fallback that would have been exact never ran.
+        let numer = int_clean
+            .parse::<i64>()
+            .ok()
+            .zip(frac_clean.parse::<i64>().ok())
+            .and_then(|(int_val, frac_val)| {
+                int_val
+                    .checked_mul(denom)
+                    .and_then(|v| v.checked_add(frac_val))
+            });
         match numer {
             Some(numer) => Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom)))),
             None => {
-                // i64 overflow — use BigInt for exact Rat
+                // Does not fit an i64 — use BigInt for an exact Rat.
                 use num_bigint::BigInt;
                 let int_val: BigInt = int_clean.parse().unwrap_or_default();
                 let frac_val: BigInt = frac_clean.parse().unwrap_or_default();
@@ -536,9 +546,28 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
             return Ok((r, Expr::Literal(Value::complex(0.0, n))));
         }
         let frac_digits = frac_clean.len() as u32;
-        let denom = 10i64.pow(frac_digits);
-        let numer: i64 = frac_clean.parse().unwrap_or(0);
-        Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
+        // Same routing rule as the `<int>.<frac>` branch above, and for the
+        // same reason: a fraction too long for an i64 must take the BigInt
+        // path. `10i64.pow(frac_digits)` PANICS past 18 digits, so the check
+        // has to come first (`say .1234567890123456789012345` aborted with
+        // "attempt to multiply with overflow").
+        match (
+            10i64.checked_pow(frac_digits),
+            frac_clean.parse::<i64>().ok(),
+        ) {
+            (Some(denom), Some(numer)) => {
+                Ok((rest, Expr::Literal(crate::value::make_rat(numer, denom))))
+            }
+            _ => {
+                use num_bigint::BigInt;
+                let numer: BigInt = frac_clean.parse().unwrap_or_default();
+                let denom: BigInt = BigInt::from(10).pow(frac_digits);
+                Ok((
+                    rest,
+                    Expr::Literal(crate::value::make_big_rat(numer, denom)),
+                ))
+            }
+        }
     }
 }
 
