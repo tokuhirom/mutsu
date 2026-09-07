@@ -20,6 +20,9 @@ pub(crate) fn atomic_var_name(expr: &Expr) -> Option<String> {
 fn lvalue_assign_name(e: &Expr) -> Option<String> {
     match e {
         Expr::Grouped(inner) => lvalue_assign_name(inner),
+        // A compound-assignment marker (`$x .= m`, `$x += 1`) is transparent:
+        // its expansion carries the lvalue the chain must write back through.
+        Expr::CompoundAssign { expanded, .. } => lvalue_assign_name(expanded),
         Expr::AssignExpr { name, .. } => Some(name.clone()),
         Expr::Var(n) => Some(n.clone()),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
@@ -28,8 +31,61 @@ fn lvalue_assign_name(e: &Expr) -> Option<String> {
     }
 }
 
+/// `EXPR .= meth` where `EXPR` is itself an assignment writing to `assign_name`
+/// (`($x = 5).=uc`, or the left half of a chained `$s .= uc .= flip`): run the
+/// inner assignment, then read the variable back and assign the method result
+/// to it, so the chain keeps mutating the same lvalue.
+fn chained_assign_writeback(
+    target: Expr,
+    assign_name: String,
+    method_call_fn: impl FnOnce(Expr) -> Expr,
+) -> Expr {
+    let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
+        Expr::ArrayVar(rest.to_string())
+    } else if let Some(rest) = assign_name.strip_prefix('%') {
+        Expr::HashVar(rest.to_string())
+    } else {
+        Expr::Var(assign_name.clone())
+    };
+    let method_result = method_call_fn(var_expr);
+    Expr::DoBlock {
+        body: vec![
+            Stmt::Expr(target),
+            Stmt::Expr(dot_assign_to_name(assign_name, method_result)),
+        ],
+        label: None,
+    }
+}
+
+/// The `.=` expansion for a simple-variable lvalue, tagged with its
+/// read-modify-write origin.
+///
+/// `$x .= meth` runs as the ordinary assignment `$x = $x.meth`, but it is *not*
+/// one: raku evaluates the lvalue once as a container and stores into it. The
+/// distinction is invisible in the expansion and decides whether
+/// `$.attr .= meth` lives (writing the itemized throwaway a non-`rw` scalar
+/// accessor returns) or dies like the hand-written `$.attr = $.attr.meth`, so
+/// every `.=` lowering keeps the marker. See
+/// [`crate::parser::stmt::assign::dotty_assign_marker`].
+pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
+    let target = if let Some(rest) = name.strip_prefix('@') {
+        Expr::ArrayVar(rest.to_string())
+    } else if let Some(rest) = name.strip_prefix('%') {
+        Expr::HashVar(rest.to_string())
+    } else {
+        Expr::Var(name.clone())
+    };
+    let expanded = Expr::AssignExpr {
+        name,
+        expr: Box::new(method_call.clone()),
+        is_bind: false,
+    };
+    crate::parser::stmt::assign::dotty_assign_marker(target, method_call, expanded)
+}
+
 /// Wrap a `.=` method call result in the appropriate assignment expression.
-/// For simple variables, generates `AssignExpr { name, expr }`.
+/// For simple variables, generates [`dot_assign_to_name`]'s marked
+/// `AssignExpr { name, expr }`.
 /// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
 /// For non-lvalue targets, returns the method call as-is.
 pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> Expr {
@@ -55,21 +111,18 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         // container topic write-through (`given @a { $_ .= uc }`) is a *statement*
         // and is handled via the `__mutsu_topic_dotassign` marker in the statement
         // assign parser instead.
-        Expr::Var(name) => Expr::AssignExpr {
-            name: name.clone(),
-            expr: Box::new(method_call_fn(target)),
-            is_bind: false,
-        },
-        Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name),
-            expr: Box::new(method_call_fn(target)),
-            is_bind: false,
-        },
-        Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name),
-            expr: Box::new(method_call_fn(target)),
-            is_bind: false,
-        },
+        Expr::Var(name) => {
+            let name = name.clone();
+            dot_assign_to_name(name, method_call_fn(target))
+        }
+        Expr::ArrayVar(name) => {
+            let name = format!("@{}", name);
+            dot_assign_to_name(name, method_call_fn(target))
+        }
+        Expr::HashVar(name) => {
+            let name = format!("%{}", name);
+            dot_assign_to_name(name, method_call_fn(target))
+        }
         Expr::Index {
             target: idx_target,
             index,
@@ -114,25 +167,14 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         // ($var = expr).=method => evaluate the assignment, then $var = $var.method
         Expr::AssignExpr { name, .. } => {
             let assign_name = name.clone();
-            let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
-                Expr::ArrayVar(rest.to_string())
-            } else if let Some(rest) = assign_name.strip_prefix('%') {
-                Expr::HashVar(rest.to_string())
-            } else {
-                Expr::Var(assign_name.clone())
-            };
-            let method_result = method_call_fn(var_expr);
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::Expr(target),
-                    Stmt::Expr(Expr::AssignExpr {
-                        name: assign_name,
-                        expr: Box::new(method_result),
-                        is_bind: false,
-                    }),
-                ],
-                label: None,
-            }
+            chained_assign_writeback(target, assign_name, method_call_fn)
+        }
+        // The same, for a compound-assignment marker on the left: a chained
+        // `.=` (`$s .= uc .= flip`) now arrives as the previous step's `.=`
+        // marker, and `($x += 2).=uc` as a `+=` one.
+        Expr::CompoundAssign { expanded, .. } if lvalue_assign_name(expanded).is_some() => {
+            let assign_name = lvalue_assign_name(expanded).unwrap();
+            chained_assign_writeback(target, assign_name, method_call_fn)
         }
         // An inline declaration target (`(my Int $x .= new).= new: 42`) parses to
         // `DoStmt(VarDecl)`. Run the declaration (which declares and initializes the
@@ -143,25 +185,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 Stmt::VarDecl { name, .. } => name.clone(),
                 _ => unreachable!(),
             };
-            let var_expr = if let Some(rest) = decl_name.strip_prefix('@') {
-                Expr::ArrayVar(rest.to_string())
-            } else if let Some(rest) = decl_name.strip_prefix('%') {
-                Expr::HashVar(rest.to_string())
-            } else {
-                Expr::Var(decl_name.clone())
-            };
-            let method_result = method_call_fn(var_expr);
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::Expr(target),
-                    Stmt::Expr(Expr::AssignExpr {
-                        name: decl_name,
-                        expr: Box::new(method_result),
-                        is_bind: false,
-                    }),
-                ],
-                label: None,
-            }
+            chained_assign_writeback(target, decl_name, method_call_fn)
         }
         // A chained `.=` on an index lvalue (`@a[i] .= m1 .= m2`). The first `.=`
         // already lowered `@a[i] .= m1` to `do { my idx = i; @a[idx] = @a[idx].m1 }`
@@ -215,25 +239,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 Some(Stmt::Expr(e)) => lvalue_assign_name(e).unwrap(),
                 _ => unreachable!(),
             };
-            let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
-                Expr::ArrayVar(rest.to_string())
-            } else if let Some(rest) = assign_name.strip_prefix('%') {
-                Expr::HashVar(rest.to_string())
-            } else {
-                Expr::Var(assign_name.clone())
-            };
-            let method_result = method_call_fn(var_expr);
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::Expr(target),
-                    Stmt::Expr(Expr::AssignExpr {
-                        name: assign_name,
-                        expr: Box::new(method_result),
-                        is_bind: false,
-                    }),
-                ],
-                label: None,
-            }
+            chained_assign_writeback(target, assign_name, method_call_fn)
         }
         // A parenthesized list of lvalues (`($x, $y) .= reverse`) applies the
         // method to the WHOLE list and assigns the result back element-wise

@@ -77,12 +77,12 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     // Only a LOOSE assignment is an error here; the mutating method call `.=` is
     // at method-postfix precedence and is legal inside `?? !!` (see
     // `assign_operator_is_tight`).
-    if is_assignment_expr(&then_expr) && !assign_operator_is_tight(after_q) {
+    if is_assignment_expr(&then_expr) && !assign_operator_is_tight(&then_expr) {
         return Err(conditional_precedence_too_loose_error(
             &spelled_assign_operator(after_q),
         ));
     }
-    if is_assignment_expr(&else_expr) && !assign_operator_is_tight(after_bang) {
+    if is_assignment_expr(&else_expr) && !assign_operator_is_tight(&else_expr) {
         return Err(conditional_precedence_too_loose_error(
             &spelled_assign_operator(after_bang),
         ));

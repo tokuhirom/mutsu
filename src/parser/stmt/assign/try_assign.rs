@@ -360,11 +360,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             return Ok((
                 rest,
-                Expr::AssignExpr {
-                    name,
-                    expr: Box::new(method_expr),
-                    is_bind: false,
-                },
+                super::super::super::expr::dot_assign_to_name(name, method_expr),
             ));
         }
         // Parse regular method name
@@ -420,17 +416,16 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         return Ok((
             rest,
-            Expr::AssignExpr {
+            super::super::super::expr::dot_assign_to_name(
                 name,
-                expr: Box::new(Expr::MethodCall {
+                Expr::MethodCall {
                     target: Box::new(method_target),
                     name: Symbol::intern(method_name),
                     args,
                     modifier: None,
                     quoted: false,
-                }),
-                is_bind: false,
-            },
+                },
+            ),
         ));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(r2) {

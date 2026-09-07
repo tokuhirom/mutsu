@@ -84,8 +84,9 @@ pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_a
 
 pub(crate) use bracket::parse_bracket_meta_assign_op;
 pub(crate) use compound_expr::{
-    build_compound_assign_expr, build_custom_compound_assign_expr, build_meta_assign_expr,
-    compound_assign_marker, preserve_compound_assign,
+    DOTTY_ASSIGN_OP, build_compound_assign_expr, build_custom_compound_assign_expr,
+    build_meta_assign_expr, compound_assign_marker, dotty_assign_marker, is_dotty_assign,
+    preserve_compound_assign,
 };
 pub(crate) use lvalue::{
     callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, list_lvalue_assign_expr,

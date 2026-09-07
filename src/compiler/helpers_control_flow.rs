@@ -685,6 +685,9 @@ impl Compiler {
             | Expr::Reduction { expr: e, .. }
             | Expr::IndirectTypeLookup(e)
             | Expr::SymbolicDeref { expr: e, .. } => Self::expr_reaches_when(e),
+            // A compound-assignment marker (`$x += 1`, `$x .= meth`) is
+            // transparent: only its expansion is executed.
+            Expr::CompoundAssign { expanded, .. } => Self::expr_reaches_when(expanded),
             Expr::Binary { left, right, .. }
             | Expr::HyperOp { left, right, .. }
             | Expr::HyperFuncOp { left, right, .. }
