@@ -49,12 +49,10 @@ impl Interpreter {
         // frozen captured value via the don't-overwrite merge) instead of its own
         // per-iteration binding. Mirrors `exec_for_loop_body`'s `saved_param`:
         // restored after the loop's LAST/post phasers via the `RestoreForParam`
-        // opcode (the compiler emits it for any single non-@/% named param), so
-        // the push below must balance that pop on normal completion.
-        let saved_param: Option<(String, Option<Value>, Option<u32>)> = param_name
-            .as_ref()
-            .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| {
+        // opcode (the compiler emits it for any single named param), so the push
+        // below must balance that pop on normal completion.
+        let saved_param: Option<(String, Option<Value>, Option<u32>)> =
+            param_name.as_ref().map(|name| {
                 (
                     name.clone(),
                     self.env().get(name).cloned(),

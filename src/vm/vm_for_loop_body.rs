@@ -427,13 +427,21 @@ impl Interpreter {
             .collect();
         // Save the single named loop param (`for ... -> $x`) too, so a loop in a
         // called sub that reuses the same variable name does not clobber an outer
-        // loop's binding of that name (the env keys these by bare name). Skip
-        // `@`/`%` sigils, which bind a shared mutable container the body may
-        // legitimately reassign, and skip the rw case (handled via writeback).
-        let saved_param: Option<(String, Option<Value>, Option<u32>)> = param_name
-            .as_ref()
-            .filter(|n| !n.starts_with('@') && !n.starts_with('%'))
-            .map(|name| {
+        // loop's binding of that name (the env keys these by bare name).
+        //
+        // `@`/`%` parameters are saved too. They used to be skipped on the theory
+        // that they "bind a shared mutable container the body may legitimately
+        // reassign" — but a pointy parameter's scope ends with the loop either
+        // way, and restoring the NAME does not undo a mutation of the container
+        // the name pointed at (that is the same Gc node before and after). What
+        // the exemption actually cost was the recursion case: a method whose body
+        // is `for @vars -> %v { ... self.render(...) ... }` re-enters the same
+        // loop in the nested frame, and with no save/restore the inner frame's
+        // last `%v` stayed bound when control returned, so the OUTER iteration
+        // finished with the inner element (`Template::Nest::Fast`'s render spliced
+        // the nested component's offsets into the parent template).
+        let saved_param: Option<(String, Option<Value>, Option<u32>)> =
+            param_name.as_ref().map(|name| {
                 (
                     name.clone(),
                     self.env().get(name).cloned(),

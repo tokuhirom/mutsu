@@ -429,10 +429,18 @@ impl Interpreter {
         self.with_handle_mut(handle_value, |state| Ok(state.encoding_setting(encoding)))
     }
 
-    pub(super) fn system_time_to_int(time: SystemTime) -> i64 {
+    /// POSIX seconds since the epoch, **keeping the sub-second part**.
+    ///
+    /// The file-timestamp accessors (`.created`/`.modified`/`.accessed`) build a
+    /// Raku `Instant` out of this, and raku reports those to nanosecond
+    /// resolution. Truncating to whole seconds made two writes inside the same
+    /// second compare equal, so a cache keyed on "is the file on disk newer than
+    /// the copy I indexed?" never invalidated (`Template::Nest::Fast`'s
+    /// `:advanced-indexing` re-index check).
+    pub(super) fn system_time_to_secs(time: SystemTime) -> f64 {
         match time.duration_since(UNIX_EPOCH) {
-            Ok(duration) => duration.as_secs() as i64,
-            Err(_) => 0,
+            Ok(duration) => duration.as_secs_f64(),
+            Err(_) => 0.0,
         }
     }
 

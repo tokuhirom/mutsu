@@ -648,6 +648,16 @@ impl Interpreter {
         }
         let target = args[0].clone();
         let method = args[1].to_string_value();
+        // NOTE: these keep their containers. The method's own arguments reach us
+        // inside an `ArrayLiteral` carrier and ADR-0040 makes an `Array` element
+        // a `Scalar` container at the store, so a *variable* argument arrives as
+        // a `ContainerRef` while a literal one arrives bare — and that asymmetry
+        // is load-bearing for a user routine with a raw/rw parameter
+        // (`class C { method m(\x) is rw { x } }; C.new.m($a) = 5` must reach
+        // `$a`, ADR-0067 slice 2/3a). A *native* lvalue method whose arguments
+        // are plain offsets instead reads through the container itself; see
+        // `assign_substr_rw`, where taking a `ContainerRef` at face value made a
+        // variable length fall to the "no length given" default.
         let method_args = match args[2].view() {
             ValueView::Array(items, ..) => items.to_vec(),
             ValueView::Nil => Vec::new(),
