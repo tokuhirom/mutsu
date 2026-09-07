@@ -87,7 +87,17 @@ impl Interpreter {
         // see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`.
         let func = func.map(Self::unwrap_callable_mixin);
 
-        let items = crate::runtime::utils::value_to_list(target);
+        // A mutable array is scanned through its element CONTAINERS, so the
+        // matcher's topic aliases the element rather than a copy of its value:
+        // `@a.first({ $_ = 5 })` writes `@a`, as `.grep`/`.map` and
+        // `@a.values.first(...)` already do. Every other receiver (a `List`, a
+        // `Seq` of bare items, a native or multi-dimensional array, a `Hash`)
+        // keeps the bare-item scan.
+        let items = Self::array_element_cells(target)
+            .unwrap_or_else(|| crate::runtime::utils::value_to_list(target));
+        // `.first` answers the element's VALUE; a container above is the
+        // matcher's binding, not the result.
+        let answer = |v: Value| Some(Ok(v.deref_container()));
         // Setup-once batched scan for a plain `Sub` matcher (one compile +
         // env setup, bare `run_reuse` per element, early exit) — ~25x cheaper
         // per element than the per-element closure call below. Falls through
@@ -96,14 +106,14 @@ impl Interpreter {
             && let Some(res) = self.try_first_match_batched(func_ref, &items, false)
         {
             return match res {
-                Ok(Some((_, value))) => Some(Ok(value)),
+                Ok(Some((_, value))) => answer(value),
                 Ok(None) => Some(Ok(Value::NIL)),
                 Err(e) => Some(Err(e)),
             };
         }
         let mut matcher = VmFirstMatcher(self);
         match find_first_match_generic(&mut matcher, func.as_ref(), &items, false) {
-            Ok(Some((_, value))) => Some(Ok(value)),
+            Ok(Some((_, value))) => answer(value),
             Ok(None) => Some(Ok(Value::NIL)),
             Err(e) => Some(Err(e)),
         }

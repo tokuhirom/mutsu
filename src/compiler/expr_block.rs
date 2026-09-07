@@ -1002,6 +1002,14 @@ impl Compiler {
                     i as u32,
                     arg,
                 );
+                self.mark_arg_index_as_container_candidate_callee(
+                    crate::opcode::RwArgCallee::CodeVar {
+                        name_idx: code_var_idx,
+                    },
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
@@ -1027,6 +1035,12 @@ impl Compiler {
                 // stack value `compile_expr(target)` just pushed, so the VM can
                 // read its real signature — no name is needed anywhere.
                 self.mark_arg_as_rw_container_candidate_callee(
+                    crate::opcode::RwArgCallee::Code,
+                    positional_indices[i],
+                    i as u32,
+                    arg,
+                );
+                self.mark_arg_index_as_container_candidate_callee(
                     crate::opcode::RwArgCallee::Code,
                     positional_indices[i],
                     i as u32,

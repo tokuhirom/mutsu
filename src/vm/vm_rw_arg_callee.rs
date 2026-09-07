@@ -109,11 +109,66 @@ impl Interpreter {
         }
     }
 
+    /// [`OpCode::IndexArgRef`]'s gate: the same question one stack slot deeper,
+    /// plus the topic rule an explicit signature cannot express.
+    ///
+    /// The subscript's own target and index are still on the stack when this
+    /// runs, so the callee sits one slot below where the accessor marker finds
+    /// it. And a bare block declares no parameter at all yet still binds its
+    /// implicit `$_` RAW to its argument (`my $b = { $_ = 9 }; $b(@a[0])` writes
+    /// `@a`), which is why the signature question alone is not enough.
+    pub(super) fn index_arg_callee_binds_container(
+        &mut self,
+        code: &CompiledCode,
+        mark: &crate::opcode::IndexArgRefMark,
+    ) -> bool {
+        let deeper = crate::opcode::RwArgCalleeMark {
+            positional: mark.mark.positional,
+            stack_offset: mark.mark.stack_offset + 1,
+            callee: mark.mark.callee.clone(),
+        };
+        if self.rw_arg_callee_binds_container(code, &deeper) {
+            return true;
+        }
+        if mark.mark.positional != 0 {
+            return false;
+        }
+        let callee = match &deeper.callee {
+            crate::opcode::RwArgCallee::Code => {
+                self.rw_arg_callee_stack_value(deeper.stack_offset as usize)
+            }
+            crate::opcode::RwArgCallee::CodeVar { name_idx } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.resolve_rw_arg_code_var(code, &name)
+            }
+            // A method never binds an argument to the topic.
+            crate::opcode::RwArgCallee::Method { .. } => None,
+        };
+        callee.is_some_and(|c| Self::code_value_binds_topic_raw(&c))
+    }
+
+    /// Whether a code value is a bare block whose implicit `$_` binds its sole
+    /// argument RAW — the topic half of the container question.
+    ///
+    /// Mirrors the branch that actually performs that binding in
+    /// `call_compiled_closure_in_unit`: a bare block with no positional
+    /// parameter of its own, whose body does not read `@_` instead of `$_`.
+    fn code_value_binds_topic_raw(callee: &Value) -> bool {
+        let callee = callee.deref_container();
+        let ValueView::Sub(data) = callee.view() else {
+            return false;
+        };
+        data.is_bare_block
+            && data.param_defs.is_empty()
+            && !data.params.iter().any(|p| p != "_" && !p.starts_with(':'))
+            && !crate::method_signature_shared::auto_signature_uses(&data.body).0
+    }
+
     /// The callee's stack slot for a marker whose argument sits `stack_offset`
     /// values above it. `None` rather than a panic when the stack is shorter
     /// than the layout implies — a producer that cannot find its callee must
     /// decline, never abort a program that is otherwise correct.
-    fn rw_arg_callee_stack_value(&self, stack_offset: usize) -> Option<Value> {
+    pub(super) fn rw_arg_callee_stack_value(&self, stack_offset: usize) -> Option<Value> {
         let depth = stack_offset + 2;
         self.stack
             .len()

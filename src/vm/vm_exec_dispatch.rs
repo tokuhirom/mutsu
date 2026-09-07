@@ -3932,6 +3932,10 @@ impl Interpreter {
                 self.exec_index_invocant_ref_op(*is_positional)?;
                 *ip += 1;
             }
+            OpCode::IndexArgRef(mark) => {
+                self.exec_index_arg_ref_op(code, mark)?;
+                *ip += 1;
+            }
             OpCode::IndexAutovivifyLazy { is_positional } => {
                 self.exec_index_autovivify_lazy_op(false, *is_positional)?;
                 *ip += 1;

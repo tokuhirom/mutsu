@@ -1288,10 +1288,12 @@ impl Interpreter {
         } else {
             false
         };
+        self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
         self.set_pending_call_arg_sources(arg_sources);
         self.pending_call_topic_bare = bare_args;
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
         self.pending_call_topic_bare = false;
+        self.pending_call_topic_source = None;
         self.set_pending_call_arg_sources(None);
         let result = result?;
         let result = loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?;
@@ -1369,10 +1371,12 @@ impl Interpreter {
             } else {
                 false
             };
+            self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
             self.set_pending_call_arg_sources(arg_sources.clone());
             self.pending_call_topic_bare = bare_args;
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.pending_call_topic_bare = false;
+            self.pending_call_topic_source = None;
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?

@@ -225,6 +225,13 @@ impl Interpreter {
         // expression, so this block's implicit `$_` has nothing behind it to
         // assign to. See `Interpreter::pending_call_topic_bare`.
         let topic_arg_is_bare = std::mem::take(&mut self.pending_call_topic_bare);
+        // The other half of the same question, read at the same instant and for
+        // the same reason: when the sole argument DOES name a caller container,
+        // a bare block's implicit `$_` aliases it rather than copying its value
+        // (`my $b = { $_ = 9 }; $b($v)` leaves `$v` at 9). See
+        // `Interpreter::pending_call_topic_source`.
+        let topic_alias_source = std::mem::take(&mut self.pending_call_topic_source)
+            .filter(|_| !cc.is_routine && explicit_topic.is_none() && !capture_rw_topic);
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -602,7 +609,7 @@ impl Interpreter {
         }
 
         // Bind parameters
-        let rw_bindings = match loan_env!(
+        let mut rw_bindings = match loan_env!(
             self,
             bind_function_args_values(&data.param_defs, &data.params, &args)
         ) {
@@ -670,8 +677,52 @@ impl Interpreter {
                 .iter()
                 .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
             {
+                // raku binds a bare block's implicit `$_` RAW to its argument,
+                // so `my $b = { $_ = 9 }; $b($v)` writes the CALLER's `$v`. The
+                // topic therefore has to be the caller's container, and the
+                // recipe is the one `binding_signature.rs` already uses for an
+                // `is rw` parameter aliasing a plain scalar caller variable:
+                // reuse the caller's live cell when it has one, otherwise box
+                // the value and install the cell under the source name so the
+                // exit writeback (`apply_rw_bindings_to_env`) and the call
+                // site's slot resync hand the caller back the SAME cell.
+                //
+                // An argument that already arrives as a container (an element
+                // cell from `@a.values`, a `:=`-bound alias) needs none of this
+                // — it IS the caller's location — and neither does a topic the
+                // call site proved container-less, which must stay refused.
+                //
+                // A block that never writes `$_` needs none of it either, and
+                // paying it anyway is observable, not merely wasteful: the
+                // recipe installs a cell in the CALLER's env under the
+                // argument's source name and registers an exit writeback, and
+                // `Log::Timeline`'s nested `Task.log: { ... }` blocks (which
+                // never touch `$_`) had an outer task's state re-published over
+                // the inner one's. Hence `cc.writes_topic`.
+                let topic = match topic_alias_source {
+                    Some(ref source)
+                        if cc.writes_topic
+                            && !first.is_container_ref()
+                            && !topic_arg_is_bare
+                            && !cc.immutable_topic =>
+                    {
+                        let cell = match self.env().get(source) {
+                            Some(existing) if existing.is_container_ref() => existing.clone(),
+                            _ => {
+                                let cell = Value::container_ref(crate::gc::Gc::new(
+                                    crate::value::ContainerCell::new(first.clone()),
+                                ));
+                                self.env_mut().insert(source.clone(), cell.clone());
+                                cell
+                            }
+                        };
+                        rw_bindings.push(("_".to_string(), source.clone()));
+                        cell
+                    }
+                    _ => first.clone(),
+                };
                 self.env_mut()
-                    .insert_sym(crate::symbol::Symbol::intern("_"), first.clone());
+                    .insert_sym(crate::symbol::Symbol::intern("_"), topic);
                 // raku binds a bare block's implicit `$_` to the argument
                 // itself: `{ $_ = 5 }(7)` is X::AdHoc "Cannot assign to an
                 // immutable value", while `{ $_ = 9 }($v)` / `(@a[0])` write

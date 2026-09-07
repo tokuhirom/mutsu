@@ -1210,11 +1210,21 @@ impl Interpreter {
             }
             (ValueView::Hash(items), ValueView::Nil) => Value::hash_with_data(items.clone()),
             (ValueView::Hash(items), ValueView::Array(keys, ..)) => {
-                let default = self.typed_container_default(&Value::hash_with_data(items.clone()));
+                let source = Value::hash_with_data(items.clone());
+                let default = self.typed_container_default(&source);
                 Value::array(
                     keys.iter()
                         .map(|k| {
-                            let v = self.resolve_hash_entry(&items, &k.to_string_value());
+                            let key = k.to_string_value();
+                            // An associative SLICE hands out the hash's own
+                            // element containers, the same way `%h.values` does:
+                            // `for %h<a b> { $_ = 5 }` writes through. Declines
+                            // for a `Map` and for an absent key, where the
+                            // ordinary read below answers the typed default.
+                            if let Some(cell) = Self::hash_element_cell_at(&source, &key) {
+                                return cell;
+                            }
+                            let v = self.resolve_hash_entry(&items, &key);
                             if v.is_nil() { default.clone() } else { v }
                         })
                         .collect(),

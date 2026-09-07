@@ -20,6 +20,36 @@ impl Interpreter {
         self.pending_call_arg_sources.as_ref()
     }
 
+    /// The caller's variable name a bare block's implicit `$_` may ALIAS for
+    /// this call — `Interpreter::pending_call_topic_source`. `None` for every
+    /// shape that is not a lone positional argument naming a plain scalar
+    /// lexical, because those are the only ones raku binds the topic raw to.
+    ///
+    /// A block takes exactly one topic, so a multi-argument call has no topic
+    /// to alias; a `@`/`%`/`&` source is a container in its own right (the
+    /// topic would alias the whole array, not an element); `_` is the caller's
+    /// OWN topic, which aliasing would make self-referential; and the `key=src`
+    /// spelling is a named argument, which never becomes the topic.
+    pub(crate) fn topic_alias_source(
+        args: &[Value],
+        arg_sources: Option<&Vec<Option<String>>>,
+    ) -> Option<String> {
+        let [arg] = args else {
+            return None;
+        };
+        if arg.unwrap_varref().is_string_pair_value() {
+            return None;
+        }
+        let name = arg_sources?.first()?.as_ref()?;
+        if name == "_" || name.contains('=') {
+            return None;
+        }
+        name.as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+            .then(|| name.clone())
+    }
+
     /// A method wrapper (`&m.wrap(-> \SELF, |c { ... })`) is invoked with the
     /// invocant PREPENDED to the method's arguments, but the pending
     /// call-site arg-source names were recorded by the call opcode for the

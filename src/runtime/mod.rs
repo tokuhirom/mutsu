@@ -1754,6 +1754,22 @@ pub struct Interpreter {
     /// BEFORE it pushes its call frame; `push_call_frame` clears it too, so the
     /// flag can never leak past one call boundary into an unrelated block.
     pub(crate) pending_call_topic_bare: bool,
+    /// The caller's variable name behind the sole positional argument of the
+    /// value-call currently being dispatched (`$b($v)` / `&b($v)`), when that
+    /// argument is a plain scalar lexical.
+    ///
+    /// raku binds a bare block's implicit `$_` **raw** — `my $b = { $_ = 9 };
+    /// $b($v)` leaves `$v` at 9 — so the topic must be the caller's container,
+    /// not a copy of its value. This is the exact sibling of
+    /// `pending_call_topic_bare`, which answers the same question's other half
+    /// (the argument has no container at all), and it shares that flag's
+    /// lifecycle: set by the two value-call opcodes, read (and cleared) by
+    /// `call_compiled_closure_with_topic` BEFORE it pushes its frame, and
+    /// cleared by `push_call_frame` so it can never leak past one call boundary
+    /// into an unrelated block — which is what keeps a native `.map`/`.first`
+    /// loop's own `pending_call_arg_sources` from being mistaken for the
+    /// block's.
+    pub(crate) pending_call_topic_source: Option<String>,
     /// Set while `require` resolves a module: a missing `Test::`-namespace
     /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
     /// instead of the silent no-op `use Test::Util` relies on.
