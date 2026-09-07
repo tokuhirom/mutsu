@@ -181,7 +181,7 @@ impl Interpreter {
         // neither does this.
         if let ValueView::Mixin(_, mixins) = args[0].view() {
             let mut mixed =
-                crate::value::types::mixin_roles_applied_last_first(&mixins, &class_name);
+                crate::value::types::mixin_roles_applied_last_first(mixins, &class_name);
             mixed.append(&mut roles);
             roles = mixed;
         }
