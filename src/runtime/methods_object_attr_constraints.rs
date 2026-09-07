@@ -31,10 +31,28 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> Vec<(String, MethodDef)> {
-        let composed = match self.registry().class_composed_roles.get(class_name) {
-            Some(roles) => roles.clone(),
+        // Initializers run in COMPOSITION order, not in the last-declared-first
+        // order `class_composed_roles` records for `.^roles` (rakudo keeps the
+        // two apart as `@!roles_to_compose` vs `@!roles`): for
+        // `class C1 does R1 does R2`, `R1.BUILD` runs before `R2.BUILD` even
+        // though `.^roles` is `(R2, R1)`. `role_closure_segments_reversed` is
+        // its own inverse, so re-applying it to the recorded list -- with the
+        // recorded (also reversed) direct list as its markers -- hands back the
+        // declaration order composition used.
+        let registry = self.registry();
+        let composed = match registry.class_composed_roles.get(class_name) {
+            Some(roles) => {
+                crate::runtime::registration_class_compose_record::role_closure_segments_reversed(
+                    roles,
+                    registry
+                        .class_direct_composed_roles
+                        .get(class_name)
+                        .map_or(&[][..], |d| &d[..]),
+                )
+            }
             None => return Vec::new(),
         };
+        drop(registry);
         // Build the correct order: for each directly composed role (in order),
         // recursively include parent roles (depth-first) before the role itself.
         // Deduplicate to avoid calling the same role submethod twice for the same class.
