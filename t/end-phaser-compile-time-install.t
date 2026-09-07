@@ -16,7 +16,7 @@ use Test;
 use lib $?FILE.IO.parent(2).add('roast/packages/Test-Helpers/lib').Str;
 use Test::Util;
 
-plan 17;
+plan 19;
 
 is_run 'if False { END { say "never-run-block" } }
 sub g      { END { say "uncalled-sub" } }
@@ -157,3 +157,19 @@ say "mainline";
 is_run 'say "start"; die "boom"; if False { END { say "dead-branch" } }; END { say "after-die" }',
     { out => "start\nafter-die\ndead-branch\n", status => 1 },
     'both a mainline and a dead-branch END still run when the body dies';
+
+# An `our` variable is a PACKAGE symbol, installed when the compunit is
+# compiled -- so its slot exists (undefined) even when the declaration sits in
+# a branch that never runs, and a never-reached END that mentions it sees the
+# type object rather than an unbound name.
+is_run 'if False { our $o = 4; END { say $o.^name } }
+say "mainline";
+',
+    { out => "mainline\nAny\n", err => '', status => 0 },
+    'an our declared in a dead branch is still installed for a never-reached END';
+
+is_run 'if False { our $o = 4 }
+say OUR::<$o>.^name;
+',
+    { out => "Any\n", err => '', status => 0 },
+    'and the package symbol itself exists, undefined';

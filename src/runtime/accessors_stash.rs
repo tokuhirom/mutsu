@@ -659,6 +659,28 @@ impl Interpreter {
             }
         }
 
+        // A named package's `our` symbols also live in the flat `our_vars`
+        // store -- that is where an `our` declared in a branch that never RAN
+        // is pre-installed (`EndWalker::install_our_symbol`), so a dead-branch
+        // `class Foo { if False { our $c = 1 } }` still lists `$c`. `or_insert`
+        // so a live env value always wins over the pre-installed type object.
+        if package_name != "GLOBAL" && !package_name.is_empty() {
+            for (key, val) in self.our_vars_iter() {
+                if key.starts_with("__mutsu_") {
+                    continue;
+                }
+                let Some(rest) = Self::stash_member_tail(key, &package_name) else {
+                    continue;
+                };
+                if rest.is_empty() || rest.contains("::") {
+                    continue;
+                }
+                symbols
+                    .entry(Self::stash_symbol_key_from_env_tail(rest))
+                    .or_insert_with(|| val.clone());
+            }
+        }
+
         for (key, def) in &self.registry().functions {
             let key_s = key.resolve();
             // A top-level sub's registry key is always package-qualified
