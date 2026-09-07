@@ -7457,6 +7457,17 @@ impl CompiledCode {
                 | OpCode::GetCallerOuterVar { .. } => {
                     self.uses_callframe = true;
                 }
+                OpCode::GetPseudoStash(name_idx) => {
+                    if let Some(value) = self.constants.get(*name_idx as usize)
+                        && let ValueView::Str(name) = value.view()
+                        && name
+                            .trim_end_matches("::")
+                            .split("::")
+                            .all(|part| part == "CALLER")
+                    {
+                        self.uses_callframe = true;
+                    }
+                }
                 _ => {}
             }
         }
