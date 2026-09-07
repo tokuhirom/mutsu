@@ -187,9 +187,9 @@ impl Compiler {
             && elems.len() > 1
         {
             self.compile_expr(left);
-            for elem in elems {
+            for (i, elem) in elems.iter().enumerate() {
                 self.compile_expr(elem);
-                self.code.emit(OpCode::ButMixinTupleElem);
+                self.code.emit(OpCode::ButMixinTupleElem { first: i == 0 });
             }
             return;
         }

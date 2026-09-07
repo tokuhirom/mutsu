@@ -23,6 +23,10 @@ impl Interpreter {
         // spellings, so `%h but Associative[Int,Int]` (a built-in parametric
         // role, no `RoleDef`, and a bracketed type-object spelling) fell all the
         // way through to `mixin_not_composable_error`.
+        // A plain single-role `but`/`does` is its own application: close any
+        // group a preceding `but (R1, R2)` left open (see
+        // `open_role_application_group`).
+        self.close_role_application_group();
         let role_composed = self
             .is_role_application(&right)
             .then(|| loan_env!(self, eval_does_values(left.clone(), right.clone())));
@@ -80,7 +84,7 @@ impl Interpreter {
 
     /// Apply a `but` mixin for a single element from a tuple expansion,
     /// with duplicate type conflict checking.
-    pub(super) fn exec_but_mixin_tuple_elem_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_but_mixin_tuple_elem_op(&mut self, first: bool) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let right = self.normalize_role_type_object(&right);
         let left = self.stack.pop().unwrap();
@@ -95,6 +99,14 @@ impl Interpreter {
             _ => false,
         };
         if is_role {
+            // Every element of ONE `but (R1, R2)` is a single composition in
+            // raku (`Int+{R1,R2}`, a different type from the `Int+{R1}+{R2}`
+            // two sequential `but`s give). The compiler split the tuple into
+            // one op per element, so open a fresh application group on the
+            // first element and let the rest join it.
+            if first {
+                self.open_role_application_group();
+            }
             let composed = loan_env!(self, eval_does_values(left, right))?;
             self.stack.push(composed);
             return Ok(());

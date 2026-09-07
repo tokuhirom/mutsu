@@ -552,6 +552,7 @@ impl Interpreter {
             }))
         };
         let mut cloned = Self {
+            open_role_group: None,
             env: self.env.clone(),
             output_sink: thread_output_sink,
             warn_output: String::new(),

@@ -1797,6 +1797,11 @@ pub struct Interpreter {
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
     /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
     pub(crate) pending_call_arg_source_slots: std::collections::HashMap<String, u32>,
+    /// An open role-APPLICATION group id, set while the ops the compiler split
+    /// out of one `but (R1, R2)` run (see
+    /// `Interpreter::open_role_application_group`). `None` outside one, so an
+    /// ordinary single-role `but`/`does` mints its own group.
+    pub(crate) open_role_group: Option<i64>,
     /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
     /// time (clobber-safe: before the callee body runs) from
     /// `pending_call_arg_source_slots`. The rw writeback drain

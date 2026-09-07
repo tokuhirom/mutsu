@@ -2638,8 +2638,8 @@ impl Interpreter {
                 self.exec_but_mixin_op(code)?;
                 *ip += 1;
             }
-            OpCode::ButMixinTupleElem => {
-                self.exec_but_mixin_tuple_elem_op()?;
+            OpCode::ButMixinTupleElem { first } => {
+                self.exec_but_mixin_tuple_elem_op(*first)?;
                 *ip += 1;
             }
             OpCode::Isa => {

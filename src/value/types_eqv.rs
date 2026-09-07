@@ -404,12 +404,18 @@ impl Value {
                     return false;
                 }
                 // Compare mixin maps (e.g. Str part of allomorphs), ignoring the
-                // `__mutsu_role_seq__` application-order bookkeeping entries
-                // (todo/tickets/mixin-role-order-not-tracked.md, closed): two
-                // separately-built `X but Role` values with otherwise identical
-                // composition are `eqv` regardless of which process-global
-                // instant each was stamped at.
-                let is_role_seq = |k: &str| k.starts_with("__mutsu_role_seq__");
+                // `__mutsu_role_seq__` application-order and
+                // `__mutsu_role_group__` application-grouping bookkeeping
+                // entries (todo/tickets/mixin-role-order-not-tracked.md,
+                // closed): two separately-built `X but Role` values with
+                // otherwise identical composition are `eqv` regardless of which
+                // process-global instant each was stamped at. The ORDER and
+                // GROUPING those stamps encode are compared where they belong,
+                // by `mixin_identity_key` for `===` and `mixin_composition_key`
+                // for `.WHAT`; raw stamp values never match across two builds.
+                let is_role_seq = |k: &str| {
+                    k.starts_with("__mutsu_role_seq__") || k.starts_with("__mutsu_role_group__")
+                };
                 let a_relevant = a_mix.iter().filter(|(k, _)| !is_role_seq(k));
                 let a_count = a_mix.keys().filter(|k| !is_role_seq(k)).count();
                 let b_count = b_mix.keys().filter(|k| !is_role_seq(k)).count();

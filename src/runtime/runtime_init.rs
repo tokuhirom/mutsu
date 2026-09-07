@@ -2805,6 +2805,7 @@ impl Interpreter {
         );
 
         let mut interpreter = Self {
+            open_role_group: None,
             user_declared_classes: std::collections::HashSet::new(),
             env: Env::from(env),
             output_sink: Arc::new(RwLock::new(OutputSink::new())),

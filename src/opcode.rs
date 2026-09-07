@@ -1242,7 +1242,16 @@ pub(crate) enum OpCode {
     ButMixin,
     /// Like ButMixin but checks for duplicate type conflicts (used for
     /// per-element tuple expansion: `True but (1, "x")`).
-    ButMixinTupleElem,
+    ///
+    /// `first` marks the leading element of one tuple. All the elements of a
+    /// single `but (R1, R2)` are ONE composition in raku -- it names the result
+    /// `Int+{R1,R2}`, distinct from the `Int+{R1}+{R2}` two sequential `but`s
+    /// give, and the two are different types. The compiler splits the tuple
+    /// into one op per element, so the flag is what lets the runtime stamp them
+    /// all with a single application group.
+    ButMixinTupleElem {
+        first: bool,
+    },
     // -- Type check --
     Isa,
     Does,
