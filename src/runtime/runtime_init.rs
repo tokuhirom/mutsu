@@ -2934,6 +2934,7 @@ impl Interpreter {
             unit_module_loading_stack: Vec::new(),
             module_owned_exports: HashMap::new(),
             suppress_exports: false,
+            module_owned_global_fns: HashSet::new(),
             in_lvalue_assignment: false,
             in_does_rhs: false,
             trait_mod_writeback_key: None,

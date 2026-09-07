@@ -749,6 +749,16 @@ impl Interpreter {
             .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
         {
             let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
+            // Ambient, not imported: remember the key so `pop_import_scope`
+            // keeps it when a `use`-containing block (or an `EVAL "use ..."`)
+            // sweeps up the aliases IT imported. The two are indistinguishable
+            // by shape -- both are `GLOBAL::name` registered during a module
+            // load -- and dropping this one is unrecoverable, because
+            // `loaded_modules` makes the module's later re-`use` a no-op that
+            // never re-runs the prelude. That is how `use-ok 'NativeHelpers::Blob'`
+            // (which EVALs a `use`) left the module's own `BODY_OF` dying with
+            // "Unknown function: nativecast".
+            self.module_owned_global_fns.insert(global_key);
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.

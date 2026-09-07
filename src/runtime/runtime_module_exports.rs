@@ -210,6 +210,17 @@ impl Interpreter {
             "size_t",
             "ssize_t",
         ];
+        // `::('NativeCall')` must resolve to the package rather than failing:
+        // `NativeLibs`' own `EXPORT` sub passes `NativeCall` through as a value.
+        //
+        // Written ahead of the already-registered early return: `env` is
+        // scoped and the export tables are not, so a scope that restored `env`
+        // wholesale since the first `use NativeCall` (a block, an `EVAL`) drops
+        // the symbol while `exported_subs` still claims NativeCall is set up.
+        self.env.insert(
+            "NativeCall".to_string(),
+            Value::package(Symbol::intern("NativeCall")),
+        );
         if self.exported_subs.contains_key("NativeCall") {
             return;
         }
@@ -227,12 +238,6 @@ impl Interpreter {
         for name in TYPES {
             self.register_exported_var("NativeCall".to_string(), name.to_string(), Vec::new());
         }
-        // `::('NativeCall')` must resolve to the package rather than failing:
-        // `NativeLibs`' own `EXPORT` sub passes `NativeCall` through as a value.
-        self.env.insert(
-            "NativeCall".to_string(),
-            Value::package(Symbol::intern("NativeCall")),
-        );
     }
 
     pub(crate) fn import_module(
@@ -432,7 +437,20 @@ impl Interpreter {
                     }
                 }
             }
+            // A module importing into its OWN scope: record the alias as
+            // module-owned so a later scope restore (a block, an `EVAL "use
+            // ..."`) cannot take it away while `loaded_modules` still claims
+            // the module is loaded -- a re-`use` is a no-op that could never
+            // put it back, and the module's own routines would die with
+            // "Unknown function". A program-level block's `use` runs with no
+            // module load on the stack and is deliberately NOT recorded, so its
+            // bare aliases still go out of scope with the block
+            // (roast S11-modules/lexical.t).
+            let module_scope_import = self.module_load_active();
             for (k, v) in function_entries {
+                if module_scope_import {
+                    self.module_owned_global_fns.insert(k);
+                }
                 let ks = k.resolve();
                 if ks.contains('/') {
                     // A multi candidate. Two modules exporting candidates of the

@@ -61,15 +61,27 @@ impl Interpreter {
     ///
     /// Only package-qualified keys are tracked (see `module_registered_functions`),
     /// so the importing scope's bare aliases still go out of scope normally.
+    ///
+    /// `GLOBAL::`-keyed routines are the exception to that exception when they
+    /// are in `module_owned_global_fns` — a module's own imports, and the
+    /// NativeCall prelude's ambient helpers. Those belong to a module that
+    /// `loaded_modules` still claims is loaded, so dropping them is permanent.
+    /// `use-ok 'NativeHelpers::Blob'` — an `EVAL "use ..."` — hit exactly that:
+    /// the module stayed loaded while its own `BODY_OF` died with "Unknown
+    /// function: nativecast".
     pub(crate) fn reinstate_module_functions(
         &self,
         functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
     ) {
-        if self.module_registered_functions.is_empty() {
+        if self.module_registered_functions.is_empty() && self.module_owned_global_fns.is_empty() {
             return;
         }
         let registry = self.registry();
-        for key in &self.module_registered_functions {
+        for key in self
+            .module_registered_functions
+            .iter()
+            .chain(self.module_owned_global_fns.iter())
+        {
             if functions.contains_key(key) {
                 continue;
             }

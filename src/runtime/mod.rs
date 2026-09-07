@@ -2271,6 +2271,20 @@ pub struct Interpreter {
     module_owned_exports: HashMap<String, HashMap<String, HashSet<String>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
+    /// `GLOBAL::`-keyed routines that belong to a loaded module rather than to
+    /// the scope that happened to be running when they were registered: the
+    /// names a module imported into its OWN scope (`import_module` while a
+    /// module load is on the stack) and the NativeCall prelude's ambient
+    /// helpers (`PRELUDE_SUB_TRAIT`, see `run_prelude.rs`).
+    ///
+    /// mutsu keys both a module's own imports and an importing block's bare
+    /// aliases as `GLOBAL::name`, so a scope restore cannot tell them apart by
+    /// shape -- and `loaded_modules` is never rolled back, so dropping the
+    /// module's copy is permanent: a later `use` of that module is a no-op that
+    /// cannot re-register it, and the module's own bodies die with "Unknown
+    /// function". This set is that missing distinction; see
+    /// `reinstate_module_functions`.
+    pub(crate) module_owned_global_fns: HashSet<Symbol>,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
     /// When true, a role call with non-matching args returns a Pair instead of

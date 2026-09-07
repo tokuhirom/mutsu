@@ -685,6 +685,7 @@ impl Interpreter {
             unit_module_loading_stack: Vec::new(),
             module_owned_exports: self.module_owned_exports.clone(),
             suppress_exports: false,
+            module_owned_global_fns: self.module_owned_global_fns.clone(),
             in_lvalue_assignment: false,
             in_does_rhs: false,
             trait_mod_writeback_key: None,

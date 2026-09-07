@@ -232,7 +232,18 @@ impl Interpreter {
         // resolve with ITS OWN (usually absent) selectors, not the outer ones.
         let (module, dist_selectors) = Self::split_dist_selectors(module);
         let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
+        // Same reasoning for `suppress_exports`, and for the same reason it is
+        // saved rather than cleared: `need Foo` sets it so that FOO's own
+        // `is export` declarations do not publish to the needer. A `use Bar`
+        // inside Foo's body is a different question entirely -- Bar must export
+        // normally so `import_module` can bind its names into Foo's own scope.
+        // Leaving the flag on suppressed Bar's exports too, so a routine
+        // declared in Foo could not see anything Foo itself imported:
+        // `need DBIish::CommonTesting` (whose file starts `use Test;`) died
+        // with "Unknown function: diag" inside its own method.
+        let saved_suppress = std::mem::replace(&mut self.suppress_exports, false);
         let result = self.use_module_with_tags_inner(module, tags);
+        self.suppress_exports = saved_suppress;
         self.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue
         // here so a native/pragma/already-loaded path (which never reaches
@@ -738,11 +749,23 @@ impl Interpreter {
             // rather than the routine registry. Collected BEFORE `import_module`
             // so the bare aliases it installs — lexical to the importing scope —
             // are excluded, exactly as for the routines above.
+            //
+            // An unqualified key counts too when its value is a package/type
+            // object: that is a module symbol the load installed, not a lexical.
+            // `use NativeCall` publishes a bare `NativeCall` package so
+            // `::('NativeCall')` resolves, and a `use NativeLibs` that pulls
+            // NativeCall in transitively must be able to put it back -- an
+            // `EVAL "use NativeLibs"` (what `Test`'s `use-ok` compiles to)
+            // restores `env` wholesale on the way out and takes the symbol with
+            // it, while `loaded_modules` still claims both are loaded, so the
+            // program's own later `use NativeLibs` is the only chance to
+            // reinstate it.
             let package_globals: Vec<(Symbol, Value)> = self
                 .env
                 .keys()
-                .filter(|k| !env_snapshot.contains(k) && k.resolve().contains("::"))
+                .filter(|k| !env_snapshot.contains(k))
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
+                .filter(|(k, v)| k.resolve().contains("::") || v.is_package_value())
                 .collect();
             if !package_globals.is_empty() {
                 self.module_package_globals

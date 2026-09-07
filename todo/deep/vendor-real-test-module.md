@@ -112,19 +112,35 @@ native provider:   283/312 test files pass   (6 DBIish MySQL rows, no server her
 vendored module:   276/312                   (those 6, plus 9 more)
 ```
 
-The 9 regressions are at least two independent interpreter bugs, both filed:
+**Six of the nine are fixed** (`news/2026-09/a-module-keeps-the-routines-it-imported.md`):
+`DBIish`'s four common-testing suites, `NativeHelpers::Blob` and `NativeLibs`
+were three ways a module could lose the routines *it* had imported --
+`need` suppressing the exports of everything the needed module used, a scope
+restore reclaiming a module's own `GLOBAL::` aliases, and `use NativeCall`
+skipping its package-symbol write on a re-`use`. None of the three was about
+`Test`; each reproduces on plain user modules.
+
+**Three remain**, each a separate root cause:
 
 - **`todo/deep/vendored-test-context-corrupts-a-sha512-digest.md`** --
   `Digest::SHA2`'s `sha512` returns a different digest for byte-identical input
   depending on process history. Bisected to a two-`subtest` repro; inputs, IV,
   round constants and multi dispatch all verified correct at the call site;
   deterministic under JIT/GC on and off. Accounts for the `Digest` row.
-- **`todo/tickets/vendored-test-hides-nativecall-exports-from-a-module.md`** --
-  a module's `use NativeCall` loses `nativecast` when the vendored `Test` is in
-  the load chain. Accounts for `NativeHelpers::Blob` and probably `NativeLibs`.
-
-The `Cro::HTTP` and remaining `DBIish` rows were not triaged; do that before
-assuming they share a root cause.
+- **`Cro::HTTP`'s `http2-request-parser.rakutest`** -- an `ok` emitted from a
+  `start` block that outlived its `test()` helper lands inside the NEXT
+  assertion's `throws-like` subtest, so that subtest runs 3 tests against a
+  plan of 2. The late assertion exists under both providers (the native run
+  emits 61 tests, the vendored one 60); only the accounting differs, because
+  the vendored `subtest` swaps module-scoped counters that every thread shares.
+  The real gap is that mutsu resolves the request's `body-blob` Promise later
+  than rakudo does, so the tap's `start` block is still running when `test()`
+  returns.
+- **`Cro::HTTP`'s `http-middleware.rakutest`** -- `throws-like { await
+  Cro::HTTP::Client.get($url) }` reports "code dies" as a FAILURE: the `await`
+  returns normally and `X::Cro::HTTP::Error::Client` surfaces at the top level
+  afterwards, so the subtest's `CATCH` never sees it. Another await/Promise
+  propagation-timing gap rather than a `Test` one.
 
 ### Three behaviour changes the switch will bring (already measured, not bugs)
 
@@ -655,10 +671,9 @@ default:
 3. `Test::Util` still composes with the default provider. **(Met -- the roast
    run loads it from `roast/packages/Test-Helpers/` throughout.)**
 4. **The bundled-library gate (`scripts/battery-testsuite.sh`) passes under the
-   vendored module.** It is a CI step and the sweeps do not cover it. **NOT met:
-   9 rows regress, tracked as
-   `todo/deep/vendored-test-context-corrupts-a-sha512-digest.md` and
-   `todo/tickets/vendored-test-hides-nativecall-exports-from-a-module.md`.**
+   vendored module.** It is a CI step and the sweeps do not cover it. **NOT met,
+   but down from 9 regressing rows to 3** — see the sixth-pass section above for
+   the three that remain and what each one actually is.
 5. Run the focused tests, then `make test` and the relevant roast checks. The
    first default-provider PR must be treated as a full-suite review.
 
