@@ -92,6 +92,52 @@ required precisely because sibling block buckets must not be scanned blind — a
 falls back to the unconditional mainline probe the cross-thread and `is rw`
 callers depend on.
 
+## Which slot the sub captured turned out to be the hard part
+
+Getting the *store* right was the easy half. Two soundness holes in **which
+`code.locals` slot** the capture boxes only surfaced under a targeted roast sweep
+over the closure/scoping synopses — `make test` covers neither.
+
+**The slot search was a heuristic that only holds at mainline.** ADR-0024 picked
+the free variable's slot by LIVENESS: "at the moment this `RegisterSub` runs, a
+shadowing block has either not run yet (still `Nil`) or is unrelated, so only the
+slot that is genuinely initialized right now can be the binding visible at this
+declaration point". True at mainline. False inside a bare block, where earlier
+SIBLING blocks have already run and left their own same-named slots live — it
+silently captured a foreign block's `$a`.
+
+Replaced by the bake closures already get. The compiler resolves each free
+variable against `local_map` at the sub declaration's own textual emit point and
+stores it in the plan as `CompiledSubDeclPlan::free_var_decl_slots` — the
+named-sub counterpart of `CompiledCode::free_var_parent_slots`, which
+`add_closure_code_baked` bakes for a closure and which is never populated for a
+plan-derived named sub. The hoisted plan gets the same bake through the handover
+that already passes it `compiled_routine_keys`. The liveness search survives only
+as the mainline arm's fallback for a plan with no compiled bodies.
+
+**Sibling block scopes deliberately SHARE a slot.** `declare_local` mints a fresh
+slot only for a genuine ANCESTOR shadow; a name left in the monotonic `local_map`
+by an already-popped sibling reuses that sibling's slot on purpose, "because
+nothing observes both at once through the slot". ADR-0024's cell does: boxing
+such a slot fuses two independent bindings, and the cell outlives the first
+block. Those slots are now recorded at declaration time in
+`CompiledCode::multi_scope_slots` and the block arm declines them — the name
+keeps legacy dynamic resolution rather than being fused. A genuine inner shadow
+gets its own slot and is unaffected, which is why the nested-block rows still
+work.
+
+An `our sub` is excluded from the block arm outright: it is installed in the
+package registry and outlives its block, its captured block lexicals already have
+a store (`escaped_our_lexical_cells`), and its hoisted registration runs before
+any of the compunit's blocks — so a second store mirrored its cell into the
+shared `env` key ahead of everything else.
+
+The shape that found all three is
+`roast/S02-names-vars/variables-and-packages.t`'s "initilization from BEGIN
+block": three sibling blocks each declaring `my $a` and a sub over it, each sub
+called *before* its declaration statement runs, the third initialized from a
+`BEGIN` block, followed by an `our sub` block. It is pinned as rows U1-U6.
+
 ## Control table
 
 `raku v2026.07` vs `mutsu`, before and after. Rows E/K/L are file-scope controls
@@ -120,9 +166,11 @@ priority.
 | R1 | sub declared inside a **routine** | 1 | 1 | 1 |
 | S1/S2 | closure made INSIDE the block sub | inner / outer | inner / outer | inner / outer |
 | T1 | `for` body declaring a sub per iteration | 10,20 | 10,20 | 10,20 |
+| U1-U6 | three sibling blocks, same name, sub called before the declaration | 0,1 / 0,1 / 3,4 | same | same |
 
-12 of the 43 assertions failed before the change; all 43 pass now, byte-identical
-under `mutsu` and `raku`. Pin: `t/free-var-in-bare-block-lexical-scope.t`.
+12 of the 49 assertions failed before the change; all 49 pass now,
+byte-identical under `mutsu` and `raku`. Pin:
+`t/free-var-in-bare-block-lexical-scope.t`.
 
 ## What is left
 
@@ -132,7 +180,8 @@ still refuses it, because the enclosing frame's locals are not the frame
 `RegisterSub` runs in the way a block's are. Row R measures it as agreeing with
 raku today, so it is a latent gap rather than an open divergence.
 
-The one accepted imprecision in the block arm is inherited from ADR-0024 §2: when
-two live slots in the same compiled unit carry the name, the capture is skipped
-and the name keeps legacy dynamic behaviour rather than guessing. No partial
-state is written either way.
+The block arm also declines, by design, any name whose slot two sibling scopes
+share (`multi_scope_slots`) and any `our sub`'s captures. Both keep legacy
+dynamic behaviour rather than guessing; no partial state is written either way.
+Making the sibling-shared case work too would need the slot allocator to stop
+reusing a popped sibling's slot, which is a §1.4/§1.5 question, not this one.
