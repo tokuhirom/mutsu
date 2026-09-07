@@ -387,13 +387,31 @@ impl Compiler {
         // A `$=...` Pod document variable is bound, not a Scalar container, so
         // `my @a = $=pod` copies the blocks rather than nesting the document
         // in one element (see `scalar_var_is_item_container`).
+        // A desugaring temp (`__with_tmp_N`, `__destructure_tmp__`, …) is not a
+        // `$`-scalar container the source wrote — it is the slot a control
+        // construct parked its once-evaluated value in. Itemizing it makes the
+        // construct's own `@`/`%` binding see one element instead of the list:
+        // `with (1,2,3) -> @m { @m.elems }` answered 1 against raku's 3, and
+        // `with $str ~~ m:g/…/ -> @m` answered 1 against 2, which is what left
+        // `Template::Nest::Fast` at 0/10. The lvalue spelling (`with $r -> @m`)
+        // was already right because it routes through `given`'s alias bind, not
+        // through this assignment path.
         if name.starts_with('@')
             && let Expr::Var(var_name) = unwrapped
             && !var_name.starts_with('=')
+            && !Self::is_desugar_temp_name(var_name)
         {
             let name_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::ItemizeVar(name_idx));
         }
+    }
+
+    /// Whether `name` is one of mutsu's internal desugaring temps rather than a
+    /// variable the source wrote. The same rule
+    /// `rakuast::convert::is_desugar_marker` uses, and for the same reason: an
+    /// internal name has none of the container semantics a user variable has.
+    fn is_desugar_temp_name(name: &str) -> bool {
+        name.starts_with("__")
     }
 
     fn compile_condition_expr(&mut self, cond: &Expr) {

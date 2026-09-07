@@ -287,9 +287,18 @@ impl Interpreter {
         if self.e2_native_method_exists(value, method_sym.as_str()) {
             return true;
         }
-        // For instances, check class methods
+        // For instances, check class methods -- and the auto-generated public
+        // accessor of a `has $.x`, which in Raku is an ordinary method of its
+        // declaring class and so is exactly as `can`-able as a written one.
+        // `class_has_method` only walks the method tables, so `can-ok $obj,
+        // 'attr'` answered False for every accessor while `$obj.can('attr')`
+        // (which goes through `resolve_user_method_or_accessor`) answered True
+        // -- the two disagreed about the same question. That is what left
+        // `Template::Nest::Fast` failing its `can-ok` sweep on six of seven
+        // names.
         if let ValueView::Instance { class_name, .. } = value.view()
-            && self.class_has_method(&class_name.resolve(), method)
+            && (self.class_has_method(&class_name.resolve(), method)
+                || self.has_public_accessor(&class_name.resolve(), method))
         {
             return true;
         }
@@ -297,7 +306,8 @@ impl Interpreter {
         // ...`), resolve methods against the named class's MRO too — a type
         // object can do any of its class's methods, not just the universal set.
         if let ValueView::Package(class_name) = value.view()
-            && self.class_has_method(&class_name.resolve(), method)
+            && (self.class_has_method(&class_name.resolve(), method)
+                || self.has_public_accessor(&class_name.resolve(), method))
         {
             return true;
         }
