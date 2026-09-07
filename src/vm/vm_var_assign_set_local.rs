@@ -1218,23 +1218,13 @@ impl Interpreter {
                 }
             } else if is_bind {
                 self.bind_positional_value(name, &raw_popped)?
-            } else if let Some(items) = self.try_iterable_instance_items(&raw_popped)? {
-                // A user class that `does Iterable` with its own `iterator`
-                // method populates the array via that iterator (raku:
-                // `my @a = $iterable` reifies `.iterator` into the array),
-                // rather than storing the object as a single element.
-                runtime::coerce_to_array(Value::real_array(items))
-            } else if let ValueView::Instance { attributes, .. } = raw_popped.view()
-                && let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned()
-            {
-                // An `is Array`/`is List` subclass instance is Positional, so
-                // list assignment distributes its ELEMENTS: rakudo's
-                // `my @b = @vec` is `[3, 2, 1, 4]`, not a one-element array
-                // holding the instance. (The `iterator`-override spelling was
-                // taken by the branch above.)
-                runtime::coerce_to_array(Value::real_array(crate::runtime::utils::value_to_list(
-                    &storage,
-                )))
+            } else if let Some(decomposed) = self.array_assign_decomposed_instance(&raw_popped)? {
+                // A `does Iterable` instance populates the array through its own
+                // `iterator` (raku: `my @a = $iterable` reifies `.iterator` into
+                // the array), and an `is Array`/`is List` subclass distributes
+                // its backing storage -- rakudo's `my @b = @vec` is
+                // `[3, 2, 1, 4]`, not a one-element array holding the instance.
+                decomposed
             } else {
                 match raw_popped.view() {
                     ValueView::LazyList(list) => {

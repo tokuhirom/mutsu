@@ -134,6 +134,11 @@ impl Compiler {
             Stmt::Assign { name, expr, .. } => {
                 // do $var = expr -> returns the assigned value
                 self.compile_expr(expr);
+                // An `@` target whose RHS is a `$` scalar variable itemizes,
+                // exactly as the statement-position store does — without it the
+                // same assignment flattened only when written where its result
+                // is consumed.
+                self.emit_array_target_itemize(name, expr);
                 // Duplicate the value so we can assign AND return it
                 self.code.emit(OpCode::Dup);
                 self.emit_set_named_var(name);
@@ -260,6 +265,10 @@ impl Compiler {
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
                     self.compile_expr(expr);
+                    // An `@` declaration whose RHS is a `$` scalar variable
+                    // itemizes, exactly as the statement-position store does:
+                    // `(my @i = $c)` must be one element, like `my @j = $c`.
+                    self.emit_array_target_itemize(name, expr);
                     // Re-clear AFTER the initializer: evaluating the RHS can call
                     // into code that declares its own typed same-named lexical
                     // (Text::CSV's `my Int @r = @!crange` runs inside

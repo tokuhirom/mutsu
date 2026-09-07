@@ -411,6 +411,67 @@ impl Interpreter {
     /// `None` for any other value so the caller falls through to `value_to_list`.
     /// An `is Array` subclass (backed by `__mutsu_array_storage`) is left to that
     /// path — its elements are the storage, not a user iterator.
+    /// Whether an `@`-assignment would DECOMPOSE this instance into elements
+    /// rather than store it as one — a `does Iterable` class with its own
+    /// `iterator`, or an `is Array`/`is List` subclass (whose backing storage
+    /// is the answer when it has no override).
+    ///
+    /// Structural only: unlike [`Self::try_iterable_instance_items`] it does not
+    /// drive the iterator, so it is safe to ask before deciding whether to
+    /// itemize. `OpCode::ItemizeVar` needs exactly this question — a scalar
+    /// holding such an instance must NOT decompose (`my $c = SA.new(3,2,1,4);
+    /// my @w = $c` is one element in rakudo), the same rule Set/Bag/Mix and
+    /// Range already get there.
+    pub(crate) fn instance_decomposes_on_array_assign(&mut self, value: &Value) -> bool {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+        else {
+            return false;
+        };
+        let cn = class_name.as_str().to_string();
+        if attributes.contains_key("__mutsu_array_storage") {
+            return true;
+        }
+        self.has_user_method(&cn, "iterator") && self.class_does_role(&cn, "Iterable")
+    }
+
+    /// The array an `@`-assignment of `raw` produces when `raw` is an instance
+    /// that DECOMPOSES, or `None` when it is not one.
+    ///
+    /// The single rule behind three stores — `SetLocal` (statement position),
+    /// `SetGlobal` (a declaration whose result is consumed, `say (my @b = @a)`)
+    /// and `AssignExprLocal` (an assignment to an already-declared local in the
+    /// same position). They diverged: only the first had it, so the same
+    /// assignment stored the instance whole when written where its value is
+    /// used.
+    ///
+    /// A class's own `iterator` override wins over the backing storage, exactly
+    /// as a user method wins anywhere else. A SCALAR-held instance never
+    /// reaches here — `OpCode::ItemizeVar` wraps it first, which is what keeps
+    /// `my $c = SA.new(3,2,1,4); my @w = $c` a single element.
+    pub(crate) fn array_assign_decomposed_instance(
+        &mut self,
+        raw: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if let Some(items) = self.try_iterable_instance_items(raw)? {
+            return Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
+                items,
+            ))));
+        }
+        let ValueView::Instance { attributes, .. } = raw.view() else {
+            return Ok(None);
+        };
+        let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() else {
+            return Ok(None);
+        };
+        Ok(Some(crate::runtime::coerce_to_array(Value::real_array(
+            crate::runtime::utils::value_to_list(&storage),
+        ))))
+    }
+
     pub(crate) fn try_iterable_instance_items(
         &mut self,
         iterable: &Value,

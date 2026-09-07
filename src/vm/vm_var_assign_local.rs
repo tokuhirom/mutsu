@@ -165,6 +165,10 @@ impl Interpreter {
                     let forced = self.force_lazy_list_vm(&list)?;
                     Value::real_array(self.decay_nil_vec_elements(forced))
                 }
+            } else if let Some(decomposed) = self.array_assign_decomposed_instance(&raw_val)? {
+                // `(@d = @a)` on an already-declared local, in value position:
+                // the third store that needs the one decomposition rule.
+                decomposed
             } else {
                 runtime::coerce_to_array(raw_val)
             };
