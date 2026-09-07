@@ -621,7 +621,7 @@ impl Interpreter {
                     let mro = self.classhow_mro_with_roles(&args[0], include_concretizations);
                     Ok(Value::array(mro))
                 } else {
-                    let mro = self.classhow_mro_names(&args[0]);
+                    let mro = self.classhow_mro_names_without_does_roles(&args[0]);
                     let mut values = self.mro_names_to_values(mro)?;
                     // The head of an MRO is the invocant's own type object
                     // (`C.^mro[0] === C`, `$o.^mro[0] === $o.WHAT`). Naming it

@@ -2771,9 +2771,27 @@ impl Interpreter {
             registry
                 .class_direct_composed_roles
                 .insert(class_name.clone(), does.clone());
+            // `does`-ONLY: a role that is ALSO this class's declared PARENT is
+            // a role-as-superclass pun, not a pure composition, and must stay
+            // in the class's MRO. rakudo has exactly one in this vocabulary --
+            // `X::TooLateForREPR`, whose parent AND composed role are both
+            // `X::Comp`, and whose `.^mro` really is
+            // `(X::TooLateForREPR X::Comp Exception Any Mu)` there. Recording
+            // it here dropped `X::Comp` from `.^mro_unhidden` (and, once
+            // `.^mro` started consulting this set, from `.^mro` too).
+            let parents = registry
+                .classes
+                .get(class_name)
+                .map(|c| c.parents.clone())
+                .unwrap_or_default();
+            let does_only: Vec<String> = does
+                .iter()
+                .filter(|r| !parents.iter().any(|p| p == *r))
+                .cloned()
+                .collect();
             registry
                 .class_does_only_roles
-                .insert(class_name.clone(), does.clone());
+                .insert(class_name.clone(), does_only);
         }
         let class_names: Vec<String> = registry.classes.keys().cloned().collect();
         for class_name in class_names {
