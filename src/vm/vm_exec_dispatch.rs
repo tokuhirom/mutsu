@@ -3522,6 +3522,7 @@ impl Interpreter {
                 name_idx,
                 arity,
                 arg_sources_idx,
+                literal_native_args,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: explode an unhandled Failure produced by one of
@@ -3536,6 +3537,7 @@ impl Interpreter {
                     *name_idx,
                     *arity,
                     *arg_sources_idx,
+                    *literal_native_args,
                     compiled_fns,
                 ) {
                     Ok(()) => {}
@@ -3556,6 +3558,7 @@ impl Interpreter {
                 arity,
                 spec_idx,
                 arg_sources_idx,
+                literal_native_args,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above.
@@ -3569,6 +3572,7 @@ impl Interpreter {
                     *arity,
                     *spec_idx,
                     *arg_sources_idx,
+                    *literal_native_args,
                     compiled_fns,
                 ) {
                     Ok(()) => {}

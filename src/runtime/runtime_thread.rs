@@ -552,6 +552,7 @@ impl Interpreter {
             }))
         };
         let mut cloned = Self {
+            literal_native_args: 0,
             env: self.env.clone(),
             output_sink: thread_output_sink,
             warn_output: String::new(),

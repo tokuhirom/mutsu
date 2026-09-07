@@ -1797,6 +1797,15 @@ pub struct Interpreter {
     /// `Pair(name, Int(slot))` arg-source entries. Set alongside the names by
     /// `decode_arg_sources`, taken with them by `bind_function_args_values`.
     pub(crate) pending_call_arg_source_slots: std::collections::HashMap<String, u32>,
+    /// Bitmask of the CURRENT call's argument positions that were written as a
+    /// literal, published by `exec_call_func_op` from the call opcode's
+    /// `literal_native_args` and restored when that call returns. Multi
+    /// dispatch reads it in `unwrap_varref_for_dispatch` to give a literal the
+    /// native `var_type` a source variable would have carried, so
+    /// `multi d(int)` / `multi d(Int)` called as `d(5)` picks `int` as rakudo
+    /// does. Zero for every call site with no literal argument, which is the
+    /// common case and costs one `u32` store per call.
+    pub(crate) literal_native_args: u32,
     /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
     /// time (clobber-safe: before the callee body runs) from
     /// `pending_call_arg_source_slots`. The rw writeback drain

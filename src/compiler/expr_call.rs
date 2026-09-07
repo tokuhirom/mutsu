@@ -317,6 +317,7 @@ impl Compiler {
                 name_idx,
                 arity: args.len() as u32,
                 arg_sources_idx,
+                literal_native_args: Self::literal_native_args_mask(args),
             });
             return;
         }
@@ -816,6 +817,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 5,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             self.code.emit(OpCode::SetGlobal(tmp_result_idx));
 
@@ -848,6 +850,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-assign"
@@ -865,6 +868,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 2,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-fetch-inc"
@@ -881,6 +885,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-inc-fetch"
@@ -897,6 +902,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-fetch-dec"
@@ -913,6 +919,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-dec-fetch"
@@ -929,6 +936,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-fetch-add"
@@ -946,6 +954,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 2,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         } else if name == "atomic-add-fetch"
@@ -963,6 +972,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity: 2,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         }
@@ -998,6 +1008,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 2,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
                 return;
             }
@@ -1040,6 +1051,7 @@ impl Compiler {
                             name_idx: call_name_idx,
                             arity: 2,
                             arg_sources_idx: None,
+                            literal_native_args: 0,
                         });
                         return;
                     }
@@ -1075,6 +1087,7 @@ impl Compiler {
                 name_idx: call_name_idx,
                 arity,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         }
@@ -1135,6 +1148,7 @@ impl Compiler {
                     name_idx: builtin_name,
                     arity: 1,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             } else if let Some(vname) = var_name {
                 // For @/% variables, clear in-place so references see the change.
@@ -1178,6 +1192,7 @@ impl Compiler {
                     name_idx: builtin_name,
                     arity: 1,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             }
         }
@@ -1440,6 +1455,7 @@ impl Compiler {
                 name_idx,
                 arity,
                 arg_sources_idx,
+                literal_native_args: Self::literal_native_args_mask(&rewritten_args),
             });
         }
         // Rewrite cas($target, $expected, $new)
@@ -1470,6 +1486,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 4,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             }
             // Multi-dim array element CAS: cas(@arr[d1;d2;...], $expected, $new)
@@ -1500,6 +1517,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 4,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             } else {
                 let assign_stmt = match &args[0] {
@@ -1567,6 +1585,7 @@ impl Compiler {
                         name_idx,
                         arity,
                         arg_sources_idx,
+                        literal_native_args: Self::literal_native_args_mask(args),
                     });
                 }
             }
@@ -1646,6 +1665,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 3,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             } else if let Expr::Index {
                 target,
@@ -1670,6 +1690,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 3,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             } else if let Expr::MultiDimIndex {
                 target, dimensions, ..
@@ -1696,6 +1717,7 @@ impl Compiler {
                     name_idx: call_name_idx,
                     arity: 3,
                     arg_sources_idx: None,
+                    literal_native_args: 0,
                 });
             } else {
                 let arity = args.len() as u32;
@@ -1708,6 +1730,7 @@ impl Compiler {
                     name_idx,
                     arity,
                     arg_sources_idx,
+                    literal_native_args: Self::literal_native_args_mask(args),
                 });
             }
         } else {
@@ -1758,6 +1781,7 @@ impl Compiler {
                     name_idx,
                     arity: args.len() as u32,
                     arg_sources_idx,
+                    literal_native_args: Self::literal_native_args_mask(args),
                 });
             } else {
                 let arity = args.len() as u32;
@@ -1854,6 +1878,12 @@ impl Compiler {
                         name_idx,
                         arity,
                         arg_sources_idx,
+                        // Safe here precisely because no named arg was
+                        // extracted: the stack positions still match `args`
+                        // one-for-one. The `CallFuncNamed` branch below leaves
+                        // the mask at 0 -- named values travel out-of-band, so
+                        // an `args` index is not a stack position there.
+                        literal_native_args: Self::literal_native_args_mask(args),
                     });
                 } else {
                     let spec_idx = self.code.add_named_arg_spec(crate::opcode::NamedArgsSpec {
@@ -1864,6 +1894,7 @@ impl Compiler {
                         arity,
                         spec_idx,
                         arg_sources_idx,
+                        literal_native_args: 0,
                     });
                 }
                 // Emit writeback for any Index expressions that THIS call
