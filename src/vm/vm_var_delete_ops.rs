@@ -384,17 +384,39 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::NIL);
-        // An *itemized* list subscript (`@a[$(7,8,9)]:delete`) is a SINGLE index
-        // (its `.Int`, the element count), not a slice.
+        // An *itemized* list subscript (`@a[$(7,8,9)]:delete`) is a SINGLE
+        // subscript, not a slice. Only a POSITIONAL one numifies (to its
+        // `.Int`, the element count); a HASH subscript keeps the value itself
+        // as the key, so `%c{$(1, 2)}:delete` removes the key the matching
+        // `%c{$(1, 2)} = …` wrote.
+        //
+        // The opcode records no bracket kind, so the target decides: unlike the
+        // read and `:exists` paths (which carry `is_positional` / `kind`), this
+        // one only has the variable name. A `%h`-shaped target is exactly the
+        // case that must not numify.
+        let target_is_hash = self
+            .env()
+            .get(&var_name)
+            .map(|v| matches!(v.deref_container().view(), ValueView::Hash(_)))
+            .unwrap_or(false);
         let idx = match idx.view() {
-            ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
+            ValueView::Array(items, crate::value::ArrayKind::ItemList) if !target_is_hash => {
                 Value::int(items.len() as i64)
             }
             ValueView::Scalar(inner)
-                if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
+                if !target_is_hash
+                    && (inner.is_range() || matches!(inner.view(), ValueView::Array(..))) =>
             {
                 Value::int(crate::runtime::utils::value_to_list(inner).len() as i64)
             }
+            // A hash subscript keeps the itemized value as ONE key. Wrapped in
+            // a `Scalar` so the slice machinery below — which matches on
+            // `ValueView::Array` regardless of `ArrayKind`, in a dozen places —
+            // leaves it alone and it reaches the single-key tail.
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::ItemList | crate::value::ArrayKind::ItemArray,
+            ) if target_is_hash => Value::scalar(idx.clone()),
             _ => idx,
         };
         // An `is Hash`/`is Map` subclass instance (`$h<k>:delete`): delegate

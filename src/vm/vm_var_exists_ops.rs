@@ -65,17 +65,35 @@ impl Interpreter {
         } else {
             let mut idx = self.stack.pop().unwrap_or(Value::NIL);
             // An *itemized* list subscript (`@a[$(7,8,9)]:exists`) is a SINGLE
-            // index (its `.Int`, the element count), not a slice.
-            match idx.view() {
-                ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
-                    idx = Value::int(items.len() as i64);
+            // subscript, not a slice. Only a POSITIONAL one numifies (to its
+            // `.Int`, the element count); a HASH subscript keeps the value
+            // itself as the key, so `%c{$(1, 2)}:exists` asks about the key the
+            // matching `%c{$(1, 2)} = …` wrote.
+            if kind == SubscriptKind::Positional {
+                match idx.view() {
+                    ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
+                        idx = Value::int(items.len() as i64);
+                    }
+                    ValueView::Scalar(inner)
+                        if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
+                    {
+                        idx = Value::int(crate::runtime::utils::value_to_list(inner).len() as i64);
+                    }
+                    _ => {}
                 }
-                ValueView::Scalar(inner)
-                    if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
-                {
-                    idx = Value::int(crate::runtime::utils::value_to_list(inner).len() as i64);
-                }
-                _ => {}
+            } else if matches!(
+                idx.view(),
+                ValueView::Array(
+                    _,
+                    crate::value::ArrayKind::ItemList | crate::value::ArrayKind::ItemArray
+                )
+            ) {
+                // A hash subscript keeps the itemized value as ONE key. Wrapped
+                // in a `Scalar` so the slice machinery below — which matches on
+                // `ValueView::Array` regardless of `ArrayKind` — leaves it
+                // alone and it reaches the single-key tail, where it
+                // stringifies to `"1 2"`, the key the matching write stored.
+                idx = Value::scalar(idx.clone());
             }
             // A Range index is a *slice* index, exactly like a list one: it names
             // one index (or key) per element and gets one answer per element.

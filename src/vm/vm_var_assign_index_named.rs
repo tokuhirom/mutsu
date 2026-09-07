@@ -342,7 +342,30 @@ impl Interpreter {
         let _target_is_sethash = declared_type.as_deref().is_some_and(|t| t == "SetHash");
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
-        let idx = self.stack.pop().unwrap_or(Value::NIL);
+        let mut idx = self.stack.pop().unwrap_or(Value::NIL);
+        // An ITEMIZED aggregate used as a HASH subscript is ONE key, not a
+        // slice: `my $s = $(1, 2); %c{$s} = "x"` is `{"1 2" => "x"}` in raku,
+        // while the non-itemized `%c{(1, 2)}` really does slice. Itemization is
+        // exactly what tells the two apart.
+        //
+        // Normalized to a `Scalar` wrapper, which is the ONE shape the slice
+        // machinery below does not treat as a list — it matches
+        // `ValueView::Array` regardless of `ArrayKind`, in a dozen places — and
+        // the same canonical form the read / `:exists` / `:delete` paths use,
+        // so all four agree on the key (and on its `.WHICH` for an object
+        // hash). Positional subscripts keep their own rule below: `@a[$(1, 2)]`
+        // is a single NUMERIC index in raku, the itemized list's element count.
+        if !is_positional
+            && matches!(
+                idx.view(),
+                ValueView::Array(
+                    _,
+                    crate::value::ArrayKind::ItemList | crate::value::ArrayKind::ItemArray
+                )
+            )
+        {
+            idx = Value::scalar(idx.clone());
+        }
         // ADR-0058: a SLICE assignment (`@n[0,1] = (1,2).map({...})`) is a
         // LIST assignment -- it distributes the Seq's elements across the
         // targeted slots, so it is eager (`roast/S32-list/seq.t` #18, "Array
@@ -603,16 +626,25 @@ impl Interpreter {
             | ValueView::GenericRange { .. } => false,
             _ => true,
         };
-        // An *itemized* list/Range subscript (`@a[$(7,8,9)] = …`) is a SINGLE
-        // index (its `.Int`, the element count), not a slice — itemization makes
-        // it one item. An itemized list reaches here as `ArrayKind::ItemList` (or
-        // a `Scalar`-wrapped list/Range). A bare `@a[7,8,9] = …` stays a slice.
+        // An *itemized* list/Range subscript is a SINGLE subscript, not a slice
+        // — itemization makes it one item. A bare `@a[7,8,9] = …` stays a
+        // slice. It reaches here as `ArrayKind::ItemList` or a `Scalar`-wrapped
+        // list/Range.
+        //
+        // What "one subscript" MEANS differs by sigil, so this only numifies a
+        // POSITIONAL one: `@a[$(7,8,9)]` is index 3, the `.Int` of the itemized
+        // list (its element count). A HASH subscript keeps the value itself as
+        // the key — `my $s = $(1, 2); %c{$s} = "x"` is `{"1 2" => "x"}` in raku
+        // (and, on an object hash, the `List` really is the key). Numifying it
+        // there made the key the element COUNT, so `%c{$(1, 2)}` and
+        // `%c{$(3, 4)}` were the same key `"2"`.
         let idx = match idx.view() {
-            ValueView::Array(items, crate::value::ArrayKind::ItemList) => {
+            ValueView::Array(items, crate::value::ArrayKind::ItemList) if is_positional => {
                 Value::int(items.len() as i64)
             }
             ValueView::Scalar(inner)
-                if inner.is_range() || matches!(inner.view(), ValueView::Array(..)) =>
+                if is_positional
+                    && (inner.is_range() || matches!(inner.view(), ValueView::Array(..))) =>
             {
                 Value::int(crate::runtime::utils::value_to_list(inner).len() as i64)
             }
@@ -1389,7 +1421,22 @@ impl Interpreter {
                 // Not an array container after all (e.g. a hash) — fall through
                 // to the shared generic tail below.
             }
-            ValueView::Array(keys, ..) => {
+            // An ITEMIZED aggregate is ONE hash key, not a slice:
+            // `my $s = $(1, 2); %c{$s} = "x"` is `{"1 2" => "x"}` in raku,
+            // while the non-itemized `%c{(1, 2)}` really does slice. Without
+            // the guard this arm took every list-shaped index, so `%c{$s}`
+            // assigned to each element in turn and the last one won
+            // (`{"2" => "x"}`), and a key-constrained hash reported the LAST
+            // ELEMENT's type ("expected List:D but got Int (2)"). Falling
+            // through leaves the whole value as the key, which is what both
+            // the `.Str` key of a plain hash and the `.WHICH` key of an object
+            // hash need. Positional subscripts are unaffected: `@a[$(1, 2)]`
+            // is a single numeric index in raku too. (An itemized hash index
+            // is in fact already normalized to a `Scalar` at the top of this
+            // opcode; the guard states the rule where the slice decision is
+            // made, so an `ItemList` that reaches here unnormalized by some
+            // other route is still handled.)
+            ValueView::Array(keys, kind) if is_positional || !kind.is_itemized() => {
                 let mut vals = self.assignment_rhs_values(&val)?;
                 // Per-element type check for slice assignment to a typed array,
                 // e.g. `my Array @x; @x[0,2] = 2, 3` must reject each Int element.
