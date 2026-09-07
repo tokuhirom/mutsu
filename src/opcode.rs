@@ -990,6 +990,9 @@ pub(crate) enum OpCode {
     AttrContainerRef(u32),
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
+    /// Signal that the next slice assignment CYCLES its RHS rather than padding
+    /// a short one -- see `Stmt::MarkHyperSliceAssign`.
+    MarkHyperSliceAssign,
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via
     /// `:=`, so it must be recorded as decontainerized (so `@a = $bound` flattens).
     MarkScalarBindContext,

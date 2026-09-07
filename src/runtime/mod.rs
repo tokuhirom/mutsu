@@ -3090,6 +3090,11 @@ pub struct Interpreter {
     /// `Arc<RwLock<String>>`/`Arc<AtomicU32>` backing works) — see that
     /// module's doc comment for the full history.
     pub(crate) bind_context: Box<Cell<bool>>,
+    /// One-shot: the next slice assignment CYCLES its RHS instead of padding a
+    /// short one, because it came from the hyper metaoperator
+    /// (`%h<a b c> »=» 7`). Set by `OpCode::MarkHyperSliceAssign` and consumed
+    /// by the slice arm of `IndexAssignExprNamed`.
+    pub(crate) hyper_slice_assign: Box<Cell<bool>>,
     pub(crate) scalar_bind_context: Box<Cell<bool>>,
     /// Set by `MarkParamRawBindContext` just before the SetLocal/SetGlobal of
     /// an assignment whose target is a sigilless binding (`-> \v` loop-param

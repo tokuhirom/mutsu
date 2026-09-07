@@ -554,6 +554,42 @@ impl Interpreter {
         }
     }
 
+    /// The value a SLICE-assignment slot gets when the RHS list runs out.
+    ///
+    /// A slice assignment is a LIST assignment: raku zips the RHS against the
+    /// targeted slots, and the slots past the end of the RHS get the
+    /// container's UNDEFINED value -- `Any` for an untyped `@a`/`%h`, and the
+    /// element type's own undefined value for a typed one (`Int` for
+    /// `my Int @a`, and `0`/`""`/`0e0` for the native `int`/`str`/`num`
+    /// element types, which have no type object to hold). That is exactly
+    /// what `typed_scalar_nil_seed_value` computes for a declaration, so it is
+    /// reused rather than re-derived.
+    ///
+    /// mutsu used to broadcast the RHS on the associative side (`%h<a b> = 1`
+    /// filled BOTH keys) and pad with `Nil` on the positional side, which is
+    /// not even the hole value its own arrays render (`my @a; @a[2] = 1` is
+    /// `[Any, Any, 1]`).
+    pub(crate) fn slice_pad_value(&mut self, var_name: &str) -> Value {
+        match loan_env!(self, var_type_constraint(var_name)) {
+            Some(constraint) => self.typed_scalar_nil_seed_value(var_name, &constraint),
+            None => Value::package(crate::symbol::Symbol::intern("Any")),
+        }
+    }
+
+    /// The value slot `i` of a slice assignment receives.
+    ///
+    /// A plain slice assignment ZIPS, so a slot past the end of the RHS gets
+    /// `pad` ([`Self::slice_pad_value`]). A HYPER one CYCLES the RHS instead --
+    /// `%h<a b c> »=» (1, 2)` is `a => 1, b => 2, c => 1`, which is the whole
+    /// point of the metaoperator (`Stmt::MarkHyperSliceAssign` is what tells
+    /// the two apart, since they are the same `IndexAssign` node here).
+    pub(crate) fn slice_rhs_value(vals: &[Value], i: usize, cycle: bool, pad: &Value) -> Value {
+        if cycle && !vals.is_empty() {
+            return vals[i % vals.len()].clone();
+        }
+        vals.get(i).cloned().unwrap_or_else(|| pad.clone())
+    }
+
     pub(crate) fn assignment_rhs_values(
         &mut self,
         val: &Value,
