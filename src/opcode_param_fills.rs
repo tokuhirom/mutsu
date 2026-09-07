@@ -100,7 +100,7 @@ impl CompiledFunction {
     /// (`$x = []`) is excluded on purpose — the general binder re-evaluates the
     /// expression per call and so hands every call a *fresh* container, which a
     /// shared constant would not.
-    fn is_immutable_scalar_literal(v: &Value) -> bool {
+    pub(crate) fn is_immutable_scalar_literal(v: &Value) -> bool {
         matches!(
             v.view(),
             ValueView::Int(_)
