@@ -493,6 +493,13 @@ impl Interpreter {
             };
         }
         // Base case: both operands are scalars.
+        // A hyper assignment's leaf op yields its right operand: `@a »=» 7`
+        // distributes 7 across @a's shape, and the old left value is simply
+        // replaced. The distribution and the dwim rules are the ordinary hyper
+        // ones, handled above; only the leaf is special.
+        if op == "=" {
+            return Ok(right.clone());
+        }
         if op == "~~" {
             return Ok(Value::truth(self.vm_smart_match(left, right)));
         }

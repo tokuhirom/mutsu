@@ -1027,13 +1027,6 @@ pub(crate) enum Stmt {
     MarkBind,
     /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
     ///
-    /// A plain slice assignment ZIPS: a slot past the end of the RHS gets the
-    /// container's undefined value (`%h<a b> = 1` leaves `b` as `Any`). A hyper
-    /// one CYCLES the RHS instead (`%h<a b c> »=» (1, 2)` is `a => 1, b => 2,
-    /// c => 1`), which is the whole point of the metaoperator. The two are the
-    /// same `IndexAssign` node by the time the VM sees them, so the hyper
-    /// desugaring (`lower_hyper_assignment`) emits this marker ahead of it.
-    MarkHyperSliceAssign,
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
     MarkSigillessReadonly(String),
     /// Register a sigilless variable name in the compiler's `sigilless_locals`

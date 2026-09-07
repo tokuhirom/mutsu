@@ -599,15 +599,13 @@ impl Interpreter {
 
     /// The value slot `i` of a slice assignment receives.
     ///
-    /// A plain slice assignment ZIPS, so a slot past the end of the RHS gets
-    /// `pad` ([`Self::slice_pad_value`]). A HYPER one CYCLES the RHS instead --
-    /// `%h<a b c> »=» (1, 2)` is `a => 1, b => 2, c => 1`, which is the whole
-    /// point of the metaoperator (`Stmt::MarkHyperSliceAssign` is what tells
-    /// the two apart, since they are the same `IndexAssign` node here).
-    pub(crate) fn slice_rhs_value(vals: &[Value], i: usize, cycle: bool, pad: &Value) -> Value {
-        if cycle && !vals.is_empty() {
-            return vals[i % vals.len()].clone();
-        }
+    /// A slice assignment ZIPS, so a slot past the end of the RHS gets `pad`
+    /// ([`Self::slice_pad_value`]). The HYPER spelling cycles instead --
+    /// `%h<a b c> »=» (1, 2)` is `a => 1, b => 2, c => 1` -- but that is now
+    /// decided where it belongs, in the hyper op itself: `»=»` lowers to an
+    /// ordinary `Expr::HyperOp` whose dwim rules produce an exact-length list,
+    /// so by the time a slice store sees it there is nothing left to cycle.
+    pub(crate) fn slice_rhs_value(vals: &[Value], i: usize, pad: &Value) -> Value {
         vals.get(i).cloned().unwrap_or_else(|| pad.clone())
     }
 
