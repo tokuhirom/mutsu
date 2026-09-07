@@ -62,6 +62,65 @@ too), which asserts both halves: a backtrace survives a `.grep` over itself, and
 the writeback the promotion exists for still works while an `=` copy of the
 result still decontainerizes.
 
+## The second thing it surfaced: a stale writeback clobbering a captured topic
+
+The bundled-library battery gate then caught `URI mutate.rakutest`, and it turned
+out to be a **pre-existing, general bug the universal publication merely made
+visible**. Minimal repro (rakudo prints the array unchanged; mutsu blanked out an
+element):
+
+```raku
+my @src = 1, 2, 3;
+sub bump(\x) { x = x + 0 }
+for @src { bump($_) }              # parks `_` on the pending-writeback list
+
+class Q {
+    has Pair @!qf;
+    method setup(@p) { @!qf = @p }
+    method !value-for($k) {
+        my $l = @!qf.grep({ .key eq $k }).map({
+            my $v = .value;
+            Proxy.new(FETCH => method () { $v },
+                      STORE => method ($n) { die "read-only" });
+        }).List;
+        $l[0]
+    }
+    method AT-KEY($k) { self!value-for($k) }
+}
+```
+
+`call_compiled_closure_in_unit` ends every closure call by rejoining an
+rw-argument writeback to the cell the closure captured under that source name —
+the mechanism behind `my $i = 0; sub inc($o is rw) { $o++ }; my $t = { inc($i) };
+$t(); $t();` answering 2. Its trigger was the *process-wide* pending lists, with
+no check that the closure has anything to do with the name.
+
+`pending_caller_var_writeback` is retain-on-miss: an entry stays until some
+frame's `code` owns a local slot for it, so a name no frame can ever own — the
+implicit topic `_`, `$/`, `@_`, a package or enum constant — is retained for the
+rest of the run. (`_` gets there from a sigilless parameter aliasing `$_`:
+`exec_set_local_op_inner` records the alias chain's root as a writeback source,
+and the drain then migrates it to the retain-on-miss list.) Every later closure
+call therefore re-ran the rejoin for `_`, storing the CALLING frame's ambient
+`$_` through whatever cell the closure's captured env held under that name.
+
+A `.map`/`.grep` block's `$_` is the source element's own container, so a closure
+created inside the block captures `_` bound to that element cell. `URI::Query`
+builds exactly such a closure — the `Proxy` reader in `!value-for` — and calling
+it from a method frame, whose ambient `$_` is undefined, wrote `Any` straight
+into `@!query-form`'s element. The next `ASSIGN-KEY` then died with "No such
+method 'key' for invocant of type 'Any'". Before this PR the promotion never
+reached the attribute array, so the fabricated write landed in a transient grep
+result and nobody saw it.
+
+The fix gates that loop on `cc.capture_free_var_set()`: only a lexical this body
+actually *reads* can be the source of a writeback into its own capture.
+`data.env` cannot make that call — it is the whole captured enclosing env, not
+the set of names the body uses — while `free_var_syms` is exactly that set, and
+is already the gate the per-instance persistence loop right below uses. Pinned by
+`t/closure-captured-topic-writeback.t` (green under rakudo; 2 of its 4 rows fail
+without the gate).
+
 ## What is left of ADR-0058 step 3b
 
 The grep mode on `SeqSource::MapGrep` (its pull arm runs `eval_map_over_items`
