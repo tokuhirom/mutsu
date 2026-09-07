@@ -8,7 +8,7 @@ use Test;
 # rows that already agreed before the change are just as important as the rows
 # that did not: they are what a laziness change is most likely to break.
 
-plan 72;
+plan 80;
 
 my $c;
 
@@ -238,9 +238,7 @@ $c = 0; "a,b,c" ~~ / ( \w { $c++ } ) +%% ',' /;
 is $c, 3, 'F5  ( \w {B} ) +%% ,';
 
 $c = 0; my $f6 = "a,b,c" ~~ / [ \w+ { $c++ } ] ** 1..3 % ',' /;
-todo 'pre-existing: a non-capturing group with a block under ** N..M % loses the chain';
 is $c, 3, 'F6  [ \w+ {B} ] ** 1..3 % , runs the block once per iteration';
-todo 'pre-existing: a non-capturing group with a block under ** N..M % loses the chain';
 is ~($f6 // ''), 'a,b,c', 'F6b and matches the whole chain';
 
 $c = 0; "line\nline2" ~~ rx| :r ( \V* { $c++ } ) *%% \n |;
@@ -278,3 +276,18 @@ is ("abc" ~~ /^ [ \w+ & 'abc' ] $/).Str, 'abc', 'A16g anchored conjunction';
         'A16h backtracking into the conjunction still matches';
     is $n, 2, 'A16i ... and runs the block once per end actually entered';
 }
+
+# --- `** N..M % sep` on a NON-capturing atom is string-expanded (the native
+# separated-quantifier path is reserved for capture-bearing atoms), and that
+# expansion has to be greedy AND capture-free.
+
+is ~("a,b,c" ~~ / [ \w+ ] ** 2..3 % ',' /), 'a,b,c', 'H1  ** 2..3 % , takes the longest chain';
+is ("a,b,c" ~~ / [ \w+ ] ** 1..3 % ',' /).list.elems, 0,
+    'H2  and introduces no positional capture';
+my $h3 = 0;
+is ~("a,b,c" ~~ / [ \w+ { $h3++ } ] ** 2..3 % ',' /), 'a,b,c', 'H3  the same with a block';
+is $h3, 3, 'H4  whose block ran once per iteration';
+is ~("a,b" ~~ / [ \w+ ] ** 1..3 % ',' /), 'a,b', 'H5  a chain shorter than the max still matches';
+is ~("a" ~~ / [ \w+ ] ** 1..3 % ',' /), 'a', 'H6  and a single element does too';
+nok ("a" ~~ / ^ [ \w+ ] ** 2..3 % ',' $ /), 'H7  but the minimum is still enforced';
+is ~("a,b,c," ~~ / [ \w+ ] ** 1..3 %% ',' /), 'a,b,c,', 'H8  %% takes the trailing separator';

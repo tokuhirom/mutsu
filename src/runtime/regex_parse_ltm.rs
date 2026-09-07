@@ -1310,12 +1310,39 @@ impl Interpreter {
         match max {
             Some(max) if max == min => build_exact_list(min),
             Some(max) => {
-                let alts: Vec<String> = (min..=max).map(build_exact_list).collect();
-                if alts.len() == 1 {
+                // LONGEST alternative first, and never an EMPTY trailing branch.
+                //
+                // Order: `|` is LTM, so with a purely declarative atom the
+                // longest branch wins whatever the order — but an atom carrying
+                // a code block ends the declarative prefix (ADR-0009), every
+                // branch then measures the same prefix, and the tie breaks by
+                // ORDER. Ascending order made `[ \w+ { $c++ } ] ** 1..3 % ','`
+                // on "a,b,c" match just `a`, while `[ \w+ ] ** 1..3 % ','`
+                // matched the whole string. A separated quantifier is greedy,
+                // so the longest branch has to come first.
+                //
+                // Zero: `build_exact_list(0)` is the empty string, and putting
+                // it LAST would make `[AA|A|]` — a trailing empty branch, which
+                // is misdetected as a null regex (`roast/S05-metasyntax/
+                // proto-token-ltm.t`). Build `1..=max` and make the whole group
+                // optional instead. Both rules mirror the no-separator arm
+                // above, which already builds its alternatives `.rev()` and
+                // wraps a `**0..max` in `[...]?`.
+                let lo = if min == 0 { 1 } else { min };
+                let alts: Vec<String> = (lo..=max).rev().map(build_exact_list).collect();
+                let core = if alts.len() == 1 {
                     alts.into_iter().next().unwrap_or_default()
                 } else {
-                    format!("({})", alts.join("|"))
-                }
+                    // Non-capturing `[...]`: a `**N..M % sep` on a
+                    // non-capturing atom must not introduce a positional
+                    // capture (`(...)` would, and `$/.list` answered 1 element
+                    // where raku answers 0). Capture-bearing atoms and
+                    // separators never reach this string expansion — they are
+                    // deferred to the native separated-quantifier path above,
+                    // precisely so their capture structure survives.
+                    format!("[{}]", alts.join("|"))
+                };
+                if min == 0 { format!("[{core}]?") } else { core }
             }
             None => {
                 if min == 0 {
