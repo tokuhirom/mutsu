@@ -630,7 +630,7 @@ mod registration_class_body_method;
 mod registration_class_body_method_forms;
 mod registration_class_compose;
 mod registration_class_compose_body;
-mod registration_class_compose_record;
+pub(crate) mod registration_class_compose_record;
 mod registration_class_decl;
 mod registration_class_validate;
 mod registration_role;
