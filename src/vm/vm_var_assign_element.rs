@@ -498,6 +498,16 @@ impl Interpreter {
         if !is_positional {
             return None;
         }
+        // A not-yet-run `.map`/`.grep` body (`SeqSource::MapGrep`) has to run
+        // its callback before the store can be decided: the refusal names the
+        // ELEMENT it addressed ("Cannot modify an immutable Int (2)"), and an
+        // unpulled body presents ADR-0034's empty seed, which named `Nil`
+        // instead (`t/producer-seq-named-receiver-write.t`). Unlike the
+        // genuinely one-shot sources below, a `MapGrep` source is finite and
+        // stays re-readable after the pull.
+        if let Err(e) = self.reify_map_grep_seq(target) {
+            return Some(Err(e));
+        }
         let ValueView::Seq(body) = target.view() else {
             return None;
         };

@@ -466,15 +466,6 @@ impl Interpreter {
         // `native_lever_a_user_override`'s doc comment (mut path twin of the
         // non-mut guard in `try_compiled_method_or_interpret_inner`).
         let lever_a_blocked = self.native_lever_a_user_override(&target, method);
-        // Native `.map` / `.grep` over a concrete array with a simple block (lever A).
-        // `target_name` is the receiver variable, enabling rw-binding writeback
-        // for `$_`-mutating blocks (`@a.map({ $_++ })` mutates `@a`).
-        if !lever_a_blocked
-            && let Some(result) =
-                self.try_native_array_map(Some(target_name), &target, method, &args)
-        {
-            return result;
-        }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
         if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
             return result;

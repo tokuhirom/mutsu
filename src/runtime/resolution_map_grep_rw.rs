@@ -19,7 +19,7 @@ impl Interpreter {
     /// `initialized` bitmap, so a `:delete`d slot stopped reading as a hole and
     /// a later trailing-element `:delete` could no longer truncate the array
     /// (roast/S32-array/delete.t).
-    pub(super) fn eval_map_over_items_rw(
+    pub(crate) fn eval_map_over_items_rw(
         &mut self,
         func: Option<Value>,
         list_items: &mut [Value],
@@ -194,8 +194,25 @@ impl Interpreter {
             let dollar_topic = "$_".to_string();
 
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
-            for k in data.env.keys() {
-                if !self.env.contains_key_sym(*k) {
+            // ADR-0058 §9.4: same capture-priority rule as the plain loop
+            // (`eval_map_over_items`), and for the same reason — this loop is
+            // no longer run inside the frame that created the block. Once
+            // `@a.map` deferred, the pull happens wherever the Seq is
+            // consumed, so a same-named lexical live in THAT frame silently
+            // shadowed the block's own free variable (`sub p($f) { my $c =
+            // C.new($f); @data.map: { $c.use } }` read the unit's `$c` —
+            // caught by the bundled-library gate on `Text::CSV`'s
+            // `66_formula.t`). Every key the merge OVERWRITES must be saved
+            // here too, not just the ones it introduces.
+            let free_vars = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| cc.capture_free_var_set());
+            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
+                super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v)
+            };
+            for (k, v) in &data.env {
+                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
                     touched_keys.push(k.resolve());
                 }
             }
@@ -223,7 +240,10 @@ impl Interpreter {
                 .collect();
 
             for (k, v) in &data.env {
-                if k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
+                if capture_wins(k, v)
+                    || k.with_str(|s| s == "self")
+                    || !self.env.contains_key_sym(*k)
+                {
                     self.env.insert_sym(*k, v.clone());
                 }
             }

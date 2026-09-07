@@ -201,6 +201,30 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
 /// `$spec` param this way) — save/restore those names like the other
 /// temporaries. A declared name that is also a free var refers to the outer
 /// binding (used before its declaration) and is left alone.
+/// Whether a captured lexical must OVERWRITE the same-named binding the
+/// consuming frame happens to hold, rather than yielding to it.
+///
+/// The map/grep loops merge the block's captured env into the running frame
+/// with caller priority by default; this is the exception list, and it is
+/// shared by the plain and the rw loops (`eval_map_over_items` /
+/// `eval_map_over_items_rw`) so they cannot drift apart. See the long comment
+/// at the plain loop's merge for the reasoning: a shared `ContainerRef` cell
+/// is the single source of truth for its lexical, and a value captured for one
+/// of the block's own FREE VARIABLES is lexical by definition, so the binding
+/// it names is the one at the block's creation site — never a same-named
+/// lexical live in whatever frame is doing the consuming. A dynamic variable
+/// (`$*x`) keeps caller priority; it is dynamic-scope by design.
+pub(crate) fn capture_wins_over_caller(
+    free_vars: Option<&rustc_hash::FxHashSet<crate::symbol::Symbol>>,
+    k: &crate::symbol::Symbol,
+    v: &Value,
+) -> bool {
+    let is_dynamic = k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
+    !is_dynamic
+        && (matches!(v.view(), ValueView::ContainerRef(_))
+            || free_vars.is_some_and(|free| free.contains(k)))
+}
+
 pub(crate) fn push_block_declared_keys(
     touched_keys: &mut Vec<String>,
     code: &crate::opcode::CompiledCode,
@@ -509,13 +533,8 @@ impl Interpreter {
                 .compiled_code
                 .as_ref()
                 .map(|cc| cc.capture_free_var_set());
-            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
-                let is_dynamic =
-                    k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
-                !is_dynamic
-                    && (matches!(v.view(), ValueView::ContainerRef(_))
-                        || free_vars.is_some_and(|free| free.contains(k)))
-            };
+            let capture_wins =
+                |k: &crate::symbol::Symbol, v: &Value| capture_wins_over_caller(free_vars, k, v);
             for (k, v) in &data.env {
                 if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
                     touched_keys.push(k.resolve());

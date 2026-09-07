@@ -88,27 +88,28 @@ impl Interpreter {
                 }
             }
         }
-        if let Some(var_name) = source_var {
-            let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut list_items)?;
-            // Only refresh the source when the block actually rw-wrote an
-            // element: rebuilding it for a read-only block would drop the
-            // container's per-slot metadata (`initialized` holes, element type)
-            // — see the same gate in `methods_mut_dispatch.rs`.
-            if wrote_back {
-                // ADR-0039 slice 2: write the mutated elements THROUGH the
-                // source container's own node instead of dropping a fresh
-                // array into `env` under the bare name -- the owning frame's
-                // local slot (which `@a` now reads through) points at the
-                // original node, so a replacement would be invisible to it.
-                self.store_container_preserving_identity(&var_name, Value::real_array(list_items));
-            }
-            Ok(result)
+        if source_var.is_some() {
+            // The listop twin of the method form's rw path (ADR-0058 §9.4):
+            // `map { $_++ }, @a` writes its mutations back into `@a`, and used
+            // to run the whole map RIGHT HERE to do it. It defers like every
+            // other `.map` now; `SeqSource::MapGrep::rw_source` carries the
+            // source container so the pull can publish the writeback in place,
+            // with no frame and no name — which also keeps the container's
+            // element-type metadata that the old `Value::real_array` rebuild
+            // dropped.
+            Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items: std::sync::Arc::new(list_items),
+                func,
+                fatal: self.fatal_mode,
+                rw_source: Some(args[1].clone()),
+            }))
         } else {
             // Same deferral as dispatch_map_method: a callback containing
-            // `return` or a stub (`...`) must not run until the Seq is forced.
+            // `return` must not run until the Seq is forced. A `...` stub
+            // goes through `SeqSource::MapGrep` like everything else — see
+            // the comment there.
             if let Some(ValueView::Sub(sub_data)) = func.as_ref().map(Value::view)
-                && (Self::body_contains_return(&sub_data.body)
-                    || Self::is_stub_routine_body(&sub_data.body))
+                && Self::body_contains_return(&sub_data.body)
             {
                 return Ok(self.create_lazy_map_list(list_items, &sub_data));
             }
@@ -122,6 +123,7 @@ impl Interpreter {
                 items: std::sync::Arc::new(list_items),
                 func,
                 fatal: self.fatal_mode,
+                rw_source: None,
             }))
         }
     }

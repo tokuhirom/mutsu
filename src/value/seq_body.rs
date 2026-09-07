@@ -51,6 +51,17 @@ pub(crate) enum SeqSource {
         /// Failure soft in rakudo — pinned by
         /// `t/try-fatal-does-not-retroactively-flag-closure-seq.t`).
         fatal: bool,
+        /// The `@`-sigil source container a `.map` was called on, when the
+        /// callback may rw-write its elements back (`@a.map({ $_++ })` —
+        /// Raku rw-binds `$_` to each source element). `None` for every other
+        /// `.map`/`.grep`. The pull runs `eval_map_over_items_rw` instead of
+        /// `eval_map_over_items` and publishes any write-back by mutating
+        /// this container's `ArrayData` IN PLACE, which is frame-independent
+        /// — the pull happens wherever the Seq is consumed, long after the
+        /// frame whose `env` held the source's name is gone (the same
+        /// reasoning that moved `grep`'s element promotion in place, ADR-0058
+        /// §9.2).
+        rw_source: Option<Value>,
     },
     /// The source was handed away by a consuming method (`.iterator`,
     /// `.list`, ...). A later attempt to reify or take again throws
@@ -494,11 +505,32 @@ impl SeqBody {
         &self,
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        self.sink_inner(pull, true)
+    }
+
+    /// The `.sink` METHOD, as opposed to a statement's implicit sink. The
+    /// only difference is that it consumes an `itemized` body too: measured
+    /// against raku, `my $s = (1,2,3).Seq; $s.sink; $s.List` throws
+    /// `X::Seq::Consumed`, while the bare mention `$s;` on the next line only
+    /// warns "Useless use of $s in sink context" and leaves it readable. The
+    /// `itemized` exemption is about *sink context*, not about `.sink`.
+    pub(crate) fn sink_explicit(
+        &self,
+        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        self.sink_inner(pull, false)
+    }
+
+    fn sink_inner(
+        &self,
+        pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
+        honor_itemized: bool,
+    ) -> Result<(), RuntimeError> {
         let source = {
             let mut state = self.core.state.lock().unwrap();
             match &state.source {
                 SeqSource::Taken => return Ok(()),
-                _ if state.itemized => return Ok(()),
+                _ if honor_itemized && state.itemized => return Ok(()),
                 SeqSource::Reified if state.cache_requested || state.retained => {
                     return Ok(());
                 }
@@ -749,12 +781,20 @@ impl SeqBody {
         match &state.source {
             SeqSource::Iterator(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),
-            SeqSource::MapGrep { items, func, .. } => {
+            SeqSource::MapGrep {
+                items,
+                func,
+                rw_source,
+                ..
+            } => {
                 for v in items.iter() {
                     v.gc_trace(visit);
                 }
                 if let Some(f) = func {
                     f.gc_trace(visit);
+                }
+                if let Some(src) = rw_source {
+                    src.gc_trace(visit);
                 }
             }
             SeqSource::Reified | SeqSource::Taken => {}

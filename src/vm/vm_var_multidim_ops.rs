@@ -17,6 +17,11 @@ impl Interpreter {
         dims.reverse();
         let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+        // `multi_dim_index_read` walks the elements purely, so a not-yet-run
+        // `.map`/`.grep` Seq (`SeqSource::MapGrep`) would present ADR-0034's
+        // empty seed and `@a.map({ $_ })[*;*]` would answer nothing
+        // (docs/adr/0058 §8.2's read-path family; `t/seq-multidim-flatten.t`).
+        self.reify_map_grep_seq(&target)?;
 
         // For shaped arrays, check bounds before reading
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);

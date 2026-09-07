@@ -6,8 +6,13 @@
 //! `@a.map(-> $x is rw { $x++ })` mutating `@a`. It captures the block's final
 //! `$_` directly (`rw_map_topic_capture`) instead of relying on the shared
 //! loop's `__mutsu_rw_map_topic__` assignment mirror, which is why it — and only
-//! it — also covers prefix `++$_`/`--$_` and `tr///`, and can re-tag the
-//! rebuilt array with the source's element-type metadata (`my Int @a`).
+//! it — also covers prefix `++$_`/`--$_` and `tr///`.
+//!
+//! ADR-0058 §9.4: this loop used to run AT the `.map` call, which made
+//! `@a.map({ $_++ })` eager where rakudo is lazy. It now runs from the
+//! deferred Seq's pull (`Interpreter::pull_rw_map`) and hands its writeback
+//! back to the caller to publish, instead of re-binding the receiver's name
+//! itself — at pull time that frame is gone.
 //!
 //! **A read-only map block must NOT come here.** It runs 4-7.6x slower than the
 //! shared loop, because this one calls the general closure-call machinery once
@@ -28,24 +33,33 @@ use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 
+/// What the native rw map loop produces: the `.map` result elements, and the
+/// source elements after the block's rw write-backs (which the caller
+/// publishes into the source container).
+pub(crate) type NativeRwMapOutcome = Result<(Vec<Value>, Vec<Value>), RuntimeError>;
+
 impl Interpreter {
-    /// Try to run `target.map(block)` natively. Returns `Some(result)` when
-    /// handled in the Interpreter, `None` to fall back to the interpreter unchanged.
+    /// Try to run `target.map(block)` natively for a block that WRITES BACK
+    /// into the source elements. Returns `Some((result elements, the source
+    /// elements after the block's rw writes))` when handled here, `None` to
+    /// fall back to the shared loop (`eval_map_over_items_rw`) unchanged.
+    ///
+    /// Called from the deferred `.map` PULL (`Interpreter::pull_rw_map`), not
+    /// from the `.map` call: ADR-0058 makes every `.map` hand back a Seq whose
+    /// callback runs at first consumption, so this loop runs there too. It
+    /// therefore does not publish the writeback itself — the caller does, in
+    /// place, because at pull time there is no frame holding the source's name
+    /// to write through.
     ///
     /// Only `.map` is handled here, not `.grep`: `.grep` returns a subset of the
     /// *original* elements that must stay rw-view-bound to the source array
     /// (`@a.grep(...)>>++` updates `@a`), which the interpreter's aggregate
     /// binding preserves and a freshly-built result array cannot.
-    pub(super) fn try_native_array_map(
+    pub(crate) fn try_native_rw_map_over(
         &mut self,
-        target_name: Option<&str>,
         target: &Value,
-        method: &str,
         args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if method != "map" {
-            return None;
-        }
+    ) -> Option<NativeRwMapOutcome> {
         // Exactly one positional Sub argument.
         if args.len() != 1 {
             return None;
@@ -152,18 +166,13 @@ impl Interpreter {
 
         // rw binding: a `$_`-mutating block, or an explicit rw/raw param,
         // writes back to the source element (`@a.map({ $_++ })` /
-        // `@a.map(-> $x is rw { $x++ })` mutate `@a`). That needs a concrete
-        // `@`-array variable to write to (the mut method opcode gives us
-        // `target_name`), single element per call, and non-pair elements
-        // (writing a mutated pair back is out of scope). Without a writeback
-        // target the mutation cannot be reproduced by the clone-based loop,
-        // so defer to the interpreter.
-        let writeback_name = if mutates_topic || rw_param.is_some() {
-            match target_name {
-                Some(name) if name.starts_with('@') && arity == 1 && !has_pairs => {
-                    Some(name.to_string())
-                }
-                _ => return None,
+        // `@a.map(-> $x is rw { $x++ })` mutate `@a`). That needs a single
+        // element per call and non-pair elements (writing a mutated pair back
+        // is out of scope); the caller supplies the concrete `@`-array
+        // receiver the writeback is published into.
+        if mutates_topic || rw_param.is_some() {
+            if arity != 1 || has_pairs {
+                return None;
             }
         } else {
             // No writeback needed, so this loop has nothing the shared
@@ -190,17 +199,13 @@ impl Interpreter {
             // through `run_reuse` — so routing read-only maps back to it costs
             // nothing but that counter.
             return None;
-        };
+        }
 
         let block = args[0].clone();
         let mut result: Vec<Value> = Vec::with_capacity(items.len() / arity + 1);
-        // Mutable copy of the source, updated from each captured `$_` for the rw
-        // writeback (only allocated when a writeback target exists).
-        let mut source_after: Vec<Value> = if writeback_name.is_some() {
-            items.to_vec()
-        } else {
-            Vec::new()
-        };
+        // Mutable copy of the source, updated from each captured `$_` for the
+        // rw writeback the caller publishes.
+        let mut source_after: Vec<Value> = items.to_vec();
         let mut i = 0usize;
         while i < items.len() {
             let chunk: Vec<Value> = items[i..i + arity].to_vec();
@@ -235,22 +240,13 @@ impl Interpreter {
                 } else {
                     None
                 };
-                let call = if explicit_topic.is_some() || writeback_name.is_some() {
-                    if writeback_name.is_some() {
-                        self.rw_map_topic_capture = None;
-                    }
-                    self.vm_call_map_block(&block, chunk, explicit_topic, writeback_name.is_some())
-                } else {
-                    self.vm_call_on_value(block.clone(), chunk, None)
-                };
-                let v = match call {
+                self.rw_map_topic_capture = None;
+                let v = match self.vm_call_map_block(&block, chunk, explicit_topic, true) {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
                 // Capture the block's final `$_` back into the source element.
-                if writeback_name.is_some()
-                    && let Some(mutated) = self.rw_map_topic_capture.take()
-                {
+                if let Some(mutated) = self.rw_map_topic_capture.take() {
                     source_after[i] = mutated;
                 }
                 v
@@ -263,24 +259,11 @@ impl Interpreter {
             i += arity;
         }
 
-        // Write the mutated source array back to its variable (Raku rw binding).
-        // The mut method opcode sets `env_dirty` after we return, which re-syncs
-        // the variable's local slot from this env update. A fresh array Arc loses
-        // the source's per-Arc element-type metadata (`my Int @a` → `Array[Int]`),
-        // so re-register it on the new container.
-        if let Some(name) = writeback_name {
-            let meta = self.container_type_metadata(target);
-            let mut new_array = Value::real_array(source_after);
-            if let Some(info) = meta {
-                new_array = self.tag_container_metadata(new_array, info);
-            }
-            self.set_env_with_main_alias(&name, new_array);
-        }
-
-        // `.map` returns a Seq (matching Rakudo and the interpreter's
-        // `dispatch_map_method`). The rw writeback above is independent of this
-        // return value, so `@a.map({ $_++ })` still mutates `@a`.
-        Some(Ok(Value::seq(result)))
+        // The caller publishes `source_after` into the source container in
+        // place (Raku rw binding), which keeps the per-container element-type
+        // metadata (`my Int @a` -> `Array[Int]`) that the old rebuild-and-
+        // re-bind route had to re-register by hand.
+        Some(Ok((result, source_after)))
     }
 }
 

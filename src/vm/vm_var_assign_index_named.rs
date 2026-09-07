@@ -343,6 +343,14 @@ impl Interpreter {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let mut idx = self.stack.pop().unwrap_or(Value::NIL);
+        // ADR-0058: the INDEX may itself be a not-yet-run `.map`/`.grep` Seq
+        // (`@n[@n.map(*+0)] = <a b>.sort`, `roast/S32-list/seq.t` #12/#14).
+        // Every reader below walks it purely, so an unpulled body would
+        // present ADR-0034's empty seed and the whole store would silently
+        // address no slots. rakudo evaluates the index sequence first, which
+        // is exactly this pull. (The RHS gets the same treatment further
+        // down, for a slice target only -- see the comment there.)
+        self.reify_map_grep_seq(&idx)?;
         // An ITEMIZED aggregate used as a HASH subscript is ONE key, not a
         // slice: `my $s = $(1, 2); %c{$s} = "x"` is `{"1 2" => "x"}` in raku,
         // while the non-itemized `%c{(1, 2)}` really does slice. Itemization is

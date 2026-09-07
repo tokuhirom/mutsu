@@ -655,7 +655,7 @@ pub(super) fn dispatch(
                 }
                 // No pull to run here (already reified/cache-requested/taken):
                 // `sink`'s pull closure is unreachable on this branch.
-                let _ = body.sink(|_| {
+                let _ = body.sink_explicit(|_| {
                     unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
                 });
                 Some(Ok(Value::NIL))

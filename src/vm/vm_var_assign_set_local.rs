@@ -518,7 +518,15 @@ impl Interpreter {
                     // `Arc<SeqBody>`), so the in-place reify above already
                     // updated it — no rebuild needed.
                 }
-            } else if name.starts_with('$') {
+            } else if !name.starts_with('&') {
+                // A `$`-sigil local is stored under its BARE name (the locals
+                // table holds `"s"` for `my $s`, while `@`/`%` keep their
+                // sigil), so this arm must be "not `@`/`%`/`&`" — testing
+                // `starts_with('$')` here made it unreachable, and the
+                // LazyList twin below has always used the right test. That
+                // was invisible while `map` produced a `LazyList`; ADR-0058
+                // step 2 made it produce a `Seq`, and this arm went dead.
+                //
                 // A plain `$s = SEQ` (or `my $s = SEQ`) assignment itemizes
                 // the Seq into a Scalar container (raku container
                 // semantics): from this point on a later "discarded in sink
