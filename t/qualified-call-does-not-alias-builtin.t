@@ -10,10 +10,12 @@ use Test;
 #
 #     Could not find symbol '&index' in 'GLOBAL::Foo::Bar'
 #
-# The strip now runs only when mutsu has something *declared* under the short
-# name. Every message below is the one rakudo produces for the same program.
+# A later round removed the strip entirely: it also reached USER routines and
+# short-name-registered types, which is a silent wrong-routine dispatch rather
+# than a missing error. Every message below is the one rakudo produces for the
+# same program.
 
-plan 11;
+plan 14;
 
 throws-like 'Foo::Bar::index("hello", "l")', X::AdHoc,
     message => /"Could not find symbol '&index' in 'GLOBAL::Foo::Bar'"/,
@@ -54,8 +56,34 @@ throws-like 'GLOBAL::Foo::bar()', X::AdHoc,
     message => /"Could not find symbol 'bar' in 'GLOBAL::Foo'"/,
     'a GLOBAL::-qualified unknown package keeps the rest of the qualifier';
 
-# Regression guards: the strip is load-bearing and must keep resolving what it
-# was there for.
+# The strip is gone entirely now: it also reached USER routines and
+# short-name-registered types, which is a silent wrong-routine dispatch rather
+# than a missing error -- a typo'd or stale qualifier called the caller's own
+# same-named routine and returned a plausible answer.
+{
+    sub zzz($n) { $n + 1 }
+    throws-like 'zzz(0); NoSuchPkg::zzz(1)', X::AdHoc,
+        message => /"Could not find symbol '&zzz' in 'GLOBAL::NoSuchPkg'"/,
+        'a qualified call does not fall through to a same-named USER routine';
+}
+
+{
+    enum QcaeE <QcaeA QcaeB>;
+    throws-like 'NoSuchPkg::QcaeE(1)', X::AdHoc,
+        message => /"Could not find symbol '&QcaeE' in 'GLOBAL::NoSuchPkg'"/,
+        'nor to a short-name-registered enum';
+}
+
+{
+    class QcaeC { }
+    throws-like 'NoSuchPkg::QcaeC("x")', X::AdHoc,
+        message => /"Could not find symbol '&QcaeC' in 'GLOBAL::NoSuchPkg'"/,
+        'nor to a short-name-registered class';
+}
+
+# Regression guards: everything the qualified path legitimately resolves must
+# keep resolving -- through the REGISTRY, which is where a module's `our sub`
+# lives.
 {
     module M2 { our sub f() { 42 } }
     is M2::f(), 42, 'a qualified user sub still resolves';

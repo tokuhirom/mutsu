@@ -1130,30 +1130,26 @@ impl Interpreter {
             return self.dispatch_nqp_op(op, args);
         }
 
-        // A qualified call retries under its short name (`Main::foo` -> `foo`) —
-        // that is how a call qualified with a package mutsu did not register
-        // still finds its routine.
+        // A package-qualified call that reached this fallback resolves to
+        // nothing. It does NOT retry under its short name.
         //
-        // The retry only makes sense when mutsu has *something declared* under
-        // the short name. Retrying unconditionally meant a qualified call landed
-        // on Raku's same-named builtin: `Foo::Bar::index("hello", "l")` returned
-        // 2, and `Test::ok(1)` ran the TAP routine, where raku says "Could not
-        // find symbol '&index' in 'GLOBAL::Foo::Bar'". A package qualifier is
-        // not a decoration to be discarded.
+        // It used to, whenever mutsu had anything declared under that short
+        // name, and that was a silent wrong-routine dispatch: `sub zzz($n) {…};
+        // NoSuchPkg::zzz(1)` answered 2 where raku says "Could not find symbol
+        // '&zzz' in 'GLOBAL::NoSuchPkg'". A typo'd or stale package qualifier
+        // called the caller's own same-named routine and returned a plausible
+        // answer. (An earlier round had already stopped the strip from reaching
+        // *builtins* — `Foo::Bar::index("hello", "l")` returning 2 — but left it
+        // reaching user routines and short-name-registered types.)
+        //
+        // Nothing legitimate depends on it: a package mutsu DOES know has
+        // already had its chance through the registry, where a module's `our
+        // sub` is found and its plain `sub` is correctly `my`-scoped and
+        // invisible, exactly as raku scopes them. A package qualifier is not a
+        // decoration to be discarded.
         if let Some(pos) = name.rfind("::") {
             let short_name = &name[pos + 2..];
             let package = &name[..pos];
-            // ... and only when the package really is one mutsu never saw. A
-            // package it *does* know has already had its chance through the
-            // registry, and a plain `sub` in a module is `my`-scoped: raku says
-            // `MScope::lex-sub()` is "Could not find symbol '&lex-sub' in
-            // 'MScope'" even while the same routine is imported and callable
-            // under its short name, and only `our sub` is reachable that way.
-            // Stripping here would resurrect every lexical routine of every
-            // loaded module under its package name.
-            if !self.is_known_package(package) && self.qualified_retry_resolves(short_name, args) {
-                return self.call_function(short_name, args.to_vec());
-            }
             return Err(self.no_such_qualified_symbol(package, short_name));
         }
 
@@ -1198,40 +1194,6 @@ impl Interpreter {
             format!("Unknown function: {}", name),
             suggestions,
         ))
-    }
-
-    /// Does mutsu have anything *declared* under a qualified call's short name?
-    /// This gates the package-prefix strip: the strip exists so that a call
-    /// qualified with a package mutsu never registered still finds its own
-    /// routine, not so that any qualifier can be dropped to reach a builtin.
-    ///
-    /// Deliberately asks "is something declared here" rather than "is this a
-    /// builtin": the builtin question has no reliable answer, because names like
-    /// `index` are dispatched by a hand-written arm of `call_function` and are
-    /// not in `BUILTIN_FUNCTION_NAMES`, so `is_builtin_function` misses them.
-    fn qualified_retry_resolves(&mut self, short_name: &str, args: &[Value]) -> bool {
-        if self.resolve_proto_function_with_alias(short_name).is_some()
-            || self.has_multi_candidates(short_name)
-            || self.wrap_sub_id_for_name(short_name).is_some()
-            || self.env.get(&format!("&{short_name}")).is_some()
-        {
-            return true;
-        }
-        if self.resolve_function_with_alias(short_name, args).is_some() {
-            return true;
-        }
-        // A routine that exists but whose candidates did not match left a
-        // pending dispatch error. Let the retry run so that error is what the
-        // caller sees, rather than "no such symbol".
-        if self.pending_dispatch_error.is_some() {
-            return true;
-        }
-        // The strip also carries type coercion (`Foo::Bar("x")`) when mutsu
-        // registered the class only under its short name.
-        self.has_class(short_name)
-            || self.has_role(short_name)
-            || self.registry().subsets.contains_key(short_name)
-            || self.registry().enum_types.contains_key(short_name)
     }
 
     /// raku's error for a qualified call whose short name resolves to nothing:
