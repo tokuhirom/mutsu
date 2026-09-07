@@ -319,6 +319,15 @@ impl Interpreter {
                 if cn == "Supplier" && method_sym == "Supply" && args.is_empty() {
                     return None;
                 }
+                // Native method on instance class: an interpreter-side handler
+                // (`IO::Handle.say`, ...) serves it, so decline the pure native
+                // path. Decided BEFORE the numeric-bridge probes below, which
+                // reach the same `None` for such a class only after two full
+                // `type_matches_value` walks (`Real`, then `Numeric`) -- the
+                // cost every `$output.say` in the vendored `Test` was paying.
+                if self.is_native_method(&cn, &method_name) {
+                    return None;
+                }
                 // Numeric bridge — Real/Numeric instances route through the
                 // interpreter's Numeric bridge for arithmetic and coercion.
                 // Exception: pure-render methods (gist/Str/raku/...) don't need
@@ -351,10 +360,6 @@ impl Interpreter {
                     "throw" | "rethrow" | "gist" | "Str" | "Stringy"
                 ) && self.exception_render_needs_interpreter(target, &cn)
                 {
-                    return None;
-                }
-                // Native method on instance class
-                if self.is_native_method(&cn, &method_name) {
                     return None;
                 }
                 // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is not

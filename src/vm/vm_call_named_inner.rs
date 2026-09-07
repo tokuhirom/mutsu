@@ -33,6 +33,12 @@ impl Interpreter {
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
         }
+        // Interned once per call: the package and routine name are pushed on
+        // three frames below (the `callframe().code` Sub, the routine frame,
+        // the state scope), and each `Symbol::intern` is a thread-local
+        // string-keyed hash lookup.
+        let fn_package_sym = Symbol::intern(fn_package);
+        let fn_name_sym = Symbol::intern(fn_name);
         // Record deprecation for cached compiled functions
         self.record_cf_deprecation(cf);
         // An END phaser registered inside this call closes over this frame's
@@ -59,8 +65,8 @@ impl Interpreter {
 
         // Push Sub value to block_stack for callframe().code
         let sub_val = Value::make_sub(
-            Symbol::intern(fn_package),
-            Symbol::intern(fn_name),
+            fn_package_sym,
+            fn_name_sym,
             cf.params.clone(),
             cf.param_defs.clone(),
             vec![],
@@ -90,12 +96,12 @@ impl Interpreter {
         // Always push a routine frame so that &?ROUTINE works inside anonymous
         // subs too. Use "<anon>" as a sentinel name when fn_name is empty.
         let routine_push_name = if fn_name.is_empty() {
-            Symbol::intern("<anon>")
+            crate::symbol::wk::anon_routine()
         } else {
-            Symbol::intern(fn_name)
+            fn_name_sym
         };
         self.push_routine_with_location(
-            Symbol::intern(fn_package),
+            fn_package_sym,
             routine_push_name,
             self.current_source_line(),
             self.current_source_file_sym(),
@@ -117,8 +123,8 @@ impl Interpreter {
             // the missing/None case correctly. This avoids triggering
             // Arc::make_mut deep clone on the CoW env for simple functions.
             if resolved_callable_id != 0 {
-                self.env_mut().insert(
-                    "__mutsu_callable_id".to_string(),
+                self.env_mut().insert_sym(
+                    crate::symbol::wk::callable_id(),
                     Value::int(resolved_callable_id),
                 );
             }
@@ -246,24 +252,39 @@ impl Interpreter {
         // Only insert if $! isn't already Nil, to avoid triggering
         // Arc::make_mut deep clone on the CoW env.
         if !fn_name.is_empty() {
-            let needs_reset = self.env().get("!").is_some_and(|v| !v.is_nil());
+            let needs_reset = self
+                .env()
+                .get_sym(crate::symbol::wk::error_var())
+                .is_some_and(|v| !v.is_nil());
             if needs_reset {
-                self.env_mut().insert("!".to_string(), Value::NIL);
+                self.env_mut()
+                    .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
             }
         }
 
         // Raku: routines get their own $_ initialized to (Any).
         if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
-            self.env_mut().insert(
-                "_".to_string(),
-                Value::package(crate::symbol::Symbol::intern("Any")),
+            self.env_mut().insert_sym(
+                crate::symbol::wk::topic(),
+                Value::package(crate::symbol::wk::any()),
             );
         }
 
         self.locals = vec![Value::NIL; cf.code.locals.len()];
-        for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
-                self.locals[i] = val.clone();
+        // `locals_sym` is the pre-interned twin of `locals` (empty only for a
+        // hand-built chunk that never ran `compute_locals_sym`); reading the
+        // seed values through it saves one string intern per local per call.
+        if cf.code.locals_sym.len() == cf.code.locals.len() {
+            for (i, local_sym) in cf.code.locals_sym.iter().enumerate() {
+                if let Some(val) = self.env().get_sym(*local_sym) {
+                    self.locals[i] = val.clone();
+                }
+            }
+        } else {
+            for (i, local_name) in cf.code.locals.iter().enumerate() {
+                if let Some(val) = self.env().get(local_name) {
+                    self.locals[i] = val.clone();
+                }
             }
         }
         // A named sub's `state` scope is its REGISTRATION clone id (refreshed
@@ -672,14 +693,22 @@ impl Interpreter {
             // caller's error variable. Blocks are excluded: a bare block shares
             // its enclosing routine's `$!` and a `CATCH` writes it there.
             let bang_is_callee_private = cf.code.is_routine;
+            // Integer compares against the pre-interned keys: a `Symbol ==
+            // &str` compare resolves the symbol through the thread-local
+            // string cache first, and this loop asked that question four
+            // times per key of a (flattened, whole-scope) callee env.
+            let topic_sym = crate::symbol::wk::topic();
+            let positional_slurpy_sym = crate::symbol::wk::positional_slurpy();
+            let named_slurpy_sym = crate::symbol::wk::named_slurpy();
+            let callable_id_sym = crate::symbol::wk::callable_id();
             for (k, v) in self.env().iter() {
-                if *k == "_" || *k == "@_" || *k == "%_" {
+                if *k == topic_sym || *k == positional_slurpy_sym || *k == named_slurpy_sym {
                     continue;
                 }
                 // __mutsu_callable_id must not leak from callee back to
                 // caller; it identifies the current routine scope for
                 // non-local return targeting.
-                if *k == "__mutsu_callable_id" {
+                if *k == callable_id_sym {
                     continue;
                 }
                 // One memoized byte answers both string predicates this loop
