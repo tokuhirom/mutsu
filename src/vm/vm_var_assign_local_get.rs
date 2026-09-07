@@ -503,13 +503,25 @@ impl Interpreter {
     /// writes surfaced one block late (`t/container-capture-cell-dichotomy.t`
     /// 21-22). A `my` is a fresh binding; a fresh cell is what that means here.
     ///
-    /// The typed-container refusal below applies to this trigger too. Lifting it
-    /// was tried and measured wrong: `my %h is BagHash = a => 1, b => 0, c => 2`
-    /// initialised to ONE key instead of two, because the declaration's store no
-    /// longer reached the assignment chokepoint that applies the container type
-    /// (`roast/S02-types/baghash.t`, `mixhash.t`). A typed container therefore
-    /// stays unboxed, and stays hijackable — the same shape of residue as the
-    /// thread-escaping one.
+    /// A TYPED container used to be refused the cell here, so it stayed
+    /// hijackable — `my Int @a` lost to a same-named caller array where the
+    /// untyped `my @a` did not. The refusal was written for the CONTAINER type
+    /// traits (`my %h is BagHash = a => 1, b => 0, c => 2`), whose declaration
+    /// store really does have to keep flowing through the assignment chokepoint
+    /// that coerces the QuantHash: celling them dropped the initialiser and
+    /// `%h` came out with one key instead of two (`roast/S02-types/baghash.t`,
+    /// `mixhash.t`).
+    ///
+    /// But those traits never reached this check at all. `is BagHash` is
+    /// invisible to `var_type_constraint` — which is exactly why
+    /// `CompiledCode::compute_free_vars` carries its own `ApplyVarTrait` name
+    /// scan, subtracting those names from `needs_cell_unvouched_containers`
+    /// before this function is ever called. The check therefore only ever
+    /// caught the ELEMENT-constraint case (`my Int @a`, `my Str %h`), which
+    /// ADR-0042 made a property of the container: a write reaching the array
+    /// through its cell still re-checks it, so it survives the cell intact.
+    /// Deleting the check leaves all six QuantHash roast files green and is
+    /// pinned by `t/typed-container-capture-cell.t`.
     pub(crate) fn box_decl_local_container_cell(
         &mut self,
         code: &CompiledCode,
@@ -528,16 +540,6 @@ impl Interpreter {
             return;
         }
         let name = code.locals[idx].clone();
-        // Typed containers must keep flowing through the assignment chokepoint.
-        if loan_env!(self, var_type_constraint(&name)).is_some()
-            || loan_env!(
-                self,
-                var_type_constraint(name.trim_start_matches(['@', '%']))
-            )
-            .is_some()
-        {
-            return;
-        }
         let container = cur.into_container_ref();
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());

@@ -124,13 +124,16 @@ plan 23;
 }
 
 # ---------------------------------------------------------------------------
-# 12-13. The other write shape the vouch refuses, and the bound the typed
-# containers keep. A TYPED `@`/`%` deliberately does NOT take the cell: its
-# declaration's store has to keep flowing through the assignment chokepoint that
-# applies the container type, and boxing it made `my %h is BagHash = a => 1,
-# b => 0, c => 2` initialise to one key instead of two. 13 therefore pins the
-# type behaviour, not the binding -- the typed container stays hijackable, the
-# same shape of residue as a thread-escaping one.
+# 12-13. The other write shape the vouch refuses, and the typed containers,
+# which take the cell like everything else. An ELEMENT-typed `@`/`%` used to be
+# refused it -- it shared one check with the CONTAINER type traits
+# (`my %h is BagHash`), whose declaration store really does have to keep flowing
+# through the assignment chokepoint that coerces the QuantHash. But those never
+# reached that check at all (`is BagHash` is invisible to `var_type_constraint`;
+# `compute_free_vars` carries a separate `ApplyVarTrait` name scan for them), so
+# the refusal only ever cost the element-constraint case, which ADR-0042 made a
+# property of the container and which therefore survives the cell. 13 pins BOTH
+# halves: the binding, and the type behaviour it must not cost.
 # ---------------------------------------------------------------------------
 {
     my @a = 1, 2;
@@ -143,6 +146,7 @@ plan 23;
     my Int @a = 1, 2;
     @a.push(3);
     my $f = -> { @a.elems };
+    sub collide-typed() { my Int @a = 9; $f.() }
     my $err = 'no-error';
     try {
         @a.push("not an Int");
@@ -152,8 +156,8 @@ plan 23;
     # the whole frame (same-named `my` locals share one slot), so calling this
     # `%h` would opt tests 2 and 4 out of the cell as well.
     my %bag is BagHash = a => 1, b => 0, c => 2;
-    is "{$f.()}/{@a.WHAT.^name}/$err/{%bag.elems}", '3/Array[Int]/died/2',
-        'a typed container is left unboxed, keeps its element check and its container type';
+    is "{collide-typed()}/{@a.WHAT.^name}/$err/{%bag.elems}", '3/Array[Int]/died/2',
+        'a typed container takes the cell, keeping its element check and its container type';
 }
 
 # ---------------------------------------------------------------------------
