@@ -250,6 +250,45 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::classhow_mro_names`] with the purely-`does`-composed roles
+    /// dropped — what `.^mro` itself answers.
+    ///
+    /// mutsu keeps composed roles in a class's `parents`, because that list IS
+    /// the method-resolution walk: a role's methods are found by walking it.
+    /// Rakudo composes them INTO the class instead, so its MRO does not need
+    /// them and does not list them — `class K does R2 {}` gives `K, Any, Mu`
+    /// there, and the roles are reachable only through the `:roles` adverb
+    /// (`K.^mro(:roles)` is `K, R2, Any, Mu`, which is exactly what mutsu's
+    /// plain `.^mro` was returning). So this is not a filter that makes
+    /// introspection disagree with dispatch behind rakudo's back: the split is
+    /// rakudo's own, and the adverb is how it exposes the other half.
+    ///
+    /// An `is Role` PUN stays, in rakudo and here: `class C is R {}` is
+    /// `C, R, Any, Mu` in both. Only the pure-`does` compositions are dropped,
+    /// which is precisely what `class_does_only_roles` records — the same
+    /// source [`Self::classhow_mro_unhidden_names`] has always used for the
+    /// same distinction.
+    pub(super) fn classhow_mro_names_without_does_roles(
+        &mut self,
+        invocant: &Value,
+    ) -> Vec<String> {
+        let mro = self.classhow_mro_names(invocant);
+        let mut composed: HashSet<String> = HashSet::new();
+        for cls in &mro {
+            if let Some(roles) = self.registry().class_does_only_roles.get(cls) {
+                for r in roles {
+                    composed.insert(r.clone());
+                }
+            }
+        }
+        if composed.is_empty() {
+            return mro;
+        }
+        mro.into_iter()
+            .filter(|name| !composed.contains(name))
+            .collect()
+    }
+
     /// MRO without hidden classes (no roles)
     pub(super) fn classhow_mro_unhidden_names(&mut self, invocant: &Value) -> Vec<String> {
         let mro = self.classhow_mro_names(invocant);
