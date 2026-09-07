@@ -555,6 +555,11 @@ impl Compiler {
                 };
                 let lhs_is_literal = rhs_is_destructive && matches!(left, Expr::Literal(_));
                 let rhs_pure_regex = Self::rhs_is_plain_regex_literal(right);
+                // A BARE `$_` RHS reads the ENCLOSING topic, not the LHS the
+                // op is about to topicalize. See the opcode field's doc: the
+                // test is on the written shape, so `($_)` is deliberately not
+                // matched here — rakudo answers differently for it.
+                let rhs_is_bare_topic = matches!(right, Expr::Var(n) if n == "_");
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
@@ -563,6 +568,7 @@ impl Compiler {
                     rhs_is_match_regex,
                     lhs_is_literal,
                     rhs_pure_regex,
+                    rhs_is_bare_topic,
                 });
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS
@@ -923,6 +929,9 @@ impl Compiler {
             rhs_is_match_regex: false,
             lhs_is_literal: false,
             rhs_pure_regex: false,
+            // This desugar only runs for a DESTRUCTIVE RHS (`s///` / `tr///`),
+            // which is never a bare `$_`.
+            rhs_is_bare_topic: false,
         });
         self.compile_expr(right);
         self.code.patch_smart_match_rhs_end(sm_idx);

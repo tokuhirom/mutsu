@@ -1209,6 +1209,14 @@ pub(crate) enum OpCode {
         /// `pending_local_updates` / `$/`-as-local). Excludes RegexWithAdverbs,
         /// named/Sub regex, substitution, transliteration, value smartmatch.
         rhs_pure_regex: bool,
+        /// True when the RHS is written as a BARE `$_`. The RHS of a smartmatch
+        /// normally runs with `$_` already bound to the LHS (`$x ~~ s///` has to
+        /// topicalize `$x`), which would make `"ab" ~~ $_` evaluate `"ab" ~~
+        /// "ab"` and lose the `Match` the topic's regex should have produced.
+        /// Rakudo special-cases exactly this spelling — `("ab" ~~ ($_))` in
+        /// parentheses really does answer `True` there — so the check is on the
+        /// syntactic shape, not on whether the RHS happens to read the topic.
+        rhs_is_bare_topic: bool,
     },
     /// Scalarize a multi-match regex result: Nil -> 0, Positional -> elems, Match -> 1.
     ScalarizeRegexMatchResult,

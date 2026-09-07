@@ -792,6 +792,8 @@ impl Compiler {
             // LHS here is `$_`, a writable container.
             lhs_is_literal: false,
             rhs_pure_regex,
+            // The RHS is the regex constant, not the topic.
+            rhs_is_bare_topic: false,
         });
         // RHS: load the regex constant
         let idx = self.code.add_constant(v.clone());
