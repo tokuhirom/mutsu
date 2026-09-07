@@ -3036,6 +3036,22 @@ pub(crate) struct CompiledSubDeclPlan {
     /// next adapter slice preserves it while importing modules and installs
     /// through these keys directly.
     pub(crate) compiled_routine_keys: Vec<Symbol>,
+    /// The DECLARING frame's compile-time local slot for each free variable of
+    /// the compiled bodies, resolved from `Compiler::local_map` at the sub's
+    /// own textual emit point — the named-sub counterpart of
+    /// `CompiledCode::free_var_parent_slots` (which `add_closure_code_baked`
+    /// bakes for closures and which is never populated for a plan-derived
+    /// named sub).
+    ///
+    /// ADR-0024's capture needs this. Under shadow slots a name occupies a
+    /// distinct slot per declaring scope, all with the same string in
+    /// `code.locals`, so a runtime name search cannot tell them apart; the
+    /// original mainline-only implementation disambiguated by *liveness*
+    /// ("only one slot named `a` is initialized right now"), which holds at
+    /// mainline (no other block has run yet) but NOT inside a bare block,
+    /// where earlier sibling blocks have already run and left their own
+    /// same-named slots live. Empty when the plan compiled no bodies.
+    pub(crate) free_var_decl_slots: Vec<(Symbol, u32)>,
     pub(crate) multi: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
@@ -4432,6 +4448,20 @@ pub(crate) struct CompiledCode {
     /// slot's writes instead. With the gate off `alloc_local` get-or-creates by
     /// name, so names are unique and this is all-false (byte-identical).
     pub(crate) dup_named_locals: Vec<bool>,
+    /// Slots that MORE THAN ONE declaring scope of this compiled unit `my`-declares.
+    ///
+    /// The shadow-slot allocator mints a fresh slot only for a *genuine* shadow
+    /// — a name already declared by an ACTIVE ANCESTOR scope. Two SIBLING
+    /// blocks that each declare `my $a` deliberately share one slot
+    /// (`declare_local`'s "a name left in the monotonic `local_map` by an
+    /// already-popped sibling block" case), because nothing observes both at
+    /// once through the slot. Something does now: ADR-0024's block-scope
+    /// capture boxes the declaring scope's slot into a shared cell, and boxing
+    /// a slot two sibling scopes take turns owning fuses their two independent
+    /// bindings into one. Such a slot is recorded here at declaration time so
+    /// that capture can decline it (`roast/S02-names-vars/variables-and-packages.t`,
+    /// three sibling blocks each declaring `my $a` plus a sub over it).
+    pub(crate) multi_scope_slots: std::collections::HashSet<u32>,
     /// Names `my`-declared (or `constant`-declared) in THIS code's body — the
     /// block's own fresh lexical bindings. The closure-exit caller-writeback
     /// scan must not propagate them to a same-named caller lexical: with the
@@ -5295,6 +5325,7 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
+            multi_scope_slots: std::collections::HashSet::new(),
             is_supply_block_body: false,
             eval_context_target_callable_id: None,
             supply_emitter_sym: None,
@@ -8025,6 +8056,7 @@ impl CompiledCode {
             signature_alternates: signature_alternates.clone(),
             alternate_metadata,
             compiled_routine_keys: Vec::new(),
+            free_var_decl_slots: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
             is_raw: *is_raw,
@@ -8132,6 +8164,20 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].compiled_routine_keys = keys;
+    }
+
+    /// Companion of [`Self::set_sub_decl_compiled_routine_keys`] for the
+    /// declaring frame's slot bake (see `CompiledSubDeclPlan::free_var_decl_slots`).
+    pub(crate) fn set_sub_decl_free_var_decl_slots(
+        &mut self,
+        decl_idx: u32,
+        slots: Vec<(Symbol, u32)>,
+    ) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].free_var_decl_slots = slots;
     }
 
     #[allow(clippy::too_many_arguments)]

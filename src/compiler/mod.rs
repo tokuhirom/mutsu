@@ -1935,6 +1935,41 @@ impl Compiler {
     /// (§1.3 closure-capture slot bake). Scalar free vars are stored sigil-less
     /// ("x") and `@`/`%`/`&` keep their sigil — the same convention `local_map`
     /// uses, so a direct lookup lines up.
+    /// Resolve each free variable of `keys`' compiled bodies against this
+    /// frame's `local_map` as it stands at the sub declaration's own emit
+    /// point. See `CompiledSubDeclPlan::free_var_decl_slots` for why a runtime
+    /// name search over `code.locals` cannot answer this.
+    ///
+    /// Both the read set (`free_var_syms`) and the write-only set
+    /// (`free_var_writes`) are covered — a setter's target never appears in the
+    /// former, exactly as ADR-0024's capture loop already unions them.
+    pub(super) fn bake_sub_decl_free_var_slots(
+        &self,
+        keys: &[crate::symbol::Symbol],
+    ) -> Vec<(crate::symbol::Symbol, u32)> {
+        let mut out: Vec<(crate::symbol::Symbol, u32)> = Vec::new();
+        for key in keys {
+            let Some(cf) = self.compiled_functions.get(key) else {
+                continue;
+            };
+            let syms = cf
+                .code
+                .free_var_syms
+                .iter()
+                .chain(cf.code.free_var_writes.iter())
+                .copied();
+            for sym in syms {
+                if out.iter().any(|(s, _)| *s == sym) {
+                    continue;
+                }
+                if let Some(slot) = sym.with_str(|s| self.local_map.get(s).copied()) {
+                    out.push((sym, slot));
+                }
+            }
+        }
+        out
+    }
+
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
         compiled.free_var_parent_slots = compiled
             .free_var_syms
@@ -2177,6 +2212,12 @@ impl Compiler {
         } else {
             self.alloc_local(name)
         };
+        // A slot reached by a second declaring scope is one two independent
+        // bindings take turns owning. Record it so ADR-0024's block-scope
+        // capture declines to box it — see `CompiledCode::multi_scope_slots`.
+        if !is_ancestor_shadow && prev == Some(slot) {
+            self.code.multi_scope_slots.insert(slot);
+        }
         if let Some(frame) = self.local_scopes.last_mut() {
             // Only a genuine ancestor shadow needs the outer slot restored on exit.
             frame.insert(

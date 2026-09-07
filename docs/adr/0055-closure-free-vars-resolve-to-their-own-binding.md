@@ -583,15 +583,34 @@ to confirm it (both still diverge from `raku` on this branch):
 - `todo/deep/sigilless-alias-closure-capture-skips-typecheck.md` — a `:=`-bound
   alias stops aliasing when the write happens inside a *stored* closure. Not a
   merge-policy or cell-population problem: the alias identity itself is lost.
-- `todo/deep/free-var-lexical-resolution-inside-a-bare-block.md` — the residue of
-  what used to be filed here as "a callee's free variable resolves through the
-  dynamic caller chain". Re-measured 2026-09-06/07: free-variable *reads* and
-  *writes* are already lexical at every nesting depth; what diverged was a `:=`
-  bind carrying its shared cell into an intervening caller's env tier by name.
-  For a compunit/mainline file-scope lexical that is fixed (ADR-0024's
-  `unit_lexicals` store is the lexical answer for those names, and the bind now
-  rebinds there instead of writing `env` —
-  `news/2026-09/free-var-bind-aliased-caller-lexical.md`). For a lexical declared
-  in a *bare block* there is no such store, so the same two by-name routes still
-  reach a shadowing caller; closing that IS the env-model change (a routine's env
-  parent should be its lexical scope, not its caller) and still needs its own ADR.
+- `news/2026-09/free-var-lexical-resolution-inside-a-bare-block.md` — CLOSED
+  2026-09-07; see §7.8, which corrects this bullet.
+
+### 7.8 The bare-block free-variable residue did NOT need the env-model change (2026-09-07)
+
+§7.5's second bullet routed the bare-block residue at "the env-model change (a
+routine's env parent should be its lexical scope, not its caller)" and said it
+still needed its own ADR. Re-measurement against `raku v2026.07` closed it
+without one, and corrected two of the bullet's own premises:
+
+1. **"Free-variable reads and writes are already lexical at every nesting
+   depth."** True only for the shape that had been probed (a `$` read shadowed by
+   a *routine*). In a bare block a `$` **write** diverged, an `@`/`%` **read**
+   diverged, and even the `$` read diverged once the shadowing caller was a
+   **block**. The residue was therefore wider than "a `:=` bind", not narrower.
+2. **"Closing that IS the env-model change."** No. The residue's own
+   "smaller step first" paragraph — extend ADR-0024's capture to block-scope
+   named subs with a per-block bucket — covers the entire measured surface
+   (20 shapes, `$`/`@`/`%`, read/write/`:=`, routine and block shadowers, both
+   bind spellings), with a dynamic-variable control that keeps caller priority
+   and no change to how envs are parented. `mainline_lexical_subs` is now a map
+   from sub name to `unit_lexicals` bucket; `active_unit_lexical_bucket()`
+   generalises `mainline_lexical_frame_active()`.
+
+Nothing in §1-§6 moves: no merge policy was touched, and none of the three merges
+§7.6 counts is on this path. The env-model change ADR-0055 §7.5 imagined remains
+unspecified and, on this evidence, unmotivated by *this* family.
+
+Write-up and pin: `news/2026-09/free-var-lexical-resolution-inside-a-bare-block.md`,
+`t/free-var-in-bare-block-lexical-scope.t` (43 assertions, 12 of which failed
+before).
