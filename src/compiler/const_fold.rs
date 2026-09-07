@@ -100,6 +100,14 @@ impl FoldCtx {
         self.saw_operator_decl.store(true, Ordering::Relaxed);
     }
 
+    /// Record that a fold was relied upon. Call sites that consult
+    /// [`Compiler::const_operand`] outside `try_const_fold_*` (the
+    /// literal-argument mask for native multi dispatch) must flag it here, or a
+    /// user operator declared *after* them would not trigger the refold pass.
+    pub(crate) fn note_folded(&self) {
+        self.folded.store(true, Ordering::Relaxed);
+    }
+
     /// True when something was folded *and* an operator declaration turned up:
     /// the unit must be recompiled with folding off.
     pub(crate) fn needs_refold_pass(&self) -> bool {
@@ -114,7 +122,11 @@ pub(crate) fn declares_operator(name: &str) -> bool {
 
 impl Compiler {
     /// True when this unit may fold. Cheap enough to call per binary expression.
-    fn const_fold_enabled(&self) -> bool {
+    ///
+    /// Note that [`Compiler::const_operand`] itself does NOT consult this --
+    /// its `try_const_fold_*` callers do -- so any other consumer must gate on
+    /// this first.
+    pub(super) fn const_fold_enabled(&self) -> bool {
         self.fold_ctx.enabled.load(Ordering::Relaxed)
             && !self.fold_ctx.saw_operator_decl.load(Ordering::Relaxed)
             // Any user operator registered anywhere in the process (a module

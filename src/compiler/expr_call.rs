@@ -317,7 +317,7 @@ impl Compiler {
                 name_idx,
                 arity: args.len() as u32,
                 arg_sources_idx,
-                literal_native_args: Self::literal_native_args_mask(args),
+                literal_native_args: self.literal_native_args_mask(args),
             });
             return;
         }
@@ -1455,7 +1455,7 @@ impl Compiler {
                 name_idx,
                 arity,
                 arg_sources_idx,
-                literal_native_args: Self::literal_native_args_mask(&rewritten_args),
+                literal_native_args: self.literal_native_args_mask(&rewritten_args),
             });
         }
         // Rewrite cas($target, $expected, $new)
@@ -1585,7 +1585,7 @@ impl Compiler {
                         name_idx,
                         arity,
                         arg_sources_idx,
-                        literal_native_args: Self::literal_native_args_mask(args),
+                        literal_native_args: self.literal_native_args_mask(args),
                     });
                 }
             }
@@ -1730,7 +1730,7 @@ impl Compiler {
                     name_idx,
                     arity,
                     arg_sources_idx,
-                    literal_native_args: Self::literal_native_args_mask(args),
+                    literal_native_args: self.literal_native_args_mask(args),
                 });
             }
         } else {
@@ -1781,7 +1781,7 @@ impl Compiler {
                     name_idx,
                     arity: args.len() as u32,
                     arg_sources_idx,
-                    literal_native_args: Self::literal_native_args_mask(args),
+                    literal_native_args: self.literal_native_args_mask(args),
                 });
             } else {
                 let arity = args.len() as u32;
@@ -1883,7 +1883,7 @@ impl Compiler {
                         // one-for-one. The `CallFuncNamed` branch below leaves
                         // the mask at 0 -- named values travel out-of-band, so
                         // an `args` index is not a stack position there.
-                        literal_native_args: Self::literal_native_args_mask(args),
+                        literal_native_args: self.literal_native_args_mask(args),
                     });
                 } else {
                     let spec_idx = self.code.add_named_arg_spec(crate::opcode::NamedArgsSpec {
