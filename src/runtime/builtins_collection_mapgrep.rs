@@ -108,11 +108,6 @@ impl Interpreter {
             // `return` must not run until the Seq is forced. A `...` stub
             // goes through `SeqSource::MapGrep` like everything else — see
             // the comment there.
-            if let Some(ValueView::Sub(sub_data)) = func.as_ref().map(Value::view)
-                && Self::body_contains_return(&sub_data.body)
-            {
-                return Ok(self.create_lazy_map_list(list_items, &sub_data));
-            }
             // ADR-0058 step 3: the listop `map &f, @xs` form defers exactly as
             // the method form does — the callback runs when something consumes
             // the Seq, not here. Without this the listop answered a `List`
