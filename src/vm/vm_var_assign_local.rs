@@ -744,7 +744,6 @@ impl Interpreter {
         val: Value,
     ) -> Result<Value, RuntimeError> {
         use crate::runtime::native_types;
-        use num_bigint::BigInt as NumBigInt;
         use num_traits::ToPrimitive;
 
         let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
@@ -800,17 +799,16 @@ impl Interpreter {
             if let ValueView::Int(n) = val.view()
                 && n < 0
             {
-                let big_val = NumBigInt::from(n);
-                let wrapped = native_types::wrap_native_int(base, &big_val);
-                return Ok(wrapped
-                    .to_i64()
-                    .map(Value::int)
-                    .unwrap_or_else(|| Value::bigint(wrapped)));
+                return Ok(native_types::wrap_native_int_value(base, n).unwrap_or(val));
             }
             return Ok(val);
         }
         let big_val = match val.view() {
-            ValueView::Int(n) => NumBigInt::from(n),
+            // The common case, machine arithmetic and no allocation: in range
+            // is the identity, out of range wraps.
+            ValueView::Int(n) => {
+                return Ok(native_types::wrap_native_int_value(base, n).unwrap_or(val));
+            }
             ValueView::BigInt(n) => (**n).clone(),
             _ => return Ok(val),
         };

@@ -6,7 +6,7 @@ impl Interpreter {
         compiled_fns: &'a CompiledFns,
         name: &str,
         args: &[Value],
-    ) -> Option<&'a CompiledFunction> {
+    ) -> Option<&'a Arc<CompiledFunction>> {
         // Pseudo-package names need interpreter's special resolution
         if self.is_interpreter_handled_function(name) {
             return None;
@@ -27,7 +27,7 @@ impl Interpreter {
         compiled_fns: &'a CompiledFns,
         name: &str,
         args: &[Value],
-    ) -> Option<&'a CompiledFunction> {
+    ) -> Option<&'a Arc<CompiledFunction>> {
         let arity = args.len();
         let name_sym = Symbol::intern(name);
         // Build a type signature for cache key to handle multi dispatch correctly

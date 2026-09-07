@@ -1412,6 +1412,22 @@ pub(crate) enum OpCode {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
+        /// Bitmask of argument positions written as a LITERAL, one bit per
+        /// position (bit 0 = first argument; positions past 31 are never
+        /// marked). A literal has no source variable, so
+        /// `unwrap_varref_for_dispatch` finds no `var_type` for it and multi
+        /// dispatch ranked the boxed candidate at distance 0 — `multi d(int)`
+        /// / `multi d(Int)` called as `d(5)` answered `Int` where rakudo
+        /// answers `int`. Literal-ness is a compile-time fact about the call
+        /// SITE (rakudo agrees: `"7".Int` is an in-range boxed `Int` at
+        /// runtime and correctly picks `Int`), so it has to be baked here.
+        /// A plain `u32` rather than a fifth `arg_sources` entry shape: the
+        /// arg-sources constant is elided whenever every position is `NIL`,
+        /// which is nearly every call site, so marking literals there would
+        /// materialize it — and pay its per-call decode — crate-wide, to serve
+        /// a ranking step that only runs when a `multi` declares both a native
+        /// and a boxed candidate.
+        literal_native_args: u32,
     },
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
@@ -1424,6 +1440,22 @@ pub(crate) enum OpCode {
         arity: u32,
         spec_idx: u32,
         arg_sources_idx: Option<u32>,
+        /// Bitmask of argument positions written as a LITERAL, one bit per
+        /// position (bit 0 = first argument; positions past 31 are never
+        /// marked). A literal has no source variable, so
+        /// `unwrap_varref_for_dispatch` finds no `var_type` for it and multi
+        /// dispatch ranked the boxed candidate at distance 0 — `multi d(int)`
+        /// / `multi d(Int)` called as `d(5)` answered `Int` where rakudo
+        /// answers `int`. Literal-ness is a compile-time fact about the call
+        /// SITE (rakudo agrees: `"7".Int` is an in-range boxed `Int` at
+        /// runtime and correctly picks `Int`), so it has to be baked here.
+        /// A plain `u32` rather than a fifth `arg_sources` entry shape: the
+        /// arg-sources constant is elided whenever every position is `NIL`,
+        /// which is nearly every call site, so marking literals there would
+        /// materialize it — and pay its per-call decode — crate-wide, to serve
+        /// a ranking step that only runs when a `multi` declares both a native
+        /// and a boxed candidate.
+        literal_native_args: u32,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
@@ -3013,6 +3045,22 @@ pub(crate) struct CompiledSubDeclPlan {
     /// next adapter slice preserves it while importing modules and installs
     /// through these keys directly.
     pub(crate) compiled_routine_keys: Vec<Symbol>,
+    /// The DECLARING frame's compile-time local slot for each free variable of
+    /// the compiled bodies, resolved from `Compiler::local_map` at the sub's
+    /// own textual emit point — the named-sub counterpart of
+    /// `CompiledCode::free_var_parent_slots` (which `add_closure_code_baked`
+    /// bakes for closures and which is never populated for a plan-derived
+    /// named sub).
+    ///
+    /// ADR-0024's capture needs this. Under shadow slots a name occupies a
+    /// distinct slot per declaring scope, all with the same string in
+    /// `code.locals`, so a runtime name search cannot tell them apart; the
+    /// original mainline-only implementation disambiguated by *liveness*
+    /// ("only one slot named `a` is initialized right now"), which holds at
+    /// mainline (no other block has run yet) but NOT inside a bare block,
+    /// where earlier sibling blocks have already run and left their own
+    /// same-named slots live. Empty when the plan compiled no bodies.
+    pub(crate) free_var_decl_slots: Vec<(Symbol, u32)>,
     pub(crate) multi: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
@@ -4409,6 +4457,20 @@ pub(crate) struct CompiledCode {
     /// slot's writes instead. With the gate off `alloc_local` get-or-creates by
     /// name, so names are unique and this is all-false (byte-identical).
     pub(crate) dup_named_locals: Vec<bool>,
+    /// Slots that MORE THAN ONE declaring scope of this compiled unit `my`-declares.
+    ///
+    /// The shadow-slot allocator mints a fresh slot only for a *genuine* shadow
+    /// — a name already declared by an ACTIVE ANCESTOR scope. Two SIBLING
+    /// blocks that each declare `my $a` deliberately share one slot
+    /// (`declare_local`'s "a name left in the monotonic `local_map` by an
+    /// already-popped sibling block" case), because nothing observes both at
+    /// once through the slot. Something does now: ADR-0024's block-scope
+    /// capture boxes the declaring scope's slot into a shared cell, and boxing
+    /// a slot two sibling scopes take turns owning fuses their two independent
+    /// bindings into one. Such a slot is recorded here at declaration time so
+    /// that capture can decline it (`roast/S02-names-vars/variables-and-packages.t`,
+    /// three sibling blocks each declaring `my $a` plus a sub over it).
+    pub(crate) multi_scope_slots: std::collections::HashSet<u32>,
     /// Names `my`-declared (or `constant`-declared) in THIS code's body — the
     /// block's own fresh lexical bindings. The closure-exit caller-writeback
     /// scan must not propagate them to a same-named caller lexical: with the
@@ -4940,7 +5002,8 @@ pub(crate) struct CallIcSlot {
     /// 0 = empty; otherwise the `pos_light_ic_epoch` this entry was filled at.
     pub(crate) epoch: u64,
     pub(crate) fns_id: u64,
-    /// `*const CompiledFunction` into the table identified by `fns_id`.
+    /// `*const Arc<CompiledFunction>` -- the address of the value slot in the
+    /// table identified by `fns_id`.
     pub(crate) target: usize,
     /// `Symbol::id()` of the callee name this entry resolved.
     pub(crate) name: u32,
@@ -5271,6 +5334,7 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
+            multi_scope_slots: std::collections::HashSet::new(),
             is_supply_block_body: false,
             eval_context_target_callable_id: None,
             supply_emitter_sym: None,
@@ -8001,6 +8065,7 @@ impl CompiledCode {
             signature_alternates: signature_alternates.clone(),
             alternate_metadata,
             compiled_routine_keys: Vec::new(),
+            free_var_decl_slots: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
             is_raw: *is_raw,
@@ -8108,6 +8173,20 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].compiled_routine_keys = keys;
+    }
+
+    /// Companion of [`Self::set_sub_decl_compiled_routine_keys`] for the
+    /// declaring frame's slot bake (see `CompiledSubDeclPlan::free_var_decl_slots`).
+    pub(crate) fn set_sub_decl_free_var_decl_slots(
+        &mut self,
+        decl_idx: u32,
+        slots: Vec<(Symbol, u32)>,
+    ) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].free_var_decl_slots = slots;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -8271,7 +8350,11 @@ impl CompiledCode {
 /// allocation). The slow resolution path probes candidate keys via
 /// `Symbol::lookup` (no interning of names that turn out not to exist), so a
 /// missed probe never grows the global symbol table.
-pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, CompiledFunction>;
+/// Values are `Arc`-shared so a running call can hold its own routine's
+/// definition (the on-demand `callframe().code` object, `CodeFrame::Lazy`)
+/// without deep-cloning the signature vectors on every entry, and so a table
+/// clone is a refcount bump per entry rather than a copy of every body.
+pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, Arc<CompiledFunction>>;
 
 /// The table itself, wrapped so that it carries a **version token** (`id`).
 ///
@@ -8313,18 +8396,30 @@ impl CompiledFns {
 
     pub(crate) fn insert(&mut self, key: crate::symbol::Symbol, value: CompiledFunction) {
         self.id = Self::next_id();
+        self.map.insert(key, Arc::new(value));
+    }
+
+    /// Insert a body another table already owns, sharing it instead of
+    /// copying it (an imported module's routines are installed in both the
+    /// importer's table and the per-import table).
+    pub(crate) fn insert_shared(
+        &mut self,
+        key: crate::symbol::Symbol,
+        value: Arc<CompiledFunction>,
+    ) {
+        self.id = Self::next_id();
         self.map.insert(key, value);
     }
 
     pub(crate) fn retain(
         &mut self,
-        f: impl FnMut(&crate::symbol::Symbol, &mut CompiledFunction) -> bool,
+        mut f: impl FnMut(&crate::symbol::Symbol, &CompiledFunction) -> bool,
     ) {
         self.id = Self::next_id();
-        self.map.retain(f);
+        self.map.retain(|key, value| f(key, value));
     }
 
-    pub(crate) fn into_values(self) -> impl Iterator<Item = CompiledFunction> {
+    pub(crate) fn into_values(self) -> impl Iterator<Item = Arc<CompiledFunction>> {
         self.map.into_values()
     }
 }
@@ -8357,7 +8452,10 @@ impl FromIterator<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
     fn from_iter<T: IntoIterator<Item = (crate::symbol::Symbol, CompiledFunction)>>(
         iter: T,
     ) -> Self {
-        let map: CompiledFnMap = iter.into_iter().collect();
+        let map: CompiledFnMap = iter
+            .into_iter()
+            .map(|(key, value)| (key, Arc::new(value)))
+            .collect();
         let id = if map.is_empty() { 0 } else { Self::next_id() };
         Self { map, id }
     }
@@ -8369,12 +8467,13 @@ impl Extend<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
         iter: T,
     ) {
         self.id = Self::next_id();
-        self.map.extend(iter);
+        self.map
+            .extend(iter.into_iter().map(|(key, value)| (key, Arc::new(value))));
     }
 }
 
 impl IntoIterator for CompiledFns {
-    type Item = (crate::symbol::Symbol, CompiledFunction);
+    type Item = (crate::symbol::Symbol, Arc<CompiledFunction>);
     type IntoIter = <CompiledFnMap as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
@@ -8382,7 +8481,7 @@ impl IntoIterator for CompiledFns {
 }
 
 impl<'a> IntoIterator for &'a CompiledFns {
-    type Item = (&'a crate::symbol::Symbol, &'a CompiledFunction);
+    type Item = (&'a crate::symbol::Symbol, &'a Arc<CompiledFunction>);
     type IntoIter = <&'a CompiledFnMap as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         self.map.iter()

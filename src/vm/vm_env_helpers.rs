@@ -552,19 +552,31 @@ impl Interpreter {
     /// the marked sub keeps reading its own captured (shadowed) binding
     /// (ADR-0024 row "adv" — raku-verified `inner`, not the mainline `outer`).
     pub(super) fn mainline_lexical_frame_active(&self) -> bool {
-        if self
-            .unit_lexicals
-            .get(crate::runtime::MAINLINE_UNIT_KEY)
-            .is_none_or(|m| m.is_empty())
-        {
-            return false;
+        self.active_unit_lexical_bucket().is_some()
+    }
+
+    /// The `unit_lexicals` bucket the running routine's own captured free
+    /// variables live in, or `None` when the running routine captured none.
+    ///
+    /// This is the generalized form of [`Self::mainline_lexical_frame_active`]:
+    /// a sub declared at mainline answers `UNIT<mainline>`, a sub declared
+    /// inside a bare block answers its own `UNIT<block ...>` bucket. The frame
+    /// discipline is identical (and deliberately last-frame-only, see above) —
+    /// only *which* bucket holds the cells differs, because mainline is one
+    /// scope while sibling blocks are many.
+    pub(super) fn active_unit_lexical_bucket(&self) -> Option<&str> {
+        if self.mainline_lexical_subs.is_empty() {
+            return None;
         }
-        let Some(frame) = self.routine_stack().last() else {
-            return false;
-        };
-        !frame.is_block
-            && frame.package == "GLOBAL"
-            && self.mainline_lexical_subs.contains(frame.name.as_str())
+        let frame = self.routine_stack().last()?;
+        if frame.is_block || frame.package != "GLOBAL" {
+            return None;
+        }
+        let key = self.mainline_lexical_subs.get(frame.name.as_str())?;
+        if self.unit_lexicals.get(key).is_none_or(|m| m.is_empty()) {
+            return None;
+        }
+        Some(key.as_str())
     }
 
     /// The store entry `name` names from the frame that is running, or `None`.
@@ -599,11 +611,8 @@ impl Interpreter {
         // package IS `GLOBAL` for a mainline sub, so those candidates would
         // never reach a mainline capture on their own.
         if !qualified
-            && self.mainline_lexical_frame_active()
-            && let Some(found) = self
-                .unit_lexicals
-                .get(crate::runtime::MAINLINE_UNIT_KEY)
-                .and_then(|m| m.get(name))
+            && let Some(bucket) = self.active_unit_lexical_bucket()
+            && let Some(found) = self.unit_lexicals.get(bucket).and_then(|m| m.get(name))
         {
             crate::vm::vm_stats::record_mainline_lexical_hit();
             return Some(found);
@@ -667,17 +676,22 @@ impl Interpreter {
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
         let qualified = crate::runtime::utils::has_double_colon(name);
-        let mainline_active = !qualified && self.mainline_lexical_frame_active();
-        if mainline_active
-            && self
-                .unit_lexicals
-                .get(crate::runtime::MAINLINE_UNIT_KEY)
-                .is_some_and(|m| m.contains_key(name))
-        {
+        let own_bucket: Option<String> = if qualified {
+            None
+        } else {
+            self.active_unit_lexical_bucket()
+                .filter(|bucket| {
+                    self.unit_lexicals
+                        .get(*bucket)
+                        .is_some_and(|m| m.contains_key(name))
+                })
+                .map(str::to_string)
+        };
+        if let Some(bucket) = own_bucket {
             crate::vm::vm_stats::record_mainline_lexical_hit();
             return self
                 .unit_lexicals
-                .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
+                .get_mut(&bucket)
                 .and_then(|m| m.get_mut(name));
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
@@ -769,13 +783,11 @@ impl Interpreter {
     /// made inside a shadowing block, is the shadow's `my`, not the mainline
     /// lexical the cell already updated (ADR-0024 row 2a).
     pub(crate) fn is_mainline_lexical_write(&self, callee_name: &str, name: &str) -> bool {
-        if self.mainline_lexical_subs.is_empty()
-            || !self.mainline_lexical_subs.contains(callee_name)
-        {
+        let Some(bucket) = self.mainline_lexical_subs.get(callee_name) else {
             return false;
-        }
+        };
         self.unit_lexicals
-            .get(crate::runtime::MAINLINE_UNIT_KEY)
+            .get(bucket)
             .is_some_and(|m| m.contains_key(name))
     }
 
@@ -801,6 +813,22 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        // The RUNNING routine's own bucket is tried first. For a mainline sub
+        // that is `MAINLINE_UNIT_KEY` itself, so nothing changes; for a sub
+        // declared inside a bare block it is that sub's own bucket, which the
+        // unconditional mainline probe below cannot reach. The frame gate is
+        // required for the block case and only for it: sibling blocks are
+        // distinct scopes that may each declare the same name, so an
+        // unconditional scan across block buckets would fuse them.
+        if let Some(bucket) = self.active_unit_lexical_bucket()
+            && let Some(ValueView::ContainerRef(arc)) = self
+                .unit_lexicals
+                .get(bucket)
+                .and_then(|m| m.get(name))
+                .map(Value::view)
+        {
+            return Some(arc.clone());
+        }
         match self
             .unit_lexicals
             .get(crate::runtime::MAINLINE_UNIT_KEY)?

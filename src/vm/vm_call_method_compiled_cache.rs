@@ -22,6 +22,10 @@ const UNDEFINED_ARG_KEY: &str = "__mutsu_key_undefined";
 /// (`f($x)` with `my Int $x` vs `f(1, 2)` would both key as `[Int, Int]`), and
 /// the two calls have different arities and therefore different winners.
 const DECLARED_TYPE_KEY: &str = "__mutsu_key_declared_type";
+/// The literal-provenance twin of `DECLARED_TYPE_KEY`: a reserved marker so a
+/// literal argument's synthetic native type can never be mistaken for the
+/// value key of an extra argument.
+const LITERAL_NATIVE_KEY: &str = "__mutsu_key_literal_native";
 
 /// Cache-key marker introducing an enum VALUE argument's `(enum type, member)`
 /// pair. An enum member refines within one `value_type_name` -- `Less` and
@@ -74,7 +78,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
-        for raw in args {
+        for (pos_idx, raw) in args.iter().enumerate() {
             // A `VarRef` (a variable passed as an argument) dispatches on the
             // *source variable's declared type* as well as on the value's own
             // type: `unwrap_varref_for_dispatch` feeds that declared type into
@@ -99,7 +103,29 @@ impl Interpreter {
                     }
                     value.clone()
                 }
-                _ => raw.clone(),
+                _ => {
+                    // A LITERAL argument dispatches on the native type its
+                    // written shape implies, exactly as a `VarRef` dispatches
+                    // on its source variable's declared type (see
+                    // `unwrap_varref_for_dispatch_at`). It must therefore be
+                    // part of the key: without it `d("7".Int)` and `d(5)` --
+                    // the same `Int` value, different provenance, different
+                    // rakudo answer -- collide, and whichever ran first
+                    // decided for both.
+                    if pos_idx < 32
+                        && self.literal_native_args & (1 << pos_idx) != 0
+                        && let Some(nt) = match raw.view() {
+                            ValueView::Int(_) => Some("int"),
+                            ValueView::Num(_) => Some("num"),
+                            ValueView::Str(_) => Some("str"),
+                            _ => None,
+                        }
+                    {
+                        keys.push(crate::symbol::Symbol::intern(LITERAL_NATIVE_KEY));
+                        keys.push(crate::symbol::Symbol::intern(nt));
+                    }
+                    raw.clone()
+                }
             };
             let a = &a;
             let key = match a.view() {

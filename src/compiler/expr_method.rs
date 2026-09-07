@@ -121,6 +121,7 @@ impl Compiler {
                 name_idx: builtin_idx,
                 arity: 2,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
             return;
         }
@@ -152,6 +153,7 @@ impl Compiler {
                 name_idx: builtin_idx,
                 arity: 2,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
         }
     }

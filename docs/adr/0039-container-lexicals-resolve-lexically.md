@@ -13,10 +13,15 @@
   `news/2026-08/our-scalar-bare-name-resolves-to-the-package-cell.md`.
   Slice 2 (§4.2) is still next and still the end state. Its read side was
   re-implemented and re-measured on 2026-09-06 and **withdrawn a second time**;
-  §10 records the full re-measurement (which found §4.1's exclusion list already
+  §10 records that re-measurement (which found §4.1's exclusion list already
   free of divergences), the four defects the flip exposed, the one fix that
-  shipped on its own, and the enumerated reason the flip is blocked — the
-  *write/capture* lane, not §9's store lane.
+  shipped on its own, and the reason it was blocked then — the *write/capture*
+  lane, not §9's store lane. §11 measured that blocker closed. **Attempt 3
+  (2026-09-07) got much further and was withdrawn a third time**: it reached a
+  green `prove t/` AND a green full `make roast` with the flip on, and was
+  stopped by the bundled-library battery gate. §12 records what it measured, the
+  seven repairs it needed, and the one blocker left; the work item carries the
+  re-derivable detail.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
@@ -1012,3 +1017,74 @@ before being planned around — the same rule that caught this blocker. The work
 item now lives at
 `todo/deep/adr0039-slice2-container-reads-compile-to-a-slot.md`, with those
 defects carried forward and flagged as pre-`da8e94252` measurements.
+
+
+## 12. Attempt 3 (2026-09-07): seven repairs, `t/` and roast green, blocked by the battery gate
+
+The read flip was implemented a third time, restricted to **plain user lexicals**
+(`is_plain_user_lexical` on the sigiled name). It reached a fully green
+`prove t/` (3783 files) and a fully green local `make roast` (1436 files, 218962
+tests), and was withdrawn by the bundled-library battery gate — a required CI
+check that neither of those covers. Only the part that is independently
+observable shipped:
+`store_container_preserving_identity`'s Set/Bag/Mix arms (repair 5 below), pinned
+in `t/container-rebuild-preserves-identity.t`. The rest, with enough detail to be
+re-derived rather than re-measured, is in
+`todo/deep/adr0039-slice2-container-reads-compile-to-a-slot.md`.
+
+What belongs in the ADR:
+
+**Re-measuring §10 was decisive, and most of it had moved.** §11's blocker was
+gone as predicted and §10.2's defect 3 had shipped. Defects 1 and 2 still
+reproduced. Defect 4 reproduced with a *different* root cause. Both of §10.3's
+roast rows still reproduced and **both recorded diagnoses were wrong**:
+`S32-list/classify.t` is not "a bug in fix 3's own probe" but
+`store_container_preserving_identity` having no QuantHash arm, and
+`S03-metaops/hyper.t` does **not** need §10.5 point 3's baked `HyperMethodCall`
+target slot — writing the rebuilt array through the existing node fixes it and
+removes the slot search entirely. Against that, the naive flip's fallout had
+GROWN from §10.2's 8 `t/` files to **26**, in two families §10 never enumerated.
+
+**The `is_plain_user_lexical` restriction is not a safety margin, it is a
+requirement.** The by-name read's tail is load-bearing for non-plain names: its
+`None` arm supplies the empty container that makes `%_` read as `{}` on the fast
+method-dispatch path, and its cascade is the only route by which `%!attr`/`%.attr`
+reach `self`'s attribute cell and `@*dyn` / `%?RESOURCES` / `::`-qualified names
+resolve at all. Those shapes are not lexical bindings of the frame; slice 2 is
+about the ones that are. Any future widening must supply their behaviour first.
+
+**§8.4 point 2 is narrower than it predicted, and it is about the CELL.** That
+point expected the flip to cut the cross-thread store off from the reader. What
+was measured instead: `GetLocal`'s `@`/`%` arms consult the `__mutsu_atomic_*`
+lanes and the bare-name store *before* the slot, and when the slot holds the
+shared `ContainerRef` cell that `env` still names, that ordering is backwards —
+`get_env_with_main_alias` has always preferred the cell (its first act is
+`unit_scope_lexical`, before its `_inner`'s lane probe). Gating on "the slot's
+cell is still what `env` names" closed all 9 cross-thread `t/` files, and both
+neighbouring conditions were measured wrong: "any cell in the slot" breaks
+`roast/S32-io/IO-Socket-Async.t` 37, "the unit-lexical cell" excludes the case the
+gate exists for. §8.4 point 2's `pending_caller_var_writeback`-shaped drain was
+**not** needed.
+
+**The remaining blocker is the `@` half of that same cell story, in `gather`.**
+`shared_hash_elem_set` writes its merged hash through the binding's cell
+unconditionally; `shared_array_mutate` does so only on its non-`is_thread_clone`
+branch. A container appended to from inside a `gather`-driven frame therefore
+ends up in the atomic lane with the owner's cell left empty — invisible while the
+owner re-resolves the NAME (the lane wins that cascade), wrong the moment it
+reads its slot. The reduction that found this is worth reusing: a temporary
+compiler env-var restricting the flip to a name list, plus delta debugging over
+the names a run touches, reduced a 3000-line vendored library to one variable.
+
+**Container identity is the repair for three of the seven defects, and it
+generalises.** `store_container_preserving_identity` (§10.4) turned out to be the
+right primitive well beyond its original three call sites. The rule that keeps
+falling out is §2/§3's: a runtime helper that REBUILDS a variable's container must
+copy the result into the existing backing node, never drop a fresh node into
+`env`; and every by-name slot search such a helper uses to "also update the slot"
+(`locals_set_by_name`, `find_local_slot`) is both unnecessary and wrong under a
+shadow.
+
+**Process note for attempt 4.** `t/` and `make roast` are not sufficient evidence
+for this change — both were green. `scripts/battery-testsuite.sh` is, and it runs
+locally in about ten minutes.

@@ -227,6 +227,7 @@ impl Interpreter {
             signature_alternates,
             alternate_metadata,
             compiled_routine_keys,
+            free_var_decl_slots,
             multi,
             is_rw,
             is_raw,
@@ -309,7 +310,9 @@ impl Interpreter {
                 if compiled_routine_keys.len() != 1 + signature_alternates.len() {
                     return None;
                 }
-                compiled_fns.get(&compiled_routine_keys[slot])
+                compiled_fns
+                    .get(&compiled_routine_keys[slot])
+                    .map(|cf| &**cf)
             };
             let primary_compiled = plan_compiled(0);
             let body: &[Stmt] = &[];
@@ -473,16 +476,63 @@ impl Interpreter {
             // captured `my`'s own initializer (raku requires declare-before-
             // use, so that initializer has always already run by then),
             // installs live cells.
-            if self.block_scope_depth() == 0
-                && self
-                    .env()
-                    .get("__mutsu_in_eval")
-                    .is_none_or(|v| !v.truthy())
+            //
+            // The same treatment extends to a named sub declared inside a
+            // BARE BLOCK (the follow-up ADR-0024 "Known limitations" names):
+            // its free variables have no store to answer them, so both the
+            // read/write resolution and a `:=` of one fall through to the flat,
+            // name-keyed `env`, where a shadowing CALLER owns the key. The only
+            // difference is the bucket: mainline is a single scope, so all its
+            // subs share `MAINLINE_UNIT_KEY`, while sibling blocks are distinct
+            // scopes that may each declare the same name — so a block-declared
+            // sub gets its own `UNIT<block ...>` bucket.
+            let capture_bucket: Option<String> = if self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_none_or(|v| !v.truthy())
                 && self.current_package() == "GLOBAL"
-                && self.routine_stack().is_empty()
                 && !self.module_load_active()
                 && !self.is_thread_clone()
             {
+                if self.block_scope_depth() == 0 && self.routine_stack().is_empty() {
+                    Some(crate::runtime::MAINLINE_UNIT_KEY.to_string())
+                } else if custom_traits.iter().any(|(t, _)| t == "__our_scoped") {
+                    // An `our sub` declared in a block is NOT lexical to it: it
+                    // is installed in the package registry and outlives the
+                    // block. Its captured block lexicals already have a store —
+                    // `escaped_our_lexical_cells`, populated by the
+                    // `escaping_our_lexical_names` block just above — and giving
+                    // it a second one boxed the name and mirrored the cell into
+                    // the shared `env` key from a *hoisted* registration that
+                    // runs before any of the compunit's blocks, hijacking an
+                    // unrelated later block's same-named `my`
+                    // (`roast/S02-names-vars/variables-and-packages.t`,
+                    // "initilization from BEGIN block").
+                    None
+                } else if !self.routine_stack().is_empty()
+                    // A sub registered while another ROUTINE is running is not
+                    // lexical to a block of the compunit body — same exclusion
+                    // the mainline arm makes with `routine_stack().is_empty()`.
+                    // Block frames are fine (and expected): the bare block the
+                    // sub is declared in is itself one. (`block_scope_depth` is
+                    // NOT the discriminator here — a bare `{ ... }` at file
+                    // scope pushes a block ROUTINE FRAME and leaves the depth
+                    // counter at 0; the counter tracks a different, narrower
+                    // notion of nesting.)
+                    && self.routine_stack().iter().all(|f| f.is_block)
+                {
+                    Some(format!(
+                        "{}{}>",
+                        crate::runtime::BLOCK_LEXICAL_UNIT_PREFIX,
+                        resolved_name
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(unit_key) = capture_bucket {
                 // Union `free_var_syms` (read) AND `free_var_writes` (a
                 // write-only free var, e.g. a setter `sub set-v($x) { $v = $x
                 // }`, never appears in `free_var_syms` — see
@@ -518,62 +568,84 @@ impl Interpreter {
                     if !code.my_declared_sym.contains(&sym) {
                         continue;
                     }
-                    // A mainline local slot is required: `code` here IS
-                    // mainline's own CompiledCode (RegisterSub executes in
-                    // mainline's frame), so this is the exact same frame the
-                    // free variable's slot lives in — no cross-frame baked
-                    // index needed, unlike closure capture. `free_var_parent_slots`
-                    // (the baked-slot mechanism closures use for this exact
-                    // ambiguity) is never populated for a plan-derived named
-                    // sub (only `add_closure_code_baked` bakes it), so a
-                    // by-name search is the only option here.
+                    // A local slot of the DECLARING frame is required: `code`
+                    // here IS that frame's own CompiledCode (RegisterSub
+                    // executes in it), so this is the exact same frame the free
+                    // variable's slot lives in.
                     //
-                    // Under shadow slots (the default), a same-named `my` in
-                    // ANOTHER scope of this mainline body — textually before
-                    // OR after this sub, e.g. the shadowing block in
-                    // ADR-0024's own headline example — occupies a DISTINCT
-                    // slot with the SAME name (`dup_named_locals`), so a
-                    // single positional search (first OR last) can pick the
-                    // wrong one: `rposition` would grab a LATER shadow block's
-                    // slot instead of the mainline binding the sub actually
-                    // captures. Disambiguate by liveness instead: at the
-                    // moment THIS `RegisterSub` executes, a shadowing block
-                    // declared elsewhere in the same compiled unit has either
-                    // not run yet (still its pool-allocated `Nil`) or its
-                    // scope has nothing to do with what "declared before this
-                    // sub" means here — only the slot that is genuinely
-                    // initialized (non-`Nil`) right now can be the binding
-                    // visible at this declaration point. Skip (legacy dynamic
-                    // fallback, no partial state) when that is not exactly one
-                    // slot — e.g. a sibling block declared BEFORE this sub
-                    // that also used the name (rare, adversarial) leaves two
-                    // live candidates and neither is preferred over the other.
-                    let candidates: Vec<usize> = code
-                        .locals
+                    // WHICH slot is the question. Under shadow slots (the
+                    // default), a same-named `my` in ANOTHER scope of this
+                    // compiled unit — textually before OR after this sub, e.g.
+                    // the shadowing block in ADR-0024's own headline example —
+                    // occupies a DISTINCT slot with the SAME string in
+                    // `code.locals` (`dup_named_locals`), so no by-name search
+                    // can tell them apart. `free_var_decl_slots` answers it
+                    // exactly: the compiler resolved each free variable against
+                    // `local_map` at the sub's own textual emit point (the
+                    // named-sub counterpart of the `free_var_parent_slots` bake
+                    // closures get). Prefer it whenever it is present.
+                    //
+                    // The liveness fallback below is what the mainline-only
+                    // implementation used before the bake existed: "only the
+                    // slot that is genuinely initialized right now can be the
+                    // binding visible at this declaration point". That reasoning
+                    // holds at MAINLINE, where a shadowing block has not run
+                    // yet, and NOT inside a bare block, where earlier sibling
+                    // blocks have already run and left their own same-named
+                    // slots live — it silently picked a foreign block's `$a` in
+                    // `roast/S02-names-vars/variables-and-packages.t`. So it is
+                    // kept only for the mainline arm, and only when the bake is
+                    // absent (a `name_expr` sub, or a plan whose bodies failed
+                    // to compile). A skip is always safe: the name simply keeps
+                    // legacy dynamic resolution, with no partial state.
+                    let baked = free_var_decl_slots
                         .iter()
-                        .enumerate()
-                        .filter(|(_, n)| **n == name)
-                        .map(|(i, _)| i)
-                        .collect();
-                    let idx = match candidates.as_slice() {
-                        [] => continue,
-                        [only] => *only,
-                        many => {
-                            let live: Vec<usize> = many
-                                .iter()
-                                .copied()
-                                .filter(|&i| !self.locals[i].is_nil())
-                                .collect();
-                            match live.as_slice() {
-                                [only_live] => *only_live,
-                                _ => continue,
+                        .find(|(s, _)| *s == sym)
+                        .map(|(_, slot)| *slot as usize)
+                        .filter(|slot| code.locals.get(*slot).is_some_and(|n| *n == name));
+                    let slot_idx = if let Some(slot) = baked {
+                        slot
+                    } else if unit_key != crate::runtime::MAINLINE_UNIT_KEY {
+                        continue;
+                    } else {
+                        let candidates: Vec<usize> = code
+                            .locals
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, n)| **n == name)
+                            .map(|(i, _)| i)
+                            .collect();
+                        match candidates.as_slice() {
+                            [] => continue,
+                            [only] => *only,
+                            many => {
+                                let live: Vec<usize> = many
+                                    .iter()
+                                    .copied()
+                                    .filter(|&i| !self.locals[i].is_nil())
+                                    .collect();
+                                match live.as_slice() {
+                                    [only_live] => *only_live,
+                                    _ => continue,
+                                }
                             }
                         }
                     };
                     if self.type_constrained_unboxable(&name) {
                         continue;
                     }
-                    let cur = self.locals[idx].clone();
+                    // A slot two SIBLING block scopes take turns owning must not
+                    // be boxed: the cell would outlive the first block and fuse
+                    // its `my $a` with the next block's independent one. Only
+                    // the block arm is affected — mainline's own lexicals are
+                    // never a sibling of anything, and a genuine inner shadow
+                    // gets its own slot. See `CompiledCode::multi_scope_slots`.
+                    if unit_key != crate::runtime::MAINLINE_UNIT_KEY
+                        && code.multi_scope_slots.contains(&(slot_idx as u32))
+                    {
+                        continue;
+                    }
+                    let cur = self.locals[slot_idx].clone();
                     let cell = if cur.is_container_ref() {
                         cur
                     } else if cur.is_nil() {
@@ -583,19 +655,20 @@ impl Interpreter {
                         continue;
                     } else {
                         let boxed = cur.into_container_ref();
-                        self.locals[idx] = boxed.clone();
+                        self.locals[slot_idx] = boxed.clone();
                         self.env_mut().insert(name.clone(), boxed.clone());
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
                     self.unit_lexicals
-                        .entry(crate::runtime::MAINLINE_UNIT_KEY.to_string())
+                        .entry(unit_key.clone())
                         .or_default()
                         .insert(name, cell);
                     captured_any = true;
                 }
                 if captured_any {
-                    self.mainline_lexical_subs.insert(resolved_name.clone());
+                    self.mainline_lexical_subs
+                        .insert(resolved_name.clone(), unit_key);
                 }
             }
             // A sub declared inside a BLOCK scope is lexical: the block-exit
@@ -1204,7 +1277,7 @@ impl Interpreter {
                 return_type.as_ref(),
                 body,
                 *is_our,
-                compiled,
+                compiled.map(|cf| &**cf),
                 is_lexical_hoist,
             )?;
         }
@@ -1215,7 +1288,7 @@ impl Interpreter {
                 param_defs,
                 return_type.as_ref(),
                 body,
-                compiled,
+                compiled.map(|cf| &**cf),
             )?;
             // Record the export so consumers/MAIN-dispatch see the whole multi
             // family. A `proto … is export` exports its candidates too (raku),

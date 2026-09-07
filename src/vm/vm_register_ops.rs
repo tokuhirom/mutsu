@@ -1096,10 +1096,10 @@ impl Interpreter {
     /// (ADR-0024 row 3). A closure created inside a plain (non-mainline)
     /// frame is unaffected: the predicate is false there, so this is a no-op.
     fn inject_mainline_lexical_captures(&self, cc: &CompiledCode, env: &mut Env) {
-        if !self.mainline_lexical_frame_active() {
+        let Some(bucket) = self.active_unit_lexical_bucket() else {
             return;
-        }
-        let Some(mainline) = self.unit_lexicals.get(crate::runtime::MAINLINE_UNIT_KEY) else {
+        };
+        let Some(mainline) = self.unit_lexicals.get(bucket) else {
             return;
         };
         for sym in &cc.free_var_syms {

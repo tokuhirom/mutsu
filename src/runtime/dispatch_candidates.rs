@@ -531,7 +531,8 @@ impl Interpreter {
                     }
                     // Unwrap VarRef Capture wrappers and check the source
                     // variable's declared type constraint for native type dispatch.
-                    let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                    let (arg, var_type) =
+                        self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
                     pos_idx += 1;
                     let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
                     let base = Self::constraint_base_name(effective);
@@ -579,7 +580,8 @@ impl Interpreter {
                         pos_idx += 1;
                     }
                     if pos_idx < args.len() {
-                        let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                        let (arg, var_type) =
+                            self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
                         pos_idx += 1;
                         let implicit = if pd.name.starts_with('@') {
                             "Positional"
@@ -606,7 +608,8 @@ impl Interpreter {
                         pos_idx += 1;
                     }
                     if pos_idx < args.len() {
-                        let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                        let (arg, var_type) =
+                            self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
                         pos_idx += 1;
                         total += self.type_hierarchy_distance_with_var_type(
                             "Any",
@@ -636,6 +639,38 @@ impl Interpreter {
             }
             None => (value.clone(), None),
         }
+    }
+
+    /// `unwrap_varref_for_dispatch` for an argument at a known POSITION, which
+    /// is what lets a LITERAL rank a native candidate. A literal has no source
+    /// variable, so the plain form finds no `var_type` and `Int` ranks at
+    /// distance 0 -- `multi d(int)` / `multi d(Int)` called as `d(5)` answered
+    /// `Int` where rakudo answers `int`. The call site's
+    /// `literal_native_args` mask (published for the duration of the call by
+    /// `exec_call_func_op`) says which positions were WRITTEN as a literal, and
+    /// the value's own kind then names the native type a same-shaped variable
+    /// would have carried.
+    ///
+    /// Provenance, not the value, is the discriminator, and rakudo agrees:
+    /// `d("7".Int)` produces an in-range boxed `Int` at runtime and correctly
+    /// picks `Int`. A bigint literal yields `None` here for the same reason
+    /// rakudo answers `Int` for `d(2**70)`: it does not fit the native width.
+    fn unwrap_varref_for_dispatch_at(
+        &self,
+        value: &Value,
+        pos_idx: usize,
+    ) -> (Value, Option<String>) {
+        let (arg, var_type) = self.unwrap_varref_for_dispatch(value);
+        if var_type.is_some() || pos_idx >= 32 || self.literal_native_args & (1 << pos_idx) == 0 {
+            return (arg, var_type);
+        }
+        let synthetic = match arg.view() {
+            ValueView::Int(_) => Some("int"),
+            ValueView::Num(_) => Some("num"),
+            ValueView::Str(_) => Some("str"),
+            _ => None,
+        };
+        (arg, synthetic.map(str::to_string))
     }
 
     /// Return how many MRO levels separate `constraint` from the actual type
@@ -939,16 +974,26 @@ impl Interpreter {
         if let Some(vt) = var_type
             && Self::is_native_type_name(vt)
         {
-            if base == vt {
-                // Exact native type match (e.g., int var → int param)
+            // Any native constraint in the SAME FAMILY is equally specific, not
+            // just the identically-spelled one: rakudo answers `int8` for a
+            // `my int $n` against `int8`/`Int` candidates exactly as it answers
+            // `int64` against `int64`/`Int`. Comparing the spellings meant only
+            // the one written the same way beat `Int`, so `my int $n` lost the
+            // `int64`, `int8` and `int32` candidates to the boxed one.
+            if Self::native_family(base).is_some()
+                && Self::native_family(base) == Self::native_family(vt)
+            {
                 return 0;
             }
-            // Native type matches its boxed equivalent with a penalty
-            // (e.g., int var → Int param) so the native candidate wins.
-            let boxed = Self::native_to_boxed(vt);
-            if base == boxed {
-                return 1;
-            }
+            // No same-family native candidate for this position: every other
+            // constraint is ranked by the ORDINARY hierarchy distance, offset
+            // by one so that a same-family native (0 above) still beats all of
+            // them. A flat penalty here instead collapsed the distinctions
+            // between them -- `Int` and `Numeric` both came out at 1 for an
+            // `int`-typed argument, so `multi rt71754(Int)` /
+            // `multi rt71754(Numeric)` called with an integer literal tied and
+            // picked the wrong one (`roast/S06-advanced/callsame.t`).
+            return 1 + self.type_hierarchy_distance(constraint, value);
         }
         self.type_hierarchy_distance(constraint, value)
     }
@@ -976,13 +1021,24 @@ impl Interpreter {
     }
 
     /// Map native type names to their boxed equivalents.
-    fn native_to_boxed(native: &str) -> &'static str {
-        match native {
-            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-            | "uint32" | "uint64" | "byte" => "Int",
-            "num" | "num32" | "num64" => "Num",
-            "str" => "Str",
-            _ => "Any",
+    /// The native *family* a native type name belongs to, or `None` when the
+    /// name is not native. Two names in one family rank EQUALLY specific for an
+    /// argument of that family, which is what rakudo does: `my int $n` picks the
+    /// `int8` candidate over `Int` just as it picks `int64` over `Int`, and two
+    /// same-family candidates are an "Ambiguous call" there rather than one
+    /// winning. The families are exactly the boundaries rakudo enforces —
+    /// signedness is one (a `my int $n` against `uint`/`Int` candidates answers
+    /// `Int`, and an integer literal against `byte`/`Int` answers `Int`), and so
+    /// is int-vs-num (`my int $n` against `num`/`Int` answers `Int`).
+    fn native_family(name: &str) -> Option<&'static str> {
+        match name {
+            "int" | "int8" | "int16" | "int32" | "int64" | "atomicint" | "long" | "longlong"
+            | "ssize_t" | "bool" => Some("int"),
+            "uint" | "uint8" | "uint16" | "uint32" | "uint64" | "byte" | "ulong" | "ulonglong"
+            | "size_t" => Some("uint"),
+            "num" | "num32" | "num64" => Some("num"),
+            "str" => Some("str"),
+            _ => None,
         }
     }
 }

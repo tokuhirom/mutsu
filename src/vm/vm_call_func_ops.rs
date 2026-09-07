@@ -35,7 +35,7 @@ impl Interpreter {
         name_sym: Symbol,
         pkg_sym: Symbol,
         fns_id: u64,
-    ) -> Option<*const CompiledFunction> {
+    ) -> Option<*const Arc<CompiledFunction>> {
         // Masked index: in bounds by construction, so no bounds check survives.
         let slot = &self.call_ic[crate::opcode::CallIcSlot::way(name_sym)];
         if slot.epoch == self.pos_light_ic_epoch
@@ -43,7 +43,7 @@ impl Interpreter {
             && slot.name == name_sym.id()
             && slot.pkg == pkg_sym.id()
         {
-            Some(slot.target as *const CompiledFunction)
+            Some(slot.target as *const Arc<CompiledFunction>)
         } else {
             None
         }
@@ -55,7 +55,10 @@ impl Interpreter {
     /// `ptr` must have been taken from `fns` while `fns.id()` had the value the
     /// caller compared against, and `fns` must not have been mutated since.
     #[inline]
-    unsafe fn ic_target(_fns: &CompiledFns, ptr: *const CompiledFunction) -> &CompiledFunction {
+    unsafe fn ic_target(
+        _fns: &CompiledFns,
+        ptr: *const Arc<CompiledFunction>,
+    ) -> &Arc<CompiledFunction> {
         unsafe { &*ptr }
     }
 
@@ -66,7 +69,7 @@ impl Interpreter {
         name_sym: Symbol,
         pkg_sym: Symbol,
         fns_id: u64,
-        target: &CompiledFunction,
+        target: &Arc<CompiledFunction>,
     ) {
         // A table that has never been mutated has no identity to vouch for the
         // address (id 0 is shared by every empty scratch table), so it cannot
@@ -77,7 +80,7 @@ impl Interpreter {
         self.call_ic[crate::opcode::CallIcSlot::way(name_sym)] = crate::opcode::CallIcSlot {
             epoch: self.pos_light_ic_epoch,
             fns_id,
-            target: target as *const CompiledFunction as usize,
+            target: target as *const Arc<CompiledFunction> as usize,
             name: name_sym.id(),
             pkg: pkg_sym.id(),
         };
@@ -98,7 +101,7 @@ impl Interpreter {
     /// checks already do.
     #[inline]
     fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
-        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains(name)
+        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains_key(name)
     }
 
     /// Names of builtin listops/functions that a same-named user-defined
@@ -261,7 +264,32 @@ impl Interpreter {
     /// materializes the Pairs in place on the stack and delegates to the
     /// ordinary `exec_call_func_op`, so behavior off the fast path is
     /// byte-identical to the old MakePair form.
+    /// See `exec_call_func_op` for the `literal_native_args` save/restore.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_func_named_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        spec_idx: u32,
+        arg_sources_idx: Option<u32>,
+        literal_native_args: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let r = self.exec_call_func_named_op_inner(
+            code,
+            name_idx,
+            arity,
+            spec_idx,
+            arg_sources_idx,
+            compiled_fns,
+        );
+        self.literal_native_args = saved;
+        r
+    }
+
+    fn exec_call_func_named_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -347,10 +375,34 @@ impl Interpreter {
                 *slot = Value::pair(e.key.clone(), val);
             }
         }
-        self.exec_call_func_op(code, name_idx, arity, arg_sources_idx, compiled_fns)
+        // `_inner`, not the wrapper: this frame's mask is already published by
+        // `exec_call_func_named_op`, and re-entering the wrapper would
+        // overwrite it with a zero it was never given.
+        self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns)
     }
 
+    /// Publish the call site's literal-argument mask for the duration of the
+    /// call, so multi-candidate ranking can give a literal the native
+    /// `var_type` a source variable would have carried (see the opcode field's
+    /// doc and `unwrap_varref_for_dispatch`). Save/restore rather than a Drop
+    /// guard: the guard would hold a `&mut self` borrow the whole body needs,
+    /// and the wrapper restores on the error path too.
     pub(super) fn exec_call_func_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        arg_sources_idx: Option<u32>,
+        literal_native_args: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
+        let r = self.exec_call_func_op_inner(code, name_idx, arity, arg_sources_idx, compiled_fns);
+        self.literal_native_args = saved;
+        r
+    }
+
+    fn exec_call_func_op_inner(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -534,7 +586,7 @@ impl Interpreter {
                 // chunk-side index table measured no better than the probes.
                 let fns_id = compiled_fns.id();
                 let cur_pkg_sym = self.current_package_sym();
-                let mut cached: Option<&CompiledFunction> = self
+                let mut cached: Option<&Arc<CompiledFunction>> = self
                     .call_ic_hit(name_sym, cur_pkg_sym, fns_id)
                     // SAFETY: `call_ic_hit` yields the address only when the
                     // slot's `fns_id` equals this table's — which proves both
@@ -567,7 +619,7 @@ impl Interpreter {
                         self.call_ic_fill(name_sym, cur_pkg_sym, fns_id, cf);
                     }
                 }
-                if let Some(cf) = cached.or(otf_hold.as_deref()) {
+                if let Some(cf) = cached.or(otf_hold.as_ref()) {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize {
                         // One fused pass over the args (J4d): junction detection
@@ -2485,7 +2537,7 @@ impl Interpreter {
     /// shared cell accumulates (matching how a same-unit compiled `sub` is called).
     pub(super) fn call_shared_state_body(
         &mut self,
-        shared: &CompiledFunction,
+        shared: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
         pkg: &str,

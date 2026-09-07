@@ -1935,6 +1935,41 @@ impl Compiler {
     /// (§1.3 closure-capture slot bake). Scalar free vars are stored sigil-less
     /// ("x") and `@`/`%`/`&` keep their sigil — the same convention `local_map`
     /// uses, so a direct lookup lines up.
+    /// Resolve each free variable of `keys`' compiled bodies against this
+    /// frame's `local_map` as it stands at the sub declaration's own emit
+    /// point. See `CompiledSubDeclPlan::free_var_decl_slots` for why a runtime
+    /// name search over `code.locals` cannot answer this.
+    ///
+    /// Both the read set (`free_var_syms`) and the write-only set
+    /// (`free_var_writes`) are covered — a setter's target never appears in the
+    /// former, exactly as ADR-0024's capture loop already unions them.
+    pub(super) fn bake_sub_decl_free_var_slots(
+        &self,
+        keys: &[crate::symbol::Symbol],
+    ) -> Vec<(crate::symbol::Symbol, u32)> {
+        let mut out: Vec<(crate::symbol::Symbol, u32)> = Vec::new();
+        for key in keys {
+            let Some(cf) = self.compiled_functions.get(key) else {
+                continue;
+            };
+            let syms = cf
+                .code
+                .free_var_syms
+                .iter()
+                .chain(cf.code.free_var_writes.iter())
+                .copied();
+            for sym in syms {
+                if out.iter().any(|(s, _)| *s == sym) {
+                    continue;
+                }
+                if let Some(slot) = sym.with_str(|s| self.local_map.get(s).copied()) {
+                    out.push((sym, slot));
+                }
+            }
+        }
+        out
+    }
+
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
         compiled.free_var_parent_slots = compiled
             .free_var_syms
@@ -2177,6 +2212,12 @@ impl Compiler {
         } else {
             self.alloc_local(name)
         };
+        // A slot reached by a second declaring scope is one two independent
+        // bindings take turns owning. Record it so ADR-0024's block-scope
+        // capture declines to box it — see `CompiledCode::multi_scope_slots`.
+        if !is_ancestor_shadow && prev == Some(slot) {
+            self.code.multi_scope_slots.insert(slot);
+        }
         if let Some(frame) = self.local_scopes.last_mut() {
             // Only a genuine ancestor shadow needs the outer slot restored on exit.
             frame.insert(
@@ -2614,6 +2655,54 @@ impl Compiler {
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Bitmask of the argument positions written as a LITERAL of a type that
+    /// has a native counterpart (`Int`, `Num`, `Str`), for
+    /// `OpCode::CallFunc`'s `literal_native_args`. A literal carries no source
+    /// variable, so multi dispatch had no `var_type` to rank a native candidate
+    /// with and `multi d(int)` / `multi d(Int)` called as `d(5)` answered `Int`
+    /// where rakudo answers `int`.
+    ///
+    /// The test is on the SHAPE, not on the runtime value: rakudo agrees that
+    /// `d("7".Int)` -- an in-range boxed `Int` produced at runtime -- picks
+    /// `Int`. Positions past 31 are never marked (a call with 32+ positional
+    /// arguments and a native `multi` candidate is not worth a wider carrier);
+    /// leaving a bit clear only preserves the old ranking for that position.
+    fn literal_native_args_mask(args: &[Expr]) -> u32 {
+        let mut mask = 0u32;
+        for (i, arg) in args.iter().enumerate().take(32) {
+            if Self::is_native_literal_arg(arg) {
+                mask |= 1 << i;
+            }
+        }
+        mask
+    }
+
+    /// One position's test for `literal_native_args_mask`. A NEGATED numeric
+    /// literal counts: `-3` parses as `Unary { Minus, Literal(3) }` rather than
+    /// a negative literal, and rakudo ranks `d(-3)` on `int` exactly as it ranks
+    /// `d(3)`.
+    fn is_native_literal_arg(arg: &Expr) -> bool {
+        match arg {
+            Expr::Literal(v) => matches!(
+                v.view(),
+                crate::value::ValueView::Int(_)
+                    | crate::value::ValueView::Num(_)
+                    | crate::value::ValueView::Str(_)
+            ),
+            Expr::Unary {
+                op: TokenKind::Minus,
+                expr,
+            } => matches!(
+                expr.as_ref(),
+                Expr::Literal(v) if matches!(
+                    v.view(),
+                    crate::value::ValueView::Int(_) | crate::value::ValueView::Num(_)
+                )
+            ),
+            _ => false,
         }
     }
 

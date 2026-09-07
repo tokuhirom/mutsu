@@ -560,7 +560,6 @@ impl Interpreter {
     /// Used by increment/decrement to implement overflow/underflow wrapping.
     pub(super) fn maybe_wrap_native_int(&mut self, var_name: &str, value: Value) -> Value {
         use crate::runtime::native_types;
-        use num_bigint::BigInt as NumBigInt;
         use num_traits::ToPrimitive;
 
         let constraint = match loan_env!(self, var_type_constraint(var_name)) {
@@ -572,7 +571,10 @@ impl Interpreter {
         }
 
         let big_val = match value.view() {
-            ValueView::Int(n) => NumBigInt::from(n),
+            // The common case, machine arithmetic and no allocation.
+            ValueView::Int(n) => {
+                return native_types::wrap_native_int_value(&constraint, n).unwrap_or(value);
+            }
             ValueView::BigInt(n) => (**n).clone(),
             _ => return value,
         };

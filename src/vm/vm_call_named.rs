@@ -3,7 +3,7 @@ use super::*;
 impl Interpreter {
     pub(crate) fn call_compiled_function_named(
         &mut self,
-        cf: &CompiledFunction,
+        cf: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
         fn_package: &str,

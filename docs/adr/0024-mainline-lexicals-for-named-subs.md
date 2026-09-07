@@ -336,6 +336,17 @@ trigger B).
   family): their free vars keep legacy resolution; the same store-plus-
   predicate pattern extends to them later (per-declaration-scope keys
   instead of the single mainline key).
+  **(2026-09-07: the bare-block half of this is DONE, exactly as predicted —
+  per-declaration-scope keys, `UNIT<block ...>`, one bucket per sub because
+  sibling blocks are distinct scopes. `mainline_lexical_subs` is now a map
+  from sub name to bucket key and `active_unit_lexical_bucket()` is the
+  generalized predicate. Note that the gate was NOT `block_scope_depth`: a
+  bare `{ ... }` at file scope leaves that counter at 0 and pushes a block
+  routine frame, so the condition that excluded such a sub was
+  `routine_stack().is_empty()`. A sub declared inside another ROUTINE is
+  still excluded. See
+  `news/2026-09/free-var-lexical-resolution-inside-a-bare-block.md` and
+  `t/free-var-in-bare-block-lexical-scope.t`.)**
 - **Textual-order edge**: a shadowed call *before* the sub's textual
   declaration (`my $c; { my $c; f() }; sub f { $c }`) still resolves
   dynamically — capture has not run yet at that call. Raku-correct programs

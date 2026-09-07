@@ -9,7 +9,7 @@ use Test;
 #
 # Every assertion is byte-identical under `raku`.
 
-plan 10;
+plan 14;
 
 # --- the listop `map` rw element writeback ----------------------------------
 
@@ -57,4 +57,21 @@ plan 10;
     @src.classify({ .chars }, into => %into);
     is %into.keys.sort.join(","), '1,2,3', 'classify :into fills the target';
     is $alias.keys.sort.join(","), '1,2,3', 'and the := alias observes it';
+}
+
+# --- The QuantHash kinds rebuild too ---------------------------------------
+# `classify(..., :into(my %b := BagHash.new))` builds a fresh Bag node; without
+# a Set/Bag/Mix arm in `store_container_preserving_identity` it replaced the env
+# entry and every other holder of the original node kept an empty bag
+# (`roast/S32-list/classify.t` 25-27 once `%b` resolves through its slot).
+
+{
+    sub even-odd($i) { $i %% 2 ?? 'even' !! 'odd' }
+    my %b := BagHash.new;
+    my $alias := %b;
+    classify(&even-odd, (1, 2, 3, 4), :into(%b));
+    is %b<even>, 2, 'classify :into a BagHash counts the evens';
+    is $alias<even>, 2, 'and the := alias observes it';
+    is %b<odd>, 2, 'and the odds';
+    is $alias<odd>, 2, 'through the alias too';
 }

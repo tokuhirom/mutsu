@@ -4344,6 +4344,15 @@ impl Compiler {
                         compiled_routine_keys.push(key);
                     }
                 }
+                // Bake the DECLARING frame's compile-time slot for each free
+                // variable of the compiled bodies, resolved from `local_map`
+                // HERE — at the sub's own textual position, after the enclosing
+                // scope's `my` declarations have been allocated. This is the
+                // named-sub counterpart of the bake `add_closure_code_baked`
+                // does for a closure, and ADR-0024's capture uses it instead of
+                // a by-name search over `code.locals`, which under shadow slots
+                // cannot tell one declaring scope's `$a` from another's.
+                let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
                 // The hoist pass registered this same declaration from a plan of
                 // its own, which never sees the compiled bodies. Hand them over,
                 // so a `multi` candidate installed by the hoisted registration
@@ -4359,9 +4368,13 @@ impl Compiler {
                         hoisted_idx,
                         compiled_routine_keys.clone(),
                     );
+                    self.code
+                        .set_sub_decl_free_var_decl_slots(hoisted_idx, free_var_decl_slots.clone());
                 }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
+                self.code
+                    .set_sub_decl_free_var_decl_slots(idx, free_var_decl_slots);
             }
             Stmt::MethodDecl {
                 name,

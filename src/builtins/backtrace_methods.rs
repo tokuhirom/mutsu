@@ -78,12 +78,23 @@ pub(crate) fn frame_is_routine(attributes: &Gc<InstanceAttrs>) -> bool {
 }
 
 /// The `frames` list of a `Backtrace` instance.
+///
+/// Elements are dereferenced here, at the one chokepoint every frame reader
+/// goes through, rather than in each of them: a `.grep` over a backtrace
+/// promotes the matched source slots to shared element cells (so a writeback
+/// loop can mutate through them) and publishes that promotion on the frames
+/// array itself, after which every `match frame.view() { ValueView::Instance
+/// .. }` reader silently saw nothing. `.summary` came back empty and
+/// `.nice` / `next-interesting-index` lost their filters.
 pub(crate) fn frames_of(attributes: &Gc<InstanceAttrs>) -> Vec<Value> {
     attributes
         .as_map()
         .get("frames")
         .map(crate::runtime::utils::value_to_list)
         .unwrap_or_default()
+        .into_iter()
+        .map(|frame| frame.with_deref(|v| v.clone()))
+        .collect()
 }
 
 fn frame_field(frame: &Value, key: &str) -> String {

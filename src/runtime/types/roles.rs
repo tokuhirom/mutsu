@@ -286,7 +286,8 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some((role_name, args, is_param)) = self.extract_role_application(&right) {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args, is_param)?;
-            let result = self.stamp_role_application_group(result, std::slice::from_ref(&role_name));
+            let result =
+                self.stamp_role_application_group(result, std::slice::from_ref(&role_name));
             // Call BUILD submethods from the composed role
             let result = self.call_role_build_submethods(result, &role_name)?;
             if let Some(target_name) = Self::var_target_name_from_value(&left) {

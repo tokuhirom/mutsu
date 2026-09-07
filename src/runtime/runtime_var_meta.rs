@@ -68,16 +68,45 @@ impl Interpreter {
     /// changes (symbols are append-only), so it is memoized per thread, keyed
     /// by the name's own symbol.
     pub(crate) fn type_meta_key_sym(name: &str) -> Symbol {
+        Self::type_meta_key_for_sym(Symbol::intern(name))
+    }
+
+    /// [`Self::type_meta_key_sym`] for a caller that already holds the name
+    /// as a symbol (a compiled `SetLocal` slot, a `SetGlobal` constant): no
+    /// string is hashed at all, only the `Symbol -> Symbol` memo.
+    pub(crate) fn type_meta_key_for_sym(name_sym: Symbol) -> Symbol {
         thread_local! {
             static META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
                 std::cell::RefCell::new(rustc_hash::FxHashMap::default());
         }
-        let name_sym = Symbol::intern(name);
         if let Some(sym) = META_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
             return sym;
         }
-        let sym = Symbol::intern(&format!("{}{}", crate::symbol::TYPE_META_PREFIX, name));
+        let sym = name_sym.with_str(|name| {
+            Symbol::intern(&format!("{}{}", crate::symbol::TYPE_META_PREFIX, name))
+        });
         META_KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
+    /// The env key for `name`'s object-hash key-type metadata,
+    /// `__mutsu_hash_key_type::<name>`, memoized per name symbol exactly like
+    /// [`Self::type_meta_key_for_sym`]. Every `my` declaration clears this
+    /// key (`set_var_type_constraint_impl`), so once one typed lexical exists
+    /// it was a `format!` + intern per declaration.
+    pub(crate) fn hash_key_meta_key_for_sym(name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static HASH_KEY_META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        if let Some(sym) = HASH_KEY_META_KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym =
+            name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_hash_key_type::{name}")));
+        HASH_KEY_META_KEYS.with(|c| {
             c.borrow_mut().insert(name_sym, sym);
         });
         sym
@@ -182,11 +211,11 @@ impl Interpreter {
         // hash. Without it a key-only object hash declared inside a routine
         // (now scoped since step 3 stopped excluding `%` from the scoped
         // opcode) silently lost key-type enforcement.
-        let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", name);
+        let hash_key_meta_key = Self::hash_key_meta_key_for_sym(Symbol::intern(name));
         if let Some(key_type) = info.key_type {
-            self.env.insert(hash_key_meta_key, Value::str(key_type));
+            self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
         } else {
-            self.env.remove(&hash_key_meta_key);
+            self.env.remove_sym(hash_key_meta_key);
         }
         Self::mark_env_type_constraint_seen();
     }
@@ -198,8 +227,8 @@ impl Interpreter {
         tag_env_value: bool,
     ) {
         if let Some(constraint) = constraint {
-            let key = name.to_string();
-            let meta_key = Self::type_meta_key_sym(name);
+            let name_sym = Symbol::intern(name);
+            let meta_key = Self::type_meta_key_for_sym(name_sym);
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
                 self.mark_atomic_var_seen();
@@ -207,11 +236,11 @@ impl Interpreter {
             self.env
                 .insert_sym(meta_key, Value::str(info.value_type.clone()));
             Self::mark_env_type_constraint_seen();
-            let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
+            let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
             if let Some(key_type) = info.key_type.clone() {
-                self.env.insert(hash_key_meta_key, Value::str(key_type));
+                self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
             } else {
-                self.env.remove(&hash_key_meta_key);
+                self.env.remove_sym(hash_key_meta_key);
             }
             // Only register container type metadata for container-sigil variables
             // (`@a`, `%h`). For scalar parameters (e.g. `Mu $a`) the bound value
@@ -219,22 +248,25 @@ impl Interpreter {
             // would corrupt the caller's container type metadata via Arc pointer
             // keying (and Arc pointer reuse after drop).
             if tag_env_value && (name.starts_with('@') || name.starts_with('%')) {
-                self.register_var_container_type_metadata(&key, &info);
+                self.register_var_container_type_metadata(name, &info);
             }
         } else {
             // Fast path for the overwhelmingly common case: a plain `my $x`
             // declaration clearing a constraint that was never set. Every such
-            // declaration reaches here (via `SetVarDynamic`), so avoid the two
-            // `format!` key allocations + the `Symbol::intern`ing `env.remove`s
-            // (the env is Symbol-keyed) unless there is actually something to
-            // clear. `env_type_constraint_seen` latches true only once a
+            // declaration reaches here (via `SetVarDynamic`), so skip the two
+            // removes unless there is actually something to clear.
+            // `env_type_constraint_seen` latches true only once a
             // `__mutsu_type::*` entry has ever been inserted, so when it is
-            // false no such env entry can exist to remove.
+            // false no such env entry can exist to remove. Once it is set
+            // (any program with one typed lexical) the two keys are the
+            // per-name memoized symbols, not a `format!` + intern each.
             if !Self::env_type_constraint_seen() {
                 return;
             }
-            self.env.remove(&format!("__mutsu_type::{}", name));
-            self.env.remove(&format!("__mutsu_hash_key_type::{}", name));
+            let name_sym = Symbol::intern(name);
+            self.env.remove_sym(Self::type_meta_key_for_sym(name_sym));
+            self.env
+                .remove_sym(Self::hash_key_meta_key_for_sym(name_sym));
         }
     }
 
@@ -331,14 +363,41 @@ impl Interpreter {
     pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
         // Most programs declare no typed lexical at all; when the monotonic
         // flag is clear no `__mutsu_type::*` entry can exist, so skip the
-        // `format!` + env probe entirely.
+        // intern + env probe entirely.
         if !Self::env_type_constraint_seen() {
             return None;
         }
-        let meta_key = Self::type_meta_key_sym(name);
+        self.var_type_constraint_sym(Symbol::intern(name))
+    }
+
+    /// [`Self::var_type_constraint`] for a caller that holds the name as a
+    /// symbol: the hot store paths (`SetLocal` has its slot's symbol,
+    /// `SetGlobal` interns its constant once) probe this several times per
+    /// store, and each `&str` probe re-hashed the name to find its symbol.
+    pub(crate) fn var_type_constraint_sym(&self, name_sym: Symbol) -> Option<String> {
+        if !Self::env_type_constraint_seen() {
+            return None;
+        }
+        let meta_key = Self::type_meta_key_for_sym(name_sym);
         match self.env.get_sym(meta_key).map(Value::view) {
-            Some(ValueView::Str(tc)) => Some(tc.to_string()),
+            // `to_string` on the `Arc<String>` guard went through `Display`;
+            // this is a plain copy of the bytes.
+            Some(ValueView::Str(tc)) => Some(tc.as_str().to_owned()),
             _ => None,
+        }
+    }
+
+    /// [`Self::var_type_constraint`] taking the symbol when the caller has
+    /// one (`code.locals_sym` is populated per slot but is an `Option`).
+    #[inline]
+    pub(crate) fn var_type_constraint_for(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<String> {
+        match name_sym {
+            Some(sym) => self.var_type_constraint_sym(sym),
+            None => self.var_type_constraint(name),
         }
     }
 
@@ -577,9 +636,9 @@ impl Interpreter {
     /// stays — an attribute's declared type lives in the class registry and is
     /// not a lexical at all.
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
-        let meta_key = format!("__mutsu_hash_key_type::{}", name);
-        if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
-            return Some(tc.to_string());
+        let meta_key = Self::hash_key_meta_key_for_sym(Symbol::intern(name));
+        if let Some(ValueView::Str(tc)) = self.env.get_sym(meta_key).map(Value::view) {
+            return Some(tc.as_str().to_owned());
         }
         self.attr_hash_key_constraint(name)
     }

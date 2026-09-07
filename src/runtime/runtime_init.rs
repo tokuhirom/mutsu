@@ -2806,6 +2806,7 @@ impl Interpreter {
 
         let mut interpreter = Self {
             open_role_group: None,
+            literal_native_args: 0,
             user_declared_classes: std::collections::HashSet::new(),
             env: Env::from(env),
             output_sink: Arc::new(RwLock::new(OutputSink::new())),
@@ -2948,7 +2949,7 @@ impl Interpreter {
             package_lexicals: PackageLexicals::default(),
             class_body_static_names: HashMap::new(),
             unit_lexicals: PackageLexicals::default(),
-            mainline_lexical_subs: std::collections::HashSet::new(),
+            mainline_lexical_subs: std::collections::HashMap::new(),
             escaped_our_lexical_cells: HashMap::new(),
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),
