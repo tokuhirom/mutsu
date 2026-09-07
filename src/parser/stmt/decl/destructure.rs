@@ -112,6 +112,13 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     is_our: bool,
     type_constraint: Option<String>,
 ) -> PResult<'_, Stmt> {
+    // `our Int ($a, $b)` is refused at compile time, like every other
+    // `our TYPE` spelling -- see `our_type_constraint_error`. Raised here
+    // rather than in the compiler because the `VarDecl`s this lowers to do not
+    // carry the `our` down with them.
+    if is_our && type_constraint.is_some() {
+        return Err(super::helpers::our_type_constraint_error());
+    }
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();

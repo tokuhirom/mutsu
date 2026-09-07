@@ -14,7 +14,7 @@ use Test;
 #
 # Measured against rakudo 2026.07.
 
-plan 18;
+plan 24;
 
 # --- 1. a `state` declaration is in effect at block start ----------------
 my $x = 0;
@@ -75,3 +75,18 @@ is Q[our Int $x].AST.gist.contains('scope       => "our"'), True,
 # routine's return type there, not to an `our` container.
 is compiles('our Int constant OURK = 3; OURK'), 3, '`our Int constant` still compiles';
 is compiles('our Int sub ourf() { 7 }; ourf()'), 7, '`our Int sub` still compiles';
+
+# The two spellings that used to escape the check, because the AST does not
+# carry the `our` down to the node the constraint lands on: a destructuring
+# list lowers to `VarDecl`s that never learn they were `our`, and a class
+# attribute is a `HasDecl` the class-body planner compiles. Both are refused in
+# the PARSER now, which is where rakudo refuses them too.
+is compiles('our Int ($oura, $ourb); 1'), 'refused', '`our Int ($a, $b)` is refused';
+is compiles('class OurAttrC { our Int $.x }; 1'), 'refused', '`our Int $.x` is refused';
+
+# ... and what must keep compiling around them. The test is on the CONSTRAINT,
+# not on `our` plus attribute.
+is compiles('class PlainOurAttr { our $.x }; 1'), 1, '`our $.x` untyped still compiles';
+is compiles('class HasAttrC { has Int $.x }; 1'), 1, '`has Int $.x` still compiles';
+is compiles('class MyAttrC { my Int $.x }; 1'), 1, '`my Int $.x` still compiles';
+is compiles('my Int ($mya, $myb); 1'), 1, '`my Int ($a, $b)` still compiles';
