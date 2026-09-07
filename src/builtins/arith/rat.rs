@@ -130,6 +130,75 @@ pub(crate) fn as_bigint(value: &Value) -> Option<NumBigInt> {
     }
 }
 
+/// An integer operand borrowed for a big-integer binary op: a `BigInt` lends
+/// its magnitude straight out of the `Arc`, an `Int` is widened into a small
+/// owned temporary.
+enum IntOperand<'a> {
+    Borrowed(&'a NumBigInt),
+    Owned(NumBigInt),
+}
+
+impl IntOperand<'_> {
+    #[inline]
+    fn get(&self) -> &NumBigInt {
+        match self {
+            IntOperand::Borrowed(b) => b,
+            IntOperand::Owned(o) => o,
+        }
+    }
+}
+
+#[inline]
+fn int_operand<'a>(view: &'a ValueView<'a>) -> Option<IntOperand<'a>> {
+    match view {
+        ValueView::Int(i) => Some(IntOperand::Owned(NumBigInt::from(*i))),
+        ValueView::BigInt(b) => Some(IntOperand::Borrowed(b.as_ref())),
+        _ => None,
+    }
+}
+
+/// Apply `op` to two integer operands, at least one of which is a big integer,
+/// **without deep-cloning either magnitude**.
+///
+/// Reading the operands with [`as_bigint`] instead costs an allocation plus a
+/// full limb-vector memcpy per operand; for a multi-thousand-digit operand that
+/// is more work than the arithmetic itself (callgrind on the growing-Fibonacci
+/// loop of `news/2026-09/bigint-arith-borrowed-operands.md`: `as_bigint`
+/// 4.5% of total instructions against 3.4% for the addition proper). Borrowing
+/// leaves only the one result buffer `num-bigint` allocates anyway.
+///
+/// Returns `None` when the pair is not "integers with at least one big" — the
+/// caller then falls through to the rational/float paths, exactly as the
+/// `as_bigint` guard it replaces did.
+pub(crate) fn big_int_binop(
+    left: &Value,
+    right: &Value,
+    op: impl FnOnce(&NumBigInt, &NumBigInt) -> NumBigInt,
+) -> Option<Value> {
+    let (lv, rv) = (left.view(), right.view());
+    if !matches!(lv, ValueView::BigInt(_)) && !matches!(rv, ValueView::BigInt(_)) {
+        return None;
+    }
+    let (a, b) = (int_operand(&lv)?, int_operand(&rv)?);
+    Some(Value::from_bigint(op(a.get(), b.get())))
+}
+
+/// `left + right` for a big-integer pair, or `None` when the operands are not
+/// two integers with at least one big. See [`big_int_binop`].
+pub(crate) fn big_int_add(left: &Value, right: &Value) -> Option<Value> {
+    big_int_binop(left, right, |a, b| a + b)
+}
+
+/// `left - right` for a big-integer pair. See [`big_int_add`].
+pub(crate) fn big_int_sub(left: &Value, right: &Value) -> Option<Value> {
+    big_int_binop(left, right, |a, b| a - b)
+}
+
+/// `left * right` for a big-integer pair. See [`big_int_add`].
+pub(crate) fn big_int_mul(left: &Value, right: &Value) -> Option<Value> {
+    big_int_binop(left, right, |a, b| a * b)
+}
+
 pub(crate) fn to_big_rat_parts(value: &Value) -> Option<(NumBigInt, NumBigInt)> {
     match value.view() {
         ValueView::Int(i) => Some((NumBigInt::from(i), NumBigInt::from(1))),

@@ -2,8 +2,8 @@
 
 use super::range::{mixin_range_arith, mixin_range_arith_val, range_offset};
 use super::rat::{
-    as_bigint, is_fat_rat_like, make_fat_rat, needs_bigrat_path, rat_add_checked, rat_sub_checked,
-    to_big_rat_parts,
+    big_int_add, big_int_sub, is_fat_rat_like, make_fat_rat, needs_bigrat_path, rat_add_checked,
+    rat_sub_checked, to_big_rat_parts,
 };
 use super::temporal::{
     instance_datetime_parts, instance_days, instance_duration_value, instance_instant_raw,
@@ -17,6 +17,15 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     // Phase 2 element container: a `:=`-bound element cell may reach an arith op
     // directly (e.g. `@a.reduce(&[+])` folds raw items); read through the cell.
     let (left, right) = (left.into_deref(), right.into_deref());
+    // Fast path: a pair of plain integers with at least one big operand. None
+    // of the Whatever/Range/Date/Instant/Duration guards below can match a bare
+    // Int/BigInt, and for a wide operand walking them costs more than the
+    // arithmetic itself. (Int+Int keeps falling through: the VM fast-paths the
+    // machine-word case before it ever reaches here, and an overflowing pair
+    // still needs the widening below.)
+    if let Some(sum) = big_int_add(&left, &right) {
+        return Ok(sum);
+    }
     // A bare Whatever value reaching `+` is NOT a curry point (those are wrapped
     // into a WhateverCode at parse time). Numifying it dies in Raku, e.g.
     // `&infix:<+>(*, 42)` invokes `+` with a Whatever argument.
@@ -131,10 +140,8 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::complex(ar + br, ai + bi)
-    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
-        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
-    {
-        Value::from_bigint(a + b)
+    } else if let Some(sum) = big_int_add(&l, &r) {
+        sum
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
         && needs_bigrat_path(&l, &r)
     {
@@ -202,6 +209,12 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
 
 pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     let (left, right) = (left.into_deref(), right.into_deref());
+    // Fast path: a pair of plain integers with at least one big operand -- see
+    // the note in `arith_add`; no Range/Date/Instant/Duration guard below can
+    // match a bare Int/BigInt either.
+    if let Some(diff) = big_int_sub(&left, &right) {
+        return diff;
+    }
     if let (Some(a), Some(b)) = (instance_instant_raw(&left), instance_instant_raw(&right)) {
         return make_duration(crate::runtime::to_float_value(&value_sub(a, b)).unwrap_or(0.0));
     }
@@ -277,10 +290,8 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let (ar, ai) = crate::runtime::to_complex_parts(&l).unwrap_or((0.0, 0.0));
         let (br, bi) = crate::runtime::to_complex_parts(&r).unwrap_or((0.0, 0.0));
         Value::complex(ar - br, ai - bi)
-    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
-        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
-    {
-        Value::from_bigint(a - b)
+    } else if let Some(diff) = big_int_sub(&l, &r) {
+        diff
     } else if let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
         && needs_bigrat_path(&l, &r)
     {
@@ -324,10 +335,8 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
                 _ => Value::int(0),
             }
         }
-    } else if (matches!(l.view(), ValueView::BigInt(_)) || matches!(r.view(), ValueView::BigInt(_)))
-        && let (Some(a), Some(b)) = (as_bigint(&l), as_bigint(&r))
-    {
-        Value::from_bigint(a - b)
+    } else if let Some(diff) = big_int_sub(&l, &r) {
+        diff
     } else {
         let lf = crate::runtime::to_float_value(&l);
         let rf = crate::runtime::to_float_value(&r);
