@@ -18,11 +18,6 @@ plan 50;
 
 my $U = 'multi infix:<+>($a, $b) is default { "USER" }; ';
 
-# Declared outside the EVAL: mutsu's EVAL returns an `enum` declaration's own
-# value rather than the block's last statement, so the enum cannot be declared
-# inside the EVAL'd string (todo/tickets/eval-returns-enum-declaration-value.md).
-enum E <A B>;
-
 # --- the core typed candidates win over an untyped user candidate ------------
 is EVAL($U ~ '1 + 2'), 3, 'Int + Int runs the core (Int:D, Int:D) candidate';
 is EVAL('multi infix:<+>($a, $b) { "USER" }; 1 + 2'), 3,
@@ -72,7 +67,7 @@ is EVAL('multi infix:<+>(UInt $a, UInt $b) { "USER" }; 1 + 2'), 'USER',
     'the core subset UInt out-narrows the core (Int:D, Int:D) too';
 is EVAL('subset Sm of Int where * < 10; multi infix:<+>(Sm $a, Sm $b) { "USER" }; 1 + 2'),
     'USER', 'a subset of Int out-narrows the core (Int:D, Int:D)';
-is EVAL('multi infix:<+>(E $a, E $b) { "USER" }; A + B'), 'USER',
+is EVAL('enum E <A B>; multi infix:<+>(E $a, E $b) { "USER" }; A + B'), 'USER',
     'an enum type out-narrows the core (Int:D, Int:D) its values carry';
 
 # --- a plain `sub` is a lexical shadow, not a candidate ----------------------
