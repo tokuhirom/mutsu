@@ -602,7 +602,17 @@ impl Compiler {
     pub(super) fn stmt_nets_a_stack_value(stmt: &Stmt) -> bool {
         matches!(
             stmt,
+            // ADR-0052: a `given`/`when`/`default` leaves its clause value.
             Stmt::Given { .. } | Stmt::When { .. } | Stmt::Default(_)
+                // `RegisterEnum` pushes the declaration's `Map` -- the value of
+                // `enum` in expression position (`my $e = enum Foo <a b c>`).
+                // A non-final `enum` statement must therefore be popped like
+                // any other net-one-value statement, or the `Map` parks at the
+                // frame's stack base and wins over the block's real tail value
+                // (`EVAL 'enum E <A B>; my $r = 42; $r'` answered the `Map`).
+                // A FINAL one is the block's value, exactly as in rakudo
+                // (`EVAL 'enum E <A B>'` is the `Map`).
+                | Stmt::EnumDecl { .. }
         )
     }
 
