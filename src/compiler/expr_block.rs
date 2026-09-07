@@ -640,11 +640,14 @@ impl Compiler {
                     .iter()
                     .any(|(t, _)| !t.starts_with("__") && t != "default");
                 let sigil_container = name.starts_with('@') || name.starts_with('%');
-                if name != "__ANON_STATE__"
-                    && name.len() > 1
-                    && ((has_default_trait && is_nil_init && !sigil_container)
-                        || (has_named_trait && sigil_container))
-                {
+                // The scalar arm is unchanged. `name` is stored SIGIL-LESS for a
+                // scalar, so a length guard here would exclude a single-letter
+                // one (`(my $c is default(7))` — `t/is-default-where-expr.t`);
+                // it belongs on the container arm, whose names carry their
+                // sigil and where it excludes the anonymous bare `@`/`%`.
+                let scalar_default = has_default_trait && is_nil_init && !sigil_container;
+                let container_trait = has_named_trait && sigil_container && name.len() > 1;
+                if name != "__ANON_STATE__" && (scalar_default || container_trait) {
                     self.code.emit(OpCode::Pop);
                     self.emit_get_named_var(name);
                 }
