@@ -16,7 +16,7 @@ fn wait_for_control_limit(ctrl_id: u64) -> i64 {
     let mut current_limit: i64 = 0;
     let start = crate::runtime::thread_compat::Instant::now();
     while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
-        for (_, event) in waker.drain() {
+        for (_, event, _) in waker.drain() {
             if let crate::value::waker::SinkEvent::Emit(val) = event
                 && let Some(rest) = val.to_string_value().strip_prefix("limit:")
                 && let Ok(n) = rest.trim().parse::<i64>()

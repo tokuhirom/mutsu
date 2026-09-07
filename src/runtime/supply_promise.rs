@@ -415,7 +415,7 @@ impl Interpreter {
         let mut quit_reason: Option<Value> = None;
         let deadline = crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30);
         'drain: loop {
-            for (_, event) in waker.drain() {
+            for (_, event, _) in waker.drain() {
                 match event {
                     SinkEvent::Emit(v) => out.push(v),
                     SinkEvent::Done => break 'drain,

@@ -81,7 +81,7 @@ impl Interpreter {
             let sink_id =
                 crate::runtime::native_methods::supplier_sink_register(supplier_id, 0, &waker);
             let collected: Result<(), RuntimeError> = 'collect: loop {
-                for (_, event) in waker.drain() {
+                for (_, event, _) in waker.drain() {
                     match event {
                         crate::value::waker::SinkEvent::Emit(v) => items.push(v),
                         crate::value::waker::SinkEvent::Quit(reason) => {

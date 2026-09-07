@@ -55,11 +55,15 @@ pub(crate) fn proc_async_merged_supply_started(attributes: &AttrMap) -> bool {
     })
 }
 
-type ClosedWheneverMap = std::sync::Mutex<std::collections::HashSet<u64>>;
+/// `whenever_id` -> the global event sequence the `Tap.close` was called at.
+/// The sequence — not merely membership — is what lets a consumer tell an event
+/// that was emitted *before* the close (which Rakudo still delivers) from one
+/// emitted after it (which it drops).
+type ClosedWheneverMap = std::sync::Mutex<HashMap<u64, u64>>;
 
 fn closed_whenever_map() -> &'static ClosedWheneverMap {
     static MAP: OnceLock<ClosedWheneverMap> = OnceLock::new();
-    MAP.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
 pub(crate) fn next_whenever_id() -> u64 {
@@ -68,15 +72,26 @@ pub(crate) fn next_whenever_id() -> u64 {
 }
 
 pub(crate) fn close_whenever(id: u64) {
+    let seq = next_emit_seq();
     if let Ok(mut closed) = closed_whenever_map().lock() {
-        closed.insert(id);
+        closed.entry(id).or_insert(seq);
     }
 }
 
 pub(crate) fn is_whenever_closed(id: u64) -> bool {
     closed_whenever_map()
         .lock()
-        .is_ok_and(|closed| closed.contains(&id))
+        .is_ok_and(|closed| closed.contains_key(&id))
+}
+
+/// The event sequence this `whenever`'s tap was closed at, if it was closed.
+/// An event sequenced at or before it was emitted while the tap was still live
+/// and must still be delivered.
+pub(crate) fn whenever_closed_seq(id: u64) -> Option<u64> {
+    closed_whenever_map()
+        .lock()
+        .ok()
+        .and_then(|closed| closed.get(&id).copied())
 }
 
 fn supply_taps_map() -> &'static SupplyTapsMap {
@@ -260,9 +275,11 @@ pub(in crate::runtime) fn supply_channel_map_pub() -> &'static SupplyChannelMap 
 /// comparable sequence numbers, so a batch sink registration can replay them
 /// merged in true emit order rather than one whole supplier's buffer at a time
 /// (see `supplier_sinks_register_batch`).
+/// Shared with `Tap.close` (`close_whenever`) and with the waker queues via
+/// [`crate::value::waker::next_event_seq`], so an emit and a close are totally
+/// ordered against each other.
 fn next_emit_seq() -> u64 {
-    static EMIT_SEQ: AtomicU64 = AtomicU64::new(1);
-    EMIT_SEQ.fetch_add(1, Ordering::Relaxed)
+    crate::value::waker::next_event_seq()
 }
 
 fn next_sink_id() -> u64 {
@@ -336,13 +353,21 @@ pub(crate) fn supplier_sink_register(
     let sink_id = next_sink_id();
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
-        for v in &state.emitted {
-            waker.push(key, crate::value::waker::SinkEvent::Emit(v.clone()));
+        for (i, v) in state.emitted.iter().enumerate() {
+            let seq = state.emitted_seq.get(i).copied().unwrap_or(0);
+            waker.push_at(key, crate::value::waker::SinkEvent::Emit(v.clone()), seq);
         }
+        let terminal_seq = state
+            .terminal_seq
+            .unwrap_or_else(|| state.emitted_seq.last().map(|s| s + 1).unwrap_or(0));
         if let Some(reason) = &state.quit_reason {
-            waker.push(key, crate::value::waker::SinkEvent::Quit(reason.clone()));
+            waker.push_at(
+                key,
+                crate::value::waker::SinkEvent::Quit(reason.clone()),
+                terminal_seq,
+            );
         } else if state.done {
-            waker.push(key, crate::value::waker::SinkEvent::Done);
+            waker.push_at(key, crate::value::waker::SinkEvent::Done, terminal_seq);
         }
         state.sinks.push(SupplierSink {
             sink_id,
@@ -407,8 +432,8 @@ pub(crate) fn supplier_sinks_register_batch(
         }
         // Stable sort keeps same-sequence ties in registration order.
         replay.sort_by_key(|(seq, _, _)| *seq);
-        for (_, key, event) in replay {
-            waker.push(key, event);
+        for (seq, key, event) in replay {
+            waker.push_at(key, event, seq);
         }
     }
     sink_ids
@@ -547,12 +572,16 @@ pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
         if state.done || state.quit_reason.is_some() {
             return;
         }
+        let seq = next_emit_seq();
         for s in &state.sinks {
-            s.waker
-                .push(s.key, crate::value::waker::SinkEvent::Emit(value.clone()));
+            s.waker.push_at(
+                s.key,
+                crate::value::waker::SinkEvent::Emit(value.clone()),
+                seq,
+            );
         }
         state.emitted.push(value);
-        state.emitted_seq.push(next_emit_seq());
+        state.emitted_seq.push(seq);
     }
 }
 
@@ -610,9 +639,11 @@ pub(crate) fn supplier_done(supplier_id: u64) {
             return;
         }
         state.done = true;
-        state.terminal_seq = Some(next_emit_seq());
+        let seq = next_emit_seq();
+        state.terminal_seq = Some(seq);
         for s in &state.sinks {
-            s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
+            s.waker
+                .push_at(s.key, crate::value::waker::SinkEvent::Done, seq);
         }
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
@@ -634,9 +665,11 @@ pub(in crate::runtime) fn supplier_done_deferred(
             return Vec::new();
         }
         state.done = true;
-        state.terminal_seq = Some(next_emit_seq());
+        let seq = next_emit_seq();
+        state.terminal_seq = Some(seq);
         for s in &state.sinks {
-            s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
+            s.waker
+                .push_at(s.key, crate::value::waker::SinkEvent::Done, seq);
         }
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
@@ -653,10 +686,14 @@ pub(crate) fn supplier_quit(supplier_id: u64, reason: Value) {
             return;
         }
         state.quit_reason = Some(reason.clone());
-        state.terminal_seq = Some(next_emit_seq());
+        let seq = next_emit_seq();
+        state.terminal_seq = Some(seq);
         for s in &state.sinks {
-            s.waker
-                .push(s.key, crate::value::waker::SinkEvent::Quit(reason.clone()));
+            s.waker.push_at(
+                s.key,
+                crate::value::waker::SinkEvent::Quit(reason.clone()),
+                seq,
+            );
         }
         let pending = std::mem::take(&mut state.pending_promises);
         for promise in pending {

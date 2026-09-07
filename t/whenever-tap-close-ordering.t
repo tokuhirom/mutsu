@@ -4,11 +4,11 @@ use Test;
 # emitted before the `.close` are still delivered, because the emit and the
 # close are ordered against each other.
 #
-# mutsu drops them: `close_whenever` sets a global flag, and
-# `Interpreter::drain_waker_events` (`vm/vm_react_subscriptions.rs`) checks that
-# flag AFTER `waker.drain()` has already handed it the queued batch -- so every
-# event the react loop had not got to yet is discarded, however long before the
-# close it was emitted.
+# mutsu used to drop them: the close was a timeless bit in a process-global set,
+# so the drive loop could only see "this subscription is closed" and retired it
+# with its whole pending batch undelivered. The close now takes a position in
+# the same global event sequence the queued events carry
+# (`value::waker::next_event_seq`), so an event emitted before it is still due.
 #
 # Measured 2026-09-06 against raku v2026.07. ADR-0053 owns the design.
 
@@ -51,7 +51,6 @@ plan 4;
         $t.close;
         whenever Promise.in(0.1) { done }
     }
-    todo 'the close discards the already-queued batch';
     is @got, [1, 2], 'closing after two emits still delivers both';
 }
 
@@ -66,6 +65,5 @@ plan 4;
         $s.emit(2);
         whenever Promise.in(0.1) { done }
     }
-    todo 'ditto -- the value emitted before the close is dropped too';
     is @got, [1], 'closing between two emits delivers only the first';
 }
