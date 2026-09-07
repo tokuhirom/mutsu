@@ -67,16 +67,13 @@ impl Interpreter {
         {
             return true;
         }
-        // SetHash/BagHash/MixHash are mutable variants sharing the same Value variants
-        if constraint == "SetHash" && value_type == "Set" {
-            return true;
-        }
-        if constraint == "BagHash" && value_type == "Bag" {
-            return true;
-        }
-        if constraint == "MixHash" && value_type == "Mix" {
-            return true;
-        }
+        // `Set`/`SetHash` (and the Bag/Mix pairs) are SIBLINGS under `Any`, not
+        // a class and its subclass: `Set.new("a") ~~ SetHash` is False in
+        // rakudo, in both directions. mutsu spells the mutable/immutable
+        // distinction as a `bool` inside one `Value` variant, and
+        // `value_type_name` already reads it — so the exact name comparison
+        // above is the whole rule and no bridge belongs here. What the two
+        // spellings DO share is the roles they do.
         if constraint == "Setty" && matches!(value_type, "Set" | "SetHash") {
             return true;
         }
@@ -84,6 +81,16 @@ impl Interpreter {
             return true;
         }
         if constraint == "Mixy" && matches!(value_type, "Mix" | "MixHash") {
+            return true;
+        }
+        // `QuantHash` is the role `Setty`/`Baggy`/`Mixy` all do, so every one
+        // of the six spellings satisfies it.
+        if constraint == "QuantHash"
+            && matches!(
+                value_type,
+                "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
+            )
+        {
             return true;
         }
         // Metamodel:: is an alias for Perl6::Metamodel::
@@ -307,8 +314,11 @@ impl Interpreter {
                     | "Map"
                     | "Pair"
                     | "Bag"
+                    | "BagHash"
                     | "Set"
+                    | "SetHash"
                     | "Mix"
+                    | "MixHash"
                     | "QuantHash"
                     | "Capture"
                     | "IO::Path::Parts"
