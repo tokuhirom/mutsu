@@ -46,7 +46,7 @@ impl Interpreter {
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
         if crate::runtime::raw_invocant::any_raw_invocant_method_possible()
-            && let Some(cell) = self.take_subscript_element_cell(is_positional)
+            && let Some(cell) = self.take_subscript_element_cell(is_positional, false)
         {
             // `skip_postcircumfix_overload` is scoped to ONE subscript dispatch
             // and is consumed by `exec_index_op_with_positional`; consume it
@@ -75,7 +75,7 @@ impl Interpreter {
         mark: &crate::opcode::IndexArgRefMark,
     ) -> Result<(), RuntimeError> {
         if self.index_arg_callee_binds_container(code, mark)
-            && let Some(cell) = self.take_subscript_element_cell(mark.is_positional)
+            && let Some(cell) = self.take_subscript_element_cell(mark.is_positional, true)
         {
             // Scoped to ONE subscript dispatch; consume it here too so producing
             // a cell instead cannot leak the suppression onto the next one.
@@ -94,7 +94,14 @@ impl Interpreter {
     /// targets, `postcircumfix` overloads and every other shape stay on the one
     /// implementation that already handles them, rather than being partially
     /// re-derived here.
-    fn take_subscript_element_cell(&mut self, is_positional: bool) -> Option<Value> {
+    ///
+    /// `grow` is the ARGUMENT producer's own rule (see
+    /// [`Self::exec_index_arg_ref_op`]): an argument position is a definite
+    /// bind, so a subscript past the end vivifies the element rather than
+    /// declining. A receiver (`@a[5].mut`) is not a bind and keeps the
+    /// declining behaviour, which is why the two producers no longer share one
+    /// answer here.
+    fn take_subscript_element_cell(&mut self, is_positional: bool, grow: bool) -> Option<Value> {
         let n = self.stack.len();
         if n < 2 {
             return None;
@@ -124,13 +131,24 @@ impl Interpreter {
             let ValueView::Int(i) = index.view() else {
                 return None;
             };
-            // Past the end is the deferred-vivification shape, which is a path
-            // token rather than a location — `@a[5].mut` has no element to hand
-            // over, so it stays an ordinary read.
-            if i < 0 || i as usize >= len {
+            if i < 0 {
                 return None;
             }
-            target.array_slot_ref(i as usize, true)?
+            // Past the end, `terminal: true` hands back a deferred
+            // vivification token rather than a location -- right for
+            // `my $r := @a[5]`, and right for `@a[5].mut`, which has no
+            // element to hand over. An ARGUMENT is a definite bind, so it asks
+            // for the eager (`terminal: false`) growth instead: rakudo answers
+            // `my @a = 1, 2; $r(@a[5])` with `[1 2 (Any) (Any) (Any) 9]`, and
+            // so does mutsu's own NAMED-callee path through `CallFunc`'s
+            // copy-in/copy-out temp protocol.
+            if !grow && i as usize >= len {
+                return None;
+            }
+            // `terminal` only decides the past-the-end behaviour, and an
+            // in-range index never reaches it, so `!grow` says exactly "defer
+            // unless this is an argument".
+            target.array_slot_ref(i as usize, !grow)?
         } else {
             // An object hash (`my %h{Any}`) stores `.WHICH`-encoded keys, so the
             // subscript has to be encoded the same way the read path encodes it.
@@ -143,7 +161,20 @@ impl Interpreter {
             } else {
                 Value::hash_key_encode(&index)
             };
-            target.hash_slot_ref(&key, true)?
+            let cell = target.hash_slot_ref(&key, true)?;
+            // Same rule on the associative side: a MISSING key hands back the
+            // deferred token, which is right for a receiver but not for an
+            // argument -- a definite bind vivifies (`$r(%h<k>)` leaves
+            // `{:k(9)}` in rakudo). `terminal` cannot express that here (a
+            // missing key defers either way), so the entry is created and the
+            // slot re-taken. An EXISTING entry is untouched, which keeps the
+            // `terminal: true` promotion of a nested Array/Hash element.
+            if grow && !matches!(cell.view(), ValueView::ContainerRef(_)) {
+                target.hash_assign_at(&key, Value::NIL)?;
+                target.hash_slot_ref(&key, true)?
+            } else {
+                cell
+            }
         };
         // A missing key hands back a lazy `HashEntryRef` token rather than a
         // location; that is a read, not a receiver container.

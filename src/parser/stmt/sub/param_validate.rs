@@ -275,7 +275,15 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             );
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
-        if pd.traits.iter().any(|t| t == "rw") && (pd.optional_marker || pd.default.is_some()) {
+        // A NAMED parameter is optional unless it carries `!`, so it needs no
+        // `?` marker and no default to reach this: `sub g(:$y is rw)` is the
+        // same compile-time error as `sub g($y? is rw)`, while `:$y! is rw` is
+        // accepted (both measured against raku). A slurpy is never "optional"
+        // in this sense -- rakudo accepts `*@a is rw`.
+        let is_optional = pd.optional_marker
+            || pd.default.is_some()
+            || (pd.named && !pd.required && !pd.slurpy && !pd.double_slurpy);
+        if pd.traits.iter().any(|t| t == "rw") && is_optional {
             // rakudo raises `X::Trait::Invalid` here with the trait split into
             // `.type` ("is") and `.subtype` ("rw"), plus `.declaring` and the
             // parameter `.name`; its message is composed from exactly those

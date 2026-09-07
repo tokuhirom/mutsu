@@ -182,12 +182,32 @@ impl Interpreter {
     /// `param_defs` directly, so this is exact and needs no registry lookup.
     fn code_value_binds_container_at(callee: &Value, positional: usize) -> bool {
         let callee = callee.deref_container();
+        // `.^lookup` / `.^methods` hand back a `Method`/`Submethod` INSTANCE
+        // whose `__mutsu_method_callable` attribute is the routine `CALL-ME`
+        // actually runs (ADR-0019 Phase F box F1). Invoked as a CODE value,
+        // such a method takes its invocant as positional argument 0 --
+        // `$obj.^lookup('m')($obj, $c.v)` passes it explicitly -- so its
+        // signature's invocant parameter IS one of the arguments counted here,
+        // and skipping it looked one parameter too far along. Every other
+        // callable (a `sub`, a block, a method reached through ordinary
+        // `.`-dispatch) receives its invocant out of band, so the skip stays.
+        let (callee, counts_invocant) = match callee.view() {
+            ValueView::Instance { attributes, .. } => {
+                match attributes.as_map().get("__mutsu_method_callable").cloned() {
+                    Some(inner) => (inner, true),
+                    // Any other instance callable (a user class with
+                    // `CALL-ME`) is not a shape this producer reads.
+                    None => return false,
+                }
+            }
+            _ => (callee, false),
+        };
         let ValueView::Sub(data) = callee.view() else {
             return false;
         };
         data.param_defs
             .iter()
-            .filter(|p| !p.named && !p.is_invocant)
+            .filter(|p| !p.named && (counts_invocant || !p.is_invocant))
             .nth(positional)
             .is_some_and(|p| p.binds_caller_container())
     }
