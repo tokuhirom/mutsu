@@ -43,6 +43,35 @@ impl Interpreter {
         self.multi_candidates_over(name, Some(&keys))
     }
 
+    /// [`Self::resolve_all_multi_candidates_indexed`] behind the per-generation
+    /// memo (`multi_dispatch_candidates_memo`): the same list, shared, for a repeat call
+    /// of the same name from the same package context under an unchanged
+    /// registry.
+    pub(crate) fn resolve_all_multi_candidates_cached(
+        &mut self,
+        name: &str,
+    ) -> crate::runtime::MultiCandidateList {
+        let generation = (self.fn_resolve_gen, self.registry().proto_generation());
+        if self.multi_dispatch_candidates_memo_gen != generation {
+            self.multi_dispatch_candidates_memo.clear();
+            self.multi_dispatch_candidates_memo_gen = generation;
+        }
+        let key = (
+            Symbol::intern(name),
+            self.current_package_sym(),
+            self.routine_stack()
+                .last()
+                .and_then(|frame| frame.lexical_package),
+        );
+        if let Some(cached) = self.multi_dispatch_candidates_memo.get(&key) {
+            return cached.clone();
+        }
+        let candidates = Arc::new(self.resolve_all_multi_candidates_indexed(name));
+        self.multi_dispatch_candidates_memo
+            .insert(key, candidates.clone());
+        candidates
+    }
+
     /// Shared body of the two candidate gathers above: `keys`, when given, is the
     /// candidate key set to filter; `None` means walk the whole functions map.
     fn multi_candidates_over(&self, name: &str, keys: Option<&[Symbol]>) -> Vec<Arc<FunctionDef>> {
@@ -170,5 +199,15 @@ mod indexed_gather_equivalence_tests {
                 .len(),
             2
         );
+
+        // The memoized gather answers the same list, and a later registration
+        // (which moves `fn_resolve_gen`) refreshes it rather than serving the
+        // stale one.
+        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 3);
+        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 3);
+        i.run("multi sub f(Num $x, Num $y, Num $z) { 4 }")
+            .expect("a fourth candidate registers");
+        assert_eq!(i.resolve_all_multi_candidates_cached("f").len(), 4);
+        assert_eq!(i.resolve_all_multi_candidates_indexed("f").len(), 4);
     }
 }

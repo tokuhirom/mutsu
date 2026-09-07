@@ -632,21 +632,32 @@ impl Env {
             Some(parent) if self.inner.is_empty() && self.tombstones.is_none() => {
                 parent.flattened()
             }
-            Some(parent) => {
-                // Recursively collapse the parent chain to a flat overlay first
-                // (the base tier stays shared, never materialized), then layer
-                // this frame's tombstones and overlay on top.
-                let parent_flat = parent.flattened();
-                let mut merged: SymMap = (*parent_flat.inner).clone();
-                // Apply tombstones: a key removed in this scope must not survive
-                // into the flattened (flat) env.
-                if let Some(tomb) = &self.tombstones {
-                    for k in tomb {
-                        merged.remove(k);
-                    }
+            Some(_) => {
+                // Collapse the whole chain in ONE pass: clone the flat root
+                // tier's map once, then layer every tier's tombstones and
+                // overlay on top of it, root-ward first. Recursing through
+                // `parent.flattened()` instead materialized a full copy of the
+                // map at EVERY tier of the chain -- a method call two routine
+                // frames deep paid two whole-scope clones for one flatten. The
+                // base tier stays shared, never materialized, as before.
+                let mut tiers: Vec<&Env> = Vec::new();
+                let mut cur: &Env = self;
+                while let Some(parent) = &cur.parent {
+                    tiers.push(cur);
+                    cur = parent;
                 }
-                for (k, v) in self.inner.iter() {
-                    merged.insert(*k, v.clone());
+                let mut merged: SymMap = (*cur.inner).clone();
+                for tier in tiers.into_iter().rev() {
+                    // An overlay that never received a write (and holds no
+                    // tombstone) is invisible to lookups.
+                    if let Some(tomb) = &tier.tombstones {
+                        for k in tomb {
+                            merged.remove(k);
+                        }
+                    }
+                    for (k, v) in tier.inner.iter() {
+                        merged.insert(*k, v.clone());
+                    }
                 }
                 Self {
                     inner: Arc::new(merged),
