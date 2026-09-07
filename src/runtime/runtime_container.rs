@@ -577,6 +577,14 @@ impl Interpreter {
         Ok(self.tag_container_metadata(value, info))
     }
 
+    /// Whether no variable has been declared `is dynamic` (see
+    /// [`Self::is_var_dynamic`]): the gate that lets a call return skip the
+    /// dynamic-writeback walk over the caller env.
+    #[inline]
+    pub(crate) fn var_dynamic_flags_is_empty(&self) -> bool {
+        self.var_dynamic_flags.is_empty()
+    }
+
     pub(crate) fn is_var_dynamic(&self, name: &str) -> bool {
         let bare = Self::normalize_var_meta_name(name);
         // The implicit special variables `$_`, `$/`, `$!` are dynamic by nature

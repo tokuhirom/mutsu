@@ -456,6 +456,14 @@ impl Interpreter {
         if tag_match && !self.registry().subsets.contains_key(constraint) {
             return true;
         }
+        // `Mu` is the root of the type hierarchy: every value, container, type
+        // object, junction and failure is a `Mu`. The general checker below
+        // reaches the same answer only at the end of its walk, and a `Mu`
+        // parameter is the shape every assertion routine in `Test.rakumod`
+        // declares (`ok(Mu $cond, ...)`, `proclaim(Bool(Mu) $cond, ...)`).
+        if constraint == "Mu" && !self.registry().subsets.contains_key("Mu") {
+            return true;
+        }
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
         }
