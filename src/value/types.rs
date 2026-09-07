@@ -152,6 +152,51 @@ pub(crate) fn role_mixin_suffix(
     role_mixin_suffix_excluding(mixins, "")
 }
 
+/// The roles a `Mixin` value's `overrides` record, MOST-RECENTLY-APPLIED
+/// FIRST — the order `.^roles` reports them in
+/// (`((1 but A) but B).^roles` is `(B, A, Real, Numeric)` in raku, with the
+/// base type's own roles after). Each entry is rendered by
+/// [`role_mixin_suffix_entry`], so a parameterised role keeps its arguments
+/// (`P[Int]`) and an anonymous one its `<anon|N>` spelling.
+///
+/// The application order is the `__mutsu_role_seq__{name}` stamp every
+/// composition site sets (`roles.rs`), the same one
+/// `receiver_class::mixin_chain` sorts the dispatch order by; the name is the
+/// tie-break for a marker that carries no stamp. `base` skips the role whose
+/// name equals it, for the punning case
+/// ([`role_mixin_suffix_excluding`]'s argument of the same name); pass `""`
+/// to exclude nothing.
+pub(crate) fn mixin_roles_applied_last_first(
+    mixins: &std::collections::HashMap<String, Value>,
+    base: &str,
+) -> Vec<String> {
+    let mut entries: Vec<(i64, String)> = mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        .filter(|n| *n != base)
+        .map(|n| {
+            let seq = mixins
+                .get(&format!("__mutsu_role_seq__{n}"))
+                .and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i),
+                    _ => None,
+                })
+                .unwrap_or(i64::MIN);
+            (seq, role_mixin_suffix_entry(mixins, n))
+        })
+        .collect();
+    entries.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut names: Vec<String> = entries.into_iter().map(|(_, name)| name).collect();
+    // `but`-mixing a plain value composes an anonymous role, recorded under its
+    // own marker rather than a `__mutsu_role__` entry (see
+    // `Interpreter::apply_single_mixin`); raku lists it too —
+    // `(1 but "x").^roles` is `(<anon|1>, Real, Numeric)`.
+    if let Some(anon) = mixins.get(VALUE_MIXIN_MARKER) {
+        names.push(crate::value::user_facing_type_name(&anon.to_string_value()).into_owned());
+    }
+    names
+}
+
 /// [`role_mixin_suffix`], but skipping the role whose name equals `base` — the
 /// role-punning case, where `R.new` builds `Mixin(Instance{R}, __mutsu_role__R)`
 /// and raku reports plain `R` rather than `R+{R}`. Pass `""` to exclude nothing.
