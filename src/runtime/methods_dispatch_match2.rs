@@ -617,11 +617,6 @@ impl Interpreter {
         // needs the `use fatal` captured at the `.map` call, which the
         // `LazyList` route has no field for. That was the last thing keeping
         // `t/map-callback-runs-at-consumption.t`'s two Part-1 rows `todo`.
-        if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
-            && Self::body_contains_return(&sub_data.body)
-        {
-            return Ok(self.create_lazy_map_list(items, &sub_data));
-        }
         // ADR-0058 step 2: `.map` returns a Seq whose callback has NOT run
         // yet. The callback runs when something consumes the Seq, through
         // ADR-0034's `reify`/`take`/`sink` split (`SeqSource::MapGrep`'s arm
@@ -635,57 +630,6 @@ impl Interpreter {
             mode: crate::value::MapGrepMode::Map,
         }))
     }
-
-    /// Create a `LazyList` that lazily maps `callback` over `items`.
-    ///
-    /// Instead of eagerly evaluating the map, stores the items and callback
-    /// in a `LazyList`. When the list is forced, `eval_map_over_items` runs
-    /// the callback for each item. This ensures that `return` inside the
-    /// callback correctly detects when the lexically enclosing routine has
-    /// already exited (out-of-dynamic-scope).
-    pub(super) fn create_lazy_map_list(
-        &self,
-        items: Vec<Value>,
-        callback: &crate::gc::Gc<crate::value::SubData>,
-    ) -> Value {
-        let mut env = self.env.clone();
-        env.insert(
-            "__mutsu_lazy_map_items".to_string(),
-            Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                crate::value::ArrayKind::List,
-            ),
-        );
-        env.insert(
-            "__mutsu_lazy_map_func".to_string(),
-            Value::sub_value(callback.clone()),
-        );
-        // Mark as gather-based so the VM auto-forces it for chained methods.
-        env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
-
-        let list = crate::value::LazyList {
-            body: Vec::new(),
-            env,
-            cache: std::sync::Mutex::new(None),
-            generation_state: std::sync::Mutex::new(None),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-            array_context: false,
-            list_context: false,
-            cached_no_sink: false,
-            itemized: false,
-        };
-        Value::lazy_list(crate::gc::Gc::new(list))
-    }
-
     /// Dispatch "min" and "max" methods.
     fn dispatch_min_max_method(
         &mut self,

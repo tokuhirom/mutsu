@@ -1,6 +1,6 @@
 # ADR-0058: `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call
 
-- **Status**: Accepted (steps 2, 3a and 3c shipped 2026-09-07; steps 3b and 4 open)
+- **Status**: Accepted — **fully implemented** (steps 0-4 all shipped 2026-09-07)
 - **Date**: 2026-08-22
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md)
@@ -140,6 +140,26 @@ rather than a patch — see §5.
 
 ---
 
+## 1b. Status (2026-09-07): every step is shipped
+
+Steps 0-4 are all done. `.map` and `.grep` both answer a deferred `Seq` in every
+spelling, one mechanism (`SeqSource::MapGrep` + `MapGrepMode`) implements it,
+and the older `LazyList` deferral is deleted. §9.5 records the process lesson
+that came out of it, and is the part worth carrying to the next deferral-shaped
+change.
+
+One divergence measured while retiring step 4 is NOT caused by it and stays
+open, unrecorded elsewhere: a `return` inside a `.map` callback that is forced
+*within* the declaring routine returns from that routine in mutsu and does not
+in rakudo --
+
+```raku
+sub h() { my $r = (1,2,3).map({ return 9 }).List; "unreached" }
+say h();      # rakudo: unreached      mutsu: 9
+```
+
+It is unaffected by the carve-out's presence or absence (measured both ways).
+
 ## 2. Decision
 
 **`.map` and `.grep` return a `Seq` whose body is not yet reified. The callback
@@ -272,7 +292,7 @@ callback `Value` already carries its own closure environment.
 | **3a** | **Done (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returns the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2. Attempted and reverted earlier the same day behind a step-2 hole (S9.1); that hole is closed (`news/2026-09/deferred-map-callback-frame.md`). The mandatory full `make roast` then found three more consumers, all fixed generally -- see S9.3. | `t/listop-map-defers.t`, and `t/nested-deferred-map-seq-is-pulled.t`'s listop row un-`todo`d. |
 | **3c** | **Done (2026-09-07).** The three EAGER `.map` loops keyed on an `@`-sigil receiver -- `call_method_mut_with_values`'s rw gate, `try_native_array_map`, and `builtin_map`'s `source_var` branch -- defer through the same `SeqSource::MapGrep`, which gains `rw_source` so the pull can publish the rw write-back in place. `is_stub_routine_body` drops out of both deferral predicates, and a `Control::Fail` raised under a captured `fatal` throws at the pull. Closes S9.4; the oracle is 37 rows with no `todo`s. | `news/2026-09/real-array-map-defers.md`. The mandatory full `make roast` + `make test` + battery run found EIGHT more general defects -- see S9.4. |
 | **3b** | **Done (2026-09-07).** Every `grep` entry point defers with the default `:v` adverb: the concrete-array arm, the range arm, the generic arm and the listop. `:k`/`:kv`/`:p` keep the eager path (they need positional indices over the whole result), the same exemption they already take from `make_lazy_pipe`. §9.5 records what the gates found. | `SeqSource::MapGrep`'s two `Option<Value>` fields collapsed into one `MapGrepMode` enum so the four shapes are mutually exclusive by construction. |
-| **4** | Retire the `body_contains_return` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. (`is_stub_routine_body` already dropped out of both predicates in step 3c: a `...` stub needs only "do not fire until iterated", which `MapGrep` gives, and unlike the `LazyList` route `MapGrep` carries the `fatal` a stub-as-`fail` needs.) | The maintainability payout. |
+| **4** | **Done (2026-09-07).** `create_lazy_map_list` and the `body_contains_return` predicate are deleted (102 lines). The carve-out's stated reason -- that an out-of-dynamic-scope `return` "the `LazyList` path already gets right" -- was measured obsolete: removing it changed nothing, because `SeqSource::MapGrep` surfaces `X::ControlFlow::Return` identically. | The maintainability payout. One deferral mechanism remains. |
 
 ### Verification
 
