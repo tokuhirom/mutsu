@@ -4,10 +4,12 @@ Found by the exception-taxonomy survey in
 `news/2026-08/readonly-assign-exception-taxonomy.md`. That work fixed *which*
 exception a rejected assignment throws; this ticket collects the cases where
 mutsu does not reject the assignment at all, which the same survey surfaced.
-Every row below was re-measured against `raku` v2026.06 on **2026-09-05**, on
-top of the closure-topic fix (`news/2026-09/closure-and-map-grep-topic-readonly.md`).
+Every surviving row below was re-measured against `raku` on **2026-09-07** on a
+fresh build of `main` at `2c7fc1dde`; every one of them still reproduced, and
+the ones this file no longer lists were closed on that same day. C2, D, E and F
+were re-verified unchanged then (D's shape had drifted — see its row).
 
-## Status (2026-09-05)
+## Status (last updated 2026-09-07)
 
 Closed since the survey opened:
 
@@ -35,8 +37,15 @@ Section B was re-measured on **2026-09-07** and three of its four producers
 were closed the same day
 (`news/2026-09/slice-first-and-block-topic-element-containers.md`); only
 producer 1 (`.list` feeding `map`) survives. Section C was re-measured on
-2026-09-06 (all seven rows diverged) and then closed; sections A, B(1), D, E and
-F are what is left.
+2026-09-06 (all seven rows diverged) and then closed.
+
+**Section A was re-measured and mostly closed on 2026-09-07**
+(`news/2026-09/immutable-topic-receiver-oracle-widened.md`, pinned by
+`t/immutable-topic-receiver-oracle.t`): the compile-time receiver oracle grew,
+which is the second of the two routes the "how the surviving rows differ"
+section below names. What is left of A is the two receivers a *syntactic* oracle
+genuinely cannot decide, plus two rows found while measuring. Sections A(rest),
+B(1), C2, D, E and F are what remain.
 
 **Read the "how the surviving rows differ" section below before designing
 anything**: two successive stated blockers for the closure-topic rows (first
@@ -51,29 +60,48 @@ accepts.
 
 ```
 my @a := (1,2,3); @a.map({$_=5}).eager      raku: X::AdHoc   mutsu: (5 5 5)
+my @a := (1,2,3); @a.grep({$_=5}).eager     raku: X::AdHoc   mutsu: (5 5 5)
+my @a := (1,2,3); for @a { $_ = 5 }         raku: X::AdHoc   mutsu: silently OK
 my $s = (1,2,3).Seq; $s.map({$_=5}).eager   raku: X::AdHoc   mutsu: (5 5 5)
-(1,2).first({$_=5})                         raku: X::AdHoc   mutsu: 1
-my %h = a=>1; %h.map({$_=9}).eager          raku: X::AdHoc   mutsu: (9)
-my @a = 1,2; (@a,).map({$_=5}).eager        raku: X::AdHoc   mutsu: (5)
-for %h { $_ = 5 }                           raku: X::AdHoc   mutsu: silently OK
+my $s = (1,2,3).Seq; $s.grep({$_=5}).eager  raku: X::AdHoc   mutsu: (5 5 5)
 ```
 
-The shipped fix keys off `Compiler::for_iterable_yields_bare_items` applied to
-the *receiver expression*, which deliberately answers `false` for a variable and
-for any derived receiver. These rows are exactly the receivers it cannot prove:
-an `@`-variable `:=`-bound to a `List`, a `$`-variable holding a `Seq`, a
-`%`-variable (whose iteration mints fresh `Pair`s), and a one-element list
-literal built from an array variable. `.first` additionally never reaches the
-marking at all — only the two map loops and the grep loop consult
-`CompiledCode::immutable_topic`.
+`Compiler::for_iterable_yields_bare_items` is a verdict on the receiver's
+*syntax*, and these two receivers are plain variables: an `@`-variable
+`:=`-bound to a `List`, and a `$`-variable holding a `Seq`. Nothing in the
+expression says so. Closing them needs either a compile-time notion of "this
+variable is `:=`-bound to an immutable Positional" / "this variable holds a
+`Seq`" (the compiler already tracks something adjacent in `scalar_bind_*`), or
+section B closed first so `is_container_ref()` becomes a sound runtime oracle.
 
-`for %h` is the same row from the `for` side. Extending
-`for_iterable_yields_bare_items` to `Expr::HashVar` looks like the one-line fix
-for both, but the `for` loop pairs its topic mark with the
-`__mutsu_deep_readonly::_` env flag, which would then also reject
-`for %h { .value = 5 }` — a write rakudo performs. Whatever closes this row has
-to separate "the topic itself is immutable" from "everything reachable through
-it is".
+Four rows that used to sit here — `(1,2).first({$_=5})`, `%h.map({$_=9})`,
+`(@a,).map({$_=5})` and `for %h { $_ = 5 }` — were closed on 2026-09-07 by
+widening that same oracle (a `%` variable, `.List`/`.pairs`/`.antipairs`/`.kv`
+on an `@`/`%` variable, and a list literal with any provably-bare item), by
+adding `"first"` to `method_binds_immutable_topic`, and by splitting the `for`
+loop's shallow topic mark from its `__mutsu_deep_readonly::_` flag — which is
+exactly the separation this section predicted was required, and it was.
+
+#### Two more rows in this family, both located but not fixed
+
+```
+my $v=1; my $b={$^x=9}; $b($v); $v
+    # raku: X::Assignment "Cannot assign to a readonly variable or a value"
+    # mutsu: silently assigns the placeholder local, $v stays 1
+my $c = class { has $.n = 1 }.new; my $b={$_=9}; $b($c.n); $c.n
+    # raku: X::AdHoc "Cannot assign to an immutable value"
+    # mutsu: silently succeeds, $c.n stays 1
+```
+
+The first is located (2026-09-07): a `$`-sigiled **pointy** parameter is marked
+readonly at the call site via `CompiledCode::pointy_alias_param`, set in
+`Compiler::compile_expr_lambda`. A **placeholder** block (`{ $^x = 9 }`) is
+compiled by `compile_expr_anon_sub` instead, which emits `MakeAnonSub` and never
+sets that flag, so `sub f($x) { $x = 5 }` and `-> $x { $x = 5 }` both die
+correctly while `{ $^x = 5 }` does not. Read the long comment above
+`pointy_alias_param` before moving the marking: injecting a `MarkReadonly`
+prologue into the body instead leaks the mark permanently through the fast
+native map/grep/first loops, and that reached CI once already.
 
 ### B. Element and argument shapes where mutsu drops the write instead
 
@@ -176,15 +204,6 @@ my $x=[1,2,3]; $x.map({$_=5}).eager; $x         raku [5 5 5]   mutsu [1 2 3]
    `Text::CSV` shape needs, which has to be understood before the positional
    half can land.
 
-   Two exclusions a future producer must inherit, both found by the local suite:
-   a HOLE that reads as the container's `is default(...)` value is not promoted
-   (`@a[3]:delete` then `@a[2,3,4]` must read the default, not the marker), and
-   the list-destructuring staging temp is excluded from the shared gate
-   entirely — see
-   `todo/deep/containerref-holding-a-hash-is-indistinguishable-from-itemization.md`
-   for why the alternative (decontainerizing in the hash initializer) is blocked
-   by a representation ambiguity.
-
 3. ~~**A block called with an argument does not alias `$_` to it.**~~ **CLOSED
    2026-09-07**, in two halves. A plain scalar argument goes through
    `Interpreter::pending_call_topic_source`, the exact sibling of
@@ -219,19 +238,29 @@ container" — is closed with it, and so is the headline of
 position over). That ticket's two asides remain open, plus one new row it
 records.
 
-#### Two more rows found while measuring producer 3 (2026-09-07)
+#### A hash-sourced `map`/`grep` Pair does not share the hash's value container
 
-Both belong with section A, not here — they are silent successes where rakudo
-refuses, and neither is fixed:
+Found 2026-09-07 while measuring section A, and it is the OPPOSITE direction —
+mutsu throws where rakudo writes:
 
 ```
-my $v=1; my $b={$^x=9}; $b($v); $v
-    # raku: X::Assignment "Cannot assign to a readonly variable or a value"
-    # mutsu: silently assigns the placeholder local, $v stays 1
-my $c = class { has $.n = 1 }.new; my $b={$_=9}; $b($c.n); $c.n
-    # raku: X::AdHoc "Cannot assign to an immutable value"
-    # mutsu: silently succeeds, $c.n stays 1
+my %h = a=>1; %h.map({ .value = 9 }).eager; %h    raku {a => 9}  mutsu: throws
+my %h = a=>1; %h.grep({ .value = 9 }).eager; %h   raku {a => 9}  mutsu: throws
+my %h = a=>1; %h.pairs.map({ .value = 9 }); %h    raku {a => 9}  mutsu {a => 9}
+my %h = a=>1; for %h { .value = 9 }; %h           raku {a => 9}  mutsu {a => 9}
 ```
+
+("throws" = `X::Assignment::RO`, "Cannot modify an immutable Int (1)".)
+
+The producer is `runtime/utils/list.rs`'s `value_to_list`, which a direct
+`%h.map`/`%h.grep` receiver goes through: its `ValueView::Hash` arm builds each
+item with `items.typed_pair(k, v.clone())`, and `typed_pair` **decontainerizes**
+the element cell deliberately, so that a pair's value matches a `%h<k>` read and
+a `.values` element (`t/bind-hash-value-pairs.t`). `%h.pairs` and the `for %h`
+loop use a different producer and keep the cell. Making the map/grep-over-a-hash
+path use the `.pairs` producer is the shape of the fix, but `value_to_list` is
+a very widely shared funnel — measure who else depends on the decontainerizing
+arm before changing it.
 
 ### How the surviving rows differ from what was fixed (measured, do not skip)
 
@@ -256,6 +285,17 @@ second route is now most of the way there for a *slice* and for `.first`; it is
 still false for a plain `@a[0]` read and for `@a`'s own elements outside a
 producer, so the runtime rule is not yet sound.
 Closing B first is the architecturally cleaner order.
+
+**Update 2026-09-07:** the *first* route — growing the receiver oracle — turned
+out to cover far more of section A than this paragraph assumed, and to need no
+runtime test at all. The exact rule, measured against rakudo, is that a list
+literal is **element-wise** (`($x, $y)` is a `List` of two `Scalar`s and writes
+through; any item with no `Scalar` behind it makes the topic immutable), and
+that a `%` variable and the `.List`/`.pairs`/`.antipairs`/`.kv` views mint fresh
+items while `.list`/`.values`/`.Seq` hand out the source's own containers. Those
+are all syntactic, so they are decidable where a `:=`-bound `@a` is not. See
+`news/2026-09/immutable-topic-receiver-oracle-widened.md`; only the two
+variable-receiver rows above still need route two.
 
 ### C. A `$` bind of a MUTABLE container is still assignable — **CLOSED 2026-09-06**
 
@@ -306,9 +346,11 @@ it would clobber the value); the same distinction is missing one level down.
 ### D. A `gather` sequence's element store
 
 ```
-my $s = (gather { take 1; take 2 }); $s[0] = 5
-    # raku: X::Assignment::RO, "Cannot modify an immutable Int (1)"
-    # mutsu: silently succeeds
+my $s = (gather { take 1; take 2 }); $s[0] = 5; say $s
+    # raku:  X::Assignment::RO, "Cannot modify an immutable Int (1)"
+    # mutsu: silently succeeds, and TRUNCATES -- prints `[5]`, not `[5 2]`
+    #        (re-measured 2026-09-07; the truncation is new information, the
+    #        store apparently reifies only as far as the assigned index)
 ```
 
 The `.Seq` twin was fixed by teaching `try_seq_element_cell_assign` to refuse a

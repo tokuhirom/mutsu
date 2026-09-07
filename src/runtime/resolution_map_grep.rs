@@ -956,6 +956,18 @@ impl Interpreter {
 
         let keeps_outer_topic = block_keeps_outer_topic(&data);
         let outer_topic = self.env.get("_").cloned();
+        // Same compile-time verdict the map/grep loops use: the matcher was
+        // written directly against a source that provably yields bare items
+        // (`(1, 2).first({ $_ = 5 })`), so its implicit topic has no container
+        // to assign into -- see `CompiledCode::immutable_topic` and
+        // `set_loop_topic_readonly`. `@a.first({ $_ = 5 })` is unaffected: `@a`
+        // is not a provably-bare receiver, and this scan already binds the
+        // element CONTAINERS for it.
+        let immutable_topic = !keeps_outer_topic
+            && data
+                .compiled_code
+                .as_ref()
+                .is_some_and(|cc| cc.immutable_topic);
 
         let mut found: Option<(usize, Value)> = None;
         let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
@@ -985,6 +997,14 @@ impl Interpreter {
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
                     let saved_when_matched = vm.when_matched();
+                    // This loop binds params directly into `env` instead of
+                    // going through the call machinery, so `readonly_frames` is
+                    // never incremented here; without an open readonly scope the
+                    // topic mark would skip the undo journal and leak
+                    // permanently (see the sibling comment in the grep loop).
+                    let _readonly_guard =
+                        crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let pred = vm
