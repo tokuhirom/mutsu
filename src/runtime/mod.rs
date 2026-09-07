@@ -1,6 +1,15 @@
 use crate::symbol::Symbol;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
+
+/// A per-package table of per-name entries: `package -> name -> V`. Both
+/// levels are keyed by plain strings but probed on every free-variable read
+/// (`unit_lexical_slot` walks a package chain, two lookups per tier), so they
+/// hash with `FxHash` rather than `SipHash`.
+pub(crate) type PackageKeyed<V> = rustc_hash::FxHashMap<String, rustc_hash::FxHashMap<String, V>>;
+/// The compunit / package-block lexical stores (`unit_lexicals`,
+/// `package_lexicals`): see [`PackageKeyed`].
+pub(crate) type PackageLexicals = PackageKeyed<Value>;
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -2195,7 +2204,7 @@ pub struct Interpreter {
     /// own imported type names. Recording the aliases against the module makes
     /// the resolution lexical to the module instead of dynamic to the frame.
     /// Consulted by `package_type_alias` from `has_type` / `GetBareWord`.
-    pub(crate) package_type_aliases: HashMap<String, HashMap<String, String>>,
+    pub(crate) package_type_aliases: PackageKeyed<String>,
     /// The module's other file-scope bare names — `constant`s and sigilless
     /// declarations its own routines close over — keyed the same way as
     /// `package_type_aliases`, and lost for the same reason. Consulted by
@@ -2207,7 +2216,7 @@ pub struct Interpreter {
     /// is the motivating case: `constant Offset` is read by the exported
     /// `OBJECT_BODY` sub of the same module, and resolved to the string
     /// `"Offset"` once the frame that loaded the module was gone.
-    pub(crate) module_scope_lexicals: HashMap<String, HashMap<String, Value>>,
+    pub(crate) module_scope_lexicals: PackageLexicals,
     /// Names the module currently being loaded imported from another module,
     /// accumulated by `import_module` and folded into `module_scope_lexicals`
     /// when the load finishes. The env diff `load_module` takes cannot see these:
@@ -2302,7 +2311,7 @@ pub struct Interpreter {
     /// `package_lexicals[current_package]`. This fires ONLY inside that package's
     /// subs (where `current_package == Foo`), so it does not leak the lexical to
     /// bare references after the block (which run under `GLOBAL`).
-    pub(crate) package_lexicals: HashMap<String, HashMap<String, Value>>,
+    pub(crate) package_lexicals: PackageLexicals,
     /// Names in `package_lexicals` that are class-body `my` statics
     /// (`class C { my $x = ...; method m { $x } }`), keyed by class. These are
     /// stored in `package_lexicals` so a method's BARE `$x` read/write and the
@@ -2330,7 +2339,7 @@ pub struct Interpreter {
     /// Distinct from `module_scope_lexicals`, which is a *last-resort* read-only
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
-    pub(crate) unit_lexicals: HashMap<String, HashMap<String, Value>>,
+    pub(crate) unit_lexicals: PackageLexicals,
     /// Names of mainline-declared named subs that captured at least one
     /// mainline `my` scalar free variable into
     /// `unit_lexicals[MAINLINE_UNIT_KEY]` at registration time (ADR-0024).

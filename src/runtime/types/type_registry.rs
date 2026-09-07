@@ -434,7 +434,7 @@ impl Interpreter {
     /// `::` chain like `resolve_type_name_for_owner`.
     pub(crate) fn lookup_in_running_package<'a, V>(
         &'a self,
-        table: &'a HashMap<String, HashMap<String, V>>,
+        table: &'a crate::runtime::PackageKeyed<V>,
         name: &str,
     ) -> Option<&'a V> {
         let current = self.current_package();
@@ -459,7 +459,7 @@ impl Interpreter {
     /// the running frame but a specific declaration — e.g. a CStruct attribute
     /// whose type alias must resolve in the scope of the class that declared it.
     pub(crate) fn lookup_in_package_chain<'a, V>(
-        table: &'a HashMap<String, HashMap<String, V>>,
+        table: &'a crate::runtime::PackageKeyed<V>,
         owner: &str,
         name: &str,
     ) -> Option<&'a V> {
@@ -481,7 +481,7 @@ impl Interpreter {
     /// `env_root_descended_mut`) that need to mutate the entry a container
     /// lexical resolves to in place rather than merely read it.
     pub(crate) fn lookup_in_package_chain_mut<'a, V>(
-        table: &'a mut HashMap<String, HashMap<String, V>>,
+        table: &'a mut crate::runtime::PackageKeyed<V>,
         owner: &str,
         name: &str,
     ) -> Option<&'a mut V> {

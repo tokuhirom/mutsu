@@ -273,7 +273,7 @@ impl Interpreter {
                 }
             }
         };
-        if let Some(v) = probe_chain(&self.current_package().to_string()) {
+        if let Some(v) = probe_chain(self.current_package_sym().as_str()) {
             return Some(v);
         }
         // Inside a method body the runtime package is often GLOBAL; the
@@ -295,14 +295,16 @@ impl Interpreter {
     /// RMW paths see the same value a plain `Var` read would. Returns the raw
     /// stored value (the caller decont's if needed).
     pub(super) fn read_package_scope_var(&self, name: &str) -> Option<Value> {
-        let cur = self.current_package();
-        if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
+        if let Some(candidate) = Self::package_qualified_candidate(name, cur)
             && let Some(v) = self.get_our_var(&candidate)
         {
             return Some(v.clone());
         }
         self.package_lexicals
-            .get(&cur)
+            .get(cur)
             .and_then(|m| m.get(name))
             .cloned()
     }
@@ -320,7 +322,9 @@ impl Interpreter {
         if name.contains("::") {
             return None;
         }
-        let cur = self.current_package();
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
         if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
             return None;
         }
@@ -334,8 +338,7 @@ impl Interpreter {
             Some(b'$' | b'@' | b'%' | b'&') => (&name[..1], &name[1..]),
             _ => ("", name),
         };
-        let cur = cur.to_string();
-        let mut pkg: &str = &cur;
+        let mut pkg: &str = cur;
         loop {
             let candidate = format!("{sigil}{pkg}::{rest}");
             if let Some(v) = self.get_our_var(&candidate).cloned() {
@@ -372,7 +375,9 @@ impl Interpreter {
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
     pub(super) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
-        let cur = self.current_package();
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
         if cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
             return None;
         }
@@ -417,7 +422,7 @@ impl Interpreter {
             std::borrow::Cow::Borrowed(name)
         };
         self.package_lexicals
-            .get(&cur)
+            .get(cur)
             .and_then(|m| m.get(key.as_ref()))
             .cloned()
     }
@@ -433,7 +438,9 @@ impl Interpreter {
     /// (`%Other::h`) never matches `current_package`, so `my` lexicals stay
     /// invisible across packages.
     pub(super) fn auto_qualified_bare_env_read(&self, name: &str) -> Option<Value> {
-        let cur = self.current_package();
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
         if cur.is_empty() || cur == "GLOBAL" {
             return None;
         }
@@ -570,12 +577,15 @@ impl Interpreter {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
+        // Probed once: `str::contains` builds a searcher per call, and this
+        // resolver asked it three times per free-variable read.
+        let qualified = name.contains("::");
         // ADR-0024: a mainline named sub's free-variable read consults its own
         // captured cells first. Tried before the package-chain candidates
         // below, which all explicitly exclude `GLOBAL` — the running routine's
         // package IS `GLOBAL` for a mainline sub, so those candidates would
         // never reach a mainline capture on their own.
-        if !name.contains("::")
+        if !qualified
             && self.mainline_lexical_frame_active()
             && let Some(found) = self
                 .unit_lexicals
@@ -585,8 +595,10 @@ impl Interpreter {
             crate::vm::vm_stats::record_mainline_lexical_hit();
             return Some(found);
         }
-        let cur = self.current_package();
-        if name.contains("::") {
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
+        if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
@@ -594,7 +606,7 @@ impl Interpreter {
             if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
                 return None;
             }
-            return Self::lookup_in_package_chain(&self.unit_lexicals, &cur, bare);
+            return Self::lookup_in_package_chain(&self.unit_lexicals, cur, bare);
         }
         let frame = self.routine_stack().last();
         let candidates = [
@@ -603,7 +615,7 @@ impl Interpreter {
             frame
                 .map(|f| f.package.as_str())
                 .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
-            Some(cur.as_str()),
+            Some(cur),
         ];
         for candidate in candidates.into_iter().flatten() {
             if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
@@ -638,7 +650,8 @@ impl Interpreter {
         // later immutable accessor calls in the same function does not
         // borrow-check under NLL even though the borrow is never actually
         // live past the `return`.
-        let mainline_active = !name.contains("::") && self.mainline_lexical_frame_active();
+        let qualified = name.contains("::");
+        let mainline_active = !qualified && self.mainline_lexical_frame_active();
         if mainline_active
             && self
                 .unit_lexicals
@@ -651,8 +664,10 @@ impl Interpreter {
                 .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
                 .and_then(|m| m.get_mut(name));
         }
-        let cur = self.current_package();
-        if name.contains("::") {
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
+        if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
@@ -661,7 +676,7 @@ impl Interpreter {
                 return None;
             }
             let bare = bare.to_string();
-            return Self::lookup_in_package_chain_mut(&mut self.unit_lexicals, &cur, &bare);
+            return Self::lookup_in_package_chain_mut(&mut self.unit_lexicals, cur, &bare);
         }
         // Same candidate order as `unit_lexical_slot`: the frame's lexical
         // package, the method-class-stack top, the frame's own package, then
@@ -678,7 +693,7 @@ impl Interpreter {
             frame
                 .map(|f| f.package.as_str().to_string())
                 .filter(|pkg| !pkg.is_empty() && pkg != "GLOBAL"),
-            Some(cur.clone()),
+            Some(cur.to_string()),
         ]
         .into_iter()
         .flatten()
@@ -861,7 +876,9 @@ impl Interpreter {
                 return None;
             }
         }
-        let cur = self.current_package();
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
         let qkey = if cur.is_empty() || cur == "GLOBAL" {
             format!("{sigil}{bare}")
         } else {
@@ -896,8 +913,10 @@ impl Interpreter {
         if self.our_vars_is_empty() && self.package_lexicals.is_empty() {
             return false;
         }
-        let cur = self.current_package();
-        if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
+        // `&'static str` off the atomic symbol mirror: `current_package()` takes
+        // the `RwLock` and clones the `String` on every free-variable read.
+        let cur: &str = self.current_package_sym().as_str();
+        if let Some(candidate) = Self::package_qualified_candidate(name, cur)
             && self.get_our_var(&candidate).is_some()
         {
             // A plain `our $x` keeps its value in ONE shared cell that the
@@ -919,7 +938,7 @@ impl Interpreter {
             }
             return true;
         }
-        if let Some(m) = self.package_lexicals.get_mut(&cur)
+        if let Some(m) = self.package_lexicals.get_mut(cur)
             && let Some(slot) = m.get_mut(name)
         {
             // A boxed lexical's cell is shared with every reader; mutate it in
