@@ -14,9 +14,12 @@ in normal use. Its required `nqp::` operations are implemented and pinned by
 `roast/packages/Test-Helpers/`, not from this provider.
 
 The native provider remains the default until the real-module mode has no
-correctness or timeout regressions across the whitelisted roast suite. Do not
-add native compatibility shims to `Test.rakumod`; fix general interpreter
-behaviour or the test harness instead.
+correctness or timeout regressions across **the whitelisted roast suite, the
+`t/` suite, and the bundled-library gate**. As of the 2026-09-07 sixth pass the
+first two are clean and the third is not; read that section before reaching for
+the one-line flip, and update the criteria at the bottom rather than the prose
+here. Do not add native compatibility shims to `Test.rakumod`; fix general
+interpreter behaviour or the test harness instead.
 
 ## How to exercise it
 
@@ -56,6 +59,101 @@ reports rather than inferring status from a raw TAP diff:
 For an `exit 124` roast row, re-run the individual file with a larger timeout
 before classifying it as a correctness bug. The vendored provider executes
 assertions as Raku code and is therefore slower than the Rust-native provider.
+
+**The two sweeps are not the whole gate.** They cover `t/` and the roast
+whitelist; they do NOT cover the bundled-library suites, which are a CI step
+(`scripts/battery-testsuite.sh`, the `test` job's "Bundled-library test suites").
+Run that under both providers too before believing the criteria below are met:
+
+```sh
+cargo build --release
+scripts/battery-testsuite.sh                     # the vendored module, once flipped
+MUTSU_REAL_TEST=0 scripts/battery-testsuite.sh   # the native-provider baseline
+```
+
+That gate is what the 2026-09-07 sixth pass caught the switch on; see below.
+
+## Current state (2026-09-07, sixth pass -- the switch was attempted and reverted)
+
+The flip was implemented and measured end to end.
+`Interpreter::real_test_module_enabled` defaulting to `true` (with
+`MUTSU_REAL_TEST=0` as the opt-out the sweeps use) is the whole switch; the
+rest of the diff was three consequences of the module being faithful. It was
+**reverted before landing** because a CI gate the earlier passes never ran
+regresses. What the attempt established:
+
+### `t/` and roast are genuinely clean
+
+Full suites, this box (4 cores, `-j4`), native provider vs vendored:
+
+| suite | native | vendored |
+| --- | --- | --- |
+| `prove -j4 t/` (debug, 3791 files) | 136 s wall / 435 CPU s, all pass | 280 s / 1008 CPU s, **all pass** |
+| `make roast` (release, 1436 files) | 242 s / 382 CPU s | 266 s / 516 CPU s, **same 3 failures** |
+
+The three roast rows (`6.c/S32-io/file-tests.t`, `S16-filehandles/filetest.t`,
+`S32-io/IO-Socket-Async.t`) fail identically under both providers -- they are
+the environmental rows every earlier sweep reports. No new timeout appeared, so
+criterion 2 holds on this box under the real `make roast` job, not just under
+the sweep.
+
+Cost: roast +10% wall, `t/` +106%. The `t/` figure is the fixed per-process
+module load (~71 ms with the precompilation cache warm) charged to 3791 very
+small files; roast's files amortize it. The two stress CI jobs run `prove t/`
+**serially**, so they absorb the ~2.3x CPU undivided and need
+`timeout-minutes: 30 -> 45`.
+
+### The bundled-library gate is where it fails
+
+`scripts/battery-testsuite.sh` -- a step in the `test` job, so a real CI gate:
+
+```
+native provider:   283/312 test files pass   (6 DBIish MySQL rows, no server here)
+vendored module:   276/312                   (those 6, plus 9 more)
+```
+
+The 9 regressions are at least two independent interpreter bugs, both filed:
+
+- **`todo/deep/vendored-test-context-corrupts-a-sha512-digest.md`** --
+  `Digest::SHA2`'s `sha512` returns a different digest for byte-identical input
+  depending on process history. Bisected to a two-`subtest` repro; inputs, IV,
+  round constants and multi dispatch all verified correct at the call site;
+  deterministic under JIT/GC on and off. Accounts for the `Digest` row.
+- **`todo/tickets/vendored-test-hides-nativecall-exports-from-a-module.md`** --
+  a module's `use NativeCall` loses `nativecast` when the vendored `Test` is in
+  the load chain. Accounts for `NativeHelpers::Blob` and probably `NativeLibs`.
+
+The `Cro::HTTP` and remaining `DBIish` rows were not triaged; do that before
+assuming they share a root cause.
+
+### Three behaviour changes the switch will bring (already measured, not bugs)
+
+Re-apply these with the flip; none of them is a reason to shim `Test.rakumod`.
+
+1. **Failure diagnostics move to stderr.** Upstream `Test` writes
+   `expected:`/`got:` through `$failure_output` (`$*ERR`); only
+   `not ok N - <desc>` stays on stdout. Verified byte-identical to rakudo
+   2026.07. `t/is-deeply-user-raku-diagnostic.t` asserts `:out` and must assert
+   `:err`.
+2. **`#?rakudo todo` starts reporting "TODO passed".** The roast fudge
+   preprocessor prefixes the reason with a `__mutsu_backend_todo__:` marker that
+   only mutsu's native TAP writer understands, so an assertion rakudo is known
+   to fail but mutsu passes prints a bare `ok`. The vendored module knows
+   nothing about that marker and must not be taught it, so
+   `run_roast_preprocess.rs` should emit a plain `todo 'reason', N` (what
+   rakudo's own fudge emits) and the marker handling in `call_helpers.rs` goes
+   away. 71 whitelisted roast files then carry `TODO passed:` rows -- prove
+   summary noise, not failures, and a true statement about mutsu.
+   `src/runtime/run_dist.rs`'s three fudge-todo unit tests pin the old spelling.
+3. **`t/vendored-real-test-module.t`** pins "unset means native"; it has to pin
+   "unset means vendored" instead, keeping `MUTSU_REAL_TEST=0` as the native
+   half.
+
+One prerequisite of the switch is already on main:
+`resolve_bundled_lib_paths` now probes `modules/` three levels up, so a
+`cargo test` harness (`target/<profile>/deps/...`) sees the bundled batteries at
+all -- without it every in-process `use Test` in a `#[test]` dies with "Could
+not find Test".
 
 ## Current state (2026-09-07, fifth pass -- eight more callgrind-driven slices)
 
@@ -549,11 +647,19 @@ Before changing `runtime_module.rs` so `use Test` loads the vendored module by
 default:
 
 1. The local and roast sweep reports contain no real-provider correctness
-   regressions.
+   regressions. **(Met 2026-09-07: `prove -j4 t/` all green, `make roast`
+   identical to the native baseline.)**
 2. The timeout class is eliminated or has a separately agreed test-budget
-   solution; it must not merely be ignored by the sweep.
-3. `Test::Util` still composes with the default provider.
-4. Run the focused tests, then `make test` and the relevant roast checks. The
+   solution; it must not merely be ignored by the sweep. **(Met on this box;
+   the job-level budget needs `timeout-minutes: 45` on gc-stress/jit-stress.)**
+3. `Test::Util` still composes with the default provider. **(Met -- the roast
+   run loads it from `roast/packages/Test-Helpers/` throughout.)**
+4. **The bundled-library gate (`scripts/battery-testsuite.sh`) passes under the
+   vendored module.** It is a CI step and the sweeps do not cover it. **NOT met:
+   9 rows regress, tracked as
+   `todo/deep/vendored-test-context-corrupts-a-sha512-digest.md` and
+   `todo/tickets/vendored-test-hides-nativecall-exports-from-a-module.md`.**
+5. Run the focused tests, then `make test` and the relevant roast checks. The
    first default-provider PR must be treated as a full-suite review.
 
 After the switch, remove the native `Test` interception and its maintenance

@@ -259,7 +259,8 @@ impl Interpreter {
     /// The bundle base is `$MUTSU_BUNDLE_DIR` if set, else discovered relative to
     /// the running binary: `share/mutsu/modules` next to `bin/` (release tarball
     /// / container layout), `modules/` two levels up (a `target/<profile>/mutsu`
-    /// dev build), or `modules/` beside the binary. Each dist's `lib/` directory
+    /// dev build), `modules/` three levels up (a `target/<profile>/deps/...`
+    /// test harness), or `modules/` beside the binary. Each dist's `lib/` directory
     /// that exists is returned; a missing bundle yields an empty list (the
     /// interpreter simply has no bundled batteries).
     /// The parser's module-scan search paths: the runtime `lib_paths` followed
@@ -283,6 +284,13 @@ impl Interpreter {
                 [
                     dir.join("..").join("share").join("mutsu").join("modules"),
                     dir.join("..").join("..").join("modules"),
+                    // `target/<profile>/deps/<binary>-<hash>`: the layout every
+                    // `cargo test` harness runs from. Without it an in-process
+                    // test Interpreter finds no bundled batteries at all, so a
+                    // `use Pod::To::Text` (or any other `modules/<Dist>/lib`
+                    // module) inside a `#[test]` dies with "Could not find ..."
+                    // while the same source works under `target/debug/mutsu`.
+                    dir.join("..").join("..").join("..").join("modules"),
                     dir.join("modules"),
                 ]
                 .into_iter()
@@ -1141,5 +1149,24 @@ impl Interpreter {
             }
             _ => false,
         })
+    }
+}
+
+#[cfg(test)]
+mod bundled_lib_path_tests {
+    use crate::runtime::Interpreter;
+
+    /// A `cargo test` harness binary lives at `target/<profile>/deps/<name>-<hash>`,
+    /// one directory deeper than `target/<profile>/mutsu`. Until the `deps/`
+    /// layout was probed, `resolve_bundled_lib_paths` returned an empty list
+    /// there, so every bundled battery was invisible to an in-process test
+    /// Interpreter even though the same source ran fine under the real binary.
+    #[test]
+    fn a_test_harness_finds_the_bundled_batteries() {
+        let paths = Interpreter::resolve_bundled_lib_paths();
+        assert!(
+            paths.iter().any(|p| p.contains("Rakudo-Core")),
+            "no bundled battery paths resolved from a test harness: {paths:?}"
+        );
     }
 }
