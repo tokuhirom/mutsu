@@ -198,7 +198,9 @@ impl Interpreter {
         for vec in &self.gather_items {
             visit_slice(visitor, vec);
         }
-        visit_slice(visitor, &self.block_stack);
+        for frame in &self.block_stack {
+            frame.visit_roots(visitor);
+        }
         visit_map_values(visitor, &self.predictive_seq_iters);
         visit_opt(visitor, &self.current_distribution);
         visit_map_values(visitor, &self.package_distributions);

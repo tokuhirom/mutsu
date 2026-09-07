@@ -63,25 +63,20 @@ impl Interpreter {
 
         loan_env!(self, push_caller_env());
 
-        // Push Sub value to block_stack for callframe().code
-        let sub_val = Value::make_sub(
+        // The frame's code object for callframe().code / &?ROUTINE, recorded
+        // lazily: the `Sub` (and the flatten of the caller env its full
+        // lexical view needs) is built only when something reads it, which
+        // almost no call does. The env handle is an `Arc` bump of the caller's
+        // env as it is right now; later caller writes copy-on-write away from
+        // it, so a read sees exactly the snapshot the eager `clone_env()` took.
+        // See `crate::runtime::CodeFrame`.
+        self.push_lazy_block(crate::runtime::LazyRoutineCode::new(
             fn_package_sym,
             fn_name_sym,
             cf.params.clone(),
             cf.param_defs.clone(),
-            vec![],
-            false,
-            // Flatten: this Sub is pushed for callframe().code introspection and
-            // must expose the full lexical view, not a scoped overlay.
-            self.clone_env(),
-        );
-        // Re-apply any role ever composed onto this routine (`.^mixin(Role)`,
-        // or a trait handler's `$r does Role`) — this Sub is a fresh rebuild
-        // from the registry, not the same object the composition ran on, so
-        // it does not carry the role by itself. See
-        // `Interpreter::materialize_routine_mixins`.
-        let sub_val = self.materialize_routine_mixins(sub_val, fn_package, fn_name);
-        self.push_block(sub_val);
+            self.env().clone(),
+        ));
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller now that sub_val / push_caller_env

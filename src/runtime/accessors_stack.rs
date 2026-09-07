@@ -242,12 +242,23 @@ impl Interpreter {
         self.routine_stack.truncate(len);
     }
 
-    pub(crate) fn block_stack_top(&self) -> Option<&Value> {
-        self.block_stack.last()
+    /// The innermost frame's code object, built on demand for a lazy routine
+    /// frame (see `CodeFrame`).
+    pub(crate) fn block_stack_top(&self) -> Option<Value> {
+        self.block_stack
+            .last()
+            .map(|frame| self.code_frame_value(frame))
     }
 
     pub(crate) fn push_block(&mut self, val: Value) {
-        self.block_stack.push(val);
+        self.block_stack.push(CodeFrame::Ready(val));
+    }
+
+    /// Push a named routine's frame without building its `Sub`; a reader
+    /// materializes it (`Interpreter::code_frame_value`).
+    pub(crate) fn push_lazy_block(&mut self, code: LazyRoutineCode) {
+        self.block_stack
+            .push(CodeFrame::Lazy(std::sync::Arc::new(code)));
     }
 
     pub(crate) fn pop_block(&mut self) {

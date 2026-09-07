@@ -57,7 +57,11 @@ impl Interpreter {
             return None;
         }
         let entry = &self.callframe_stack[stack_len - depth];
-        let code = entry.code.clone().unwrap_or(Value::NIL);
+        let code = entry
+            .code
+            .as_ref()
+            .map(|frame| self.code_frame_value(frame))
+            .unwrap_or(Value::NIL);
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
         let mut attrs = HashMap::new();
         attrs.insert("line".to_string(), Value::int(entry.line));
@@ -144,20 +148,16 @@ impl Interpreter {
     fn current_routine_sub_value(&self) -> Value {
         // Try to find the current routine as a Sub value from the block stack
         // (looking through a `Mixin` wrapper the same way as above).
-        for v in self.block_stack.iter().rev() {
-            let inner_is_sub = match v.view() {
-                ValueView::Mixin(inner, _) => matches!(inner.as_ref().view(), ValueView::Sub(_)),
-                other => matches!(other, ValueView::Sub(_)),
-            };
-            if inner_is_sub {
-                return v.clone();
+        for frame in self.block_stack.iter().rev() {
+            if frame.is_sub() {
+                return self.code_frame_value(frame);
             }
         }
         // Fallback: look at the most recent callframe stack entry for the code
         if let Some(entry) = self.callframe_stack.last()
             && let Some(ref code) = entry.code
         {
-            return code.clone();
+            return self.code_frame_value(code);
         }
         Value::NIL
     }

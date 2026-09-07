@@ -794,7 +794,8 @@ impl Interpreter {
                 def_file: None,
                 invocation_id,
             });
-            self.block_stack.push(block_sub);
+            self.block_stack
+                .push(crate::runtime::CodeFrame::Ready(block_sub));
             let return_spec = data
                 .env
                 .get("__mutsu_return_type")

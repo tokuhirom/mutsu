@@ -78,7 +78,7 @@ impl Interpreter {
         // self-reference needed by `.leave` and other identity-sensitive APIs.
         if val.is_nil()
             && name == "?BLOCK"
-            && let Some(block) = self.block_stack_top().cloned()
+            && let Some(block) = self.block_stack_top()
         {
             val = block;
         }

@@ -358,7 +358,7 @@ impl Interpreter {
                 // Anonymous subs are pushed with "<anon>" as the sentinel name.
                 // Return the block_stack Sub directly so callers can invoke it.
                 if frame.name.is_empty() || frame.name == "<anon>" {
-                    if let Some(val) = self.block_stack.last().cloned()
+                    if let Some(val) = self.block_stack_top()
                         && matches!(val.view(), ValueView::Sub(_))
                     {
                         return val;

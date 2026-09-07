@@ -442,6 +442,8 @@ mod calls;
 mod class;
 mod class_dispatch;
 mod class_introspection;
+mod code_frame;
+pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
@@ -1385,7 +1387,7 @@ pub(crate) struct IoHandleState {
 pub(crate) struct CallFrameEntry {
     pub file: String,
     pub line: i64,
-    pub code: Option<Value>,
+    pub code: Option<CodeFrame>,
     pub env: Env,
 }
 
@@ -1830,7 +1832,7 @@ pub struct Interpreter {
     /// warn/control signals appropriately.
     pub(crate) control_handler_depth: u32,
     test_assertion_line_stack: Vec<i64>,
-    block_stack: Vec<Value>,
+    block_stack: Vec<CodeFrame>,
     doc_comments: HashMap<String, DocComment>,
     /// Ordered list of doc comments for $=pod
     doc_comment_list: Vec<DocComment>,
