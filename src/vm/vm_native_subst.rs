@@ -120,6 +120,14 @@ impl Interpreter {
         {
             pos = if end > start { end } else { start + 1 };
             matches.push((start, end, caps));
+            // A non-global `.subst` replaces only the first match, so scanning
+            // on is pure waste -- and not harmless: a `{ ... }` block in the
+            // pattern runs for every extra attempt
+            // (`"aaa".subst(/( \w* { $d++ } )/, 'X')` left `$d` at 2 where raku
+            // leaves it at 1).
+            if !global {
+                break;
+            }
         }
 
         if matches.is_empty() {

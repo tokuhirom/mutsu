@@ -590,7 +590,7 @@ impl Interpreter {
                         self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(&pattern, &text)
+                    self.regex_match_non_overlapping(&pattern, &text)
                 };
                 let non_overlapping = self.select_non_overlapping_matches(all);
 
@@ -756,7 +756,7 @@ impl Interpreter {
                         self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(&pattern, &text)
+                    self.regex_match_non_overlapping(&pattern, &text)
                 };
                 let non_overlapping = self.select_non_overlapping_matches(all);
                 let Some(selected) =
@@ -789,7 +789,7 @@ impl Interpreter {
                         self.regex_match_all_with_captures(&pattern, &text)
                     }
                 } else {
-                    self.regex_match_all_with_captures(&pattern, &text)
+                    self.regex_match_non_overlapping(&pattern, &text)
                 };
                 // Filter to non-overlapping: take longest match at each position,
                 // then skip matches that overlap with already-selected ones

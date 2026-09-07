@@ -129,8 +129,10 @@ impl Interpreter {
                 // Plain `:g` (and `:nth` / `:x`, which index into the ordered
                 // non-overlapping match list): keep the canonical greedy/frugal
                 // match at each start so a top-level `.*?` matches minimally.
-                let all = self.regex_match_canonical_per_start(&pat, &text);
-                self.select_non_overlapping_matches(all)
+                // The scan skips a start a previously accepted match already
+                // covers, so the pattern is never run for a match that would be
+                // discarded (a `{ ... }` block in it would have run anyway).
+                self.regex_match_non_overlapping(&pat, &text)
             };
             // Apply :nth filtering before :x bounds
             if let Some(ref nth_val) = nth_arg {

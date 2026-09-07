@@ -54,11 +54,9 @@ $c = 0; "aaac" ~~ / :my $*Z = 0; ( \w* { $c++; $*Z = 1 } ) c /;
 is $c, 2, 'A13 a $* -mentioning block counts like any other';
 
 $c = 0; my @a14 = "aa bb" ~~ m:g/ ( \w* { $c++ } ) /;
-todo 'residue: the :g scan enumerates every end at every start position';
 is $c, 4, 'A14 m:g runs the block once per position it commits to';
 
 $c = 0; my $a15 = "aaa".subst(/ ( \w* { $c++ } ) /, 'X');
-todo 'residue: the find scan re-runs the pattern at a position';
 is $c, 1, 'A15 subst runs the block once';
 
 $c = 0; "aaa" ~~ / ( \w* { $c++ } & \w* ) /;
