@@ -10,7 +10,7 @@ use Test;
 # rows (E/K/L) are controls that must not move; the dynamic-variable row (I) is
 # the control that must KEEP caller priority, being dynamic-scope by design.
 
-plan 43;
+plan 49;
 
 # --- A: block-scope $ read, shadowing caller is a routine ------------------
 {
@@ -218,3 +218,27 @@ for 1, 2 -> $i {
     @tout.push(gt());
 }
 is @tout.join(','), '10,20', 'T1: a per-iteration lexical is re-captured';
+
+# --- U: three sibling blocks sharing one name, each with its own sub, ------
+# called BEFORE the declaration statement runs.  Sibling blocks deliberately
+# SHARE a `locals` slot (only a genuine inner shadow gets a fresh one), so
+# boxing that slot would fuse three independent bindings.  This is
+# roast/S02-names-vars/variables-and-packages.t's shape.
+{
+  is-deeply ufoo(), 0, 'U1: sibling block 1, undeclared yet';
+  is-deeply ufoo(), 1, 'U2: sibling block 1, second call';
+  my $ua;
+  sub ufoo { $ua++ }
+}
+{
+  is-deeply ubar(), 0, 'U3: sibling block 2, undeclared yet';
+  is-deeply ubar(), 1, 'U4: sibling block 2, second call';
+  my $ua = 3;
+  sub ubar { $ua++ }
+}
+{
+  is ubaz(), 3, 'U5: sibling block 3 sees its own BEGIN initialization';
+  is ubaz(), 4, 'U6: ... and keeps counting on its own binding';
+  my $ua; BEGIN { $ua = 3 };
+  sub ubaz { $ua++ }
+}
