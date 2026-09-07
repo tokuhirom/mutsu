@@ -572,6 +572,21 @@ different frame. That is also why
 so 3b needs a grep mode on the variant (or a sibling variant) before any of the
 above.
 
+**Prerequisite landed 2026-09-07** (`news/2026-09/grep-promotion-is-published-in-place.md`).
+The concrete blocker was sharper than "the promotion moves to pull time": the
+promotion was published by building a REPLACEMENT `ArrayData` and re-binding it
+with `overwrite_array_bindings_by_identity`, which walks the **current frame's
+`env`**. A deferred grep promotes in a frame where the source's names are gone,
+so that route cannot work at pull time at all -- and it was already silently
+dropping the promotion for any source not lexically visible right there.
+Publishing the promotion by mutating the source `Gc<ArrayData>` in place
+(ADR-0013 §7 made this sound at the primitive) is frame-independent, reaches
+every alias by construction, and drops the `pending_rw_writeback_sources` drain
+the re-binding needed. It also cost the drop of exactly two decont leaks
+(`Backtrace`'s frame readers), which is the measured blast radius: `make test`
+and a full `make roast` are otherwise unchanged. 3b's remaining work is the
+grep mode on the variant plus deferring the two entry points.
+
 ### 9.3 What DID land from the attempt
 
 Pulling a deferred `MapGrep` left the deferred `MapGrep`s it *produced*

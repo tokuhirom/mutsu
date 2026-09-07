@@ -1640,6 +1640,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let frames = crate::builtins::backtrace_methods::frames_of(&attributes);
                     let mut out = String::new();
                     for frame in &frames {
+                        // See the `concise`/`summary` arm: a frame can arrive
+                        // inside an element container once a `.grep` over this
+                        // backtrace has promoted its slots, and matching
+                        // `ValueView::Instance` without dereferencing skips it.
+                        let frame = frame.with_deref(|v| v.clone());
                         if let ValueView::Instance { attributes: fa, .. } = frame.view() {
                             out.push_str(&backtrace_frame_str(&fa));
                         }
@@ -1682,6 +1687,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let want_summary = method == "summary";
                     let mut out = String::new();
                     for frame in &frames {
+                        // A frame can arrive inside an element container: a
+                        // `.grep` over this backtrace promotes each matched
+                        // source slot to a shared cell so a writeback loop can
+                        // mutate through it, and that promotion is published on
+                        // the frames array itself. Matching `ValueView::Instance`
+                        // without dereferencing silently skipped every promoted
+                        // frame, so `.summary` after a `.grep` came back empty.
+                        let frame = frame.with_deref(|v| v.clone());
                         if let ValueView::Instance { attributes: fa, .. } = frame.view() {
                             let is_routine = backtrace_frame_is_routine(&fa);
                             // concise: only non-hidden, non-setting routines.
