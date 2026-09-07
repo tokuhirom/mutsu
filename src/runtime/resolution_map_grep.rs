@@ -498,8 +498,26 @@ impl Interpreter {
             // Captured lexical vars (in data.env) must keep mutations done inside
             // the mapper block (e.g. `{ $a++ }`).
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 1);
-            for k in data.env.keys() {
-                if !self.env.contains_key_sym(*k) {
+            // Every key the capture merge below OVERWRITES has to be saved here
+            // too, not only the ones it introduces: a nested map that overwrote
+            // a name the enclosing map had already installed would otherwise
+            // leave its own value behind for the enclosing map's NEXT iteration
+            // (`sub inner(@sizes) { map -> $e { map -> $g {...},
+            // inner(@sizes[1..*]) }, ['a','b'] }` read `@sizes` as the inner
+            // call's on iteration 2). `self` is handled explicitly below.
+            let free_vars = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| cc.capture_free_var_set());
+            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
+                let is_dynamic =
+                    k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
+                !is_dynamic
+                    && (matches!(v.view(), ValueView::ContainerRef(_))
+                        || free_vars.is_some_and(|free| free.contains(k)))
+            };
+            for (k, v) in &data.env {
+                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
                     touched_keys.push(k.resolve());
                 }
             }
@@ -560,17 +578,11 @@ impl Interpreter {
             //    base case (`todo/deep/deferred-map-callback-...`, which
             //    aborted `roast/integration/99problems-21-to-30.t` with a
             //    stack overflow when ADR-0058 step 3 landed).
-            let free_vars = data
-                .compiled_code
-                .as_ref()
-                .map(|cc| cc.capture_free_var_set());
             for (k, v) in &data.env {
-                let is_dynamic =
-                    k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
-                let capture_wins = !is_dynamic
-                    && (matches!(v.view(), ValueView::ContainerRef(_))
-                        || free_vars.is_some_and(|free| free.contains(k)));
-                if capture_wins || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
+                if capture_wins(k, v)
+                    || k.with_str(|s| s == "self")
+                    || !self.env.contains_key_sym(*k)
+                {
                     self.env.insert_sym(*k, v.clone());
                 }
             }

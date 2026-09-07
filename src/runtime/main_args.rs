@@ -533,9 +533,22 @@ impl Interpreter {
             .insert("*USAGE".to_string(), Value::str(usage_text));
         self.mark_readonly("$*USAGE");
         self.mark_readonly("*USAGE");
+        // rakudo's `RUN-MAIN` SINKS whatever `MAIN` returns
+        // (`roast/S06-other/main.t`'s "MAIN return value is sunk"), so a `MAIN`
+        // whose tail is a `map` still runs its callback. Since ADR-0058 that
+        // tail is a not-yet-run Seq rather than an already-evaluated List, and
+        // dropping it here dropped the side effects with it.
         match self.call_routine_def(candidate, args) {
-            Ok(_) => Ok(()),
-            Err(e) if e.return_value.is_some() => Ok(()),
+            Ok(v) => {
+                self.sink_map_grep_seq(&v)?;
+                Ok(())
+            }
+            Err(e) if e.return_value.is_some() => {
+                if let Some(v) = e.return_value.clone() {
+                    self.sink_map_grep_seq(&v)?;
+                }
+                Ok(())
+            }
             Err(e) if e.message.is_empty() => Ok(()),
             Err(e) => Err(e),
         }

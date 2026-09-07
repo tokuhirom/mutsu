@@ -324,6 +324,13 @@ impl Interpreter {
             } else {
                 mapped
             };
+            // ADR-0058: a mapper whose body is a `map`/`grep` hands back a
+            // not-yet-run Seq, and `mapper_categories`/`mapper_path` read its
+            // elements through pure code (`as_items`), which cannot pull. Without
+            // this the whole categorization came out empty
+            // (`roast/S32-list/categorize.t`'s multi-level row). The sibling
+            // `LazyList` force above is the same guard for the older deferral.
+            self.reify_map_grep_seq(&mapped)?;
 
             let mapped_item = if let Some(as_fn) = &as_mapper {
                 self.call_sub_value(as_fn.clone(), vec![callable_item(item)], true)?

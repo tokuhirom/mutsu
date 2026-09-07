@@ -20,11 +20,7 @@ is nested().flat.join('|'), 'STOP', '.flat reaches the inner elements';
 is nested().elems, 1, 'the outer Seq still has one element';
 is nested()[0].elems, 1, '... whose own Seq has one element';
 
-# The listop spelling of the same nesting. It does not reach this path at all
-# yet: `builtin_map` is still eager (ADR-0058 step 3 is blocked -- see
-# `todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`), so it
-# answers a plain nested List instead of a Seq of Seqs.
-todo 'the listop `map` is still eager (ADR-0058 step 3)';
+# The listop spelling of the same nesting, deferred since ADR-0058 step 3.
 is (map { map { "STOP" }, [2] }, [1]).raku, '(("STOP",).Seq,).Seq',
     'the listop spelling agrees';
 
