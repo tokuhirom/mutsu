@@ -14,6 +14,19 @@ impl Interpreter {
         let chars: Vec<char> = s.chars().collect();
         let str_len = chars.len();
 
+        // `substr-rw`'s own arguments are plain offsets, not containers. The
+        // lvalue lowering deliberately hands the whole argument list through
+        // WITHOUT the call-site auto-FETCH (a user `method m(\x) is rw` needs
+        // its argument's container — ADR-0067), and the arguments travel inside
+        // an array carrier whose elements are `Scalar` containers per ADR-0040.
+        // So a variable offset arrives as a `ContainerRef` while a literal one
+        // arrives bare: `resolve_substr_rw_range`'s length arm then saw neither
+        // an `Int` nor a `Whatever` and fell to its "no length given" default,
+        // replacing the whole tail of the string
+        // (`$s.substr-rw(1, $len) = "Z"`). Read through the container here,
+        // where we know these are offsets.
+        let method_args: Vec<Value> = method_args.iter().map(Value::deref_container).collect();
+
         // Resolve start and end using the same logic as dispatch_substr
         let (start, end) = self.resolve_substr_rw_range(&method_args, str_len)?;
 
@@ -115,6 +128,10 @@ impl Interpreter {
         } else {
             Vec::new()
         };
+
+        // See `assign_substr_rw`: `subbuf-rw`'s from/length are plain offsets,
+        // and a variable one arrives wrapped in its element container.
+        let method_args: Vec<Value> = method_args.iter().map(Value::deref_container).collect();
 
         // Splice `new_bytes` over the `[from, from+len)` window. Shared by the
         // in-place and the rebuild path below, so the two cannot drift.

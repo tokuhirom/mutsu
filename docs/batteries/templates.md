@@ -52,7 +52,7 @@ plain checkout of the dist with `-I lib`.
 | `Template6` | 0.16.0 | 2026-02-04³ | Artistic-2.0 | **0** | 7 | **12/12** | **12/12** ⬆ |
 | `Template::Jinja2` | 0.2.0 | 2026-04-29 | Artistic-2.0 | 1 (`JSON::Fast`, native) | 2 | 22/23 | **3/23** ⬆ |
 | `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **4/5** |
-| `Template::Nest::Fast` | 0.3.0 | 2024-11-18 | ISC | **0** | 0 | **10/10** | **0/10** |
+| `Template::Nest::Fast` | 0.3.0 | 2024-11-18 | ISC | **0** | 0 | **10/10** | **10/10** ⬆ |
 | `SP6` | 0.2.1 | 2021-09-04 | Apache-2.0 | **0** | 0 | 10/11 | **10/11** |
 | `Template::Classic` | 0.0.3 | 2020-04-11 | BSD-3-Clause | **0** | 1 | **1/1** | 0/1 |
 | `Template::HAML` | 0.9.5 | 2026-06-27 | Artistic-2.0 | **0** | 2 | 82/83 | 39/83⁴ |
@@ -78,6 +78,20 @@ followed the same rule once more: its `[% INCLUDE "x" name = "World" %]` rendere
 `name` instead of `World` because the *no-capture* regex matcher ignored frugal
 quantifiers, so the directive tokenizer's `.comb(/ \" .*? \" | \S+ /)` returned one
 token spanning the whole statement (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`).
+
+⬆ `Template::Nest::Fast` went **0/10 → 2/10 → 10/10** on 2026-09-07, and made
+the same point a third time: the row's recorded first failure (`with $f ~~ m:g/…/
+-> @m` binding a one-element wrapper) was genuine but bought only two files. The
+other eight came from three general bugs in three subsystems the row never
+mentioned — an lvalue method's own arguments keeping the `Scalar` element
+containers of their argument carrier (so `$s.substr-rw($from, $len) = v` ignored
+the length and replaced the whole tail), a `%`/`@`-sigil `for` parameter being
+exempt from the loop's parameter save/restore (so recursing into the same loop
+resumed the outer iteration with the inner frame's element), and
+`IO::Path.modified` truncating to whole seconds (so a "is the file newer than my
+index?" check never fired). Pins: `t/substr-rw-computed-args.t`,
+`t/for-container-param-recursion.t`, `t/io-path-timestamp-subsecond.t`.
+Write-up: `news/2026-09/template-nest-fast-zero-to-ten-of-ten.md`.
 
 `Template::Mustache` itself went **1/13 → 11/13** on 2026-07-25 when the single
 interpreter bug behind it was fixed: a hyper method call (`@objs>>.made`) did not
@@ -115,7 +129,7 @@ them all.
 | `Template6` | none; 12/12. The last file (`05-includes`) was fixed 2026-09-06: the no-capture regex matcher matched frugal quantifiers greedily, so `.comb(/ \" .*? \" | \S+ /)` collapsed a whole `[% INCLUDE ... %]` statement into one token (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`) |
 | `Template::Jinja2` | loads now (3/23); the rest are ordinary per-feature failures. Its last load blocker — `Renderer.rakumod:114`'s `when If {` read as a call — was fixed 2026-09-06 |
 | `Template::Mojo` | `00-basic` only; `todo/tickets/template-mojo-residual-failures.md` |
-| `Template::Nest::Fast` | `with $f ~~ m:g/…/ -> @m` binds `@m` to a one-element list *containing* the match list, so `$m[0].from` is Nil. `with ("a<!--x-->b<!--yy-->c" ~~ m:g/('<!--') \s* (\w+) \s* ('-->')/) -> @m { say @m.elems }` gives 2 under raku, 1 under mutsu |
+| `Template::Nest::Fast` | none; 10/10 as of 2026-09-07. The recorded `with EXPR -> @m` symptom was real but only worth 2/10; the rest came from three unrelated general bugs (`news/2026-09/template-nest-fast-zero-to-ten-of-ten.md`) |
 | `Template::Classic` | `Unterminated <%` from its own grammar — the `$<part> = <rule>` capture-assignment form inside a `||` chain does not match |
 | `SP6` | at parity with raku (both 10/11, same file) |
 

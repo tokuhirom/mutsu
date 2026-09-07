@@ -311,6 +311,8 @@ impl Interpreter {
         pos: &Value,
         total_len: usize,
     ) -> Result<i64, RuntimeError> {
+        // See `substr_extract_range`: an itemized argument keeps its `Scalar`.
+        let pos = pos.descalarize();
         match pos.view() {
             ValueView::Int(i) => Ok(i),
             ValueView::Num(f) => Ok(f as i64),
@@ -352,6 +354,11 @@ impl Interpreter {
         val: &Value,
         total_len: usize,
     ) -> Result<Option<(usize, usize)>, RuntimeError> {
+        // A `$`-held Range is itemized (`my $r = 1..3`), so the argument arrives
+        // wrapped in a `Scalar`. Read through it before asking "is this a
+        // Range?" — otherwise `$s.substr($r)` silently fell to the "not a Range"
+        // default and took the whole rest of the string.
+        let val = val.descalarize();
         match val.view() {
             ValueView::Range(a, b) => {
                 let end = b.saturating_add(1).max(0) as usize;

@@ -16,7 +16,7 @@ carried-over figure. Several rows had gone badly stale.
 | `Template6` 0.16.0 | 12/12 | ~~0/12~~ → ~~10/12~~ → ~~11/12~~ → **12/12** | **DONE 2026-09-06** (`news/2026-09/template6-zero-to-ten-of-twelve.md`). The `Use of Nil in string context` headline was, as this file predicted, a pointer and not the diagnosis: reducing `Parser.compile` by deletion found four unrelated general bugs — a split-`:v` separator `Match` carried no named captures; `.subst(…, :nth(2..*))` aborted the process with a Rust `capacity overflow`; an attribute default's closure was stamped with the *constructing* class and lost its own file's subs; and an assignment to `$_` inside a nested block was discarded on block exit. `02-for` was then fixed on 2026-09-06 too: a one-parameter pointy block lost its parameter's sigil, so `-> @stack { @stack.shift }` bound the caller's array BY VALUE (`news/2026-09/one-parameter-pointy-block-loses-its-sigil.md`). The last file, `05-includes`, followed on 2026-09-06 as well and it too was one general bug rather than the template machinery the ticket suspected: the *no-capture* regex matcher (`regex_match_end_from_in_pkg`, the engine behind `.comb(/rx/)`, `.split`, `.subst(:g)` and the lookaround assertions) ignored `RegexToken::frugal` outright, so `Parser!action`'s `.comb(/ \" .*? \" | \' .*? \' | \S+ /)` matched from the first quote to the LAST one and returned the whole `[% INCLUDE "included" name = "World" %]` statement as a single token (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`). The dist is complete |
 | `Template::Jinja2` 0.2.0 | 22/23 | ~~0/23~~ → **3/23** | The two 2026-08-19 blockers are genuinely fixed, and so is the *third* one found on 2026-09-06: `lib/Template/Jinja2/Renderer.rakumod:114`'s `when If {` was parsed as a call (`Function 'If' needs parens to avoid gobbling block`) because a `use`d module's `is export`ed classes never reached the parser's type index — a trait on a declarator wraps it in a bare `Stmt::Block` the module scan did not walk into. The dist now loads; the remaining 20 files are ordinary per-feature failures |
 | `Template::Mojo` 0.2.2 | 5/5 | **4/5** | `00-basic` only; residue in `todo/tickets/template-mojo-residual-failures.md` |
-| `Template::Nest::Fast` 0.3.0 | 10/10 | **0/10** | `with $f ~~ m:g/…/ -> @m` binds `@m` to a one-element list *containing* the match list instead of to the list itself, so `$m[0].from` is Nil and `!index-template` warns and then dies. Reduced: `with ("a<!--x-->b<!--yy-->c" ~~ m:g/('<!--') \s* (\w+) \s* ('-->')/) -> @m { say @m.elems }` — raku 2, mutsu 1 |
+| `Template::Nest::Fast` 0.3.0 | 10/10 | ~~0/10~~ → ~~2/10~~ → **10/10** | **DONE 2026-09-07** (`news/2026-09/template-nest-fast-zero-to-ten-of-ten.md`). Five general bugs, none of them in the template machinery. Off zero: `with EXPR -> @m` bound `@m` to a one-element wrapper, and `can-ok` did not see auto-generated attribute accessors. Then, in order: an lvalue method's **own arguments** kept the `Scalar` element containers of their array carrier, so `$s.substr-rw($from, $len) = v` saw neither an `Int` length nor a `Range` and replaced the whole tail (`my $l = 3; my $s = "hello"; $s.substr-rw(1, $l) = "Z"` — raku `hZo`, mutsu `hZ`); a `%`/`@`-sigil `for` parameter was exempt from the loop's save/restore, so recursing into the same loop left the inner frame's element bound and `render` spliced the nested component's offsets into the parent; and `IO::Path.modified` truncated to whole seconds, so the `:advanced-indexing` re-index check never fired. Pins: `t/substr-rw-computed-args.t`, `t/for-container-param-recursion.t`, `t/io-path-timestamp-subsecond.t` |
 | `Template::HAML` 0.9.5 | 82/83 | **39/83** ² | many; also **2–3× slower to load than raku** (release) → `todo/tickets/grammar-heavy-module-load-slower-than-raku.md` |
 | `SP6` 0.2.1 | 10/11 | **10/11** | at parity — its one failure is `00-meta`, the same file raku fails |
 | `Template::Classic` 0.0.3 | 1/1 | **0/1** | `Unterminated <%` thrown by its own grammar: `my grammar Grammar { token TOP { ^ [ $<part> = <text> || $<part> = <code> || <!before $> { die … } ] … } }`. The `$<part> = <rule>` capture-assignment form inside a `||` chain does not match. (The older "`Unknown method value dispatch`" note is stale.) |
@@ -99,8 +99,12 @@ needs its own reduction before it can be scheduled. What *is* known:
 3. ~~`Template6`~~ — **12/12 as of 2026-09-06**; the dist is closed. Five
    general interpreter bugs came out of reducing it, every one of them found by
    deleting constructs rather than by reading the first error line.
-4. `Template::Nest::Fast` — 0/10 behind a single reduced bug (`with EXPR -> @m`
-   wrapping the list); likely the cheapest whole row left.
+4. ~~`Template::Nest::Fast`~~ — **10/10 as of 2026-09-07**; the dist is closed.
+   The ticket's "single reduced bug" guess was wrong in the usual direction: the
+   `with EXPR -> @m` wrapping was real but only worth 2/10, and the remaining
+   eight files came from three further general bugs in three unrelated
+   subsystems (the lvalue-argument container boundary, the `for`-parameter
+   lifetime, and `IO::Path` timestamp resolution).
 5. The rest (`Mojo`, `HAML`, `Classic`) as ordinary compatibility work; each is
    also a data point that mutsu's grammar/list semantics still diverge in ways
    ordinary modules hit.
@@ -114,6 +118,13 @@ the table is the decision input and goes stale the moment one lands.
 - **2026-09-01 (TRIAGE regeneration, no tarballs fetched):** confirmed from the
   news archive that both `Template::Jinja2` blockers were closed, and flagged
   the whole table as unmeasured since.
+- **2026-09-07 (`Template::Nest::Fast` only):** 2/10 → **10/10**. Three general
+  fixes on top of the two that took it off zero the same day; every one found by
+  reducing a divergence to a snippet, none of them where the recorded symptom
+  pointed. Notably the second one was only visible *after* the first: with the
+  splice length fixed, the output was still wrong but now spliced correctly at
+  the wrong offsets, which is what exposed the loop-parameter leak. Reducing one
+  layer at a time is what this file prescribes and it paid again.
 - **2026-09-06 (full re-run, all eight dists fetched):** the table above. The
   Jinja2 row had indeed moved (0/23 → 1/23, and onto a new blocker, itself
   fixed the same day to reach 3/23), `SP6` had

@@ -504,10 +504,7 @@ impl Compiler {
         // Balance the ForLoop opcode's deferred param-restore push (see the
         // Stmt::For compile path). Required even though this collected form has
         // no post phasers, so the push/pop stay balanced.
-        if param
-            .as_ref()
-            .is_some_and(|p| !p.starts_with('@') && !p.starts_with('%'))
-        {
+        if param.is_some() {
             self.code.emit(OpCode::RestoreForParam);
         }
     }

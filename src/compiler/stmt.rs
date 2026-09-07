@@ -3094,12 +3094,9 @@ impl Compiler {
                 // Restore the single named loop param after the post (LAST)
                 // phasers ran. The ForLoop opcode deferred this restore (pushing
                 // its saved binding) so the phasers could still see the param at
-                // its final value. Emit only when a single non-@/% named param
-                // exists, mirroring the VM's save condition so push/pop balance.
-                if param
-                    .as_ref()
-                    .is_some_and(|p| !p.starts_with('@') && !p.starts_with('%'))
-                {
+                // its final value. Emit whenever a single named param exists,
+                // mirroring the VM's save condition so push/pop balance.
+                if param.is_some() {
                     self.code.emit(OpCode::RestoreForParam);
                 }
                 self.self_is_signature_param = saved_self_is_signature_param;
