@@ -443,16 +443,36 @@ impl Interpreter {
         let core_subscript_call = std::mem::take(&mut self.skip_postcircumfix_overload);
         let mut index = self.stack.pop().unwrap();
         // An *itemized* list/Range used as a subscript (`@a[$(7,8,9)]`,
-        // `@a[my $ = ^2]`) is a SINGLE index, not a slice: itemization makes it
-        // one item, which numifies to its element count (`$(7,8,9).Int == 3`).
-        // (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)
-        if let ValueView::Scalar(inner) = index.view()
-            && (inner.is_range() || matches!(inner.view(), ValueView::Array(..)))
-        {
-            let n = crate::runtime::utils::value_to_list(inner).len() as i64;
-            index = Value::int(n);
-        } else if let ValueView::Array(items, crate::value::ArrayKind::ItemList) = index.view() {
-            index = Value::int(items.len() as i64);
+        // `@a[my $ = ^2]`) is a SINGLE subscript, not a slice: itemization makes
+        // it one item. (A bare `@a[7,8,9]` / `@a[^2]` is still a slice.)
+        //
+        // Only a POSITIONAL one numifies, to the itemized list's element count
+        // (`$(7,8,9).Int == 3`). A HASH subscript keeps the value itself as the
+        // key: `%c{"1 2"} = "y"; my $s = $(1, 2); %c{$s}` is `"y"` in raku.
+        // Numifying it there looked up the element COUNT, so the read never
+        // found what the matching write had stored.
+        if is_positional {
+            if let ValueView::Scalar(inner) = index.view()
+                && (inner.is_range() || matches!(inner.view(), ValueView::Array(..)))
+            {
+                let n = crate::runtime::utils::value_to_list(inner).len() as i64;
+                index = Value::int(n);
+            } else if let ValueView::Array(items, crate::value::ArrayKind::ItemList) = index.view()
+            {
+                index = Value::int(items.len() as i64);
+            }
+        } else if matches!(
+            index.view(),
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::ItemList | crate::value::ArrayKind::ItemArray
+            )
+        ) {
+            // A HASH subscript keeps the itemized value as ONE key, normalized
+            // to the same `Scalar` wrapper the assign / `:exists` / `:delete`
+            // paths use — so all four agree on the key, and on its `.WHICH` for
+            // an object hash.
+            index = Value::scalar(index.clone());
         }
         let mut target = self.stack.pop().unwrap();
         // A scalar-held Range is a Range receiver for its own positional
