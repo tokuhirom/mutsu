@@ -192,6 +192,10 @@ pub(crate) enum SeqView {
 /// state: a `retained`/`Taken` transition made through either handle must be
 /// visible through both (docs/adr/0038 S5).
 struct SeqCore {
+    /// This Seq's `.WHICH` identity — a never-reused id rather than the
+    /// allocation address, which two dead temporaries could share. See
+    /// [`crate::value::which_id::WhichId`].
+    which_id: crate::value::which_id::WhichId,
     #[allow(clippy::vec_box)]
     gens: SyncUnsafeCell<Vec<Box<Vec<Value>>>>,
     state: Mutex<SeqState>,
@@ -233,6 +237,13 @@ impl std::ops::Deref for SeqBody {
 }
 
 impl SeqBody {
+    /// This Seq's never-reused `.WHICH` id. Shared by every `SeqBody` view over
+    /// the same core, which is what makes it the Seq's identity rather than a
+    /// per-view one.
+    pub(crate) fn which_id(&self) -> u64 {
+        self.core.which_id.get()
+    }
+
     /// Build an already-reified body (the common case: `Value::seq(vec)` and
     /// every eager Seq/HyperSeq/RaceSeq constructor).
     pub(crate) fn reified(items: Vec<Value>) -> Arc<Self> {
@@ -247,6 +258,7 @@ impl SeqBody {
     ) -> Arc<Self> {
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
+                which_id: crate::value::which_id::WhichId::default(),
                 gens: SyncUnsafeCell::new(vec![Box::new(items)]),
                 state: Mutex::new(SeqState {
                     source: SeqSource::Reified,
@@ -269,6 +281,7 @@ impl SeqBody {
     pub(crate) fn deferred(source: SeqSource) -> Arc<Self> {
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
+                which_id: crate::value::which_id::WhichId::default(),
                 gens: SyncUnsafeCell::new(Vec::new()),
                 state: Mutex::new(SeqState {
                     source,

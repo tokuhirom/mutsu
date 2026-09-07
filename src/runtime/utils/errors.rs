@@ -352,8 +352,11 @@ pub(crate) fn value_which_key(value: &Value) -> String {
             Some(which) => which.to_string(),
             None => format!("{}|{}", value_type_name(value), id),
         },
-        ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(&items)),
-        ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map)),
+        // Same never-reused id as the `.WHICH` twin in
+        // `builtins::methods_0arg::dispatch_core_coerce` -- an address is
+        // unique only among LIVE objects, and this string outlives them.
+        ValueView::Array(items, ..) => format!("Array|{}", items.which_id.get()),
+        ValueView::Hash(map) => format!("Hash|{}", map.which_id.get()),
         // A Pair with a plain string key and a ValuePair holding a Str key are
         // the same identity (`("x" => 1) === (:x(1))`), so both render the key
         // through its own `.WHICH` (`Pair|Str|x|Int|1`, raku's format).

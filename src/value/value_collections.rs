@@ -51,6 +51,7 @@ impl HashData {
     pub fn new(map: HashMap<String, Value>) -> Self {
         HashData {
             map,
+            which_id: crate::value::which_id::WhichId::default(),
             value_type: None,
             key_type: None,
             declared_type: None,
@@ -162,6 +163,7 @@ impl ArrayData {
     pub fn new(items: Vec<Value>) -> Self {
         ArrayData {
             items,
+            which_id: crate::value::which_id::WhichId::default(),
             native: None,
             value_type: None,
             key_type: None,

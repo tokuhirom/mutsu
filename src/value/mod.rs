@@ -222,6 +222,7 @@ mod guards;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
 mod match_view;
+pub(crate) mod which_id;
 pub(crate) use match_lazy::MatchNode;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
@@ -1094,6 +1095,10 @@ pub enum ArrayKind {
 #[derive(Debug, Clone, Default)]
 pub struct HashData {
     pub map: HashMap<String, Value>,
+    /// This hash's `.WHICH` identity. Lazily minted and never reused, so two
+    /// dead temporaries cannot collide the way their recycled ADDRESSES could
+    /// (`{a=>1}.WHICH eq {a=>1}.WHICH` was `True`). See [`which_id::WhichId`].
+    pub which_id: which_id::WhichId,
     /// Element value-type constraint (e.g. `Int` for `my Int %h`), if any.
     pub value_type: Option<String>,
     /// Object-hash key-type constraint (e.g. `Mu` for `my %h{Mu}`), if any.
@@ -1146,6 +1151,9 @@ pub struct HashData {
 #[derive(Debug, Clone, Default)]
 pub struct ArrayData {
     items: Vec<Value>,
+    /// This array's `.WHICH` identity — see the `HashData` twin and
+    /// [`which_id::WhichId`].
+    pub which_id: which_id::WhichId,
     /// Native numeric `array[T]` payload, when this array has been promoted
     /// to ADR-0015 P3b storage. `items` is then only the seed — the payload
     /// node and its lazily-filled decode cache live behind
@@ -2238,6 +2246,10 @@ pub(crate) struct LazyThunkData {
 pub(crate) type PromiseWaiter = Box<dyn FnOnce(String, Value, String, String) + Send>;
 
 struct PromiseState {
+    /// This promise's `.WHICH` identity — a never-reused id rather than the
+    /// allocation address, which two dead temporaries could share. See
+    /// [`which_id::WhichId`].
+    which_id: which_id::WhichId,
     status: String, // "Planned", "Kept", "Broken"
     result: Value,
     output: String, // captured stdout from thread
@@ -2277,6 +2289,8 @@ pub(crate) struct SharedPromise {
 
 #[derive(Debug)]
 struct ChannelState {
+    /// This channel's `.WHICH` identity — see the `PromiseState` twin.
+    which_id: which_id::WhichId,
     queue: std::collections::VecDeque<Value>,
     send_closed: bool,
     drained_closed: bool,

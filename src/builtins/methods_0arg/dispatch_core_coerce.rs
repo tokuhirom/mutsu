@@ -504,11 +504,15 @@ pub(super) fn dispatch(
                     }
                     format!("Junction|{:016X}", hasher.finish())
                 }
+                // Never-reused id, like the Array/Hash arms below.
                 ValueView::Seq(items) => {
-                    format!("Seq|{:p}", Arc::as_ptr(&items))
+                    format!("Seq|{}", items.which_id())
                 }
+                // A `Slip`'s payload is a bare `Arc<Vec<Value>>` with nowhere
+                // to embed the id the other containers carry, so its
+                // never-reused id comes from the weak-checked side table.
                 ValueView::Slip(items) => {
-                    format!("Slip|{:p}", Arc::as_ptr(&items))
+                    format!("Slip|{}", crate::value::which_id::slip_which_id(&items))
                 }
                 ValueView::RakuAst(node) => {
                     // RakuAST nodes are reference-like model objects. The
@@ -520,11 +524,18 @@ pub(super) fn dispatch(
                         node as *const _ as usize
                     )
                 }
+                // A lazily minted, never-reused id rather than the container's
+                // ADDRESS: a `.WHICH` string always outlives its object, and an
+                // address is unique only among LIVE objects, so two dead
+                // temporaries collided whenever the allocator handed the second
+                // one the block the first had just freed
+                // (`[1,2].WHICH eq [3,4,5].WHICH` was True). See
+                // `crate::value::which_id`.
                 ValueView::Array(items, ..) => {
-                    format!("Array|{:p}", crate::gc::Gc::as_ptr(&items))
+                    format!("Array|{}", items.which_id.get())
                 }
                 ValueView::Hash(map) => {
-                    format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map))
+                    format!("Hash|{}", map.which_id.get())
                 }
                 // A Pair whose contents are themselves value-identified is
                 // value-identified too, from the key's and value's own `.WHICH`
@@ -545,11 +556,15 @@ pub(super) fn dispatch(
                 ValueView::Pair(_, _) | ValueView::ValuePair(_, _) if is_value_type => {
                     runtime::utils::value_which_key(target)
                 }
+                // Never-reused ids, for the same reason as the Array/Hash arms
+                // above: `Promise.new.WHICH eq Promise.new.WHICH` was `True`
+                // whenever the second temporary landed on the first's freed
+                // block.
                 ValueView::Promise(p) => {
-                    format!("Promise|{:p}", p.arc_ptr())
+                    format!("Promise|{}", p.which_id())
                 }
                 ValueView::Channel(c) => {
-                    format!("Channel|{:p}", c.arc_ptr())
+                    format!("Channel|{}", c.which_id())
                 }
                 ValueView::Range(..)
                 | ValueView::RangeExcl(..)
