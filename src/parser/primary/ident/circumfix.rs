@@ -4,7 +4,7 @@ use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 
-/// Parse a user-declared circumfix operator: `open args close` → Call circumfix:<open close>(args)
+/// Parse a user-declared circumfix operator: `open args close` → Call `circumfix:<open close>(args)`
 pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
     if let Some((name, open_len, close_delim)) =
         crate::parser::stmt::simple::match_user_declared_circumfix_op(input)

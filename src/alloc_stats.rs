@@ -31,7 +31,7 @@
 //!
 //! # Cost when the feature is off (the default)
 //!
-//! Zero. [`alloc_scope!`] expands to nothing and the custom allocator is not
+//! Zero. [`alloc_scope!`](crate::alloc_scope) expands to nothing and the custom allocator is not
 //! installed, so a default `cargo build` is byte-identical to one from before
 //! this module existed. The feature is a measurement tool, never shipped on.
 //!
@@ -60,8 +60,8 @@ macro_rules! alloc_scope {
     };
 }
 
-/// Like [`alloc_scope!`], but binds the guard to a named variable so the region
-/// can be closed early with [`alloc_scope_end!`] instead of running to the end
+/// Like [`alloc_scope!`](crate::alloc_scope), but binds the guard to a named variable so the region
+/// can be closed early with [`alloc_scope_end!`](crate::alloc_scope_end) instead of running to the end
 /// of the block. Use it to split one function into sequential phases without
 /// re-indenting it into nested blocks.
 #[macro_export]

@@ -85,7 +85,7 @@ impl Registry {
             .unwrap_or_default()
     }
 
-    /// Full-table consistency check between [`owner_method_names`](Registry::
+    /// Full-table consistency check between [`Self::owner_method_names`](Registry::
     /// owner_method_names) and the `user_candidates` half of `method_entries`:
     /// every indexed name must have a live row and every row with a
     /// non-empty `user_candidates` must be indexed under its owner. No-op
@@ -257,7 +257,7 @@ impl Registry {
     /// Replaces `(owner, name)`'s user candidate list wholesale -- the F4c-2
     /// mutator behind `sync_user_method_entries`'s per-name re-derivation,
     /// and (from F4c-3 onward) individual class-body method declarations.
-    /// An empty `defs` is equivalent to [`remove_user_methods`](Self::
+    /// An empty `defs` is equivalent to [`Self::remove_user_methods`](Self::
     /// remove_user_methods); the row is dropped from `method_entries`
     /// entirely once no column keeps it alive (ADR-0019 F4c design note
     /// (3)).
@@ -400,7 +400,7 @@ impl Registry {
             .collect()
     }
 
-    /// Inverse of [`user_method_rows_for_owner`](Self::
+    /// Inverse of [`Self::user_method_rows_for_owner`](Self::
     /// user_method_rows_for_owner): replaces `owner`'s entire user-owned row
     /// set with `rows`, clearing anything not present in `rows` first.
     pub(crate) fn restore_user_method_rows(

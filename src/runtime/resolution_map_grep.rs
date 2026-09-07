@@ -824,7 +824,7 @@ impl Interpreter {
         Ok(result)
     }
 
-    /// [`eval_grep_over_items`] plus the source index each matched value came
+    /// [`Self::eval_grep_over_items`] plus the source index each matched value came
     /// from, for the `:k`/`:kv`/`:p` adverbs. `None` when the grep consumed the
     /// source in multi-element chunks (see
     /// [`Self::eval_grep_over_items_with_mutated`]).

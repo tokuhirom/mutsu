@@ -996,7 +996,7 @@ pub(in crate::runtime) fn remove_tcp_stream(conn_id: u64) {
     }
 }
 
-/// Map of listener_id -> Arc<AtomicBool> for signaling listener threads to stop
+/// Map of `listener_id` -> `Arc<AtomicBool>` for signaling listener threads to stop
 type ListenerClosedMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
 
 fn listener_closed_map() -> &'static ListenerClosedMap {
@@ -1010,7 +1010,7 @@ pub(in crate::runtime) fn register_listener_closed_flag(listener_id: u64, flag: 
     }
 }
 
-/// Map of listener_id -> Arc<AtomicBool> that the accept thread raises once it
+/// Map of `listener_id` -> `Arc<AtomicBool>` that the accept thread raises once it
 /// has dropped the OS listener. `set_listener_closed` waits on it so closing a
 /// Tap actually stops listening before it returns.
 type ListenerStoppedMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;

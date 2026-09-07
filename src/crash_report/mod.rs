@@ -36,7 +36,7 @@
 //! handler needs more room than the 8 KiB `SIGSTKSZ` stack `std` gives every
 //! thread it spawns, so on a thread that keeps `std`'s it overflows and faults
 //! a second time — fatally and silently. Every thread mutsu spawns therefore
-//! takes [`install_thread_alt_stack`] in
+//! takes `install_thread_alt_stack` in
 //! `builtins_system::spawn_registered_thread`. A thread mutsu does *not* spawn
 //! (a dependency's own worker) still gets no report; there is no portable hook
 //! for that, and mutsu has no such threads today.
@@ -62,7 +62,7 @@ mod report;
 /// Idempotent for the process-wide part; the alternate stack is per-thread and
 /// this entry point never gives it back, so call it only from a thread that
 /// lives as long as the process. Worker threads take
-/// [`install_thread_alt_stack`] instead, whose guard frees the stack on exit.
+/// `install_thread_alt_stack` instead, whose guard frees the stack on exit.
 ///
 /// Disabled entirely by `MUTSU_CRASH_REPORT=0`. Reports are written to
 /// `tmp/crash` relative to the startup working directory, or to

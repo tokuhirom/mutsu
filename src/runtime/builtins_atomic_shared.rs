@@ -726,7 +726,7 @@ impl Interpreter {
         }
     }
 
-    /// [`scalar_cell_target`], promoting a plain atomic-scalar binding to a
+    /// [`Self::scalar_cell_target`], promoting a plain atomic-scalar binding to a
     /// shared `ContainerRef` cell on first use.
     ///
     /// The legacy lane stores an atomic scalar's value under
@@ -788,7 +788,7 @@ impl Interpreter {
         self.shared_vars.get(&value_key)
     }
 
-    /// [`scalar_cell_target`] fallback: promote a plain atomic-scalar binding
+    /// [`Self::scalar_cell_target`] fallback: promote a plain atomic-scalar binding
     /// to a shared `ContainerRef` cell on first use.
     ///
     /// **Seed-and-retire protocol.** A same-name entry in the legacy

@@ -7,7 +7,7 @@ impl Interpreter {
     /// `Array((1,2), 3).elems` is 2), so the args list is materialized directly.
     /// A single type-object argument (`Array(Int)`) is a parametric type request
     /// rather than a value coercion, so it passes through as a `Type(Type)`
-    /// package rendering, mirroring [`builtin_coerce`].
+    /// package rendering, mirroring [`Self::builtin_coerce`].
     pub(super) fn builtin_container_coerce(
         &mut self,
         name: &str,

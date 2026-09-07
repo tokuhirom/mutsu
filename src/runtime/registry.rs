@@ -107,8 +107,8 @@ pub(crate) struct Registry {
     /// The negative pre-filter of the method half of
     /// [`OpCode::MarkRwArgRefContextCallee`](crate::opcode::OpCode::MarkRwArgRefContextCallee)'s
     /// gate, which would otherwise pay an MRO walk per execution. Set-only for
-    /// exactly the reasons [`any_raw_invocant_method`](Self::
-    /// any_raw_invocant_method) is, maintained by the same single writer
+    /// exactly the reasons [`any_raw_invocant_method`](Self::any_raw_invocant_method)
+    /// is, maintained by the same single writer
     /// (`Registry::note_container_binding_methods`) so the two cannot drift.
     ///
     /// It is deliberately only a *filter*: the decision is
@@ -131,8 +131,8 @@ pub(crate) struct Registry {
     /// already nondeterministic between runs and no consumer can depend on
     /// it; a `Vec` merely avoids adding a second, different nondeterminism
     /// (hash-set iteration order) on top. Private to this module -- for now
-    /// (F4c-1) maintained only by [`sync_user_method_entries`](Self::
-    /// sync_user_method_entries); F4c-2 adds the full mutator API and routes
+    /// (F4c-1) maintained only by `sync_user_method_entries` (since retired);
+    /// F4c-2 adds the full mutator API and routes
     /// every write through it. See the ADR-0019 F4c design note.
     ///
     /// `pub(crate)` only because `Registry { .. Registry::default() }`
@@ -190,7 +190,7 @@ pub(crate) struct Registry {
     pub(crate) cstruct_classes: HashSet<String>,
     /// Classes declared `is repr('CPointer')` — an opaque native handle with no
     /// declared field layout of its own (OpenSSL's `BIO`). Tracked separately
-    /// from [`cstruct_classes`] because such a class has no layout to compute,
+    /// from [`cstruct_classes`](Self::cstruct_classes) because such a class has no layout to compute,
     /// but a *field* of that type is still one pointer wide inside an enclosing
     /// CStruct.
     pub(crate) cpointer_classes: HashSet<String>,
@@ -411,7 +411,7 @@ pub(crate) struct Registry {
     pub(crate) our_scoped_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
     /// `proto sub` markers (multi proto stubs): name -> proto `FunctionDef`.
     pub(crate) proto_functions: HashMap<Symbol, std::sync::Arc<FunctionDef>>,
-    /// Grammar token/rule definitions: name -> [overloads]. Each overload is
+    /// Grammar token/rule definitions: name -> `[overloads]`. Each overload is
     /// held behind `Arc` so the whole-map snapshot/restore clones (and the
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.

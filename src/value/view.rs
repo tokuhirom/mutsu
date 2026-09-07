@@ -136,7 +136,7 @@ pub enum ValueView<'a> {
 }
 
 impl Value {
-    /// Decode this value into a borrowed [`ValueView`]. While `Value` is the
+    /// Decode this value into a borrowed `ValueView`. While `Value` is the
     /// enum this is a zero-cost re-borrow; post NaN-boxing it becomes the tag
     /// decode. Always cheap — call it freshly wherever a view is needed.
     #[inline]

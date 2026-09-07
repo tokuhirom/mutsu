@@ -3651,7 +3651,7 @@ impl Interpreter {
         Some(unsafe { &mut *descended })
     }
 
-    /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+    /// Deep nested index assignment (3+ levels): `@a[i][j][k]... = val`
     /// Stack order: [value, idx_outermost, ..., idx_innermost] (innermost on top).
     /// positional_flags_idx is a constant index holding an array of booleans
     /// (innermost to outermost) indicating whether each subscript is positional.

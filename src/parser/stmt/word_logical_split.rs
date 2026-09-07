@@ -7,7 +7,7 @@
 //! `(return True) and False` (the `return` fires; `and False` is dead code).
 //!
 //! The hand-rolled statement-level assignment, declaration and `return` parsers
-//! parse their RHS with [`expression_no_word_logical`], which stops before a
+//! parse their RHS with [`expression_no_word_logical`](crate::parser::expr::expression_no_word_logical), which stops before a
 //! top-level (unparenthesized) word-logical. This module then re-attaches the
 //! trailing `... and ...` at the correct, looser precedence: it wraps the
 //! value-producing statement in a scopeless [`Stmt::SyntheticBlock`] whose second

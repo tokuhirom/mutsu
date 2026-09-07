@@ -209,7 +209,7 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
 /// (`return 1 and 2`) is left in the stream for the caller's word-logical tail.
 ///
 /// Applies the same fat-arrow (`=>`) and WhateverCode wrapping as [`expression`].
-/// The parse entry is the list-infix layer ([`list_infix_top`]), which is the
+/// The parse entry is the list-infix layer ([`list_infix_top`](crate::parser::expr::precedence::list_infix_top)), which is the
 /// precedence tier just below the word-logicals.
 pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, Expr> {
     let (rest, mut expr) = precedence::list_infix_top(input, operators::ExprMode::Full)?;

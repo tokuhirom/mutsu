@@ -165,7 +165,7 @@ impl Interpreter {
     /// one at `depth` outward to the oldest, returning the first that holds the
     /// dynamic var; this is the only way `CALLERS::` reaches past the immediate
     /// caller. A plain name (`cascade == false`) is delegated straight to
-    /// [`get_caller_var`] — raku does not cascade a non-twigil `is dynamic`
+    /// [`Self::get_caller_var`] — raku does not cascade a non-twigil `is dynamic`
     /// lexical, so `CALLERS::` and `CALLER::` agree there.
     pub(crate) fn get_callers_var(
         &self,

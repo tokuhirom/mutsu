@@ -9,7 +9,7 @@
 //! `Seq` (consumed-state tracking + `squish` env mutation) and an already-built
 //! `Iterator` Instance are handled by the caller, not here.
 //!
-//! Spec: https://docs.raku.org/routine/iterator
+//! Spec: <https://docs.raku.org/routine/iterator>
 
 use std::collections::HashMap;
 

@@ -813,7 +813,7 @@ impl Interpreter {
         self.run_range_from(code, start, start, end, compiled_fns)
     }
 
-    /// The interpreter loop of [`run_range`], entered at `from` (== `start`
+    /// The interpreter loop of [`Self::run_range`], entered at `from` (== `start`
     /// except when resuming mid-range after a JIT'd body's goto/warn).
     fn run_range_from(
         &mut self,

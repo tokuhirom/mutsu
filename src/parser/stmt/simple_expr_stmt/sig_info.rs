@@ -4,7 +4,7 @@ use crate::value::ValueView;
 
 /// Extract variable names from a Signature literal expression for signature binding.
 /// Returns None if the expression is not a Signature literal.
-/// Returns Some(Vec<String>) where each string is either a variable name (e.g., "f")
+/// Returns `Some(Vec<String>)` where each string is either a variable name (e.g., "f")
 /// or empty string for anonymous params.
 #[derive(Debug, Clone)]
 pub(super) struct SigParamInfo {

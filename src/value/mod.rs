@@ -170,8 +170,8 @@ pub(crate) struct BagData {
     pub declared_type: Option<String>,
 }
 
-/// Set data: wraps HashSet<String> with optional original-typed keys.
-/// Implements Deref to HashSet<String> so existing code works unchanged.
+/// Set data: wraps `HashSet<String>` with optional original-typed keys.
+/// Implements `Deref` to `HashSet<String>` so existing code works unchanged.
 #[derive(Debug, Clone)]
 pub(crate) struct SetData {
     pub elements: HashSet<String>,
@@ -238,7 +238,6 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
-/// `Buf`/`Blob` element storage — the accessor chokepoint (ADR-0015 P2).
 pub(crate) mod value_buf;
 pub(crate) mod value_buf_repr;
 pub(crate) mod value_carray;
@@ -1200,9 +1199,9 @@ pub enum EnumValue {
 
 /// The public `Value` type: one NaN-boxed 8-byte word behind the newtype
 /// **seal** (ADR-0005, 3b-1 step B — the representation flip). The field and
-/// the [`NanBox`] encoding are private to `crate::value`; [`ValueRepr`]
+/// the `NanBox` encoding are private to `crate::value`; `ValueRepr`
 /// survives as the transient *working* enum crossed through
-/// [`Value::into_repr`] / [`Value::from_repr`], and borrowed reads decode
+/// `Value::into_repr` / `Value::from_repr`, and borrowed reads decode
 /// through [`Value::view`]. Call sites outside `src/value/` see only the
 /// 3b-0 wall API, which is unchanged by the flip.
 #[derive(Clone)]
@@ -1218,7 +1217,7 @@ impl std::fmt::Debug for Value {
 }
 
 /// Raw NaN-box word access for the JIT Tier B inline emitter (see
-/// [`jit_words`]). Read-only: exposing the bits does not breach the newtype
+/// `jit_words`). Read-only: exposing the bits does not breach the newtype
 /// seal's ownership rules (the word still owns its payload reference).
 #[cfg(feature = "jit")]
 impl Value {
@@ -1563,7 +1562,7 @@ impl Value {
 }
 
 /// Variant-named constructor shims for the tuple/unit variants of
-/// [`ValueRepr`], so the `Value::Int(..)` / `Value::Nil` *expression* sites
+/// `ValueRepr`, so the `Value::Int(..)` / `Value::Nil` *expression* sites
 /// inside `src/value/` compile unchanged across the newtype seal (patterns
 /// cannot resolve to functions/consts, so every pattern site was rewritten to
 /// `Value::from_repr(ValueRepr::..)`). Private to `crate::value` like the repr itself —

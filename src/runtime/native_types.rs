@@ -94,7 +94,7 @@ pub(crate) fn unbox_bool_to_native_int(val: crate::value::Value) -> crate::value
 }
 
 /// Map a native type to the generic family name Rakudo uses in messages such as
-/// "Cannot bind to a native <family> array" (e.g. `int8`/`int64` -> `int`,
+/// `Cannot bind to a native <family> array` (e.g. `int8`/`int64` -> `int`,
 /// `uint16` -> `uint`, `num32` -> `num`).
 pub(crate) fn native_family_name(name: &str) -> &'static str {
     match name {

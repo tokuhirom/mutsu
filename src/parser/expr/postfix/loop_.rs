@@ -109,7 +109,7 @@ fn parse_prefix_listop_operand(input: &str) -> PResult<'_, Expr> {
 ///
 /// `?` joined this set once `Z??`/`X??`/`R??`/`S??` (an attempted meta-op over
 /// the ternary) got their own `X::Syntax::CannotMeta` diagnosis
-/// ([`cannot_meta_ternary_error`], checked upstream of every place `Z`/`X`
+/// (`cannot_meta_ternary_error`, checked upstream of every place `Z`/`X`
 /// falls back to a bare infix) — see
 /// `news/2026-08/metaop-ternary-cannot-meta.md`. Before that, mutsu's metaop
 /// scanner fell back to a *bare* `Z` for `Z??`, so the `??` arrived here

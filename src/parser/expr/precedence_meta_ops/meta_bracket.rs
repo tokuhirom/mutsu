@@ -469,7 +469,7 @@ pub(crate) fn strip_sequence_op(input: &str) -> Option<(&str, TokenKind, &str)> 
     }
 }
 
-/// Parse bracket infix operator: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
+/// Parse bracket infix operator: `[+]`, `[R-]`, `[Z*]`, `[Z[cmp]]`, `[blue]`, etc.
 /// Returns (kind, total_consumed_len) where kind is an enum describing
 /// whether it's a plain op, meta op, or user-defined infix.
 pub(crate) enum BracketInfix {

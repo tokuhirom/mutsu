@@ -432,7 +432,7 @@ impl Compiler {
     /// Whether a statement list declares any routine (`sub`/`token`/`rule`/…)
     /// at its top level. Used to decide whether a for-loop body needs
     /// routine-registry scoping (hoist + snapshot/restore). Mirrors the set of
-    /// statements that [`hoist_sub_decls`] acts on (`Stmt::SubDecl`).
+    /// statements that [`Self::hoist_sub_decls`] acts on (`Stmt::SubDecl`).
     pub(crate) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
         stmts
             .iter()
@@ -774,7 +774,7 @@ impl Compiler {
     }
 
     /// The declaration-only subset of a class body used by
-    /// [`hoist_type_decl_shells`]: attribute/method/composition declarations
+    /// [`Self::hoist_type_decl_shells`]: attribute/method/composition declarations
     /// are kept (with user custom traits stripped so trait_mod subs don't run
     /// twice), every statement with runtime effect is dropped. Class-level
     /// (`our`/`my`-scoped) attributes with initializers are dropped too — their

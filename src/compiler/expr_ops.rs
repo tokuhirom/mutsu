@@ -310,7 +310,7 @@ impl Compiler {
         }
     }
 
-    /// Compile HyperFuncOp (>>[&func]<<).
+    /// Compile HyperFuncOp (`>>[&func]<<`).
     pub(super) fn compile_expr_hyper_func_op(
         &mut self,
         func_name: &str,

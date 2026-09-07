@@ -523,7 +523,7 @@ impl Interpreter {
         }
     }
 
-    /// The shared cross-thread `once` result store (see [`once_scope_key`]).
+    /// The shared cross-thread `once` result store (see [`Self::once_scope_key`]).
     pub(crate) fn once_store(&self) -> &std::sync::Arc<crate::runtime::once_store::OnceStore> {
         &self.once_values
     }

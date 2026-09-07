@@ -158,7 +158,7 @@ impl Interpreter {
     /// True when a `Test` (or `Test::*`) module is loaded. This is the gate the
     /// interpreter's `call_function_fallback` uses before dispatching a Test
     /// function, so it is the correct precondition for the VM's native Test
-    /// dispatch too — unlike [`test_mode_active`], it is already true for the
+    /// dispatch too — unlike [`Self::test_mode_active`], it is already true for the
     /// very first test call (`plan`), before any `TestState` exists.
     pub(crate) fn test_module_loaded(&self) -> bool {
         self.loaded_modules.contains("Test")

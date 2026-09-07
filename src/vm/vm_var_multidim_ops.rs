@@ -3,7 +3,7 @@ use crate::vm::vm_comparison_ops::expand_range_to_list;
 
 impl Interpreter {
     /// Multi-dimensional indexing: @a[$x;$y;$z]
-    /// Stack: [target, dim0, dim1, ..., dimN-1] → [result]
+    /// Stack: `[target, dim0, dim1, ..., dimN-1] → [result]`
     pub(super) fn exec_multi_dim_index_op(
         &mut self,
         ndims: u32,

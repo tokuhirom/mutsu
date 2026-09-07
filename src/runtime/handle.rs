@@ -80,7 +80,7 @@ impl IoHandleState {
     /// closed handle, append `nl_out` when `newline`, account the bytes, and do
     /// the buffered file write. Mirrors `write_to_handle_value_trying`'s File
     /// path exactly for the UTF-8 case. `trying` names the op for the
-    /// closed-handle error. Caller guarantees [`can_native_text_write`].
+    /// closed-handle error. Caller guarantees [`Self::can_native_text_write`].
     pub(crate) fn native_text_write(
         &mut self,
         content: &str,
@@ -153,7 +153,7 @@ impl IoHandleState {
 
     /// VM-native `.slurp` (Str) on a `File`+UTF8 handle: read everything from the
     /// current position to EOF, UTF-8-lossy. Caller guarantees
-    /// [`can_native_slurp_string`].
+    /// [`Self::can_native_slurp_string`].
     pub(crate) fn slurp_string_native(&mut self) -> Result<String, RuntimeError> {
         if self.closed {
             return Err(RuntimeError::io_closed("handle operation"));
@@ -175,7 +175,7 @@ impl IoHandleState {
     /// `count` bytes in one `read` (a short read is fine); `count == 0` reads to
     /// EOF. Encoding-independent (returns raw bytes). Mirrors
     /// `read_bytes_from_handle_value`'s File branch. Caller guarantees
-    /// [`is_file_target`].
+    /// [`Self::is_file_target`].
     pub(crate) fn read_bytes_native(&mut self, count: usize) -> Result<Vec<u8>, RuntimeError> {
         if self.closed {
             return Err(RuntimeError::io_closed("handle operation"));
@@ -204,7 +204,7 @@ impl IoHandleState {
     /// PR-D3): `count = Some(n)` reads up to n UTF-8 characters, `None` reads the
     /// rest of the file UTF-8-lossy. Mirrors `read_chars_from_handle_value`'s
     /// File branch for the UTF-8/binary case. Caller guarantees
-    /// [`can_native_text_write`] (which excludes utf16 — that path needs the
+    /// [`Self::can_native_text_write`] (which excludes utf16 — that path needs the
     /// interpreter's BOM/endianness handling).
     pub(crate) fn read_chars_native(
         &mut self,
@@ -256,7 +256,7 @@ impl IoHandleState {
     /// codepoint that begins the next cluster is over-read to find the boundary
     /// and seeked back, so a subsequent read sees the correct position. Fewer
     /// than `count` (incl. empty) means EOF was reached. Caller guarantees
-    /// [`can_native_text_write`].
+    /// [`Self::can_native_text_write`].
     pub(crate) fn read_grapheme_native(&mut self, count: usize) -> Result<String, RuntimeError> {
         use std::io::Seek;
         use unicode_segmentation::UnicodeSegmentation;
@@ -339,7 +339,7 @@ impl IoHandleState {
     /// VM-native raw byte write to a File handle (`write`/`spurt`): closed-check,
     /// not-open-for-writing check, byte accounting, then the raw file write.
     /// Mirrors `write_bytes_to_handle_value`'s phase-1 validation + File branch
-    /// for a File target. Caller guarantees [`is_file_target`].
+    /// for a File target. Caller guarantees [`Self::is_file_target`].
     pub(crate) fn native_write_bytes_file(&mut self, bytes: &[u8]) -> Result<(), RuntimeError> {
         if self.closed {
             return Err(RuntimeError::io_closed("write"));

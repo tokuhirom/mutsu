@@ -296,9 +296,9 @@ impl Interpreter {
         self.candidate_specificity_rank_for_args(def, &[])
     }
 
-    /// Like [`candidate_specificity_rank`], but ranks coercion parameters
+    /// Like [`Self::candidate_specificity_rank`], but ranks coercion parameters
     /// against the arguments that would bind to them — see
-    /// [`effective_dispatch_constraint`].  Pass an empty `args` slice when no
+    /// [`Self::effective_dispatch_constraint`].  Pass an empty `args` slice when no
     /// call is in flight (ordering a `callsame` chain, say); coercion params
     /// then rank by the type they accept.
     /// Whether a type-constraint base name is a `subset` — a user-declared one

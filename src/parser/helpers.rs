@@ -441,7 +441,7 @@ fn parse_pod_directive_line(line: &str) -> Option<(&str, &str)> {
     Some((directive, target))
 }
 
-/// Skip an embedded comment `#`<bracket>...<close>`.
+/// Skip an embedded comment `#<bracket>...<close>`.
 /// Returns the remaining input after the comment, or None if not an embedded comment.
 /// The opening bracket a `#`` ` comment uses, if it has one at all. Separates
 /// "no opening bracket" from "opening bracket that never closes" for the

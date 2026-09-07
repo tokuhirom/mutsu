@@ -283,7 +283,7 @@ pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
 /// Natively this is `stw_aware_wait` with the lock taken for you, and the
 /// result is always `Some`. On wasm nobody else can ever set the condition
 /// while this thread waits — there is no other thread — so instead of parking
-/// on the condvar it runs the cooperative scheduler ([`crate::runtime::wasm_sched::pump`])
+/// on the condvar it runs the cooperative scheduler (`crate::runtime::wasm_sched::pump`)
 /// between checks, dropping the guard each round so the task that resolves the
 /// wait can take the same lock. `None` means the pump ran dry: the waiter is
 /// blocked on something that can never happen, and the caller should raise a

@@ -116,7 +116,7 @@ struct LexicalScope {
     term_symbols: HashMap<String, TermBinding>,
     /// Compile-time constants (name → string value) for resolving `<<$x>>` in operator names.
     compile_time_constants: HashMap<String, String>,
-    /// Operator precedence levels. Key is full operator name (e.g. "infix:<add>"),
+    /// Operator precedence levels. Key is full operator name (e.g. `infix:<add>`),
     /// value is numeric precedence level.
     op_precedence: HashMap<String, i32>,
     /// User-declared class/role/grammar/enum names. Used to disambiguate

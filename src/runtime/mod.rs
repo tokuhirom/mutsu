@@ -2266,7 +2266,7 @@ pub struct Interpreter {
     /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
     /// so that `$x does Role("arg")` works as a role application.
     pub(crate) in_does_rhs: bool,
-    /// When set, `does` on a routine parameter inside trait_mod:<is> will
+    /// When set, `does` on a routine parameter inside `trait_mod:<is>` will
     /// store the resulting Mixin value for writeback to the outer scope.
     pub(crate) trait_mod_writeback_key: Option<String>,
     /// The captured Mixin value from a trait_mod `does` writeback.
@@ -2475,7 +2475,7 @@ pub struct Interpreter {
     /// `declare` behavior partway through the call before any nested spawn.
     /// A dedicated set, touched only by
     /// [`mask_thread_redeclared_params`](Self::mask_thread_redeclared_params) /
-    /// [`unmask_thread_redeclared_params`](Self::unmask_thread_redeclared_params),
+    /// `unmask_thread_redeclared_params`,
     /// has no such interference. Empty for single-threaded programs.
     /// Same `Box<RefCell<...>>` wrapping and same reason as
     /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
@@ -2739,7 +2739,7 @@ pub struct Interpreter {
     pub(crate) raku_leaf_active: Vec<u64>,
     /// Instance ids for which a cycle backreference was emitted during the
     /// current native `.raku` render; the frame that pushed the id onto
-    /// [`raku_leaf_active`] consumes the flag to wrap its rendering in the
+    /// `raku_leaf_active` consumes the flag to wrap its rendering in the
     /// `(my \NAME = ...)` binding (mirroring the user-facing `rakuseen`).
     pub(crate) raku_leaf_cycle_hit: std::collections::HashSet<u64>,
     /// Pending Proxy subclass attribute reference for writeback on mutating methods.
@@ -3295,7 +3295,7 @@ pub struct Interpreter {
     /// per-call ranking never disqualifies an entry from being cached; ranking
     /// against fresh call args happens every time from the cached candidates.
     /// Cleared with the other method caches on any registry generation change
-    /// ([`crate::vm::vm_call_method_compiled_cache::Interpreter::refresh_method_caches_for_generation`]).
+    /// ([`refresh_method_caches_for_generation`](crate::runtime::Interpreter::refresh_method_caches_for_generation)).
     pub(crate) resolved_seq_cache: rustc_hash::FxHashMap<
         (
             crate::type_id::TypeId,

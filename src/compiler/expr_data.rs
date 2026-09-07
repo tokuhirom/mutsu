@@ -436,7 +436,7 @@ impl Compiler {
         });
     }
 
-    /// Compile Index expression (target[index] or target{index}).
+    /// Compile Index expression (`target[index]` or `target{index}`).
     pub(super) fn compile_expr_index(&mut self, target: &Expr, index: &Expr, is_positional: bool) {
         // When in scalar bind context (`:=`), emit IndexAutovivifyLazy so that
         // binding alone doesn't autovivify (deferred until assignment).

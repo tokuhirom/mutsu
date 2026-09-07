@@ -139,7 +139,7 @@ impl Interpreter {
     /// clone + drop were a measured ~15% of the hottest call path's self time
     /// (ADR-0004 J4d), while the set almost never changes inside a frame. The
     /// mutators below journal their *actual* changes into `readonly_undo`
-    /// while at least one scope is open, and [`exit_readonly_frame`] replays
+    /// while at least one scope is open, and [`Self::exit_readonly_frame`] replays
     /// the inverses — a frame whose params are already marked (the
     /// monomorphic/recursive steady state) journals nothing and pays two
     /// integer ops total.
@@ -158,7 +158,7 @@ impl Interpreter {
     }
 
     /// Close a readonly scope: undo every journaled mutation made since the
-    /// matching [`enter_readonly_frame`], newest first, then pop the scope
+    /// matching [`Self::enter_readonly_frame`], newest first, then pop the scope
     /// sentinel. Scopes are strictly LIFO (each pairs entry/exit around one
     /// call frame); an inner scope abandoned by an error unwind is cleaned up
     /// by the enclosing exit, since rolling back to a lower mark replays the
@@ -317,7 +317,7 @@ impl Interpreter {
 
     /// True when nothing at all is marked readonly. Lets a caller on the
     /// declaration hot path skip the sigil-strip + `Symbol::intern` that
-    /// [`unmark_readonly`] would need just to miss.
+    /// [`Self::unmark_readonly`] would need just to miss.
     #[inline]
     pub(crate) fn no_readonly_vars(&self) -> bool {
         self.readonly_vars.borrow().is_empty()

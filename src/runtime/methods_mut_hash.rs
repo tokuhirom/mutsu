@@ -48,7 +48,7 @@ impl Interpreter {
         pairs
     }
 
-    /// Like [`hash_push_collect_pairs`] but preserves the original key *value*
+    /// Like [`Self::hash_push_collect_pairs`] but preserves the original key *value*
     /// (not its stringification), so typed object hashes can type-check the key
     /// and store it under its `.WHICH` key. The first element of each tuple is
     /// the key value, the second the value.

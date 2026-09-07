@@ -213,7 +213,7 @@ impl Interpreter {
     }
 
     /// A mark of "how many END-phaser env captures have happened so far",
-    /// taken on scope entry and handed back to [`update_end_phaser_envs`] on
+    /// taken on scope entry and handed back to [`Self::update_end_phaser_envs`] on
     /// scope exit to name the captures this scope is responsible for freezing.
     ///
     /// This replaced the old `end_phasers.len()` mark, which stopped meaning

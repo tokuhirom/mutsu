@@ -8,7 +8,7 @@ impl Value {
     /// same type and (recursively) contain equivalent values.
     /// Unlike PartialEq (used for `==`), this does NOT allow cross-type comparisons:
     ///   1 eqv 1.0  → False  (Int vs Num)
-    ///   [1,2] eqv (1,2)  → False  (Array vs List)
+    ///   `[1,2] eqv (1,2)`  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
         // Unwrap Scalar/ContainerRef containers: eqv looks through containerization
         if let ValueView::Scalar(inner) = self.view() {

@@ -269,7 +269,7 @@ impl Interpreter {
     /// The write half of `f() = value` once the routine has run: the routine
     /// handed back a container (ADR-0059) and `value` is stored through it, or
     /// it handed back a plain value and the assignment is `X::Assignment::RO`
-    /// with Rakudo's "Cannot modify an immutable <Type> (<value>)" wording.
+    /// with Rakudo's `Cannot modify an immutable <Type> (<value>)` wording.
     pub(crate) fn assign_through_rw_result(
         &mut self,
         result: Value,

@@ -41,12 +41,14 @@ test: check-value-wall check-flaky-list
 # exists in the configuration you actually compile, so the default host build
 # (the `test` job) misses both the Cranelift-less feature set the Miri job and
 # the release fallback use, and the wasm32 lib the npm package is built from
-# (the `lint-configs` job). Needs the wasm target:
+# (the `lint-configs` job), plus rustdoc, whose intra-doc link resolution and
+# Markdown parse no other configuration performs. Needs the wasm target:
 #   rustup target add wasm32-unknown-unknown
 lint:
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo clippy --no-default-features --features native --all-targets -- -D warnings
 	cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
+	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 check-value-wall:
 	scripts/check-value-wall.sh

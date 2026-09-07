@@ -4,7 +4,7 @@
 //! my $errno := cglobal('libc.so.6', 'errno', int32);
 //! ```
 //!
-//! Raku's `cglobal` returns a [`Proxy`] that "redirects all its accesses" to the
+//! Raku's `cglobal` returns a `Proxy` that "redirects all its accesses" to the
 //! named symbol (`Language/nativecall.rakudoc`), so it re-reads on every fetch —
 //! which is the whole point for a variable C keeps changing underneath you. That
 //! `Proxy` is built in the NativeCall prelude; this module is the primitive
@@ -272,7 +272,7 @@ impl Interpreter {
         Some(result)
     }
 
-    /// [`try_native_call_method`] from a call site that knows only the
+    /// [`Self::try_native_call_method`] from a call site that knows only the
     /// receiver, resolving the declaring class across the MRO the way ordinary
     /// method resolution does (a native method can be inherited).
     ///

@@ -1,7 +1,7 @@
 //! rustyline-backed interactive REPL for the CLI (`mutsu` with no script).
 //!
 //! The line-accumulation / value-display semantics live in
-//! [`crate::repl_core`] so the WASM playground shares them verbatim.
+//! `crate::repl_core` so the WASM playground shares them verbatim.
 
 use crate::Interpreter;
 use crate::repl_core::{LineResult, process_line};

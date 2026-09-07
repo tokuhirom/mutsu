@@ -38,7 +38,7 @@ fn strip_hyper_left(input: &str) -> Option<(bool, usize, &str)> {
     }
 }
 
-/// Parse hyper operator: >>op<<, >>op>>, <<op<<, <<op>>
+/// Parse hyper operator: `>>op<<`, `>>op>>`, `<<op<<`, `<<op>>`
 /// Also supports Unicode variants: \u{00BB}op\u{00AB}, \u{00BB}op\u{00BB}, \u{00AB}op\u{00AB}, \u{00AB}op\u{00BB}
 /// and mixed forms like >>op\u{00AB}, \u{00BB}op<<, etc.
 fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
@@ -173,7 +173,7 @@ fn lower_hyper_assignment(target: Expr, value: Expr) -> Expr {
     }
 }
 
-/// Parse hyper operator with function reference: >>[&func]<<, <<[&func]>>, etc.
+/// Parse hyper operator with function reference: `>>[&func]<<`, `<<[&func]>>`, etc.
 /// Returns (func_name, dwim_left, dwim_right, total_consumed_length)
 fn parse_hyper_func_op(input: &str) -> Option<(String, bool, bool, usize)> {
     // Determine left delimiter and dwim_left

@@ -504,7 +504,7 @@ impl Interpreter {
     /// `@a does R`, `"x" does R`, ...) overrides a method and calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE method on
     /// the mixin's inner value is the final base candidate. This mirrors
-    /// [`native_array_storage_next_candidate`], but for a plain `Mixin` over
+    /// [`Self::native_array_storage_next_candidate`], but for a plain `Mixin` over
     /// a builtin `Value` rather than an `is Array` subclass's synthesized
     /// `__mutsu_array_storage` attribute.
     ///
@@ -515,7 +515,7 @@ impl Interpreter {
     /// registered class name) — a native `Hash`/`Array`/`Str`/... inner value
     /// has no `MethodDef`s to find, so that frame is empty and `nextsame`
     /// previously fell through to the generic "exhausted MRO" `Nil` at the
-    /// end of [`dispatch_next_candidate`] instead of reaching the real
+    /// end of [`Self::dispatch_next_candidate`] instead of reaching the real
     /// native implementation (`Hash::AT-KEY`, ...). Verified against
     /// `Hash::Restricted`'s `restrict-current`/`restrict-given` roles, whose
     /// `AT-KEY`/`ASSIGN-KEY`/`BIND-KEY`/`STORE` overrides all `nextsame`/

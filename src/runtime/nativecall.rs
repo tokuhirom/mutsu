@@ -698,7 +698,7 @@ pub(crate) fn native_object_where(payload: usize) -> usize {
 /// CStruct return is a type object.
 /// A `Pointer[T]` — an ordinary `Pointer` object that also remembers what it
 /// points at, so `.of` can report `T` and `.deref` can read through it. Kept as
-/// class `Pointer` rather than a class named "Pointer[T]" so every existing
+/// class `Pointer` rather than a class named `Pointer[T]` so every existing
 /// `Pointer` method and the marshalling layer's `address` read keep working.
 /// A NULL address is still a defined object here: unlike an opaque CStruct
 /// handle, `Pointer.new(0)` is a legitimate value in Rakudo too.

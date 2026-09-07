@@ -1413,7 +1413,7 @@ pub(crate) enum OpCode {
     },
     /// Method call with writeback: target is a variable that may be mutated.
     /// Fast path for @arr.push(val) — directly appends to the array Arc,
-    /// bypassing full method dispatch. Stack: [val] -> [array].
+    /// bypassing full method dispatch. Stack: `[val] -> [array]`.
     ArrayPush {
         target_name_idx: u32,
         /// When the pushed argument is a bare container variable (`@a.push(@b)` /
@@ -1735,7 +1735,7 @@ pub(crate) enum OpCode {
     DeleteIndexNamed(u32, Option<u32>),
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
-    /// Stack: [target, dim0, dim1, ..., dimN] → [result]
+    /// Stack: `[target, dim0, dim1, ..., dimN] → [result]`
     ///
     /// `is_positional` records the bracket kind — see `MultiDimIndexAssign`.
     /// An associative multi-dim read is a slice even when every dimension is a
@@ -1788,7 +1788,7 @@ pub(crate) enum OpCode {
     /// Stack: [target, dim0, ..., dimN] → [ContainerRef | value]
     MultiDimIndexBindRef(u32),
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
-    /// Stack: [target] → [result list]
+    /// Stack: `[target] → [result list]`
     HyperSlice(u8),
 
     // -- String interpolation --
@@ -1908,7 +1908,7 @@ pub(crate) enum OpCode {
     /// tagged onto their node so the method's own type check fires. The
     /// following method call mutates the element's node in place (container
     /// identity §3.2), so no post-call writeback is emitted.
-    /// Stack: [container, key] → [element]
+    /// Stack: `[container, key] → [element]`
     IndexElemAutoviv {
         name_idx: u32,
         is_positional: bool,
@@ -1975,7 +1975,7 @@ pub(crate) enum OpCode {
         outer_positional: bool,
         inner_positional: bool,
     },
-    /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
+    /// Deep nested index assignment (3+ levels): `@a[i][j][k]... = val`
     /// Stack: [value, idx_n (outermost), idx_n-1, ..., idx_1 (innermost)]
     /// `depth` is the total number of subscript levels.
     /// `positional_flags_idx` is a constant index holding a Array of booleans
@@ -1986,7 +1986,7 @@ pub(crate) enum OpCode {
         positional_flags_idx: u32,
     },
     /// Generic index assignment on a stack-computed target.
-    /// Stack: [target, index, value] → assigns value to target[index].
+    /// Stack: `[target, index, value]` → assigns value to `target[index]`.
     /// Supports callframe .my hash writeback for dynamic variables.
     IndexAssignGeneric {
         /// Whether the computed target was reached through `[...]` rather
@@ -2117,7 +2117,7 @@ pub(crate) enum OpCode {
     ExistsEnvIndex(u32),
     ExistsExpr,
     /// Rich :exists adverb with flags.
-    /// Stack: [target, index] or [target, index, arg] or [target] (zen).
+    /// Stack: `[target, index]` or `[target, index, arg]` or `[target]` (zen).
     /// Flags: bit0=negated, bit1=has_arg, bit2=is_zen,
     ///        bits 4-7=adverb (0=None,1=Kv,2=NotKv,3=P,4=NotP,5=NotV,
     ///                         6=InvalidK,7=InvalidNotK,8=InvalidV),
@@ -2519,8 +2519,8 @@ pub(crate) enum OpCode {
     /// `Symbol::from_id`/`Symbol::id`) for the unique state key — not a
     /// constant-pool index.
     /// Pops init value from stack.
-    /// If state_vars has key: set locals[slot] = stored value (discard init).
-    /// If not: set locals[slot] = init value, store in state_vars.
+    /// If state_vars has key: set `locals[slot]` = stored value (discard init).
+    /// If not: set `locals[slot]` = init value, store in state_vars.
     StateVarInit(u32, u32),
     /// Guard for state variable initialization.
     /// Check if state key (arg 0, an interned `Symbol` id like `StateVarInit`)
@@ -2537,7 +2537,7 @@ pub(crate) enum OpCode {
         name_idx: u32,
         tags_idx: Option<u32>,
     },
-    /// Apply a custom variable trait via trait_mod:<is>.
+    /// Apply a custom variable trait via `trait_mod:<is>`.
     /// When `has_arg` is true, pops trait argument value from stack.
     /// `slot` is the compile-time-baked local slot of the declared variable
     /// (§1.5; scope-correct under shadow slots). `None` for env-only
@@ -2558,7 +2558,7 @@ pub(crate) enum OpCode {
     },
 
     /// Get a variable through `$CALLERS::` — the "any caller scope" twin of
-    /// [`GetCallerVar`]. A `$*`-twigil dynamic name cascades outward through the
+    /// [`GetCallerVar`](Self::GetCallerVar). A `$*`-twigil dynamic name cascades outward through the
     /// whole caller chain (`cascade = true`); a plain name resolves to the exact
     /// frame at `depth`, identical to `GetCallerVar` (`cascade = false`).
     GetCallersVar {
@@ -2599,7 +2599,7 @@ pub(crate) enum OpCode {
     /// Get a caller-frame lexical when the `CALLER::` site sits inside an
     /// *immediate* block (a bare block / `if` / `for` / `while` body, run in
     /// place). Such a block's dynamic caller IS its lexical parent, so `CALLER::`
-    /// there resolves lexically — exactly like [`GetOuterVar`] — rather than
+    /// there resolves lexically — exactly like [`GetOuterVar`](Self::GetOuterVar) — rather than
     /// against the runtime call stack (which the block never pushed a frame onto).
     /// Unlike `GetOuterVar` it still enforces the `CALLER::` dynamic-ness contract:
     /// a binding present in the target scope but not declared `is dynamic` throws
@@ -3857,7 +3857,7 @@ pub(crate) enum DeferredBodyOpKind {
 /// composition entry point runs these ops (ADR-0019 D8-2) instead of
 /// re-parsing/re-lowering the raw statement per statement on every
 /// composition. Reuses [`RoleBodyOp::Deferred`]'s raw statements as input —
-/// see [`deferred_body_ops`].
+/// see [`deferred_body_ops`](CompiledRoleDeclPlan::deferred_body_ops).
 #[derive(Debug, Clone)]
 pub(crate) struct DeferredBodyOp {
     pub(crate) kind: DeferredBodyOpKind,
@@ -4162,7 +4162,7 @@ pub(crate) struct CompiledCode {
     /// is once per iteration.
     pub(crate) locals_deleted_index_sym: Vec<Symbol>,
     pub(crate) locals_bound_slice_sym: Vec<Symbol>,
-    /// Bitmap: true if local[i] is a *plain lexical* name — the sigil-less form
+    /// Bitmap: true if `local[i]` is a *plain lexical* name — the sigil-less form
     /// the compiler stores scalars under (`my $x` -> `"x"`, a scalar param
     /// `$n` -> `"n"`), with no twigil (`*d`, `^a`), no attribute (`.x`, `!x`),
     /// no `@`/`%`/`&` sigil, no `::` qualifier, not the topic `_`, and not a
@@ -4366,7 +4366,7 @@ pub(crate) struct CompiledCode {
     /// that are NOT method-local (attributes, params, special vars).
     /// When true, the fast method path cannot use a fresh env.
     pub(crate) may_capture_outer_vars: bool,
-    /// Bitmap: true if local[i] needs to be synced to env (because it's
+    /// Bitmap: true if `local[i]` needs to be synced to env (because it's
     /// referenced by GetGlobal/SetGlobal in this code or closures exist).
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
@@ -4374,7 +4374,7 @@ pub(crate) struct CompiledCode {
     /// Per-consumer lexical-slot synchronization sets (ADR-0018). Their union
     /// contributes to `needs_env_sync` without widening unrelated slots.
     pub(crate) env_consumer_slots: EnvConsumerSlots,
-    /// Bitmap: true if local[i]'s NAME occupies more than one `locals` slot —
+    /// Bitmap: true if `local[i]`'s NAME occupies more than one `locals` slot —
     /// a genuine inner-block shadow under the `MUTSU_SHADOW_SLOTS` gate (§1.4).
     /// The name-keyed env can hold only ONE value per name, so the whole-locals
     /// env broadcast (`sync_env_from_locals` and the regex-interpolation sync)
@@ -4546,18 +4546,18 @@ pub(crate) struct CompiledCode {
     /// anon `sub {}`, a bare block, a class/role method, `start`/`supply` —
     /// ADR-0032 D2). Kept slot-addressed so a same-named lexical in another
     /// block is not boxed at its declaration site. Named `_ref_capture_` (not
-    /// `_named_sub_`) because this is populated by [`Compiler::emit_wrap_var_ref`]
+    /// `_named_sub_`) because this is populated by [`Compiler::emit_wrap_var_ref`](crate::compiler::Compiler::emit_wrap_var_ref)
     /// (D1) at every WrapVarRef emit site and bubbled to the owning frame by
-    /// [`Compiler::bubble_container_ref_capture_syms`] (D2), not by a
+    /// [`Compiler::bubble_container_ref_capture_syms`](crate::compiler::Compiler::bubble_container_ref_capture_syms) (D2), not by a
     /// named-sub-specific peephole.
     pub(crate) needs_cell_ref_capture_slots: Vec<u32>,
     /// Free variables whose raw container is consumed by `WrapVarRef`. Runtime
     /// reference wrapping may read a captured env cell only for this explicit
     /// set; ordinary same-named env cells must not override a shadow value.
-    /// Populated at emission time by [`Compiler::emit_wrap_var_ref`] (ADR-0032
+    /// Populated at emission time by [`Compiler::emit_wrap_var_ref`](crate::compiler::Compiler::emit_wrap_var_ref) (ADR-0032
     /// D1) whenever the name is not a local of the emitting frame, and
     /// bubbled transitively across nested-code boundaries by
-    /// [`Compiler::bubble_container_ref_capture_syms`] until it reaches the
+    /// [`Compiler::bubble_container_ref_capture_syms`](crate::compiler::Compiler::bubble_container_ref_capture_syms) until it reaches the
     /// frame that owns the name (see `needs_cell_ref_capture_slots`).
     pub(crate) container_ref_capture_syms: Vec<Symbol>,
     /// Named-sub writes of a NON-own (ancestor) lexical, bubbled up so the ancestor

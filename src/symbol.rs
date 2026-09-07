@@ -304,7 +304,7 @@ impl Symbol {
     }
 
     /// Look a string up *without* interning it: `Some` only if the string has
-    /// already been interned by someone. Used by [`crate::value::AttrMap`]'s
+    /// already been interned by someone. Used by `crate::value::AttrMap`'s
     /// string-keyed convenience lookups (`attrs.get("name")`), where a name that
     /// was never interned cannot possibly be a key in the map — so a miss must
     /// not grow the (append-only, leaked) symbol table with a name nothing else

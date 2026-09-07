@@ -360,7 +360,7 @@ impl Compiler {
         }
     }
 
-    /// Parse CALLERS:: prefix(es), the twin of [`parse_caller_prefix`].
+    /// Parse CALLERS:: prefix(es), the twin of [`Self::parse_caller_prefix`].
     /// "CALLERS::a" -> ("a", 1), "CALLERS::CALLERS::a" -> ("a", 2).
     ///
     /// `CALLERS::` differs from `CALLER::` only for a `$*`-twigil dynamic name,

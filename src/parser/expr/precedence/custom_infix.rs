@@ -174,7 +174,7 @@ pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
 /// Parse one application of a user-declared `infix:<word>` operator, folding it
 /// into `left`. Returns `Ok(None)` when `r` does not open with a custom infix
 /// word whose precedence level falls in `(min_level, max_level]` — with `None`
-/// (no precedence trait) counted as [`PREC_ADDITIVE`], rakudo's default for a
+/// (no precedence trait) counted as [`PREC_ADDITIVE`](crate::parser::stmt::simple::PREC_ADDITIVE), rakudo's default for a
 /// trait-less operator.
 ///
 /// The whole custom-infix application — its operand, its `is assoc` folding and
@@ -182,7 +182,7 @@ pub(crate) fn is_reserved_infix_word(name: &str) -> bool {
 /// identically wherever it is invoked. It is called from two precedence layers:
 /// the additive layer (`additive_expr`, for the default level) and the
 /// list-infix layer (for operators explicitly pushed down to or below
-/// [`PREC_SEQUENCE`] with `is looser`).
+/// [`PREC_SEQUENCE`](crate::parser::stmt::simple::PREC_SEQUENCE) with `is looser`).
 ///
 /// `operand` parses the right-hand operand at the calling layer's tighter level.
 pub(crate) fn try_custom_infix_word<'a>(
@@ -323,7 +323,7 @@ pub(crate) fn parse_comma_list_of_range_raw<'a>(input: &'a str) -> PResult<'a, V
     Ok((r, items))
 }
 
-/// Parse a comma-separated list of range_expr, returning (rest, Vec<Expr>).
+/// Parse a comma-separated list of range_expr, returning `(rest, Vec<Expr>)`.
 /// The precedence level at which a list-infix operator (Z/X/meta/`...`) parses
 /// its operands.
 ///

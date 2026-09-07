@@ -28,7 +28,7 @@
 //! to empty on a freshly spawned worker thread's `Interpreter`, see
 //! `runtime_thread.rs`) is invisible from the callback's own thread. A
 //! thread-local depth, raised for the extent of
-//! [`Interpreter::call_react_callback`] — the single dispatch point every
+//! [`Interpreter::call_react_callback`](crate::runtime::Interpreter::call_react_callback) — the single dispatch point every
 //! `whenever`/`LAST`/`QUIT`/`CLOSE` callback body goes through, on whichever
 //! thread actually runs it — is what correctly answers "is a react/supply
 //! consumer dynamically active on *this* thread right now?".

@@ -373,7 +373,7 @@ fn collect_named_names_recursive(pd: &ParamDef, names: &mut Vec<String>) {
     }
 }
 
-/// Convert Vec<ParamDef> and optional return type to SigInfo.
+/// Convert `Vec<ParamDef>` and optional return type to `SigInfo`.
 pub(crate) fn param_defs_to_sig_info(params: &[ParamDef], return_type: Option<String>) -> SigInfo {
     SigInfo {
         params: params.iter().map(param_def_to_sig_param).collect(),

@@ -286,7 +286,7 @@ pub(crate) fn decode_text_content(s: String) -> String {
     translate_nl_in(strip_utf8_bom(s))
 }
 
-/// Check if a class name represents a (mutable) Buf-like type (Buf, Buf[uint8],
+/// Check if a class name represents a (mutable) Buf-like type (`Buf`, `Buf[uint8]`,
 /// buf8, etc.). The encoding types (utf8/utf16/...) are immutable Blobs, not
 /// Bufs, so they are excluded here (see `is_blob_like_class`).
 pub(crate) fn is_buf_like_class(cn: &str) -> bool {
@@ -295,7 +295,7 @@ pub(crate) fn is_buf_like_class(cn: &str) -> bool {
         || cn.starts_with("buf")
 }
 
-/// Check if a class name represents a Blob-like type (Blob, Blob[uint8], blob8,
+/// Check if a class name represents a Blob-like type (`Blob`, `Blob[uint8]`, `blob8`,
 /// and the immutable encoding buffers utf8/utf16/utf32).
 pub(crate) fn is_blob_like_class(cn: &str) -> bool {
     matches!(
@@ -452,7 +452,7 @@ pub(crate) fn hash_uses_typed_keys(hash: &Value) -> bool {
 
 /// Retrieve the original (typed) key value for a hash entry, if available.
 /// Falls back to the string key if no original key is embedded. Honors the
-/// object-hash gate (see [`HashData::typed_key`]): a plain hash always yields a
+/// object-hash gate (see [`HashData::typed_key`](crate::value::HashData::typed_key)): a plain hash always yields a
 /// `Str` key.
 pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
     if let ValueView::Hash(arc) = hash.view() {

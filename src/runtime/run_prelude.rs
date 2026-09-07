@@ -32,7 +32,7 @@ impl Interpreter {
 
     /// Prepend NativeCall's type objects (`Pointer`, `void`, `OpaquePointer`,
     /// `NativeCall::CStr`) to a program that uses NativeCall. Parsed once and
-    /// cached, like [`inject_prelude_roles`].
+    /// cached, like [`Self::inject_prelude_roles`].
     ///
     /// The gate is `use NativeCall` alone, deliberately: keying it on the
     /// source also naming `Pointer` meant `use NativeCall; say void.^name` --
