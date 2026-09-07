@@ -269,7 +269,7 @@ callback `Value` already carries its own closure environment.
 | **0** | **Measure the read-path exposure** by flipping `dispatch_map_method`/`builtin_map` to always call `create_lazy_map_list` behind a temporary env gate, and running `t/` and the roast whitelist with it on. This is option 3's exposure without option 3's cost, and it produces the list of consumers that read a deferred sequence without forcing it. | Discard the gate afterwards; it is a measurement, not a slice. |
 | **1** | **Done (2026-08-22).** `t/map-callback-runs-at-consumption.t` — 23 rows, raku-verified 23/23, mutsu 12 passing and 11 `todo`. Un-`todo`ing the nine ADR-0058 rows is this ADR's completion signal; the other two `todo`s belong to §1.4's separate bug. | Same shape as ADR-0034 phase 1. |
 | **2** | **Done (2026-09-07).** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method` only (not `builtin_map`, not `grep`), plus the read-path consumers S8 lists. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d; the two remaining `todo`s are S1.4's separate bug. |
-| **3a** | **Attempted and REVERTED (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returning the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2 is a five-line diff and was green on `make test`, but the full roast run aborted a whitelisted file. **Blocked on a step-2 hole**, see S9.1 and `todo/deep/deferred-map-callback-runs-in-the-consuming-frames-env.md`. | |
+| **3a** | **Done (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returns the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2. Attempted and reverted earlier the same day behind a step-2 hole (S9.1); that hole is closed (`news/2026-09/deferred-map-callback-frame.md`). The mandatory full `make roast` then found three more consumers, all fixed generally -- see S9.3. | `t/listop-map-defers.t`, and `t/nested-deferred-map-seq-is-pulled.t`'s listop row un-`todo`d. |
 | **3b** | Extend to both `grep` entry points. Measured 2026-09-07: grep is still fully eager and diverges from rakudo. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. **Its own slice, for a measured reason -- see S9.2.** | |
 | **4** | Retire the `body_contains_return` / `is_stub_routine_body` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. | The maintainability payout. |
 
@@ -529,6 +529,22 @@ captured value for one of the block's own `free_var_syms` win, which is the same
 lexical-resolution rule the cell encodes, and costs a set lookup per captured
 key rather than an `Env` clone. So step 3 and step 4 are unblocked, and §5's
 mandatory full `make roast` is what still gates them.
+
+### 9.3 What the mandatory roast run found when step 3 landed (2026-09-07)
+
+`make test` was green (3779 files / 39681 tests) with step 3 in place, and the
+full `make roast` still failed three files. All three were **general** defects
+that eager `map` had been hiding, not step-3 special cases:
+
+| file | defect | fix |
+|---|---|---|
+| `integration/99problems-21-to-30.t` | The capture merge in `eval_map_over_items` now *overwrites* a same-named key, but `touched_keys` -- the save/restore set around the map loop -- still listed only the keys the merge *introduced*. A nested deferred map therefore left its own capture behind for the enclosing map's NEXT iteration, and a recursive producer read the inner call's `@sizes` from iteration 2 on. | Every key the merge overwrites is saved and restored. |
+| `S32-list/categorize.t` | `categorize`'s mapper result is read through `as_items`, a pure-value reader that cannot pull, so a mapper whose body is a `map` categorized nothing. The `LazyList` force beside it was the same guard for the older deferral. | `reify_map_grep_seq` on the mapper result. |
+| `S06-other/main.t` | rakudo's `RUN-MAIN` **sinks** `MAIN`'s return value; mutsu dropped it. Invisible while `map` was eager. | `sink_map_grep_seq` on `MAIN`'s result (both the fall-off-the-end and the explicit-`return` paths). |
+
+This is the §5 risk paying for itself twice: the run before step 3 caught the
+frame hole, and the run with step 3 caught three consumers. Keep the full local
+`make roast` for step 3b and step 4.
 
 ### 9.2 grep is eager too, and is its own slice regardless
 

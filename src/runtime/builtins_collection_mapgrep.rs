@@ -112,7 +112,17 @@ impl Interpreter {
             {
                 return Ok(self.create_lazy_map_list(list_items, &sub_data));
             }
-            self.eval_map_over_items(func, list_items)
+            // ADR-0058 step 3: the listop `map &f, @xs` form defers exactly as
+            // the method form does — the callback runs when something consumes
+            // the Seq, not here. Without this the listop answered a `List`
+            // where rakudo answers a `Seq`, ran its side effects at the call
+            // instead of at first consumption, and let a `die` inside the
+            // callback be caught by a `try` that merely enclosed the `map`.
+            Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items: std::sync::Arc::new(list_items),
+                func,
+                fatal: self.fatal_mode,
+            }))
         }
     }
 

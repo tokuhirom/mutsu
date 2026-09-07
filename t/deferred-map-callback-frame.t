@@ -7,7 +7,7 @@ use Test;
 # frame. Only `$`-scalars got this right (they are boxed into a shared cell);
 # an `@`/`%` container free variable lost to the consumer's.
 
-plan 9;
+plan 11;
 
 {
     my @sizes = 1, 2, 3;
@@ -71,4 +71,34 @@ plan 9;
     my $s = (1,).map({ $a });
     $a = 5;
     is $s.List, (5,), 'a lexical mutated after the `.map` call is seen at the pull';
+}
+
+# A NESTED deferred map must not leave its own capture behind for the enclosing
+# map's next iteration. The capture merge overwrites a same-named key now, so
+# every key it overwrites has to be saved and restored around the loop -- not
+# only the keys it introduces. Without that, `inner`'s second outer iteration
+# read `@sizes` as the recursive call's `(2,)`.
+{
+    sub inner(@sizes) {
+        return $["END"] if @sizes == 0;
+        map -> $e {
+            map -> $g { "$e/$g" }, inner(@sizes[1..*])
+        }, ['a', 'b']
+    }
+    is inner((1, 2)).map({ .List.raku }).join(' ; '),
+        '("a/a/END", "a/b/END") ; ("b/a/END", "b/b/END")',
+        'a nested deferred map does not clobber the enclosing one\'s capture';
+}
+
+# The same shape one level deeper, with the recursion feeding the inner source.
+{
+    sub deep(@sizes) {
+        return $['X'] if @sizes == 0;
+        map -> $e {
+            map -> $g { "$e$g" }, deep(@sizes[1..*])
+        }, ['p', 'q']
+    }
+    is deep((1, 2, 3)).map({ .List.map({ .List.raku }).join(',') }).join(' ; '),
+        '("pppX pqX",),("pqpX qqX",) ; ("qppX pqX",),("qqpX qqX",)',
+        '... at three levels of recursion too';
 }
