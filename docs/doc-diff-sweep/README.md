@@ -23,9 +23,11 @@ cp tmp/sweep-final/{summary.txt,progress.txt} docs/doc-diff-sweep/
 cp -r tmp/sweep-final/reports docs/doc-diff-sweep/reports
 ```
 
+**Cap captured output before committing** — the harness does not (see `todo/tickets/doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md`); the 2026-09-07b sweep needed 11 MB → 412 KB of truncation. Keep only the reports for files listed in `summary.txt`.
+
 Then regenerate the survey table + Corpus snapshot in
 [../doc-diff-backlog.md](../doc-diff-backlog.md) from the new `summary.txt`, and
-update the totals in [PLAN.md](../../PLAN.md) §8.1.
+update the totals in [PLAN.md](../../PLAN.md) §6 (the QA section — the old §8.1 pointer was stale).
 
 **Always re-sweep on the current `main` before trusting a row** — a report goes
 stale as soon as a fix lands, and a sweep run against a stale binary reports

@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=0  mutsu-crash=2  no-oracle=11  raku-drift=0  skipped-marker=0  skipped-nondet=0
+# stats: match=0  mismatch=2  mutsu-crash=0  no-oracle=11  raku-drift=0  skipped-marker=0  skipped-nondet=0
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Type/Lock/Async.rakudoc:162
+[1] output-mismatch  raku-doc/doc/Type/Lock/Async.rakudoc:162
 --- program ---
 my Lock::Async $lock .= new;
 my Int         $count = 0;
@@ -35,14 +35,11 @@ for 0..^2 {
 say $count; # OUTPUT: 5
 --- raku stdout ---
 4
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'protect-or-queue-on-recursion' for invocant of type 'Lock::Async'
-  in block <unit> at tmp/ddh/prog-3414935.raku line 5
+--- mutsu stdout (exit 0) ---
+5
 
 ==============================================================================
-[2] mutsu-error  raku-doc/doc/Type/Lock/Async.rakudoc:202
+[2] output-mismatch  raku-doc/doc/Type/Lock/Async.rakudoc:202
 --- program ---
 my Lock::Async $lock .= new;
 my Int         $count = 0;
@@ -67,9 +64,8 @@ $lock.protect-or-queue-on-recursion({
 });
 --- raku stdout ---
 1
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'protect-or-queue-on-recursion' for invocant of type 'Lock::Async'
-  in block <unit> at tmp/ddh/prog-3414935.raku line 4
+2
+--- mutsu stdout (exit 0) ---
+1
+0
 

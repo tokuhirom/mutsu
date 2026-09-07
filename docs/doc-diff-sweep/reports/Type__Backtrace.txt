@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=1  mutsu-crash=3  no-oracle=1  raku-drift=0  skipped-marker=3  skipped-nondet=18
+# stats: match=1  mismatch=1  mutsu-crash=0  no-oracle=1  raku-drift=2  skipped-marker=3  skipped-nondet=18
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Backtrace.rakudoc:15
@@ -12,12 +12,12 @@ if ($!) {
     say $!.backtrace[*-1].raku;
 }
 --- raku stdout ---
-Backtrace::Frame.new(file => "tmp/ddh/prog-3373026.raku", line => 6, code => ->  { #`(Block|2591685986568) ... }, subname => "<unit>")
+Backtrace::Frame.new(file => "tmp/ddh/prog-1353530.raku", line => 6, code => ->  { #`(Block|3698577923600) ... }, subname => "<unit>")
 --- mutsu stdout (exit 0) ---
-Nil
+Backtrace::Frame.new(file => "tmp/ddh/prog-1353530.raku", line => 2, code => sub <unit> ($arg0) { #`(Sub|0) ... }, subname => "<unit>")
 
 ==============================================================================
-[2] mutsu-error  raku-doc/doc/Type/Backtrace.rakudoc:72
+[2] raku-drift-from-doc  raku-doc/doc/Type/Backtrace.rakudoc:72
 --- program ---
 sub zipi { { { die "Something bad happened" }() }() };
 try zipi;
@@ -26,39 +26,19 @@ say $!.backtrace.next-interesting-index( :named ); #  OUTPUT: «4␤»
 --- raku stdout ---
 2
 4
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'next-interesting-index' for invocant of type 'Backtrace'
-  in block <unit> at tmp/ddh/prog-3373026.raku line 3
+--- mutsu stdout (exit 0) ---
+2
+2
 
 ==============================================================================
-[3] mutsu-error  raku-doc/doc/Type/Backtrace.rakudoc:84
---- program ---
-sub zipi { { { die "Something bad happened" }() }() };
-try zipi;
-say $!.backtrace.outer-caller-idx( 4 ); # OUTPUT: «[6]␤»
---- raku stdout ---
-[6]
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'outer-caller-idx' for invocant of type 'Backtrace'
-  in block <unit> at tmp/ddh/prog-3373026.raku line 3
-
-==============================================================================
-[4] mutsu-error  raku-doc/doc/Type/Backtrace.rakudoc:96
+[3] raku-drift-from-doc  raku-doc/doc/Type/Backtrace.rakudoc:96
 --- program ---
 sub zipi { { { die "Something bad happened" }() }() };
 try zipi;
 say $!.backtrace.nice( :oneline ) if $!;
 # OUTPUT: «  in sub zipi at /tmp/... line 1␤␤»
 --- raku stdout ---
-  in sub zipi at tmp/ddh/prog-3373026.raku line 1
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'nice' for invocant of type 'Backtrace'
-Did you mean 'note'?
-  in block <unit> at tmp/ddh/prog-3373026.raku line 3
+  in sub zipi at tmp/ddh/prog-1353530.raku line 1
+--- mutsu stdout (exit 0) ---
+  in block <unit> at tmp/ddh/prog-1353530.raku line 2
 

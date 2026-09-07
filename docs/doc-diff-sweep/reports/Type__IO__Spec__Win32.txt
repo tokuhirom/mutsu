@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=7  mismatch=3  mutsu-crash=0  no-oracle=17  raku-drift=2  skipped-marker=0  skipped-nondet=0
+# stats: match=8  mismatch=2  mutsu-crash=0  no-oracle=17  raku-drift=2  skipped-marker=0  skipped-nondet=0
 
 ==============================================================================
 [1] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:162
@@ -18,20 +18,20 @@ say IO::Spec::Win32.rel2abs: '/foo/', 'bar'; # OUTPUT: «C:\foo␤»
 say IO::Spec::Win32.rel2abs: 'foo/../../', 'bar';
 # OUTPUT: «C:\Users\camelia\bar\foo\..\..␤»
 --- raku stdout ---
-"/home/tokuhirom/work/mutsu-codex".IO
-\home\tokuhirom\work\mutsu-codex\foo
-\home\tokuhirom\work\mutsu-codex
-\home\tokuhirom\work\mutsu-codex\foo\..\..
+"/home/tokuhirom/work/mutsu-roast".IO
+\home\tokuhirom\work\mutsu-roast\foo
+\home\tokuhirom\work\mutsu-roast
+\home\tokuhirom\work\mutsu-roast\foo\..\..
 \foo
-\home\tokuhirom\work\mutsu-codex\bar\foo
+\home\tokuhirom\work\mutsu-roast\bar\foo
 \bar
 \foo
-\home\tokuhirom\work\mutsu-codex\bar\foo\..\..
+\home\tokuhirom\work\mutsu-roast\bar\foo\..\..
 --- mutsu stdout (exit 0) ---
-"/home/tokuhirom/work/mutsu-codex".IO
-\home\tokuhirom\work\mutsu-codex\foo
-\home\tokuhirom\work\mutsu-codex
-\home\tokuhirom\work\mutsu-codex\foo\..\..
+"/home/tokuhirom/work/mutsu-roast".IO
+\home\tokuhirom\work\mutsu-roast\foo
+\home\tokuhirom\work\mutsu-roast
+\home\tokuhirom\work\mutsu-roast\foo\..\..
 \foo
 bar\foo
 \bar
@@ -66,12 +66,12 @@ IO::Path::Parts.new("",".",".")
 IO::Path::Parts.new("",".",".")
 IO::Path::Parts.new("","","")
 --- mutsu stdout (exit 0) ---
-IO::Path::Parts.new
-IO::Path::Parts.new
-IO::Path::Parts.new
-IO::Path::Parts.new
-IO::Path::Parts.new
-IO::Path::Parts.new
+IO::Path::Parts.new("C:","/foo","bar.txt")
+IO::Path::Parts.new("","\\","foo")
+IO::Path::Parts.new("","\\","\\")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("",".",".")
+IO::Path::Parts.new("",".","")
 
 ==============================================================================
 [3] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:251
@@ -119,17 +119,7 @@ IO::Spec::Win32.splitpath('').raku.say;
 ("", "", "")
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:54
---- program ---
-IO::Spec::Win32.catdir(<foo/bar ber raku>).say;
-# OUTPUT: «foo\bar\ber\raku␤»
---- raku stdout ---
-foo\bar\ber\raku
---- mutsu stdout (exit 0) ---
-foo\bar ber raku
-
-==============================================================================
-[5] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:126
+[4] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:126
 --- program ---
 IO::Spec::Win32.join('C:', '/some/dir', 'foo.txt').say;
 # OUTPUT: «C:/some/dir\and/more␤»

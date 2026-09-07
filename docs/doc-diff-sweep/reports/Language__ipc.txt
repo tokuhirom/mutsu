@@ -1,19 +1,96 @@
 # doc-diff-harness report
-# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=6  raku-drift=0  skipped-marker=0  skipped-nondet=1
+# stats: match=3  mismatch=0  mutsu-crash=1  no-oracle=6  raku-drift=0  skipped-marker=0  skipped-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/ipc.rakudoc:14
+[1] mutsu-error  raku-doc/doc/Language/ipc.rakudoc:34
 --- program ---
-run 'git', 'status';
+my $git = run 'git', 'log', '--oneline', :out;
+for $git.out.lines -> $line {
+    my ($sha, $subject) = $line.split: ' ', 2;
+    say "$subject [$sha]";
+}
+$git.out.close();
 --- raku stdout ---
-On branch main
-Your branch is up to date with 'origin/main'.
-
-Untracked files:
-  (use "git add <file>..." to include in what will be committed)
-	foo.bak
-
-nothing added to commit but untracked files present (use "git add" to track)
---- mutsu stdout (exit 0) ---
-
-
+Merge pull request #7508 from tokuhirom/docs/triage-regen-2026-09-07b [dccfd1737]
+docs(todo): regenerate TRIAGE.md against a fully re-measured todo/ tree [aa67e19e0]
+Merge pull request #7506 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [a7db67d29]
+fix(mixin): an anonymous value mixin has an application order and stacks [f6726723f]
+Merge pull request #7505 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [509023208]
+fix(which): a container's identity is a never-reused id, not its address [5ae234f6f]
+Merge pull request #7504 from tokuhirom/feat/adr0058-step4-retire-lazylist [a57ab3eaf]
+refactor(runtime): retire the second map deferral mechanism (ADR-0058 step 4) [6c9d0a633]
+Merge pull request #7503 from tokuhirom/fix/config-toml-blockers [de01ab4f1]
+Merge pull request #7502 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [92375e4bc]
+Merge pull request #7501 from tokuhirom/feat/adr0058-step3b-grep-defer [182178e6b]
+fix(dispatch): where-clause exceptions, defaulted-param where, typed element ++ [9e0eb9d8f]
+fix(array-subclass): honour an iterator override and iterate as elements [5ab72aa19]
+feat(runtime): grep produces a deferred Seq too (ADR-0058 step 3b) [a39fe5c52]
+Merge pull request #7500 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [130d78661]
+fix(channel): Channel.Supply is pumped, not bridged at send time [187fc2eff]
+Merge pull request #7499 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [ab61d0aee]
+fix(compiler): a folded constant is a literal for native multi dispatch [4bd70eaac]
+Merge pull request #7498 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [6dc3aee00]
+Merge pull request #7497 from tokuhirom/fix/template-nest-fast-render [8b547169d]
+fix(reduce): call a user operator for a one- or zero-element reduction [86bcc73d1]
+Merge pull request #7496 from tokuhirom/feat/real-array-map-defers [200923834]
+fix: Template::Nest::Fast 2/10 -> 10/10 (three general bugs) [1b94dcd8b]
+Merge pull request #7495 from tokuhirom/fix/adr0068-step3-routes [83f5315ab]
+fix(vm): `@a.map` on a real array defers too (ADR-0058 step 3c) [f7c60a238]
+Merge pull request #7494 from tokuhirom/claude/process-todo-tickets-wjcv3s-mro-roles [06a0eaf6e]
+fix(vm): a chained subscript store takes the cross-thread exclusion too [35e8de6e4]
+Merge pull request #7490 from tokuhirom/claude/process-todo-tickets-wjcv3s-mixin-name-order [671a5bec9]
+fix(mop): .^mro no longer lists a class's composed roles [d84f1cc32]
+Merge pull request #7493 from tokuhirom/fix/template-nest-fast-with-list [d03ba4800]
+Merge origin/main into the mixin application-order branch [19b9b6a31]
+Merge pull request #7492 from tokuhirom/fix/immutable-lvalue-writes [abae4a064]
+fix: a `with` pointy container param binds the list, and can-ok sees accessors [cb2745a7c]
+fix(compiler): the immutable-topic receiver oracle learns the shapes raku refuses [fecc1c1a6]
+Merge pull request #7485 from tokuhirom/feat/adr0039-slice2 [b64e4fa4f]
+Merge pull request #7489 from tokuhirom/claude/vendor-real-test-module-88hkmr [d84a86329]
+fix(vm): a rebuilt QuantHash keeps its container identity (ADR-0039 slice 2) [442a3a993]
+Merge pull request #7481 from tokuhirom/feat/adr0058-step3b-grep [2c7fc1dde]
+Merge pull request #7491 from tokuhirom/fix/residual-try-cell-seq [b79dc1cd5]
+docs(todo): `@a.map` on a real array is still eager, and that is the residue [c0b1f6d17]
+... [10456 more lines truncated by the commit step; re-run the sweep to see them in full]
+--- mutsu stdout (exit 124) ---
+Merge pull request #7508 from tokuhirom/docs/triage-regen-2026-09-07b [dccfd1737]
+docs(todo): regenerate TRIAGE.md against a fully re-measured todo/ tree [aa67e19e0]
+Merge pull request #7506 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [a7db67d29]
+fix(mixin): an anonymous value mixin has an application order and stacks [f6726723f]
+Merge pull request #7505 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [509023208]
+fix(which): a container's identity is a never-reused id, not its address [5ae234f6f]
+Merge pull request #7504 from tokuhirom/feat/adr0058-step4-retire-lazylist [a57ab3eaf]
+refactor(runtime): retire the second map deferral mechanism (ADR-0058 step 4) [6c9d0a633]
+Merge pull request #7503 from tokuhirom/fix/config-toml-blockers [de01ab4f1]
+Merge pull request #7502 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [92375e4bc]
+Merge pull request #7501 from tokuhirom/feat/adr0058-step3b-grep-defer [182178e6b]
+fix(dispatch): where-clause exceptions, defaulted-param where, typed element ++ [9e0eb9d8f]
+fix(array-subclass): honour an iterator override and iterate as elements [5ab72aa19]
+feat(runtime): grep produces a deferred Seq too (ADR-0058 step 3b) [a39fe5c52]
+Merge pull request #7500 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [130d78661]
+fix(channel): Channel.Supply is pumped, not bridged at send time [187fc2eff]
+Merge pull request #7499 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [ab61d0aee]
+fix(compiler): a folded constant is a literal for native multi dispatch [4bd70eaac]
+Merge pull request #7498 from tokuhirom/claude/todo-tickets-sequential-v39ht4 [6dc3aee00]
+Merge pull request #7497 from tokuhirom/fix/template-nest-fast-render [8b547169d]
+fix(reduce): call a user operator for a one- or zero-element reduction [86bcc73d1]
+Merge pull request #7496 from tokuhirom/feat/real-array-map-defers [200923834]
+fix: Template::Nest::Fast 2/10 -> 10/10 (three general bugs) [1b94dcd8b]
+Merge pull request #7495 from tokuhirom/fix/adr0068-step3-routes [83f5315ab]
+fix(vm): `@a.map` on a real array defers too (ADR-0058 step 3c) [f7c60a238]
+Merge pull request #7494 from tokuhirom/claude/process-todo-tickets-wjcv3s-mro-roles [06a0eaf6e]
+fix(vm): a chained subscript store takes the cross-thread exclusion too [35e8de6e4]
+Merge pull request #7490 from tokuhirom/claude/process-todo-tickets-wjcv3s-mixin-name-order [671a5bec9]
+fix(mop): .^mro no longer lists a class's composed roles [d84f1cc32]
+Merge pull request #7493 from tokuhirom/fix/template-nest-fast-with-list [d03ba4800]
+Merge origin/main into the mixin application-order branch [19b9b6a31]
+Merge pull request #7492 from tokuhirom/fix/immutable-lvalue-writes [abae4a064]
+fix: a `with` pointy container param binds the list, and can-ok sees accessors [cb2745a7c]
+fix(compiler): the immutable-topic receiver oracle learns the shapes raku refuses [fecc1c1a6]
+Merge pull request #7485 from tokuhirom/feat/adr0039-slice2 [b64e4fa4f]
+Merge pull request #7489 from tokuhirom/claude/vendor-real-test-module-88hkmr [d84a86329]
+fix(vm): a rebuilt QuantHash keeps its container identity (ADR-0039 slice 2) [442a3a993]
+Merge pull request #7481 from tokuhirom/feat/adr0058-step3b-grep [2c7fc1dde]
+Merge pull request #7491 from tokuhirom/fix/residual-try-cell-seq [b79dc1cd5]
+docs(todo): `@a.map` on a real array is still eager, and that is the residue [c0b1f6d17]
+... [7803 more lines truncated by the commit step; re-run the sweep to see them in full]

@@ -14,7 +14,7 @@ print join(">", prettylist(3, 2, 1)); # OUTPUT: «3>2>1»
 --- raku stdout ---
 1<2<33>2>1
 --- mutsu stdout (exit 0) ---
-1<2<33 2 1
+1<2<33<2<1
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2310

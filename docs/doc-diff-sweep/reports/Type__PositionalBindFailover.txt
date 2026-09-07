@@ -22,6 +22,7 @@ first-five Foo.new; # OUTPUT: # OUTPUT: «(42 Nil Nil Nil Nil)␤»
 --- mutsu stdout (exit 1) ---
 
 --- mutsu stderr ---
-X::InvalidType: Invalid typename 'PositionalBindFailover'
-  in block <unit> at tmp/ddh/prog-3424808.raku line 1
+Calling first-five(Any) will never work with declared signature (@a)
+  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '@a'; expected Positional but got Any (Foo())
+  in block <unit> at tmp/ddh/prog-1370130.raku line 13
 
