@@ -2553,6 +2553,7 @@ impl Interpreter {
                 rhs_is_match_regex,
                 lhs_is_literal,
                 rhs_pure_regex,
+                rhs_is_bare_topic,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_smart_match_expr_op(
@@ -2564,6 +2565,7 @@ impl Interpreter {
                     *rhs_is_match_regex,
                     *lhs_is_literal,
                     *rhs_pure_regex,
+                    *rhs_is_bare_topic,
                     compiled_fns,
                 )?;
             }

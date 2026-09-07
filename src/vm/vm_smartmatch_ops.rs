@@ -44,6 +44,7 @@ impl Interpreter {
         rhs_is_match_regex: bool,
         lhs_is_literal: bool,
         rhs_pure_regex: bool,
+        rhs_is_bare_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         use crate::opcode::SmartMatchLhs;
@@ -92,7 +93,14 @@ impl Interpreter {
             }
             _ => None,
         };
-        if topic_cell.is_none() {
+        // A BARE `$_` RHS reads the ENCLOSING topic, and installing `left` here
+        // would make `"ab" ~~ $_` evaluate `"ab" ~~ "ab"` -- a string-vs-string
+        // match that is correctly `True`, but which never runs the regex the
+        // topic actually holds, so the `Match` (and `$/`) were lost. rakudo
+        // special-cases exactly this spelling; `("ab" ~~ ($_))` in parentheses
+        // really does answer `True` there, which is why the flag is set from the
+        // RHS's written shape rather than from what it evaluates to.
+        if topic_cell.is_none() && !rhs_is_bare_topic {
             self.env_mut().insert("_".to_string(), left.clone());
         }
         // While the RHS runs, `$_` is *aliased* to the LHS variable (`$x ~~ s///`
