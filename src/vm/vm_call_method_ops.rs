@@ -716,17 +716,9 @@ impl Interpreter {
             )
         {
             let key = args[0].to_string_value();
-            let result = self.bind_stash_key(
-                code,
-                &target,
-                &key,
-                args[1].clone(),
-                bind_source.as_deref(),
-            )?;
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethod",
-                "stash-bind-key",
-            );
+            let result =
+                self.bind_stash_key(code, &target, &key, args[1].clone(), bind_source.as_deref())?;
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "stash-bind-key");
             self.stack.push(result);
             return Ok(());
         }
