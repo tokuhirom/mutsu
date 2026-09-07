@@ -7234,32 +7234,22 @@ impl CompiledCode {
         // DECLARATION site rather than at each capture, so the set is computed
         // here (where the vouch is known) but consumed by `exec_set_local_op`.
         //
-        // A name any `is <Type>` variable trait in this frame applies to is also
-        // excluded. `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain
-        // Hash at the declaration store and lets `ApplyVarTrait` coerce it to
-        // the QuantHash afterwards, reading the slot back to find the initial
-        // values; a cell in that slot is not the Hash it looks for, so the
-        // initialiser was dropped and `%h` came out with one key instead of two
+        // An `is <Type>` variable trait used to exclude its name here as well.
+        // `my %h is BagHash = a => 1, b => 0, c => 2` builds a plain Hash at the
+        // declaration store and lets `ApplyVarTrait` coerce it to the QuantHash
+        // afterwards, reading the slot back to find the initial values; a cell
+        // in that slot was not the Hash it looked for, so the initialiser was
+        // dropped and `%h` came out with one key instead of two
         // (`roast/S02-types/baghash.t`, `mixhash.t`). Same-named `my` locals
-        // share one slot, so the exclusion is by NAME across the whole frame,
-        // not per declaration.
-        let trait_applied: std::collections::HashSet<Symbol> = self
-            .ops
-            .iter()
-            .filter_map(|op| match op {
-                OpCode::ApplyVarTrait { name_idx, .. } => self
-                    .constants
-                    .get(*name_idx as usize)
-                    .and_then(|v| match v.view() {
-                        ValueView::Str(name) => Some(Symbol::intern(&name)),
-                        _ => None,
-                    }),
-                _ => None,
-            })
-            .collect();
+        // share one slot, so that exclusion was by NAME across the whole frame
+        // — one `my %h is BagHash` anywhere in a frame opted EVERY `%h` in it
+        // out of the cell, and a mutating capture of an unrelated `%h` then lost
+        // to a same-named caller local. `exec_apply_var_trait_op` reads and
+        // writes through the cell now (`read_var_trait_target` /
+        // `write_var_trait_target`), so the name scan is gone.
         self.needs_cell_unvouched_containers = escaping_captured_own
             .into_iter()
-            .filter(|sym| !vouched.contains(sym) && !trait_applied.contains(sym))
+            .filter(|sym| !vouched.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| crate::env::is_plain_user_lexical(s) && s.starts_with(['@', '%']))
             })

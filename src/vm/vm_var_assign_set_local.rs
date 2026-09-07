@@ -2213,8 +2213,24 @@ impl Interpreter {
                     None
                 },
             };
-            let stored = std::mem::replace(&mut self.locals[idx], Value::NIL);
-            self.locals[idx] = self.tag_container_metadata(stored, info);
+            // Through a capture cell (ADR-0055's container lane): the slot holds
+            // only the `ContainerRef`, and tagging that is a no-op — the
+            // container inside would never learn its declared element type, so
+            // `element_constraint_for` later answered `None` and a
+            // `%h is BagHash` re-assignment fell through to the plain-hash
+            // initializer.
+            let cell = match self.locals[idx].view() {
+                ValueView::ContainerRef(cell) => Some(cell.clone()),
+                _ => None,
+            };
+            if let Some(cell) = cell {
+                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let tagged = self.tag_container_metadata(inner, info);
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = tagged;
+            } else {
+                let stored = std::mem::replace(&mut self.locals[idx], Value::NIL);
+                self.locals[idx] = self.tag_container_metadata(stored, info);
+            }
         }
         // Container identity (§3, splice.t): copy the final container's contents
         // back into the ORIGINAL backing `Gc` so aliases (a by-value `@a` capture
