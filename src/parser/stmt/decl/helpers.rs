@@ -272,3 +272,22 @@ pub(super) fn is_parser_keyword(name: &str) -> bool {
             | "let"
     )
 }
+
+/// The compile-time refusal rakudo raises for `our TYPE $x`.
+///
+/// `our` names a PACKAGE symbol, which has no container descriptor to hang a
+/// type constraint on, so rakudo rejects every spelling of it at compile time.
+/// The scalar/array/hash/sigilless forms are refused by the compiler's
+/// `Stmt::VarDecl` arm; these two are refused here instead, because the AST
+/// does not carry the `our` down to the node the constraint ends up on -- a
+/// destructuring list lowers to `VarDecl`s that never learn they were `our`,
+/// and a class attribute is a `HasDecl` the class-body planner compiles rather
+/// than `compile_stmt`.
+pub(in crate::parser::stmt) fn our_type_constraint_error() -> PError {
+    const MSG: &str = "Cannot put a type constraint on an 'our'-scoped variable";
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(MSG.to_string()));
+    attrs.insert("payload".to_string(), Value::str(MSG.to_string()));
+    let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs);
+    PError::fatal_with_exception(MSG.to_string(), Box::new(ex))
+}

@@ -320,6 +320,15 @@ pub(super) fn try_dot_twigil_attr<'a>(
         } else {
             (after_name, None)
         };
+        // `class C { our Int $.x }` is refused at compile time, like every
+        // other `our TYPE` spelling -- see `our_type_constraint_error`. Raised
+        // here rather than in the compiler because a class attribute is a
+        // `HasDecl` the class-body planner compiles, never `compile_stmt`'s
+        // `VarDecl` arm. The UNTYPED `our $.x` stays legal, so the test is on
+        // the constraint, not on `our` plus attribute.
+        if is_our && type_constraint.is_some() {
+            return Err(super::helpers::our_type_constraint_error());
+        }
         let stmt = Stmt::HasDecl {
             name: Symbol::intern(&attr_name),
             is_public: true,
