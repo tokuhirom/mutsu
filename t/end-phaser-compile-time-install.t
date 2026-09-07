@@ -16,7 +16,7 @@ use Test;
 use lib $?FILE.IO.parent(2).add('roast/packages/Test-Helpers/lib').Str;
 use Test::Util;
 
-plan 9;
+plan 17;
 
 is_run 'if False { END { say "never-run-block" } }
 sub g      { END { say "uncalled-sub" } }
@@ -74,6 +74,83 @@ say "mainline";
 ',
     { out => "mainline\n1\n", err => '', status => 0 },
     'and a never-run declaration of a container still gives the END an empty one';
+
+# --- what an unreached END's body actually SEES -------------------------
+#
+# rakudo's END is a closure that was never CLONED against a live frame, so
+# every `my`/`state` lexical it mentions reads as that container's UNASSIGNED
+# value -- `Any` for a `$`, an empty `Array`/`Hash` for `@`/`%` -- no matter
+# which enclosing scope declared it, and no matter what that scope later
+# stored there. mutsu seeds exactly those names into the pre-installed
+# phaser's env (`Interpreter::preinstall_end_phaser`); everything that is NOT
+# a per-frame lexical container still resolves against the live exit-time env.
+
+is_run 'if False { my $x = 1; END { say $x.^name; say $x.raku } }
+say "mainline";
+',
+    { out => "mainline\nAny\nAny\n", err => '', status => 0 },
+    "an unreached END reads its block's `\$` lexical as Any, not Nil";
+
+is_run 'my $t = 5;
+if False { END { say $t.raku } }
+say "mainline";
+',
+    { out => "mainline\nAny\n", err => '', status => 0 },
+    'and an OUTER lexical too -- the whole frame chain was never instantiated';
+
+is_run 'my @arr = 1, 2, 3;
+if False { END { say @arr.raku } }
+say "mainline";
+',
+    { out => "mainline\n[]\n", err => '', status => 0 },
+    'an assigned outer Array reads as the empty container';
+
+is_run 'my $w = 1;
+if False { my $w = 2; END { say $w.raku } }
+say "mainline";
+',
+    { out => "mainline\nAny\n", err => '', status => 0 },
+    "the phaser's own declaration shadows a live same-named outer variable";
+
+is_run 'sub outer() { my $m = 1; if False { my $n = 2; END { say $m.raku, " ", $n.raku } } }
+outer();
+say "mainline";
+',
+    { out => "mainline\nAny Any\n", err => '', status => 0 },
+    'a routine that DID run still leaves its unreached END nothing to see';
+
+# Everything that is not a per-frame lexical container resolves normally.
+is_run 'sub sayit() { say "sub-ran" }
+our $pkg = 7;
+constant K = 11;
+class CL { method m() { "meth" } }
+if False { END { sayit(); say $pkg.raku; say K.raku; say CL.new.m; say $*PROGRAM-NAME.defined } }
+say "mainline";
+',
+    { out => "mainline\nsub-ran\n7\n11\nmeth\nTrue\n", err => '', status => 0 },
+    'an unreached END still reaches subs, `our`, constants, classes and dynamics';
+
+# A top-level END is ALWAYS reached and closes over the still-live unit scope,
+# so it sees the LIVE values -- including writes made after its own declaration,
+# and by a later END. It must not be seeded.
+is_run 'my $hist;
+END { say $hist.raku }
+END { $hist ~= "End " }
+$hist ~= "main ";
+',
+    { out => "\"main End \"\n", err => '', status => 0 },
+    'a top-level END still sees the live unit lexicals, not unassigned ones';
+
+# mutsu answers `Any` for an uncalled routine's parameter. rakudo answers
+# `VMNull` there -- a raw NQP null whose `.defined` throws
+# `X::Method::NotFound ... for invocant of type 'VMNull'` -- which is an
+# artifact of its binder rather than a Raku value, so this row deliberately
+# pins mutsu's answer and not rakudo's.
+is_run 'sub g($p) { my $q = 2; END { say $p.^name, " ", $q.^name } }
+say "mainline";
+',
+    { out => "mainline\nAny Any\n", err => '', status => 0 },
+    "an uncalled routine's parameter reads as Any (rakudo says VMNull; see the comment)";
 
 # The eager installation must not cost the existing guarantee that an END runs
 # when the mainline dies before reaching it.
