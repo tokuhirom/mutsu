@@ -2454,6 +2454,57 @@ impl Interpreter {
         );
         ccr.insert("Complex".to_string(), vec!["Numeric".to_string()]);
         ccr.insert("Str".to_string(), vec!["Stringy".to_string()]);
+        // The Positional/Associative side of the built-in vocabulary, measured
+        // against raku v2026.07 (`T.^roles`). Without these `.^roles` answered
+        // an EMPTY list for every one of them. Like the numeric seeds above,
+        // each list is the FLATTENED closure `class_composed_roles` is
+        // documented to hold; `role_parents` below records which of them are
+        // reached through another, so `.^roles(:!transitive)` can filter.
+        // The DIRECT compositions of the built-ins whose flattened closure is
+        // wider, so `.^roles(:!transitive)` can answer from a record rather
+        // than re-derive directness from `role_parents` (which cannot see
+        // through a parametric role like `Rational[Int,Int]` unless the
+        // prelude declaring it was injected).
+        for (class_name, direct) in [
+            ("Int", &["Real"][..]),
+            ("Num", &["Real"][..]),
+            ("Rat", &["Rational[Int,Int]"][..]),
+            ("FatRat", &["Rational[Int,Int]"][..]),
+            ("Seq", &["Sequence", "Iterable"][..]),
+            ("Buf", &["Blob[T]"][..]),
+            ("Set", &["Setty"][..]),
+            ("Bag", &["Baggy"][..]),
+            ("Mix", &["Mixy"][..]),
+        ] {
+            registry.class_direct_composed_roles.insert(
+                class_name.to_string(),
+                direct.iter().map(|r| (*r).to_string()).collect(),
+            );
+        }
+        let ccr = &mut registry.class_composed_roles;
+        for (class_name, roles) in [
+            ("Array", &["Positional", "Iterable"][..]),
+            ("List", &["Positional", "Iterable"][..]),
+            ("Slip", &["Positional", "Iterable"][..]),
+            ("Range", &["Positional", "Iterable"][..]),
+            ("Hash", &["Associative", "Iterable"][..]),
+            ("Map", &["Associative", "Iterable"][..]),
+            ("Pair", &["Associative"][..]),
+            (
+                "Seq",
+                &["Sequence", "PositionalBindFailover", "Iterable"][..],
+            ),
+            ("Buf", &["Blob[T]", "Positional[T]", "Stringy"][..]),
+            ("Blob", &["Positional[T]", "Stringy"][..]),
+            ("Set", &["Setty", "QuantHash", "Associative"][..]),
+            ("Bag", &["Baggy", "QuantHash", "Associative"][..]),
+            ("Mix", &["Mixy", "Baggy", "QuantHash", "Associative"][..]),
+        ] {
+            ccr.insert(
+                class_name.to_string(),
+                roles.iter().map(|r| (*r).to_string()).collect(),
+            );
+        }
         // Built-in role definitions (PR-A slice 4: roles now live in the
         // shared Registry instead of an Interpreter field).
         registry.roles = {

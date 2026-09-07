@@ -242,29 +242,47 @@ impl Interpreter {
 
         let mut result = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        if local_only || non_transitive {
+        if non_transitive {
+            // The DIRECT compositions, walked up the MRO: an inherited
+            // composition is still one of this class's roles, so
+            // `class L is Int {}; L.^roles(:!transitive)` is `Real` -- Int's
+            // direct role -- rather than nothing (measured against raku).
+            let mro = if let Some(cd) = self.registry().classes.get(class_name)
+                && !cd.mro.is_empty()
+            {
+                cd.mro.clone()
+            } else {
+                [crate::symbol::Symbol::intern(class_name)].into()
+            };
+            // The NEAREST contributor wins and the walk stops: a class that
+            // composes nothing of its own reports its ancestor's direct roles
+            // (`class L is Int {}` is `Real`), but one that composes something
+            // reports only its own -- `Buf`, whose MRO carries `Blob`, is
+            // `Blob[T]`, not `Blob[T], Positional[T], Stringy`.
+            for cn in mro.iter().map(|s| s.as_str()) {
+                if cn == "Any" || cn == "Mu" {
+                    continue;
+                }
+                let direct = self.direct_composed_roles(cn);
+                if direct.is_empty() {
+                    continue;
+                }
+                for r in direct {
+                    if seen.insert(r.clone()) {
+                        result.push(r);
+                    }
+                }
+                break;
+            }
+            return result;
+        }
+        if local_only {
             if let Some(roles) = self.registry().class_composed_roles.get(class_name) {
                 for r in roles {
                     if seen.insert(r.clone()) {
                         result.push(r.clone());
                     }
                 }
-            }
-            if non_transitive {
-                // Filter out roles that are transitively reachable from other
-                // roles in the list (i.e. keep only directly-composed roles).
-                let all = result.clone();
-                let mut transitive = std::collections::HashSet::new();
-                for r in &all {
-                    let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
-                    if let Some(parents) = self.registry().role_parents.get(base) {
-                        for p in parents {
-                            transitive.insert(p.clone());
-                            self.collect_transitive_set(p, &mut transitive);
-                        }
-                    }
-                }
-                result.retain(|r| !transitive.contains(r));
             }
         } else {
             let mro = if let Some(cd) = self.registry().classes.get(class_name)
@@ -293,6 +311,42 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    /// The roles `class_name` composes DIRECTLY, as opposed to the flattened
+    /// closure `class_composed_roles` holds.
+    ///
+    /// A recorded list (`class_direct_composed_roles`) wins: the built-ins seed
+    /// one because their closure cannot be un-flattened by walking
+    /// `role_parents` -- a parametric role like `Rational[Int,Int]` has no
+    /// registered parents unless the prelude declaring it was injected, so
+    /// `Rat`'s direct list kept `Real`. Otherwise directness is derived, by
+    /// dropping every entry reachable from another entry's own `does`.
+    fn direct_composed_roles(&self, class_name: &str) -> Vec<String> {
+        if let Some(direct) = self.registry().class_direct_composed_roles.get(class_name) {
+            return direct.clone();
+        }
+        let Some(all) = self
+            .registry()
+            .class_composed_roles
+            .get(class_name)
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let mut transitive = std::collections::HashSet::new();
+        for r in &all {
+            let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
+            if let Some(parents) = self.registry().role_parents.get(base).cloned() {
+                for p in parents {
+                    transitive.insert(p.clone());
+                    self.collect_transitive_set(&p, &mut transitive);
+                }
+            }
+        }
+        all.into_iter()
+            .filter(|r| !transitive.contains(r))
+            .collect()
     }
 
     /// Collect all transitively reachable roles into a set (for filtering).
