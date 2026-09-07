@@ -55,6 +55,8 @@ impl Interpreter {
         let mut walker = EndWalker {
             interp: self,
             package,
+            lexicals: Vec::new(),
+            depth: 0,
         };
         walker.stmts(stmts);
     }
@@ -101,6 +103,7 @@ impl Interpreter {
         body: Vec<Stmt>,
         end_index: u32,
         package: String,
+        lexicals: &[String],
     ) {
         // Idempotent per index. The walker can reach one declaration twice
         // through an AST node that keeps both a source form and its expansion;
@@ -113,18 +116,57 @@ impl Interpreter {
         // of numbering them at parse time.
         let order = super::end_order::MAIN + super::end_order::slot(Some(end_index), 0);
         let slot = self.end_phasers.len();
+        // Seeded rather than cloned from the pre-run env: rakudo's END is a
+        // closure that was never CLONED against a live frame, so every `my`/
+        // `state` lexical it mentions reads as that container's *unassigned*
+        // value -- `Any` for a `$`, an empty `Array`/`Hash` for `@`/`%` --
+        // no matter which enclosing scope declared it and no matter what that
+        // scope later stored there. Measured: `my $t = 5; if False { END {
+        // say $t } }` prints `Any`, not 5, and `my @arr = 1,2,3; if False {
+        // END { say @arr } }` prints `[]`. Only these names are seeded, so
+        // everything that is NOT a per-frame lexical container -- routines,
+        // `our`/package variables, constants, types, dynamics -- still
+        // resolves against the live exit-time env, which is also what rakudo
+        // does.
+        let mut env = Env::new();
+        let mut dead_keys = crate::runtime::NameSet::default();
+        for name in lexicals {
+            let sym = Symbol::intern(name);
+            env.insert_sym(sym, Self::unassigned_lexical_value(name));
+            // The seed is this phaser's authoritative binding for the name, so
+            // it must win over a live same-named variable further out at exit
+            // (`my $w = 1; if False { my $w = 2; END { say $w } }` is `Any`).
+            dead_keys.insert(sym);
+        }
         self.end_phasers.push(super::EndPhaser {
             body,
-            // Deliberately empty rather than a clone of the pre-run env: an
-            // un-captured phaser must not overlay anything at exit, so every
-            // name it mentions resolves against the live exit-time env.
-            env: Env::new(),
+            env,
             package,
-            dead_keys: crate::runtime::NameSet::default(),
+            dead_keys,
             order,
             capture_seq: None,
         });
         self.main_end_slots.insert(end_index, slot);
+    }
+
+    /// The value an unassigned lexical container of this sigil reads as: `Any`
+    /// for a `$` (and for a routine parameter that was never bound), an empty
+    /// `Array` for an `@`, an empty `Hash` for a `%`.
+    ///
+    /// rakudo answers `VMNull` for an uncalled routine's parameter — a raw NQP
+    /// null that explodes on any method call (`.defined` throws
+    /// `X::Method::NotFound ... for invocant of type 'VMNull'`). That is an
+    /// implementation artifact of its binder, not a Raku value; mutsu
+    /// deliberately answers `Any` there instead, which agrees with rakudo on
+    /// every *defined* question (`.defined` is `False` either way).
+    fn unassigned_lexical_value(name: &str) -> crate::value::Value {
+        match name.chars().next() {
+            Some('@') => crate::value::Value::real_array(Vec::new()),
+            Some('%') => crate::value::Value::hash(std::collections::HashMap::new()),
+            // Scalars are stored under their BARE name (no `$`), the same
+            // convention `Stmt::VarDecl::name` uses — see `push_lexical`.
+            _ => crate::value::Value::package(Symbol::intern("Any")),
+        }
     }
 
     /// Capture the current lexical scope into the pre-installed phaser slot
@@ -269,12 +311,92 @@ struct EndWalker<'a> {
     /// that is never reached still runs under the package it was declared in
     /// (a reached one has its package refreshed at capture time).
     package: String,
+    /// Every `my`/`state` lexical (and routine/block parameter) declared
+    /// *before* the current descent point, across all enclosing scopes — i.e.
+    /// exactly the lexical containers an `END` declared here would close over.
+    /// A never-reached phaser is seeded with these, since rakudo's uncloned
+    /// closure reads them all as unassigned. Pushed on scope entry and
+    /// truncated on exit, so it always describes the current point.
+    lexicals: Vec<String>,
+    /// Statement-list nesting depth: 1 while walking the unit's own top-level
+    /// statements, higher inside any nested body. An `END` at depth 1 is
+    /// ALWAYS reached (and `Interpreter::run` drops it from the body outright,
+    /// since it closes over the still-live unit scope), so it must not be
+    /// seeded — a seed would be the only binding it ever gets.
+    depth: u32,
 }
 
 impl EndWalker<'_> {
     fn stmts(&mut self, stmts: &[Stmt]) {
+        let mark = self.lexicals.len();
+        self.depth += 1;
         for s in stmts {
+            // Walk first, then record: a `my $x` is visible to what FOLLOWS it,
+            // which is the only place an `END` could legally mention it.
             self.stmt(s);
+            self.declare(s);
+        }
+        self.depth -= 1;
+        self.lexicals.truncate(mark);
+    }
+
+    /// Walk `body` with `params` in scope — a routine or pointy-block body,
+    /// whose parameters are lexicals of that body just like its `my`s.
+    fn param_scope(&mut self, params: &[&str], body: &[Stmt]) {
+        let mark = self.lexicals.len();
+        for p in params {
+            self.push_lexical(p);
+        }
+        self.stmts(body);
+        self.lexicals.truncate(mark);
+    }
+
+    /// Record the lexical a statement declares, if it declares one.
+    fn declare(&mut self, stmt: &Stmt) {
+        if let Stmt::VarDecl {
+            name,
+            is_our: false,
+            is_dynamic: false,
+            ..
+        } = stmt
+        {
+            self.push_lexical(name);
+        }
+    }
+
+    /// Add one name to the visible set, if it is a per-frame lexical container.
+    ///
+    /// Names arrive in the AST's own spelling: an `@`/`%` variable keeps its
+    /// sigil, a `$` variable is stored BARE (`my $x` is `VarDecl { name: "x" }`,
+    /// and the topic is `"_"`), which is also how the env keys them.
+    ///
+    /// `&`-sigiled names, sigilless bindings and every twigil (`$*dyn`,
+    /// `$!attr`, `$?FILE`, `$/`, `$_`) are skipped: they are not frame lexicals
+    /// whose value an uncloned closure would lose, and rakudo resolves them
+    /// normally inside a never-reached `END` (measured — an uncalled `sub`, an
+    /// `our` variable, a `constant`, a class and `$*PROGRAM-NAME` all still
+    /// answer there).
+    fn push_lexical(&mut self, name: &str) {
+        if name.contains("::") {
+            return;
+        }
+        let bare = match name.chars().next() {
+            Some('@' | '%') => &name[1..],
+            Some('&' | '$') => return,
+            _ => name,
+        };
+        // A twigil or a special name (`_`, `/`, `!`, `*x`, `?x`, `.x`, `0`) is
+        // not an ordinary frame lexical.
+        let mut chars = bare.chars();
+        match chars.next() {
+            Some(c) if c.is_alphabetic() || c == '_' => {}
+            _ => return,
+        }
+        if bare == "_" || !chars.all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+            return;
+        }
+        if !self.lexicals.iter().any(|n| n == name) {
+            self.lexicals.push(name.to_string());
         }
     }
 
@@ -293,8 +415,24 @@ impl EndWalker<'_> {
                 ..
             } => {
                 if let Some(index) = *end_index {
-                    self.interp
-                        .preinstall_end_phaser(body.clone(), index, self.package.clone());
+                    // Only at `GLOBAL`: inside a `class`/`role`/`package` body
+                    // the compiler package-qualifies a lexical's env key
+                    // (`Compiler::qualify_variable_name`), and this walker does
+                    // not reproduce that mangling — seeding a bare name there
+                    // would install a binding the body never reads. Such an
+                    // `END` keeps the pre-seeding behaviour (it resolves against
+                    // the live exit-time env).
+                    let lexicals: &[String] = if self.package == "GLOBAL" && self.depth > 1 {
+                        &self.lexicals
+                    } else {
+                        &[]
+                    };
+                    self.interp.preinstall_end_phaser(
+                        body.clone(),
+                        index,
+                        self.package.clone(),
+                        lexicals,
+                    );
                 }
                 // An END nested inside another END's body is installed by the
                 // same rule, so keep descending.
@@ -308,10 +446,13 @@ impl EndWalker<'_> {
             | Stmt::Control(body)
             | Stmt::React { body }
             | Stmt::Loop { body, .. }
-            | Stmt::Subtest { body, .. }
-            | Stmt::SubDecl { body, .. }
-            | Stmt::MethodDecl { body, .. }
-            | Stmt::ProtoDecl { body, .. } => self.stmts(body),
+            | Stmt::Subtest { body, .. } => self.stmts(body),
+            Stmt::SubDecl { params, body, .. }
+            | Stmt::MethodDecl { params, body, .. }
+            | Stmt::ProtoDecl { params, body, .. } => {
+                let params: Vec<&str> = params.iter().map(String::as_str).collect();
+                self.param_scope(&params, body);
+            }
             Stmt::Package { name, body, .. }
             | Stmt::ClassDecl { name, body, .. }
             | Stmt::RoleDecl { name, body, .. }
@@ -330,9 +471,19 @@ impl EndWalker<'_> {
                 self.expr(cond);
                 self.stmts(body);
             }
-            Stmt::For { iterable, body, .. } => {
+            Stmt::For {
+                iterable,
+                param,
+                params,
+                body,
+                ..
+            } => {
                 self.expr(iterable);
-                self.stmts(body);
+                let mut names: Vec<&str> = params.iter().map(String::as_str).collect();
+                if let Some(p) = param {
+                    names.push(p.as_str());
+                }
+                self.param_scope(&names, body);
             }
             Stmt::Given { topic, body, .. } => {
                 self.expr(topic);
@@ -386,12 +537,15 @@ impl EndWalker<'_> {
         match expr {
             Expr::Block(body)
             | Expr::AnonSub { body, .. }
-            | Expr::AnonSubParams { body, .. }
-            | Expr::Lambda { body, .. }
             | Expr::Gather(body)
             | Expr::DoBlock { body, .. }
             | Expr::Once { body }
             | Expr::PhaserExpr { body, .. } => self.stmts(body),
+            Expr::AnonSubParams { params, body, .. } => {
+                let params: Vec<&str> = params.iter().map(String::as_str).collect();
+                self.param_scope(&params, body);
+            }
+            Expr::Lambda { param, body, .. } => self.param_scope(&[param.as_str()], body),
             Expr::Try { body, catch } => {
                 self.stmts(body);
                 if let Some(c) = catch {
