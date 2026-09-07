@@ -573,6 +573,7 @@ mod rat;
 mod set_coerce;
 mod set_ops;
 mod shaped;
+mod str_scan;
 mod type_constraints;
 mod type_misc;
 
@@ -587,6 +588,7 @@ pub(crate) use rat::*;
 pub(crate) use set_coerce::*;
 pub(crate) use set_ops::*;
 pub(crate) use shaped::*;
+pub(crate) use str_scan::*;
 pub(crate) use type_constraints::*;
 pub(crate) use type_misc::*;
 

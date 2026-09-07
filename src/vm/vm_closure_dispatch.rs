@@ -945,7 +945,9 @@ impl Interpreter {
             // in place, so `group-of { … my class Foo {} … }` named the class
             // `Test::Util::Foo` and every message quoting it diverged from raku
             // (roast/integration/error-reporting.t).
-            if !pkg.is_empty() && !pkg.contains("::&") && data.package != self.current_package_sym()
+            if !pkg.is_empty()
+                && !crate::runtime::utils::has_routine_scope_marker(pkg)
+                && data.package != self.current_package_sym()
             {
                 Some(self.enter_package_guarded(pkg.to_string()))
             } else {

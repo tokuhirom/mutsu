@@ -78,7 +78,9 @@ impl Interpreter {
     fn our_package_var_key(&self, name: &str) -> Option<String> {
         // An explicitly-written `@Other::x` is already the package variable it
         // names; anonymous containers are never package variables.
-        if name.contains("::") || name.contains("__ANON") {
+        if crate::runtime::utils::has_double_colon(name)
+            || crate::runtime::utils::has_anon_marker(name)
+        {
             return None;
         }
         if self.running_frame_declares_local(name) {
@@ -97,7 +99,10 @@ impl Interpreter {
         for candidate in candidates.into_iter().flatten() {
             let mut pkg = candidate;
             loop {
-                if pkg.is_empty() || pkg == "GLOBAL" || pkg.contains("::&") {
+                if pkg.is_empty()
+                    || pkg == "GLOBAL"
+                    || crate::runtime::utils::has_routine_scope_marker(pkg)
+                {
                     break;
                 }
                 // `package_qualified_candidate` applies the same twigil /

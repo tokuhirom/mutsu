@@ -355,7 +355,7 @@ impl Interpreter {
                         // variables accessed via package-qualified names (e.g., $Pkg::var).
                         // Bare variable names should NOT fall back to our_vars — the
                         // lexical alias for `our` variables is block-scoped.
-                        if name.contains("::") {
+                        if crate::runtime::utils::has_double_colon(name) {
                             self.get_our_var(name)
                                 .cloned()
                                 .or_else(|| self.our_var_pseudo_unqualified(name))
@@ -412,7 +412,7 @@ impl Interpreter {
                         // This handles class body statements that access outer
                         // lexical variables which are stored in env under their
                         // unqualified names (not as `A::x`).
-                        if !name.contains("::") {
+                        if !crate::runtime::utils::has_double_colon(name) {
                             return None;
                         }
                         // Only apply when the qualifier matches the current package
@@ -966,7 +966,9 @@ impl Interpreter {
                     let sig_len = sigil.map(|_| 1).unwrap_or(0);
                     let qualifier = &name[sig_len..pos];
                     let bare_after = &name[pos + 2..];
-                    if !qualifier.is_empty() && !bare_after.is_empty() && !bare_after.contains("::")
+                    if !qualifier.is_empty()
+                        && !bare_after.is_empty()
+                        && !crate::runtime::utils::has_double_colon(bare_after)
                     {
                         let cur = self.current_package();
                         let bare = match sigil {
@@ -1051,7 +1053,7 @@ impl Interpreter {
                     && !self.vardecl_context.get()
                     && !is_attr_twigil
                     && !is_internal_temp
-                    && !name.contains("::")
+                    && !crate::runtime::utils::has_double_colon(&name)
                     && !self.env().contains_key(&name)
                     && !self.has_unit_scope_lexical(&name)
                     && !code.param_bind_names.iter().any(|n| n == &name)
@@ -1176,7 +1178,7 @@ impl Interpreter {
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&')
-                    && !name.contains("::")
+                    && !crate::runtime::utils::has_double_colon(&name)
                 {
                     // A bareword that has never been (re)bound to something
                     // else still resolves to the type object it names (an
@@ -1804,7 +1806,7 @@ impl Interpreter {
                     // fresh container (`@kh.VAR.name` reports "@kh" through any
                     // later pass-by-binding chain). Safe to stamp: the detach
                     // above guarantees an unshared node.
-                    if !name.contains("__ANON") {
+                    if !crate::runtime::utils::has_anon_marker(&name) {
                         val.stamp_descriptor_name(&name);
                     }
                 }
@@ -1813,7 +1815,7 @@ impl Interpreter {
                     && !raw_mode
                     && !sg_is_vardecl
                     && bind_source.is_none()
-                    && !name.contains("__ANON")
+                    && !crate::runtime::utils::has_anon_marker(&name)
                     && (name.starts_with('@') || name.starts_with('%'))
                 {
                     match (self.env().get(&name).map(Value::view), val.view()) {

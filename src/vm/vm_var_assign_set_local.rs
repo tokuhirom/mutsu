@@ -367,7 +367,7 @@ impl Interpreter {
             && code.locals.get(idx as usize).is_some_and(|n| {
                 (n.starts_with('@') || n.starts_with('%'))
                     && !n[1..].starts_with(['!', '.'])
-                    && !n.contains("__ANON")
+                    && !crate::runtime::utils::has_anon_marker(n)
             });
         let r = self.exec_set_local_op_inner(code, idx);
         // The store that ends a declaration's in-flight window: from here the
@@ -935,7 +935,7 @@ impl Interpreter {
         // In-place reassignment there would alias two unrelated anonymous
         // containers (e.g. `(my % = ...), (my % = ...)` in a list), so exclude
         // anon names and let them take the fresh-container (replace) path.
-        let is_anon_container = name.contains("__ANON");
+        let is_anon_container = crate::runtime::utils::has_anon_marker(name);
         let inplace_old_array: Option<crate::gc::Gc<crate::value::ArrayData>> =
             if name.starts_with('@') && !is_bind && !is_rebind && !is_vardecl && !is_anon_container
             {

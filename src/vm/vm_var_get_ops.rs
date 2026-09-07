@@ -215,7 +215,7 @@ impl Interpreter {
             {
                 // Check for poisoned enum aliases
                 if matches!(v.view(), ValueView::Enum { .. })
-                    && !name.contains("::")
+                    && !crate::runtime::utils::has_double_colon(name)
                     && let Some(pkg_name) = self.is_poisoned_enum_alias(name)
                 {
                     let pkg_name = pkg_name.to_string();
@@ -243,7 +243,7 @@ impl Interpreter {
                 v.clone()
             } else if self.has_type(name) || Self::is_builtin_type(name) {
                 Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
-            } else if name.contains("::")
+            } else if crate::runtime::utils::has_double_colon(name)
                 && !name.starts_with('$')
                 && !name.starts_with('@')
                 && !name.starts_with('%')
@@ -276,7 +276,7 @@ impl Interpreter {
             // prefix through the alias and then looks up the enum variant, e.g.
             // `my constant G = F::B; G::c === F::B::c`.
             enum_val
-        } else if name.contains("::")
+        } else if crate::runtime::utils::has_double_colon(name)
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
             if let Some(cf) = self.find_compiled_function(compiled_fns, name, &[]) {
@@ -374,7 +374,7 @@ impl Interpreter {
         } else if name.starts_with("Metamodel::") {
             // Meta-object protocol type objects
             Value::package(Symbol::intern(name))
-        } else if name.contains("::") {
+        } else if crate::runtime::utils::has_double_colon(name) {
             // Check if this is an access to a non-existent enum variant
             if let Some((pkg, sym)) = name.rsplit_once("::")
                 && self.has_enum_type(pkg)

@@ -158,7 +158,9 @@ impl Interpreter {
         // call read/wrote package vars under `GLOBAL` and silently lost them.
         // Skip a mangled state-scope package (`Pkg::&sub/arity`, used for nested
         // subs) and fall back to the passed name in that case.
-        let def_package: &str = if !cf.package.is_empty() && !cf.package.contains("::&") {
+        let def_package: &str = if !cf.package.is_empty()
+            && !crate::runtime::utils::has_routine_scope_marker(&cf.package)
+        {
             cf.package.as_str()
         } else {
             fn_package

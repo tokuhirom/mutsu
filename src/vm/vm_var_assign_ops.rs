@@ -818,7 +818,7 @@ impl Interpreter {
         arc: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) {
-        let is_anon_container = name.contains("__ANON");
+        let is_anon_container = crate::runtime::utils::has_anon_marker(name);
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
