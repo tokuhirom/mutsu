@@ -3,7 +3,7 @@ use super::*;
 impl Interpreter {
     pub(super) fn call_compiled_function_named_inner(
         &mut self,
-        cf: &CompiledFunction,
+        cf: &Arc<CompiledFunction>,
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
         fn_package: &str,
@@ -73,8 +73,7 @@ impl Interpreter {
         self.push_lazy_block(crate::runtime::LazyRoutineCode::new(
             fn_package_sym,
             fn_name_sym,
-            cf.params.clone(),
-            cf.param_defs.clone(),
+            Arc::clone(cf),
             self.env().clone(),
         ));
 
@@ -502,7 +501,7 @@ impl Interpreter {
                         Vec::new(),
                         plan.is_rw,
                         self.clone_env(),
-                        Some(std::sync::Arc::new(compiled.clone())),
+                        Some(std::sync::Arc::clone(compiled)),
                     ),
                     // Neither the registry lookup above nor the plan's own
                     // compiled routine resolved: build a body-less Sub (the

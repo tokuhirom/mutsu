@@ -7,7 +7,7 @@ impl Interpreter {
     /// without touching the env HashMap, maximizing performance for hot loops.
     pub(super) fn call_compiled_function_light(
         &mut self,
-        cf: &CompiledFunction,
+        cf: &Arc<CompiledFunction>,
         args: &[Value],
         compiled_fns: &CompiledFns,
         func_name: &str,
@@ -31,7 +31,7 @@ impl Interpreter {
     /// all-in-band ordering.
     pub(super) fn call_compiled_function_light_spec(
         &mut self,
-        cf: &CompiledFunction,
+        cf: &Arc<CompiledFunction>,
         args: &[Value],
         compiled_fns: &CompiledFns,
         func_name: &str,

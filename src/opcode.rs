@@ -4963,7 +4963,8 @@ pub(crate) struct CallIcSlot {
     /// 0 = empty; otherwise the `pos_light_ic_epoch` this entry was filled at.
     pub(crate) epoch: u64,
     pub(crate) fns_id: u64,
-    /// `*const CompiledFunction` into the table identified by `fns_id`.
+    /// `*const Arc<CompiledFunction>` -- the address of the value slot in the
+    /// table identified by `fns_id`.
     pub(crate) target: usize,
     /// `Symbol::id()` of the callee name this entry resolved.
     pub(crate) name: u32,
@@ -8294,7 +8295,11 @@ impl CompiledCode {
 /// allocation). The slow resolution path probes candidate keys via
 /// `Symbol::lookup` (no interning of names that turn out not to exist), so a
 /// missed probe never grows the global symbol table.
-pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, CompiledFunction>;
+/// Values are `Arc`-shared so a running call can hold its own routine's
+/// definition (the on-demand `callframe().code` object, `CodeFrame::Lazy`)
+/// without deep-cloning the signature vectors on every entry, and so a table
+/// clone is a refcount bump per entry rather than a copy of every body.
+pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, Arc<CompiledFunction>>;
 
 /// The table itself, wrapped so that it carries a **version token** (`id`).
 ///
@@ -8336,18 +8341,30 @@ impl CompiledFns {
 
     pub(crate) fn insert(&mut self, key: crate::symbol::Symbol, value: CompiledFunction) {
         self.id = Self::next_id();
+        self.map.insert(key, Arc::new(value));
+    }
+
+    /// Insert a body another table already owns, sharing it instead of
+    /// copying it (an imported module's routines are installed in both the
+    /// importer's table and the per-import table).
+    pub(crate) fn insert_shared(
+        &mut self,
+        key: crate::symbol::Symbol,
+        value: Arc<CompiledFunction>,
+    ) {
+        self.id = Self::next_id();
         self.map.insert(key, value);
     }
 
     pub(crate) fn retain(
         &mut self,
-        f: impl FnMut(&crate::symbol::Symbol, &mut CompiledFunction) -> bool,
+        mut f: impl FnMut(&crate::symbol::Symbol, &CompiledFunction) -> bool,
     ) {
         self.id = Self::next_id();
-        self.map.retain(f);
+        self.map.retain(|key, value| f(key, value));
     }
 
-    pub(crate) fn into_values(self) -> impl Iterator<Item = CompiledFunction> {
+    pub(crate) fn into_values(self) -> impl Iterator<Item = Arc<CompiledFunction>> {
         self.map.into_values()
     }
 }
@@ -8380,7 +8397,10 @@ impl FromIterator<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
     fn from_iter<T: IntoIterator<Item = (crate::symbol::Symbol, CompiledFunction)>>(
         iter: T,
     ) -> Self {
-        let map: CompiledFnMap = iter.into_iter().collect();
+        let map: CompiledFnMap = iter
+            .into_iter()
+            .map(|(key, value)| (key, Arc::new(value)))
+            .collect();
         let id = if map.is_empty() { 0 } else { Self::next_id() };
         Self { map, id }
     }
@@ -8392,12 +8412,13 @@ impl Extend<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
         iter: T,
     ) {
         self.id = Self::next_id();
-        self.map.extend(iter);
+        self.map
+            .extend(iter.into_iter().map(|(key, value)| (key, Arc::new(value))));
     }
 }
 
 impl IntoIterator for CompiledFns {
-    type Item = (crate::symbol::Symbol, CompiledFunction);
+    type Item = (crate::symbol::Symbol, Arc<CompiledFunction>);
     type IntoIter = <CompiledFnMap as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()
@@ -8405,7 +8426,7 @@ impl IntoIterator for CompiledFns {
 }
 
 impl<'a> IntoIterator for &'a CompiledFns {
-    type Item = (&'a crate::symbol::Symbol, &'a CompiledFunction);
+    type Item = (&'a crate::symbol::Symbol, &'a Arc<CompiledFunction>);
     type IntoIter = <&'a CompiledFnMap as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         self.map.iter()

@@ -27,8 +27,11 @@ pub(crate) enum CodeFrame {
 pub(crate) struct LazyRoutineCode {
     pub(crate) package: Symbol,
     pub(crate) name: Symbol,
-    pub(crate) params: Vec<String>,
-    pub(crate) param_defs: Vec<ParamDef>,
+    /// The routine being run: a refcount bump of the table's (or the OTF
+    /// cache's) own `Arc`, so entry copies no signature vector. The
+    /// `params` / `param_defs` the built `Sub` carries are read off it only
+    /// if something materializes the frame.
+    pub(crate) cf: std::sync::Arc<crate::opcode::CompiledFunction>,
     /// The caller's env as it was at call entry. An `Arc` bump of the live
     /// env: later writes to that env copy-on-write away from this handle, so
     /// it is the same snapshot the eager `clone_env()` took, minus the
@@ -41,15 +44,13 @@ impl LazyRoutineCode {
     pub(crate) fn new(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        cf: std::sync::Arc<crate::opcode::CompiledFunction>,
         env: Env,
     ) -> Self {
         Self {
             package,
             name,
-            params,
-            param_defs,
+            cf,
             env,
             materialized: std::sync::OnceLock::new(),
         }
@@ -126,8 +127,8 @@ impl Interpreter {
                     let sub_val = Value::make_sub(
                         l.package,
                         l.name,
-                        l.params.clone(),
-                        l.param_defs.clone(),
+                        l.cf.params.clone(),
+                        l.cf.param_defs.clone(),
                         vec![],
                         false,
                         l.env.flattened(),
