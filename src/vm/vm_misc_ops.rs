@@ -386,7 +386,25 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(callable) = callable {
             if let ValueView::Routine { name, .. } = callable.view() {
-                return loan_env!(self, call_user_routine_direct(&name.resolve(), args));
+                let name = name.resolve();
+                // `&[+]` / `&infix:<+>` is a `Routine` value naming a BUILTIN
+                // operator, which `call_user_routine_direct` cannot find (it
+                // looks for a user declaration and then for an `&`-keyed env
+                // binding, and a core operator is neither) -- `my &op = &[+];
+                // [[&op]] 1, 2, 3` died with "Unknown function: infix:<+>".
+                // Evaluate the operator itself in that case, exactly as the
+                // no-callable path below does. A user-declared `infix:<+>`
+                // still wins: `has_function` sees it and the direct call runs.
+                if !self.has_function(&name)
+                    && args.len() == 2
+                    && let Some(op) = name
+                        .strip_prefix("infix:<")
+                        .and_then(|rest| rest.strip_suffix('>'))
+                    && Self::is_builtin_reduction_op(op)
+                {
+                    return self.eval_reduction_operator_values(op, &args[0], &args[1]);
+                }
+                return loan_env!(self, call_user_routine_direct(&name, args));
             }
             return self.vm_call_on_value(callable.clone(), args, None);
         }

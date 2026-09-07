@@ -156,7 +156,15 @@ impl Interpreter {
         // would instead compute `[op]` right-folded (e.g. `[R/] 100,10,2` is
         // `2/10/100` = 0.002, not `100/(10/2)` = 20).
         while let Some(inner) = base_op.strip_prefix('R') {
-            if !inner.is_empty() && Self::is_builtin_reduction_op(inner) {
+            // An explicit `&callable` inner (`[R[&f]]`) reverses too. It is
+            // matched separately from the builtin table because a bare
+            // identifier after `R` is ambiguous — a user may have declared
+            // `infix:<Rfoo>` as well as `infix:<foo>` — while the `&` sigil
+            // cannot be part of an operator name, so there is nothing to
+            // confuse it with.
+            let inner_is_callable =
+                inner.starts_with('&') && self.reduction_callable_for_op(inner).is_some();
+            if !inner.is_empty() && (Self::is_builtin_reduction_op(inner) || inner_is_callable) {
                 list.reverse();
                 base_op = inner.to_string();
             } else {
