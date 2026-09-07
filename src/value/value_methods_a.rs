@@ -298,7 +298,7 @@ impl Value {
     }
     /// Rebuild an array's backing data with new elements, keeping ONLY the
     /// `initialized` set of `like`. Deliberately narrower than
-    /// [`Value::array_data_like`]: a typed-element coercion rebuilds every row
+    /// [`Value::array_arc`]: a typed-element coercion rebuilds every row
     /// of a shaped array, and carrying `shape` down onto the rebuilt rows makes
     /// each row look like a shaped array of its own, which routes every element
     /// write through the multidimensional slow path (measured ~45x on the 100M-cell
@@ -314,24 +314,6 @@ impl Value {
     /// Build an `crate::gc::Gc<ArrayData>` from a plain element vector.
     pub(crate) fn array_arc(items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
         crate::gc::Gc::new(ArrayData::new(items))
-    }
-    /// Rebuild an array's backing data with new elements, preserving the
-    /// embedded container type metadata of `like` (used by mutators that
-    /// reconstruct the vector, so a typed `Array[Int]` stays typed).
-    pub(crate) fn array_data_like(like: &ArrayData, items: Vec<Value>) -> crate::gc::Gc<ArrayData> {
-        crate::gc::Gc::new(ArrayData {
-            items,
-            // `items` is a rebuilt authoritative vector; an old payload may
-            // describe the previous vector and must not be carried across.
-            native: None,
-            value_type: like.value_type.clone(),
-            key_type: like.key_type.clone(),
-            declared_type: like.declared_type.clone(),
-            default: like.default.clone(),
-            shape: like.shape.clone(),
-            initialized: like.initialized.clone(),
-            descriptor_name: like.descriptor_name.clone(),
-        })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then

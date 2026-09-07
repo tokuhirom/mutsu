@@ -673,15 +673,6 @@ impl Interpreter {
         // check of its own, so an augmented native class must be checked here
         // once (see `native_lever_a_user_override`'s doc comment).
         let lever_a_blocked = self.native_lever_a_user_override(&target, method);
-        // Native `.map` / `.grep` over a concrete array with a simple block: run
-        // the iteration loop in the Interpreter instead of the interpreter (lever A). No
-        // `target_name` here (the receiver is a value, not a mutable variable),
-        // so `$_`-mutating blocks fall back to the interpreter.
-        if !lever_a_blocked
-            && let Some(result) = self.try_native_array_map(None, &target, method, &args)
-        {
-            return result;
-        }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
         if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
             return result;

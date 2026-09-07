@@ -247,7 +247,15 @@ impl Interpreter {
                                 // A callback returning a finite lazy `.map`/
                                 // `.grep` pipe must reify here — the wrapped
                                 // HyperSeq's downstream `.flat`/`for` use static
-                                // readers that cannot force a nested pipe.
+                                // readers that cannot force a nested pipe. Same
+                                // for a callback returning a deferred `.map`
+                                // Seq (ADR-0058's `SeqSource::MapGrep`): the
+                                // HyperSeq is eager by construction and this is
+                                // the last place with a VM to run it in.
+                                if let Err(e) = vm.reify_map_grep_seq(&val) {
+                                    error = Some(e);
+                                    break;
+                                }
                                 match vm.reify_finite_pipe_value(val) {
                                     Ok(val) => {
                                         if let ValueView::Slip(s) = val.view() {

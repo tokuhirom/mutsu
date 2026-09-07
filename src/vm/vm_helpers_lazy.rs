@@ -28,7 +28,12 @@ impl Interpreter {
             // first consumption — so a `die`/`fail` it raises surfaces at the
             // consuming statement, outside a `try` that merely enclosed the
             // `.map` call.
-            SeqSource::MapGrep { items, func, fatal } => {
+            SeqSource::MapGrep {
+                items,
+                func,
+                fatal,
+                rw_source,
+            } => {
                 // Same contract as `force_lazy_list_vm`: this force IS the
                 // effective call site for the callbacks it runs, so a
                 // captured-outer lexical the callback mutated (`LAST $ran =
@@ -39,10 +44,54 @@ impl Interpreter {
                 // `use fatal` is lexical to the `.map` call site, not to
                 // whoever consumes the Seq — see `SeqSource::MapGrep::fatal`.
                 let saved_fatal = std::mem::replace(&mut self.fatal_mode, *fatal);
-                let result = self.eval_map_over_items(func.clone(), items.as_ref().clone());
+                // Run the callback under its DECLARING package, exactly as
+                // `call_compiled_closure_in_unit` does when a Sub value is
+                // invoked from a foreign frame. The map loop drives the block
+                // through `run_reuse`, which bypasses that guard, and the pull
+                // happens wherever the Seq is consumed -- so
+                // `class Outer { our sub f(@n) { @n.map({ Inner.new }) } }`
+                // consumed from `GLOBAL` could no longer resolve `Inner`
+                // (`t/closure-package-nested-class.t`). Eager `map` never hit
+                // this because the loop ran inside the declaring routine.
+                let _pkg_guard = func.as_ref().and_then(|f| match f.view() {
+                    ValueView::Sub(data)
+                        if !data.package.as_str().is_empty()
+                            && !crate::runtime::utils::has_routine_scope_marker(
+                                data.package.as_str(),
+                            )
+                            && data.package != self.current_package_sym() =>
+                    {
+                        let pkg = data.package.as_str().to_string();
+                        Some(self.enter_package_guarded(pkg))
+                    }
+                    _ => None,
+                });
+                let result = match rw_source {
+                    // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
+                    // element, so the callback's writes have to reach `@a`.
+                    // See `SeqSource::MapGrep::rw_source`.
+                    Some(source) => {
+                        self.pull_rw_map(func.clone(), items.as_ref().clone(), source.clone())
+                    }
+                    None => self.eval_map_over_items(func.clone(), items.as_ref().clone()),
+                };
                 self.fatal_mode = saved_fatal;
                 self.reconcile_caller_after_lazy_force(caller_code);
-                let result = result?;
+                // A `fail` (and `...`, which IS a `fail`) raised by the
+                // callback escapes as a `Control::Fail` error, which the next
+                // routine boundary would soften into a returned `Failure`.
+                // Under the `use fatal` that was lexically in force at the
+                // `.map` CALL — most often an enclosing `try`, which implies
+                // it — rakudo throws instead, and that boundary is nowhere
+                // near here: it is whichever routine encloses the CONSUMER.
+                // So decide it here, where the call site's `fatal` is known,
+                // by turning the soft failure into a hard throw.
+                let result = result.map_err(|mut e| {
+                    if *fatal && e.is_fail() {
+                        e.control = None;
+                    }
+                    e
+                })?;
                 let items = match result.view() {
                     ValueView::Array(items, _) => items.to_vec(),
                     _ => crate::runtime::utils::value_to_list(&result),
@@ -68,6 +117,80 @@ impl Interpreter {
                 Ok(items)
             }
         }
+    }
+
+    /// Pull a deferred `.map` whose receiver was an `@`-sigil container
+    /// (`SeqSource::MapGrep::rw_source`): run the rw map loop, then publish
+    /// any element the callback wrote back into that container.
+    fn pull_rw_map(
+        &mut self,
+        func: Option<Value>,
+        mut items: Vec<Value>,
+        source: Value,
+    ) -> Result<Value, RuntimeError> {
+        // The narrow native rw loop first: it is the only one that captures a
+        // prefix `++$_`/`--$_` or a bare `tr///` (`rw_map_topic_capture`),
+        // which the shared loop's `__mutsu_rw_map_topic__` assignment mirror
+        // does not see. It declines everything else, including every
+        // read-only block, for which it is 4-7.6x slower (see its module doc).
+        if !self.native_lever_a_user_override(&source, "map")
+            && let Some(args) = func.clone().map(|f| vec![f])
+            && let Some(native) = self.try_native_rw_map_over(&source, &args)
+        {
+            let (result_items, source_after) = native?;
+            self.publish_rw_map_writeback(&source, source_after);
+            return Ok(Value::seq(result_items));
+        }
+        let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut items)?;
+        // A read-only block wrote nothing, so leave the source container
+        // ALONE. It used to be rebuilt unconditionally, which silently
+        // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
+        // slot lost its `initialized` bit, stopped reading as a hole, and a
+        // later trailing-element `:delete` could no longer truncate the array
+        // (roast/S32-array/delete.t, via a read-only
+        // `@a.map({ $_ // "Any()" })` in between).
+        if wrote_back {
+            self.publish_rw_map_writeback(&source, items);
+        }
+        Ok(result)
+    }
+
+    /// Write the mutated elements of a rw `.map` back into the source
+    /// container, by mutating its `ArrayData` IN PLACE.
+    ///
+    /// In place, not by rebuilding and re-binding the name: the pull runs
+    /// wherever the Seq is consumed, so the frame whose `env` held `@a` may
+    /// be long gone by then and `store_container_preserving_identity` would
+    /// have nothing to store into. Writing through the `Gc` (ADR-0013 §7 made
+    /// this sound at the primitive) reaches every alias by construction and
+    /// does not depend on which frame is running — the same move that made
+    /// `grep`'s element promotion frame-independent (ADR-0058 §9.2).
+    fn publish_rw_map_writeback(&mut self, source: &Value, items: Vec<Value>) {
+        // A shaped array keeps its shape/structure — only the leaf values
+        // change — so rebuild the rows from the mutated leaves instead of
+        // flattening it into an ordinary list, then publish the rows.
+        let new_items = if crate::runtime::utils::is_shaped_array(source) {
+            let rebuilt = crate::runtime::utils::replace_shaped_leaves(source, &items);
+            match rebuilt.view() {
+                ValueView::Array(rows, _) => rows.to_vec(),
+                _ => return,
+            }
+        } else {
+            items
+        };
+        let ValueView::Array(data, _) = source.view() else {
+            return;
+        };
+        // SAFETY: same contract as `dispatch_grep`'s in-place promotion —
+        // a `&mut` to the `Gc`'s contents while no other borrow of it is
+        // live (the element vector was cloned out before the map ran).
+        let slots = unsafe { crate::value::gc_contents_mut(&data) };
+        // The replacement vector is authoritative; an `array[int]` native
+        // payload describes the OLD vector and must not decode back over it
+        // (the `Value::array_data_like` rebuild this replaces dropped it too
+        // -- that helper had no other caller left and is gone).
+        slots.clear_native_storage();
+        *slots.items_mut() = new_items;
     }
 
     /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
@@ -251,6 +374,15 @@ impl Interpreter {
     /// rakudo's `sink`: run the source for side effects and discard.
     pub(crate) fn sink_seq_body(&mut self, body: &Arc<SeqBody>) -> Result<(), RuntimeError> {
         body.sink(|source| self.pull_seq_source(source))
+    }
+
+    /// [`Self::sink_seq_body`] for the `.sink` METHOD — see
+    /// [`SeqBody::sink_explicit`] for why the two differ.
+    pub(crate) fn sink_seq_body_explicit(
+        &mut self,
+        body: &Arc<SeqBody>,
+    ) -> Result<(), RuntimeError> {
+        body.sink_explicit(|source| self.pull_seq_source(source))
     }
 
     /// Reify a not-yet-run `.map`/`.grep` Seq (`SeqSource::MapGrep`,
@@ -438,7 +570,7 @@ impl Interpreter {
             return Ok(target);
         }
         if method == "sink" {
-            self.sink_seq_body(&body)?;
+            self.sink_seq_body_explicit(&body)?;
             return Ok(target);
         }
         if method == "cache" {

@@ -282,7 +282,17 @@ impl Interpreter {
                             self.try_compiled_method_or_interpret(array_target, &method, args)
                         };
                         let result_val = call_result?;
+                        // ADR-0058: the delegated `.map`/`.grep` -- and each
+                        // element the block itself produced with a `.map` --
+                        // hands back a Seq whose callback has not run, while
+                        // `value_to_list` and every later reader of the
+                        // HyperSeq (`.flat`, `.gist`) are pure and would see
+                        // ADR-0034's empty seed. A HyperSeq is eager by
+                        // construction, so this is where they get run. Twin
+                        // of the `exec_call_method_mut_op_impl` arm below.
+                        self.reify_map_grep_seq(&result_val)?;
                         let result_items = crate::runtime::value_to_list(&result_val);
+                        self.reify_map_grep_seq_args(&result_items)?;
                         let wrapped = if is_hyper {
                             Value::hyper_seq(result_items)
                         } else {
@@ -1650,7 +1660,24 @@ impl Interpreter {
                         )
                     };
                     let result_val = call_result?;
+                    // ADR-0058: the delegated `.map`/`.grep` hands back a Seq
+                    // whose callback has not run, and `value_to_list` is a
+                    // pure reader that would see ADR-0034's empty seed -- so
+                    // `@a.hyper.map({ ... })` came out empty
+                    // (`t/hyper-map-implicit-named-slurpy-leak.t`). A HyperSeq
+                    // is eager by construction, so pulling here is the whole
+                    // contract, not a compromise.
+                    self.reify_map_grep_seq(&result_val)?;
                     let result_items = crate::runtime::value_to_list(&result_val);
+                    // ... and so may each ELEMENT, when the block itself
+                    // returned a `.map`/`.grep` Seq
+                    // (`@a.hyper.map({ @ids.map({...}) })`). The HyperSeq is
+                    // built eagerly from these, and every later reader of it
+                    // (`.flat`, `.gist`) is pure, so this is the last place
+                    // that can run them. Mirrors the recursive pull the
+                    // `MapGrep` arm of `pull_seq_source` does for its own
+                    // nested results (ADR-0058 §9.3).
+                    self.reify_map_grep_seq_args(&result_items)?;
                     let wrapped = if is_hyper {
                         Value::hyper_seq(result_items)
                     } else {
@@ -2615,32 +2642,20 @@ impl Interpreter {
                             );
                             return Ok(());
                         }
-                        // Non-mutating block list methods (`.map`/`.first`/
-                        // `.minmax`) dispatch through the same native helpers a
-                        // *plain* array uses on the backing storage, so an
-                        // `is Array` instance gets the same VM-native coverage
-                        // instead of bouncing to the tree-walk interpreter (ledger
-                        // §D / §C Phase-3). They borrow `&storage` and return a
-                        // fresh value, so they never mutate the instance. `.grep`
-                        // returns rw views into the source (a `for @s.grep { $_++ }`
-                        // writes back), and `.splice`/`ASSIGN-POS`/… mutate, so
-                        // those keep the fallback — they need the first-class
-                        // element-cell write-back the interpreter owns.
-                        if let Some(r) = self.try_native_array_map(None, &storage, &method, &args) {
-                            crate::vm::vm_stats::record_dispatch_entry_outcome(
-                                "callmethodmut",
-                                "native",
-                            );
-                            self.shadow_check_native_row_candidate(
-                                &target,
-                                &method,
-                                method_sym,
-                                args.len(),
-                                true,
-                            );
-                            self.stack.push(r?);
-                            return Ok(());
-                        }
+                        // Non-mutating block list methods (`.first`/`.minmax`)
+                        // dispatch through the same native helpers a *plain*
+                        // array uses on the backing storage, so an `is Array`
+                        // instance gets the same VM-native coverage instead of
+                        // bouncing to the tree-walk interpreter (ledger §D /
+                        // §C Phase-3). They borrow `&storage` and return a
+                        // fresh value, so they never mutate the instance.
+                        // `.grep` returns rw views into the source (a
+                        // `for @s.grep { $_++ }` writes back), and
+                        // `.splice`/`ASSIGN-POS`/… mutate, so those keep the
+                        // fallback — they need the first-class element-cell
+                        // write-back the interpreter owns. (`.map` used to be
+                        // in this list; it is deferred now, and its rw loop
+                        // runs from the Seq's pull — ADR-0058 §9.4.)
                         if let Some(r) = self.try_native_first(&storage, &method, &args) {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",

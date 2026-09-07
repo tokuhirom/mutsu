@@ -604,15 +604,21 @@ impl Interpreter {
                 }
             }
         };
-        // A `return`/stub callback keeps the older `LazyList` deferral for now
-        // (ADR-0058 step 4 retires it once `builtin_map`/`grep` defer too):
-        // that `return` targets the lexically enclosing routine, and if the
-        // Seq is forced after that routine has exited it must surface as
-        // `X::ControlFlow::Return` with out-of-dynamic-scope set, which the
-        // `LazyList` path already gets right.
+        // A `return` callback keeps the older `LazyList` deferral for now
+        // (ADR-0058 step 4 retires it): that `return` targets the lexically
+        // enclosing routine, and if the Seq is forced after that routine has
+        // exited it must surface as `X::ControlFlow::Return` with
+        // out-of-dynamic-scope set, which the `LazyList` path already gets
+        // right.
+        //
+        // A `...` STUB body no longer takes it. The stub's only requirement
+        // is "do not fire while the Seq is never iterated", which
+        // `SeqSource::MapGrep` provides — and `...` is `fail`, so it also
+        // needs the `use fatal` captured at the `.map` call, which the
+        // `LazyList` route has no field for. That was the last thing keeping
+        // `t/map-callback-runs-at-consumption.t`'s two Part-1 rows `todo`.
         if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
-            && (Self::body_contains_return(&sub_data.body)
-                || Self::is_stub_routine_body(&sub_data.body))
+            && Self::body_contains_return(&sub_data.body)
         {
             return Ok(self.create_lazy_map_list(items, &sub_data));
         }
@@ -626,6 +632,7 @@ impl Interpreter {
             items: std::sync::Arc::new(items),
             func: args.first().cloned(),
             fatal: self.fatal_mode,
+            rw_source: None,
         }))
     }
 

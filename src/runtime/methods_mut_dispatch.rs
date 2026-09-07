@@ -2103,62 +2103,33 @@ impl Interpreter {
                 "map-rw-writeback",
             );
             let is_shaped = crate::runtime::utils::is_shaped_array(&target);
-            let mut items = if is_shaped {
+            let items = if is_shaped {
                 crate::runtime::utils::shaped_array_leaves(&target)
             } else {
                 Self::value_to_list(&target)
             };
-            let (result, wrote_back) =
-                self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
-            // `.map` returns a Seq (same contract as `dispatch_map_method` and the
-            // native fast path); only the rw writeback below is special here.
-            let result = match result.view() {
-                ValueView::Array(items, _) => Value::seq(items.to_vec()),
-                _ => result.clone(),
-            };
-            // Write mutated elements back to the source array. `.map(* *= 2)`
-            // rw-binds `$_` to each element, so element mutations persist (Raku
-            // semantics). A shaped array keeps its shape/structure — only the leaf
-            // values change — so rebuild it from the mutated leaves instead of
-            // flattening it into an ordinary list.
+            // ADR-0058 §9.4: this used to run the map loop RIGHT HERE, which
+            // made `@a.map({ ... })` -- the commonest `.map` spelling there
+            // is -- the one receiver step 2 never reached, because a `.map`
+            // on a named array variable compiles to `OpCode::CallMethodMut`
+            // and lands in this rw dispatch instead of `dispatch_map_method`.
+            // It now defers exactly like every other `.map`: the callback
+            // runs at first consumption, through `SeqSource::MapGrep`.
             //
-            // A read-only block wrote nothing, so leave the source container
-            // ALONE. It used to be rebuilt unconditionally, which silently
-            // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
-            // slot lost its `initialized` bit, stopped reading as a hole, and a
-            // later trailing-element `:delete` could no longer truncate the
-            // array (roast/S32-array/delete.t, via a read-only
-            // `@a.map({ $_ // "Any()" })` in between).
-            if !wrote_back {
-                return Ok(result);
-            }
-            let key = target_var.to_string();
-            if is_shaped {
-                let mut rebuilt = crate::runtime::utils::replace_shaped_leaves(&target, &items);
-                // The element-type metadata (`array[int]`) is embedded in
-                // ArrayData; `replace_shaped_leaves` rebuilds it, so re-tag the
-                // result to keep `.WHAT`/`.raku` (and shaped-only behaviours like
-                // `:delete` dying) correct after the map.
-                if let Some(info) = self.container_type_metadata(&target) {
-                    rebuilt = self.tag_container_metadata(rebuilt, info);
-                }
-                // ADR-0039 slice 2: preserve the source container's identity
-                // (see `store_container_preserving_identity`) -- the caller's
-                // local slot holds the original node and a bare-name env
-                // replacement never reaches it.
-                self.store_container_preserving_identity(&key, rebuilt);
-            } else if let ValueView::Array(src, kind) = target.view() {
-                // Keep the source container's metadata (element type, default,
-                // `initialized` holes) across the rebuild.
-                let rebuilt = Value::array_data_like(&src, items);
-                self.store_container_preserving_identity(
-                    &key,
-                    Value::array_with_kind(rebuilt, kind),
-                );
-            } else {
-                self.store_container_preserving_identity(&key, Value::real_array(items));
-            }
-            return Ok(result);
+            // The rw write-back is what made deferring this one awkward, and
+            // it is carried by `rw_source`: the pull runs
+            // `eval_map_over_items_rw` and publishes any mutation by writing
+            // the source `ArrayData` IN PLACE, so it needs no frame and no
+            // name (`publish_rw_map_writeback`). That matters because the
+            // pull happens wherever the Seq is consumed -- rakudo writes back
+            // at consumption too (`my @a=1,2,3; @a.map({$_++})` leaves
+            // `[2 3 4]` only because a sunk statement consumes the Seq).
+            return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+                items: std::sync::Arc::new(items),
+                func: args.first().cloned(),
+                fatal: self.fatal_mode,
+                rw_source: Some(target.clone()),
+            }));
         }
 
         // SetHash.grab / SetHash.grabpairs: remove random elements, mutating the Set

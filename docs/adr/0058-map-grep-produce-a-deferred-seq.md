@@ -1,6 +1,6 @@
 # ADR-0058: `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call
 
-- **Status**: Accepted (step 2 shipped 2026-09-07; steps 3-4 open)
+- **Status**: Accepted (steps 2, 3a and 3c shipped 2026-09-07; steps 3b and 4 open)
 - **Date**: 2026-08-22
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md)
@@ -268,10 +268,11 @@ callback `Value` already carries its own closure environment.
 | --- | --- | --- |
 | **0** | **Measure the read-path exposure** by flipping `dispatch_map_method`/`builtin_map` to always call `create_lazy_map_list` behind a temporary env gate, and running `t/` and the roast whitelist with it on. This is option 3's exposure without option 3's cost, and it produces the list of consumers that read a deferred sequence without forcing it. | Discard the gate afterwards; it is a measurement, not a slice. |
 | **1** | **Done (2026-08-22).** `t/map-callback-runs-at-consumption.t` — 23 rows, raku-verified 23/23, mutsu 12 passing and 11 `todo`. Un-`todo`ing the nine ADR-0058 rows is this ADR's completion signal; the other two `todo`s belong to §1.4's separate bug. | Same shape as ADR-0034 phase 1. |
-| **2** | **Done for SOME receivers only (2026-09-07); see the caveat below.** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method` only (not `builtin_map`, not `grep`), plus the read-path consumers S8 lists. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d; the two remaining `todo`s are S1.4's separate bug. |
+| **2** | **Done (2026-09-07).** `SeqSource::MapGrep` + the `pull_seq_source` arm + `Value::seq_deferred` construction in `dispatch_map_method`, plus the read-path consumers S8 lists. Shipped covering only SOME receivers; the `@`-array hole it left is closed by step 3c below. | All nine ADR-0058 rows of phase 1's oracle are un-`todo`d. |
 | **3a** | **Done (2026-09-07).** `builtin_map` (the `map &f, @xs` listop form) returns the same `Value::seq_deferred(SeqSource::MapGrep { .. })` as step 2. Attempted and reverted earlier the same day behind a step-2 hole (S9.1); that hole is closed (`news/2026-09/deferred-map-callback-frame.md`). The mandatory full `make roast` then found three more consumers, all fixed generally -- see S9.3. | `t/listop-map-defers.t`, and `t/nested-deferred-map-seq-is-pulled.t`'s listop row un-`todo`d. |
+| **3c** | **Done (2026-09-07).** The three EAGER `.map` loops keyed on an `@`-sigil receiver -- `call_method_mut_with_values`'s rw gate, `try_native_array_map`, and `builtin_map`'s `source_var` branch -- defer through the same `SeqSource::MapGrep`, which gains `rw_source` so the pull can publish the rw write-back in place. `is_stub_routine_body` drops out of both deferral predicates, and a `Control::Fail` raised under a captured `fatal` throws at the pull. Closes S9.4; the oracle is 37 rows with no `todo`s. | `news/2026-09/real-array-map-defers.md`. The mandatory full `make roast` + `make test` + battery run found EIGHT more general defects -- see S9.4. |
 | **3b** | Extend to both `grep` entry points. Measured 2026-09-07: grep is still fully eager and diverges from rakudo. `grep`'s `:k`/`:kv`/`:p` adverbs need positional indices over the whole result and can stay eager, exactly as they already opt out of `make_lazy_pipe`. **Its own slice, for a measured reason -- see S9.2.** | |
-| **4** | Retire the `body_contains_return` / `is_stub_routine_body` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. | The maintainability payout. |
+| **4** | Retire the `body_contains_return` deferral predicate and `create_lazy_map_list` — both become dead once every map defers. (`is_stub_routine_body` already dropped out of both predicates in step 3c: a `...` stub needs only "do not fire until iterated", which `MapGrep` gives, and unlike the `LazyList` route `MapGrep` carries the `fatal` a stub-as-`fail` needs.) | The maintainability payout. |
 
 ### Verification
 
@@ -530,25 +531,91 @@ lexical-resolution rule the cell encodes, and costs a set lookup per captured
 key rather than an `Env` clone. So step 3 and step 4 are unblocked, and §5's
 mandatory full `make roast` is what still gates them.
 
-### 9.4 Step 2 does not cover `@a.map` (measured 2026-09-07)
+### 9.4 Step 2 did not cover `@a.map` -- closed 2026-09-07 (step 3c)
 
 Step 2 put the deferral in `dispatch_map_method`, and a `.map` on a **named
 array variable** never gets there: it compiles to `OpCode::CallMethodMut`, whose
-VM-native array-method dispatch runs the map eagerly. Measured at `e7662519d`:
-`@a.map` and `(@a).map` run their callback at the call, while `@a.List.map` and
-`(1,2,3).map` defer. A `rust-gdb` breakpoint on this ADR's own deferred tail
-never fires for `@a.map({ … })`, and one on `eval_map_over_items` does not
-either -- so the eager loop is a THIRD implementation, not either of the two
-this ADR knows about. `t/map-callback-runs-at-consumption.t`'s 23 rows do not
-exercise that spelling.
+dispatch reaches `call_method_mut_with_values` first. Measured at `e7662519d`:
+`@a.map` and `(@a).map` ran their callback at the call, while `@a.List.map` and
+`(1,2,3).map` deferred. `t/map-callback-runs-at-consumption.t`'s 23 rows did not
+exercise that spelling, which is why the oracle stayed green through the hole.
 
-This also explains the residual `try` rows: `try` implies `use fatal`, and
-`SeqSource::MapGrep` already captures `fatal` at the `.map` call -- but the
-`@a` spelling never builds a `MapGrep`, and the Range spelling goes through
-`make_lazy_pipe`'s `LazyList`, which has no `fatal` field. The fix is not a rule
-about `try`; it is routing every `.map` through one deferral that carries
-`fatal`, i.e. step 4. Tracked in
-`todo/deep/array-map-on-a-real-array-is-still-eager.md`.
+**The eager loop was THREE loops, not one**, all selected by the `@` receiver
+and all existing for the same reason -- Raku rw-binds `$_` to the source
+element, so a `.map` on an `@` array can write back into it, and the write-back
+was published by re-binding the receiver's NAME in the current frame:
+
+1. `call_method_mut_with_values`'s "map with rw binding" gate
+   (`runtime/methods_mut_dispatch.rs`), which fired for every `@`-receiver
+   `.map`, read-only blocks included.
+2. `try_native_array_map` (`vm/vm_native_map.rs`) -- the narrow loop that
+   captures a prefix `++$_`/`--$_` or a bare `tr///` via
+   `rw_map_topic_capture`. It declines a read-only block, so a read-only probe
+   never reaches it and it looks innocent; a WRITING block goes straight here.
+3. `builtin_map`'s `source_var` branch, the listop twin `map { $_++ }, @a`.
+
+**Fix.** `SeqSource::MapGrep` gains `rw_source: Option<Value>` (the `@`
+container). All three hand back a deferred Seq; `Interpreter::pull_rw_map` runs
+the rw loop at pull time -- `try_native_rw_map_over` (loop 2, reduced to an
+eligibility check plus a loop that RETURNS its write-back) first,
+`eval_map_over_items_rw` otherwise -- and publishes by mutating the source
+`ArrayData` **in place** (`publish_rw_map_writeback`). Frame-independent,
+reaches every alias, and preserves the container metadata the old
+`Value::real_array`/`Value::array_data_like` rebuilds had to re-register;
+`array_data_like` had no caller left and is gone. This is the identical move
+S9.2's prerequisite made for `grep`'s promotion. rakudo agrees the write-back
+lands at CONSUMPTION (`my @a=1,2,3; my $s=@a.map({$_++;$_}); say @a` -> `[1 2 3]`).
+
+**The residual `try` rows closed with it, and were not about `try`.** Two
+independent gaps: a `...` stub took the `create_lazy_map_list` `LazyList`
+detour, which has no `fatal` field (so `is_stub_routine_body` was dropped from
+both deferral predicates -- `MapGrep` already gives the stub its only real
+requirement, "do not fire until iterated"); and `...` IS `fail`, whose
+`Control::Fail` error the next routine boundary softens into a returned
+`Failure`. Under the `use fatal` `try` implies, rakudo throws -- and that
+boundary is nowhere near the pull, it is whichever routine encloses the
+CONSUMER. The pull, the one place that knows the call site's `fatal`, now turns
+a `Control::Fail` raised under it into a hard throw.
+
+**What the mandatory gates found: eight more general defects**, every one a
+pre-existing bug that only became reachable once the commonest `.map` spelling
+produced a deferred body:
+
+| where | defect |
+|---|---|
+| `vm/vm_var_assign_set_local.rs` | `SeqBody::mark_itemized` was UNREACHABLE: a `$` local is stored under its BARE name (`"s"` for `my $s`; `@`/`%` keep their sigil) and the arm tested `starts_with('$')`. Its `LazyList` twin three lines below always used the right test, which is why `my $s = map …;` never forced while map produced a `LazyList`. |
+| `vm/vm_helpers_lazy.rs` | The pull ran the callback under the CONSUMER's package. `call_compiled_closure_in_unit` installs a Sub's declaring package for a foreign-frame invocation, but the map loop drives the block through `run_reuse`, which bypasses that. The pull now installs the callback's own `SubData::package` guard. |
+| `vm/vm_hyper_race_parallel.rs` | A hyper/race worker reified a nested lazy PIPE result but not a nested deferred `MapGrep`, so `@a.hyper.map({ @ids.map({…}) }).flat` came out empty. |
+| `vm/vm_var_multidim_ops.rs` | `multi_dim_index_read` walks elements purely, so `@a.map({$_})[*;*]` read the empty seed. |
+| `vm/vm_var_assign_element.rs` | The Seq element store names the element it refused; an unpulled body named `Nil`. A `MapGrep` source is finite and re-readable, unlike the one-shot sources that guard protects. |
+| `vm/vm_var_assign_typed.rs` | STRING INTERPOLATION rendered a deferred Seq as nothing (`"X{ @a.map({…}) }Y"` -> `XY`). `StringConcat` is the one string path with no surrounding coercion op to hang S8.2's guard on. Pre-existing since step 2, reached by a whitelisted test only once `@a.map` deferred (`roast/S06-signature/positional.t` #5). |
+| `runtime/resolution_map_grep_rw.rs` | The rw loop merged the captured env with plain CALLER priority, so a same-named lexical in the CONSUMING frame shadowed the block's own free variable. S9.1/S9.3 had already given `eval_map_over_items` the capture-wins rule; the rw loop had never needed it because it only ran inside the creating frame. The rule is now one shared `capture_wins_over_caller`. Caught ONLY by the bundled-library gate (`Text::CSV` `66_formula.t`, `Cro::HTTP` `http-cookiejar.rakutest`). |
+| `vm/vm_var_assign_index_named.rs` | The slice INDEX may itself be a deferred Seq (`@n[@n.map(*+0)] = <a b>.sort`), read purely, so the store addressed no slots. S8.2 had reified the RHS for a slice target but not the index. Also pre-existing since step 2. (`roast/S32-list/seq.t` #12/#14) |
+
+Making `mark_itemized` live needed a companion: rakudo's `itemized` exemption
+is about SINK CONTEXT, not about `.sink`. Measured,
+`my $s = (1,2,3).Seq; $s.sink; $s.List` throws `X::Seq::Consumed`, while the
+bare mention `$s;` on the next line only warns and leaves it readable. So
+`SeqBody` grew `sink_explicit` for the `.sink` METHOD (its dispatch site and
+the pure-value native), while every implicit-sink call site keeps `sink`
+(`t/seq-consumption-matrix.t`).
+
+**`make_lazy_pipe` needs no `fatal` field, and its finite case does not exist.**
+S9.4's first draft said the residual `try` rows' Range spelling went through
+`make_lazy_pipe`'s `LazyList`, "which has no `fatal` field". Re-measured:
+`is_lazy_pipe_source` is true only for a genuinely INFINITE source (an
+`i64::MAX`-ended range, an infinite `GenericRange`, a lazy pipe or a
+gather-backed `LazyList`), so `(1..3)` never took that route -- it was a
+`MapGrep` from step 2 on. The infinite route was then measured directly
+(`sub ee { my $s = try { (1..*).map({ fail "boom" }) }; say "T"; $s[0] }`) and
+agrees with rakudo as it stands: both print `T` and die. So the field is not
+needed, and there is no finite case to reroute.
+
+`t/array-map-seq.t` held the one assertion that had been pinning mutsu's
+EAGERNESS (it read the source after `.^name`, which does not consume); re-measured
+under `raku` it answers `[1, 2, 3]`, and the row now says so. The oracle is 37
+raku-verified rows with no `todo`s, its new Part 3 being the spelling audit.
+`news/2026-09/real-array-map-defers.md`.
 
 ### 9.3 What the mandatory roast run found when step 3 landed (2026-09-07)
 
@@ -591,6 +658,16 @@ different frame. That is also why
 `SeqSource::MapGrep`'s pull arm also runs `eval_map_over_items` unconditionally,
 so 3b needs a grep mode on the variant (or a sibling variant) before any of the
 above.
+
+**Re-measured 2026-09-07 alongside step 3c**, for the "does grep have the same
+eager-on-a-real-array hole `map` had" question: it does not have a SPELLING
+hole, because it is uniformly eager. `my @a=1,2,3;` then each of
+`@a.grep({...})`, `@a.List.grep({...})`, `(1,2,3).grep({...})` and
+`grep({...}, @a)` runs its callback at the call (rakudo runs none of them), so
+3b owns all four at once and needs no separate `@`-receiver slice. The
+real-array arm IS `dispatch_grep`'s `ValueView::Array` branch -- the promotion
+one -- so its prerequisite is exactly the in-place publication that landed
+below.
 
 **Prerequisite landed 2026-09-07** (`news/2026-09/grep-promotion-is-published-in-place.md`).
 The concrete blocker was sharper than "the promotion moves to pull time": the

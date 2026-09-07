@@ -688,6 +688,13 @@ impl Interpreter {
             } else {
                 v
             };
+            // Interpolating a not-yet-run `.map`/`.grep` Seq must run its
+            // callback: the renderer below is pure and would see ADR-0034's
+            // empty seed, so `"X{ @a.map({...}) }Y"` rendered `XY`. Same
+            // guard `exec_str_coerce_op`/`coerce_stringy_operand`/`say`
+            // already carry (docs/adr/0058 §8.2) — this is the one string
+            // path that had no surrounding coercion op to hang it on.
+            self.reify_map_grep_seq(&v)?;
             // Interpolating an unhandled Failure into a string throws its underlying
             // exception (Raku: a Failure is an "unthrown exception" that explodes on
             // use as a value). Mirrors the prefix:<~> stringify path; without this,
