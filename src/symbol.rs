@@ -160,6 +160,11 @@ pub(crate) mod flags {
     pub(crate) const INDEX_RW_CALL_TEMP: u8 = 1 << 1;
     /// A `__mutsu_type::<name>` typed-lexical metadata key.
     pub(crate) const TYPE_META: u8 = 1 << 2;
+    /// An `nqp::<op>` routine name: a compiler-known primitive in a reserved
+    /// namespace no user routine can be declared in, so a call op carrying
+    /// this name dispatches straight to the op table
+    /// (`Interpreter::exec_nqp_call_op`).
+    pub(crate) const NQP_OP: u8 = 1 << 3;
     /// Set once the byte has been computed (so a symbol with no flags is not
     /// recomputed on every lookup).
     pub(crate) const COMPUTED: u8 = 1 << 7;
@@ -168,6 +173,9 @@ pub(crate) mod flags {
 /// The `__mutsu_type::` prefix `flags::TYPE_META` marks. Kept next to the flag
 /// so the two cannot drift.
 pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
+
+/// The `nqp::` prefix `flags::NQP_OP` marks.
+pub(crate) const NQP_OP_PREFIX: &str = "nqp::";
 
 fn compute_flags(s: &str) -> u8 {
     let mut f = flags::COMPUTED;
@@ -179,6 +187,9 @@ fn compute_flags(s: &str) -> u8 {
     }
     if s.starts_with(TYPE_META_PREFIX) {
         f |= flags::TYPE_META;
+    }
+    if s.starts_with(NQP_OP_PREFIX) {
+        f |= flags::NQP_OP;
     }
     f
 }

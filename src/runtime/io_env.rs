@@ -406,6 +406,18 @@ impl Interpreter {
         } else {
             value
         };
+        // A plain `Str` gists as itself. Answered here unless the program has
+        // augmented `Str` (or an ancestor) with its own `gist` -- the same
+        // memoized gate the native method fast paths use -- because the
+        // general dispatch below is a ~7k-instruction walk of every
+        // qualified/mixin/proxy/format/collection probe before it reaches the
+        // native `Str` row, and `say $str` is what every TAP line the vendored
+        // `Test.rakumod` prints comes down to (`$output.say: $tap`).
+        if let ValueView::Str(s) = value.view()
+            && !self.native_lever_a_user_override(value, "gist")
+        {
+            return Ok(s.to_string());
+        }
         // The pure native `.gist` fast path cannot reproduce the base method's
         // virtual `.Str` call on a role Mixin. Enter mixin dispatch directly so
         // a role-provided `gist`, or its inherited-gist/provided-Str fallback,

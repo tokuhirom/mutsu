@@ -359,6 +359,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // An `nqp::` op is a compiler-known primitive in a reserved namespace:
+        // nothing below can answer it differently than the op table, so it
+        // goes there directly (see `exec_nqp_call_op`). One memoized flag
+        // byte on the callee symbol decides.
+        if code.const_sym(name_idx).flags() & crate::symbol::flags::NQP_OP != 0 {
+            return self.exec_nqp_call_op(code, name_idx, arity, arg_sources_idx);
+        }
         // `++`/`--` reach here as a call only because a user declared a `multi`
         // for the operator; the native implementation is one candidate of that
         // multi (rakudo's `Int:D`/`Bool`/`Num:D`/... core candidates), so rank
