@@ -543,10 +543,34 @@ impl Interpreter {
             //    §1.2(b) through the `.map($f)` invocation path). A DYNAMIC
             //    variable (`$*x`) keeps caller priority — it is dynamic-scope by
             //    design — exactly as in the compiled merge.
+            //  - a captured value for one of the block's own FREE VARIABLES
+            //    wins for the same reason the cell does: a free variable is
+            //    lexical by definition, so the binding it names is the one at
+            //    the block's creation site, never a same-named lexical that
+            //    happens to be live in the frame doing the consuming. The cell
+            //    exception alone covered only the lexicals that
+            //    `box_captured_lexicals` boxes — in practice `$`-scalars — so
+            //    an `@`/`%` container free variable still resolved to the
+            //    caller's. That is visible whenever the pull happens in a
+            //    DIFFERENT frame than the `.map` call, which ADR-0058 made the
+            //    normal case: `sub mk(@p) { [1].map({ @p.elems }) }` consumed
+            //    inside a routine with its own `@p` read the consumer's, and
+            //    in a RECURSIVE producer the callback read an outer
+            //    invocation's parameter, so the recursion never reached its
+            //    base case (`todo/deep/deferred-map-callback-...`, which
+            //    aborted `roast/integration/99problems-21-to-30.t` with a
+            //    stack overflow when ADR-0058 step 3 landed).
+            let free_vars = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| cc.capture_free_var_set());
             for (k, v) in &data.env {
-                let cell_wins = matches!(v.view(), ValueView::ContainerRef(_))
-                    && !k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
-                if cell_wins || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
+                let is_dynamic =
+                    k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*'));
+                let capture_wins = !is_dynamic
+                    && (matches!(v.view(), ValueView::ContainerRef(_))
+                        || free_vars.is_some_and(|free| free.contains(k)));
+                if capture_wins || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
                     self.env.insert_sym(*k, v.clone());
                 }
             }
