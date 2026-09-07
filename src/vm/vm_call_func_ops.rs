@@ -596,6 +596,18 @@ impl Interpreter {
                             let start = self.stack.len() - arity_usize;
                             if cl.is_some() {
                                 loan_env!(self, set_pending_callsite_line(cl));
+                                // The line has been read off the synthetic
+                                // `__mutsu_test_callsite_line` Pair the parser
+                                // appends (last) to every parenthesized
+                                // zero-argument call; it is not an argument, so
+                                // drop it before the binder counts it. Doing it
+                                // here rather than in the binder keeps it off
+                                // the hot path: the scan above already told us
+                                // whether there is one to look for.
+                                if Self::is_callsite_line_marker(&self.stack[self.stack.len() - 1])
+                                {
+                                    self.stack.pop();
+                                }
                             }
                             let result = self.call_compiled_function_positional_light_at(
                                 cf,

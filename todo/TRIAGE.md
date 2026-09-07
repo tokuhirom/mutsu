@@ -183,10 +183,12 @@ was read on 2026-09-06.
    else in this file.
 2. **Finish the `Test`-provider retirement (a PLAN §1 goal item, not perf
    polish).** `deep/vendor-real-test-module` is at 29.5s against a 30s gate,
-   and it names its own remaining work: `perf/defaulted-param-forfeits-the-light-call-path`
-   (a routine with one defaulted trailing parameter re-resolves **by name on
-   every call** — 1001 full resolves per 1000 calls, and 280k of the 565k
-   by-name resolves in `write-int.t`), `perf/listop-call-bypasses-every-compiled-call-cache`
+   and it names its own remaining work. Two of the three named files are now
+   measured out: `perf/defaulted-param-forfeits-the-light-call-path` is CLOSED
+   (a huge win for ordinary defaulted subs, but `ok` is a multi and `proclaim`
+   carries `is copy` + a coercion, so neither becomes eligible and
+   `write-int.t`'s resolve count is unchanged), and
+   `perf/listop-call-bypasses-every-compiled-call-cache`
    (measured 2026-09-06: the carrier it blames is 1.2%, its own 8.5% finding is
    fixed, and its corrected budget table is now the useful part) and
    `perf/method-dispatch-flattens-the-env-on-every-call` (17% of what is left).
@@ -305,7 +307,7 @@ Numbers marked *debug* have never been confirmed on release.
 
 | Ticket | Status |
 |---|---|
-| [defaulted-param-forfeits-the-light-call-path](perf/defaulted-param-forfeits-the-light-call-path.md) | **NEXT — and the cheapest of the four.** A routine with one defaulted trailing parameter re-resolves **by name on every call**: 1001 `function-full-resolve` over 1000 calls, and 280k of `write-int.t`'s 565k by-name resolves. Two-tier binder fix (exact-arity-with-defaults, then constant-default filling); no ADR. Counters are optimization-independent, so iterate on debug. |
+| [non-constant-defaults-still-forfeit-the-light-path](perf/non-constant-defaults-still-forfeit-the-light-path.md) | **The residue of `defaulted-param-forfeits-the-light-call-path`, which is CLOSED** (tiers 1+2 landed: constant defaults and bare `?` now fill from a registration-time table, 1001 full resolves over 1000 calls -> 1, and 13.8x fewer instructions on a defaulted-param loop). What is left is tier 3 — compiling default *expressions* into a callee prologue — a compiler change, not a binder one. **Survey before building**: the constant cases were the common ones, and the `Test`-module motivation the original ticket carried is measured stale (`write-int.t` reports the same 22 805 resolves either way). |
 | [listop-call-bypasses-every-compiled-call-cache](perf/listop-call-bypasses-every-compiled-call-cache.md) | **MEASURED, and the headline was wrong — read the file before picking it up.** The counter it asked for is in (`execcallpairs:compiled`/`:native`/`:carrier`) and confirms 200/200 assertions take the carrier. But callgrind on release puts the *whole* carrier arm at **1.2%** of the run, and `ok`'s defaulted `$desc` makes it light-ineligible, so a cache hit would land on the same `call_compiled_function_named` the carrier already reaches — gaps (a) and (b) are ~1% slow-path retirements, not speedups. The 8.5% the profile did find (`push_multi_dispatch_frame`'s registry-wide candidate walk) is **fixed** (-7.5% wall clock on the 20k-assertion loop). What is left in the file is the corrected budget table: `bind_function_args_values` 13%, ~47 `format!` per assertion. |
 | [method-dispatch-flattens-the-env-on-every-call](perf/method-dispatch-flattens-the-env-on-every-call.md) | **NEXT.** Every full method dispatch that misses the accessor fast path runs `flatten_scoped_env()`, making method cost linear in names-in-scope *and* destroying the O(writes) return-merge — 17% of what remains in the 20k-assertion `ok` loop. Two suspects already eliminated by measurement. Cheaper sub-fix if the full move looks risky: short-circuit `Env::flattened()` to `parent.flattened()` on an empty overlay. Risk shape is a wrong answer, not a crash — read `docs/vm-dual-store.md`. |
 | [interpreter-call-path-in-hot-loops](perf/interpreter-call-path-in-hot-loops.md) | **Do NOT start from its "Where to start" — the file says so itself.** The `&`-sigil gate it blamed for a year is measured closed (byte-identical opcode profiles). The live finding is new: under `MUTSU_REAL_TEST=1`, **83.3% of function-call opcodes fall back to the interpreter**, dominated by `nqp::`-prefixed calls that never reach a cached dispatch despite being fixed known names. That is the question. Methodology: "raku will delete your benchmark" — an unread accumulator is optimized away and manufactures a 140-370x fake deficit. |
