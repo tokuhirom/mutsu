@@ -122,11 +122,12 @@ skipping its package-symbol write on a re-`use`. None of the three was about
 
 **Three remain**, each a separate root cause:
 
-- **`todo/deep/vendored-test-context-corrupts-a-sha512-digest.md`** --
-  `Digest::SHA2`'s `sha512` returns a different digest for byte-identical input
-  depending on process history. Bisected to a two-`subtest` repro; inputs, IV,
-  round constants and multi dispatch all verified correct at the call site;
-  deterministic under JIT/GC on and off. Accounts for the `Digest` row.
+- **`todo/deep/two-multi-candidates-share-one-inner-sub-key.md`** -- root-caused
+  and **not a `Test` problem at all**: it reproduces in a 12-line script with no
+  `Test`, and on a build predating this ticket's perf passes. `sha256` and
+  `sha512` each declare inner helpers named `Σ0`/`Σ1`/`σ0`/`σ1`, both register
+  under `Digest::SHA2::Σ0`, and sha512's rounds end up executing sha256's
+  32-bit versions. Accounts for the `Digest` row.
 - **`Cro::HTTP`'s `http2-request-parser.rakutest`** -- an `ok` emitted from a
   `start` block that outlived its `test()` helper lands inside the NEXT
   assertion's `throws-like` subtest, so that subtest runs 3 tests against a
@@ -673,7 +674,10 @@ default:
 4. **The bundled-library gate (`scripts/battery-testsuite.sh`) passes under the
    vendored module.** It is a CI step and the sweeps do not cover it. **NOT met,
    but down from 9 regressing rows to 3** — see the sixth-pass section above for
-   the three that remain and what each one actually is.
+   the three that remain and what each one actually is. All three are general
+   interpreter bugs the vendored provider merely reaches; none of them is a
+   `Test` compatibility gap, and one of them (the `Digest` row) is now known to
+   reproduce with no `Test` in the program.
 5. Run the focused tests, then `make test` and the relevant roast checks. The
    first default-provider PR must be treated as a full-suite review.
 
