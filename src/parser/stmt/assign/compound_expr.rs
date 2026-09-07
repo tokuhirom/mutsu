@@ -558,6 +558,45 @@ pub(crate) fn compound_assign_marker(
     }
 }
 
+/// The source-level marker for the `.=` metaop (`$x .= meth(...)`).
+///
+/// `.=` is a *read-modify-write*: raku evaluates the left-hand side once as a
+/// container and stores the method result back into that container. The
+/// expansion the compiler runs (`$x = $x.meth(...)`) spells a plain assignment
+/// instead, and the two are not interchangeable -- `$.attr .= uc` writes into
+/// the itemized throwaway a non-`rw` scalar accessor hands back (so it lives and
+/// leaves the attribute alone), while the byte-identical-looking
+/// `$.attr = $.attr.uc` writes *through* the accessor and dies
+/// `X::Assignment::RO`. Both lower to the same `Expr::AssignExpr`, so without
+/// this marker nothing downstream can tell them apart.
+///
+/// Rakudo agrees that `.=` is its own construct: it models the source as
+/// `ApplyDottyInfix(DottyInfix::CallAssign)`, a node distinct from the
+/// `MetaInfix::Assign` used for `+=` and friends. `op` is therefore the literal
+/// `".="` rather than a [`CompoundAssignOp`] symbol, and `rhs` is the method
+/// call applied to the target. Like every other compound-assignment marker this
+/// is transparent to execution: `expanded` stays the shape the compiler runs.
+pub(crate) fn dotty_assign_marker(lhs: Expr, method_call: Expr, expanded: Expr) -> Expr {
+    Expr::CompoundAssign {
+        target: Box::new(lhs),
+        op: DOTTY_ASSIGN_OP.to_string(),
+        rhs: Box::new(method_call),
+        expanded: Box::new(expanded),
+    }
+}
+
+/// The `op` spelling [`dotty_assign_marker`] stamps on its `Expr::CompoundAssign`.
+pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
+
+/// Whether `expr` is a `.=` metaop marker built by [`dotty_assign_marker`].
+///
+/// `.=` binds at method-postfix (dotty-infix) precedence, far tighter than `=`
+/// and the `OP=` compound assignments, so it is the one assignment-like
+/// expression that may appear unparenthesized inside a ternary branch.
+pub(crate) fn is_dotty_assign(expr: &Expr) -> bool {
+    matches!(expr, Expr::CompoundAssign { op, .. } if op == DOTTY_ASSIGN_OP)
+}
+
 pub(crate) fn build_custom_compound_assign_expr(
     lhs: Expr,
     op_name: String,

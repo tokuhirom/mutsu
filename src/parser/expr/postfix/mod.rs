@@ -17,6 +17,7 @@ mod loop_;
 pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 
 pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
+pub(crate) use dot_assign::dot_assign_to_name;
 pub(in crate::parser) use helpers::is_angle_key_char;
 pub(crate) use loop_::without_pending_prefix;
 pub(in crate::parser) use loop_::{brace_newline_state, consumed_span};

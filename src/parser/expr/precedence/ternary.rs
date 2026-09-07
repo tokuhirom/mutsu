@@ -11,28 +11,19 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
     )
 }
 
-/// Whether the assignment at the start of `src` used a *tight* operator, i.e.
-/// the mutating method call `.=` (`$v .= uc`, `$v.=uc`). `.=` sits at method
-/// postfix / dotty-infix precedence, which is much tighter than the conditional
-/// `?? !!`, so it is legal inside a ternary branch — unlike `=` and the compound
+/// Whether an assignment-like ternary branch used a *tight* operator, i.e. the
+/// mutating method call `.=` (`$v .= uc`, `$v.=uc`). `.=` sits at method postfix
+/// / dotty-infix precedence, which is much tighter than the conditional `?? !!`,
+/// so it is legal inside a ternary branch — unlike `=` and the compound
 /// assignments, which are looser and must be parenthesized.
 ///
-/// This has to read the source because the parser lowers `$v .= uc` to exactly
-/// the same `Expr::AssignExpr { name: "v", expr: MethodCall { target: Var("v"),
-/// … } }` that `$v = $v.uc` produces (`postfix::dot_assign::wrap_dot_assign`),
-/// so the AST alone cannot tell the tight operator from the loose one.
-/// TODO: record the operator in the AST (an `AssignExpr` discriminant) and drop
-/// this text scan; that is a ~170-construction-site change, so it is deferred.
-///
-/// `src` is the branch's source text, starting at its first token: a sigil
-/// variable, whose name is skipped before looking for the operator. Anything
-/// else is reported as loose, preserving the previous behaviour.
-pub(crate) fn assign_operator_is_tight(src: &str) -> bool {
-    let src = src.trim_start();
-    if !src.starts_with(['$', '@', '%', '&']) {
-        return false;
-    }
-    skip_lvalue_prefix(src).starts_with(".=")
+/// This used to scan the branch's *source text*, because `$v .= uc` lowered to
+/// exactly the same `Expr::AssignExpr` that `$v = $v.uc` produces. It no longer
+/// has to: every `.=` lowering now keeps a `.=` compound-assignment marker
+/// (`postfix::dot_assign::dot_assign_to_name`), which records the operator in
+/// the AST where it belongs.
+pub(crate) fn assign_operator_is_tight(expr: &Expr) -> bool {
+    crate::parser::stmt::assign::is_dotty_assign(expr)
 }
 
 /// Skip the sigil + name at the start of an assignment branch's source text
@@ -400,12 +391,12 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // call at method-postfix precedence (operators.rakudoc "Method call" /
         // "Dotty infix"), far tighter than `?? !!`, so `1 ?? $v .= uc !! 9` is
         // legal and must not be rejected.
-        if is_assignment_expr(&then_expr) && !assign_operator_is_tight(then_src) {
+        if is_assignment_expr(&then_expr) && !assign_operator_is_tight(&then_expr) {
             return Err(conditional_precedence_too_loose_error(
                 &spelled_assign_operator(then_src),
             ));
         }
-        if is_assignment_expr(&else_expr) && !assign_operator_is_tight(else_src) {
+        if is_assignment_expr(&else_expr) && !assign_operator_is_tight(&else_expr) {
             return Err(conditional_precedence_too_loose_error(
                 &spelled_assign_operator(else_src),
             ));

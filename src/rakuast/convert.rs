@@ -817,9 +817,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             AssignOp::Assign => match expr {
                 Expr::CompoundAssign {
                     target, op, rhs, ..
-                } if compound_target_matches_name(target, name) => Ok(Some(statement_expression(
-                    compound_assignment_infix(target, op, rhs)?,
-                ))),
+                } if !is_dotty_assign_op(op) && compound_target_matches_name(target, name) => {
+                    Ok(Some(statement_expression(compound_assignment_infix(
+                        target, op, rhs,
+                    )?)))
+                }
                 _ => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
             },
             // `$x := EXPR` — a plain `:=` infix (slice 9).
@@ -888,6 +890,12 @@ fn plain_infix(op: &str) -> RakuAstNode {
         class: RakuAstClass::Infix,
         fields: vec![leaf_field(None, Value::str(op.to_string()))],
     }
+}
+
+/// Whether a compound-assignment marker's `op` is the `.=` metaop, which rakudo
+/// models as `ApplyDottyInfix`, not as `MetaInfix::Assign` over an infix.
+fn is_dotty_assign_op(op: &str) -> bool {
+    op == crate::parser::DOTTY_ASSIGN_OP
 }
 
 /// `$x OP= EXPR` -> `ApplyInfix(left, MetaInfix::Assign(Infix(OP)), right)`.
@@ -1244,8 +1252,21 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             assignment_infix(name, expr)
         }
         Expr::CompoundAssign {
-            target, op, rhs, ..
-        } => compound_assignment_infix(target, op, rhs),
+            target,
+            op,
+            rhs,
+            expanded,
+        } => {
+            if is_dotty_assign_op(op) {
+                // TODO: rakudo renders `$x .= meth` as
+                // `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`,
+                // node classes this converter does not model yet. Until it does,
+                // render the expansion -- exactly what the bare `AssignExpr`
+                // produced before `.=` carried a marker.
+                return convert_expr(expanded);
+            }
+            compound_assignment_infix(target, op, rhs)
+        }
         Expr::ArrayVar(name) => {
             if is_desugar_marker(name) {
                 return Err(desugared(name));

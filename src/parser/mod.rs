@@ -18,7 +18,7 @@ mod primary;
 mod quote_shadow;
 mod sink_warn;
 mod stmt;
-pub(crate) use stmt::assign::compound_assign_op_from_name;
+pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 
 /// Reuse the parser's proven compound-assignment expansion from consumers that
 /// cannot name the parser's private parse-error type (such as RakuAST lowering).
