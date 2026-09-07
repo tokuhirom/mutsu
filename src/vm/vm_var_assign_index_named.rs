@@ -38,6 +38,32 @@ impl Interpreter {
             .insert(key.to_string(), idx.clone());
     }
 
+    /// The key value an OBJECT HASH records for `.keys` / `.kv` / `.pairs` /
+    /// `.raku` to hand back.
+    ///
+    /// The subscript paths deliberately normalize an itemized index to a
+    /// `Scalar` wrapper -- that is the one shape the slice machinery does not
+    /// read as a list, and it is what makes read / assign / `:exists` /
+    /// `:delete` agree on one key. The wrapper is the right TRANSPORT, but raku
+    /// decontainerizes the key before storing it, so `%h{$(1, 2)} = 5` then
+    /// reports its key as `(1, 2)`, not `$(1, 2)`.
+    ///
+    /// Unwrapping only the RECORDED value is safe for the round-trip: the
+    /// `.WHICH` string the entry is filed under is still computed from the
+    /// index as given, so a later `%h{$t}` finds the same entry.
+    fn object_hash_key_value(idx: &Value) -> Value {
+        // `deref_container` first: the index arrives as the variable's own
+        // `ContainerRef` cell when the key was written as `%h{$t}`, and
+        // `deitemize_element` looks through a `Scalar`/itemized-kind wrapper,
+        // not through a container.
+        // Applied twice: the index can arrive as a `Scalar` wrapper around the
+        // variable's own `ContainerRef` cell (`%h{$t}`), and `deref_container`
+        // looks through the cell while `deitemize_element` looks through the
+        // `Scalar`/itemized-kind wrapper -- neither looks through the other.
+        let once = idx.clone().deref_container().deitemize_element();
+        once.deref_container().deitemize_element()
+    }
+
     /// Drop an original-object key when its QuantHash element is removed.
     fn forget_quanthash_object_key(
         original_keys: &mut Option<std::collections::HashMap<String, Value>>,
@@ -2406,7 +2432,7 @@ impl Interpreter {
                             if use_which {
                                 hd.original_keys
                                     .get_or_insert_with(std::collections::HashMap::new)
-                                    .insert(key.clone(), idx.clone());
+                                    .insert(key.clone(), Self::object_hash_key_value(&idx));
                             }
                         })
                         .is_some();
@@ -2656,7 +2682,7 @@ impl Interpreter {
                             let mut hash_val = Value::hash(hash);
                             if use_which {
                                 let mut orig = HashMap::new();
-                                orig.insert(key.clone(), idx.clone());
+                                orig.insert(key.clone(), Self::object_hash_key_value(&idx));
                                 hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                             }
                             *container = hash_val;
@@ -2678,7 +2704,7 @@ impl Interpreter {
                         let mut hash_val = Value::hash(hash);
                         if use_which {
                             let mut orig = HashMap::new();
-                            orig.insert(key.clone(), idx.clone());
+                            orig.insert(key.clone(), Self::object_hash_key_value(&idx));
                             hash_val = runtime::utils::set_hash_original_keys(hash_val, orig);
                         }
                         self.env_mut().insert(var_name.clone(), hash_val);
