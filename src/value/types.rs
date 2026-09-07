@@ -276,6 +276,84 @@ pub(crate) fn mixin_composition_key(
     format!("{base_type_name}\u{1}{}", parts.join("\u{1}"))
 }
 
+/// Build the identity key for a role-mixed value's `===` (`.WHICH`) —
+/// [`crate::runtime::utils::values_identical`]'s `Mixin` arm.
+///
+/// `===` on two separately-built but identically-composed values is `True` in
+/// raku (`(1 but A) === (1 but A)`), so the key must exclude everything that is
+/// per-APPLICATION or per-INSTANCE, while still separating two genuinely
+/// different compositions. Comparing the raw `overrides` maps — which is what
+/// this replaced — could never answer `True`, because every application stamps
+/// its own `__mutsu_role_seq__{name}` (see `roles.rs`).
+///
+/// Excluded:
+/// * `__mutsu_role_seq__*` — the per-application-order stamp. Its ORDER
+///   information is kept (the role list below is sorted by it), only its
+///   absolute value is dropped. Order matters: raku's
+///   `((1 but A) but C) === ((1 but C) but A)` is `False`.
+/// * `__mutsu_attr__*` — per-instance role-attribute values. raku's
+///   `(1 but R(2)) === (1 but R(3))` is `True`: `===` is `.WHICH` on the base
+///   value plus the composed type, and both are `Int+{R}` holding 1.
+///
+/// Everything else is compared as-is, which is what keeps two compositions
+/// apart that only the non-role part distinguishes: the allomorph `"Str"` key
+/// (`<42> === IntStr.new(42, "forty-two")` is `False`) and
+/// [`VALUE_MIXIN_MARKER`]'s fresh anonymous name per `but <non-role>`
+/// application (`(1 but "x") === (1 but "x")` is `False`).
+pub(crate) fn mixin_identity_key(mixins: &std::collections::HashMap<String, Value>) -> String {
+    // Roles in application order (`__mutsu_role_seq__` ascending, name as the
+    // tie-break for a marker that carries no stamp), each with the same
+    // (name, role_id, typeargs) triple `mixin_composition_key` uses.
+    let mut roles: Vec<(i64, String)> = mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        .map(|role_name| {
+            let seq = mixins
+                .get(&format!("__mutsu_role_seq__{role_name}"))
+                .and_then(|v| match v.view() {
+                    ValueView::Int(n) => Some(n),
+                    _ => None,
+                })
+                .unwrap_or(i64::MIN);
+            let role_id = mixins
+                .get(&format!("__mutsu_role_id__{role_name}"))
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            let typeargs = mixins
+                .get(&format!("__mutsu_role_typeargs__{role_name}"))
+                .map(|v| match v.view() {
+                    ValueView::Array(items, _) => items
+                        .items()
+                        .iter()
+                        .map(what_type_name)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    _ => v.to_string_value(),
+                })
+                .unwrap_or_default();
+            (seq, format!("{role_name}\u{0}{role_id}\u{0}{typeargs}"))
+        })
+        .collect();
+    roles.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+    // Every remaining key/value pair, sorted (HashMap order is not stable).
+    let mut rest: Vec<String> = mixins
+        .iter()
+        .filter(|(k, _)| {
+            !k.starts_with("__mutsu_role__")
+                && !k.starts_with("__mutsu_role_seq__")
+                && !k.starts_with("__mutsu_role_id__")
+                && !k.starts_with("__mutsu_role_typeargs__")
+                && !k.starts_with("__mutsu_attr__")
+        })
+        .map(|(k, v)| format!("{k}\u{0}{}", v.to_string_value()))
+        .collect();
+    rest.sort_unstable();
+
+    let roles: Vec<String> = roles.into_iter().map(|(_, part)| part).collect();
+    format!("{}\u{2}{}", roles.join("\u{1}"), rest.join("\u{1}"))
+}
+
 /// Filter a `Mixin` value's `overrides` down to just the composition-
 /// defining markers (`__mutsu_role__*`, `__mutsu_role_id__*`,
 /// `__mutsu_role_typeargs__*`, `__mutsu_role_param__*`) — the subset that
