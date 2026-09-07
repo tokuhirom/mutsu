@@ -1258,6 +1258,29 @@ impl Interpreter {
             if source.with_str(crate::env::is_dynamic_var_name) {
                 continue;
             }
+            // Only a lexical this body actually CAPTURED can be the source of
+            // such a writeback. Both pending lists are process-wide and
+            // retain-on-miss: `pending_caller_var_writeback` keeps a name until
+            // some frame's `code` owns a local slot for it, and a name that no
+            // frame can ever own (the implicit topic `_`, `$/`, `@_`, a package
+            // or enum constant) is therefore retained for the rest of the run.
+            // Without this gate every later closure call re-ran the rejoin for
+            // those stale names, storing the CALLING frame's ambient value
+            // through whatever cell the closure's captured env happened to hold
+            // under that name -- a write the closure never performed.
+            //
+            // The topic is how that bites: a `.map`/`.grep` block's `$_` is the
+            // source element's own container, so a closure created inside the
+            // block (`Proxy.new(FETCH => method () { $v })` in URI::Query)
+            // captures `_` bound to that element cell. Calling it later, from a
+            // frame whose ambient `$_` is undefined, wrote `Any` straight into
+            // the source array element. `data.env` alone cannot tell the two
+            // apart: it is the whole captured enclosing env, not the set of
+            // names this body reads. `free_var_syms` is exactly that set -- the
+            // same gate the per-instance persistence loop below already uses.
+            if !cc.capture_free_var_set().contains(&source) {
+                continue;
+            }
             let Some(updated) = self.env().get_sym(source).cloned() else {
                 continue;
             };

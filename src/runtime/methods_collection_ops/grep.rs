@@ -303,7 +303,7 @@ impl Interpreter {
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            ValueView::Array(items, arr_kind) => {
+            ValueView::Array(items, _arr_kind) => {
                 let (filtered, mutated_items, matched_indices) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
                 // Which source positions matched, so those slots can be shared
@@ -352,11 +352,29 @@ impl Interpreter {
                     promoted[i] = cell.clone();
                     shared_cells.push(cell);
                 }
-                let updated_source = crate::value::Value::array_data_like(&items, promoted);
-                self.overwrite_array_bindings_by_identity(
-                    &items,
-                    Value::array_with_kind(updated_source, arr_kind),
-                );
+                // Publish the promotion by mutating the source `ArrayData` IN
+                // PLACE rather than building a replacement and re-binding every
+                // name that pointed at the old one. Both are visible to every
+                // alias, but the old route reached them through
+                // `overwrite_array_bindings_by_identity`, which walks the
+                // CURRENT frame's `env` — so it only ever found the aliases
+                // that happened to be lexically visible right here, and needed
+                // a `pending_rw_writeback_sources` drain to keep the caller's
+                // local slot from going stale behind it. Writing through the
+                // `Gc` (ADR-0013 §7 made this sound at the primitive) reaches
+                // every alias by construction, needs no drain, and does not
+                // depend on which frame is running — which is what ADR-0058
+                // step 3b needs, since a deferred grep promotes at PULL time,
+                // in a frame where the source's names are long gone.
+                {
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
+                    let slots = data.items_mut();
+                    for (i, v) in promoted.into_iter().enumerate() {
+                        if i < slots.len() {
+                            slots[i] = v;
+                        }
+                    }
+                }
                 // Build the result array from the shared cells (default `:v`
                 // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
                 // `transform_result` from `indices`, which drops the aliasing (a

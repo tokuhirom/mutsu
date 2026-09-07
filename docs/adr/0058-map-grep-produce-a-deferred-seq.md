@@ -592,6 +592,28 @@ different frame. That is also why
 so 3b needs a grep mode on the variant (or a sibling variant) before any of the
 above.
 
+**Prerequisite landed 2026-09-07** (`news/2026-09/grep-promotion-is-published-in-place.md`).
+The concrete blocker was sharper than "the promotion moves to pull time": the
+promotion was published by building a REPLACEMENT `ArrayData` and re-binding it
+with `overwrite_array_bindings_by_identity`, which walks the **current frame's
+`env`**. A deferred grep promotes in a frame where the source's names are gone,
+so that route cannot work at pull time at all -- and it was already silently
+dropping the promotion for any source not lexically visible right there.
+Publishing the promotion by mutating the source `Gc<ArrayData>` in place
+(ADR-0013 §7 made this sound at the primitive) is frame-independent, reaches
+every alias by construction, and drops the `pending_rw_writeback_sources` drain
+the re-binding needed. Making the publication universal cost two follow-on
+fixes, both for pre-existing bugs the old frame-dependent route had merely
+hidden: two decont leaks in `Backtrace`'s frame readers, and -- caught by the
+bundled-library battery gate on `URI mutate.rakutest` -- a closure's frame-exit
+"rejoin an rw-argument writeback to the captured cell" step that fired for any
+name on the *process-wide* retain-on-miss pending list, so a stale `_` entry let
+one closure store the calling frame's ambient topic through the element cell a
+`.map`/`.grep` block had captured. That is now gated on
+`cc.capture_free_var_set()`. With both, `make test` and a full `make roast` are
+unchanged. 3b's remaining work is the grep mode on the variant plus deferring
+the two entry points.
+
 ### 9.3 What DID land from the attempt
 
 Pulling a deferred `MapGrep` left the deferred `MapGrep`s it *produced*
