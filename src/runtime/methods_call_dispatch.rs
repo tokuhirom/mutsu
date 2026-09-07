@@ -1595,6 +1595,11 @@ impl Interpreter {
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
         ) && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
         {
+            // ADR-0070: this block runs in front of the arity cascade and reads
+            // `args` positionally, so an adverb none of these methods accepts
+            // would be spliced in as an element or counted as a positional
+            // (`[1,2,3].pop(:zzz)` died with an arity error; raku pops).
+            let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
             // Check element type constraints from container metadata (e.g., typed attribute arrays)
             if matches!(method, "push" | "append" | "unshift" | "prepend") {
                 self.check_array_value_element_types(&target, &args)?;
@@ -1641,6 +1646,11 @@ impl Interpreter {
         // In Raku, %h.push: (k => v) inserts the pair; if the key exists,
         // it creates an itemized array of both values.
         if matches!(method, "push" | "append") && matches!(target.view(), ValueView::Hash(_)) {
+            // ADR-0070, as in the Array block above: `%h.push(:zzz)` inserted a
+            // `zzz` key where raku's `Hash.push(+new)` swallows the adverb into
+            // `%_` and leaves the hash alone. A *positional* `Pair`
+            // (`%h.push((k => 1))`) carries the other flavour and survives.
+            let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
             // Type check values being pushed against container type metadata
             if let Some(info) = self.container_type_metadata(&target) {
                 let constraint = &info.value_type.clone();
@@ -3337,6 +3347,16 @@ impl Interpreter {
         // for this cascade: if it declines, the original `args` (nameds intact)
         // go on to the by-name dispatchers, the constructors and the user
         // method, none of which may lose a named.
+        // The interpreter-side twin of `try_native_method_raw`'s `base`
+        // interceptor: `.base($radix, $digits, :no-trailing-zeroes)` is a
+        // three-argument call no arity arm matches, so the adverb has to be read
+        // before the cascade or the implicit-`*%_` retry silently drops it.
+        if method == "base"
+            && !bypass_native_fastpath
+            && let Some(result) = crate::builtins::native_base_with_options(&target, &args)
+        {
+            return result;
+        }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);
         let native_result = if bypass_native_fastpath {
@@ -3381,7 +3401,11 @@ impl Interpreter {
             && !bypass_native_fastpath
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
         {
-            return self.dispatch_tail(target, &args);
+            // `dispatch_tail` reads `args[0]` as the tail COUNT, so it needs the
+            // same named-blindness the arity cascade below gets: `tail` is
+            // declared as accepting no adverb, and `(1,2,3).tail(:zzz)` used to
+            // die "Cannot use 'zzz\tTrue' as a tail count" where raku answers 3.
+            return self.dispatch_tail(target, cascade_args);
         }
         // `.head(&callable)` / `.head(*)` — WhateverCode/Whatever argument. The
         // native fast path only handles plain numeric counts; resolve the

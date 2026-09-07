@@ -476,6 +476,23 @@ impl Interpreter {
         if !args.is_empty() {
             return None;
         }
+        // The same cycle, on the receiver side. `call_function("elems", ..)`
+        // reaches `builtin_elems`, which is DEFINED as `$x.elems`, so the
+        // delegation below only terminates when that inner call is served by
+        // the arity cascade -- and `native_fastpath_receiver_state_guard`
+        // deliberately diverts EVERY `Instance` receiver's `.elems` away from
+        // that cascade (so a `Supply` reaches the arm above). For any other
+        // instance the bounce therefore came straight back here and recursed
+        // until the stack overflowed: `elems(Date.new(2026,1,1))`,
+        // `elems(C.new)` for a plain user class, and -- via the implicit-`*%_`
+        // retry that re-enters this chain with the adverb removed --
+        // `Blob.new(1,2,3).elems(:adverb)`. Answer an instance from the native
+        // 0-arg layer directly, which is where the bounce was trying to arrive
+        // (a buf-backed class reports its length, a `Stash` its symbol count,
+        // anything else raku's `Any.elems` of 1).
+        if matches!(target.view(), ValueView::Instance { .. }) {
+            return crate::builtins::native_method_0arg(&target, Symbol::intern("elems"));
+        }
         Some(self.call_function("elems", vec![target]))
     }
 

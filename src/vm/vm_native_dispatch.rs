@@ -489,6 +489,15 @@ impl Interpreter {
         {
             return Some(result);
         }
+        // `.base($radix, $digits, :no-trailing-zeroes)` — the one adverb `base`
+        // declares. It has to be read in front of the cascade: a three-argument
+        // call matches no arity arm, and the implicit-`*%_` retry then drops the
+        // adverb before the 2-ary arm sees it.
+        if method_name == "base"
+            && let Some(result) = crate::builtins::native_base_with_options(target, args)
+        {
+            return Some(result);
+        }
         // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The

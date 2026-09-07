@@ -164,6 +164,83 @@ pub(crate) fn rat_to_base(n: i64, d: i64, radix: u32, digits_mode: BaseDigits) -
     result
 }
 
+/// `.base($radix, $digits?, :no-trailing-zeroes)`.
+///
+/// The adverb is Rakudo's, and it is declared on **`Rational.base` only**:
+/// `255.base(16, 4, :no-trailing-zeroes)` is still `"FF.0000"` and
+/// `2.5e0.base(10, 5, :no-trailing-zeroes)` still `"2.50000"`, while
+/// `0.5.base(10, 5, :no-trailing-zeroes)` is `"0.5"` and
+/// `1.0.base(10, 5, :no-trailing-zeroes)` is `"1"` -- when every fractional
+/// digit goes, so does the radix point (all measured against `raku`).
+///
+/// This is an interceptor, in front of the arity cascade, for the reason the
+/// other `native_*_with_options` helpers are: the cascade picks its arm by
+/// argument count, so the three-argument call never reaches a 2-ary `base`.
+/// Returns `None` when the adverb is absent, so the ordinary forms keep their
+/// existing arms.
+pub(crate) fn native_base_with_options(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let mut no_trailing_zeroes = None;
+    let mut positional: Vec<&Value> = Vec::with_capacity(args.len());
+    for arg in args {
+        if arg.is_string_pair_value()
+            && let ValueView::Pair(key, value) = arg.view()
+            && key.as_str() == "no-trailing-zeroes"
+        {
+            no_trailing_zeroes = Some(value.truthy());
+            continue;
+        }
+        positional.push(arg);
+    }
+    let strip = no_trailing_zeroes?;
+    let radix = parse_radix_checked(positional.first().copied()?)?;
+    let radix = match radix {
+        Ok(r) => r,
+        Err(e) => return Some(Err(e)),
+    };
+    let digits_mode = match positional.get(1).copied().map(Value::view) {
+        None => BaseDigits::Auto,
+        Some(ValueView::Int(d)) if d >= 0 => BaseDigits::Fixed(d as u32),
+        Some(ValueView::Whatever) => BaseDigits::Whatever,
+        Some(_) => return None,
+    };
+    if positional.len() > 2 {
+        return None;
+    }
+    // Only a Rational honours the adverb; everything else keeps the plain
+    // answer, which is what the ordinary arms already produce.
+    let (n, d, rational) = match target.view() {
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => (n, d, true),
+        ValueView::Int(i) => (i, 1, false),
+        ValueView::Num(f) => {
+            let (n, d) = f64_to_rat(f);
+            (n, d, false)
+        }
+        _ => return None,
+    };
+    let rendered = rat_to_base(n, d, radix, digits_mode);
+    if !(strip && rational) {
+        return Some(Ok(Value::str(rendered)));
+    }
+    Some(Ok(Value::str(strip_trailing_base_zeroes(&rendered))))
+}
+
+/// Drop the trailing zero digits of a base-rendered fraction, and the radix
+/// point with them when nothing is left after it.
+fn strip_trailing_base_zeroes(rendered: &str) -> String {
+    let Some(point) = rendered.find('.') else {
+        return rendered.to_string();
+    };
+    let trimmed = rendered[point + 1..].trim_end_matches('0');
+    if trimmed.is_empty() {
+        rendered[..point].to_string()
+    } else {
+        format!("{}.{}", &rendered[..point], trimmed)
+    }
+}
+
 fn int_to_base(mut n: u64, radix: u32) -> String {
     if n == 0 {
         return "0".to_string();

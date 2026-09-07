@@ -12,11 +12,21 @@
 # The output is the authoritative accepted-named set for a method: a Raku method
 # carries an implicit `*%_`, so a named argument that is not in this set cannot
 # change the method's answer, and mutsu's builtin dispatch may therefore drop it
-# before choosing an arity. `*%_` / `*%a` slurpies are reported as `**SLURPY**`
-# and are NOT accepted names -- but note that a routine which validates its own
-# `%_` (`grep`, `first`) accepts names that no signature mentions, so a method
-# whose only entry is `**SLURPY**` still needs its adverbs confirmed by hand
-# against `raku-doc/doc/Type/`.
+# before choosing an arity.
+#
+# A named SLURPY is reported separately, by name, because the name is what tells
+# the two cases apart:
+#
+#   * `(+*%_)` -- only the implicit slurpy every method carries. The explicit
+#     named set is then very likely complete.
+#   * `(+*%options)`, `(+*%a)`, ... -- the routine DECLARED a named slurpy, which
+#     means it reads its adverbs out of it (`subst`'s `:g`/`:x`/`:nth`,
+#     `first`'s validation). The explicit set is a LOWER BOUND; do not declare
+#     such a method without establishing its real set by hand.
+#
+# The distinction is necessary but NOT sufficient: `Str.trans` declares nothing
+# but the implicit `*%_` and still reads `:d`/`:s`/`:c` out of it. Confirm any
+# `--` row behaviourally (and against `raku-doc/doc/Type/`) before declaring it.
 
 my @OWNERS = <Mu Any Cool Str Int Num Rat Complex List Array Seq Hash Map Range
               Pair Set Bag Mix SetHash BagHash MixHash Blob Buf Match Date
@@ -29,6 +39,10 @@ my @DEFAULT-METHODS = <
     classify categorize first grep map split comb lines batch Str contains
     starts-with ends-with substr-eq subst trans match min max unique squish
     sort reduce produce keys values kv pairs list Array
+    add remove grab tail tree Rat FatRat Int Bool Numeric atan2 abs gist raku
+    WHICH arity count signature of lazy link sibling yyyy-mm-dd mm-dd-yyyy
+    dd-mm-yyyy push pop shift unshift append prepend splice
+    classify-list categorize-list
 >;
 
 sub named-params($m) {
@@ -37,7 +51,7 @@ sub named-params($m) {
         for $c.signature.params -> $p {
             next unless $p.named;
             if $p.slurpy {
-                %seen{'**SLURPY**'} = True;
+                %seen{'**SLURPY:' ~ ($p.name // '(anon)') ~ '**'} = True;
             } else {
                 %seen{$_} = True for $p.named_names;
             }
@@ -54,14 +68,17 @@ for @methods -> $name {
     for @OWNERS -> $owner {
         my $type = ::($owner);
         next if $type ~~ Failure;
-        my $m = $type.^lookup($name);
-        next without $m;
-        my @n = named-params($m);
+        # `^lookup` can answer an NQPRoutine, which has no `.defined`.
+        my $m = try $type.^lookup($name);
+        next unless (try so $m) // False;
+        my @n = try named-params($m) // ();
         next unless @n;
         @owners-with.push: $owner;
         %union{$_} = True for @n;
     }
-    my @accepted = %union.keys.grep({ $_ ne '**SLURPY**' }).sort;
-    my $slurpy = %union<**SLURPY**> ?? ' (+*%_)' !! '';
+    my @accepted = %union.keys.grep({ !.starts-with('**SLURPY:') }).sort;
+    my @slurpies = %union.keys.grep({ .starts-with('**SLURPY:') })
+                              .map({ .substr(9, *-2) }).sort;
+    my $slurpy = @slurpies ?? " (+*{@slurpies.join(' +*')})" !! '';
     printf "%-14s %s%s\n", $name, (@accepted ?? @accepted.join(' ') !! '--'), $slurpy;
 }

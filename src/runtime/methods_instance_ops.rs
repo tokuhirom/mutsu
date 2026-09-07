@@ -2454,6 +2454,18 @@ impl Interpreter {
                 // Method calls on callables compose by applying the method to the
                 // callable's return value, e.g. `(*-*).abs`.
                 if matches!(target.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
+                    // ADR-0070: composing is the LAST resort, so an adverb the
+                    // method does not accept must not be what pushes the call
+                    // into it. `{ $_ }.arity(:zzz)` answered a
+                    // `<composed-method:arity>` Sub (the `args.is_empty()` guard
+                    // on the real `.arity` arm had already declined) where raku
+                    // answers 0. Drop the undeclared nameds and re-dispatch;
+                    // `strip_undeclared_nameds` answers `Some` only when it
+                    // actually removed something, so the retry cannot loop.
+                    if let Some(stripped) = crate::builtins::strip_undeclared_nameds(method, &args)
+                    {
+                        return self.call_method_with_values(target, method, stripped);
+                    }
                     use crate::ast::{Expr, Stmt};
                     use std::sync::atomic::{AtomicU64, Ordering};
 

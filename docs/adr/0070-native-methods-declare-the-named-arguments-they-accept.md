@@ -221,7 +221,36 @@ ran.
   `scripts/native-method-adverb-survey.raku`, and
   `t/native-method-accepted-nameds.t` (66 assertions, green under raku and
   mutsu).
-- **Slice 2 (open).** Survey and declare the remaining residue — `add` /
-  `remove` / `grab` on the mutable QuantHashes, and the methods whose adverb set
-  Rakudo answers only through `%_` validation. Recorded in the narrowed
-  `todo/deep/` file.
+- **Slice 2 (implemented 2026-09-07).** 35 more `&[]` rows plus six with a
+  non-empty accepted set, `native_base_with_options` (the `base`
+  `:no-trailing-zeroes` adverb this ADR listed as declared-but-unimplemented),
+  and `scripts/native-method-adverb-sweep.raku` — the sweep this ADR describes,
+  now a committed script that runs under any interpreter. See
+  `news/2026-09/native-method-accepted-nameds-slice-2.md`.
+
+  Slice 2 corrected two of this ADR's own claims, both by measurement:
+
+  1. **"the adverb reaches the implementation" for `base` is false.**
+     `.base($radix, $digits, :no-trailing-zeroes)` is a three-argument call that
+     matches no arity arm, so the implicit-`*%_` retry dropped the adverb before
+     the 2-ary arm saw it. It needed an interceptor, not just a row.
+  2. **The builtin layer has seven entries, not three.** The Decision section
+     lists the arity cascade, its interpreter twin and
+     `dispatch_method_by_name_1/2/3`. Six further sites dispatch a builtin
+     *before* the cascade and had to be routed through the same declaration:
+     `vm_baghash_mutators::apply_baghash_mutator`, the `tail` interceptor, the
+     by-value array/hash mutator blocks, `exec_call_method_mut_op_impl` +
+     `call_method_mut_with_values`, `call_native_instance_method` +
+     `try_io_path_lexical`, and the compose-a-method-over-a-callable last
+     resort. The compiler's `ArrayPush` fast path also had to decline a named
+     call site. Each is restricted to a receiver that cannot be a user class,
+     so the "a user method still sees its own nameds" invariant holds.
+
+  It also refuted the tempting shortcut that a method whose only named slurpy is
+  the implicit `%_` accepts nothing: `Str.trans` declares only `*%_` and reads
+  `:d`/`:s`/`:c` out of it. The survey now reports each slurpy **by name**
+  (`(+*%_)` vs `(+*%options)`), which makes the *declared*-slurpy readers
+  visible, but a `--` row still has to be confirmed behaviourally.
+
+- **Slice 3 (open).** `subst` / `trans`, `new`, and the plain-call divergences
+  the sweep surfaces. Recorded in the narrowed `todo/deep/` file.

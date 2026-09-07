@@ -104,7 +104,7 @@ pub(crate) use functions::native_function;
 pub(crate) use functions::{deitemize_flat_operand, flat_val};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
-    native_contains_with_options, native_method_1arg, native_method_2arg,
+    native_base_with_options, native_contains_with_options, native_method_1arg, native_method_2arg,
     native_prefix_suffix_with_options, native_substr_eq_with_options, read_f32_endian,
     read_f64_endian, read_int_value,
 };

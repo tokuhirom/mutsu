@@ -684,6 +684,19 @@ impl Interpreter {
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
         let target = self.reify_or_consume_seq_target(target, method.as_str())?;
+        // ADR-0070 at the mutable OPCODE entry. The push/append/unshift/prepend
+        // branches below (and the `call_method_mut_with_values` arms they lead
+        // to) read `args` positionally, so an adverb none of them declares was
+        // stored as an ELEMENT: `@a.push(:zzz)` left `[1, 2, 3, :zzz]` where
+        // raku's implicit `*%_` swallows it and the array is untouched.
+        // Restricted to a native container receiver -- an `Instance`/`Package`
+        // may be a user class whose own `push` declares a named parameter, and a
+        // `Mixin` may carry a role method, so neither is touched here.
+        let args = if matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_)) {
+            crate::builtins::strip_undeclared_nameds(&method, &args).unwrap_or(args)
+        } else {
+            args
+        };
         // ADR-0058: a mutating method reads its ARGUMENTS' elements through
         // pure code (`@a.splice(1, 1, (7,8).map({...}))` flattens the Seq into
         // the array), so a still-deferred `.map` argument has to run first.
