@@ -310,6 +310,31 @@ impl Compiler {
                             slot: decl_slot,
                         });
                     }
+                    // Every OTHER named trait, for the same reason: a CONTAINER
+                    // trait (`is SetHash`, `is BagHash`, `is Buf`, a custom
+                    // container class) replaces the declared container, so a
+                    // declaration whose value this expression returns -- the tail
+                    // statement of a `do` block, most visibly -- has to have it
+                    // applied before the read-back below, or the block's result is
+                    // the un-coerced `Hash`. Traits taking an argument are left to
+                    // the statement path: their argument would have to be compiled
+                    // onto the stack here, ahead of the value this expression is
+                    // building.
+                    for (trait_name, trait_arg) in custom_traits {
+                        if trait_name.starts_with("__")
+                            || trait_name == "default"
+                            || trait_arg.is_some()
+                        {
+                            continue;
+                        }
+                        let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
+                        self.code.emit(OpCode::ApplyVarTrait {
+                            name_idx,
+                            trait_name_idx,
+                            has_arg: false,
+                            slot: decl_slot,
+                        });
+                    }
                     // Tag the container's element-type metadata so `.of` survives
                     // (and the missing-element default is the element type) when a
                     // typed array/hash is declared in EXPRESSION position
@@ -603,11 +628,22 @@ impl Compiler {
                 // returns its assigned value.
                 let has_default_trait = custom_traits.iter().any(|(t, _)| t == "default");
                 let is_nil_init = matches!(expr, Expr::Literal(lit) if lit.is_nil());
-                if has_default_trait
-                    && is_nil_init
-                    && !name.starts_with('@')
-                    && !name.starts_with('%')
-                    && name != "__ANON_STATE__"
+                // A CONTAINER trait (`is SetHash`, `is BagHash`, `is MixHash`,
+                // `is Buf`, a custom container class) REPLACES the declared
+                // container, so the value this expression pushed before the
+                // trait ran is stale: `(my %q is SetHash).^name` answered `Hash`
+                // even though `my %q is SetHash; %q.^name` answered `SetHash`.
+                // Reading the variable back after the trait is what the scalar
+                // `is default(...)` case below already does; an `@`/`%`
+                // declaration needs it for the same reason.
+                let has_named_trait = custom_traits
+                    .iter()
+                    .any(|(t, _)| !t.starts_with("__") && t != "default");
+                let sigil_container = name.starts_with('@') || name.starts_with('%');
+                if name != "__ANON_STATE__"
+                    && name.len() > 1
+                    && ((has_default_trait && is_nil_init && !sigil_container)
+                        || (has_named_trait && sigil_container))
                 {
                     self.code.emit(OpCode::Pop);
                     self.emit_get_named_var(name);
