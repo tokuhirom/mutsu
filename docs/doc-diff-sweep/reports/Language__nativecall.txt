@@ -1,78 +1,8 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=1  mutsu-crash=4  no-oracle=34  raku-drift=0  skipped-marker=25  skipped-nondet=2
+# stats: match=4  mismatch=0  mutsu-crash=1  no-oracle=34  raku-drift=0  skipped-marker=25  skipped-nondet=2
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/nativecall.rakudoc:377
---- program ---
-use NativeCall;
-
-my $native-array = CArray[int32].new( 1, 2, 3, 4, 5 );
-say 'Number of elements: ' ~ $native-array.elems;
-
-# walk the array
-for $native-array.list -> $elem {
-    say "Current element is: $elem";
-}
-
-# get every element by its index-based position
-for 0..$native-array.elems - 1 -> $position {
-    say "Element at position $position is "
-          ~ $native-array[ $position ];
-}
---- raku stdout ---
-Number of elements: 5
-Current element is: 1
-Current element is: 2
-Current element is: 3
-Current element is: 4
-Current element is: 5
-Element at position 0 is 1
-Element at position 1 is 2
-Element at position 2 is 3
-Element at position 3 is 4
-Element at position 4 is 5
---- mutsu stdout (exit 0) ---
-Number of elements: 1
-Current element is: 
-Element at position 0 is
-
-==============================================================================
-[2] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:482
---- program ---
-use NativeCall;
-
-class MyUnion is repr('CUnion') {
-    has int32 $.flags32;
-    has int64 $.flags64;
-}
-
-say nativesizeof(MyUnion.new);  # OUTPUT: «8␤»
-                                # ie. max(sizeof(MyUnion.flags32), sizeof(MyUnion.flags64))
---- raku stdout ---
-8
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Unknown function: nativesizeof
-  in block <unit> at tmp/ddh/prog-3344813.raku line 8
-
-==============================================================================
-[3] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:598
---- program ---
-use NativeCall;
-sub strdup(Str $s --> Pointer[Str]) is native { * }
-my Pointer[Str] $p = strdup("Success!");
-say $p.deref;
---- raku stdout ---
-Success!
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Type check failed for return value; expected Pointer[Str] but got Whatever (*)
-  in block <unit> at tmp/ddh/prog-3344813.raku line 3
-
-==============================================================================
-[4] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:1186
+[1] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:1186
 --- program ---
 #!/usr/bin/env raku
 
@@ -209,94 +139,48 @@ sub MAIN() {
 return val: 0
 Name: google.com
 AF_INET SOCK_STREAM
-142.251.23.102
+142.251.24.113
 AF_INET SOCK_DGRAM
-142.251.23.102
+142.251.24.113
 AF_INET SOCK_RAW
-142.251.23.102
+142.251.24.113
 AF_INET SOCK_STREAM
-142.251.23.101
+142.251.24.139
 AF_INET SOCK_DGRAM
-142.251.23.101
+142.251.24.139
 AF_INET SOCK_RAW
-142.251.23.101
+142.251.24.139
 AF_INET SOCK_STREAM
-142.251.23.113
+142.251.24.138
 AF_INET SOCK_DGRAM
-142.251.23.113
+142.251.24.138
 AF_INET SOCK_RAW
-142.251.23.113
+142.251.24.138
 AF_INET SOCK_STREAM
-142.251.23.100
+142.251.24.101
 AF_INET SOCK_DGRAM
-142.251.23.100
+142.251.24.101
 AF_INET SOCK_RAW
-142.251.23.100
+142.251.24.101
 AF_INET SOCK_STREAM
-142.251.23.139
+142.251.24.102
 AF_INET SOCK_DGRAM
-142.251.23.139
+142.251.24.102
 AF_INET SOCK_RAW
-142.251.23.139
+142.251.24.102
 AF_INET SOCK_STREAM
-142.251.23.138
+142.251.24.100
 AF_INET SOCK_DGRAM
-142.251.23.138
+142.251.24.100
 AF_INET SOCK_RAW
-142.251.23.138
+142.251.24.100
 AF_INET6 SOCK_STREAM
-2404:6800:400b:c00c::8a
-AF_INET6 SOCK_DGRAM
-2404:6800:400b:c00c::8a
-AF_INET6 SOCK_RAW
-2404:6800:400b:c00c::8a
-AF_INET6 SOCK_STREAM
-2404:6800:400b:c00c::66
-AF_INET6 SOCK_DGRAM
-2404:6800:400b:c00c::66
-AF_INET6 SOCK_RAW
-2404:6800:400b:c00c::66
-AF_INET6 SOCK_STREAM
-2404:6800:400b:c00c::65
-AF_INET6 SOCK_DGRAM
-2404:6800:400b:c00c::65
-AF_INET6 SOCK_RAW
-2404:6800:400b:c00c::65
-AF_INET6 SOCK_STREAM
-2404:6800:400b:c00c::8b
-AF_INET6 SOCK_DGRAM
-2404:6800:400b:c00c::8b
-AF_INET6 SOCK_RAW
-2404:6800:400b:c00c::8b
+2404:6800:400b:c005::66
+... [22 more lines truncated by the commit step; re-run the sweep to see them in full]
 --- mutsu stdout (exit 1) ---
-
+return val: 0
 --- mutsu stderr ---
-Unknown function: AddrInfo-Family
-  in block <unit> at tmp/ddh/prog-3344813.raku line 9
+No value '' found in enum AddrInfo-Family
+  in sub MAIN at tmp/ddh/prog-1343706.raku line 124
+  in block <unit> at tmp/ddh/prog-1343706.raku line 114
 
-==============================================================================
-[5] mutsu-error  raku-doc/doc/Language/nativecall.rakudoc:870
---- program ---
-use NativeCall;
-my class PwStruct is repr('CStruct') {
-    has Str $.pw_name;
-    has Str $.pw_passwd;
-    has uint32 $.pw_uid;
-    has uint32 $.pw_gid;
-    has Str $.pw_gecos;
-    has Str $.pw_dir;
-    has Str $.pw_shell;
-}
-sub getuid()              returns uint32   is native { * };
-sub getpwuid(uint32 $uid) returns PwStruct is native { * };
-
-say getpwuid(getuid()).pw_dir;
---- raku stdout ---
-/home/tokuhirom
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Type check failed for return value; expected PwStruct but got Whatever (*)
-  in block <unit> at tmp/ddh/prog-3344813.raku line 14
-
-... [report truncated at 300 lines — 301 total; a doc example produced a very large diff (usually a filesystem listing). Re-run the harness on this file for the full output.]

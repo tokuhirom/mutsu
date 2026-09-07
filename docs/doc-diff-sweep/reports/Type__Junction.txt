@@ -1,18 +1,8 @@
 # doc-diff-harness report
-# stats: match=17  mismatch=2  mutsu-crash=0  no-oracle=12  raku-drift=3  skipped-marker=0  skipped-nondet=0
+# stats: match=18  mismatch=1  mutsu-crash=0  no-oracle=12  raku-drift=3  skipped-marker=0  skipped-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Junction.rakudoc:266
---- program ---
-my $n = Junction.new( "one", 1..6 );
-say $n.Bool;                         # OUTPUT: «False␤»
---- raku stdout ---
-False
---- mutsu stdout (exit 0) ---
-True
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:325
+[1] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:325
 --- program ---
 my $odd  = 1|3|5;
 my $even = 2|4|6;
@@ -38,7 +28,7 @@ Found 03
 Found 11
 
 ==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:64
+[2] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:64
 --- program ---
 my %h = :42foo, :70bar;
 say    %h{one <foo meow>}:exists; # OUTPUT: «one(True, False)␤»
@@ -57,7 +47,7 @@ False
 False
 
 ==============================================================================
-[4] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:164
+[3] raku-drift-from-doc  raku-doc/doc/Type/Junction.rakudoc:164
 --- program ---
 my $j = +any "not a number", "42", "2.1";
 my @list = gather for $j -> $e {
@@ -71,7 +61,7 @@ my @list = gather for $j -> $e {
 [any(Failure(), 42, 2.1)]
 
 ==============================================================================
-[5] output-mismatch  raku-doc/doc/Type/Junction.rakudoc:205
+[4] output-mismatch  raku-doc/doc/Type/Junction.rakudoc:205
 --- program ---
 sub calc ($_) { die when 13 }
 my $j = any 1..42;

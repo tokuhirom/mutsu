@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=24  mismatch=1  mutsu-crash=0  no-oracle=22  raku-drift=0  skipped-marker=1  skipped-nondet=0
+# stats: match=24  mismatch=0  mutsu-crash=1  no-oracle=22  raku-drift=0  skipped-marker=1  skipped-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Pair.rakudoc:61
+[1] mutsu-error  raku-doc/doc/Type/Pair.rakudoc:61
 --- program ---
 sub s(*%h){ say %h.raku };
 s :a1:b2;
@@ -19,8 +19,8 @@ say $manna.^name;
 {:a1, :b2}
 Pair
 List
---- mutsu stdout (exit 0) ---
-{:a1(Bool::True), :b2(Bool::True)}
-Pair
-List
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Runtime error: Unsupported regex adverb :a1
 

@@ -1,0 +1,27 @@
+# doc-diff-harness report
+# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=1  raku-drift=0  skipped-marker=1  skipped-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/IO/Path/Parts.rakudoc:71
+--- program ---
+my $parts = IO::Path::Parts.new('C:', '/some/dir', 'foo.txt');
+say $parts<volume>;      # OUTPUT: «C:␤»
+say $parts[0];           # OUTPUT: «volume => C:␤»
+say $parts[0].^name;     # OUTPUT: «Pair␤»
+.say for $parts[];
+# OUTPUT: «volume => C:␤dirname => /some/dir␤basename => foo.txt␤»
+--- raku stdout ---
+C:
+volume => C:
+Pair
+volume => C:
+dirname => /some/dir
+basename => foo.txt
+--- mutsu stdout (exit 0) ---
+C:
+
+Pair
+volume => C:
+dirname => /some/dir
+basename => foo.txt
+

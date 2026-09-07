@@ -14,7 +14,13 @@ far (re-survey every ticket, re-score, rewrite).
 
 Surveyed at `a57ab3eaf`: **58 files** — 24 `deep/`, 19 `tickets/`, 15 `perf/`
 (was 67: 30/22/15). The regen itself then retired one closed ticket to `news/`
-and filed three new ones, so the tree stands at **60** — 24/21/15.
+and filed three new ones; a follow-on doc-diff re-sweep filed four more, while
+PR #7506 closed two rows mid-flight. The
+tree stands at **62** — 24/23/15.
+
+**One of those four is a Tier S regression that landed on `main` the same day**
+— see [lazy-seq-argument-vanishes-into-a-user-slurpy](tickets/lazy-seq-argument-vanishes-into-a-user-slurpy.md),
+bisected to PR #7501, CI green.
 
 **48 PRs merged (#7454-#7504)** in the ~20 hours since the last regen, closing
 **20 `todo/` files** (6 `deep/`, 14 `tickets/`) and filing **11 new** ones (all
@@ -103,7 +109,7 @@ first probe tried was a near-miss of the one that fails.
 
 ---
 
-## Tier S — Soundness (silent data loss)
+## Tier S — Soundness (silent data loss, hangs)
 
 | Ticket | Breadth | Effort | Verified 2026-09-07b |
 |---|---|---|---|
@@ -111,6 +117,8 @@ first probe tried was a near-miss of the one that fails.
 | [decimal-literal-with-big-integer-part-loses-it](tickets/decimal-literal-with-big-integer-part-loses-it.md) | every decimal literal whose integer part exceeds `i64::MAX` | **S** | **Confirmed, unchanged**: `1000000000000000000000000000000.5` evaluates to **`0.5`**, silently; `12345678901234567890.5` likewise. Threshold is exactly `i64::MAX` (`…807.5` correct, `…808.5` wrong). One `unwrap_or(0)` at `src/parser/primary/number.rs:473` swallows the `parse::<i64>()` failure that was the only signal selecting the already-correct BigInt arm. Both siblings are clean — the exponent form and the pure-integer form both agree with raku — so the blast radius is that one branch. **Still the cheapest Tier S row this file has ever carried.** |
 | [short-rhs-slice-assign-broadcasts-instead-of-padding](tickets/short-rhs-slice-assign-broadcasts-instead-of-padding.md) | every slice assignment whose RHS is shorter than the slice | M | **NEW, confirmed, and it fabricates values that were never on the RHS**: `my %h; %h{(1, 2)} = "z"` writes `"z"` into key `2`; raku writes `Any`. It is a clamped index, not a scalar broadcast — `%j{(1,2,3)} = "z","y"` gives `3 => "z"` (the *last* value repeats). The positional twin drops to `Nil` instead of `Any` (`@a[0,1,2] = "z",` → `["z", Nil, Nil]`), and a typed target must pad with that type's undefined value: `my Int @c; @c[0,1,2] = 5,` → mutsu `Array[Int].new(5, Nil, Nil)`, raku `(5, Int, Int)`. Control holds (RHS longer than the slice truncates correctly on both). Both halves want `Interpreter::unassigned_lexical_value`; the site is the slice arm of `src/vm/vm_var_assign_index_named.rs`. |
 | [is-type-capture-cell-exclusion-is-by-name-across-the-frame](tickets/is-type-capture-cell-exclusion-is-by-name-across-the-frame.md) | a mutating closure capture of any `%h`/`@a` whose *name* is used with `is <ContainerType>` anywhere in the compilation unit | M | **NEW, confirmed — but ONLY with the recorded repro's two blocks REVERSED.** As written in the file it now answers `4` on both; put the `my %h is BagHash` block *first* and mutsu answers **`2`** against raku's `4` — the closure's `%h<d> = 4` lands in the callee's own `%h`, silently. That declaration order now matters is itself an unexplained lead worth chasing. The mechanism is intact: the `trait_applied` `HashSet<Symbol>` scan over `OpCode::ApplyVarTrait` (`src/opcode.rs:7243`) still subtracts by bare name across the whole frame, and it feeds `needs_cell_unvouched_containers`. The load-bearing side still works (`my %g2 is BagHash = q => 1, r => 2` → `2` on both), which is why the naive removal is not the fix. **Update the file with the reversed-order repro before anyone re-tests it.** |
+| [lazy-seq-argument-vanishes-into-a-user-slurpy](tickets/lazy-seq-argument-vanishes-into-a-user-slurpy.md) | every lazy `Seq` passed to a user `*@a` slurpy | M | **NEW, and the `.grep` face is a REGRESSION on `main`.** `sub f(*@a) {…}; f((1..3).grep(*>0))` binds **0** elements where raku binds 3 — the arguments silently vanish. Bisected by building three commits: `f62654e3d` **3**, `2c7fc1dde` (#7481) **3**, `200923834` (#7496) **3**, **`182178e6b` (#7501 `adr0058-step3b-grep-defer`) 0**, `dccfd1737` 0. CI was green. The `.map` (`[]`), `gather` (`1`) and sequence-operator (`1`) faces are **not** regressions — they answer wrongly at `f62654e3d` too. The discriminator is laziness, not slurpiness: an **eager** `.Seq`, a `List`, a `Range` and a literal list all bind 3, and a non-slurpy `@a` receives the Seq intact. |
+| [array-slice-with-a-runtime-empty-reversed-range-hangs](tickets/array-slice-with-a-runtime-empty-reversed-range-hangs.md) | any `@a[0 .. $n]` whose endpoint is a runtime-negative variable | M | **NEW, and it is a HANG, not a wrong answer**: `my @el = (4,); my $e = -1; @el[0 .. $e]` never terminates (killed at `timeout 10`); raku answers `()`. The Range itself is correct on both (`(0..$e).elems` is 0), and the *literal* `@el[0 .. -1]` is rejected by both — which is why it went unnoticed. A process-killing bug on the `0 .. $n-1` idiom. |
 | [array-subclass-assignment-in-expression-position](tickets/array-subclass-assignment-in-expression-position.md) | `is Array` subclass instances crossing an assignment | M | **NEW, confirmed — and its stated CONTROL is broken, which is the bigger half.** Headline: `my @a := SA.new(3,2,1,4); (my @b = @a).elems` → mutsu `1`, raku `4`. But the row the file says must stay one element is wrong in *statement* position: `my $c = SA.new(3,2,1,4); my @e; @e = $c` → mutsu `4` / `[3, 2, 1, 4]`, raku `1` / `[[3, 2, 1, 4],]`. In value position that same row is correct on both. So the framing is not "value position is missing the rule" but **"the two paths disagree in both directions"**: `set_local_*` (`src/vm/vm_var_assign_set_local.rs`) decomposes an `is Array` subclass even when it arrives itemized through a `$`. Route both through one itemization-aware helper and add the `@e = $c` row to `t/array-subclass-iterator-override.t`, which does not pin it. |
 
 **Two more files carry S-grade rows inside them** and are ranked lower only
@@ -137,7 +145,16 @@ Housekeeping and are **not** re-listed in the tables below.
 |---|---|---|
 | [global-match-scan-enumerates-every-end-at-every-start](tickets/global-match-scan-enumerates-every-end-at-every-start.md) | B1, **M** | **Confirmed**: a code block inside `m:g/…/` runs **12** times against raku's 4; inside `.subst`, 2 against 1. `src/runtime/regex/regex_match_find.rs:287` still does `starts.extend(0..=orig_chars.len())` (and `:258` for the stripped variant). Broad because it is on every `:g` scan, `subst`, `comb` and `split`, and the sibling A17 pin shows a `die` in such a block is the severity ceiling. **The file's own open question is the right first step and is still unanswered**: is the `subst` row two starts, or twice at one start? Answer that before designing; then enumerate which callers actually want overlapping ends. |
 
-### Narrow correctness, diagnostics, permissiveness (13)
+### Narrow correctness, diagnostics, permissiveness (11)
+
+> **Two rows that were in this table when it was written are already gone.**
+> `anon-role-mixin-has-no-order-and-collapses` and
+> `array-and-hash-which-collides-on-a-reused-address` were fixed by PR #7506
+> (`f6726723f`, `5ae234f6f`), which merged between the survey commit
+> (`a57ab3eaf`) and this file landing — verified fixed here
+> (`((1 but "x") but A).^name` → `Int+{<anon|1>}+{A}` on both;
+> `[1,2].WHICH eq [3,4,5].WHICH` → `False` on both). This is the routing hazard
+> the previous regen named, happening again inside a single session.
 
 | Ticket | Tier | Note (verified 2026-09-07b) |
 |---|---|---|
@@ -146,12 +163,10 @@ Housekeeping and are **not** re-listed in the tables below.
 | [regex-str-should-warn-and-return-empty](tickets/regex-str-should-warn-and-return-empty.md) | N, **S** | **NEW, confirmed**: `(/a/).Str.raku` → mutsu `"/a/"`, raku warns `Regex object coerced to string (please use .gist or .raku to do that)` and yields `""`. It also produces a **wrong answer**, not just a missing warning: `for (/a/,) { say ($_ ~~ $_).raku }` → mutsu `Match.new(…)`, raku `Nil`. Split the two consumers of one stringification: `.gist`/`.raku` legitimately show source text and must keep doing so; `.Str` and string context must warn to stderr with rakudo's wording (`quietly`-suppressible) and return `""`. |
 | [mro-roles-adverb-lists-roles-in-declaration-order](tickets/mro-roles-adverb-lists-roles-in-declaration-order.md) | N, **S** | **NEW, confirmed — and the file's premise about `.^roles` is wrong.** `K2.^mro(:roles)` → mutsu `K2,R2,R3,Any,Mu`, raku `K2,R3,R2,Any,Mu`. The file implies `.^roles` is already correct; it is **not** — `K2.^roles` is mutsu `R2,R3` against raku `R3,R2`. That is good news: one ordering bug with two observables, fixable once at the registration order or a shared reversal. Keep the file's caution — measure `class K does R2 does R3` where both define the same method before reversing `parents`, since rakudo refuses that composition and the observable is an ambiguity error, not a winner. |
 | [an-undefined-typed-state-scalar-reads-as-nil](tickets/an-undefined-typed-state-scalar-reads-as-nil.md) | N, **S** | **NEW, confirmed**: `sub t() { state Int $u; $u.^name }` → mutsu `Nil` twice, raku `Int` twice. Controls hold (`my Int $z` → `Int`; `state $s` → `Any`; `state Int $x = 0` → `0`), and they are exactly the rows the diagnosis predicts stay correct: `SetVarType`'s `typed_scalar_nil_seed_value` seed is overwritten by the following `StateVarInit`. Reorder the seed after `StateVarInit` rather than threading the constraint into the op; the persistence rows in `t/state-and-our-typed-declarations.t` are the gate. |
-| [anon-role-mixin-has-no-order-and-collapses](tickets/anon-role-mixin-has-no-order-and-collapses.md) | N, **M** | **NEW, confirmed**: `((1 but "x") but A).^name` → mutsu `Int+{A}+{<anon|1>}`, raku `Int+{<anon|1>}+{A}`; two anonymous mixins **collapse** (`Int+{<anon|4>}` vs raku's `Int+{<anon|3>}+{<anon|4>}`). `.^roles` diverges the same way and is **not** in the file — add it to the acceptance list. The difficulty is that the marker key's *presence* currently doubles as the "not an allomorph" signal; the allomorph controls (`<42>` → `IntStr`, `(<42> but R)` → `IntStr+{R}`) must stay. |
 | [our-typed-destructuring-and-attribute-declarations-are-accepted](tickets/our-typed-destructuring-and-attribute-declarations-are-accepted.md) | N, **M** | **NEW, confirmed**: `our Int ($a, $b)` and `class C { our Int $.x }` both compile in mutsu; raku SORRYs `Cannot put a type constraint on an 'our'-scoped variable`. **Add the phase row the file omits**: the already-refused scalar spelling `our Int $z` is refused by mutsu at *run* time and by raku at *compile* time. If the class-attribute refusal is moving into the declaration planner anyway, doing all three at compile time is one decision instead of three. |
 | [an-our-declared-in-a-never-run-block-is-not-installed](tickets/an-our-declared-in-a-never-run-block-is-not-installed.md) | N, **M** | **Confirmed**: `if False { our $o = 4 }; say OUR::<$o>.^name` → mutsu `Nil`, raku `Any`. rakudo installs a package symbol when the compunit is *compiled*, so the slot exists undefined even though the assignment never ran. The file's predicted mutsu output is slightly wrong (it says "no such symbol"; mutsu prints `Nil` — the missing binding reads as Nil, it does not error). `EndWalker` (`src/runtime/end_phasers.rs`) is the shape to copy, but the walk must track `Compiler::qualify_our_variable_name`'s pseudo-package resolution. |
 | [inline-container-trait-declaration-in-an-expression-is-a-plain-hash](tickets/inline-container-trait-declaration-in-an-expression-is-a-plain-hash.md) | N, **M** | **Confirmed, and worse than filed**: `(my %q is SetHash).^name` → `Hash` (raku `SetHash`), and `~~ SetHash` is `False`. Beyond the file: `(my %u is MixHash).^name` answers **`Hash[MixHash]`** — a *third*, different wrong answer, so the un-coerced value is not uniformly a bare `Hash`; check that arm separately. `(my @a is Buf).^name` → `Array` while the statement form is correctly `Buf`. **The file's cross-reference is a dead link** — its target was renamed to `is-type-capture-cell-exclusion-is-by-name-across-the-frame.md`. |
 | [roles-not-transitive-is-ignored-for-builtin-types](tickets/roles-not-transitive-is-ignored-for-builtin-types.md) | N, **M** | **NEW, confirmed**: `1.^roles(:!transitive)` → mutsu `Real,Numeric`, raku `Real`. `collect_roles_for_class` applies `non_transitive` only when walking the registry's `role_parents`; the built-in role table is flat. **`:local` needs no work** — `1.^roles(:local)` already agrees, which answers the file's open question. Do not test with `Str` (its closure is one deep, so it cannot show the bug); use `Int`, and check `Num`/`Rat`/`Array`/`Hash`. |
-| [array-and-hash-which-collides-on-a-reused-address](tickets/array-and-hash-which-collides-on-a-reused-address.md) | N, **M** | **Confirmed, and the file's own re-diagnosis is right** — `[1,2].WHICH eq [3,4,5].WHICH` is `True`, which rules out a content hash; two *temporaries* land on the same recycled allocator block. Damage stays bounded: two variable-held arrays compare `False`, and `===`/`eqv` are already correct via `Gc::ptr_eq`. `Promise.new.WHICH eq Promise.new.WHICH` is also `True`, confirming the file's prediction that those arms share the hazard — **do them in the same change**. The fix is a lazily minted per-object id in `ArrayData`/`HashData`: a layout change on the two hottest container types, so it wants an `alloc-stats` + bench-CI measurement. |
 | [immutable-list-element-write-is-silently-dropped](tickets/immutable-list-element-write-is-silently-dropped.md) | N, **L** | **Confirmed**: `$l[0].mut` on `my $l = (1,2)` with a `\S:` raw invocant lives and changes nothing; raku dies `Cannot modify an immutable Int (1)`. The write is correctly dropped — only the *diagnostic* is missing, because the binder never consults readonly-ness for a raw invocant. Note the passing controls A2-A4 also differ in wording (mutsu names the `List`, raku the `Int`); fold that into the same change. ADR-0067 rows L4/L5/M1/M2, and the same family as the subscript ticket below. |
 | [subscript-argument-container-producer](tickets/subscript-argument-container-producer.md) | N (row (c) is **S**), **L** | **Headline correctly self-declared CLOSED** and re-verified — all six "now works" rows give `[9, 2]` on both. Three residue rows still reproduce: (a) `$obj.^lookup('m')($obj, $c.v)` — a `Method` invoked as a code value counts its invocant as positional 0 (**the file's row as written is under-specified; the method must take an `is rw` parameter or you get an arity error instead — rewrite it before re-measuring**); (b) `sub g(:$y is rw)` accepted where raku SORRYs — a pure parser-validation gap with nothing to do with containers, **split it out as a cheap standalone slice**; (c) an out-of-range subscript argument, where `$bl(@b[5])` silently drops the write. |
 
@@ -438,16 +453,23 @@ local runs — and now with the benchmark's **noise class** attached.
   files instead: `.returns(:qqzz9)` leaking `&<composed-method:returns>`, and
   the RakuAST `with` refusal dumping a raw Rust `Debug` struct into a
   user-facing message.
-- **`docs/doc-diff-backlog.md`'s Ticketed section has fully drained — all 25
-  ticket links in it are dead.** Every `todo/tickets/*.md` it names has closed.
-  That feeder produced zero new tickets this cycle, which is why the
-  neighbourhood sweep is now the only working source. Rewriting that section
-  (and re-running the harness to refill it) is a small docs-only PR and is the
-  single highest-leverage housekeeping item open. Its corpus snapshot
-  (high-signal 296 → 108) is still current as a *measurement*; only the ticket
-  table is dead. Next untriaged high-signal files: `Type/Any` (3+1),
-  `Language/experimental` (0+4), `Language/objects` (2+1), `Language/traps`
-  (2+1).
+- **`docs/doc-diff-backlog.md` was re-swept and rewritten on 2026-09-07b — the
+  feeder is NOT drained, it was mis-bucketed.** All 25 ticket links in its
+  Ticketed section were dead (every ticket had been fixed), so the section was
+  refilled from a fresh full-corpus sweep at `dccfd1737`: high-signal
+  108 → **87** (mismatch 74 → 59, crash 34 → 28, `match` 2376 → 2402).
+  **The important finding is not the counts.** The harness's `raku-drift`
+  bucket is only reachable *after* mutsu is found to differ from raku, yet the
+  backlog told readers it was "version skew, not mutsu bugs — lowest priority".
+  Classifying all 114: **67 (59%) are confirmed real mutsu divergences**
+  against 5 (4%) that the bucket name describes — a larger pool of real work
+  than the 87 the survey table ranks, and 61 of the 114 sit in files the table
+  cannot show at all. 37% of the bucket is pure noise from doc lines that froze
+  an address or an iteration order raku itself cannot reproduce twice, and
+  **nine real bugs were hiding under that noise**. Tracked in
+  [doc-diff-harness-has-no-output-cap-or-nondeterminism-gate](tickets/doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md);
+  the fix is one policy line (run the oracle twice, drop non-reproducible
+  blocks), not a pattern list.
 - **`todo/` files whose own root-cause or status section is wrong** — still the
   project's most common failure mode, and this cycle it took a new and more
   dangerous form: **a repro that passes while its bug is still live.** Two of

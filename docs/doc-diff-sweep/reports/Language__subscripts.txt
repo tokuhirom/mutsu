@@ -1,108 +1,26 @@
 # doc-diff-harness report
-# stats: match=25  mismatch=4  mutsu-crash=1  no-oracle=85  raku-drift=1  skipped-marker=3  skipped-nondet=3
+# stats: match=28  mismatch=2  mutsu-crash=0  no-oracle=85  raku-drift=1  skipped-marker=3  skipped-nondet=3
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:418
+[1] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:51
 --- program ---
-my $beatles;
+my %grade = Zoe => "C", Ben => "B+";
+say %grade{"Zoe"};  # OUTPUT: «C␤»
+say %grade{"Ben"};  # OUTPUT: «B+␤»
 
-$beatles{"White Album"}[0] = "Back in the U.S.S.R.";  # autovivification!
-
-say $beatles.raku;  # OUTPUT: «${"White Album" => $["Back in the U.S.S.R."]}␤»
+my $stats = ( Date.today => 4.18, Date.new(2015,  4,  5) => 17.253 ).Mix;
+say $stats{ Date.new(2015, 4, 4) + 1 };  # OUTPUT: «17.253␤»
 --- raku stdout ---
-${"White Album" => $["Back in the U.S.S.R."]}
+C
+B+
+17.253
 --- mutsu stdout (exit 0) ---
-Any
+C
+B+
+0
 
 ==============================================================================
-[2] mutsu-error  raku-doc/doc/Language/subscripts.rakudoc:462
---- program ---
-my @fib = 1,1, * + * … ∞;
-my @lucas = 1,3, * + * … ∞;
-my %sequences;
-%sequences<f> := @fib;
-%sequences<l> := @lucas;
-for %sequences.keys -> $s {
-    for ^10 -> $n {
-        say %sequences{$s}[100+$n*10]/%sequences{$s}[101+$n*10];
-    }
-}
-# OUTPUT: 0.6180339887498949 times 20.
---- raku stdout ---
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
-0.6180339887498949
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Attempt to divide 0 by zero
-  in block <unit> at tmp/ddh/prog-3355205.raku line 8
-
-==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:964
---- program ---
-role Logger { method log( Str $msg) {…}}
-
-class ConsoLogger does Logger { method log ( Str $msg ) { "❢ $msg".say }}
-
-class DNA {
-    has $.chain;
-    has Logger $!logger;
-
-    submethod BUILD( :$chain, :$logger = ConsoLogger.new() ) {}
-
-    method STORE (Str $chain where {
-            /^^ <[ACGT]>+ $$ / and
-            .chars %% 3
-        },
-        :$INITIALIZE --> DNA) {
-
-        if ($INITIALIZE) {
-            $!logger = ConsoLogger.new();
-            $!logger.log( "Initialized" );
-        }
-
-        $!chain  := $chain;
-        $!logger.log("Change value to $chain" );
-        self
-    }
-
-    method Str(::?CLASS:D:) { return $!chain.comb.rotor(3).map( *.join("")).join("|") }
-};
-
-my @string is DNA = 'GAATCC';    # OUTPUT: «❢ Initialized␤❢ Change value to GAATCC␤»
-say ~@string;                    # OUTPUT: «GAA|TCC␤»
-@string = 'ACGTCG';              # OUTPUT: «❢ Change value to ACGTCG␤»
-say  ~@string;                   # OUTPUT: «ACG|TCG␤»
---- raku stdout ---
-❢ Initialized
-❢ Change value to GAATCC
-GAA|TCC
-❢ Change value to ACGTCG
-ACG|TCG
---- mutsu stdout (exit 0) ---
-GAATCC
-ACGTCG
-
-==============================================================================
-[4] raku-drift-from-doc  raku-doc/doc/Language/subscripts.rakudoc:225
+[2] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:225
 --- program ---
 my %color = kiwi => "green", banana => "yellow", cherry => "red";
 say %color{"cherry", "kiwi"};  # OUTPUT: «(red green)␤»
@@ -111,14 +29,14 @@ say %color{*};                 # OUTPUT: «(red yellow green)␤»
 --- raku stdout ---
 (red green)
 (red green)
-(green yellow red)
+(red yellow green)
 --- mutsu stdout (exit 0) ---
 (red green)
 (red green)
-(yellow green red)
+(yellow red green)
 
 ==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:336
+[3] raku-drift-from-doc  raku-doc/doc/Language/subscripts.rakudoc:336
 --- program ---
 my %bag := (orange => 1, apple => 3).Bag;
 say %bag<>;    # OUTPUT: «Bag(apple(3) orange)␤»
@@ -128,45 +46,11 @@ say %bag{()};  # OUTPUT: «()␤»
 --- raku stdout ---
 Bag(apple(3) orange)
 Bag(apple(3) orange)
-(1 3)
-()
---- mutsu stdout (exit 0) ---
-Bag(apple(3) orange)
-Bag(apple(3) orange)
 (3 1)
 ()
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:348
---- program ---
-my @words = "cruel", "world";
-say "Hello, @words[]!";  # OUTPUT: «Hello, cruel world!␤»
-
-my $list = <a b c>;
-.say for $list;   # OUTPUT: «(a b c)␤»
-.say for $list<>; # OUTPUT: «a␤b␤c␤»
-.say for $list[]; # OUTPUT: «a␤b␤c␤»
-
-my @fib = 1,1, * + * … *;
-say @fib[];                 # OUTPUT: «[...]␤»
---- raku stdout ---
-Hello, cruel world!
-(a b c)
-a
-b
-c
-a
-b
-c
-[...]
 --- mutsu stdout (exit 0) ---
-Hello, cruel world!
-(a b c)
-a
-b
-c
-a
-b
-c
-[1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987 1597 2584 4181 6765 10946 17711 28657 46368 75025 121393 196418 317811 514229 832040 1346269 2178309 3524578 5702887]
+Bag(apple(3) orange)
+Bag(apple(3) orange)
+(1 3)
+()
 

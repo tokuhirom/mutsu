@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=8  mismatch=3  mutsu-crash=2  no-oracle=20  raku-drift=2  skipped-marker=5  skipped-nondet=1
+# stats: match=13  mismatch=1  mutsu-crash=1  no-oracle=20  raku-drift=0  skipped-marker=5  skipped-nondet=1
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:387
+[1] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:387
 --- program ---
 grammar HTTPRequest {
     has Bool $.invalid;
@@ -71,139 +71,22 @@ say "field(\"$m.<field>[0]\")={$m.<field>[0].invalid}";
 type("GOT ")=True
 path("/index.html")=False
 field("Host: docs.raku.org")=False
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Cannot look up attributes in a HTTPRequest type object. Did you forget a '.new'?
-  in block <unit> at tmp/ddh/prog-3337172.raku line 57
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Language/grammars.rakudoc:485
---- program ---
-grammar demonstrate-arguments-again {
-    rule TOP ($word) {
-    <phrase-stem><added-word($word)>
-    }
-
-    rule phrase-stem {
-       "I like"
-    }
-
-    rule added-word($passed-word) {
-       $passed-word
-    }
-}
-
-say demonstrate-arguments-again.parse("I like vegetables", :args(("vegetables",)));
-# OUTPUT: ｢I like vegetables｣␤»
-# OUTPUT:  «phrase-stem => ｢I like ｣␤»
-# OUTPUT:  «added-word => ｢vegetables｣␤»
---- raku stdout ---
-｢I like vegetables｣
- phrase-stem => ｢I like ｣
- added-word => ｢vegetables｣
 --- mutsu stdout (exit 0) ---
-Nil
+type("GOT /index.html HTTP/1.1
+Host: docs.raku.org
+
+body.<type>")=
+path("GOT /index.html HTTP/1.1
+Host: docs.raku.org
+
+body.<path>")=
+field("GOT /index.html HTTP/1.1
+Host: docs.raku.org
+
+body.<field>[0]")=
 
 ==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Language/grammars.rakudoc:509
---- program ---
-grammar demonstrate-arguments-dynamic {
-   rule TOP ($*word, $*extra) {
-      <phrase-stem><added-words>
-   }
-   rule phrase-stem {
-      "I like"
-   }
-   rule added-words {
-      $*word $*extra
-   }
-}
-
-say demonstrate-arguments-dynamic.parse("I like everything else",
-  :args(("everything", "else")));
-# OUTPUT: «｢I like everything else｣␤»
-# OUTPUT:  «phrase-stem => ｢I like ｣␤»
-# OUTPUT:  «added-words => ｢everything else｣␤»
---- raku stdout ---
-｢I like everything else｣
- phrase-stem => ｢I like ｣
- added-words => ｢everything else｣
---- mutsu stdout (exit 0) ---
-Nil
-
-==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:112
---- program ---
-grammar Calculator {
-    token TOP { [ <add> | <sub> ] }
-    rule  add { <num> '+' <num> }
-    rule  sub { <num> '-' <num> }
-    token num { \d+ }
-}
-
-class Calculations {
-    method TOP ($/) { make $<add> ?? $<add>.made !! $<sub>.made; }
-    method add ($/) { make [+] $<num>; }
-    method sub ($/) { make [-] $<num>; }
-}
-
-say Calculator.parse('2 + 3', actions => Calculations).made;
-
-# OUTPUT: «5␤»
---- raku stdout ---
-5
---- mutsu stdout (exit 0) ---
-0
-
-==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:132
---- program ---
-grammar Calculator {
-    token TOP { <calc-op> }
-
-    proto rule calc-op          {*}
-          rule calc-op:sym<add> { <num> '+' <num> }
-          rule calc-op:sym<sub> { <num> '-' <num> }
-
-    token num { \d+ }
-}
-
-class Calculations {
-    method TOP              ($/) { make $<calc-op>.made; }
-    method calc-op:sym<add> ($/) { make [+] $<num>; }
-    method calc-op:sym<sub> ($/) { make [-] $<num>; }
-}
-
-say Calculator.parse('2 + 3', actions => Calculations).made;
-
-# OUTPUT: «5␤»
---- raku stdout ---
-5
---- mutsu stdout (exit 0) ---
-0
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:260
---- program ---
-grammar Foo {
-    token TOP { <letter>+ }
-    proto token letter {*}
-          token letter:sym<R> { <sym> }
-          token letter:sym<a> { <sym> }
-          token letter:sym<k> { <sym> }
-          token letter:sym<u> { <sym> }
-          token letter:sym<*> {   .   }
-}.parse("I ♥ Raku", actions => class {
-    method TOP($/) { make $<letter>.grep(*.<sym>).join }
-}).made.say; # OUTPUT: «Raku␤»
---- raku stdout ---
-Raku
---- mutsu stdout (exit 0) ---
-
-
-==============================================================================
-[7] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:289
+[2] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:289
 --- program ---
 grammar Digifier {
     rule TOP {
@@ -227,7 +110,10 @@ say Digifier.parse('255 435 777', actions => Devanagari.new).made;
 --- mutsu stdout (exit 1) ---
 
 --- mutsu stderr ---
+Use of Nil in string context
+  in sub digit at tmp/ddh/prog-1341052.raku line 11
+  in block <unit> at tmp/ddh/prog-1341052.raku line 16
 X::Assignment::RO: cannot assign through .tail on non-instance
-  in sub digit at tmp/ddh/prog-3337172.raku line 11
-  in block <unit> at tmp/ddh/prog-3337172.raku line 16
+  in sub digit at tmp/ddh/prog-1341052.raku line 11
+  in block <unit> at tmp/ddh/prog-1341052.raku line 16
 

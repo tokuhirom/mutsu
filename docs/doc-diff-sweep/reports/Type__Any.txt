@@ -1,45 +1,21 @@
 # doc-diff-harness report
-# stats: match=77  mismatch=4  mutsu-crash=3  no-oracle=84  raku-drift=5  skipped-marker=2  skipped-nondet=5
+# stats: match=79  mismatch=5  mutsu-crash=1  no-oracle=84  raku-drift=4  skipped-marker=2  skipped-nondet=5
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1525
+[1] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1307
 --- program ---
-use v6.e.PREVIEW;
-.say for snip * < 10, 2, 5, 13, 9, 6;      # OUTPUT: «(2 5)␤(13 9 6)␤»
-.say for snip (* < 10, * < 20), 5, 13, 29; # OUTPUT: «(5)␤(13)␤(29)␤»
-.say for snip Int, 2, 5, 5, "a", "b";      # OUTPUT: «(2 5 5)␤(a b)␤»
-.say for (2, 5, 13, 9, 6).snip(* < 10);    # OUTPUT: «(2 5)␤(13 9 6)␤»
-.say for (5, 13,29).snip(* < 10, * < 20);  # OUTPUT: «(5)␤(13)␤(29)␤»
-.say for (2, 5, 5, "a", "b").snip: Int;    # OUTPUT: «(2 5 5)␤(a b)␤»
+my @floors = ( 'A', ('B','C', ('E','F','G')));
+say @floors.tree(1).flat.elems; # OUTPUT: «6␤»
+say @floors.tree(2).flat.elems; # OUTPUT: «2␤»
+say @floors.tree( *.join("-"),*.join("—"),*.join("|"));# OUTPUT: «A-B—C—E|F|G␤»
 --- raku stdout ---
-(2 5)
-(13 9 6)
-(5)
-(13)
-(29)
-(2 5 5)
-(a b)
-(2 5)
-(13 9 6)
-(5)
-(13)
-(29)
-(2 5 5)
-(a b)
+6
+2
+A-B—C—E|F|G
 --- mutsu stdout (exit 0) ---
-(2 5)
-(13 9 6)
-(5)
-(13)
-(29)
-(2 5 5)
-(a b)
-(2 5)
-(13 9 6)
-(5)
-(13 29)
-(2 5 5)
-(a b)
+2
+2
+A-B—C—E|F|G
 
 ==============================================================================
 [2] mutsu-error  raku-doc/doc/Type/Any.rakudoc:1549
@@ -55,23 +31,25 @@ say (1..3).Seq.snitch.map(*+2);     # OUTPUT: «(1 2 3)␤(3 4 5)␤»
 666
 (3 4 5)
 --- mutsu stdout (exit 1) ---
-
+666
 --- mutsu stderr ---
-X::Assignment::RO: cannot assign through .snitch on non-instance
-  in block <unit> at tmp/ddh/prog-3367282.raku line 2
+42
+1..5
+(1 2 3 4 5)
+Callable expected
+  in block <unit> at tmp/ddh/prog-1351604.raku line 5
 
 ==============================================================================
-[3] mutsu-error  raku-doc/doc/Type/Any.rakudoc:1559
+[3] output-mismatch  raku-doc/doc/Type/Any.rakudoc:311
 --- program ---
-use v6.e.PREVIEW;
-(1..3).Seq ==> snitch() ==> map(*+2) ==> say();  # OUTPUT: «(1 2 3)␤(3 4 5)␤»
+say [[1, 2, 3], [(4, 5), 6, 7]]      .flat; # OUTPUT: «([1 2 3] [(4 5) 6 7])␤»
+say [[1, 2, 3], [(4, 5), 6, 7]]».List.flat; # OUTPUT: «(1 2 3 4 5 6 7)␤»
 --- raku stdout ---
-(3 4 5)
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Unknown function: snitch
-  in block <unit> at tmp/ddh/prog-3367282.raku line 2
+([1 2 3] [(4 5) 6 7])
+(1 2 3 4 5 6 7)
+--- mutsu stdout (exit 0) ---
+([1 2 3] [(4 5) 6 7])
+(1 2 3 (4 5) 6 7)
 
 ==============================================================================
 [4] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:617
@@ -98,14 +76,14 @@ Unknown function: snitch
 (:b(75),).Seq
 
 ==============================================================================
-[6] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:639
+[6] output-mismatch  raku-doc/doc/Type/Any.rakudoc:639
 --- program ---
 my $setty = Set(<Þor Oðin Freija>);
 say $setty.keys; # OUTPUT: «(Þor Oðin Freija)␤»
 --- raku stdout ---
-(Þor Freija Oðin)
+(Þor Oðin Freija)
 --- mutsu stdout (exit 0) ---
-(Oðin Freija Þor)
+(Oðin Þor Freija)
 
 ==============================================================================
 [7] output-mismatch  raku-doc/doc/Type/Any.rakudoc:908
@@ -122,57 +100,29 @@ say set(1,2).permutations;
 ((1 => True 2 => True) (2 => True 1 => True))
 
 ==============================================================================
-[8] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1093
+[8] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:1093
 --- program ---
 <1 2 2 3 3 3>.Bag.pairs.say;# OUTPUT: «(1 => 1 3 => 3 2 => 2)␤»
 --- raku stdout ---
-(1 => 1 3 => 3 2 => 2)
---- mutsu stdout (exit 0) ---
 (2 => 2 1 => 1 3 => 3)
+--- mutsu stdout (exit 0) ---
+(3 => 3 2 => 2 1 => 1)
 
 ==============================================================================
 [9] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:1110
 --- program ---
 %(s => 1, t=> 2, u => 3).antipairs.say ;# OUTPUT: «(2 => t 1 => s 3 => u)␤»
 --- raku stdout ---
-(1 => s 2 => t 3 => u)
+(3 => u 1 => s 2 => t)
 --- mutsu stdout (exit 0) ---
-(1 => s 3 => u 2 => t)
+(1 => s 2 => t 3 => u)
 
 ==============================================================================
-[10] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:1122
+[10] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1122
 --- program ---
 "aaabbcccc".comb.Bag.invert.say; # OUTPUT: «(4 => c 3 => a 2 => b)␤»
 --- raku stdout ---
-(2 => b 3 => a 4 => c)
+(4 => c 3 => a 2 => b)
 --- mutsu stdout (exit 0) ---
 (3 => a 2 => b 4 => c)
-
-==============================================================================
-[11] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1362
---- program ---
-my $a;
-say $a.grep({ True }); # OUTPUT: «((Any))␤»
-say $a.grep({ $_ });   # OUTPUT: «()␤»
---- raku stdout ---
-((Any))
-()
---- mutsu stdout (exit 0) ---
-(Nil)
-()
-
-==============================================================================
-[12] mutsu-error  raku-doc/doc/Type/Any.rakudoc:1420
---- program ---
-$*COLLATION.set(:quaternary(False), :tertiary(False));
-say 'a' coll 'A'; # OUTPUT: «Same␤»
-say ('a','A').collate == ('A','a').collate; # OUTPUT: «True␤»
---- raku stdout ---
-Same
-True
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-No such method 'set' for invocant of type 'Any'
-  in block <unit> at tmp/ddh/prog-3367282.raku line 1
 

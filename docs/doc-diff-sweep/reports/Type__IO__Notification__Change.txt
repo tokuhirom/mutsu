@@ -13,19 +13,19 @@ IO::Notification.watch-path($*CWD).act( -> $change {
 });
 await $finish;
 --- raku stdout ---
-(1) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(2) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(3) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(4) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(5) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(6) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(7) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(8) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(9) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
-(10) /home/tokuhirom/work/mutsu-codex/foo: FileChanged
+(1) /home/tokuhirom/work/mutsu-roast/--my arbitrary filename: FileChanged
+(2) /home/tokuhirom/work/mutsu-roast/--my arbitrary filename: FileChanged
+(3) /home/tokuhirom/work/mutsu-roast/--my arbitrary filename: FileChanged
+(4) /home/tokuhirom/work/mutsu-roast/--my: FileChanged
+(5) /home/tokuhirom/work/mutsu-roast/arbitrary: FileChanged
+(6) /home/tokuhirom/work/mutsu-roast/filename: FileChanged
+(7) /home/tokuhirom/work/mutsu-roast/test: FileChanged
+(8) /home/tokuhirom/work/mutsu-roast/test: FileChanged
+(9) /home/tokuhirom/work/mutsu-roast/test: FileChanged
+(10) /home/tokuhirom/work/mutsu-roast/test: FileChanged
 --- mutsu stdout (exit 1) ---
 
 --- mutsu stderr ---
 No such method 'watch-path' for invocant of type 'IO::Notification'
-  in block <unit> at tmp/ddh/prog-3402398.raku line 3
+  in block <unit> at tmp/ddh/prog-1359931.raku line 3
 

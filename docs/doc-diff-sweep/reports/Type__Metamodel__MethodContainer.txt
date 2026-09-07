@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=1  mutsu-crash=1  no-oracle=5  raku-drift=1  skipped-marker=0  skipped-nondet=0
+# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=5  raku-drift=2  skipped-marker=0  skipped-nondet=0
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:15
+[1] raku-drift-from-doc  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:15
 --- program ---
 say .name for Int.^methods(:all);
 
@@ -51,252 +51,77 @@ asin
 cos
 acos
 tan
-atan
-atan2
-sec
-asec
-cosec
-acosec
-cotan
-acotan
-sinh
-asinh
-cosh
-acosh
-tanh
-atanh
-sech
-asech
-cosech
-acosech
-cotanh
-acotanh
-unpolar
-cis
-Complex
-log
-exp
-truncate
-isNaN
-polymod
-log2
-log10
-roots
-succ
-pred
-WHICH
-ACCEPTS
-raku
-Bool
-Str
-sqrt
-Real
-Numeric
-gist
-DUMP
-POPULATE
-chr
-unimatch
-uniname
-uniprop
-unival
-sqrt
+... [339 more lines truncated by the commit step; re-run the sweep to see them in full]
+--- mutsu stdout (exit 0) ---
 abs
-conj
-sign
-rand
-sin
-asin
-cos
-acos
-tan
-atan
-atan2
-sec
-asec
-cosec
-acosec
-cotan
-acotan
-sinh
-asinh
-cosh
-acosh
-tanh
-atanh
-sech
-asech
-cosech
-acosech
-cotanh
-acotanh
-cis
-is-prime
-log
-Order
-exp
-round
-roots
-log2
-log10
-unpolar
-floor
 ceiling
-truncate
-chars
-codes
-encode
-wordcase
-trans
-indent
-uc
-lc
-tc
-fc
-tclc
-flip
-chomp
-chop
-samecase
-samemark
-samespace
-starts-with
-ends-with
-substr
-substr-rw
-substr-eq
-contains
-indices
-index
-rindex
-split
-comb
-lines
-words
-subst
-subst-mutate
-IO
-sprintf
-printf
-trim
-trim-leading
-trim-trailing
-EVAL
-Failure
-UInt
+floor
+round
+sign
+sqrt
+log
+log10
+exp
+roots
+is-prime
+chr
+base
+polymod
+expmod
+pred
+succ
+Numeric
+Int
 Num
 Rat
-FatRat
-Complex
-Version
-int
-int64
-int32
-int16
-int8
-uint
-uint64
-uint32
-uint16
-uint8
-byte
-fmt
-Real
-Int
-POPULATE
-chr
-ord
-ords
-unimatch
-uniname
-uninames
-uniparse
+Bool
+Str
+gist
+raku
+rand
 uniprop
-uniprops
-unival
-univals
-NFC
-NFD
-NFKC
-NFKD
-chrs
-parse-names
-path
-AST
-POPULATE
-EXISTS-KEY
-DELETE-KEY
-DELETE-POS
-cache
-list
-fmt
-flat
-eager
+lsb
+msb
+int8
+Real
+Complex
 serial
-List
-Slip
-Array
-Seq
 hash
-Hash
-Map
-elems
-end
-keys
-kv
-values
-pairs
-antipairs
-invert
-splice
-pick
-roll
-match
-classify
-categorize
-reverse
-combinations
-permutations
-join
-tree
-push
-append
-unshift
-prepend
-EXISTS-POS
-AT-POS
-ZEN-KEY
-ASSIGN-POS
-BIND-POS
-all
-any
-one
-none
-AT-KEY
-BIND-KEY
-ASSIGN-KEY
-FLATTENABLE_LIST
-FLATTENABLE_HASH
-Set
-SetHash
-Bag
-BagHash
-Mix
-MixHash
-Supply
-nl-out
-print-nl
-lazy-if
-ACCEPTS
-iterator
-chrs
-throw-iterator-cannot-be-lazy
-fail-iterator-cannot-be-lazy
-throw-cannot-be-empty
-fail-cannot-be-empty
-map
-flatmap
-grep
-first
+say
+put
+print
+note
+so
+not
+... [46 more lines truncated by the commit step; re-run the sweep to see them in full]
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:40
+--- program ---
+class A {
+    method x() { };
+}
 
-... [report truncated at 300 lines — 572 total; a doc example produced a very large diff (usually a filesystem listing). Re-run the harness on this file for the full output.]
+say A.^methods();                   # x
+say A.^methods(:all);               # x infinite defined ...
+--- raku stdout ---
+(x POPULATE)
+(x POPULATE EXISTS-KEY DELETE-KEY DELETE-POS cache list fmt flat eager serial List Slip Array Seq hash Hash Map elems end keys kv values pairs antipairs invert splice pick roll match classify categorize reverse combinations permutations join tree push append unshift prepend EXISTS-POS AT-POS ZEN-KEY ASSIGN-POS BIND-POS all any one none AT-KEY BIND-KEY ASSIGN-KEY FLATTENABLE_LIST FLATTENABLE_HASH Set SetHash Bag BagHash Mix MixHash Supply nl-out print-nl lazy-if ACCEPTS iterator chrs throw-iterator-cannot-be-lazy fail-iterator-cannot-be-lazy throw-cannot-be-empty fail-cannot-be-empty map flatmap grep first iterator-and-first sum sort collate reduce produce slice unique repeated squish pairup toggle head tail skip batch rotor are nodemap deepmap duckmap minpairs maxpairs min ...)
+--- mutsu stdout (exit 0) ---
+(x)
+(x serial hash say put print note so not defined WHAT WHERE HOW WHY iterator flat eager lazy map grep first sort reverse unique repeated squish head tail skip min max minmax elems end keys values kv pairs antipairs classify categorize join pick roll sum reduce produce rotor batch Bool Str gist raku Numeric Int DEFINITE WHICH clone new)
+
+==============================================================================
+[3] raku-drift-from-doc  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:73
+--- program ---
+say 2.5.^lookup("sqrt").raku;      # OUTPUT: «method sqrt (Rat $: *%_) ...␤»
+say Str.^lookup("BUILD").raku;     # OUTPUT: «submethod BUILD (Str $: :$value = "", *%_ --> Nil) ...␤»
+say Int.^lookup("does-not-exist"); # OUTPUT: «(Mu)␤»
+--- raku stdout ---
+proto method sqrt (Cool $:: *%_) {*}
+submethod BUILD (Str $:: Str(Any) :$value = "", *%_ --> Nil) { #`(Submethod|2271092929488) ... }
+(Mu)
+--- mutsu stdout (exit 0) ---
+Method.new
+Mu
+(Mu)
+

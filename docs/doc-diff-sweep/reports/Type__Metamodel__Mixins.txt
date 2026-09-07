@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=0  mutsu-crash=3  no-oracle=9  raku-drift=0  skipped-marker=0  skipped-nondet=0
+# stats: match=1  mismatch=0  mutsu-crash=2  no-oracle=9  raku-drift=0  skipped-marker=0  skipped-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:18
@@ -40,10 +40,11 @@ True
 True
 True
 --- mutsu stdout (exit 1) ---
-
+True
 --- mutsu stderr ---
-X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Billboard:D
-  in block <unit> at tmp/ddh/prog-3419689.raku line 24
+Type check failed for return value; expected Str:D but got Pair (vandalism	          S       s  s ne     k          l   o   l     .
+We    e  ee            e  e  e    e    e      e     !)
+  in block <unit> at tmp/ddh/prog-1367640.raku line 27
 
 ==============================================================================
 [2] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:63
@@ -89,25 +90,9 @@ True
 True
 True
 --- mutsu stdout (exit 1) ---
-
+True
 --- mutsu stderr ---
-X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on Billboard:D
-  in block <unit> at tmp/ddh/prog-3419689.raku line 29
-
-==============================================================================
-[3] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:112
---- program ---
-class Foo { }
-role Bar { }
-
-say Foo.new but Bar;     # OUTPUT: «Foo+{Bar}.new␤»
-say Foo.new.^mixin(Bar); # OUTPUT: «Foo+{Bar}.new␤»
---- raku stdout ---
-Foo+{Bar}.new
-Foo+{Bar}.new
---- mutsu stdout (exit 1) ---
-Foo.new
---- mutsu stderr ---
-No such method 'mixin' for invocant of type 'Perl6::Metamodel::ClassHOW'
-  in block <unit> at tmp/ddh/prog-3419689.raku line 5
+P6opaque: no such attribute '$!vandalism' on type Billboard::Vandalized in a Billboard when trying to get a value
+  in sub Str at tmp/ddh/prog-1367640.raku line 32
+  in block <unit> at tmp/ddh/prog-1367640.raku line 32
 

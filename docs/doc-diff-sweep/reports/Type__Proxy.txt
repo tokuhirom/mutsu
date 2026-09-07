@@ -19,6 +19,6 @@ say $doubled;       # OUTPUT: «8␤»
 --- mutsu stdout (exit 1) ---
 
 --- mutsu stderr ---
-Cannot assign to a readonly variable (doubled) or a value
-  in block <unit> at tmp/ddh/prog-3426086.raku line 8
+Cannot assign to an immutable value
+  in block <unit> at tmp/ddh/prog-1370851.raku line 8
 

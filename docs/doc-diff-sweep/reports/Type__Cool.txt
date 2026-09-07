@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=89  mismatch=1  mutsu-crash=2  no-oracle=96  raku-drift=5  skipped-marker=0  skipped-nondet=4
+# stats: match=91  mismatch=0  mutsu-crash=1  no-oracle=96  raku-drift=5  skipped-marker=0  skipped-nondet=4
 
 ==============================================================================
 [1] raku-drift-from-doc  raku-doc/doc/Type/Cool.rakudoc:1293
@@ -91,47 +91,4 @@ BOX DRAWINGS LIGHT DIAGONAL UPPER CENTRE TO MIDDLE RIGHT AND MIDDLE LEFT TO LOWE
 --- mutsu stdout (exit 124) ---
 RIGHT-POINTING DOUBLE ANGLE QUOTATION MARK
 LATIN CAPITAL LETTER D WITH DOT BELOW
-
-==============================================================================
-[7] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:1416
---- program ---
-say 1+0i.Rat;                             # OUTPUT: «1␤»
-say 2e1.Rat;                              # OUTPUT: «20␤»
-say (-4/3).Rat;                           # OUTPUT: «-1.333333␤»
-say "foo".Rat.^name;                      # OUTPUT: «Failure␤»
-say (.numerator, .denominator) for π.Rat; # OUTPUT: «(355 113)␤»
---- raku stdout ---
-1
-20
--1.333333
-Failure
-(355 113)
---- mutsu stdout (exit 0) ---
-1
-20
--1.333333
-Rat
-(355 113)
-
-==============================================================================
-[8] mutsu-error  raku-doc/doc/Type/Cool.rakudoc:1444
---- program ---
-say 1+0i.UInt;            # OUTPUT: «1␤»
-say 2e1.UInt;             # OUTPUT: «20␤»
-say 1.3.UInt;             # OUTPUT: «1␤»
-say (-4/3).UInt.^name;    # OUTPUT: «Failure␤»
-say "foo".UInt.^name;     # OUTPUT: «Failure␤»
---- raku stdout ---
-1
-20
-1
-Failure
-Failure
---- mutsu stdout (exit 1) ---
-1
-20
-1
---- mutsu stderr ---
-Coercion to UInt out of range. Is: -1, should be in 0..^Inf
-  in block <unit> at tmp/ddh/prog-3385144.raku line 4
 
