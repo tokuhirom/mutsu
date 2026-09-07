@@ -861,16 +861,28 @@ impl Interpreter {
         base_name
     }
 
-    pub(in crate::runtime) fn resolve_constraint_alias(&self, constraint: &str) -> String {
+    /// Borrowed when `constraint` is not an env alias (a `::T` capture or a
+    /// lexical bound to a type object) -- the common case, which used to
+    /// allocate a copy of the constraint per call, twice per coercion-typed
+    /// parameter. The env probes go through `Symbol::lookup`: a constraint
+    /// spelling nobody has interned cannot be an env key, and this must not
+    /// grow the symbol table with every constraint string it is asked about.
+    pub(in crate::runtime) fn resolve_constraint_alias<'c>(
+        &self,
+        constraint: &'c str,
+    ) -> std::borrow::Cow<'c, str> {
         if let Some(captured) = constraint.strip_prefix("::")
-            && let Some(ValueView::Package(name)) = self.env.get(captured).map(Value::view)
+            && let Some(sym) = Symbol::lookup(captured)
+            && let Some(ValueView::Package(name)) = self.env.get_sym(sym).map(Value::view)
         {
-            return name.resolve();
+            return std::borrow::Cow::Owned(name.resolve());
         }
-        if let Some(ValueView::Package(name)) = self.env.get(constraint).map(Value::view) {
-            return name.resolve();
+        if let Some(sym) = Symbol::lookup(constraint)
+            && let Some(ValueView::Package(name)) = self.env.get_sym(sym).map(Value::view)
+        {
+            return std::borrow::Cow::Owned(name.resolve());
         }
-        constraint.to_string()
+        std::borrow::Cow::Borrowed(constraint)
     }
 
     /// Whether a parameter's default/bound value satisfies its type

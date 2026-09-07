@@ -57,6 +57,106 @@ For an `exit 124` roast row, re-run the individual file with a larger timeout
 before classifying it as a correctness bug. The vendored provider executes
 assertions as Raku code and is therefore slower than the Rust-native provider.
 
+## Current state (2026-09-07, fifth pass -- eight more callgrind-driven slices)
+
+Same protocol as the fourth pass (callgrind only, 300 `ok 1, "x"` under
+`MUTSU_REAL_TEST=1` minus the one-assertion baseline, release build), same
+rule (one PR per slice, before/after in its description, nothing
+special-cased for `Test`). The session opened at 335,929 Ir per assertion
+(a re-measurement of the fourth pass's 333,577 on the same binary).
+
+| slice | per assertion | PR |
+| --- | --- | --- |
+| start of the session | 335,929 Ir | -- |
+| `nqp::` ops skip the call machinery (a compile-time `NQP_OP` symbol flag); a `Str` `.gist` answers without dispatch | 313,662 | #7472 |
+| env-pure mutating methods (`push`, `AT-KEY`, `new`, ...) dispatch before the scoped-env flatten | 285,180 | #7476 |
+| free-variable reads drop the `str::contains` searchers (`has_double_colon` & co. byte scans); `package_scope_lexical` short-circuits an empty store | 276,814 | #7477 |
+| a named routine's `callframe().code` object is built on demand (`CodeFrame::Lazy`) | 261,339 | #7480 |
+| the binder stops re-deriving the implicit `Any` check (native tags accept `Any`), a `::T`-capture latch, `is copy` skips the sigilless meta removes, `^name` placeholder key memoized | 250,138 | #7483 |
+| native integer wrapping stays in `i128` machine arithmetic (`my int` RMW, typed stores, native-typed parameters) | 244,707 | #7486 |
+| `CompiledFns` shares its bodies (`Arc<CompiledFunction>`), so the lazy frame holds its routine by refcount instead of cloning `params`/`param_defs` per call | 237,744 | #TBD7 |
+| typed-lexical metadata probes take symbols (`var_type_constraint_sym`, the hash-key twin memoized), `resolve_constraint_alias` borrows | 234,580 | this PR |
+
+**-30.2% in instructions per assertion this pass; -52.3% since the fourth
+pass opened at 492,188.** Wall clock on this box, release build:
+
+| | fourth pass | now |
+| --- | --- | --- |
+| 20,000-assertion `ok` loop, real module | 0.86 s | 0.47-0.49 s |
+| same loop, native provider | -- | 0.03 s |
+| `roast/S03-buf/write-int.t`, real module, idle (three runs) | 9.6-9.9 s | 7.0-7.9 s (median 7.5) |
+| `write-int.t`, native provider | -- | 3.5 s |
+
+### Completion criterion 2, re-measured under contention
+
+`write-int.t` under the real module through `scripts/run-roast-test.sh`
+with `prove -j4 --timer` alongside the same five heavy files as the fourth
+pass (`S03-buf/read-write-bits.t`, `S32-str/sprintf{,-b,-e,-x}.t`):
+
+| condition | this box | scaled to the reference machine (x2) |
+| --- | --- | --- |
+| idle, median of three | 7.5 s | ~15 s |
+| `prove -j4`, six heavy files | 10.9 s | ~22 s |
+
+The contended, scaled figure is now ~28% under the 30 s budget (fourth
+pass: ~10%), the idle one ~50%. That is the margin the fourth pass asked
+for before calling criterion 2 met on this box; the reference machine is
+still not available from this session, so the x2 scaling remains an
+estimate rather than a measurement.
+
+### Sweeps (2026-09-07, after the eighth slice)
+
+Both sweeps re-run on the binaries carrying all eight slices.
+
+Roast sweep (release, whitelist, 4 jobs):
+
+```
+pass under both:                   1432
+regressed under the real Test:     0
+passes only under the real Test:   0
+fail under both (pre-existing):    4
+```
+
+The four fail-under-both rows are the same environmental four as every
+earlier sweep.
+
+`t/` sweep (debug, all 3782 files, 4 jobs):
+
+```
+pass under both:                   3760
+regressed under the real Test:     0
+passes only under the real Test:   0
+fail under both (pre-existing):    22
+```
+
+Criterion 1 (no real-provider correctness regression in either sweep)
+holds; criterion 3 (`Test::Util` composes) is exercised by the roast sweep
+under both providers.
+
+### What the profile looks like now (per assertion, 234.6k)
+
+Inclusive, after the eighth slice. One caveat the fourth pass did not
+record: ~44.6k of the differential is the JIT compiling the loop's hot
+ranges (`vm_jit_compile::compile_range`), a one-time cost that the
+300-minus-1 protocol charges to the 299 extra assertions. The steady-state
+per-assertion figure is therefore ~190k; the protocol is kept as is so the
+slice-to-slice deltas stay comparable.
+
+| row | Ir | what it is |
+| --- | --- | --- |
+| `bind_function_args_values` | 28.1k | the general binder for `ok`/`proclaim`: `bind_param_type_constraint` 4.4k (interns `pd.name` per parameter; `bind_param_value` interns it again), `check_and_coerce_param_type` 3.5k for `Bool(Mu)`, `bind_param_value` 3.2k, `@_`/filtered-args `Vec`s and `String` clones |
+| `exec_call_method_mut_op` | 15.7k | `$output.say` and `$desc.Str`: `try_env_pure_mut_dispatch` 8.3k, `decode_arg_sources` 3.0k (a `Vec<Option<String>>` of cloned names plus a `HashMap<String, u32>` per call) |
+| `exec_set_local_op` | 15.1k | four `SetLocal`s at ~3.8k: `set_env_plain_lexical` 3.5k (the env mirror + `set_shared_var_sym`), the remaining `var_type_constraint_sym` probes, `exec_set_var_dynamic_op` 3.8k |
+| `Symbol::intern` | 12.7k | ~85 interns per assertion (fourth pass: ~195): the binder (`pd.name` twice per parameter), `native_lever_a_user_override`, `multi_arg_type_keys`, `set_var_type_constraint_impl`, `find_compiled_function_inner` |
+| free-variable reads | 8.2k + 7.5k | `get_env_with_main_alias` -> `unit_lexical_slot` -> `lookup_in_package_chain`: ~10 reads of `$num_of_tests_run`, `$indents`, `$output`, ... at ~600 each, each re-resolving the running frame's package candidates and hashing two strings |
+| `call_nqp_op` | 7.1k | five `nqp::` ops, now called directly; the remaining cost is `to_string_value` on their string operands |
+| `exec_string_concat_op` | 6.8k | the TAP line: `to_string_value` (a `String` per operand) + `resolve_list_element_stringifiers` + `mixin_user_stringifier` per operand |
+| `malloc` + `free` | ~31k | diffuse; every row above allocates |
+
+The env flatten of the fourth pass is gone from the profile (`Env::flattened`
+0, `drop_in_place<Env>` gone): #7476 moved the env-pure mutators ahead of
+it and #7480 removed the per-call `clone_env`.
+
 ## Current state (2026-09-07, fourth pass -- five callgrind-driven slices)
 
 The per-assertion budget was attacked again with callgrind only (the box has
