@@ -8,7 +8,7 @@ use Test;
 # rows that already agreed before the change are just as important as the rows
 # that did not: they are what a laziness change is most likely to break.
 
-plan 80;
+plan 87;
 
 my $c;
 
@@ -187,9 +187,61 @@ is $e2, 2, 'E2  nested regex subrules';
 
 my $e3 = 0;
 grammar E3G { token TOP { <part> 'c' }; regex part { \w* { $e3++ } } }
-$e3 = 0; E3G.parse('aaac');
-todo 'ADR-0073 Slice 2: a ratcheted caller cannot backtrack into the subrule';
+$e3 = 0; my $e3m = E3G.parse('aaac');
 is $e3, 1, 'E3  regex subrule under a ratcheted caller';
+# A ratcheted caller commits to the subrule's highest-priority end, so `\w*`
+# eats the trailing `c` and TOP's literal has nothing left: raku does NOT match
+# here, and the count above is exactly why -- there is no second candidate to
+# fall back to.
+nok $e3m.defined, 'E3a and the ratcheted caller cannot backtrack, so the parse fails';
+
+my $e3b = 0;
+grammar E3BG { token TOP { <part> 'a' }; regex part { \w* { $e3b++ } } }
+my $e3bm = E3BG.parse('aaa');
+is $e3b, 1, 'E3b  the subrule body runs once even when the caller then fails';
+nok $e3bm.defined, 'E3c and that failure is raku behaviour, not a lost candidate';
+
+# The Slice-2 guard: a rule that can call a rule stays on the full walk, so the
+# left-recursion growing-seed loop still sees its own re-entry. `<term>` ranks
+# ahead of the recursive branch, so a first-only walk of `expr` would stop on
+# `1` and lose the parse.
+#
+# These two rows have no `raku` oracle -- Rakudo has no growing-seed loop and
+# hangs on a left-recursive rule. They pin a mutsu capability against the
+# regression an unguarded Slice 2 would cause; every other row in this file was
+# measured against raku.
+grammar E3LR {
+    token TOP  { <expr> }
+    token expr { <term> | <expr> '+' <term> }
+    token term { \d+ }
+}
+is ~(E3LR.parse('1+2+3') // ''), '1+2+3',
+    'E3d  left recursion under a ratcheted caller still grows its seed';
+grammar E3LR2 {
+    token TOP  { <expr> }
+    token expr { <expr> '+' <term> | <term> }
+    token term { \d+ }
+}
+is ~(E3LR2.parse('1+2+3') // ''), '1+2+3',
+    'E3e  and with the recursive branch declared first';
+
+# A proto/multi subrule under a ratcheted caller keeps its rank-then-match
+# dispatch (ADR-0046) and runs the winner's block once.
+my $e3f = 0;
+grammar E3FG {
+    token TOP { <part> 'c' }
+    proto token part {*}
+    multi token part:sym<a> { \w* { $e3f++ } }
+}
+E3FG.parse('aaac');
+is $e3f, 1, 'E3f  a proto subrule under a ratcheted caller runs its winner once';
+
+# Control: a QUANTIFIED subrule under a ratcheted caller grows its chain one
+# iteration at a time already (`walk_quant_chain`), and must keep doing so.
+my $e3g = 0;
+grammar E3GG { token TOP { <part>+ 'c' }; regex part { \w { $e3g++ } } }
+E3GG.parse('aaac');
+is $e3g, 4, 'E3g  a quantified subrule still runs once per iteration entered';
 
 my $e4 = 0;
 grammar E4G { regex TOP { <part> 'c' }; token part { \w* { $e4++ } } }
