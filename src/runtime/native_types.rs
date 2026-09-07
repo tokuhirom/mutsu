@@ -153,6 +153,53 @@ pub(crate) fn is_signed_native(type_name: &str) -> bool {
     )
 }
 
+/// [`native_int_bounds`] without the two `BigInt` allocations: the bounds of
+/// every native integer type fit an `i128`.
+pub(crate) fn native_int_bounds_i128(type_name: &str) -> Option<(i128, i128)> {
+    let bits = native_type_bits(type_name)?;
+    Some(if is_signed_native(type_name) {
+        (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1)
+    } else {
+        (0, (1i128 << bits) - 1)
+    })
+}
+
+/// [`wrap_native_int`] for a value that fits an `i128` -- which every value a
+/// native store or a native-typed parameter ever sees does (`Int` is an
+/// `i64`, and a `BigInt` that fits is converted by the caller). Every native
+/// type is at most 64 bits wide, so the modulus `2^bits` fits an `i128` too
+/// and the wrap is two machine operations. `None` for a name that is not a
+/// native integer type.
+///
+/// The `BigInt` version below computed `((v % m) + m) % m` on heap integers:
+/// three divisions and several allocations per store into a `my int` lexical,
+/// which the vendored `Test.rakumod` does once per assertion
+/// (`$num_of_tests_run = $num_of_tests_run + 1`) and which showed up as ~7k
+/// instructions of `num_bigint` division per assertion
+/// (`todo/deep/vendor-real-test-module.md`).
+pub(crate) fn wrap_native_int_i128(type_name: &str, value: i128) -> Option<i128> {
+    let bits = native_type_bits(type_name)?;
+    let modulus = 1i128 << bits;
+    let wrapped = value.rem_euclid(modulus);
+    Some(if is_signed_native(type_name) && wrapped >= modulus >> 1 {
+        wrapped - modulus
+    } else {
+        wrapped
+    })
+}
+
+/// [`wrap_native_int_i128`] for an `Int` value, producing the wrapped `Value`
+/// (an `Int` when the result fits an `i64`, which it always does for a signed
+/// type; a `uint64` result above `i64::MAX` boxes). `None` for a name that is
+/// not a native integer type.
+pub(crate) fn wrap_native_int_value(type_name: &str, value: i64) -> Option<crate::value::Value> {
+    let wrapped = wrap_native_int_i128(type_name, value as i128)?;
+    Some(match i64::try_from(wrapped) {
+        Ok(n) => crate::value::Value::int(n),
+        Err(_) => crate::value::Value::bigint(NumBigInt::from(wrapped)),
+    })
+}
+
 /// Wrap a BigInt value to fit within the native type's range.
 /// This performs modular wrapping (like C integer overflow).
 pub(crate) fn wrap_native_int(type_name: &str, value: &NumBigInt) -> NumBigInt {
@@ -160,6 +207,12 @@ pub(crate) fn wrap_native_int(type_name: &str, value: &NumBigInt) -> NumBigInt {
         Some(b) => b,
         None => return value.clone(),
     };
+    // Machine arithmetic whenever the value fits (see `wrap_native_int_i128`).
+    if let Some(v) = num_traits::ToPrimitive::to_i128(value)
+        && let Some(wrapped) = wrap_native_int_i128(type_name, v)
+    {
+        return NumBigInt::from(wrapped);
+    }
     let signed = is_signed_native(type_name);
 
     // Total range = 2^bits
@@ -182,6 +235,14 @@ pub(crate) fn wrap_native_int(type_name: &str, value: &NumBigInt) -> NumBigInt {
 
 /// Check if a value (as BigInt) is within range for the native type.
 pub(crate) fn is_in_native_range(type_name: &str, value: &NumBigInt) -> bool {
+    // Machine compare whenever the value fits an `i128` (see
+    // `native_int_bounds_i128`); a wider value is out of every native range.
+    if let Some((min, max)) = native_int_bounds_i128(type_name) {
+        return match num_traits::ToPrimitive::to_i128(value) {
+            Some(v) => v >= min && v <= max,
+            None => false,
+        };
+    }
     if let Some((min, max)) = native_int_bounds(type_name) {
         value >= &min && value <= &max
     } else {
@@ -230,6 +291,80 @@ mod tests {
         // -129 should wrap to 127
         let val = NumBigInt::from(-129);
         assert_eq!(wrap_native_int("int8", &val), NumBigInt::from(127));
+    }
+
+    /// The machine-arithmetic fast paths agree with the `BigInt` definitions
+    /// they short-circuit, across every width and both signednesses.
+    #[test]
+    fn i128_fast_paths_agree_with_bigint_paths() {
+        use num_traits::ToPrimitive;
+        let bigint_wrap = |type_name: &str, value: &NumBigInt| -> NumBigInt {
+            let bits = native_type_bits(type_name).unwrap();
+            let modulus = NumBigInt::from(1u64) << bits;
+            let wrapped = ((value % &modulus) + &modulus) % &modulus;
+            if is_signed_native(type_name) && wrapped >= (&modulus >> 1) {
+                wrapped - modulus
+            } else {
+                wrapped
+            }
+        };
+        let samples: [i128; 14] = [
+            0,
+            1,
+            -1,
+            127,
+            128,
+            -128,
+            -129,
+            255,
+            256,
+            65_536,
+            i64::MAX as i128,
+            i64::MIN as i128,
+            u64::MAX as i128,
+            u64::MAX as i128 + 1,
+        ];
+        for type_name in [
+            "int8", "uint8", "int16", "uint16", "int32", "uint32", "int", "uint",
+        ] {
+            let (lo, hi) = native_int_bounds(type_name).unwrap();
+            assert_eq!(
+                native_int_bounds_i128(type_name).unwrap(),
+                (lo.to_i128().unwrap(), hi.to_i128().unwrap()),
+                "{type_name} bounds"
+            );
+            for v in samples {
+                let big = NumBigInt::from(v);
+                assert_eq!(
+                    NumBigInt::from(wrap_native_int_i128(type_name, v).unwrap()),
+                    bigint_wrap(type_name, &big),
+                    "{type_name} wrap {v}"
+                );
+                assert_eq!(
+                    wrap_native_int(type_name, &big),
+                    bigint_wrap(type_name, &big),
+                    "{type_name} wrap (BigInt entry) {v}"
+                );
+                assert_eq!(
+                    is_in_native_range(type_name, &big),
+                    big >= lo && big <= hi,
+                    "{type_name} range {v}"
+                );
+            }
+        }
+        assert_eq!(wrap_native_int_i128("Str", 5), None);
+        assert_eq!(
+            wrap_native_int_value("uint8", 300).unwrap(),
+            crate::value::Value::int(44)
+        );
+        assert_eq!(
+            wrap_native_int_value("int8", -129).unwrap(),
+            crate::value::Value::int(127)
+        );
+        assert_eq!(
+            wrap_native_int_value("uint64", -1).unwrap(),
+            crate::value::Value::bigint(NumBigInt::from(u64::MAX))
+        );
     }
 
     #[test]

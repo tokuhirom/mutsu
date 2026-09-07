@@ -84,7 +84,12 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
         )));
     }
     let big_val = match val.view() {
-        ValueView::Int(n) => NumBigInt::from(n),
+        // The common case, machine arithmetic and no allocation. An `Int` is
+        // always in range for the full-width types (the overflow errors below
+        // are about `BigInt`s), and the narrower ones wrap.
+        ValueView::Int(n) => {
+            return Ok(native_types::wrap_native_int_value(base, n).unwrap_or(val));
+        }
         ValueView::BigInt(n) => (**n).clone(),
         _ => return Ok(val),
     };
