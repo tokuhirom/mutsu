@@ -98,7 +98,7 @@ impl Interpreter {
     /// checks already do.
     #[inline]
     fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
-        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains(name)
+        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains_key(name)
     }
 
     /// Names of builtin listops/functions that a same-named user-defined

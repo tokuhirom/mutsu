@@ -2947,7 +2947,7 @@ impl Interpreter {
             package_lexicals: PackageLexicals::default(),
             class_body_static_names: HashMap::new(),
             unit_lexicals: PackageLexicals::default(),
-            mainline_lexical_subs: std::collections::HashSet::new(),
+            mainline_lexical_subs: std::collections::HashMap::new(),
             escaped_our_lexical_cells: HashMap::new(),
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),

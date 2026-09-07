@@ -473,16 +473,50 @@ impl Interpreter {
             // captured `my`'s own initializer (raku requires declare-before-
             // use, so that initializer has always already run by then),
             // installs live cells.
-            if self.block_scope_depth() == 0
-                && self
-                    .env()
-                    .get("__mutsu_in_eval")
-                    .is_none_or(|v| !v.truthy())
+            //
+            // The same treatment extends to a named sub declared inside a
+            // BARE BLOCK (the follow-up ADR-0024 "Known limitations" names):
+            // its free variables have no store to answer them, so both the
+            // read/write resolution and a `:=` of one fall through to the flat,
+            // name-keyed `env`, where a shadowing CALLER owns the key. The only
+            // difference is the bucket: mainline is a single scope, so all its
+            // subs share `MAINLINE_UNIT_KEY`, while sibling blocks are distinct
+            // scopes that may each declare the same name — so a block-declared
+            // sub gets its own `UNIT<block ...>` bucket.
+            let capture_bucket: Option<String> = if self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_none_or(|v| !v.truthy())
                 && self.current_package() == "GLOBAL"
-                && self.routine_stack().is_empty()
                 && !self.module_load_active()
                 && !self.is_thread_clone()
             {
+                if self.block_scope_depth() == 0 && self.routine_stack().is_empty() {
+                    Some(crate::runtime::MAINLINE_UNIT_KEY.to_string())
+                } else if !self.routine_stack().is_empty()
+                    // A sub registered while another ROUTINE is running is not
+                    // lexical to a block of the compunit body — same exclusion
+                    // the mainline arm makes with `routine_stack().is_empty()`.
+                    // Block frames are fine (and expected): the bare block the
+                    // sub is declared in is itself one. (`block_scope_depth` is
+                    // NOT the discriminator here — a bare `{ ... }` at file
+                    // scope pushes a block ROUTINE FRAME and leaves the depth
+                    // counter at 0; the counter tracks a different, narrower
+                    // notion of nesting.)
+                    && self.routine_stack().iter().all(|f| f.is_block)
+                {
+                    Some(format!(
+                        "{}{}>",
+                        crate::runtime::BLOCK_LEXICAL_UNIT_PREFIX,
+                        resolved_name
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(unit_key) = capture_bucket {
                 // Union `free_var_syms` (read) AND `free_var_writes` (a
                 // write-only free var, e.g. a setter `sub set-v($x) { $v = $x
                 // }`, never appears in `free_var_syms` — see
@@ -589,13 +623,14 @@ impl Interpreter {
                         boxed
                     };
                     self.unit_lexicals
-                        .entry(crate::runtime::MAINLINE_UNIT_KEY.to_string())
+                        .entry(unit_key.clone())
                         .or_default()
                         .insert(name, cell);
                     captured_any = true;
                 }
                 if captured_any {
-                    self.mainline_lexical_subs.insert(resolved_name.clone());
+                    self.mainline_lexical_subs
+                        .insert(resolved_name.clone(), unit_key);
                 }
             }
             // A sub declared inside a BLOCK scope is lexical: the block-exit

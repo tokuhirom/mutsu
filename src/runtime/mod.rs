@@ -2349,17 +2349,22 @@ pub struct Interpreter {
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
     pub(crate) unit_lexicals: PackageLexicals,
-    /// Names of mainline-declared named subs that captured at least one
-    /// mainline `my` scalar free variable into
-    /// `unit_lexicals[MAINLINE_UNIT_KEY]` at registration time (ADR-0024).
+    /// Named subs that captured at least one enclosing-scope `my` free
+    /// variable into `unit_lexicals` at registration time (ADR-0024), mapped to
+    /// the `unit_lexicals` bucket key holding their cells.
     ///
-    /// A free-variable read/write resolves through the mainline unit-lexical
-    /// cells ONLY while the last (non-block) routine frame's name is in this
-    /// set AND its package is `GLOBAL` — see
-    /// `Interpreter::mainline_lexical_frame_active`. Empty for a program with
-    /// no such capture: zero cost beyond the map-presence check already paid
-    /// by `unit_lexical_slot`.
-    pub(crate) mainline_lexical_subs: std::collections::HashSet<String>,
+    /// A sub declared at mainline maps to [`MAINLINE_UNIT_KEY`] (all mainline
+    /// subs share one bucket, because mainline is one scope). A sub declared
+    /// inside a *bare block* maps to its own
+    /// [`BLOCK_LEXICAL_UNIT_PREFIX`]-keyed bucket, because sibling blocks are
+    /// distinct scopes that may declare the same name.
+    ///
+    /// A free-variable read/write resolves through those cells ONLY while the
+    /// last (non-block) routine frame's name is a key here AND its package is
+    /// `GLOBAL` — see `Interpreter::active_unit_lexical_bucket`. Empty for a
+    /// program with no such capture: zero cost beyond the map-presence check
+    /// already paid by `unit_lexical_slot`.
+    pub(crate) mainline_lexical_subs: std::collections::HashMap<String, String>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
@@ -3780,6 +3785,15 @@ pub(crate) const DEFAULT_TOLERANCE: f64 = 1e-15;
 /// cannot appear in a real Raku package name, so no user `package`/`module`/
 /// `class` can collide with it.
 pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
+
+/// Prefix of the reserved pseudo-unit key a named sub declared inside a *bare
+/// block* stores its own captured block lexicals under (ADR-0024's
+/// "subs declared inside blocks" follow-up). One bucket per sub rather than
+/// one shared bucket, because a block scope — unlike mainline — is not
+/// unique: two sibling blocks each declaring `my $x` and each declaring a sub
+/// that captures it are two different bindings, and a single bucket would fuse
+/// them. Contains `<`/`>` for the same reason [`MAINLINE_UNIT_KEY`] does.
+pub(crate) const BLOCK_LEXICAL_UNIT_PREFIX: &str = "UNIT<block ";
 
 /// Immutable process-constant magic/dynamic variables hoisted into the shared
 /// env base tier (see `Interpreter::new`). These hold the same value for the
