@@ -520,8 +520,37 @@ impl Interpreter {
     /// caught the ELEMENT-constraint case (`my Int @a`, `my Str %h`), which
     /// ADR-0042 made a property of the container: a write reaching the array
     /// through its cell still re-checks it, so it survives the cell intact.
-    /// Deleting the check leaves all six QuantHash roast files green and is
-    /// pinned by `t/typed-container-capture-cell.t`.
+    /// Narrowing the check to the NATIVE element types is therefore what it
+    /// should always have been. Those genuinely do not survive the cell: a
+    /// `my atomicint @values` element lives in the native/atomic lane, and
+    /// celling the container puts a `ContainerRef` where `cas(@values[0], ...)`
+    /// expects a native slot, so the read fails with "Cannot convert value to
+    /// native integer type 'int'" (`roast/S17-lowlevel/cas-int.t`) -- the same
+    /// lane `box_decl_local_cell` already declines via `legacy_atomic_lane_owns`
+    /// for scalars. Ordinary object element types (`Int`, `Str`) take the cell
+    /// and keep their check; all six QuantHash roast files stay green. Pinned by
+    /// `t/typed-container-capture-cell.t`.
+    /// The declared ELEMENT type of an `@`/`%` container lexical, looked up
+    /// under both the sigilled and the bare spelling (the metadata is
+    /// registered under whichever the declaration used).
+    fn container_element_type_constraint(&self, name: &str) -> Option<String> {
+        loan_env!(self, var_type_constraint(name)).or_else(|| {
+            loan_env!(
+                self,
+                var_type_constraint(name.trim_start_matches(['@', '%']))
+            )
+        })
+    }
+
+    /// Whether an element type names a NATIVE representation — one whose
+    /// elements are raw machine slots rather than `Value`s, so a `ContainerRef`
+    /// in front of the container breaks native/atomic element access.
+    fn is_native_element_type(constraint: &str) -> bool {
+        let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
+        crate::runtime::native_types::is_native_int_type(base)
+            || matches!(base, "num" | "num32" | "num64" | "str")
+    }
+
     pub(crate) fn box_decl_local_container_cell(
         &mut self,
         code: &CompiledCode,
@@ -540,6 +569,16 @@ impl Interpreter {
             return;
         }
         let name = code.locals[idx].clone();
+        // A NATIVE element type keeps flowing through the assignment
+        // chokepoint: its elements are native slots, not Values, so a
+        // `ContainerRef` in the way breaks `cas`/atomic access (see the doc
+        // comment above).
+        if self
+            .container_element_type_constraint(&name)
+            .is_some_and(|t| Self::is_native_element_type(&t))
+        {
+            return;
+        }
         let container = cur.into_container_ref();
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());

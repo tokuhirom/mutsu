@@ -24,7 +24,7 @@ use Test;
 #
 # Every expectation below was measured against rakudo 2026.07.
 
-plan 12;
+plan 14;
 
 # --- the ticket's repro, and its `%` and `Str` twins --------------------
 my Int @a = 1, 2;
@@ -82,3 +82,20 @@ my Int @v = 1, 2, 3;
 my $f7 = -> { @v.elems };
 sub c7() { my Int @v = 9; $f7.() }
 is c7(), 3, 'a vouched typed capture still resolves to its own binding';
+
+# --- the NATIVE element types keep flowing through the chokepoint -------
+# Their elements are raw machine slots, not Values, so a `ContainerRef` in
+# front of the container breaks native/atomic element access: celling a
+# `my atomicint @values` made `cas(@values[0], ...)` fail with "Cannot convert
+# value to native integer type 'int'" (`roast/S17-lowlevel/cas-int.t`). They are
+# refused the cell for that reason, and so stay hijackable -- the residue this
+# pins deliberately, rather than a behaviour to rely on.
+my atomicint @at;
+@at[0] = 0;
+cas(@at[0], 0, 7);
+is @at[0], 7, 'cas on an atomicint array element still works';
+
+my int @ni = 1, 2, 3;
+my $f8 = -> { @ni.elems };
+sub c8() { my int @ni = 9; $f8.() }
+ok c8() ~~ Int, 'a native-typed array capture still returns an Int (no cell)';
