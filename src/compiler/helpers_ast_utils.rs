@@ -174,12 +174,34 @@ impl Compiler {
         })
     }
 
+    /// Peel the source-preserving compound-assignment marker (`$x += 1`,
+    /// `$x .= meth`) off an expression, yielding the assignment expansion the
+    /// compiler actually runs. The marker is transparent to execution, so every
+    /// analysis that asks "is this an assignment, and to what?" must see through
+    /// it. Nested markers (a chained `.=`) are peeled to the innermost one.
+    pub(super) fn peel_compound_assign(expr: &Expr) -> &Expr {
+        match expr {
+            Expr::CompoundAssign { expanded, .. } => Self::peel_compound_assign(expanded),
+            other => other,
+        }
+    }
+
+    /// The scalar/aggregate lvalue name an assignment-shaped expression writes
+    /// to, seeing through a compound-assignment marker.
+    pub(super) fn assign_expr_lvalue_name(expr: &Expr) -> Option<&str> {
+        match Self::peel_compound_assign(expr) {
+            Expr::AssignExpr { name, .. } => Some(name.as_str()),
+            _ => None,
+        }
+    }
+
     pub(super) fn postfix_index_name(target: &Expr) -> Option<String> {
         match target {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
             Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::CompoundAssign { expanded, .. } => Self::postfix_index_name(expanded),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
                 _ => None,
@@ -198,6 +220,7 @@ impl Compiler {
             // through the sigilless alias back to the original container.
             Expr::BareWord(name) => Some(name.clone()),
             Expr::AssignExpr { name, .. } => Some(name.clone()),
+            Expr::CompoundAssign { expanded, .. } => Self::index_assign_target_name(expanded),
             Expr::DoStmt(stmt) => match stmt.as_ref() {
                 Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name.clone()),
                 _ => None,
@@ -212,7 +235,10 @@ impl Compiler {
     }
 
     pub(super) fn index_assign_target_requires_eval(target: &Expr) -> bool {
-        matches!(target, Expr::AssignExpr { .. } | Expr::DoStmt(_))
+        matches!(
+            Self::peel_compound_assign(target),
+            Expr::AssignExpr { .. } | Expr::DoStmt(_)
+        )
     }
 
     /// Extract the variable name from a method call target (e.g., `$foo.bar` → "foo").

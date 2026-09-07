@@ -200,6 +200,9 @@ impl Compiler {
             | Expr::Eager(e)
             | Expr::PositionalPair(e)
             | Expr::ZenSlice(e) => Self::expr_has_state_decl(e),
+            // A compound-assignment marker (`$x += 1`, `$x .= meth`) is
+            // transparent: only its expansion is executed.
+            Expr::CompoundAssign { expanded, .. } => Self::expr_has_state_decl(expanded),
             Expr::Binary { left, right, .. } => {
                 Self::expr_has_state_decl(left) || Self::expr_has_state_decl(right)
             }
