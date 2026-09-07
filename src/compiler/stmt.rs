@@ -1351,6 +1351,42 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
+                // `our TYPE $x` does not compile in rakudo: a package variable
+                // is reachable by its qualified name from anywhere, so there is
+                // nowhere to enforce a lexical constraint. Rejected HERE rather
+                // than in the parser because rakudo still *parses* it — `Q[our
+                // Int $x].AST` builds a `RakuAST::VarDeclaration::Simple` with
+                // both `scope => "our"` and its `type` (pinned by
+                // `t/rakuast-vardecl-scoped.t`) — and only refuses to compile
+                // it. `our TYPE sub f() {…}` is legal and never reaches this
+                // arm (the parser takes the typed-routine path, where the
+                // constraint is the return type); `our TYPE constant K = …` is
+                // legal too and DOES reach it, so it is excluded below.
+                //
+                // Two `our TYPE` spellings are still accepted, both because the
+                // AST does not carry the `our` down to where the constraint is:
+                // a destructuring list (`our Int ($a, $b)` lowers to VarDecls
+                // with `is_our: false`) and a class attribute (`our Int $.x` is
+                // a `HasDecl`, compiled through the class-body planner rather
+                // than here). See
+                // `todo/tickets/our-typed-destructuring-and-attribute-declarations-are-accepted.md`.
+                if *is_our
+                    && type_constraint.is_some()
+                    && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                {
+                    const MSG: &str = "Cannot put a type constraint on an 'our'-scoped variable";
+                    let err = Value::make_exception(
+                        "X::Comp::AdHoc",
+                        &[
+                            ("message", Value::str(MSG.to_string())),
+                            ("payload", Value::str(MSG.to_string())),
+                        ],
+                    );
+                    let idx = self.code.add_constant(err);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    self.code.emit(OpCode::Die { user_throw: false });
+                    return;
+                }
                 // ADR-0061: `my $self` declares the reserved lexical key, unless
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
