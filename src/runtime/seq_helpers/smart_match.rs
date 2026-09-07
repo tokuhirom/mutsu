@@ -108,6 +108,14 @@ impl Interpreter {
         {
             return v.to_string_value();
         }
+        // A `Regex` SUBJECT is coerced with `.Str` like any other value, so it
+        // warns and yields the EMPTY string -- see `regex_str_coercion`. That
+        // is what makes `$_ ~~ $_` on a regex topic answer `Nil`: `""` cannot
+        // contain an `a`, whereas the source text `"/a/"` does, which is why
+        // mutsu used to report a spurious `Match`.
+        if let Some(coerced) = self.regex_str_coercion(left) {
+            return coerced.map(|v| v.to_string_value()).unwrap_or_default();
+        }
         left.to_string_value()
     }
 

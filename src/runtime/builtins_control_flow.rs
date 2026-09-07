@@ -419,6 +419,40 @@ impl Interpreter {
     /// value in `return_value`, which function-call boundaries treat as an
     /// explicit `return` — silently swallowing the warning and abandoning the
     /// rest of the callee body.
+    /// The `Str` COERCION of a `Regex`, or `None` when `v` is not one.
+    ///
+    /// rakudo refuses to hand back a regex's source text in string context: it
+    /// warns "Regex object coerced to string (please use .gist or .raku to do
+    /// that)" and yields the EMPTY string. `.gist` and `.raku` legitimately
+    /// show the source and are untouched -- the two consumers used to share
+    /// one answer (`to_string_value`), which is what made
+    /// `(/a/).Str` be `"/a/"`.
+    ///
+    /// It matters beyond the coercion itself: a smartmatch of a `Regex`
+    /// against a `Regex` stringifies the LHS to give the RHS a subject, and
+    /// `"/a/"` really does contain an `a`, so `$_ ~~ $_` on a regex topic
+    /// reported a spurious `Match` where rakudo answers `Nil`.
+    pub(crate) fn regex_str_coercion(&mut self, v: &Value) -> Option<Result<Value, RuntimeError>> {
+        if !Self::is_regex_like_value(v) {
+            return None;
+        }
+        Some(self.raise_resumable_warning(
+            "Regex object coerced to string (please use .gist or .raku to do that)",
+            Value::str(String::new()),
+        ))
+    }
+
+    /// The three value shapes a `Regex` can take: an anonymous `/.../`, one
+    /// carrying adverbs, and a named `regex`/`token`/`rule` routine.
+    pub(crate) fn is_regex_like_value(v: &Value) -> bool {
+        matches!(
+            v.view(),
+            ValueView::Regex(_)
+                | ValueView::RegexWithAdverbs(..)
+                | ValueView::Routine { is_regex: true, .. }
+        )
+    }
+
     pub(crate) fn raise_resumable_warning(
         &mut self,
         message: &str,

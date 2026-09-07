@@ -323,6 +323,14 @@ impl Interpreter {
                 }
                 None
             }
+            // A `Regex` in string context warns and yields the empty string --
+            // see `regex_str_coercion`. Checked before the generic list/`Str`
+            // renderer, which would hand back the source text.
+            "Str" | "Stringy" if args.is_empty() && self.regex_str_coercion(&target).is_some() => {
+                // The probe above already warned; re-running it would warn
+                // twice, so answer directly.
+                Some(Ok(Value::str(String::new())))
+            }
             "Str" | "Stringy" if args.is_empty() => self.dispatch_list_str_method(target),
             "join" if args.len() <= 1 => {
                 // `.join` on a Thread blocks until the thread completes and syncs

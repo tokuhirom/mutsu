@@ -724,6 +724,12 @@ pub(super) fn dispatch(
             // -- `~@a` then disagreed with `@a.join("")` for the same array).
             // `dispatch_list_str_method` resolves the elements and re-renders.
             _ if crate::Interpreter::list_str_needs_interpreter(target) => None,
+            // A `Regex` warns and yields the EMPTY string rather than its
+            // source text, and the warning needs the interpreter -- see
+            // `Interpreter::regex_str_coercion`.
+            ValueView::Regex(_)
+            | ValueView::RegexWithAdverbs(..)
+            | ValueView::Routine { is_regex: true, .. } => None,
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {
