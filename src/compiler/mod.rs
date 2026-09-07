@@ -2670,10 +2670,10 @@ impl Compiler {
     /// `Int`. Positions past 31 are never marked (a call with 32+ positional
     /// arguments and a native `multi` candidate is not worth a wider carrier);
     /// leaving a bit clear only preserves the old ranking for that position.
-    fn literal_native_args_mask(args: &[Expr]) -> u32 {
+    fn literal_native_args_mask(&self, args: &[Expr]) -> u32 {
         let mut mask = 0u32;
         for (i, arg) in args.iter().enumerate().take(32) {
-            if Self::is_native_literal_arg(arg) {
+            if self.is_native_literal_arg(arg) {
                 mask |= 1 << i;
             }
         }
@@ -2684,26 +2684,59 @@ impl Compiler {
     /// literal counts: `-3` parses as `Unary { Minus, Literal(3) }` rather than
     /// a negative literal, and rakudo ranks `d(-3)` on `int` exactly as it ranks
     /// `d(3)`.
-    fn is_native_literal_arg(arg: &Expr) -> bool {
-        match arg {
-            Expr::Literal(v) => matches!(
+    ///
+    /// An expression that CONSTANT-FOLDS to such a literal counts too, because
+    /// rakudo folds during optimization and the call site is indistinguishable
+    /// from the literal one by the time dispatch runs: `d(5 + 0)` ranks on
+    /// `int` exactly as `d(5)` does. Reusing `const_operand` (ADR-0006 §2.1)
+    /// rather than a private walker keeps the operator-override safety with it
+    /// -- a unit that declares `infix:<+>` folds nothing, so its call sites
+    /// fall back to the literal-only reading. A fold that leaves the native
+    /// width lands on `BigInt`, which is not accepted here, so
+    /// `d(2**35 * 2**35)` still ranks as boxed.
+    fn is_native_literal_arg(&self, arg: &Expr) -> bool {
+        let is_native_scalar = |v: &Value| {
+            matches!(
                 v.view(),
                 crate::value::ValueView::Int(_)
                     | crate::value::ValueView::Num(_)
                     | crate::value::ValueView::Str(_)
-            ),
+            )
+        };
+        // The literal shapes are recognised without folding, so they still
+        // rank native in a unit that declares an operator (which turns folding
+        // off entirely).
+        match arg {
+            Expr::Literal(v) if is_native_scalar(v) => return true,
             Expr::Unary {
                 op: TokenKind::Minus,
                 expr,
-            } => matches!(
+            } if matches!(
                 expr.as_ref(),
                 Expr::Literal(v) if matches!(
                     v.view(),
                     crate::value::ValueView::Int(_) | crate::value::ValueView::Num(_)
                 )
-            ),
-            _ => false,
+            ) =>
+            {
+                return true;
+            }
+            _ => {}
         }
+        // `const_operand` does not itself check whether folding is allowed --
+        // its `try_const_fold_*` callers do -- so gate on that here, and record
+        // the reliance so a user operator declared later in the unit still
+        // triggers the refold pass.
+        if !self.const_fold_enabled() {
+            return false;
+        }
+        let folded = self
+            .const_operand(arg)
+            .is_some_and(|v| is_native_scalar(&v));
+        if folded {
+            self.fold_ctx.note_folded();
+        }
+        folded
     }
 
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
