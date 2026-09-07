@@ -2412,6 +2412,12 @@ impl Interpreter {
                 self.shaped_decl_context = true;
                 *ip += 1;
             }
+            OpCode::StashVarDeclInit => {
+                // Peek, do NOT pop: the value still has to reach the SetLocal
+                // that follows.
+                self.vardecl_init_raw = self.stack.last().cloned();
+                *ip += 1;
+            }
 
             // -- String --
             OpCode::Concat => {

@@ -942,9 +942,19 @@ impl Interpreter {
         Ok(Some(()))
     }
 
-    /// True when `instance` is a tied container: a user `STORE` method plus a
-    /// composed `Associative`/`Positional` role.
-    pub(super) fn instance_is_tied(&mut self, instance: &Value) -> bool {
+    /// True when `instance` is a tied container: a user `STORE` method (the
+    /// custom-container protocol), or a native `Hash`/`Map` subclass whose
+    /// storage delegation supplies `STORE`.
+    ///
+    /// Every caller has already established that the assignment target is an
+    /// `@`/`%` variable currently *holding an instance* — i.e. the declaration
+    /// already tied it. A user `STORE` is therefore sufficient on its own; the
+    /// composed `Associative`/`Positional` role is not additionally required,
+    /// because the sigil already supplies those semantics (raku ties an `@`/`%`
+    /// variable to any class named by `is`). Demanding the role made
+    /// `my @a is DNA = 'x'; @a = 'y'` silently bypass `DNA::STORE` and clobber
+    /// the tie with a plain Array.
+    pub(crate) fn instance_is_tied(&mut self, instance: &Value) -> bool {
         let Some(class_name) = Self::tied_instance_type_name(instance) else {
             return false;
         };
@@ -964,17 +974,14 @@ impl Interpreter {
             .mro_readonly(cn)
             .iter()
             .any(|n| Self::is_associative_base(n));
-        native_hash_subclass
-            || (self.has_user_method_including_role(cn, "STORE")
-                && (self.class_does_role(cn, "Associative")
-                    || self.class_does_role(cn, "Positional")))
+        native_hash_subclass || self.has_user_method_including_role(cn, "STORE")
     }
 
     /// The type name behind a candidate tied container. A tie declared with a
     /// *role* (`my %h is TypeConverter`, `has %.C is TypeConverter`) puns the
     /// role, and a punned role is a `Mixin` wrapping the instance — so matching
     /// `Instance` alone would silently skip every role-typed tie.
-    pub(super) fn tied_instance_type_name(val: &Value) -> Option<crate::symbol::Symbol> {
+    pub(crate) fn tied_instance_type_name(val: &Value) -> Option<crate::symbol::Symbol> {
         match val.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Mixin(inner, _) => Self::tied_instance_type_name(inner),
@@ -993,10 +1000,11 @@ impl Interpreter {
     /// original instance).
     fn tied_store_dispatch(&mut self, instance: Value) -> Result<Value, RuntimeError> {
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
-        let store_values = Self::associative_store_values(&rhs);
-        // Pass the flattened values as a single positional list; STORE's slurpy
-        // `*@values` flattens it (separate args would bind Pairs as *named*).
-        let list_arg = Value::array(store_values);
+        // Pass the RHS as ONE positional argument, shaped the way raku shapes it:
+        // an aggregate becomes a single list (STORE's slurpy `*@values` flattens
+        // it; separate args would bind Pairs as *named*), while a plain scalar
+        // stays a scalar so a typed single-positional `STORE(Str $x)` binds it.
+        let list_arg = Self::associative_store_arg(&rhs);
         let stored =
             self.try_compiled_method_or_interpret(instance.clone(), "STORE", vec![list_arg])?;
         Ok(if Self::is_tie_bindable(&stored) {
@@ -1006,18 +1014,23 @@ impl Interpreter {
         })
     }
 
-    /// Flatten an RHS value into the list `STORE` expects: a Hash becomes its
-    /// pairs, a list-like aggregate its items, anything else a single element.
-    fn associative_store_values(rhs: &Value) -> Vec<Value> {
+    /// Shape an RHS value into the single positional argument `STORE` expects: a
+    /// Hash becomes the list of its pairs, a list-like aggregate the list of its
+    /// items, and anything else passes through UNWRAPPED. The last case is what
+    /// raku does — `@a = 'z'` calls `STORE('z')`, not `STORE(('z',))` — and
+    /// wrapping it broke every typed single-positional signature
+    /// (`method STORE(Str $chain)` saw a List and failed its type check).
+    fn associative_store_arg(rhs: &Value) -> Value {
         match rhs.view() {
-            ValueView::Hash(h) => h
-                .iter()
-                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
-                .collect(),
-            ValueView::Array(a, _) => a.iter().cloned().collect(),
-            ValueView::Seq(s) => s.iter().cloned().collect(),
-            ValueView::Slip(s) => s.iter().cloned().collect(),
-            _ => vec![rhs.clone()],
+            ValueView::Hash(h) => Value::array(
+                h.iter()
+                    .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                    .collect(),
+            ),
+            ValueView::Array(a, _) => Value::array(a.iter().cloned().collect()),
+            ValueView::Seq(s) => Value::array(s.iter().cloned().collect()),
+            ValueView::Slip(s) => Value::array(s.iter().cloned().collect()),
+            _ => rhs.clone(),
         }
     }
 }

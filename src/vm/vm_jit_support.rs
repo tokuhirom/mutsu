@@ -149,6 +149,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MarkVarDeclContext
             | OpCode::MarkExplicitInitializerContext
             | OpCode::MarkShapedDeclContext
+            | OpCode::StashVarDeclInit
             | OpCode::MarkArrayShareSource(_)
             | OpCode::SetTopic
             | OpCode::SaveTopic

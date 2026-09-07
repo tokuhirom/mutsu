@@ -2,6 +2,41 @@
 use super::*;
 
 impl Interpreter {
+    /// The single positional argument a custom container's `STORE` receives for
+    /// a declaration initializer (`my @a is DNA = 'GAATCC'`).
+    ///
+    /// Raku hands `STORE` the RHS *as written*: a plain scalar stays a scalar
+    /// (`STORE('GAATCC', :INITIALIZE)`), a comma list or an array arrives as one
+    /// list (`STORE(('x','y'), :INITIALIZE)`). `SetLocal`'s Array/Hash coercion
+    /// erases that distinction, so `StashVarDeclInit` captures the raw RHS and
+    /// it is preferred here; `coerced` (the value read back out of the slot) is
+    /// the fallback for declarations that reach this op without a stash.
+    ///
+    /// Returns `None` when there was no initializer at all — `my @a is DNA;`
+    /// binds the instance and never calls `STORE`.
+    fn custom_container_store_arg(raw: Option<Value>, coerced: Option<Value>) -> Option<Value> {
+        let value = raw.or(coerced)?;
+        match value.view() {
+            ValueView::Nil => None,
+            ValueView::Array(a, _) if a.is_empty() => None,
+            ValueView::Seq(s) if s.is_empty() => None,
+            ValueView::Slip(s) if s.is_empty() => None,
+            ValueView::Hash(h) if h.is_empty() => None,
+            // A Hash RHS is delivered as its Pairs, which is what raku's
+            // `(:a(1), :b(2))` list is; every other shape passes through with
+            // its own identity so a typed single-positional `STORE(Str $x)`
+            // binds the scalar rather than a 1-element list.
+            ValueView::Hash(h) => Some(Value::array(
+                h.iter()
+                    .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                    .collect(),
+            )),
+            ValueView::Seq(s) => Some(Value::array(s.iter().cloned().collect())),
+            ValueView::Slip(s) => Some(Value::array(s.iter().cloned().collect())),
+            _ => Some(value),
+        }
+    }
+
     pub(super) fn exec_apply_var_trait_op(
         &mut self,
         code: &CompiledCode,
@@ -12,6 +47,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name = Self::const_str(code, trait_name_idx).to_string();
+        // Consume the `StashVarDeclInit` capture unconditionally, right here, so
+        // a declaration whose trait takes some *other* branch below cannot leave
+        // a stale RHS behind for the next custom-container tie to pick up.
+        let stashed_init = self.vardecl_init_raw.take();
         // `is TraitName` names its target class/role as WRITTEN in the source
         // (a constant string baked at compile time), but a lexical class
         // registers under a mangled storage name (ADR-0047 P1:
@@ -491,12 +530,27 @@ impl Interpreter {
         // the class's own methods, mirroring the `%`-sigil tied-hash block
         // below. Raku ties an `@` variable to ANY class named by `is` — the
         // `@` sigil supplies the positional semantics.
+        // A user-declared `STORE` names the custom-container protocol
+        // (`Language/subscripts.rakudoc`'s `my @string is DNA = 'GAATCC'`), which
+        // is what `@`-sigil ties use in real Raku: the variable is bound to
+        // `Type.new` (NO arguments) and the *declaration's own initializer* is
+        // then fed through `STORE(list, :INITIALIZE)`. That is a different
+        // protocol from the `Foo.new(|@values)` constructor call below, which
+        // only fits the `class Foo is Array[Str] {}` native-subclass style that
+        // has no `STORE` of its own.
+        let at_sigil_user_store =
+            name.starts_with('@') && self.has_user_method_including_role(&trait_name, "STORE");
         if name.starts_with('@')
             && (self.registry().classes.contains_key(&trait_name)
                 || self.registry().roles.contains_key(&trait_name))
             && (self.class_mro(&trait_name).iter().any(|n| n == "Array")
                 || self.class_does_role(&trait_name, "Positional")
-                || self.has_user_method_including_role(&trait_name, "AT-POS"))
+                || self.has_user_method_including_role(&trait_name, "AT-POS")
+                // Raku ties an `@` variable to ANY class named by `is` — the
+                // `@` sigil supplies the positional semantics, so a plain class
+                // that only implements `STORE` (the documented custom-container
+                // shape) ties just as well as one composing `Positional`.
+                || at_sigil_user_store)
         {
             if has_arg {
                 self.stack.pop();
@@ -515,6 +569,30 @@ impl Interpreter {
                 _ => Vec::new(),
             };
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            if at_sigil_user_store {
+                let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
+                // Bind first, then STORE through the bound variable, so the
+                // mutating dispatch resolves `self` to the instance the variable
+                // now holds — the same ordering the `%`-sigil block below uses.
+                self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
+                self.set_env_with_main_alias(&name_str, instance.clone());
+                let store_arg = Self::custom_container_store_arg(stashed_init, init_source);
+                if let Some(list_arg) = store_arg {
+                    let stored = self.try_compiled_method_or_interpret(
+                        instance.clone(),
+                        "STORE",
+                        vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
+                    )?;
+                    let bound = if Self::is_tie_bindable(&stored) {
+                        stored
+                    } else {
+                        instance
+                    };
+                    self.write_local_slot_or_name(code, eff_slot, &name_str, bound.clone());
+                    self.set_env_with_main_alias(&name_str, bound);
+                }
+                return Ok(());
+            }
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", init_values)?;
             self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
             self.set_env_with_main_alias(&name_str, instance);
@@ -561,21 +639,12 @@ impl Interpreter {
                 self.stack.pop();
             }
             let name_str = name.to_string();
-            // Gather any initializer values (`my %h is Foo = @pairs` assigns the
-            // initializer before this trait op runs) as Pairs / a flat kv list.
+            // The declaration's own initializer (`my %h is Foo = @pairs` assigns
+            // it before this trait op runs). Prefer the raw pre-coercion RHS the
+            // compiler stashed; fall back to the coerced slot value.
             let init_source = self
                 .read_local_slot_or_name(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
-            let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
-                Some(ValueView::Hash(h)) if !h.is_empty() => h
-                    .iter()
-                    .map(|(k, v)| Value::pair(k.clone(), v.clone()))
-                    .collect(),
-                Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
-                Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
-                Some(ValueView::Slip(s)) if !s.is_empty() => s.iter().cloned().collect(),
-                _ => Vec::new(),
-            };
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
             let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
             // Bind the instance to the variable first, then STORE the initializer
@@ -583,7 +652,7 @@ impl Interpreter {
             // to the same instance the variable now holds.
             self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
             self.set_env_with_main_alias(&name_str, instance.clone());
-            if !init_values.is_empty() {
+            if let Some(list_arg) = Self::custom_container_store_arg(stashed_init, init_source) {
                 // Pass the initializer as a single positional list (not as
                 // separate Pair args, which STORE's signature would bind as
                 // *named* arguments); STORE's slurpy `*@values` flattens it.
@@ -593,7 +662,6 @@ impl Interpreter {
                 // population from a forbidden overwrite (WriteOnceHash's STORE
                 // gates on `:$INITIALIZE`). A STORE that ignores it absorbs the
                 // extra named arg through its implicit `*%_`.
-                let list_arg = Value::array(init_values);
                 let stored = self.try_compiled_method_or_interpret(
                     instance.clone(),
                     "STORE",

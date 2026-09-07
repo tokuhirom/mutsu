@@ -3109,6 +3109,13 @@ pub struct Interpreter {
     /// `my @a[N;M] = ...` declaration is itself shaped — so the assignment KEEPS
     /// the shape instead of dropping it as a value copy (`my @u = @shaped` does).
     pub(crate) shaped_decl_context: bool,
+    /// Set by `StashVarDeclInit`: the raw, uncoerced initializer of the `@`/`%`
+    /// declaration currently being processed, so `ApplyVarTrait`'s
+    /// custom-container branches can hand the class's `STORE` the RHS with its
+    /// original scalar-vs-list shape intact (raku passes `'x'` bare but
+    /// `('x','y')` as a List). Taken by the trait op; `None` for every
+    /// declaration that does not carry a type-named `is` trait.
+    pub(crate) vardecl_init_raw: Option<Value>,
     /// Slice F (env<->locals coherence): the caller-variable *source* names that
     /// the most recent compiled-function return wrote back via an `is rw` /
     /// `is raw` / aliased-container parameter (`apply_rw_bindings_to_env`). The

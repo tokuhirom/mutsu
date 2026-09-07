@@ -901,6 +901,7 @@ impl Interpreter {
             explicit_initializer_context: Box::new(std::cell::Cell::new(false)),
             vardecl_context: Box::new(std::cell::Cell::new(false)),
             shaped_decl_context: false,
+            vardecl_init_raw: None,
             pending_rw_writeback_sources: Vec::new(),
             pending_caller_var_writeback: Vec::new(),
             inline_control_env_writes: Vec::new(),

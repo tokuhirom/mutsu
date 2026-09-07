@@ -793,6 +793,14 @@ pub(crate) enum OpCode {
     /// itself, so SetLocal must KEEP it (unlike `my @u = @shaped`, which copies
     /// values and drops shaped-ness).
     MarkShapedDeclContext,
+    /// Stash (non-destructively peek) the initializer value about to be stored
+    /// by the next `SetLocal`/`SetGlobal` of an `@`/`%` declaration that carries
+    /// a type-named `is` trait. `SetLocal`'s Array/Hash coercion erases the RHS's
+    /// original shape (`= 'x'` and `= ('x',)` both land as a 1-element Array),
+    /// but Raku's custom-container protocol hands `STORE` the RHS *as written*.
+    /// Only `ApplyVarTrait`'s custom-container branches read the stash, so this
+    /// is purely additive for every other declaration.
+    StashVarDeclInit,
     SetVarType {
         name_idx: u32,
         tc_idx: u32,
