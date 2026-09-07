@@ -729,6 +729,27 @@ impl Interpreter {
                     {
                         Some(Self::hash_inplace_reassign(old_gc, new_gc))
                     }
+                    // ADR-0039 slice 2: the QuantHash kinds, for the same reason
+                    // and by the same rule. `classify(..., :into(my %b :=
+                    // BagHash.new))` rebuilds the bag and used to drop the fresh
+                    // node into `env`, which only a by-name read could see; the
+                    // binding's own slot kept the empty original
+                    // (`roast/S32-list/classify.t` 25-27).
+                    (ValueView::Set(old_gc, _), ValueView::Set(new_gc, m)) => {
+                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
+                            Value::set_parts(gc, *m)
+                        })
+                    }
+                    (ValueView::Bag(old_gc, _), ValueView::Bag(new_gc, m)) => {
+                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
+                            Value::bag_parts(gc, *m)
+                        })
+                    }
+                    (ValueView::Mix(old_gc, _), ValueView::Mix(new_gc, m)) => {
+                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
+                            Value::mix_parts(gc, *m)
+                        })
+                    }
                     _ => None,
                 }
             }
@@ -745,6 +766,28 @@ impl Interpreter {
                 self.env_mut().insert(var_name.to_string(), new_val);
             }
         }
+    }
+
+    /// Copy a rebuilt QuantHash's data into the original backing node, so every
+    /// holder of that node (a local slot, a by-value capture, a `:=` alias) sees
+    /// the rebuild. `None` when the two are already the same node, which leaves
+    /// the caller's env entry untouched. ADR-0039 slice 2.
+    fn quanthash_inplace_reassign<T: crate::gc::Trace + Clone + 'static>(
+        old_gc: &crate::gc::Gc<T>,
+        new_gc: &crate::gc::Gc<T>,
+        rebuild: impl FnOnce(crate::gc::Gc<T>) -> Value,
+    ) -> Option<Value> {
+        if crate::gc::Gc::ptr_eq(old_gc, new_gc) {
+            return None;
+        }
+        let data = (**new_gc).clone();
+        // SAFETY: single audited aliased in-place container write
+        // (`value::aliased_mut`); `data` is a fresh clone and no borrow into
+        // `old_gc`'s contents is live across the write.
+        unsafe {
+            *crate::value::gc_contents_mut(old_gc) = data;
+        }
+        Some(rebuild(old_gc.clone()))
     }
 
     /// Container identity (§3, splice.t): copy `new_gc`'s array contents into the
