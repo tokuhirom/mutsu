@@ -464,6 +464,30 @@ impl Interpreter {
         if constraint == "Mu" && !self.registry().subsets.contains_key("Mu") {
             return true;
         }
+        // `Any` is the next root down, and a concrete native scalar is an
+        // `Any` by construction (`Int`/`Num`/`Str`/`Bool`/`Rat` all derive
+        // from `Cool`). This is the implicit constraint the binder checks on
+        // every untyped `$` parameter -- to reject a Junction, which is a Mu
+        // but not an Any -- so without the fast accept every such argument
+        // walked the whole gauntlet below (the MRO dispatch, the role-key
+        // resolution, the parametric/coercion parsers) to reach the answer
+        // `Any` has for it. Gated on the subset registry like the tag accept
+        // above; a type object, an instance of a class that `is Mu`, a
+        // junction, a container, or anything else keeps the full checker.
+        if constraint == "Any"
+            && matches!(
+                value.view(),
+                ValueView::Int(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Rat(..)
+            )
+            && !self.registry().subsets.contains_key("Any")
+        {
+            return true;
+        }
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
         }
