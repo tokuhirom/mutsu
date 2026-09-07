@@ -143,6 +143,7 @@ mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
 mod vm_call_method_compiled_mut;
 mod vm_call_method_mut_ops;
+mod vm_call_method_mut_prenative;
 mod vm_call_method_ops;
 mod vm_call_named;
 mod vm_call_named_inner;

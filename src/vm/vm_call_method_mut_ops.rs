@@ -992,6 +992,16 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Two more dispatch shapes that touch no env -- a pure native method on
+        // an immutable scalar receiver, and text output to a native
+        // `IO::Handle` -- are answered here, before the flatten below, for the
+        // same reason the accessor read is. See `try_env_pure_mut_dispatch`.
+        if let Some(result) =
+            self.try_env_pure_mut_dispatch(&target, &method, method_sym, &args, modifier, quoted)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // Beyond the pure-read accessor fast path above, full method dispatch may
         // capture/iterate the env; collapse a transient scoped overlay env to a
         // flat env so the full lexical view is seen. Placed after the accessor
