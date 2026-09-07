@@ -146,6 +146,7 @@ mod vm_call_method_mut_ops;
 mod vm_call_method_ops;
 mod vm_call_named;
 mod vm_call_named_inner;
+mod vm_call_nqp;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
 mod vm_catch_dispatch;
