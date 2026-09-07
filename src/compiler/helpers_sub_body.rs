@@ -51,8 +51,8 @@ impl Compiler {
                 remap.insert(key, imported_key);
             }
             self.compiled_functions
-                .insert(imported_key, function.clone());
-            imported.insert(imported_key, function);
+                .insert_shared(imported_key, std::sync::Arc::clone(&function));
+            imported.insert_shared(imported_key, function);
         }
         if !remap.is_empty() {
             code.remap_sub_decl_compiled_routine_keys(&remap);

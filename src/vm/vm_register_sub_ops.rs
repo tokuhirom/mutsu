@@ -309,7 +309,9 @@ impl Interpreter {
                 if compiled_routine_keys.len() != 1 + signature_alternates.len() {
                     return None;
                 }
-                compiled_fns.get(&compiled_routine_keys[slot])
+                compiled_fns
+                    .get(&compiled_routine_keys[slot])
+                    .map(|cf| &**cf)
             };
             let primary_compiled = plan_compiled(0);
             let body: &[Stmt] = &[];
@@ -1204,7 +1206,7 @@ impl Interpreter {
                 return_type.as_ref(),
                 body,
                 *is_our,
-                compiled,
+                compiled.map(|cf| &**cf),
                 is_lexical_hoist,
             )?;
         }
@@ -1215,7 +1217,7 @@ impl Interpreter {
                 param_defs,
                 return_type.as_ref(),
                 body,
-                compiled,
+                compiled.map(|cf| &**cf),
             )?;
             // Record the export so consumers/MAIN-dispatch see the whole multi
             // family. A `proto … is export` exports its candidates too (raku),

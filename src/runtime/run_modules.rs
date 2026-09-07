@@ -1123,7 +1123,7 @@ impl Interpreter {
         for cf in compiled_fns.into_values() {
             self.imported_compiled_fns
                 .entry(cf.fingerprint)
-                .or_insert_with(|| std::sync::Arc::new(cf));
+                .or_insert_with(|| cf);
         }
     }
 
