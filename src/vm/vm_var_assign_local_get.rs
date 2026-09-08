@@ -48,19 +48,6 @@ impl Interpreter {
     /// Pushes the raw local value, preserving container references for `=:=` checks.
     pub(super) fn exec_get_local_raw_op(&mut self, idx: u32) {
         let idx = idx as usize;
-        // A Stash.BIND-KEY call can replace a caller lexical with a Proxy by
-        // name while that lexical's slot is suspended in a call frame. Unlike
-        // ContainerRef, Proxy is already the container and must be adopted as
-        // such rather than dereferenced or copied as a plain value.
-        if !self.locals[idx].is_proxy_value()
-            && let Some(proxy) = self
-                .env()
-                .get(name)
-                .filter(|v| v.is_proxy_value())
-                .cloned()
-        {
-            self.locals[idx] = proxy;
-        }
         let val = self.locals[idx].clone();
         self.stack.push(val);
     }
@@ -260,7 +247,7 @@ impl Interpreter {
         // function/method body runs under a single env tier — nested blocks do
         // not push their own `scoped_child`), so an ancestor frame's container can
         // never be picked up here.
-        if !self.locals[idx].is_container_ref()
+        if !self.locals[idx].is_container_ref() && !self.locals[idx].is_proxy_value()
             // A lazy Match counts as an Instance here — probed by tag so this
             // per-GetLocal check cannot materialize it.
             && !self.locals[idx].is_lazy_match_value()
@@ -278,12 +265,13 @@ impl Interpreter {
                 || self.env().overlay_get(name),
                 |sym| self.env().overlay_get_sym(*sym),
             )
-            && let Some(arc) = match env_hit.view() {
-                ValueView::ContainerRef(arc) => Some(arc.clone()),
+            && let Some(container) = match env_hit.view() {
+                ValueView::ContainerRef(arc) => Some(Value::container_ref(arc.clone())),
+                ValueView::Proxy { .. } => Some(env_hit.clone()),
                 _ => None,
             }
         {
-            self.locals[idx] = Value::container_ref(arc);
+            self.locals[idx] = container;
         }
         // Phase 3 Stage 2 (scalar slice): scalar instance attributes read straight
         // from `self`'s shared cell, so a mutation made in a nested method frame
