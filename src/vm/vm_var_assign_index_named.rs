@@ -3582,10 +3582,23 @@ impl Interpreter {
     /// container, a `:=`-bound cell, an object that owns its own element
     /// storage) or is genuinely undefined and so autovivifies.
     ///
-    /// TODO: compile to bytecode — a reifiable sequence (`Seq`, `LazyList`,
-    /// `Slip`) is left alone here because rakudo reifies it and then refuses
-    /// the *element* ("Cannot modify an immutable Int (3)"), which needs the
-    /// reification this predicate cannot perform.
+    /// Two shapes are deliberately left alone, because rakudo's refusal for
+    /// them is decided by the ELEMENT the next subscript reaches and not by
+    /// the slot, which is more than a predicate over the slot can see:
+    ///
+    /// * a reifiable sequence (`Seq`, `LazyList`, `Slip`) — rakudo reifies it
+    ///   and refuses the element ("Cannot modify an immutable Int (3)");
+    /// * a `List`-kind array. `my @a = (1,2),3; @a[0][0] = 9` does die in
+    ///   rakudo, but purely because that `List` holds bare values: a `List`
+    ///   whose elements ARE containers is written through, which is what
+    ///   `take-rw` builds (`@n[0] = eager gather { take-rw @spot[1] };
+    ///   @n[0][0] = 999` updates `@spot[1]`, pinned by
+    ///   `t/take-rw-shared-cell.t`). Refusing on the array's KIND regresses
+    ///   that; the refusal belongs at the inner element store, which is
+    ///   separate work.
+    ///
+    /// TODO: compile to bytecode — see the two paragraphs above for the rows
+    /// this predicate cannot decide.
     pub(crate) fn subscript_descent_refusal(
         slot: &Value,
         outer_positional: bool,
@@ -3593,12 +3606,10 @@ impl Interpreter {
         let view = slot.view();
         let descendable = matches!(
             view,
-            // A mutable Positional/Associative container, or a `:=`-bound cell
-            // holding one: the store writes through it.
-            ValueView::Array(
-                _,
-                ArrayKind::Array | ArrayKind::ItemArray | ArrayKind::Shaped | ArrayKind::Lazy
-            ) | ValueView::Hash(..)
+            // A Positional/Associative container, or a `:=`-bound cell holding
+            // one: the store writes through it. Every `ArrayKind` counts —
+            // see the `List` paragraph in the doc comment.
+            ValueView::Array(..) | ValueView::Hash(..)
                 | ValueView::ContainerRef(..)
                 | ValueView::ContainerView(..)
                 | ValueView::Scalar(..)

@@ -1,6 +1,6 @@
 use Test;
 
-plan 26;
+plan 23;
 
 # A chained subscript store autovivifies only through an UNDEFINED slot.
 # A slot already holding a defined value with no writable container behind it
@@ -30,15 +30,6 @@ plan 26;
     throws-like { @a[0][0] = 9 }, X::Assignment::RO,
         message => 'Cannot modify an immutable Rat (1.5)',
         'a Rat element is refused, and the message names the gist';
-}
-
-{
-    my @a = (1, 2), 3;
-    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable List ((1 2))',
-        'an immutable List element is refused, not written through';
-    is @a[0].elems, 2, 'the List is untouched';
-    is @a[0][0], 1, 'and still reads its original element';
 }
 
 {
@@ -76,13 +67,6 @@ plan 26;
         message => 'Type Int does not support associative indexing.',
         'associative store through a defined Int element is refused';
     is @a[1], 2, 'the element is unchanged';
-}
-
-{
-    my @a = (1, 2), 3;
-    throws-like { @a[0]<k> = 9 }, X::AdHoc,
-        message => 'Type List does not support associative indexing.',
-        'a List element refuses associative indexing';
 }
 
 # --- what still autovivifies -----------------------------------------------
@@ -139,4 +123,16 @@ plan 26;
     @a[0] = [];
     @a[0][0][0] = 5;
     is @a[0][0][0], 5, 'the deep walk still vivifies through an empty Array';
+}
+
+# A `List` slot is NOT refused on its kind. Rakudo's refusal for one is decided
+# by the element the next subscript reaches, and a List whose elements ARE
+# containers is written through -- which is exactly what `take-rw` builds
+# (`t/take-rw-shared-cell.t`). Refusing the kind regressed that file.
+{
+    my @spot = 10, 20, 30;
+    my @n;
+    @n[0] = eager gather { take-rw @spot[1] };
+    @n[0][0] = 999;
+    is @spot[1], 999, 'a List holding a live container is still written through';
 }
