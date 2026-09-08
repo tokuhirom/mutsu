@@ -171,14 +171,46 @@ pub(crate) fn format_num_str(f: f64) -> String {
 /// trailing-comma rules instead of a duplicated walk having to re-derive them.
 pub(crate) const RAKU_RAW_KEY: &str = "__mutsu_raku_raw";
 
+/// Twin of [`RAKU_RAW_KEY`] for a leaf that itself does `Iterable` -- an
+/// `is Array` / `is List` / `is Hash` subclass instance.
+///
+/// The rendered text alone cannot say whether the leaf was Iterable, and the
+/// container that splices it back in has to know: a real array holding one
+/// Iterable element renders a trailing comma (`[[3, 2, 1, 4],]`), which is
+/// exactly the rule the marker exists to preserve. Without the distinction the
+/// placeholder erased the element's Iterable-ness and the comma was dropped.
+pub(crate) const RAKU_RAW_ITERABLE_KEY: &str = "__mutsu_raku_raw_iterable";
+
 /// Wrap an already-rendered `.raku` fragment so `raku_value` emits it verbatim.
 pub(crate) fn raku_raw(rendered: String) -> Value {
     Value::pair(RAKU_RAW_KEY.to_string(), Value::str(rendered))
 }
 
+/// [`raku_raw`] for a leaf that does `Iterable`; see [`RAKU_RAW_ITERABLE_KEY`].
+pub(crate) fn raku_raw_iterable(rendered: String) -> Value {
+    Value::pair(RAKU_RAW_ITERABLE_KEY.to_string(), Value::str(rendered))
+}
+
+/// Whether a leaf whose `.raku` needs method dispatch is itself `Iterable`.
+///
+/// An `is Array` / `is List` / `is Hash` subclass instance keeps its elements
+/// in the backing-store attribute every container method on it delegates to;
+/// carrying that attribute is what makes the instance container-backed at all.
+pub(crate) fn raku_leaf_is_iterable(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Instance { attributes, .. } => {
+            attributes.contains_key("__mutsu_array_storage")
+                || attributes.contains_key("__mutsu_hash_storage")
+        }
+        _ => false,
+    }
+}
+
 fn raku_raw_repr(v: &Value) -> Option<String> {
     match v.view() {
-        ValueView::Pair(name, inner) if name == RAKU_RAW_KEY => Some(inner.to_string_value()),
+        ValueView::Pair(name, inner) if name == RAKU_RAW_KEY || name == RAKU_RAW_ITERABLE_KEY => {
+            Some(inner.to_string_value())
+        }
         _ => None,
     }
 }
@@ -350,6 +382,14 @@ fn element_needs_trailing_comma(v: &Value) -> bool {
                 | "Stash"
                 | "PseudoStash"
         ),
+        // An `is Array` / `is List` / `is Hash` subclass instance does
+        // Iterable just as much as the container it wraps, so it takes the
+        // same trailing comma: rakudo renders `my @h = SA.new(3, 2, 1, 4)` as
+        // `[[3, 2, 1, 4],]`. Such a leaf usually arrives here already replaced
+        // by the dispatch placeholder, which carries the same fact under
+        // `RAKU_RAW_ITERABLE_KEY`; this arm covers the direct-render path.
+        ValueView::Pair(name, _) if name == RAKU_RAW_ITERABLE_KEY => true,
+        ValueView::Instance { .. } => raku_leaf_is_iterable(v),
         _ => false,
     }
 }
