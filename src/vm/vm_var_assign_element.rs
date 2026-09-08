@@ -570,10 +570,17 @@ impl Interpreter {
         // The VM local slot is authoritative for a lexical scalar between env
         // synchronization points.  A Range receiver is immutable even when the
         // scalar wrapper came from ordinary `my $r = ...` assignment.
-        if let Some(value) = target_slot
-            .and_then(|slot| self.locals.get(slot as usize))
-            .map(|value| value.deref_container().descalarize().clone())
-            .filter(|value| value.is_range())
+        //
+        // Only for a POSITIONAL subscript. A Range does `Positional`, so
+        // `$r[0] = 5` reaches the store and is refused as immutable; it does
+        // NOT do `Associative`, so `$r<k> = 5` never gets that far and rakudo
+        // answers the protocol error instead ("Type Range does not support
+        // associative indexing.") -- see `scalar_subscript_protocol_error`.
+        if is_positional
+            && let Some(value) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize))
+                .map(|value| value.deref_container().descalarize().clone())
+                .filter(|value| value.is_range())
         {
             return Err(RuntimeError::assignment_ro_value(value));
         }
@@ -584,6 +591,12 @@ impl Interpreter {
             .map(|value| value.deref_container().descalarize().clone())
             .filter(|value| value.is_range())
         {
+            if !is_positional {
+                return Err(RuntimeError::new(format!(
+                    "Type {} does not support associative indexing.",
+                    crate::runtime::utils::value_type_name(&value)
+                )));
+            }
             return Err(RuntimeError::assignment_ro_value(value));
         }
         // `%h{*} = ...` is refused: an associative slice has no order to assign
