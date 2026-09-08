@@ -601,6 +601,35 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
   3. Roast tests related to in-progress features
   4. `todo:deep` and `todo:ticket` issues, oldest-first (see "The issue-backlog parallel-agent pipeline" below) — both queues get worked in parallel, not one after the other, so neither backlog grows unchecked while the other drains. **`todo:perf` is NOT part of that pipeline**: perf work is batched into its own profiling-heavy session and its implementation agent runs solo (see below). [docs/triage.md](docs/triage.md) ranks the open backlog so a session can pick without re-reading every issue.
 
+### A queue request is a standing instruction — do not re-ask what is already settled
+
+"Work the `todo:ticket` issues that have no `tier:*` label yet, one after another, and open the
+PRs", "process the `tier:N` tickets, keep the PRs coming", "drain the queue" and the like are
+**complete instructions**, not the opening of a negotiation. How such a run is executed is already
+decided — here and in `.agents/skills/mutsu-ticket-flow/SKILL.md` — so stopping to confirm any of it
+is itself the failure. In particular, these are settled; **never ask them**:
+
+- **One issue, one PR.** Never bundle several issues into one PR, never stack PRs.
+- **Selection** is the filter the user named (a label, a tier, "no tier yet", "the queue"),
+  oldest-first within it, skipping anything carrying `working` or a live claim. A missing `tier:*`
+  is a normal workable state — do not stop to triage tiers first, and do not ask which issues count.
+- **Claim and release every issue** by the `Claiming:` / re-read / `Releasing:` protocol above.
+- **Every code fix carries a focused regression test**, a `news/YYYY-MM/<slug>.md` entry, and
+  `Closes #NNNN` in the PR body.
+- **Open the PR, enable auto-merge (merge method), watch CI, fix forward.** "PR を出して" *is* the
+  permission; asking for it again is asking twice.
+- **Go straight on to the next issue after each verified merge**, up to the run cap in the skill —
+  no "shall I continue?" between tickets.
+- **Re-triaging a ticket to `todo:deep`, or closing it as already fixed, is a legitimate outcome**
+  of the run, not something to seek approval for.
+
+Stop and ask only when the answer is genuinely the user's: the fix would need a decision this file
+reserves for them (a rung-3 native provider, a new or superseding ADR, weakening a CI gate, dropping
+a whitelisted test), or two readings of the issue lead to materially different implementations and
+its own evidence cannot settle it. Even then, prefer to park that one issue, carry on with the rest
+of the batch, and put the question in the run's final report rather than idling the whole queue on
+it.
+
 ### The issue-backlog parallel-agent pipeline
 
 When working through the issue backlog (as opposed to a single focused task), run it as a batch pipeline of disposable, fully-independent worktree agents rather than one long serial session:
