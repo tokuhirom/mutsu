@@ -213,6 +213,23 @@ pub(crate) fn is_dynamic_var_name(name: &str) -> bool {
     decider == Some(b'*')
 }
 
+/// Whether `key` — an *env key*, not a source-level variable name — names a
+/// dynamic variable: `*x`, `$*OUT`, `@*ARGS`, `%*ENV`, `&*foo`.
+///
+/// Deliberately distinct from [`is_dynamic_var_name`], which strips at most one
+/// `@`/`%`/`&` and so answers `false` for a key that kept its `$` sigil. Env
+/// keys are *mostly* stored sigil-less for scalars, but not always — the
+/// built-in dynamics are seeded under their full spelling (`$*OUT`,
+/// `$*ERR`, …; see `Interpreter::init_io_environment_impl`), and the
+/// closure-capture merge must recognize exactly those. This predicate is the
+/// one that merge has always used, lifted out of it verbatim so the memoized
+/// [`crate::symbol::flags::DYNAMIC_VAR_ENV_KEY`] bit cannot drift from it.
+#[inline]
+pub(crate) fn is_dynamic_var_env_key(key: &str) -> bool {
+    key.trim_start_matches(['$', '@', '%', '&'])
+        .starts_with('*')
+}
+
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,

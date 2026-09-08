@@ -389,12 +389,12 @@ impl Interpreter {
                 // already excluded from `authoritative_free_vars` below for the same
                 // reason; do the same for the box-on-capture cell — don't overwrite,
                 // so the live dynamic binding stands.
-                if k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*')) {
+                if k.is_dynamic_var_env_key() {
                     self.env_mut().entry_or_insert_sym(*k, v.clone());
                 } else {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
-            } else if k.with_str(|s| s == "self") {
+            } else if *k == crate::symbol::wk::self_() {
                 // `self` is LEXICAL in Raku: a block has no invocant of its own, so
                 // a `self` inside it resolves outwards to the enclosing method's
                 // invocant — the one this closure captured. The don't-overwrite
@@ -409,7 +409,9 @@ impl Interpreter {
                 // A method's own invocant is bound from its args further below,
                 // after this merge, so it still wins over the captured value.
                 self.env_mut().insert_sym(*k, v.clone());
-            } else if !cc.is_routine && k.with_str(|s| s == "_" || s == "!") {
+            } else if !cc.is_routine
+                && (*k == crate::symbol::wk::topic() || *k == crate::symbol::wk::error_var())
+            {
                 // `$_` (the topic) and `$!` (the last error) are LEXICAL in a
                 // block: a block lexically captures them from its creation
                 // scope and must see those values when called from another
@@ -445,9 +447,9 @@ impl Interpreter {
         // for a closure captured under a scoped overlay. Resolve through the
         // tier-walking get and force-install (interpreter-path twin in
         // `call_sub_value`).
-        if let Some(captured_self) = data.env.get("self").cloned() {
+        if let Some(captured_self) = data.env.get_sym(crate::symbol::wk::self_()).cloned() {
             self.env_mut()
-                .insert_sym(crate::symbol::Symbol::intern("self"), captured_self);
+                .insert_sym(crate::symbol::wk::self_(), captured_self);
         }
         // A closure's free variables are lexically bound in its captured env, so an
         // *authoritative* capture must OVERWRITE whatever the caller env happens to
@@ -1740,14 +1742,16 @@ impl Interpreter {
         // ensures END phasers see the final values rather than stale copies.
         // Only update keys matching the closure's captured variable names to
         // avoid overwriting unrelated captured lexicals in other END phasers.
-        if self.has_end_phasers() && !data.env.is_empty() {
-            let captured_strs: Vec<String> = data.env.keys().map(|s| s.resolve()).collect();
-            let captured_names: std::collections::HashSet<&str> =
-                captured_strs.iter().map(|s| s.as_str()).collect();
+        // `end_phasers_watch_any` is the guard, not an optimization detail: the
+        // update itself is a no-op unless some phaser captured one of these
+        // names, and asking first is what keeps the `clone_env()` flatten below
+        // off every closure return in a program that merely declares an `END`
+        // (#7565).
+        if self.has_end_phasers() && !data.env.is_empty() && self.end_phasers_watch_any(&data.env) {
             // Flatten: END phasers run at program exit with this captured env;
             // it must hold the full lexical view, not a transient scoped overlay.
             let current = self.clone_env();
-            self.update_end_phaser_envs_for_keys(&captured_names, &current);
+            self.update_end_phaser_envs_for_keys(&data.env, &current);
         }
 
         let return_spec = data

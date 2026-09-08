@@ -177,6 +177,17 @@ pub(crate) mod flags {
     /// them into the memoized byte makes the filter one thread-local lookup
     /// instead of two plus two string scans.
     pub(crate) const ATTR_TWIGIL_ENV_KEY: u8 = 1 << 5;
+    /// A *dynamic* variable's env key (`*x`, `$*OUT`, `@*ARGS`, `%*ENV`).
+    /// Mirrors `crate::env::is_dynamic_var_env_key`.
+    ///
+    /// The closure-call capture merge asks this about every entry of the
+    /// captured env, and asked it by resolving the symbol and scanning its
+    /// leading sigils. That capture is as wide as the *creating* scope — a
+    /// program that `use`s a module with a broad export list, or one the
+    /// reflective latch has widened to a whole-env snapshot, walks hundreds of
+    /// keys here per closure call, which put this one scan at ~11% of the whole
+    /// program (#7565).
+    pub(crate) const DYNAMIC_VAR_ENV_KEY: u8 = 1 << 6;
     /// Set once the byte has been computed (so a symbol with no flags is not
     /// recomputed on every lookup).
     pub(crate) const COMPUTED: u8 = 1 << 7;
@@ -208,6 +219,9 @@ fn compute_flags(s: &str) -> u8 {
     }
     if crate::env::is_attr_twigil_env_key(s) {
         f |= flags::ATTR_TWIGIL_ENV_KEY;
+    }
+    if crate::env::is_dynamic_var_env_key(s) {
+        f |= flags::DYNAMIC_VAR_ENV_KEY;
     }
     f
 }
@@ -444,6 +458,12 @@ impl Symbol {
     #[inline]
     pub(crate) fn is_attr_twigil_env_key(self) -> bool {
         self.flags() & flags::ATTR_TWIGIL_ENV_KEY != 0
+    }
+
+    /// Memoized [`crate::env::is_dynamic_var_env_key`] for this symbol's string.
+    #[inline]
+    pub(crate) fn is_dynamic_var_env_key(self) -> bool {
+        self.flags() & flags::DYNAMIC_VAR_ENV_KEY != 0
     }
 
     /// Resolve the symbol back to its string representation.
