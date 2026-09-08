@@ -65,10 +65,22 @@ impl Compiler {
     }
 
     /// Check if a statement list contains `let` or `temp` statements (not inside sub/lambda bodies).
+    ///
+    /// This is what decides whether a block gets an `OpCode::LetBlock` save
+    /// frame, so every statement kind that can carry an expression a `let` can
+    /// hide in has to be walked — a declaration's or an assignment's initializer
+    /// included (`my $seen = $( let $a = 23; $a )`, GH-7645). Missing one does
+    /// not merely defer the resolution to the enclosing block: nothing resolves
+    /// the save at all and the speculative value becomes permanent.
     pub(super) fn has_let_deep(stmts: &[Stmt]) -> bool {
         for s in stmts {
             match s {
                 Stmt::Let { .. } | Stmt::TempMethodAssign { .. } => return true,
+                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                    if Self::expr_has_let_deep(expr) {
+                        return true;
+                    }
+                }
                 Stmt::Block(inner) => {
                     if Self::has_let_deep(inner) {
                         return true;
@@ -116,6 +128,11 @@ impl Compiler {
         for s in stmts {
             match s {
                 Stmt::Let { is_temp: false, .. } => return true,
+                Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+                    if Self::expr_has_real_let_deep(expr) {
+                        return true;
+                    }
+                }
                 Stmt::Block(inner) => {
                     if Self::has_real_let_deep(inner) {
                         return true;
@@ -155,7 +172,19 @@ impl Compiler {
     fn expr_has_real_let_deep(expr: &Expr) -> bool {
         match expr {
             Expr::DoBlock { body, .. } => Self::has_real_let_deep(body),
+            Expr::DoStmt(stmt) => Self::has_real_let_deep(std::slice::from_ref(stmt)),
             Expr::Try { body, .. } => Self::has_real_let_deep(body),
+            Expr::Grouped(inner) => Self::expr_has_real_let_deep(inner),
+            Expr::CompoundAssign {
+                target,
+                rhs,
+                expanded,
+                ..
+            } => {
+                Self::expr_has_real_let_deep(target)
+                    || Self::expr_has_real_let_deep(rhs)
+                    || Self::expr_has_real_let_deep(expanded)
+            }
             Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                 args.iter().any(Self::expr_has_real_let_deep)
             }
@@ -183,6 +212,18 @@ impl Compiler {
             Expr::DoStmt(stmt) => Self::has_let_deep(&[*stmt.clone()]),
             Expr::Try { body, .. } => Self::has_let_deep(body),
             Expr::Grouped(inner) => Self::expr_has_let_deep(inner),
+            // `$t += $( let $a = 23; 1 )` parses as a `Stmt::Assign` whose expr
+            // is the compound node, so the save hides two levels down.
+            Expr::CompoundAssign {
+                target,
+                rhs,
+                expanded,
+                ..
+            } => {
+                Self::expr_has_let_deep(target)
+                    || Self::expr_has_let_deep(rhs)
+                    || Self::expr_has_let_deep(expanded)
+            }
             Expr::IndexAssign {
                 target,
                 index,
