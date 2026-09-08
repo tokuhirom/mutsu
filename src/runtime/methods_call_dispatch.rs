@@ -4,7 +4,8 @@ use super::methods::{
     multidim_exists_pos, shaped_multidim_exists_pos,
 };
 use super::methods_signature_errors::{
-    make_method_not_found_error, make_multi_no_match_error, make_x_immutable_error,
+    make_method_not_found_error, make_multi_no_match_error, make_no_candidates_error,
+    make_x_immutable_error,
 };
 use super::*;
 use crate::symbol::Symbol;
@@ -1538,7 +1539,12 @@ impl Interpreter {
             self.exit_readonly_frame(saved_readonly);
             return Ok(Value::str(rendered.to_string_value()));
         }
-        // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw
+        // Immutable List/Range: the six mutators rakudo DOES define on them
+        // throw X::Immutable. `splice` is not among them -- rakudo declares it
+        // on Array only, so a List/Range invocant resolves no candidate at all
+        // and raises X::Multi::NoMatch instead ("Cannot resolve caller
+        // splice(List:D, Int:D, Int:D); Routine does not have any candidates."),
+        // which is the spelling Crane's CATCH maps to X::Crane::Add::RO.
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
@@ -1553,6 +1559,9 @@ impl Interpreter {
                 _ => false,
             };
             if is_immutable {
+                if method == "splice" {
+                    return Err(make_no_candidates_error(method, &target, &args));
+                }
                 let typename = match target.view() {
                     ValueView::Array(..) => "List",
                     _ => "Range",
