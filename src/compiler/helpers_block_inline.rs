@@ -445,6 +445,16 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    // `let $x = 42` in block-final position is an assignment
+                    // too, so the block's value is the assigned one — and that
+                    // is exactly what `OpCode::LetBlock` reads to decide whether
+                    // the block succeeded (#7646).
+                    Stmt::Let { name, .. } => {
+                        let name = name.clone();
+                        self.compile_let_stmt_as_value(stmt, &name);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::Phaser {
                         kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
                         body,

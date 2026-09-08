@@ -865,8 +865,8 @@ impl Interpreter {
                         let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
-                        self.stack.push(ret_val);
-                        self.discard_let_saves(let_mark);
+                        self.stack.push(ret_val.clone());
+                        self.resolve_frame_let_saves(let_mark, &ret_val);
                         result = Ok(());
                         break;
                     }
@@ -887,8 +887,8 @@ impl Interpreter {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.discard_let_saves(let_mark);
+                    self.stack.push(ret_val.clone());
+                    self.resolve_frame_let_saves(let_mark, &ret_val);
                     result = Ok(());
                     break;
                 }
@@ -925,6 +925,14 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+
+        // Natural fall-through completion: resolve the body's own `let`/`temp`
+        // saves against the value it produced. A method body is a block, so it
+        // owns the saves its `let`/`temp` recorded; without this they leaked
+        // into the caller's scope (#7646).
+        if result.is_ok() && explicit_return.is_none() {
+            self.resolve_frame_let_saves(let_mark, &ret_val);
+        }
 
         self.stack.truncate(saved_stack_depth);
 
@@ -2001,8 +2009,8 @@ impl Interpreter {
                         let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
-                        self.stack.push(ret_val);
-                        self.discard_let_saves(let_mark);
+                        self.stack.push(ret_val.clone());
+                        self.resolve_frame_let_saves(let_mark, &ret_val);
                         result = Ok(());
                         break;
                     }
@@ -2021,8 +2029,8 @@ impl Interpreter {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.discard_let_saves(let_mark);
+                    self.stack.push(ret_val.clone());
+                    self.resolve_frame_let_saves(let_mark, &ret_val);
                     result = Ok(());
                     break;
                 }
@@ -2057,6 +2065,14 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+
+        // Natural fall-through completion: resolve the body's own `let`/`temp`
+        // saves against the value it produced. A method body is a block, so it
+        // owns the saves its `let`/`temp` recorded; without this they leaked
+        // into the caller's scope (#7646).
+        if result.is_ok() && explicit_return.is_none() {
+            self.resolve_frame_let_saves(let_mark, &ret_val);
+        }
 
         self.stack.truncate(saved_stack_depth);
 

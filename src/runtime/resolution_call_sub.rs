@@ -973,15 +973,16 @@ impl Interpreter {
                 .map(|spec| self.resolved_type_capture_name(spec));
             self.block_stack.pop();
             self.routine_stack.pop();
-            // Manage let saves based on sub result
+            // Manage let saves based on sub result. `temp` always restores;
+            // `let` restores only when the body exited unsuccessfully, which for
+            // a normal exit means it produced an undefined value (#7646).
             match &result {
-                Ok(_) => {
-                    // Successful completion — restore temps, discard lets
-                    self.resolve_let_saves_on_success(let_mark, true);
+                Ok(v) => {
+                    self.resolve_frame_let_saves(let_mark, v);
                 }
                 Err(e) if e.return_value.is_some() => {
-                    // Explicit return — restore temps, discard lets
-                    self.resolve_let_saves_on_success(let_mark, true);
+                    let ret = e.return_value.clone().unwrap_or(Value::NIL);
+                    self.resolve_frame_let_saves(let_mark, &ret);
                 }
                 Err(_) => {
                     // Exception/fail — restore saves

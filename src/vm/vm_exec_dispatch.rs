@@ -5785,6 +5785,25 @@ impl Interpreter {
         crate::runtime::types::value_is_defined(val)
     }
 
+    /// Resolve a routine/method/closure frame's own `let`/`temp` saves at
+    /// frame teardown (#7646).
+    ///
+    /// `let`/`temp` are resolved at the end of the enclosing *block*, and a
+    /// routine body is one. The block lowerings (`OpCode::LetBlock`) only cover
+    /// bare and `do` blocks; a routine body is compiled by the closure/sub-body
+    /// path instead, which emits no `LetBlock`, so the frame teardown is the
+    /// only place its saves can be resolved. `temp` always restores; `let`
+    /// restores only when the frame exited unsuccessfully, which for a normal
+    /// (non-throwing) exit means it produced an undefined value.
+    ///
+    /// Must be called while the callee frame's `env`/`locals` are still live —
+    /// `restore_let_value` writes through the baked slot and records a
+    /// caller-frame writeback, both of which need the frame that owns them.
+    pub(crate) fn resolve_frame_let_saves(&mut self, mark: usize, frame_result: &Value) {
+        let success = Self::is_let_success(frame_result);
+        self.resolve_let_saves_on_success(mark, success);
+    }
+
     /// Pull back into the compiler-baked local slots any slot-backing env entry
     /// an internally-dispatched method changed (`pre_env` is the snapshot taken
     /// before the dispatch). Used by the sink-context arms, which run user code

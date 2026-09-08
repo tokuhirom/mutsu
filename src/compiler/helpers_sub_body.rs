@@ -835,6 +835,16 @@ impl Compiler {
                         }
                         continue;
                     }
+                    // `let`/`temp` as last statement is an assignment too, so it
+                    // returns the assigned value. That value is what decides
+                    // whether the frame keeps or restores its own `let` saves
+                    // (#7646), so it must not fall through to the valueless
+                    // default.
+                    Stmt::Let { name, .. } => {
+                        let name = name.clone();
+                        sub_compiler.compile_let_stmt_as_value(stmt, &name);
+                        continue;
+                    }
                     Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {
                         // A statement-form I/O builtin tail (`say`/`put`/`print`/
                         // `note`) prints and returns True, so leave True on the
@@ -1323,6 +1333,13 @@ impl Compiler {
                     }
                     continue;
                 }
+                // `let`/`temp` is an assignment too — see the twin arm in
+                // `compile_routine_body_stmts` (#7646).
+                if is_value && let Stmt::Let { name, .. } = stmt {
+                    let name = name.clone();
+                    sub_compiler.compile_let_stmt_as_value(stmt, &name);
+                    continue;
+                }
                 sub_compiler.compile_stmt(stmt);
                 // A non-value statement `given` nets one stack value that would
                 // pollute the stack under the closure's real value — pop it.
@@ -1490,6 +1507,13 @@ impl Compiler {
                                 ));
                                 sub_compiler.code.emit(OpCode::GetGlobal(idx));
                             }
+                            continue;
+                        }
+                        // `let`/`temp` is an assignment too — see the twin arm
+                        // in `compile_routine_body_stmts` (#7646).
+                        Stmt::Let { name, .. } => {
+                            let name = name.clone();
+                            sub_compiler.compile_let_stmt_as_value(stmt, &name);
                             continue;
                         }
                         Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => {

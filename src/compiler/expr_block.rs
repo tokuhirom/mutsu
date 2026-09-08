@@ -41,6 +41,26 @@ impl Compiler {
     }
 
     /// Compile DoStmt expression (do { ... }, do if, do for, etc.).
+    /// Compile a `let`/`temp` statement so it leaves its value on the stack.
+    ///
+    /// `let $x = 42` is an assignment, so its value is the assigned one — this
+    /// runs the save plus the assignment and then pushes the temporized
+    /// variable. Used both for `(temp $x = 42)` in genuine expression position
+    /// and for a block-final `let`/`temp`, whose value is the block's value and
+    /// therefore decides whether the frame's `let` saves are kept or restored
+    /// (#7646).
+    pub(super) fn compile_let_stmt_as_value(&mut self, stmt: &Stmt, name: &str) {
+        self.compile_stmt(stmt);
+        // Reuse the same logic as Expr::ArrayVar/HashVar/Var compilation.
+        if let Some(stripped) = name.strip_prefix('@') {
+            self.compile_expr(&Expr::ArrayVar(stripped.to_string()));
+        } else if let Some(stripped) = name.strip_prefix('%') {
+            self.compile_expr(&Expr::HashVar(stripped.to_string()));
+        } else {
+            self.compile_expr(&Expr::Var(name.to_string()));
+        }
+    }
+
     pub(super) fn compile_expr_do_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::If {
@@ -946,27 +966,9 @@ impl Compiler {
                 // opens no scope a save could resolve at.
                 self.compile_do_block_expr_scoped(inner, &None, crate::ast::DoBlockOrigin::Desugar);
             }
-            Stmt::Let {
-                name,
-                index: _,
-                value: _,
-                is_temp: _,
-                undefine_first: _,
-            } => {
-                // Compile the temp/let statement, then push the variable as result.
-                // This handles `(temp @a)` / `(temp $x = 42)` in expression position.
-                self.compile_stmt(stmt);
-                // Push the variable value as the expression result.
-                // Reuse the same logic as Expr::ArrayVar/HashVar/Var compilation.
-                if name.starts_with('@') {
-                    let stripped = name.strip_prefix('@').unwrap_or(name);
-                    self.compile_expr(&Expr::ArrayVar(stripped.to_string()));
-                } else if name.starts_with('%') {
-                    let stripped = name.strip_prefix('%').unwrap_or(name);
-                    self.compile_expr(&Expr::HashVar(stripped.to_string()));
-                } else {
-                    self.compile_expr(&Expr::Var(name.clone()));
-                }
+            Stmt::Let { name, .. } => {
+                let name = name.clone();
+                self.compile_let_stmt_as_value(stmt, &name);
             }
             // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):
             // build the routine value carrying its declared name WITHOUT

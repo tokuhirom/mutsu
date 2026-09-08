@@ -1003,8 +1003,8 @@ impl Interpreter {
                         let ret_val = e.return_value.unwrap_or(Value::NIL);
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
-                        self.stack.push(ret_val);
-                        self.resolve_let_saves_on_success(let_mark, true);
+                        self.stack.push(ret_val.clone());
+                        self.resolve_frame_let_saves(let_mark, &ret_val);
                         handled_let_saves = true;
                         result = Ok(());
                         break;
@@ -1020,8 +1020,8 @@ impl Interpreter {
                     let ret_val = e.return_value.unwrap_or(Value::NIL);
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.resolve_let_saves_on_success(let_mark, true);
+                    self.stack.push(ret_val.clone());
+                    self.resolve_frame_let_saves(let_mark, &ret_val);
                     handled_let_saves = true;
                     result = Ok(());
                     break;
@@ -1037,7 +1037,9 @@ impl Interpreter {
                     let ret_val = Value::NIL;
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
+                    self.stack.push(ret_val.clone());
+                    // A `supply` body's own `done` terminator is not a failed
+                    // exit; its Nil is a terminator, not a result value.
                     self.resolve_let_saves_on_success(let_mark, true);
                     handled_let_saves = true;
                     result = Ok(());
@@ -1080,8 +1082,8 @@ impl Interpreter {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.resolve_let_saves_on_success(let_mark, true);
+                    self.stack.push(ret_val.clone());
+                    self.resolve_frame_let_saves(let_mark, &ret_val);
                     handled_let_saves = true;
                     result = Ok(());
                     break;
@@ -1116,13 +1118,6 @@ impl Interpreter {
         // even though this line is never reached.
         drop(pkg_guard);
 
-        // Natural fall-through completion (no explicit return / break arm): a
-        // routine body that ends with `temp $x = ...` must restore the `temp`
-        // binding here, otherwise it leaks into the caller's scope.
-        if !handled_let_saves {
-            self.resolve_let_saves_on_success(let_mark, true);
-        }
-
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::NIL)
@@ -1132,6 +1127,14 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+
+        // Natural fall-through completion (no explicit return / break arm): a
+        // body that ends with `temp $x = ...` must restore the `temp` binding
+        // here, otherwise it leaks into the caller's scope, and a `let` whose
+        // block produced an undefined value must be restored too (#7646).
+        if !handled_let_saves {
+            self.resolve_frame_let_saves(let_mark, &ret_val);
+        }
 
         self.stack.truncate(saved_stack_depth);
 

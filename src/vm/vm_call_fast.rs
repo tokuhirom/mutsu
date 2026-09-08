@@ -229,8 +229,8 @@ impl Interpreter {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.resolve_let_saves_on_success(let_mark, true);
+                    self.stack.push(ret_val.clone());
+                    self.resolve_frame_let_saves(let_mark, &ret_val);
                     result = Ok(());
                     break;
                 }
@@ -254,14 +254,6 @@ impl Interpreter {
             }
         }
 
-        // Natural fall-through completion (no explicit return / fail / error
-        // break arm): restore any `temp` bindings the body introduced so a
-        // `sub f { temp $x = ... }` with no explicit return does not leak the
-        // temporized value into the caller's scope.
-        if result.is_ok() && explicit_return.is_none() && !fail_bypass {
-            self.resolve_let_saves_on_success(let_mark, true);
-        }
-
         let ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::NIL)
@@ -271,6 +263,15 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+
+        // Natural fall-through completion (no explicit return / fail / error
+        // break arm): resolve the body's own `let`/`temp` saves against the
+        // value it produced, so a `sub f { temp $x = ... }` with no explicit
+        // return does not leak the temporized value into the caller's scope and
+        // a `sub f { let $x = ...; Nil }` restores it (#7646).
+        if result.is_ok() && explicit_return.is_none() && !fail_bypass {
+            self.resolve_frame_let_saves(let_mark, &ret_val);
+        }
 
         self.stack.truncate(saved_stack_depth);
         self.pop_routine();
