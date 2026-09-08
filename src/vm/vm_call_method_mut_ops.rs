@@ -578,17 +578,30 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
+        crate::alloc_scope_named!(_sc_cmm_dec, "cmm:decode-sources");
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        crate::alloc_scope_end!(_sc_cmm_dec);
+        crate::alloc_scope_named!(_sc_cmm_names, "cmm:names");
         let method_raw = Self::const_str(code, name_idx);
-        let target_name = Self::const_str(code, target_name_idx).to_string();
+        let target_name: &str = Self::const_str(code, target_name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
-        let method = Self::rewrite_method_name(method_raw, modifier);
+        // `rewrite_method_name` allocated a fresh `String` for the method name on
+        // EVERY method call, even the overwhelmingly common no-modifier case where
+        // the name is already a `&str` in the constant pool. The `_cow` variant
+        // (already used by the sibling call paths) borrows it instead; only `.^`/`.!`
+        // still allocate. Together with `target_name` below this was 2.0 of the
+        // ~12.6 allocations `benchmarks/bench-ctor.raku` spends per method call
+        // outside the fast-path scopes (#7561).
+        let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
+        let method: &str = &method_cow;
         // Interned once per call: the unrewritten name comes from the per-chunk
         // constant-symbol table, so the hot path pays no re-intern.
         let method_sym = match modifier {
-            Some("^") | Some("!") => crate::symbol::Symbol::intern(&method),
+            Some("^") | Some("!") => crate::symbol::Symbol::intern(method),
             _ => code.const_sym(name_idx),
         };
+        crate::alloc_scope_end!(_sc_cmm_names);
+        crate::alloc_scope_named!(_sc_cmm_args, "cmm:args");
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new(
@@ -611,32 +624,32 @@ impl Interpreter {
         // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
         // before the several push/append dispatch branches below, so every one
         // of them sees already-wrapped values.
-        let args = if matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
-            && !args.is_empty()
-        {
-            // Dual store: a scalar-held container (`my $a := array[uint8].new`)
-            // keeps its live value — including the `array[uint8]` element-type
-            // metadata `wrap_native_int_items` below reads via
-            // `element_constraint_for` — in the local slot only, leaving the env
-            // mirror at the `my`-declaration seed until some later sync point
-            // (an I/O op, a frame boundary, ...) republishes it. Without this,
-            // `native_int_element_constraint`'s `self.env().get(target_name)`
-            // read the STALE, untagged env copy and silently skipped the wrap
-            // (`$a.push(-1)` stored `-1` instead of wrapping to `255`), even
-            // though `$a[0]`/`.of` — which read the authoritative slot — already
-            // reported the array as `uint8`. Same fix as the sibling
-            // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
-            self.seed_env_from_scalar_slot(code, None, &target_name);
-            self.wrap_native_int_items(&target_name, args)
-        } else {
-            args
-        };
+        let args =
+            if matches!(method, "push" | "unshift" | "append" | "prepend") && !args.is_empty() {
+                // Dual store: a scalar-held container (`my $a := array[uint8].new`)
+                // keeps its live value — including the `array[uint8]` element-type
+                // metadata `wrap_native_int_items` below reads via
+                // `element_constraint_for` — in the local slot only, leaving the env
+                // mirror at the `my`-declaration seed until some later sync point
+                // (an I/O op, a frame boundary, ...) republishes it. Without this,
+                // `native_int_element_constraint`'s `self.env().get(target_name)`
+                // read the STALE, untagged env copy and silently skipped the wrap
+                // (`$a.push(-1)` stored `-1` instead of wrapping to `255`), even
+                // though `$a[0]`/`.of` — which read the authoritative slot — already
+                // reported the array as `uint8`. Same fix as the sibling
+                // element-assignment/`:delete` handlers (`seed_env_from_scalar_slot`).
+                self.seed_env_from_scalar_slot(code, None, target_name);
+                self.wrap_native_int_items(target_name, args)
+            } else {
+                args
+            };
         // ADR-0040's store boundary, Proxy half — see
         // `Interpreter::fetch_proxy_mutator_args`.
-        let args = self.fetch_proxy_mutator_args(&method, args)?;
+        let args = self.fetch_proxy_mutator_args(method, args)?;
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        crate::alloc_scope_end!(_sc_cmm_args);
         let stash_target = if method == "BIND-KEY" && args.len() == 2 {
             match target.view() {
                 ValueView::Instance { class_name, .. }
@@ -644,8 +657,8 @@ impl Interpreter {
                 {
                     Some(target.clone())
                 }
-                _ => Self::caller_stash_depth(&target_name)
-                    .map(|depth| self.caller_stash_value(&target_name, depth)),
+                _ => Self::caller_stash_depth(target_name)
+                    .map(|depth| self.caller_stash_value(target_name, depth)),
             }
         } else {
             None
@@ -705,7 +718,7 @@ impl Interpreter {
         // `X::Foo.throw`/`.fail`/... on an Exception type object (compiled here
         // because the bareword target routes through CallMethodMut) requires a
         // concrete invocant: X::Parameter::InvalidConcreteness.
-        if let Some(err) = self.exception_concreteness_error(&method, &args, &target) {
+        if let Some(err) = self.exception_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "exception-concreteness",
@@ -720,7 +733,7 @@ impl Interpreter {
         // shares, so no writeback is needed: every alias (this frame's
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
-        let target = self.reify_or_consume_seq_target(target, method.as_str())?;
+        let target = self.reify_or_consume_seq_target(target, method)?;
         // ADR-0070 at the mutable OPCODE entry. The push/append/unshift/prepend
         // branches below (and the `call_method_mut_with_values` arms they lead
         // to) read `args` positionally, so an adverb none of them declares was
@@ -730,7 +743,7 @@ impl Interpreter {
         // may be a user class whose own `push` declares a named parameter, and a
         // `Mixin` may carry a role method, so neither is touched here.
         let args = if matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_)) {
-            crate::builtins::strip_undeclared_nameds(&method, &args).unwrap_or(args)
+            crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args)
         } else {
             args
         };
@@ -740,7 +753,7 @@ impl Interpreter {
         self.reify_map_grep_seq_args(&args)?;
         // Mutating methods reached through `.VAR` must retain the underlying
         // cell so the established container writeback paths can update it.
-        let target = if !matches!(method.as_str(), "WHAT" | "^name" | "VAR")
+        let target = if !matches!(method, "WHAT" | "^name" | "VAR")
             && let ValueView::ContainerView(cell) = target.view()
         {
             Value::container_ref(cell.clone())
@@ -750,7 +763,7 @@ impl Interpreter {
         // A lexical receiver uses CallMethodMut even for a read-only method.
         // Read through scalar itemization for Range methods, while retaining the
         // wrapper for the renderers that expose itemization.
-        let target = if matches!(method.as_str(), "ACCEPTS" | "combinations" | "int-bounds")
+        let target = if matches!(method, "ACCEPTS" | "combinations" | "int-bounds")
             && target.descalarize().is_range()
         {
             target.descalarize().clone()
@@ -764,8 +777,7 @@ impl Interpreter {
         // `compile_expr_method_on_var`), so `@a.gist` and `$l.raku` arrive here
         // and nowhere else. Placed with the other receiver-deciding steps above,
         // and after them, so it sees the receiver they settled on.
-        let target = if Self::renders_receiver_elements(method.as_str())
-            && Self::holds_nested_proxy(&target)
+        let target = if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target)
         {
             loan_env!(self, resolve_proxies_in_value(&target))?
         } else {
@@ -783,10 +795,8 @@ impl Interpreter {
         // this — a class's methods are compiled to bytecode and dispatched
         // without reaching the resolver, and `$obj.meth` on a variable compiles
         // to the *mut* opcode.
-        if let Some(result) = loan_env!(
-            self,
-            try_native_method_on_receiver(&target, method.as_str(), &args)
-        ) {
+        if let Some(result) = loan_env!(self, try_native_method_on_receiver(&target, method, &args))
+        {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "nativecall");
             self.stack.push(result?);
             return Ok(());
@@ -800,7 +810,7 @@ impl Interpreter {
         if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
-            && let Some(action) = match method.as_str() {
+            && let Some(action) = match method {
                 "push" => Some("push to"),
                 "pop" => Some("pop from"),
                 "append" => Some("append to"),
@@ -816,11 +826,12 @@ impl Interpreter {
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && (ll.sequence_spec.is_some() || ll.closure_seq.is_some() || ll.scan_spec.is_some())
-            && matches!(method.as_str(), "shift" | "unshift" | "prepend" | "splice")
+            && matches!(method, "shift" | "unshift" | "prepend" | "splice")
         {
             let items = self.force_lazy_list_vm(&ll)?;
             let reified = Value::real_array(items);
-            self.env_mut().insert(target_name.clone(), reified.clone());
+            self.env_mut()
+                .insert(target_name.to_string(), reified.clone());
             reified
         } else {
             target
@@ -835,12 +846,12 @@ impl Interpreter {
             )
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "pair-freeze");
-            let frozen = self.pair_freeze(&target, &target_name);
+            let frozen = self.pair_freeze(&target, target_name);
             self.stack.push(frozen);
             return Ok(());
         }
         // `proto method` body dispatch (see try_proto_method_body).
-        if let Some(result) = self.try_proto_method_body(&target, &method, &args) {
+        if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "proto");
             let v = result?;
             // Drain captured-outer writeback recorded by the dispatched multi
@@ -852,7 +863,7 @@ impl Interpreter {
         // `Exception.Str`/`.gist` delegate to a user `message` *method* (e.g. from a
         // parameterized role). `$e.Str` on a variable compiles to CallMethodMut, so
         // the mut path needs the same interception as CallMethod.
-        if let Some(out) = self.try_exception_str_via_user_message(&target, &method, &args)? {
+        if let Some(out) = self.try_exception_str_via_user_message(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "exception-str-message",
@@ -865,7 +876,7 @@ impl Interpreter {
         // rather than forcing the (possibly infinite) sequence. Must run before
         // the gather-coroutine force below, which would hang on an infinite list.
         if let ValueView::LazyList(ll) = target.view()
-            && matches!(method.as_str(), "gist" | "Str" | "raku" | "perl")
+            && matches!(method, "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -874,7 +885,7 @@ impl Interpreter {
             );
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
-                    method.as_str(),
+                    method,
                     ll.in_array_context(),
                 )));
             return Ok(());
@@ -897,9 +908,9 @@ impl Interpreter {
             && ll.needs_vm_lazy_dispatch()
             && ll.is_genuinely_lazy()
             && args.is_empty()
-            && matches!(method.as_str(), "kv" | "pairs" | "antipairs")
+            && matches!(method, "kv" | "pairs" | "antipairs")
         {
-            let transform = match method.as_str() {
+            let transform = match method {
                 "pairs" => crate::value::IndexTransform::Pairs,
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
@@ -926,7 +937,7 @@ impl Interpreter {
         }
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
-            && Self::lazy_list_needs_forcing(&method)
+            && Self::lazy_list_needs_forcing(method)
             // A `.map`/`.grep` on a lazy pipeline, an infinite sequence/closure
             // spec, OR a gather coroutine appends another lazy stage (interpreter
             // dispatch via `is_lazy_pipe_source`) — it must not force the source
@@ -934,22 +945,22 @@ impl Interpreter {
             // (and its trailing side effects) instead of pulling on demand.
             // Laziness-preserving coercions return the list unchanged (native
             // dispatch) — neither forces.
-            && !(matches!(method.as_str(), "map" | "grep")
+            && !(matches!(method, "map" | "grep")
                 && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
-                && Self::lazy_pipe_preserving_coercion(&method))
+                && Self::lazy_pipe_preserving_coercion(method))
             // On an infinite sequence/closure spec — OR an explicitly `lazy`-marked
             // (`lazy gather {…}`) list — the count/numeric coercions produce a
             // *soft* X::Cannot::Lazy Failure (recoverable with `//`), emitted by
             // the 0-arg native dispatch — they must not be hard-forced/reified.
             // A plain (non-`lazy`) finite gather stays forceable and reifies.
             && !((ll.is_infinite_spec() || ll.is_lazy_marked())
-                && matches!(method.as_str(), "elems" | "Int" | "Numeric"))
+                && matches!(method, "elems" | "Int" | "Numeric"))
         {
             let saved_env = self.env().clone();
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
-            let items = match Self::gather_head_bound(&method, &args) {
+            let items = match Self::gather_head_bound(method, &args) {
                 Some(n) => self.force_lazy_list_vm_n(&ll, n)?,
                 // A strict force of an infinite list (lazy pipeline / infinite
                 // sequence / closure spec) cannot terminate: raise
@@ -960,7 +971,7 @@ impl Interpreter {
                 None if (ll.lazy_pipe.is_some() && !ll.pipe_bottoms_out_finite())
                     || ll.is_infinite_spec() =>
                 {
-                    return Err(RuntimeError::cannot_lazy(&method));
+                    return Err(RuntimeError::cannot_lazy(method));
                 }
                 None => self.force_lazy_list_vm(&ll)?,
             };
@@ -968,7 +979,7 @@ impl Interpreter {
             // in this Interpreter, so its side effects on enclosing variables are
             // legitimate and must persist (unlike gather coroutine corruption,
             // which the env restore undoes).
-            if !matches!(method.as_str(), "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
+            if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
             // A list-context view (`(gather {...}).List`, `.cache`) records
@@ -995,7 +1006,7 @@ impl Interpreter {
         // the invocant, so no write-back to `target_name` is needed.
         if let Some(val) = self.try_fast_accessor_read(
             &target,
-            &method,
+            method,
             &args,
             modifier.is_some(),
             quoted,
@@ -1010,7 +1021,7 @@ impl Interpreter {
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path.
-        if matches!(method.as_str(), "so" | "not") && args.is_empty() {
+        if matches!(method, "so" | "not") && args.is_empty() {
             let user_bool_owner = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 ValueView::Package(name) => Some(name.resolve()),
@@ -1034,7 +1045,7 @@ impl Interpreter {
         // `IO::Handle` -- are answered here, before the flatten below, for the
         // same reason the accessor read is. See `try_env_pure_mut_dispatch`.
         if let Some(result) =
-            self.try_env_pure_mut_dispatch(&target, &method, method_sym, &args, modifier, quoted)
+            self.try_env_pure_mut_dispatch(&target, method, method_sym, &args, modifier, quoted)
         {
             self.stack.push(result?);
             return Ok(());
@@ -1055,17 +1066,17 @@ impl Interpreter {
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
-            && !self.has_type(&target_name)
-            && !Self::is_builtin_type(&target_name)
-            && !self.has_class(&target_name)
+            && !self.has_type(target_name)
+            && !Self::is_builtin_type(target_name)
+            && !self.has_class(target_name)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "undeclared-type-new",
             );
-            let suggestions = self.suggest_type_names(&target_name);
+            let suggestions = self.suggest_type_names(target_name);
             return Err(RuntimeError::undeclared_type_symbols(
-                &target_name,
+                target_name,
                 format!("Undeclared name:\n    {} used at line 1", target_name),
                 suggestions,
             ));
@@ -1073,7 +1084,7 @@ impl Interpreter {
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
             && !matches!(
-                method.as_str(),
+                method,
                 "Bool"
                     | "so"
                     | "WHAT"
@@ -1107,7 +1118,7 @@ impl Interpreter {
             // already holds the accumulated value).
             for v in values.iter() {
                 let r = if let Some(threaded) =
-                    self.maybe_autothread_method_args(v, &method, &args)?
+                    self.maybe_autothread_method_args(v, method, &args)?
                 {
                     threaded
                 } else if let Some(nr) = self.try_native_method(v, method_sym, &args) {
@@ -1142,7 +1153,7 @@ impl Interpreter {
         }
 
         // Junction auto-threading for method arguments (mut variant)
-        if let Some(result) = self.maybe_autothread_method_args(&target, &method, &args)? {
+        if let Some(result) = self.maybe_autothread_method_args(&target, method, &args)? {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "junction-args");
             self.stack.push(result);
             return Ok(());
@@ -1231,7 +1242,7 @@ impl Interpreter {
         // `.with-lock-hidden-from-recursion-check`: the recursion-aware
         // siblings of `.protect`. See `runtime::lock_async_recursion`.
         if matches!(
-            method.as_str(),
+            method,
             "protect-or-queue-on-recursion" | "with-lock-hidden-from-recursion-check"
         ) && args.len() == 1
             && let ValueView::Instance {
@@ -1277,7 +1288,7 @@ impl Interpreter {
         if target_name.starts_with('@')
             && matches!(target.view(), ValueView::Array(..))
             && self.shared_vars_active
-            && !self.container_name_is_redeclared(&target_name)
+            && !self.container_name_is_redeclared(target_name)
         {
             // Only a plain *lexical* `@name` is a single variable shared across
             // threads. Instance-attribute arrays (`@!order` / `@.order`) and
@@ -1286,8 +1297,8 @@ impl Interpreter {
             // keyed by name — that would accumulate pushes across every object
             // (roles-6e.t DESTROY: each `C1` instance's `@!order` doubled). They
             // keep the original base-key / interior-mutation path.
-            let plain = Self::is_plain_lexical_array_name(&target_name);
-            match method.as_str() {
+            let plain = Self::is_plain_lexical_array_name(target_name);
+            match method {
                 // Route through the atomic shared store. The base-key
                 // `push_to_existing_shared_array`/`push_to_shared_var` write the
                 // plain `@a` shared entry, which `set_shared_var` can clobber with
@@ -1307,16 +1318,16 @@ impl Interpreter {
                         "callmethodmut",
                         "shared-array-push-atomic",
                     );
-                    let items = if matches!(method.as_str(), "push" | "unshift") {
+                    let items = if matches!(method, "push" | "unshift") {
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.clone())
                     } else {
                         crate::runtime::flatten_append_args(args.clone())
                     };
                     // Stored through a native slot, so each element wraps to the
                     // element width (`my uint8 @e; @e.push(1, 300, 2)` -> 1, 44, 2).
-                    let items = self.wrap_native_int_items(&target_name, items);
-                    let front = matches!(method.as_str(), "unshift" | "prepend");
-                    let result = self.shared_array_extend(&target_name, items, front);
+                    let items = self.wrap_native_int_items(target_name, items);
+                    let front = matches!(method, "unshift" | "prepend");
+                    let result = self.shared_array_extend(target_name, items, front);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -1327,10 +1338,10 @@ impl Interpreter {
                     );
                     let result = loan_env!(
                         self,
-                        push_to_existing_shared_array(&target_name, args.clone())
+                        push_to_existing_shared_array(target_name, args.clone())
                     )
                     .unwrap_or_else(|| {
-                        loan_env!(self, push_to_shared_var(&target_name, args, &target))
+                        loan_env!(self, push_to_shared_var(target_name, args, &target))
                     });
                     self.stack.push(result);
                     return Ok(());
@@ -1346,15 +1357,15 @@ impl Interpreter {
                             target.view(),
                             ValueView::Array(_, crate::value::ArrayKind::Array)
                         )
-                        && self.atomic_array_entry_exists(&target_name) =>
+                        && self.atomic_array_entry_exists(target_name) =>
                 {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
                         "shared-array-pop-shift",
                     );
-                    let (result, _) = self.shared_array_mutate(&target_name, |data, _| {
+                    let (result, _) = self.shared_array_mutate(target_name, |data, _| {
                         if data.items().is_empty() {
-                            crate::runtime::utils::make_empty_array_failure_what(&method, "Array")
+                            crate::runtime::utils::make_empty_array_failure_what(method, "Array")
                         } else if method == "shift" {
                             data.items_mut().remove(0)
                         } else {
@@ -1370,13 +1381,13 @@ impl Interpreter {
                             target.view(),
                             ValueView::Array(_, crate::value::ArrayKind::Array)
                         )
-                        && self.atomic_array_entry_exists(&target_name) =>
+                        && self.atomic_array_entry_exists(target_name) =>
                 {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
                         "shared-array-splice",
                     );
-                    let (removed, _) = self.shared_array_mutate(&target_name, |data, _| {
+                    let (removed, _) = self.shared_array_mutate(target_name, |data, _| {
                         crate::runtime::Interpreter::splice_array_data(data, &args)
                     });
                     self.stack.push(Value::real_array(removed));
@@ -1388,7 +1399,7 @@ impl Interpreter {
 
         let mut skip_native = quoted
             && matches!(
-                method.as_str(),
+                method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             );
         let is_junction_target = match target.view() {
@@ -1396,7 +1407,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
             _ => false,
         };
-        if matches!(method.as_str(), "gist" | "raku" | "perl") && is_junction_target {
+        if matches!(method, "gist" | "raku" | "perl") && is_junction_target {
             skip_native = true;
         }
         // Also skip native if the target has a user-defined method with this name,
@@ -1406,7 +1417,7 @@ impl Interpreter {
         // so a user override must win here too.
         if !skip_native
             && !matches!(
-                method.as_str(),
+                method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
             )
         {
@@ -1416,13 +1427,13 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.has_user_method(&cn, &method)
+                && self.has_user_method(&cn, method)
             {
                 skip_native = true;
             }
         }
         if !skip_native
-            && matches!(method.as_str(), "AT-KEY" | "keys" | "values")
+            && matches!(method, "AT-KEY" | "keys" | "values")
             && matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))
         {
             skip_native = true;
@@ -1430,14 +1441,14 @@ impl Interpreter {
         if !skip_native
             && method == "keys"
             && target_name.starts_with('%')
-            && loan_env!(self, var_hash_key_constraint(&target_name)).is_some()
+            && loan_env!(self, var_hash_key_constraint(target_name)).is_some()
         {
             skip_native = true;
         }
         if !skip_native
             && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
             && matches!(
-                method.as_str(),
+                method,
                 "start"
                     | "kill"
                     | "write"
@@ -1462,7 +1473,7 @@ impl Interpreter {
         if !skip_native
             && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
-                method.as_str(),
+                method,
                 "elems"
                     | "AT-POS"
                     | "BIND-POS"
@@ -1492,11 +1503,11 @@ impl Interpreter {
         if quoted
             && skip_native
             && matches!(
-                method.as_str(),
+                method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
             )
         {
-            self.skip_pseudo_method_native = Some(method.clone());
+            self.skip_pseudo_method_native = Some(method.to_string());
         }
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
@@ -1547,12 +1558,12 @@ impl Interpreter {
             };
             self.env_mut()
                 .insert(target_name.to_string(), new_str.clone());
-            self.locals_set_by_name(code, &target_name, new_str);
+            self.locals_set_by_name(code, target_name, new_str);
             self.stack.push(ret);
             return Ok(());
         }
         // .hyper/.race with named arguments in mut path
-        if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
+        if matches!(method, "hyper" | "race") && !args.is_empty() {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "hyper-race-config",
@@ -1575,19 +1586,12 @@ impl Interpreter {
                 && b <= 0
             {
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "method".to_string(),
-                    Value::str(method.as_str().to_string()),
-                );
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
                 attrs.insert("value".to_string(), Value::int(b));
                 attrs.insert(
                     "message".to_string(),
-                    Value::str(format!(
-                        "Invalid value '{}' for 'batch' on '{}'",
-                        b,
-                        method.as_str()
-                    )),
+                    Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
                 );
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
@@ -1595,18 +1599,14 @@ impl Interpreter {
                 && d <= 0
             {
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert(
-                    "method".to_string(),
-                    Value::str(method.as_str().to_string()),
-                );
+                attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
                 attrs.insert("value".to_string(), Value::int(d));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
                         "Invalid value '{}' for 'degree' on '{}'",
-                        d,
-                        method.as_str()
+                        d, method
                     )),
                 );
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
@@ -1630,13 +1630,13 @@ impl Interpreter {
             ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
         ) {
             let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
-            match method.as_str() {
+            match method {
                 "hyper" | "race" | "is-lazy" | "^name" | "WHAT" | "defined" => {
                     let items_arc = match target.view() {
                         ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let result = match method.as_str() {
+                    let result = match method {
                         "hyper" => Value::hyper_seq_body(items_arc),
                         "race" => Value::race_seq_body(items_arc),
                         "is-lazy" => Value::FALSE,
@@ -1651,7 +1651,7 @@ impl Interpreter {
                         }
                         _ => unreachable!(),
                     };
-                    let arm = match method.as_str() {
+                    let arm = match method {
                         "hyper" => "hyperseq-hyper",
                         "race" => "hyperseq-race",
                         "is-lazy" => "hyperseq-is-lazy",
@@ -1680,7 +1680,7 @@ impl Interpreter {
                         native_result
                     } else {
                         self.try_compiled_method_mut_or_interpret_sym(
-                            &target_name,
+                            target_name,
                             array_target,
                             method_sym,
                             args,
@@ -1761,7 +1761,7 @@ impl Interpreter {
         };
 
         // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
-        match method.as_str() {
+        match method {
             "AT-KEY" if args.len() == 1 => {
                 let inner_target = match target.view() {
                     ValueView::Scalar(inner) => inner,
@@ -2253,15 +2253,15 @@ impl Interpreter {
             // snapshot of the bag (`my %b is BagHash` reproduced exactly that).
             "add" | "remove" => {
                 if let Some(receiver) =
-                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, &method)
+                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, method)
                 {
                     let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
-                        receiver, &method, &args,
+                        receiver, method, &args,
                     )?;
                     if !target_name.is_empty() {
                         self.env_mut()
                             .insert(target_name.to_string(), target.clone());
-                        self.update_local_if_exists(code, &target_name, &target);
+                        self.update_local_if_exists(code, target_name, &target);
                     }
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
@@ -2372,7 +2372,7 @@ impl Interpreter {
         // dispatch, and the post-dispatch FALLBACK absorb in
         // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
         if modifier.is_none() && target.is_nil() {
-            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(&method, args.is_empty()) {
+            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(method, args.is_empty()) {
                 Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
@@ -2398,7 +2398,7 @@ impl Interpreter {
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
         // an undefined variable auto-vivifies it to an Array.
-        let target = if matches!(method.as_str(), "push" | "unshift" | "append" | "prepend")
+        let target = if matches!(method, "push" | "unshift" | "append" | "prepend")
             && (target.is_nil()
                 || matches!(
                     target.view(),
@@ -2420,7 +2420,7 @@ impl Interpreter {
                     "modifier-plus",
                 );
                 let vals =
-                    self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
+                    self.call_method_all_with_fallback(&target, method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
             }
             Some("*") => {
@@ -2428,7 +2428,7 @@ impl Interpreter {
                     "callmethodmut",
                     "modifier-star",
                 );
-                match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
+                match self.call_method_all_with_fallback(&target, method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
                         self.stack.push(Value::array(vec![]))
@@ -2446,7 +2446,7 @@ impl Interpreter {
                 // keeps owning those richer semantics.
                 if modifier.is_none()
                     && let Some(result) =
-                        self.try_native_array_mut(&target_name, &target, &method, &args)
+                        self.try_native_array_mut(target_name, &target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     // ADR-0019 E6b step 1: shadow-verify the `Native` candidate
@@ -2454,7 +2454,7 @@ impl Interpreter {
                     // native-probe completion shapes, observational only.
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2469,13 +2469,12 @@ impl Interpreter {
                 // propagates to the bind source instead of detaching into the
                 // receiver's own slot.
                 if modifier.is_none()
-                    && let Some(result) =
-                        self.try_native_hash_mut_bound(&target_name, &method, &args)
+                    && let Some(result) = self.try_native_hash_mut_bound(target_name, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2488,12 +2487,12 @@ impl Interpreter {
                 // dispatch -> Interpreter-native).
                 if modifier.is_none()
                     && let Some(result) =
-                        self.try_native_array_splice(&target_name, &target, &method, &args)
+                        self.try_native_array_splice(target_name, &target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2505,12 +2504,12 @@ impl Interpreter {
                 // instance (ledger §1: native receiver dispatch -> Interpreter-native).
                 if modifier.is_none()
                     && let Some(result) =
-                        self.try_native_buf_mut(&target_name, &target, &method, &args)
+                        self.try_native_buf_mut(target_name, &target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2523,12 +2522,12 @@ impl Interpreter {
                 // Interpreter-native). `$it.pull-one` etc. compile to CallMethodMut, so the
                 // index-advancing dispatch lands here.
                 if modifier.is_none()
-                    && let Some(result) = self.try_native_iterator(&target, &method, &args)
+                    && let Some(result) = self.try_native_iterator(&target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2547,7 +2546,7 @@ impl Interpreter {
                 {
                     let cn = inst_class.resolve();
                     let is_array_method = matches!(
-                        method.as_str(),
+                        method,
                         "push"
                             | "pop"
                             | "shift"
@@ -2614,7 +2613,7 @@ impl Interpreter {
                             | "one"
                     );
                     if is_array_method
-                        && !self.has_user_method(&cn, &method)
+                        && !self.has_user_method(&cn, method)
                         && attributes.contains_key("__mutsu_array_storage")
                         && self
                             .mro_readonly(&cn)
@@ -2631,9 +2630,9 @@ impl Interpreter {
                         // the instance's storage would move `[0]`/`.join`/`|`
                         // too -- which rakudo keeps on the reified elements.
                         if let Some(source) =
-                            self.positional_subclass_iteration_source(&target, &method)
+                            self.positional_subclass_iteration_source(&target, method)
                         {
-                            let r = self.call_method_with_values(source?, &method, args);
+                            let r = self.call_method_with_values(source?, method, args);
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
                                 "user",
@@ -2651,11 +2650,11 @@ impl Interpreter {
                         // updated storage written back, with no interpreter
                         // dispatch. Richer methods fall through below.
                         if let Some(result) =
-                            Self::native_array_storage_mut(&mut storage, &method, &args)
+                            Self::native_array_storage_mut(&mut storage, method, &args)
                         {
                             let result = result?;
                             let updated_instance = self.write_back_array_storage_instance(
-                                &target_name,
+                                target_name,
                                 &inst_class,
                                 &attributes,
                                 inst_id,
@@ -2672,16 +2671,13 @@ impl Interpreter {
                             // query resolve_sequence with.
                             self.shadow_check_native_row_candidate(
                                 &target,
-                                &method,
+                                method,
                                 method_sym,
                                 args.len(),
                                 true,
                             );
                             self.stack.push(
-                                if matches!(
-                                    method.as_str(),
-                                    "push" | "append" | "prepend" | "unshift"
-                                ) {
+                                if matches!(method, "push" | "append" | "prepend" | "unshift") {
                                     updated_instance
                                 } else {
                                     result
@@ -2703,14 +2699,14 @@ impl Interpreter {
                         // write-back the interpreter owns. (`.map` used to be
                         // in this list; it is deferred now, and its rw loop
                         // runs from the Seq's pull — ADR-0058 §9.4.)
-                        if let Some(r) = self.try_native_first(&storage, &method, &args) {
+                        if let Some(r) = self.try_native_first(&storage, method, &args) {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
                                 "native",
                             );
                             self.shadow_check_native_row_candidate(
                                 &target,
-                                &method,
+                                method,
                                 method_sym,
                                 args.len(),
                                 true,
@@ -2718,14 +2714,14 @@ impl Interpreter {
                             self.stack.push(r?);
                             return Ok(());
                         }
-                        if let Some(r) = self.try_native_minmax(&storage, &method, &args) {
+                        if let Some(r) = self.try_native_minmax(&storage, method, &args) {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
                                 "native",
                             );
                             self.shadow_check_native_row_candidate(
                                 &target,
-                                &method,
+                                method,
                                 method_sym,
                                 args.len(),
                                 true,
@@ -2739,7 +2735,7 @@ impl Interpreter {
                         // a whitelist of methods that return fresh values (never an
                         // rw view into, nor a mutation of, the source), so the
                         // by-value `&storage` borrow is correct for the instance.
-                        if Self::is_array_storage_native_safe(&method)
+                        if Self::is_array_storage_native_safe(method)
                             && let Some(r) = self.try_native_method(&storage, method_sym, &args)
                         {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
@@ -2748,7 +2744,7 @@ impl Interpreter {
                             );
                             self.shadow_check_native_row_candidate(
                                 &target,
-                                &method,
+                                method,
                                 method_sym,
                                 args.len(),
                                 true,
@@ -2759,11 +2755,11 @@ impl Interpreter {
                         // Perform the operation on the backing array
                         // TODO: compile to bytecode — Array-backed instance method
                         // (non-simple methods on `is Array` storage). See ledger §1.
-                        crate::vm::vm_stats::record_method_fallback(&method);
+                        crate::vm::vm_stats::record_method_fallback(method);
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                         self.shadow_check_native_row_candidate(
                             &target,
-                            &method,
+                            method,
                             method_sym,
                             args.len(),
                             false,
@@ -2786,13 +2782,13 @@ impl Interpreter {
                             call_method_mut_with_values(
                                 "__mutsu_array_tmp",
                                 storage.clone(),
-                                &method,
+                                method,
                                 args,
                             )
                         )
                         .or_else(|_| {
                             // Try non-mut dispatch for read-only methods
-                            self.vm_call_method_with_values(storage.clone(), &method, vec![])
+                            self.vm_call_method_with_values(storage.clone(), method, vec![])
                         })?;
                         // Read back the (potentially mutated) storage
                         if let Some(updated_storage) = self.env().get("__mutsu_array_tmp").cloned()
@@ -2802,7 +2798,7 @@ impl Interpreter {
                         self.env_mut().remove("__mutsu_array_tmp");
                         // Update the instance with the new storage
                         self.write_back_array_storage_instance(
-                            &target_name,
+                            target_name,
                             &inst_class,
                             &attributes,
                             inst_id,
@@ -2818,12 +2814,12 @@ impl Interpreter {
                 // existing native Hash dispatch (via a synthetic env binding)
                 // instead of hand-written Rust mutators.
                 if let Some(result) =
-                    self.try_hash_storage_delegate_mut(&target_name, &target, &method, &args)
+                    self.try_hash_storage_delegate_mut(target_name, &target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.shadow_check_native_row_candidate(
                         &target,
-                        &method,
+                        method,
                         method_sym,
                         args.len(),
                         true,
@@ -2841,13 +2837,9 @@ impl Interpreter {
                 // proven-pure compiled method path clears this.
                 self.method_dispatch_pure = false;
                 if !skip_native
-                    && !self.native_lever_a_user_override(&target, &method)
-                    && let Some(produced) = self.try_quanthash_weight_pair_producer(
-                        &target,
-                        &target_name,
-                        &method,
-                        &args,
-                    )
+                    && !self.native_lever_a_user_override(&target, method)
+                    && let Some(produced) =
+                        self.try_quanthash_weight_pair_producer(&target, target_name, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome(
                         "callmethodmut",
@@ -2869,8 +2861,8 @@ impl Interpreter {
                     // still win: this routing changes how a *native* producer
                     // builds its result, and there is no native producer to
                     // change when the user has replaced the method.
-                    && !self.native_lever_a_user_override(&target, &method)
-                    && let Some(produced) = self.try_element_container_producer(&target, &method, &args)
+                    && !self.native_lever_a_user_override(&target, method)
+                    && let Some(produced) = self.try_element_container_producer(&target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome(
                         "callmethodmut",
@@ -2895,7 +2887,7 @@ impl Interpreter {
                         );
                         self.shadow_check_native_row_candidate(
                             &target,
-                            &method,
+                            method,
                             method_sym,
                             args.len(),
                             true,
@@ -2905,16 +2897,16 @@ impl Interpreter {
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                         self.shadow_check_native_row_candidate(
                             &target,
-                            &method,
+                            method,
                             method_sym,
                             args.len(),
                             false,
                         );
                         self.dispatch_compiled_method_mut_with_raw_invocant(
                             code,
-                            &target_name,
+                            target_name,
                             target,
-                            &method,
+                            method,
                             method_sym,
                             args,
                         )
@@ -2930,9 +2922,9 @@ impl Interpreter {
                     crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                     self.dispatch_compiled_method_mut_with_raw_invocant(
                         code,
-                        &target_name,
+                        target_name,
                         target,
-                        &method,
+                        method,
                         method_sym,
                         args,
                     )

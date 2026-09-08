@@ -180,6 +180,11 @@ impl Interpreter {
         // Per-opcode execution histogram (MUTSU_VM_STATS=1 only; a single
         // cached bool load when off). Feeds instruction-set tuning decisions.
         crate::vm::vm_stats::record_opcode(&code.ops[*ip]);
+        // Per-opcode allocation accounting (`alloc-stats` builds only; expands
+        // to nothing otherwise). `mfast:body` -- the bytecode execution of a
+        // method -- is the largest region in the #7561 report and could not be
+        // attributed any further without splitting it by opcode family.
+        crate::alloc_scope_dyn!(crate::alloc_stats::opcode_label(&code.ops[*ip]));
         // Track the currently-executing frame's code so the lazy-force machinery
         // can reconcile this (caller) frame's local slots from env after a reify
         // that mutated a captured-outer lexical (Slice F). See `current_code`.
@@ -3797,6 +3802,7 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                crate::alloc_scope_named!(_sc_cmm_pre, "op:CallMethodMut:pre");
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
@@ -3811,6 +3817,8 @@ impl Interpreter {
                             .get_sym(code.const_sym(*target_name_idx))
                             .cloned()
                     });
+                crate::alloc_scope_end!(_sc_cmm_pre);
+                crate::alloc_scope_named!(_sc_cmm_disp, "op:CallMethodMut:dispatch");
                 match self.exec_call_method_mut_op(
                     code,
                     *name_idx,
@@ -3859,6 +3867,8 @@ impl Interpreter {
                 // A method that mutates the receiver in place through its `Gc`
                 // (rather than rebinding the name) leaves the bits equal, and that
                 // is correct: the slot already holds the very same `Gc`.
+                crate::alloc_scope_end!(_sc_cmm_disp);
+                crate::alloc_scope_named!(_sc_cmm_post, "op:CallMethodMut:post");
                 if let Some(before) = receiver_before {
                     let after = self.env().get_sym(code.const_sym(*target_name_idx));
                     let rebound = match (&before, after) {
@@ -3874,6 +3884,7 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 self.drain_pending_local_updates_after_call(code);
                 self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+                crate::alloc_scope_end!(_sc_cmm_post);
                 *ip += 1;
             }
             OpCode::CallOnValue {
