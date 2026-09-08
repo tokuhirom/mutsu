@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::types::is_stash_class_name;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -4734,7 +4735,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => {
+            } if is_stash_class_name(class_name.as_str()) => {
                 let package = attributes
                     .as_map()
                     .get("name")

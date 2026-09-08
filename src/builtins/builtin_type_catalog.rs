@@ -135,6 +135,17 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: ["Associative", "Iterable"],
         owner: "Hash",
     ),
+    // A pseudo-package view of a lexical pad (`MY::`, `CALLER::`, `UNIT::`,
+    // ...). Raku keeps it apart from the package symbol table `Stash`: they
+    // are SIBLINGS under `Map`, not parent and child (measured against
+    // rakudo, `PseudoStash.^mro` is `(PseudoStash Map Cool Any Mu)`), so
+    // `PseudoStash` must never be modelled as a `Stash` subclass.
+    row!(
+        "PseudoStash",
+        mro: ["PseudoStash", "Map", "Cool", "Any", "Mu"],
+        roles: ["Associative", "Iterable"],
+        owner: "Hash",
+    ),
     row!(
         "Range",
         mro: ["Range", "Cool", "Any", "Mu"],

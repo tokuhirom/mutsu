@@ -47,6 +47,7 @@ impl Compiler {
                     | "IO"
                     | "Exception"
                     | "Stash"
+                    | "PseudoStash"
                     | "Array"
                     | "Hash"
                     | "List"

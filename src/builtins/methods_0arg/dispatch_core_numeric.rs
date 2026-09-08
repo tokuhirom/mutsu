@@ -4,6 +4,7 @@ use crate::builtins::rng::builtin_rand;
 /// uc, lc, fc, tc, sign
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::types::is_stash_class_name;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::Signed;
 
@@ -169,7 +170,7 @@ pub(super) fn dispatch(
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => {
+                } if is_stash_class_name(class_name.as_str()) => {
                     match attributes.as_map().get("symbols").map(Value::view) {
                         Some(ValueView::Hash(map)) => Value::int(map.len() as i64),
                         _ => Value::int(0),

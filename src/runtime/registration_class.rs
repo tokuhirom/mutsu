@@ -644,6 +644,7 @@ impl Interpreter {
                     | "IO"
                     | "Exception"
                     | "Stash"
+                    | "PseudoStash"
             )
         {
             return format!("{}{}", lookup, suffix);

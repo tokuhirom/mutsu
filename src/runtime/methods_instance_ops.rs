@@ -6,6 +6,7 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueView;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     fn is_pod_block_instance(&mut self, value: &Value) -> bool {
@@ -240,7 +241,9 @@ impl Interpreter {
                     rendered.join(",")
                 ))));
             }
-            "Stash" if method == "raku" || method == "perl" => {
+            _ if is_stash_class_name(class_name.as_str())
+                && (method == "raku" || method == "perl") =>
+            {
                 let symbols = attributes
                     .as_map()
                     .get("symbols")
@@ -1150,7 +1153,7 @@ impl Interpreter {
                     self.make_globalish_package(attributes.as_map().get("globalish-symbols"))
                 );
             }
-            if class_name == "Stash" && method == "merge-symbols" {
+            if is_stash_class_name(class_name.as_str()) && method == "merge-symbols" {
                 let pkg = args.first().cloned().unwrap_or(Value::NIL);
                 return Ok(self.merge_global_symbols(&pkg));
             }

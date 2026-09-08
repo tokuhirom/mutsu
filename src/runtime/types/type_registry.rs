@@ -1045,6 +1045,7 @@ impl Interpreter {
                 | "Signature"
                 | "Parameter"
                 | "Stash"
+                | "PseudoStash"
                 | "Grammar"
                 | "Proc"
         ) {

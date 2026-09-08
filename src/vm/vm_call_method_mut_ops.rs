@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     /// The invocant of a `.&sub(...)` call is always bound positionally to the
@@ -638,7 +639,9 @@ impl Interpreter {
         })?;
         let stash_target = if method == "BIND-KEY" && args.len() == 2 {
             match target.view() {
-                ValueView::Instance { class_name, .. } if class_name == "Stash" => {
+                ValueView::Instance { class_name, .. }
+                    if is_stash_class_name(class_name.as_str()) =>
+                {
                     Some(target.clone())
                 }
                 _ => Self::caller_stash_depth(&target_name)
@@ -1420,7 +1423,7 @@ impl Interpreter {
         }
         if !skip_native
             && matches!(method.as_str(), "AT-KEY" | "keys" | "values")
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))
         {
             skip_native = true;
         }

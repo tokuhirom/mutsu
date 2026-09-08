@@ -61,6 +61,7 @@ pub(super) fn is_core_raku_type(name: &str) -> bool {
             | "HyperWhatever"
             | "WhateverCode"
             | "Stash"
+            | "PseudoStash"
             | "Scalar"
             | "Numeric"
             | "Real"

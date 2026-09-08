@@ -1,6 +1,7 @@
 //! Symbolic stash member lookup and package/indirect-type-name resolution.
 use super::*;
 use crate::value::ValueView;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     fn stash_symbol_key_from_env_tail(rest: &str) -> String {
@@ -171,7 +172,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => {
+            } if is_stash_class_name(class_name.as_str()) => {
                 let map = attributes.as_map();
                 if let Some(origin) = map.get(Self::STASH_ORIGIN_PACKAGE_ATTR) {
                     return Some(origin.to_string_value());
@@ -200,7 +201,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => {
+            } if is_stash_class_name(class_name.as_str()) => {
                 let map = attributes.as_map();
                 map.get(Self::STASH_ORIGIN_ROUTINE_ATTR)
                     .map(|v| v.to_string_value())
@@ -213,7 +214,33 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
         attrs.insert("symbols".to_string(), Value::hash(symbols));
-        Value::make_instance(Symbol::intern("Stash"), attrs)
+        Value::make_instance(
+            Symbol::intern(Self::stash_class_for_package(package)),
+            attrs,
+        )
+    }
+
+    /// The class a stash for `package` carries: `Stash` for a real package
+    /// symbol table, `PseudoStash` for a pseudo-package view of a lexical pad.
+    ///
+    /// Raku keeps the two apart — `PseudoStash.^mro` is
+    /// `(PseudoStash Map Cool Any Mu)`, so it is a *sibling* of `Stash`, not a
+    /// subclass — and the distinction is what lets a future `BIND-KEY` bind
+    /// into a pad rather than into a package. Measured against rakudo:
+    /// `MY OUTER OUTERS LEXICAL DYNAMIC CALLER CALLERS CORE SETTING UNIT
+    /// CLIENT` answer `PseudoStash`; `OUR`, `GLOBAL` and `PROCESS` are genuine
+    /// package symbol tables and stay `Stash`.
+    ///
+    /// A repeated spelling (`CALLER::CALLER::`) is still a pseudo-stash, which
+    /// is why every component has to be one; a qualified name whose head only
+    /// looks pseudo (`CORE::Foo`) is a package.
+    pub(crate) fn stash_class_for_package(package: &str) -> &'static str {
+        let normalized = Self::normalize_stash_package(package);
+        let is_pseudo = !normalized.is_empty()
+            && normalized.split("::").all(|part| {
+                Self::is_pseudo_package_name(part) && !matches!(part, "OUR" | "GLOBAL")
+            });
+        if is_pseudo { "PseudoStash" } else { "Stash" }
     }
 
     /// Parse a stash made exclusively from repeated `CALLER` components.
@@ -259,7 +286,7 @@ impl Interpreter {
         else {
             return Err(RuntimeError::new("BIND-KEY requires a Stash invocant"));
         };
-        if class_name != "Stash" {
+        if !is_stash_class_name(class_name.as_str()) {
             return Err(RuntimeError::new("BIND-KEY requires a Stash invocant"));
         }
 
@@ -403,7 +430,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Stash" {
+        if !is_stash_class_name(class_name.as_str()) {
             return None;
         }
         let map = attributes.as_map();
@@ -545,7 +572,9 @@ impl Interpreter {
                         return Self::no_such_symbol_failure(name);
                     }
                 }
-                ValueView::Instance { class_name, .. } if class_name == "Stash" => {
+                ValueView::Instance { class_name, .. }
+                    if is_stash_class_name(class_name.as_str()) =>
+                {
                     if let Some(value) = Self::stash_lookup_symbol(&current, part) {
                         value
                     } else {

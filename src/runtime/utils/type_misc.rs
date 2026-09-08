@@ -37,6 +37,13 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::LazyList(ll) if ll.is_genuinely_lazy() => "Seq",
         ValueView::LazyList(_) => "Array",
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",
+        // A pseudo-package view of a lexical pad (`MY::`, `OUTER::`,
+        // `LEXICAL::`, `DYNAMIC::`) is a `PseudoStash` in raku, not a `Hash`.
+        // mutsu keeps the pad snapshot as a hash and carries the type as its
+        // declared type, the same way `Map` is carried.
+        ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("PseudoStash") => {
+            "PseudoStash"
+        }
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
         | ValueView::RangeExcl(_, _)
