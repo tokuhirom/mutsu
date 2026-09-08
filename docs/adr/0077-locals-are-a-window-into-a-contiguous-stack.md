@@ -233,13 +233,49 @@ governs here. In particular:
 
 ### Cross-check of the ~5.7% claim (2026-09-08)
 
-The 5.7% figure predates the September sweep, so it was re-derived on
-`4d684e4` before this ADR was written. `perf` is unavailable in the container
-used (not installed; `perf_event_paranoid=2`), so the cross-check used
-**callgrind**, whose instruction counts are exact and load-independent — the
-right tool for confirming that a cluster is still worth attacking, and the
-wrong one for a wall-clock claim. See §"Cross-check result" below, which this
-ADR records rather than the bench CI numbers Slice 2 must produce.
+The 5.7% figure predates the September sweep, so it was re-derived on `4d684e4`
+before this ADR was written. `perf` was unavailable in the container used (not
+installed; `perf_event_paranoid=2`), so the cross-check used **callgrind**,
+whose instruction counts are exact and load-independent — the right tool for
+confirming a cluster is still worth attacking, and the wrong one for any
+wall-clock claim. **These are not bench-CI numbers and must not be quoted as
+the win**; Slice 2 owes the bench CI a real measurement.
+
+`--profile profiling` build, JIT on (default), `fib(22)` — 57 312 calls,
+152 774 784 Ir total. Inclusive cost, so each row already contains the
+allocation it triggers:
+
+| what | Ir | share | per call |
+| --- | ---: | ---: | --- |
+| `take_locals_from_pool`'s `Vec::resize` | 3 101 409 | **2.03%** | 57 312× — once per call |
+| `recycle_locals` | 2 984 559 | **1.95%** | 57 312× — once per call |
+| **locals cluster total** | | **~4.0%** | |
+
+So the cluster is still there and still costs about what #7562 said, on a
+benchmark whose callee has exactly one local. The `perf` figure being higher
+(5.7%) is consistent: it was `fib(30)`, where the call path dominates more, and
+cycles weight the malloc traffic that instruction counts do not.
+
+**One attribution in #7562's table is worth correcting.** Its
+`<Vec<T,A> as Drop>::drop` row (0.96%) is not the locals vector — the locals
+vector is recycled, not dropped. In this run `Vec::drop` is called **171 936
+times, three per call**, from `call_compiled_function_positional_light_at`
+(2.14% inclusive), and those are the *other* `mem::take`n frame fields
+(`loop_local_vars`, `block_declared_vars`, `active_loop_param_names`, …) being
+dropped on restore. Together with the 3.90% attributed to `core::mem` inside
+the same function, that is a **neighbouring cluster this ADR does not close**:
+the per-call frame saves eight independent `Vec` fields, and locals is only the
+one that also allocates. Whether the same contiguous-frame treatment should
+swallow the other seven is a follow-on question, deliberately out of scope here
+so that Slice 2 measures one thing.
+
+Also visible: 20 871 `__rdl_alloc` calls for 57 312 calls — the pool misses
+about a third of the time even in `fib`'s tree recursion, where returns refill
+it constantly. A linear recursion deeper than `LOCALS_POOL_MAX = 64` misses it
+structurally (the descent finds the pool empty), so such a program pays a
+malloc *and* a free per call today. That cost does not appear in #7562's
+profile at all — `fib`'s depth is 30 — and it is the one place where the win
+could be much larger than a few percent.
 
 ## Consequences
 
@@ -247,8 +283,10 @@ ADR records rather than the bench CI numbers Slice 2 must produce.
   `resize`, and to **zero** for a callee whose locals are exactly its leading
   parameters.
 - A deep recursion now grows one buffer instead of cycling a bounded free list,
-  so the pool's `LOCALS_POOL_MAX = 64` ceiling (past which a deep recursion
-  allocated and freed per call) stops mattering.
+  so the pool's `LOCALS_POOL_MAX = 64` ceiling stops mattering. Past that depth
+  a linear recursion currently pays a malloc and a free **per call** (the
+  descent always finds the pool empty), which no existing benchmark measures —
+  see the measurement section.
 - The interpreter gains an invariant to hold: **no cached pointer into
   `locals_stack` across anything that can push a frame.** This is the one new
   footgun the change introduces, and the reason the ADR insists the window is

@@ -52,5 +52,23 @@ prefix. When it is, the argument the caller pushed already sits in the cell the
 local slot wants — `locals_base = args_base`, and a callee whose locals are
 exactly its parameters pays *nothing* for its locals frame.
 
+The cluster was re-measured before the ADR was written, since the 5.7% figure
+predates the September call-path sweep. `perf` was unavailable in the container
+used, so the cross-check is callgrind instruction counts (exact and
+load-independent — right for "is this still worth attacking", wrong for a
+wall-clock claim, and not a substitute for the bench-CI number Slice 2 owes).
+On `fib(22)` with the JIT on, `take_locals_from_pool`'s `resize` is 2.03% and
+`recycle_locals` 1.95% of retired instructions, each once per call: **~4.0%**,
+still there.
+
+Two things the re-measurement corrected or added. #7562's
+`<Vec<T,A> as Drop>::drop` row is *not* the locals vector — that one is
+recycled, not dropped; `Vec::drop` runs three times per call on the *other*
+`mem::take`n frame fields, which this ADR deliberately leaves alone so Slice 2
+measures one thing. And the pool misses about a third of the time even in
+`fib`'s tree recursion (20 871 allocations for 57 312 calls); a linear recursion
+deeper than `LOCALS_POOL_MAX = 64` misses it *structurally*, paying a malloc and
+a free per call, which no current benchmark measures.
+
 No behavior change; the ADR is `Proposed` and #7562 stays open for the
 implementation slices.
