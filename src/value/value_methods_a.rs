@@ -895,7 +895,7 @@ impl Value {
         // container kind their step addresses) has no terminal yet — the
         // deferred bind reads as `Any` without creating anything.
         let Some(terminal) = self.hash_entry_locate() else {
-            return Value::Package(crate::symbol::Symbol::intern("Any"));
+            return Value::Package(crate::symbol::wk::any());
         };
         // An unconnected slot reads as what an unwritten slot of that container
         // holds: `Any` for a hash entry, the element hole (`Int`, an

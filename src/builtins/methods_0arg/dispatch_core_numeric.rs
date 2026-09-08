@@ -188,7 +188,9 @@ pub(super) fn dispatch(
                     a.default.as_deref().cloned().unwrap()
                 }
                 ValueView::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
-                ValueView::Array(..) | ValueView::Hash(..) => Value::package(Symbol::intern("Any")),
+                ValueView::Array(..) | ValueView::Hash(..) => {
+                    Value::package(crate::symbol::wk::any())
+                }
                 ValueView::Set(..) => Value::FALSE,
                 ValueView::Bag(..) | ValueView::Mix(..) => Value::int(0),
                 _ => return Some(None),

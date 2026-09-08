@@ -37,7 +37,7 @@ impl Compiler {
     /// The `Any` type-object literal seeded by
     /// `uninit_untyped_scalar_defaults_to_any` sites.
     pub(super) fn any_type_object_expr() -> Expr {
-        Expr::Literal(Value::package(crate::symbol::Symbol::intern("Any")))
+        Expr::Literal(Value::package(crate::symbol::wk::any()))
     }
 
     /// Check if a method call is a known mutating method on an indexed target

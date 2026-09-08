@@ -1187,7 +1187,7 @@ impl Compiler {
                     // [//] () and [orelse] () return Any (type object)
                     let any_idx = self
                         .code
-                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::wk::any()));
                     self.code.emit(OpCode::LoadConst(any_idx));
                 }
                 _ => {
@@ -1407,7 +1407,7 @@ impl Compiler {
                 "//" | "orelse" => {
                     let any_idx = self
                         .code
-                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::wk::any()));
                     self.code.emit(OpCode::LoadConst(any_idx));
                 }
                 "&&" | "and" => {

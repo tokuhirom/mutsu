@@ -2892,7 +2892,7 @@ impl Interpreter {
                         return Ok(Value::package(Symbol::intern(&candidate)));
                     }
                 }
-                Ok(Value::package(Symbol::intern("Any")))
+                Ok(Value::package(crate::symbol::wk::any()))
             }
             [expected] => {
                 let expected_type = self.are_expected_type_name(expected);

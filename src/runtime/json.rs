@@ -502,9 +502,7 @@ impl<'a> Parser<'a> {
             Some(b'"') => Ok(Value::str(self.parse_string()?)),
             Some(b't') => self.parse_literal("true", Value::TRUE),
             Some(b'f') => self.parse_literal("false", Value::FALSE),
-            Some(b'n') => {
-                self.parse_literal("null", Value::package(crate::symbol::Symbol::intern("Any")))
-            }
+            Some(b'n') => self.parse_literal("null", Value::package(crate::symbol::wk::any())),
             Some(c) if c == b'-' || c.is_ascii_digit() => self.parse_number(),
             Some(c) => Err(format!("Unexpected character in JSON: {}", c as char)),
             None => Err("Unexpected end of JSON".to_string()),

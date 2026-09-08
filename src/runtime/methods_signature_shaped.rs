@@ -105,7 +105,7 @@ impl Interpreter {
         // re-seeds these cells with its element type via
         // coerce_typed_array_elements (the unset-seed arm); the `array[T].new`
         // / `Array[T].new` constructors pass their seed directly.
-        Self::make_shaped_array_seeded(dims, &Value::package(Symbol::intern("Any")))
+        Self::make_shaped_array_seeded(dims, &Value::package(crate::symbol::wk::any()))
     }
 
     /// [`Self::make_shaped_array`] with an explicit unset-cell seed, for a

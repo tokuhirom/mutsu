@@ -254,7 +254,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     items
                         .iter()
                         .map(|v| match v.view() {
-                            ValueView::Nil => Value::package(crate::symbol::Symbol::intern("Any")),
+                            ValueView::Nil => Value::package(crate::symbol::wk::any()),
                             _ => v.clone(),
                         })
                         .collect()

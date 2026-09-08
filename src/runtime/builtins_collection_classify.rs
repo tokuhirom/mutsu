@@ -23,7 +23,7 @@ impl Interpreter {
         /// it does not hold: the `Any` type object, which is what the
         /// equivalent subscript read (`@mapper[6]`, `%mapper<z>`) answers.
         fn mapper_miss() -> Value {
-            Value::package(crate::symbol::Symbol::intern("Any"))
+            Value::package(crate::symbol::wk::any())
         }
 
         /// Returns (paths, is_multi_level).

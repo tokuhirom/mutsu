@@ -2388,10 +2388,10 @@ impl Interpreter {
                     ValueView::Array(items, kind) if !kind.is_itemized() => Value::array(
                         items
                             .iter()
-                            .map(|_| Value::package(Symbol::intern("Any")))
+                            .map(|_| Value::package(crate::symbol::wk::any()))
                             .collect(),
                     ),
-                    _ => Value::package(Symbol::intern("Any")),
+                    _ => Value::package(crate::symbol::wk::any()),
                 }
             }
             // Postcircumfix POSITIONAL index (`[idx]`) on the bare Any type object —
@@ -2410,10 +2410,10 @@ impl Interpreter {
                     ValueView::Array(items, ..) => Value::array(
                         items
                             .iter()
-                            .map(|_| Value::package(Symbol::intern("Any")))
+                            .map(|_| Value::package(crate::symbol::wk::any()))
                             .collect(),
                     ),
-                    _ => Value::package(Symbol::intern("Any")),
+                    _ => Value::package(crate::symbol::wk::any()),
                 }
             }
             // Parameterizing a user-declared class / package / module that is NOT

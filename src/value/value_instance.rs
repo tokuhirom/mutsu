@@ -32,6 +32,11 @@ impl Drop for AttrReadGuard<'_> {
         if still_held {
             return;
         }
+        // Deferred writes are a rare self-deadlock escape hatch; the counter
+        // answers "none anywhere" without a second thread-local round trip.
+        if !super::pending_cell_writes_possible() {
+            return;
+        }
         let flush = PENDING_CELL_WRITES.with(|p| {
             let mut v = p.borrow_mut();
             let mut mine: Vec<(AttrCell, AttrMap)> = Vec::new();
@@ -45,6 +50,7 @@ impl Drop for AttrReadGuard<'_> {
             });
             mine
         });
+        super::note_pending_cell_writes_drained(flush.len());
         for (cell, map) in flush {
             *write_attrs(&cell) = map;
         }
@@ -377,6 +383,14 @@ impl InstanceAttrs {
             true
         };
         if !should_queue {
+            return;
+        }
+        // Nothing in this program declares a user `DESTROY`, so the queued item
+        // could only be walked and thrown away. Checked AFTER the refcount
+        // bookkeeping above (skipping that would leak `live_instance_refcounts`
+        // entries) and at DROP time, so a `DESTROY` registered later still
+        // fires for every instance that dies after it.
+        if !super::any_destroy_method_declared() {
             return;
         }
         let _ = PENDING_INSTANCE_DESTROYS.try_with(|pending| {

@@ -2472,7 +2472,7 @@ impl Interpreter {
                                         Self::autoviv_resize(
                                             arr,
                                             max_idx + 1,
-                                            Value::package(Symbol::intern("Any")),
+                                            Value::package(crate::symbol::wk::any()),
                                         )?;
                                     }
                                     Ok(())
@@ -2686,7 +2686,7 @@ impl Interpreter {
                             || (is_positional && !var_name.starts_with('%')))
                             && let Some(i) = Self::index_to_usize(&idx)
                         {
-                            let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
+                            let mut arr = vec![Value::package(crate::symbol::wk::any()); i + 1];
                             // ADR-0040 slice 1: itemize the stored value.
                             arr[i] = Self::itemize_value(val.clone());
                             *container = Value::real_array_initialized_at(arr, i);
@@ -2707,7 +2707,7 @@ impl Interpreter {
                     if (var_name.starts_with('@') || (is_positional && !var_name.starts_with('%')))
                         && let Some(i) = Self::index_to_usize(&idx)
                     {
-                        let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
+                        let mut arr = vec![Value::package(crate::symbol::wk::any()); i + 1];
                         // ADR-0040 slice 1: itemize the stored value.
                         arr[i] = Self::itemize_value(val.clone());
                         self.env_mut()
@@ -3608,7 +3608,7 @@ impl Interpreter {
                 // Autovivified gaps fill with the `Any` type object (matching
                 // a direct `@a[i] = v`), not `Nil`. A nested hash/array element
                 // container is untyped here, so `Any` is the correct hole.
-                let fill = Value::package(crate::symbol::Symbol::intern("Any"));
+                let fill = Value::package(crate::symbol::wk::any());
                 // Container identity (§3): write through a shared node.
                 let a = crate::value::gc_data_mut(arr);
                 Self::autoviv_resize_tracking(a, i, fill)?;
@@ -4112,7 +4112,7 @@ impl Interpreter {
                                     Self::autoviv_resize_tracking(
                                         arr,
                                         i,
-                                        Value::package(Symbol::intern("Any")),
+                                        Value::package(crate::symbol::wk::any()),
                                     )?;
                                     arr[i] = Self::fresh_autoviv_container(next_positional);
                                     Ok(&mut arr[i] as *mut Value)
@@ -4443,11 +4443,7 @@ impl Interpreter {
                     // change is visible to all holders of the same Arc; see
                     // `gc_contents_mut`.
                     let v = unsafe { crate::value::gc_contents_mut(&arc) }.items_mut();
-                    Self::autoviv_resize(
-                        v,
-                        i + 1,
-                        Value::package(crate::symbol::Symbol::intern("Any")),
-                    )?;
+                    Self::autoviv_resize(v, i + 1, Value::package(crate::symbol::wk::any()))?;
                     match &bind_cell {
                         // Bind mode installs the shared cell at the element;
                         // the same cell is written back to the source var
@@ -4589,10 +4585,9 @@ impl Interpreter {
                             ),
                         };
                         if i >= items.items().len() {
-                            items.items_mut().resize(
-                                i + 1,
-                                Value::package(crate::symbol::Symbol::intern("Any")),
-                            );
+                            items
+                                .items_mut()
+                                .resize(i + 1, Value::package(crate::symbol::wk::any()));
                         }
                         match &bind_cell {
                             Some((_, cell)) => {

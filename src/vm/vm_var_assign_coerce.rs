@@ -593,7 +593,7 @@ impl Interpreter {
     pub(crate) fn slice_pad_value(&mut self, var_name: &str) -> Value {
         match loan_env!(self, var_type_constraint(var_name)) {
             Some(constraint) => self.typed_scalar_nil_seed_value(var_name, &constraint),
-            None => Value::package(crate::symbol::Symbol::intern("Any")),
+            None => Value::package(crate::symbol::wk::any()),
         }
     }
 

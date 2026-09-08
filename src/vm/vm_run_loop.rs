@@ -1116,7 +1116,7 @@ impl Interpreter {
             {
                 return Value::package(crate::symbol::Symbol::intern(&tc));
             }
-            Value::package(crate::symbol::Symbol::intern("Any"))
+            Value::package(crate::symbol::wk::any())
         } else {
             val
         }

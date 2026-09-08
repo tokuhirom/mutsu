@@ -664,7 +664,7 @@ impl Interpreter {
         if self.readonly_kind(&name).is_some() {
             return Ok(Value::FALSE);
         }
-        if crate::env::closure_meta_keys_possible() {
+        if crate::env::sigilless_readonly_keys_possible() {
             let key = crate::runtime::sigilless_readonly_key(&name);
             if matches!(
                 self.env.get(&key).map(Value::view),

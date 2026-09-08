@@ -64,7 +64,7 @@ specializes the whole new -> bless -> BUILDALL chain.
   case). Also avoid the unconditional `cell.to_map()` probe when no alias
   refresh is needed and the resolved candidate doesn't consume it.
   Expected: removes most of the 30us/construction TWEAK overhead.
-- [ ] **S2: trim the custom-new -> bless argument plumbing** — avoid
+- [~] **S2: trim the custom-new -> bless argument plumbing** — avoid
   rebuilding the named-arg hash/pair vector twice (`%_` slurpy then
   `:meta(%_)` slip flatten), and chase the 3 env_deep_copies/construction on
   this path. **2026-08-14 investigation (this session) root-caused the
@@ -474,6 +474,77 @@ open, from the same repro: `CheckReadOnly` builds
 assignment once `closure_meta_keys_possible()` is armed — and that flag is shared
 with `__mutsu_state_key::` / `__mutsu_sigilless_alias::` / predictive-seq keys, so
 creating any of those arms the readonly probe too; it wants its own flag.
+
+## Update (2026-09-08, round 6 — construction was re-deriving names it already knew)
+
+Landed; write-up in `news/2026-09/bench-ctor-name-rederivation.md`. Whole-bench
+instruction count **1,715,336,347 -> 1,480,264,577 (-13.7%)**, i.e. 343k -> 296k
+instructions per construction, measured with **callgrind** (this container has
+no `perf`; callgrind's counts are deterministic, which is what a perf iteration
+wants anyway). An interleaved same-session wall-clock A/B (release builds of
+`main` and of the change, alternating, `taskset -c 2`, best of 9) reads
+**0.302s -> 0.225s, -25%**; the wall delta exceeds the instruction delta
+because most of what went away was cache-unfriendly (thread-local + hash +
+`memcmp` round trips, plus a 21-entry `AttrMap` clone per constructed object).
+Confirm on the bench CI.
+
+Round 5's two open `dispatch_bless` leads were real but the small half. The
+dominant residual was **name re-derivation**: `LocalKey<T>::with` was 9.2% of
+the whole run and its dominant caller was `Symbol::intern` at **732,232 calls
+for 5000 constructions — 146 per constructed object**. Next to it, **every
+instance death cloned its whole 21-entry attribute map into a DESTROY queue**
+that no `DESTROY` could ever consume, then walked the MRO interning two names
+per level to discover that.
+
+What landed:
+
+- **S2-adjacent (the round-5 leads):** `NativeCtorPlan` gained `attr_index`
+  (attribute name -> index; the override loop's linear per-argument name scan
+  becomes one hash probe, resolved once and shared with the seed loop) and
+  `attr_seeds` (the per-attribute no-initializer seed, so the
+  `type_constraints` lookup + `nominal_type_object_name_for_constraint` walk +
+  `Symbol::intern` per unfilled attribute — 16 interns/construction — is paid
+  once per class).
+- **DESTROY latch:** a monotonic process-global "some user DESTROY exists"
+  flag, armed from `Registry::reindex_user_method_name` and role registration,
+  read at DROP time by `InstanceAttrs::finalize_destroy` (after the refcount
+  bookkeeping, so no leak; at drop rather than construction, so a late
+  `.^add_method` DESTROY still fires). Pinned by
+  `t/destroy-latch-late-registration.t`.
+- **Symbol-keyed MRO presence probes:** `has_user_method` cloned the whole
+  `Vec<MethodDef>` per level just to read one boolean (1.6% of the bench on its
+  own) and re-interned both names per level. New
+  `Registry::user_method_public_presence` / `accessor_is_public_sym` /
+  `user_method_local_role_presence_sym` allocate and intern nothing.
+- `Symbol::intern("Any")` -> `wk::any()` tree-wide (115 sites).
+- `AttrReadGuard::drop` skips the deferred-write queue scan behind a global
+  `PENDING_CELL_WRITE_COUNT` (~40 attribute reads/construction each paid a
+  second thread-local + `RefCell` borrow + `Vec::retain`).
+- **Round 5's `CheckReadOnly` item:** `__mutsu_sigilless_readonly::` got its own
+  latch (`sigilless_readonly_keys_possible`) instead of sharing
+  `closure_meta_keys_possible` with `__mutsu_state_key::` & co.
+- Interning hoists in `call_compiled_method{,_fast}` (owner class interned once
+  per call, not twice; `"?CLASS"`/`"?ROLE"` inserted by well-known symbol
+  instead of a fresh `String`; an attributive param bind interns its attribute
+  name once and inserts by `Symbol`).
+
+**Still open (~3% of the bench between them), each needing its own surgery:**
+`native_lever_a_user_override` (2 interns per native method dispatch;
+`value_type_name` returns a `&'static str`, so a pointer-keyed memo or a
+`value_type_sym` would do it), `get_env_with_main_alias_inner` (~16
+interns/construction from name-keyed env reads — wants symbol-threaded
+callers), and the routine-frame push's `lexical_package`/`method_name` (wants
+pre-interned symbols on `MethodDef`, which is 18 struct-literal sites). The
+older structural items are unchanged: S2's `env_deep_copies` remainder stays
+gated on `docs/vm-single-store.md` §3, S3 stays closed, and S4's
+construction-pipeline campaign is still the long-term lever.
+
+**Lesson for the next round, alongside round 5's:** a flat profile can also
+hide *name re-derivation*. `Symbol::intern` never appears as a single hot
+symbol — its cost lands in `LocalKey::with`, `hashbrown`, `memcmp` and
+`malloc`, the same bucket rounds 2-4 read as "no dominant function". Count the
+calls (`callgrind_annotate --tree=caller` on `Symbol::intern`) before believing
+it.
 
 ## Measurement notes
 

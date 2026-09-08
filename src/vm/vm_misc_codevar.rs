@@ -129,7 +129,7 @@ impl Interpreter {
         // in `A`'s `&`-symbols). Unqualified `&name` keeps returning Nil — custom
         // `EXPORT` routines probe it that way.
         if val.is_nil() && name.contains("::") {
-            val = Value::package(crate::symbol::Symbol::intern("Any"));
+            val = Value::package(crate::symbol::wk::any());
         }
         self.stack.push(val);
         Ok(())

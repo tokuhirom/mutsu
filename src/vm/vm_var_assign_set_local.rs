@@ -134,7 +134,7 @@ impl Interpreter {
             let v = rhs_vals
                 .get(i)
                 .cloned()
-                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
             if let ValueView::ContainerRef(cell) = cell_val.view() {
                 Value::store_through_cell(&cell, &v);
             } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
@@ -709,7 +709,7 @@ impl Interpreter {
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub). Same latch: the `__mutsu_sigilless_readonly::*`
             // key only exists once the program creates a sigilless/`:=` alias.
-            if crate::env::closure_meta_keys_possible()
+            if crate::env::sigilless_readonly_keys_possible()
                 && let Some(sym) = code.readonly_sym(idx)
             {
                 self.env_mut().remove_sym(sym);
@@ -893,13 +893,13 @@ impl Interpreter {
                     let v = rhs_vals
                         .get(i)
                         .cloned()
-                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                     Value::store_through_cell(&cell, &v);
                 } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {
                     let v = rhs_vals
                         .get(i)
                         .cloned()
-                        .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                        .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                     let cell =
                         crate::gc::Gc::new(crate::value::ContainerCell::new(cell_val.clone()));
                     Value::store_through_cell(&cell, &v);
@@ -1585,7 +1585,7 @@ impl Interpreter {
         // outright when no `__mutsu_sigilless_*` key has ever been created, so a
         // program with no sigilless/`:=` binding pays no `format!` per store.
         if !is_vardecl
-            && crate::env::closure_meta_keys_possible()
+            && crate::env::sigilless_readonly_keys_possible()
             && let Some(readonly_sym) = code.readonly_sym(idx)
             && let Some(alias_sym) = code.alias_sym(idx)
             && matches!(
@@ -2645,7 +2645,7 @@ impl Interpreter {
             } else if name.starts_with('%') {
                 Value::hash(std::collections::HashMap::new())
             } else {
-                Value::package(crate::symbol::Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             };
             crate::env::note_env_key(name);
             self.env_mut().insert_sym(name_sym, default);

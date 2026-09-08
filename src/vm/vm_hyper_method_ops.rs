@@ -735,7 +735,7 @@ impl Interpreter {
                                 "hypermethodcall",
                                 "native",
                             );
-                            native_result.unwrap_or(Value::package(Symbol::intern("Any")))
+                            native_result.unwrap_or(Value::package(crate::symbol::wk::any()))
                         } else {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "hypermethodcall",
@@ -748,7 +748,7 @@ impl Interpreter {
                                     *item = updated;
                                     v
                                 }
-                                Err(_) => Value::package(Symbol::intern("Any")),
+                                Err(_) => Value::package(crate::symbol::wk::any()),
                             }
                         }
                     } else {
@@ -761,7 +761,7 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::package(Symbol::intern("Any")),
+                            Err(_) => Value::package(crate::symbol::wk::any()),
                         }
                     };
                     results.push(val);
@@ -1267,7 +1267,7 @@ impl Interpreter {
                 match modifier {
                     Some("?") => Ok(self
                         .vm_call_on_value(callable.clone(), call_args, None)
-                        .unwrap_or_else(|_| Value::package(Symbol::intern("Any")))),
+                        .unwrap_or_else(|_| Value::package(crate::symbol::wk::any()))),
                     Some("+") => {
                         let val = self.vm_call_on_value(callable.clone(), call_args, None)?;
                         Ok(Value::array(vec![val]))
@@ -1376,7 +1376,7 @@ impl Interpreter {
                     let val = match modifier {
                         Some("?") => self
                             .vm_call_on_value(name_val.clone(), call_args, None)
-                            .unwrap_or_else(|_| Value::package(Symbol::intern("Any"))),
+                            .unwrap_or_else(|_| Value::package(crate::symbol::wk::any())),
                         Some("+") => Value::array(vec![self.vm_call_on_value(
                             name_val.clone(),
                             call_args,
@@ -1413,7 +1413,7 @@ impl Interpreter {
                             "hypermethodcalldynamic",
                             "native",
                         );
-                        native_result.unwrap_or(Value::package(Symbol::intern("Any")))
+                        native_result.unwrap_or(Value::package(crate::symbol::wk::any()))
                     } else {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcalldynamic",
@@ -1424,7 +1424,7 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::package(Symbol::intern("Any")),
+                            Err(_) => Value::package(crate::symbol::wk::any()),
                         }
                     };
                     results.push(val);

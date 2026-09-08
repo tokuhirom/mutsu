@@ -287,7 +287,7 @@ pub(crate) fn reduction_identity_opt(op: &str) -> Option<Value> {
         "&&" | "and" | "?&" => Value::TRUE,
         "||" | "or" | "?|" | "^^" => Value::FALSE,
         "?^" => Value::FALSE,
-        "//" => Value::package(Symbol::intern("Any")),
+        "//" => Value::package(crate::symbol::wk::any()),
         "orelse" => Value::NIL,
         "andthen" | "notandthen" => Value::TRUE,
         "xor" => Value::FALSE,

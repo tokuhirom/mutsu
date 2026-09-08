@@ -34,7 +34,7 @@ impl Interpreter {
                 return def;
             }
             return if info.value_type.is_empty() {
-                Value::package(Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             } else {
                 Value::package(Symbol::intern(&info.value_type))
             };

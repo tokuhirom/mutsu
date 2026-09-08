@@ -43,7 +43,7 @@ pub(crate) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
         };
         cur = items.get(i).cloned().unwrap_or_else(|| {
             if is_real_array {
-                Value::package(Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             } else {
                 Value::NIL
             }
@@ -182,7 +182,7 @@ pub(crate) fn multidim_assign_pos(
             return Err(RuntimeError::assignment_ro(None));
         }
         if i >= updated.len() {
-            updated.resize(i + 1, Value::package(Symbol::intern("Any")));
+            updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
         }
         updated[i] = value;
     } else {
@@ -221,7 +221,7 @@ pub(crate) fn multidim_bind_pos(
     let mut updated = items.to_vec();
     if indices.len() == 1 {
         if i >= updated.len() {
-            updated.resize(i + 1, Value::package(Symbol::intern("Any")));
+            updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
         }
         updated[i] = Value::scalar(value);
     } else {
@@ -270,7 +270,7 @@ pub(crate) fn multidim_delete_pos(
             // `Nil` is no longer a hole sentinel, only `initialized` is
             // (mirrors the single-dimension `.DELETE-POS`,
             // `array_delete_pos_value` in methods_subscript_protocol.rs).
-            let old = std::mem::replace(&mut updated[i], Value::package(Symbol::intern("Any")));
+            let old = std::mem::replace(&mut updated[i], Value::package(crate::symbol::wk::any()));
             deleted = match old.view() {
                 ValueView::Scalar(inner) => inner.clone(),
                 _ => old.clone(),
