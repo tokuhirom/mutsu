@@ -105,13 +105,27 @@ impl Interpreter {
             // The IMPORTED aliases (bare names and `GLOBAL::name`) are still
             // removed, so a bare call after the block exits still dies (roast
             // S11-modules/lexical.t: `{ use Foo } EVAL('foo()')`).
+            // `GLOBAL::`-prefixed entries the block itself imported still go,
+            // but one a LOADED MODULE's own body installed stays: a `unit
+            // module`'s body runs at `current_package() == GLOBAL`, so its own
+            // `use NativeCall` registers `GLOBAL::nativecast`, and dropping that
+            // when an enclosing block's import scope popped left the module
+            // half-loaded -- `loaded_modules` still claimed it was loaded, so
+            // the later top-level `use` short-circuited and could not put it
+            // back. `module_registered_functions` is exactly that set: its delta
+            // is taken BEFORE `import_module`, so an alias installed for the
+            // IMPORTING scope is never in it and `{ use Foo } foo()` still dies
+            // (`roast/S11-modules/lexical.t`). This is the block twin of the
+            // carve-out `reinstate_module_functions` gives the EVAL rollback.
+            let module_keys = std::mem::take(&mut self.module_registered_functions);
             self.registry_mut().functions.retain(|key, _| {
-                if func_snapshot.contains(key) {
+                if func_snapshot.contains(key) || module_keys.contains(key) {
                     return true;
                 }
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
+            self.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the
             // module is loaded. `loaded_modules` is never rolled back, so a
