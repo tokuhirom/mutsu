@@ -30,7 +30,7 @@ impl Interpreter {
     /// `callsame`/`nextsame` chain, which is once per call for any routine
     /// reached through the OTF-cached named path: it measured 8.5% of the
     /// per-assertion cost of the vendored upstream `Test` module
-    /// (`todo/perf/listop-call-bypasses-every-compiled-call-cache.md`).
+    /// (listop-call-bypasses-every-compiled-call-cache, #7574).
     ///
     /// The index is also captured once per `fn_resolve_gen`, so the candidate
     /// order it feeds the specificity sort is stable within a generation rather

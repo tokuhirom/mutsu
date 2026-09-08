@@ -2363,7 +2363,7 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
 /// node that cannot exist in a real RakuAST tree. Refusing is the same rule the
 /// rest of the converter follows: an erased distinction is a boundary, never a
 /// guess. The underlying constructs are tracked as read-direction gaps in
-/// `todo/deep/rakuast-remaining.md`.
+/// rakuast-remaining (#7564).
 fn is_desugar_marker(name: &str) -> bool {
     name.starts_with("__") || name.starts_with("@__") || name.starts_with("%__")
 }

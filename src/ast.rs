@@ -2580,7 +2580,7 @@ pub(crate) enum ArgSupply {
     /// uninitialized `VMNull` register: it gists as `(Mu)` and `$^c === Mu` is
     /// `True`, but `$^c.^name` says `VMNull` and `$^c.defined` throws. mutsu
     /// does not supply the value at all yet — see
-    /// `todo/deep/role-body-placeholder-mu-supply.md` — so this variant
+    /// role-body-placeholder-mu-supply (#7550) — so this variant
     /// currently only records that a role body never under-supplies.)
     AllMu,
     /// Zero arguments.
@@ -2768,7 +2768,7 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
         // placeholder, because the value cannot be supplied from the
         // `Stmt::RoleDecl` compile site — see the comment on that arm in
         // `src/compiler/stmt.rs` and
-        // `todo/deep/role-body-placeholder-mu-supply.md`.
+        // role-body-placeholder-mu-supply (#7550).
         Stmt::RoleDecl { .. } => PlaceholderBodyKind::Signature(ArgSupply::AllMu),
         Stmt::SyntheticBlock(_) => PlaceholderBodyKind::Transparent,
         Stmt::Given {

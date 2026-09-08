@@ -220,7 +220,7 @@ impl Interpreter {
         method: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
-        // ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+        // ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
         // `resolve_private_method_any_owner`'s `private_zeroarg_method_cache`
         // read is generation-blind — it relied entirely on the manual clear
         // blocks (`clear_private_zeroarg_method_cache`'s call sites), not on

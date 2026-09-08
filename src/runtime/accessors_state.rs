@@ -666,7 +666,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> bool {
-        // ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+        // ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
         // `dispatch_multi_candidate` is generation-blind — it relied entirely
         // on the manual clear blocks, not on `method_generation`.
         self.refresh_method_caches_for_generation();
@@ -809,7 +809,7 @@ impl Interpreter {
         // and every call pays the full candidate walk. That is the shape of
         // rakudo's own `Test.rakumod` (`multi sub ok(Mu $cond, $desc = '')`),
         // where it was the single largest per-assertion cost
-        // (todo/deep/vendor-real-test-module-flip.md). The value-dependency analysis
+        // (vendor-real-test-module-flip, #7554). The value-dependency analysis
         // above is what makes a cached winner sound, and it does not care how
         // many candidates there are.
         let cacheable = !candidates.is_empty() && !value_dependent;

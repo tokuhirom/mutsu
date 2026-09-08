@@ -1709,7 +1709,7 @@ impl Interpreter {
         // rerouting both dependants would need a second, non-`classes`-backed
         // parent-resolution path in `register_x`, which is more machinery for
         // no observable gain. See
-        // todo/deep/exception-class-hierarchy-is-mostly-unregistered.md R4.
+        // exception-class-hierarchy-is-mostly-unregistered (#7545) R4.
         register_x("X::Comp", "Exception", &[]);
         register_x("X::Value", "Exception", &[]);
         register_x("X::Syntax", "X::Comp", &[]);
@@ -1727,7 +1727,7 @@ impl Interpreter {
         // This is the one documented, data-verified exception to "a marker
         // role name never appears in a class's `.^mro`" -- see
         // t/exception-role-membership.t and
-        // todo/deep/exception-class-hierarchy-is-mostly-unregistered.md R2.
+        // exception-class-hierarchy-is-mostly-unregistered (#7545) R2.
         // It is expressible here (and not elsewhere) only because `X::Comp`
         // is dual-registered as a `ClassDef` immediately above (R4), which
         // `register_x`'s parent walk resolves.
@@ -2778,7 +2778,7 @@ impl Interpreter {
         };
         // ADR-0029: role-to-role composition among the 16 `X::` marker
         // roles above, re-verified against real rakudo (2026-08-19,
-        // see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
+        // see exception-class-hierarchy-is-mostly-unregistered (#7545)
         // R1) -- exactly three edges exist; the other thirteen compose
         // nothing. (Slice 3 grew the marker-role list from the ADR's
         // original 14 to 16 without re-running this measurement, which

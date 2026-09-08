@@ -8,7 +8,7 @@
 //! The driver is rakudo's own `lib/Test.rakumod`, which mutsu still provides
 //! natively (`runtime/test_functions.rs`). Running the genuine upstream module
 //! instead needs exactly these ops — see
-//! `todo/deep/vendor-real-test-module-flip.md`. Note that `can`, `join`, `split`
+//! vendor-real-test-module-flip (#7554). Note that `can`, `join`, `split`
 //! and `time` all collide with same-named Raku builtins of *different*
 //! semantics, which is why they are implemented here under their full `nqp::`
 //! name rather than by relaxing the aliasing guard in

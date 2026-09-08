@@ -638,7 +638,7 @@ impl Interpreter {
         // The other half of rakudo's rule: `$x = v` needs `$x` bound to a
         // SCALAR container, and a `Hash`/`Map`/`Pair`/real `Array` is not one
         // even though each is mutable through its own interface
-        // (`todo/deep/immutable-lvalues-that-mutsu-still-lets-you-assign-to.md`
+        // (immutable-lvalues-that-mutsu-still-lets-you-assign-to (#7556)
         // section C). Two source shapes reach it: an unnamed container value
         // (`my $x := [1,2,3]`, `{a=>1}`, `Map.new(...)`, `(a => 1)`), and a
         // NAMED `@`/`%` source (`my $x := @a`), which the immutability test

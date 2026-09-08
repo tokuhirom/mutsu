@@ -6,7 +6,7 @@
 //! E's resolver needs to ask the same question ("does (owner, name) admit a
 //! native call, and at which arity?") WITHOUT invoking the cascade -- that is
 //! recognition metadata, not invocation, and it is what `NativeMethodRow`
-//! records. See `todo/deep/adr0019-e2-e4-resolver-core.md` decision 1.
+//! records. See adr0019-e2-e4-resolver-core (#7540) decision 1.
 //!
 //! Invocation stays in the arity cascades until Phase F retires them.
 //! [`native_row_servable`] (E4b's dispatch-admission resolver,

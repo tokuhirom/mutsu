@@ -6,14 +6,14 @@
 > | kind of information | where it lives |
 > |---|---|
 > | completed work | [news/](news/) — one file per accomplishment |
-> | open findings, small | [todo/tickets/](todo/tickets/) — one file per finding |
-> | open findings, deep | [todo/deep/](todo/deep/) — needs design or an ADR |
+> | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
+> | which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked, periodically regenerated snapshot |
 > | architectural decisions | [docs/adr/](docs/adr/) |
 > | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
 > | performance numbers | the bench CI (`bench-data` branch), [PERFORMANCE.md](PERFORMANCE.md) |
 >
-> Do **not** append progress notes here. A new file under `todo/` or `news/` conflicts with nothing
-> on merge; an append to this file conflicts with every other in-flight PR.
+> Do **not** append progress notes here. A GitHub issue or a new file under `news/` conflicts with
+> nothing on merge; an append to this file conflicts with every other in-flight PR.
 
 ## Goal — a batteries-included Raku implementation
 
@@ -86,7 +86,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5b:
       `references`** — the one remaining method that genuinely needs per-occurrence positions,
       since a line may hold several and text scanning cannot rank them soundly. **Start from
-      [todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md](todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md),
+      [#7547](https://github.com/tokuhirom/mutsu/issues/7547),
       not from D6**: reconnaissance during S5a found the parser already knows every byte offset,
       so a thread-local occurrence table behind the analysis flag is likely cheaper than spans on
       AST variants and touches neither `Expr`'s size nor the bincode cache. Its blocker is parser
@@ -113,11 +113,10 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       op set is a threshold function. Implement an individual op when a real dist needs it (as
       `nqp::sha1` was for zef).
 - [ ] **NativeCall**: `nativecall-cannot-be-vendored.md` (measured non-vendorable, stays a justified
-      rung-3 provider — [todo/deep/nativecall-cannot-be-vendored.md](todo/deep/nativecall-cannot-be-vendored.md));
+      rung-3 provider — [#7560](https://github.com/tokuhirom/mutsu/issues/7560));
       native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
       pick up only when a real consumer needs it).
-- [ ] Other open module-compat findings are individual files under
-      [todo/tickets/](todo/tickets/) and [todo/deep/](todo/deep/).
+- [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 
 ---
 
@@ -162,15 +161,15 @@ bench CI, never a local run.
 
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
-      [todo/perf/interpreter-call-path-in-hot-loops.md](todo/perf/interpreter-call-path-in-hot-loops.md).
+      [#7573](https://github.com/tokuhirom/mutsu/issues/7573).
       Its consumer is retiring the native `Test` provider
-      ([todo/deep/vendor-real-test-module-flip.md](todo/deep/vendor-real-test-module-flip.md)), a
+      ([#7554](https://github.com/tokuhirom/mutsu/issues/7554)), a
       BATTERIES.md rung-3 retirement and therefore a §1 goal item, not polish. **Read that ticket's
       numbers first** — the `&`-sigil signature gate this file long blamed is closed, and five
       callgrind passes took the per-assertion cost 492k -> 235k instructions, so the cost is now
       inside the roast budget (`make roast` 1.24x, `t/` 2.0x). Perf is **no longer what blocks the
       flip**: it was attempted 2026-09-07/08 and withdrawn on four bundled-library regressions
-      ([todo/deep/vendored-test-battery-gate-regressions.md](todo/deep/vendored-test-battery-gate-regressions.md)),
+      ([#7555](https://github.com/tokuhirom/mutsu/issues/7555)),
       which are ordinary interpreter gaps, not assertion cost.
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
@@ -187,7 +186,7 @@ The [shared worker pool](docs/adr/0020-shared-worker-pool.md) is done (Accepted,
 2026-08-05) — do not re-plan it. Its only open follow-up: the pool alone recovered only ~10% of
 per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
 levers, tracked in
-[todo/perf/digest-ripemd-start-per-block-overhead.md](todo/perf/digest-ripemd-start-per-block-overhead.md)
+[#7571](https://github.com/tokuhirom/mutsu/issues/7571)
 (actively worked, see its own status log). The whole-`locals` clone/restore in `BlockScope` is also
 already gone under the default shadow-slots path (`exec_block_scope_op`, `vm/vm_misc_scope.rs`,
 closed via [ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md)) —
@@ -201,8 +200,7 @@ deriving from the real dispatch table is also done (ADR-0019 F1/F2, closed 2026-
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
       deep-recursion `fatal runtime error: stack overflow` process abort for crashes.
-- Individual concurrency bugs are files under [todo/tickets/](todo/tickets/) and
-  [todo/deep/](todo/deep/).
+- Individual concurrency bugs are individual `todo:ticket` / `todo:deep` issues.
 
 ---
 

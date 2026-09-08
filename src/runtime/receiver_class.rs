@@ -462,7 +462,7 @@ impl Interpreter {
     /// [`crate::builtins::native_method_row`] catalog already accounts for
     /// it, bumping `native_call_unmodeled` when it does not. `name` must be a
     /// `Symbol::as_str()` result (interned, `'static`) so the row lookup does
-    /// not need to allocate. See `todo/deep/adr0019-e2-e4-resolver-core.md`
+    /// not need to allocate. See adr0019-e2-e4-resolver-core (#7540)
     /// decision 2's counter-to-zero discipline; nothing reads this catalog to
     /// make a real dispatch decision yet.
     ///

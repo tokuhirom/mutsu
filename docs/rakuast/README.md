@@ -1,23 +1,23 @@
 # RakuAST work
 
 RakuAST work is organized by implementation scope, not in a separate
-`todo/rakuast/` category. RakuAST is a reflection/model layer over mutsu's
+RakuAST-only label. RakuAST is a reflection/model layer over mutsu's
 internal `Expr`/`Stmt` AST, so each completed slice should preserve the normal
 `Parser -> Compiler -> VM` pipeline.
 
 ## Where work lives
 
-- `todo/deep/rakuast-remaining.md` is the campaign overview and records broad
-  representation gaps.
-- `todo/tickets/rakuast-<slug>.md` contains a self-contained implementation
-  slice that can be completed in one PR.
-- `todo/deep/rakuast-<slug>.md` contains a slice that needs an ADR, parser or
+- The `todo:deep` "RakuAST remaining work" issue is the campaign overview and
+  records broad representation gaps.
+- A `todo:ticket` issue contains a self-contained implementation slice that can
+  be completed in one PR.
+- A `todo:deep` issue contains a slice that needs an ADR, parser or
   internal-AST redesign, or a broader execution campaign.
 - `docs/adr/` contains architectural decisions and their current phase/status.
 - `t/rakuast-<slice>.t` is the focused dual-oracle regression test.
 - `news/YYYY-MM/` records completed slices after they merge.
 
-The per-slice todo or news entry is the source of truth. The campaign overview
+The per-slice issue or news entry is the source of truth. The campaign overview
 should remain an index rather than a second detailed ledger, so small slices do
 not all need to edit the same shared file.
 

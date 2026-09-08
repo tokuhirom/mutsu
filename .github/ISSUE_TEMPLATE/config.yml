@@ -1,0 +1,4 @@
+# Keep the blank issue available: most externally-reported mutsu bugs are a
+# short "this Raku program does the wrong thing" and do not fit the internal
+# backlog templates below.
+blank_issues_enabled: true

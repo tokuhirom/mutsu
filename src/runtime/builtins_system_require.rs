@@ -446,7 +446,7 @@ impl Interpreter {
     /// exemption list; rather than keep discovering new ambient mechanisms
     /// case-by-case, the general "reap a module's non-exported package-less
     /// top-level routines after it loads" cleanup is left as a follow-up
-    /// (`todo/deep/module-toplevel-private-sub-leak-cleanup.md`) and only the
+    /// (module-toplevel-private-sub-leak-cleanup, #7558) and only the
     /// MAIN-specific removal -- proven safe for years -- is kept here.
     /// [`Self::hide_toplevel_global_routines`] /
     /// [`Self::restore_toplevel_global_routines`] still fix the acute bug

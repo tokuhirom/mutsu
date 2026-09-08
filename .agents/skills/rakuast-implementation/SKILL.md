@@ -8,7 +8,7 @@ metadata:
 # RakuAST implementation
 
 Use this skill for work involving `src/rakuast/`, `t/rakuast*.t`,
-`todo/deep/rakuast-remaining.md`, or RakuAST-specific ADR/design work.
+the RakuAST campaign-overview issue, or RakuAST-specific ADR/design work.
 It covers the RakuAST-specific investigation and implementation details; use
 the repository's normal ticket and PR workflow for branching, validation, and
 publication.
@@ -69,10 +69,10 @@ English comments/test descriptions. For an individual roast test use
 
 ## Track the campaign
 
-Do not create a fourth `todo/rakuast/` category. Keep the campaign overview in
-`todo/deep/rakuast-remaining.md`, put a self-contained implementation slice in
-`todo/tickets/rakuast-<slug>.md`, and keep architectural blockers in
-`todo/deep/rakuast-<slug>.md`. Use `docs/rakuast/README.md` for stable workflow
+Do not invent a fourth RakuAST-only label. Keep the campaign overview in the
+`todo:deep` "RakuAST — remaining work" issue, file a self-contained
+implementation slice as a `todo:ticket` issue, and file an architectural blocker
+as a `todo:deep` one. Use `docs/rakuast/README.md` for stable workflow
 guidance, ADRs for decisions, `news/YYYY-MM/` for completed work, and the
 focused test as the executable record. Avoid making every small slice edit a
 shared campaign ledger; the per-slice todo/news file is the source of truth.

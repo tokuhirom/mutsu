@@ -206,7 +206,7 @@ impl Interpreter {
         // dual-registered names today are the ADR-0029 `X::` marker roles
         // (`X::Comp`, `X::Syntax`), whose `ClassDef` exists purely so
         // `register_x`'s parent-walk MRO synthesis can resolve them as a
-        // `parent` (see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
+        // `parent` (see exception-class-hierarchy-is-mostly-unregistered (#7545)
         // R4) -- in real rakudo neither is a class, so `.^roles` called on
         // the name itself must use role semantics
         // (`X::Syntax.^roles` -> `(X::Comp)`, not `()`).

@@ -22,12 +22,13 @@ minimal-repro reports), `progress.txt` (one stats line per file), `summary.txt`
 signal.
 
 **When a finding is confirmed real (not raku-drift, not a harness false positive —
-see "Known harness false positive" below), file it as a ticket immediately** under
-`todo/tickets/<slug>.md` (or `todo/deep/` for high-blast-radius ones) per the root
-`CLAUDE.md` conventions, and add a row to [Ticketed](#ticketed-open--linked-to-todo)
-below linking the doc location to the ticket file. This is what keeps this backlog
-and the `todo/` queue in sync — a finding sitting only in a sweep report or only in a
-ticket file with no cross-link is easy to lose track of.
+see "Known harness false positive" below), file it as an issue immediately** on
+`tokuhirom/mutsu`, labelled `todo:ticket` (or `todo:deep` for high-blast-radius
+ones) per `docs/issue-workflow.md`, and add a row to
+[Ticketed](#ticketed-open--linked-to-todo) below linking the doc location to that
+issue. This is what keeps this backlog and the issue queue in sync — a finding
+sitting only in a sweep report, or only in an issue with no cross-link, is easy to
+lose track of.
 
 The **raw output of the latest committed sweep** is checked in under
 [doc-diff-sweep/](doc-diff-sweep/) — read a per-file report there to get the minimal
@@ -280,9 +281,9 @@ section (11 MB → 412 KB); a `... [N more lines truncated]` marker shows where.
 
 ### Ticketed (open — linked to todo/)
 
-Confirmed-real findings that have a filed ticket but are not yet fixed. When the
-ticket is resolved, move its content to `news/` (per `todo/README.md`) and delete
-the row here.
+Confirmed-real findings that have a filed issue but are not yet fixed. When the
+issue is resolved, write it up in `news/` (per `docs/issue-workflow.md`) and
+delete the row here.
 
 > **The 2026-08-22 rounds' table was removed on 2026-09-07b: every one of its 25
 > ticket links was dead** — all 25 tickets had been fixed and their files deleted
@@ -290,7 +291,7 @@ the row here.
 > push`, `make return-rw call results assignable`, `preserve Win32 path
 > separators`, `preserve captures across regex alternation`, `implement repl
 > routine`, …). The rows were left in place long after the work landed, which is
-> exactly the drift `todo/README.md` warns about. Read `git log -- docs/doc-diff-backlog.md`
+> exactly the drift this backlog is prone to. Read `git log -- docs/doc-diff-backlog.md`
 > for the historical table.
 
 #### Filed from the 2026-09-07b sweep

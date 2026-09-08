@@ -387,7 +387,7 @@ pub(crate) fn record_owner_shadow_check(
 // for an `(owner, name)` pair whose row does not admit that call's arity (an
 // absent row, per `native_method_row`'s conservative default, counts as "does
 // not admit any arity"). Every hit is a missing/wrong row for E2b to add —
-// see `todo/deep/adr0019-e2-e4-resolver-core.md` decision 2's counter-to-zero
+// see adr0019-e2-e4-resolver-core (#7540) decision 2's counter-to-zero
 // discipline. `native_call_unmodeled_by_site` breaks hits down by
 // `"<owner>x<name> [<call site>]"` so E2b can work through them file-by-file.
 // Nothing reads this counter to make a dispatch decision: shadow-only, zero
@@ -424,7 +424,7 @@ pub(crate) fn record_native_call_recognition(site: &str, owner: &str, name: &str
 // `resolve_method_with_owner_impl`'s early-stopping rule that a non-multi method
 // resolves by name alone, independent of whether the call's arguments actually bind
 // it (see `runtime::resolution_sequence`'s module doc and
-// `todo/deep/adr0019-e2-e4-resolver-core.md`). Nothing reads these counters to make a
+// adr0019-e2-e4-resolver-core (#7540)). Nothing reads these counters to make a
 // dispatch decision: shadow-only, zero behavior change.
 static RESOLVER_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
 static RESOLVER_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
@@ -771,7 +771,7 @@ pub(crate) fn record_mainline_lexical_hit() {
 // `carrier` (the `exec_call` interpreter fallback, with its env snapshot and
 // writeback diff). It exists to make the size of that fallback measurable rather
 // than assumed -- see
-// `todo/perf/listop-call-bypasses-every-compiled-call-cache.md`, whose original
+// listop-call-bypasses-every-compiled-call-cache (#7574), whose original
 // cost estimate it corrected.
 fn dispatch_entry_outcome_by_key() -> &'static Mutex<HashMap<String, u64>> {
     static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();

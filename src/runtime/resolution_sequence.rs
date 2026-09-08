@@ -3,7 +3,7 @@
 //! [`Interpreter::resolve_sequence`] walks an E1 [`TypeId`] MRO chain and collects
 //! every visible user-declared method candidate for a name into a flat
 //! [`ResolvedSequence`] — the "shape-independent candidate universe" of design
-//! decision 4 in `todo/deep/adr0019-e2-e4-resolver-core.md`. Nothing in the VM or
+//! decision 4 in adr0019-e2-e4-resolver-core (#7540). Nothing in the VM or
 //! the interpreter's real dispatch reads a sequence today: E4a only builds one
 //! beside the existing resolver, at the two `resolve_method_cached` boundaries, and
 //! compares the winner against the real resolution under `MUTSU_VM_STATS` counters
@@ -75,7 +75,7 @@ use std::sync::Arc;
 /// one specific call: the call's own arity, and whether the receiver is a
 /// concrete value (`DEFINITE`) rather than a bare type object. This is
 /// deliberately smaller than the design doc's future E3 cache-key `CallShape`
-/// (`{ arity_bucket, has_named }`, `todo/deep/adr0019-e2-e4-resolver-core.md`)
+/// (`{ arity_bucket, has_named }`, adr0019-e2-e4-resolver-core (#7540))
 /// — see the step-4 scoping note in
 /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md` for
 /// why the full shape is not needed here.
@@ -221,7 +221,7 @@ pub(crate) fn value_is_definite(value: &Value) -> bool {
     }
 }
 
-/// ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+/// ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
 /// the call-shape component of `resolved_seq_cache`'s key
 /// `(TypeId, Symbol, CallShape)`. A [`ResolvedSequence`] only depends on the
 /// receiver's owner chain and the call's arity/named-ness (via
@@ -252,7 +252,7 @@ impl CallShape {
 }
 
 impl Interpreter {
-    /// ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+    /// ADR-0019 E3 (design decision 5, adr0019-e2-e4-resolver-core (#7540)):
     /// resolve `(cn, method)` for `args`/`target` via the cached
     /// [`ResolvedSequence`], replacing the live per-call MRO walk
     /// (`resolve_method_with_owner_impl`, reached via

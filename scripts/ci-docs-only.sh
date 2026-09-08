@@ -52,7 +52,7 @@ set -u
 # `.github/**` forces the full suite.
 is_doc_path() {
   case "$1" in
-    docs/*|news/*|todo/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
+    docs/*|news/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
     .claude/*) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
@@ -165,7 +165,7 @@ self_test() {
   }
 
   check true  'adr + news entry'        docs/adr/0016-x.md news/2026-07/y.md
-  check true  'todo ticket'             todo/tickets/z.md
+  check false 'retired todo directory'  todo/tickets/z.md
   check true  'top-level plan'          PLAN.md
   check true  'roast ledger'            TODO_roast/BLOCKERS.md
   check true  'vendored docs'           raku-doc/doc/Type/Str.rakudoc

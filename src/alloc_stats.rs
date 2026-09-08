@@ -1,7 +1,7 @@
 //! Deterministic per-scope allocation accounting (`alloc-stats` feature).
 //!
 //! Why this exists: the ADR-0019 G3 investigation
-//! (`todo/perf/adr0019-g3-diffuse-bless-allocation-cost.md`) stalled because
+//! (adr0019-g3-diffuse-bless-allocation-cost, #7561) stalled because
 //! `bench-ctor`'s cost is *diffuse* — a flat `perf` profile shows ~7% in
 //! `malloc`/`free` and ~6.5% in NaN-box GC/refcount ops with no single hot
 //! function, and call-graph attribution was unusable in the dev container

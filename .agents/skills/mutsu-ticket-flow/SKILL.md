@@ -1,37 +1,47 @@
 ---
 name: mutsu-ticket-flow
-description: Implement up to five mutsu todo tickets end-to-end, including deep-ticket triage, PR publication, and verified merges. Use when asked to fix or work through todo/tickets/.
+description: Implement up to five mutsu backlog issues end-to-end, including deep-ticket triage, PR publication, and verified merges. Use when asked to fix or work through the todo:ticket issue queue.
 metadata:
   short-description: Deliver up to five mutsu tickets through merge
 ---
 
 # Mutsu Ticket Flow
 
-Use this skill for requests to fix or process `todo/tickets/` items. A processed ticket ends as
-either a correctly filed deep item or a PR whose merge is verified on GitHub and in `origin/main`.
+Use this skill for requests to fix or process `todo:ticket` issues on `tokuhirom/mutsu`. A
+processed ticket ends as either a correctly relabelled deep item or a PR whose merge is verified on
+GitHub and in `origin/main`.
+
+Never file, label, comment on or close an issue in any repository other than `tokuhirom/mutsu`.
+
+## Claim the issue before you start
+
+Agents run in parallel. Before any investigation, comment on the issue saying you are starting it
+and add the `working` label; remove that label the moment you are done, whether the PR merged, you
+stopped, or you found it blocked. Never pick up an issue that already carries `working` — it belongs
+to another agent. Read `docs/issue-workflow.md` for the full label scheme.
 
 Process at most **five tickets in one user-triggered run**, and only continue beyond the first
 when the user explicitly asks to process multiple tickets or the queue. Count a ticket when its
-documentation or implementation PR has merged. For a single-ticket request, report the next
-actionable filename after its verified merge but do not start it. After the fifth verified merge,
-report the next actionable filename but do not start it. A later user request starts a new run and
+re-triage or implementation PR has merged. For a single-ticket request, report the next actionable
+issue number after its verified merge but do not start it. After the fifth verified merge, report
+the next actionable issue number but do not start it. A later user request starts a new run and
 resets this limit.
 
 ## Triage before implementation
 
-1. Read the selected ticket completely. Reproduce its stated behavior when practical, inspect every
-   linked ADR/design record, re-check each ADR's current status, and inspect affected code/tests.
-2. Keep it in `todo/tickets/` only when evidence supports a small, self-contained implementation
+1. Read the selected issue completely, including its comment thread. Reproduce its stated behavior
+   when practical, inspect every linked ADR/design record, re-check each ADR's current status, and
+   inspect affected code/tests.
+2. Keep the `todo:ticket` label only when evidence supports a small, self-contained implementation
    without a new cross-cutting design.
-3. Move it to `todo/deep/` when the fix needs a new or unimplemented architectural decision, a broad
-   invariant across execution layers, a prerequisite campaign, or cannot be bounded as one PR. Use
-   `git mv`, preserve repro/root-cause evidence, and add a concise dated note naming the owning
-   ADR/campaign. Publish that documentation change through the same merge workflow.
+3. Relabel it `todo:deep` when the fix needs a new or unimplemented architectural decision, a broad
+   invariant across execution layers, a prerequisite campaign, or cannot be bounded as one PR. Post
+   a comment recording the repro/root-cause evidence you gathered and naming the owning
+   ADR/campaign, so the re-triage is not a bare label change.
 
-A documentation-only deep triage does **not** need `cargo fmt`, `cargo clippy`,
-`make test`, or `make roast`. Validate the recorded repro and rationale, run
-`git diff --check`, and run a focused check only if the documentation modifies
-generated output, executable scripts, or test configuration.
+Re-triage touches no repository files, so it needs no `cargo fmt`, `cargo clippy`, `make test`, or
+`make roast` — but it is not "done" until the `working` label is removed and the comment explaining
+the relabel is posted.
 
 Never overlap full-suite runs. They share Cargo locks, temporary logs, and
 test-harness state; wait for one to finish before rerunning it for evidence.
@@ -83,10 +93,13 @@ git merge-base --is-ancestor "$merge_oid" origin/main
 
 ## Continue the queue
 
-After each verified merge, choose the lexicographically next actionable `todo/tickets/` filename
-after the completed item, wrapping to the first filename as needed. Skip deliberate non-divergence
-records, blocked tickets, and items whose current evidence makes them deep; record or move the
-latter through this workflow. Never start a dependent ticket before its prerequisite merge is
-verified. For a single-ticket request, report that filename and stop. Continue only when the user
-explicitly requested multiple tickets or queue processing, and stop after five processed tickets
-in that run.
+After each verified merge, close the issue (the PR body's `Closes #NNNN` does this; verify it
+actually closed), remove any lingering `working` label, and write the accomplishment up as
+`news/YYYY-MM/<slug>.md`.
+
+Then choose the next actionable open `todo:ticket` issue — oldest first, **skipping every issue
+labelled `working`**, plus deliberate non-divergence records, blocked tickets, and items whose
+current evidence makes them deep (relabel the latter through this workflow). Never start a dependent
+ticket before its prerequisite merge is verified. For a single-ticket request, report that issue
+number and stop. Continue only when the user explicitly requested multiple tickets or queue
+processing, and stop after five processed tickets in that run.
