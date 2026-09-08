@@ -933,22 +933,37 @@ impl Interpreter {
                     // empty seed and answered `()`. Tag-probed, so this is one
                     // relaxed check for every other argument shape.
                     self.reify_map_grep_seq(&single)?;
-                    match single.view() {
-                        ValueView::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
-                        ValueView::Slip(arr) => arr.to_vec(),
-                        ValueView::Seq(arr) => arr.to_vec(),
-                        ValueView::Range(..)
-                        | ValueView::RangeExcl(..)
-                        | ValueView::RangeExclStart(..)
-                        | ValueView::RangeExclBoth(..)
-                        | ValueView::GenericRange { .. } => {
-                            // A single iterable argument is used as the argument
-                            // list: a finite range flattens to its elements.
-                            let mut items = Vec::new();
-                            flatten_into_slurpy(std::slice::from_ref(&single), &mut items);
-                            items
+                    // The `gather` / sequence-operator twin of the `.map`/`.grep`
+                    // reification above: a finite LazyList is an iterable single
+                    // argument, so it becomes the argument LIST rather than one
+                    // element of it. A genuinely lazy one never gets here -- the
+                    // `single_lazy` branch above binds it whole and `continue`s.
+                    let forced = match single.view() {
+                        ValueView::LazyList(ll) if !ll.is_genuinely_lazy() => {
+                            Some(self.force_lazy_list_vm(&ll)?)
                         }
-                        _ => vec![single.clone()],
+                        _ => None,
+                    };
+                    if let Some(values) = forced {
+                        values
+                    } else {
+                        match single.view() {
+                            ValueView::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
+                            ValueView::Slip(arr) => arr.to_vec(),
+                            ValueView::Seq(arr) => arr.to_vec(),
+                            ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. } => {
+                                // A single iterable argument is used as the argument
+                                // list: a finite range flattens to its elements.
+                                let mut items = Vec::new();
+                                flatten_into_slurpy(std::slice::from_ref(&single), &mut items);
+                                items
+                            }
+                            _ => vec![single.clone()],
+                        }
                     }
                 } else {
                     // Multiple top-level args: the single-argument rule does NOT
@@ -1293,6 +1308,28 @@ impl Interpreter {
                         // hand it the whole `arg`, not its extracted elements, matching
                         // every other call site (`sprintf`, `catdir`, ...).
                         let arg = unwrap_varref_value(raw_arg);
+                        // A `gather` / sequence-operator argument is a LazyList,
+                        // not a `Seq` body, so it matched none of the iterable
+                        // arms below and arrived as ONE slurpy element holding
+                        // the whole sequence. Only a genuinely lazy one may stay
+                        // whole -- and the single-argument case never reaches
+                        // here, the `single_lazy_value` branch above binds it
+                        // lazily and `continue`s -- so a finite lazy source is
+                        // forced through the VM and flattened like any other
+                        // list. Forcing needs the VM (a gather body is user
+                        // code), which is why `flatten_into_slurpy`, a pure
+                        // function, cannot do it itself.
+                        let forced = match arg.view() {
+                            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() => {
+                                Some(self.force_lazy_list_vm(&ll)?)
+                            }
+                            _ => None,
+                        };
+                        if let Some(values) = forced {
+                            flatten_into_slurpy(&values, &mut items);
+                            positional_idx += 1;
+                            continue;
+                        }
                         match arg.view() {
                             ValueView::Pair(..) => {
                                 // Named arg -- leave for *%_ slurpy or post-loop check
