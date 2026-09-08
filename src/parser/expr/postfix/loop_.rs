@@ -2941,6 +2941,24 @@ fn postfix_expr_loop_from(
             // Check for ».method / >>.method and modifier forms like ».?method, ».+method, »!Type::meth.
             let had_dot = after_hyper.starts_with('.');
             let r = after_hyper.strip_prefix('.').unwrap_or(after_hyper);
+            // `».^meth` / `>>.^meth` does NOT distribute: `».` hypers ordinary
+            // method calls, and rakudo applies the metamethod to the CONTAINER
+            // (`my @a = Int, Str; @a>>.^name` is `"Array"`, not
+            // `["Int", "Str"]`). The other introspection dotties mutsu already
+            // treats this way (`».WHAT`/`».HOW`/`».VAR`/`».DEFINITE` all answer
+            // about the container in both implementations); only the `.^` form
+            // was distributing. Hand the `.^meth` back to the plain dotted-call
+            // branch at the top of this loop, with `expr` untouched, so it
+            // compiles exactly as the hyper-less spelling would.
+            if had_dot
+                && let Some(after_caret) = r.strip_prefix('^')
+                && after_caret.chars().next().is_some_and(|c| {
+                    c.is_alphanumeric() || matches!(c, '_' | '$' | '@' | '%' | '&')
+                })
+            {
+                rest = after_hyper;
+                continue;
+            }
             // Hyper dotted postfix update: >>.++ / >>.--
             if let Some((op, len)) = parse_postfix_update_op(r) {
                 let name = match op.token_kind() {
