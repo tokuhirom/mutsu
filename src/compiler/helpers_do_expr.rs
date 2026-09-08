@@ -166,7 +166,8 @@ impl Compiler {
     /// Compile an `if`/`elsif` chain in value (expression) position.
     ///
     /// A thin wrapper over the shared lowering in `control_if.rs`; the only
-    /// difference from the statement form is [`IfPosition::Value`].
+    /// difference from the statement form is
+    /// [`IfPosition::Value`](crate::compiler::control_if::IfPosition::Value).
     pub(super) fn compile_do_if_expr_bound(
         &mut self,
         cond: &Expr,
