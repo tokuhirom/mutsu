@@ -1,11 +1,20 @@
 # ADR-0014: `make test` runs the TAP (`t/`) suite on the debug binary, not release
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0075](0075-make-test-runs-tap-on-release-binary.md) (2026-09-07)
 - **Date**: 2026-07-26
 - **Deciders**: tokuhirom, Claude
 - **Related**: `Makefile` (the `test` target), `.github/workflows/ci.yml` (the `test` job),
   `scripts/run-t-test.sh`, CLAUDE.md "Checking `make test` / `make roast` results" /
   "Delegate the full roast run to CI".
+
+> **Superseded.** The 19-minute release build this ADR's case rests on was accurate when
+> taken, but predates the build-side work since — mold as the linker (2026-09-06) and CI's
+> `CARGO_PROFILE_RELEASE_DEBUG=false`. The same build measured **4 m 40 s** on 2026-09-07,
+> without mold. Meanwhile `t/` grew from 2469 to 3825 files and the vendored upstream
+> `Test` module made the per-process `use Test` cost — 5.7x worse in debug — the suite's
+> dominant term, so the runtime gap is now 3.3x parallel / 6.1x serial rather than 2.3x.
+> See ADR-0075, which also keeps a suite-wide `debug_assert!` pass by leaving
+> `gc-stress`/`jit-stress` on debug.
 
 ## 1. Context
 
