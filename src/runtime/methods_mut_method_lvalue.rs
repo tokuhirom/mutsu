@@ -1427,6 +1427,17 @@ impl Interpreter {
                 attr_sigil,
                 assigned_value,
             );
+            // The accessor named a container the attribute already holds, so
+            // this is a store INTO that container, not a rebinding of the
+            // attribute (see `store_into_attr_container`). Doing it in place
+            // keeps the container's identity -- and keeps a concurrent writer
+            // from committing a stale copy of the whole attribute map over
+            // another thread's write.
+            if let Some(existing) = updated.get(&attr_name).cloned()
+                && Self::store_into_attr_container(&existing, &assigned_value)
+            {
+                return Ok(assigned_value);
+            }
             updated.insert(attr_name, assigned_value.clone());
             if let Some(var_name) = target_var {
                 self.env.insert_through(

@@ -42,8 +42,8 @@ reachable while the name-keyed lane declines (ADR-0068 §2 lists five):
 - the name is not a plain lexical `@`/`%` (attributes, twigils);
 - the name is masked as re-declared;
 - the container was never in a spawning frame's env;
-- the write is not name-keyed at all (`$obj.attr[$i]`, `%h<k>[$i]`, a container
-  returned from a method);
+- the write is not name-keyed at all (~~`$obj.attr[$i]`, `%h<k>[$i]`, a
+  container returned from a method~~ — all three done, see below);
 - ~~mutating *methods* rather than element stores~~ — **done**, see above.
 
 Each wants its own oracle-classified probe and its own stress acceptance, per
@@ -81,21 +81,28 @@ Three specific loose ends from the route audit:
   0/24 after, both the hash-outer and array-outer arms. Pin:
   `t/concurrent-nested-subscript-store.t`.
 
-- **An element store through a container returned by a USER method is still
-  open, and it is NOT a locking gap.** `class Holder { has @.items; method
-  bag() { @!items } }` with `$h.bag[$i] = 1` from 20 threads lands
-  **418 / 543 / 304 of 1000** writes (rakudo: 1000) — silent data loss, no
-  crash. The breakpoint oracle shows it DOES reach the attribute-lvalue funnel
-  (`builtin_index_assign_method_lvalue`), once per write, and keying that
-  funnel's guard on the shared invocant instead of the returned container was
-  implemented and measured: still 24/24 wrong. The reason is that the guard is
-  acquired *after* `current = self.call_method_with_values(...)` — the accessor
-  call, which is where each thread takes its own copy of the array
-  (`Gc::make_mut` on an aliased node), runs unguarded. So the exclusion has to
-  cover the accessor dispatch, which is what that funnel's own comment
-  deliberately kept outside the region ("the accessor dispatches inside the
-  region cannot deadlock against themselves"). Resolving that tension is the
-  next unit of work here, and it needs a decision, not a patch.
+- ~~**An element store through a container returned by a USER method**~~
+  **CLASSIFIED AND FIXED (2026-09-08, ADR-0068 §10).** It was not a locking
+  gap, and the "each thread takes its own copy of the array" reading was wrong
+  in an instructive way: the accessor hands back the attribute's live container
+  just fine, but the *assignment* rebound the attribute to a fresh one
+  (`assign_method_lvalue_with_values`'s `rw_attr_target` branch →
+  `write_back_sharing`) instead of storing into it. That is a deterministic,
+  single-threaded identity bug — `my @a := $h.bag; $h.bag = (1,2,3)` left `@a`
+  empty where raku shows `[1 2 3]` — and it is why the container's address
+  moved on every write, so no guard keyed on it could exclude anything.
+  `ArrayData::adopt_state_from`/`HashData::adopt_state_from` store in place.
+
+  With the churn gone the guard could finally be keyed on something stable: the
+  invocant's `Gc<InstanceAttrs>`, measured identical on every write from every
+  thread, acquired **before** the accessor dispatch so the accessor's read of
+  the live container is inside the region. That is the decision this file asked
+  for; its cost (user code runs inside the region) is bounded by
+  `container_lock`'s at-most-one-lock rule. 0/96 at 24-way, and it also fixed a
+  route §8 never probed: the same store written INLINE in the thread body, with
+  no routine in between, which was losing updates on 4 of 5 runs. Pins:
+  `t/attribute-accessor-container-identity.t` and three new rows in
+  `t/concurrent-attribute-element-store.t`.
 
 - **Route 5 (`Channel.Supply` tap captures)** is exposed on the path oracle but
   blocked behind a separate deterministic Channel-supply delivery bug that

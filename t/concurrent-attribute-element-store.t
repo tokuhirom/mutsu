@@ -18,7 +18,7 @@ use Test;
 # container all land, but it does not corrupt its own heap either, and every
 # row below is measured green under raku.
 
-plan 4;
+plan 7;
 
 # The array attribute: 1000 distinct indices from 20 threads.
 {
@@ -61,4 +61,47 @@ plan 4;
     sub add($v) { $p.log.push($v) }
     await (^20).map: -> $t { start { for ^50 -> $k { add($t * 50 + $k) } } };
     is $p.log.elems, 1000, 'every push onto an attribute container lands';
+}
+
+# ADR-0068 §4 step 3, the last route the ticket left open: the container is
+# handed back by a USER-WRITTEN accessor (`method bag() { @!items }`) rather
+# than a generated one. It was measured landing 304-543 of 1000 writes.
+#
+# Two things were wrong, and only the first is a locking question. The accessor
+# assignment rebound the attribute to a fresh container instead of storing into
+# the one it already held (pinned deterministically in
+# `t/attribute-accessor-container-identity.t`), so the container's address moved
+# on every write and the store guard, keyed on it, locked a different stripe
+# each time. And the guard was taken only *after* the accessor ran, leaving the
+# read of the live container outside the region. The guard is now keyed on the
+# invocant's attribute cell -- the one address every thread agrees on -- and
+# acquired before the accessor dispatch.
+{
+    class Bagged { has @.items; method bag() { @!items } }
+    my $b = Bagged.new;
+    sub put-it($i) { $b.bag[$i] = 1 }
+    await (^20).map: -> $t { start { for ^50 -> $k { put-it($t * 50 + $k) } } };
+    is $b.items.grep(*.defined).elems, 1000,
+        'every element store through a user-written array accessor lands';
+}
+
+{
+    class HBagged { has %.items; method bag() { %!items } }
+    my $b = HBagged.new;
+    sub put-key($i) { $b.bag{"k$i"} = 1 }
+    await (^20).map: -> $t { start { for ^50 -> $k { put-key($t * 50 + $k) } } };
+    is $b.items.elems, 1000,
+        'every key store through a user-written hash accessor lands';
+}
+
+# The same shape written straight into the thread body, with no named sub in
+# between. This is the variant that stayed exposed after the first attribute
+# slice: with no routine to close over the invocant it never became celled, so
+# the celled read/write guard never applied to it either.
+{
+    class Inline { has @.rows is rw; }
+    my $n = Inline.new(rows => []);
+    await (^12).map: -> $t { start { for ^40 -> $k { $n.rows[$t * 40 + $k] = 1 } } };
+    is $n.rows.grep(*.defined).elems, 480,
+        'an inline attribute element store lands with no routine in between';
 }

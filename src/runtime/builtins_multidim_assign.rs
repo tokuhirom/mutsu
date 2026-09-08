@@ -50,6 +50,37 @@ impl Interpreter {
         let value = args[3 + offset].clone();
         let var_name = args[4 + offset].to_string_value();
 
+        // ADR-0068 §4 step 3: an attribute-rooted element store on an INSTANCE
+        // is guarded from HERE -- before the accessor runs -- keyed on the
+        // invocant's attribute cell.
+        //
+        // The container the accessor hands back is the wrong key: it moves.
+        // Measured across two threads writing one array attribute, the
+        // attribute's `Gc<ArrayData>` took four distinct addresses in six
+        // writes, so a guard keyed on it locked a different stripe almost every
+        // time and excluded nothing, while the accessor call -- which reads the
+        // live container's elements -- sat outside the region entirely. The
+        // invocant's `Gc<InstanceAttrs>` is the one address every thread
+        // reaching the same object agrees on and that no store moves: the same
+        // measurement shows it identical on all six writes from both threads.
+        //
+        // Extending the region over the accessor dispatch is the decision
+        // `todo/deep/gc-contents-mut-cross-thread-aliased-writes.md` asked for.
+        // It is safe against the obvious re-entrancy: a thread holds at most one
+        // container-structure lock (`container_lock`'s at-most-one rule), so an
+        // accessor that itself stores into a container takes no second lock and
+        // cannot self-deadlock. What it does NOT cover is an accessor that
+        // blocks on *another* thread while this one holds the stripe; no such
+        // accessor exists in the suite, and the alternative -- leaving the read
+        // of the live container unguarded -- is a use-after-free.
+        let invocant_guard = match target.view() {
+            ValueView::Instance { attributes, .. } => {
+                let attrs_addr = crate::gc::Gc::as_ptr(&attributes) as usize;
+                crate::value::container_lock::ContainerStructGuard::acquire(attrs_addr)
+            }
+            _ => None,
+        };
+
         // Path accessors conventionally receive `(root, @steps)`. Resolve that
         // shape from the supplied root so the selected container stays anchored
         // there even when the accessor's `return-rw` temporary is unwound.
@@ -84,17 +115,10 @@ impl Interpreter {
         // for the element modify; the shared-Arc propagation below
         // (`overwrite_array_bindings_by_identity`, now cell-aware) reaches every
         // alias through the cell's inner Arc.
-        // ADR-0068 §4 step 3: an attribute-rooted element store
-        // (`$obj.attr[$i] = v`) is one of the routes the name-keyed cross-thread
-        // lane cannot cover -- it is not name-keyed at all -- and §3 left it
-        // "Unresolved" for want of a trace. Measured with the §1.1 harness:
-        // 96/96 runs corrupt the heap (`corrupted size vs. prev_size`,
-        // `double free or corruption (top)`, a NaN-box tag panic), with the lane
-        // never consulted. Every write below goes through the container the
-        // accessor just handed back, so excluding on that container covers them
-        // all at once. A no-op (one relaxed load) until a VM mutator thread is
-        // spawned; a thread holds at most one of these locks, so the accessor
-        // dispatches inside the region cannot deadlock against themselves.
+        // For a non-instance invocant (a Pair value, a package path accessor)
+        // there is no attribute cell to key on, so the container the accessor
+        // handed back is still the best available key. `acquire_for` is a no-op
+        // when `invocant_guard` above already locked this thread's one stripe.
         let attr_cell_addr = match current.view() {
             ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
             _ => None,
@@ -103,10 +127,12 @@ impl Interpreter {
             ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
             _ => current,
         };
-        let _struct_guard = crate::value::container_lock::ContainerStructGuard::acquire_for(
-            attr_cell_addr,
-            &current,
-        );
+        let _struct_guard = invocant_guard.or_else(|| {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(
+                attr_cell_addr,
+                &current,
+            )
+        });
 
         // Package-level `is rw` accessors with arguments (for example
         // `Crane::At.at($root, @path)`) return the selected container itself.

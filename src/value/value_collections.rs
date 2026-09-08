@@ -67,6 +67,14 @@ impl HashData {
         self.has_type_meta() || self.original_keys.is_some()
     }
 
+    /// Adopt `src`'s entire state while keeping this node's `.WHICH` identity.
+    /// The hash twin of [`ArrayData::adopt_state_from`].
+    pub(crate) fn adopt_state_from(&mut self, src: &HashData) {
+        let identity = std::mem::take(&mut self.which_id);
+        *self = src.clone();
+        self.which_id = identity;
+    }
+
     /// Whether container *type* metadata (element/key/declared type) is attached.
     /// This is the authoritative replacement for the `hash_type_metadata` side
     /// table: a freshly-built hash literal has `false` here, so it can never
@@ -178,6 +186,19 @@ impl ArrayData {
     /// Whether container *type* metadata (element/key/declared type) is attached.
     pub fn has_type_meta(&self) -> bool {
         self.value_type.is_some() || self.key_type.is_some() || self.declared_type.is_some()
+    }
+
+    /// Adopt `src`'s entire state while keeping this node's `.WHICH` identity.
+    ///
+    /// This is the "same container, new contents" half of a Raku list
+    /// assignment (`@!items = LIST`): the array object survives, so every alias
+    /// of it observes the store. `which_id` is the one field deliberately not
+    /// taken from `src` -- it *is* the identity being preserved, and cloning an
+    /// `ArrayData` mints a fresh one.
+    pub(crate) fn adopt_state_from(&mut self, src: &ArrayData) {
+        let identity = std::mem::take(&mut self.which_id);
+        *self = src.clone();
+        self.which_id = identity;
     }
 
     /// Borrow the element vector through the representation chokepoint.
