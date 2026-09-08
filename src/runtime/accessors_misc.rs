@@ -61,9 +61,23 @@ impl Interpreter {
     ///
     /// Only package-qualified keys are tracked (see `module_registered_functions`),
     /// so the importing scope's bare aliases still go out of scope normally.
+    ///
+    /// `include_global_aliases` decides whether the `GLOBAL::`-prefixed members of
+    /// that set are put back too, and only the **`EVAL` rollback** passes `true`.
+    /// The distinction is forced by a key collision the set cannot see through: a
+    /// file with no `unit module` declaration runs its body at
+    /// `current_package() == GLOBAL`, so its own `sub foo is export` registers
+    /// `GLOBAL::foo` — the same shape as an alias installed *for the importing
+    /// scope*. Reinstating those on an ordinary block exit made
+    /// `{ require NoModule <&bar>; }` leak `&bar` past the block
+    /// (`roast/S11-modules/require.t` test 10). An `EVAL` is the one caller that
+    /// must reinstate them: it rolls the whole registry back while
+    /// `loaded_modules` keeps the module recorded as loaded, so without this the
+    /// module is left permanently unable to resolve its own imports.
     pub(crate) fn reinstate_module_functions(
         &self,
         functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
+        include_global_aliases: bool,
     ) {
         if self.module_registered_functions.is_empty() {
             return;
@@ -71,6 +85,9 @@ impl Interpreter {
         let registry = self.registry();
         for key in &self.module_registered_functions {
             if functions.contains_key(key) {
+                continue;
+            }
+            if !include_global_aliases && key.resolve().starts_with("GLOBAL::") {
                 continue;
             }
             if let Some(def) = registry.functions.get(key) {
@@ -133,7 +150,7 @@ impl Interpreter {
         // arithmetic (e.g. Test.rakumod's `$num_of_tests_run + 1`) after the
         // block exited, resetting the test counter to Nil.
         self.user_declared_infix_ops = user_infix_ops;
-        self.reinstate_module_functions(&mut functions);
+        self.reinstate_module_functions(&mut functions, is_eval);
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.
         // Preserve functions defined in the current package (original behavior)
