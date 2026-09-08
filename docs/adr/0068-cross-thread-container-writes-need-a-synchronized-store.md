@@ -142,7 +142,7 @@ then confirmed with the §1.1 stress harness at 24-way on 12 cores.
 | 2 | **`Promise.then` combinator callback captures** | 21 / 0 | **3 / 240**, lost updates | **RACES** |
 | 3 | Object attribute (`has @.seen is rw`) written from two threads | 0 / 0 — reaches **neither** probed aliased-store site, nor `gc_data_mut`, nor the computed-attr sites | 1 clean run | **Unresolved** — the write takes some other path; needs its own trace before it can be called covered or exposed |
 | 4 | `Thread.start` bodies (spawn via block-less `clone_for_thread`) | 21 / 0 | run incomplete at wind-down | **Exposed** on the oracle; same site as routes 1/2 |
-| 5 | `Channel.Supply` tap captures | 20 / 0 | fails on a *single* run | **Exposed** on the oracle, but the single-run failure is a separate, deterministic Channel-supply delivery bug (values dropped/misordered), which must be fixed first before this route's race is measurable |
+| 5 | `Channel.Supply` tap captures | 20 / 0 | fails on a *single* run | **Exposed** on the oracle, but the single-run failure is a separate, deterministic Channel-supply delivery bug (values dropped/misordered), which must be fixed first before this route's race is measurable — **superseded by §11**: the delivery bug does not reproduce, the single-run failure was the competing-consumer divergence of [#7604](https://github.com/tokuhirom/mutsu/issues/7604), and the re-run oracle says 0 unsynchronized / covered |
 
 Route 1 is the important one: it is the same shape as the fixed `.act` route, it races at the
 same rate (0.42% vs 0.63% per run — statistically indistinguishable), it produces genuine
@@ -249,8 +249,14 @@ mutual-exclusion edge. This ADR does not argue that case and must not be read as
    stress harness, not the argument.
 2. **Route 3 (object attributes) is unclassified.** The probe reached none of the aliased-store
    sites this session probed. Trace it before assuming either coverage or exposure.
-3. **Route 5 is blocked by a separate Channel-supply delivery bug** (values dropped/misordered
-   on a single, unloaded run). Fix that first; until then this route's race rate is unmeasurable.
+3. ~~**Route 5 is blocked by a separate Channel-supply delivery bug** (values dropped/misordered
+   on a single, unloaded run). Fix that first; until then this route's race rate is unmeasurable.~~
+   **ANSWERED (2026-09-08, §11).** The delivery bug does not reproduce; the single-run failure was
+   rakudo's competing-consumer semantics for a channel-backed Supply, which mutsu broadcasts
+   instead ([#7604](https://github.com/tokuhirom/mutsu/issues/7604)) — a compatibility bug, not a
+   delivery one. With the idiom corrected the route reaches the cell-keyed guard (capture shape)
+   or the name-keyed lane (named-sub shape) and the unsynchronized store not at all: 0 / 240 at
+   24-way.
 4. **Does the (C) flag belong in `gc_contents_mut` itself** (one relaxed load at the primitive,
    for every site at once) or at each synchronized store? Measuring the primitive-level load
    against the bench CI is the deciding datum, and it was not taken this session.
@@ -533,9 +539,72 @@ Pins: three new rows in `t/concurrent-attribute-element-store.t`.
 
 ### 10.4 Still open
 
+*(Superseded in part by §11, which unblocks and classifies route 5.)*
+
 Route 5 (`Channel.Supply` tap captures) is still blocked behind the
 Channel-supply delivery bug, and §3.1's `S17-procasync/stress.t` SIGSEGV is
 still unexplained. The remaining §2 lane-decline reasons (twigil'd names, a
 container never in a spawning frame's env) stay unprobed; the expectation
 recorded in §8 — that a new route arrives at one of the known funnels — held for
 this one.
+
+## 11. Step 3, third slice (2026-09-08): route 5 is unblocked, and it is covered
+
+Route 5 (`Channel.Supply` tap captures) was the last route §3 left **Exposed**
+on the oracle. §6 question 3 blocked it behind "a separate, deterministic
+Channel-supply delivery bug (values dropped/misordered on a single, unloaded
+run)", which had to be fixed before the route's race rate could be measured.
+Both halves of that are now settled, and neither needed a lock.
+
+### 11.1 The blocker was mostly a measurement artifact
+
+The delivery bug does not reproduce. A `Channel.Supply` tap delivers every sent
+value, in order, on a single unloaded run: 1000/1000 elements through a named
+sub, and 100/100 values through the day05 three-writer idiom, both matching
+`raku` on the same program.
+
+What the original probe hit is a **semantic** divergence, not a delivery one.
+Two taps on one `Channel`'s Supply are *competing consumers* in rakudo — each
+sent value goes to exactly one of them (`a=1,3,5 b=2,4,6`) — while mutsu
+broadcasts to all of them (`a=1,2,3,4,5,6` twice). The three-tap-writer FizzBuzz
+idiom §3 used therefore cannot fill the array under rakudo at all, and reading
+its mutsu output as "values dropped/misordered" was reading the divergence from
+the other side. A `Supplier` is a genuine broadcaster and mutsu agrees with
+rakudo there, so the fault is specific to the channel-backed Supply. Filed as
+[#7604](https://github.com/tokuhirom/mutsu/issues/7604); it is a compatibility
+bug, not a concurrency one, and it does not gate this route.
+
+### 11.2 The oracle now answers "covered", in both shapes
+
+With the idiom corrected to one tap (the shape that means the same thing in both
+implementations), the §1.2 oracle says:
+
+| Probe | `ContainerStructGuard::acquire_for` | `shared_array_elem_set` | unsynchronized aliased store |
+|---|---|---|---|
+| tap body writes captured `%seen` / `@log` / `$sum` directly | **100** | 0 | **0** |
+| tap body calls a named sub that writes `@a[$i]` | 0 | **1000** | **0** |
+
+So the capture shape is on the cell-keyed guard that §7 added, and the
+named-sub shape is on the name-keyed lane — the same two outcomes routes 1 and 4
+reached after step 1/2. The unsynchronized site is not reached at all. That is
+what §8 predicted: a new route arrives at one of the known funnels rather than
+needing a fourth.
+
+### 11.3 Acceptance (debug build, `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`, 24-way)
+
+| Probe | Result |
+|---|---|
+| day05 three-writer idiom over one `Channel.Supply` tap, 20 emitters | **0 / 96 failures** |
+| FizzBuzz three-writer idiom in one tap callback, 20 emitters | **0 / 96** |
+| named-sub element store driven from a `Channel.Supply` tap, 1000 writes | **0 / 48** |
+
+Pins: two new rows in `t/concurrent-celled-container-store.t`, which passes in
+full under real rakudo as well as under mutsu.
+
+### 11.4 Still open
+
+Of §3's routes, none is now Exposed-and-unmeasured. What remains of step 3 is
+§3.1's `S17-procasync/stress.t` SIGSEGV, still unexplained and never
+reproduced, and the §2 lane-decline reasons that no route has yet exercised
+(twigil'd names, a name masked as re-declared, a container never in a spawning
+frame's env). Probe before assuming any of them needs a fourth funnel.

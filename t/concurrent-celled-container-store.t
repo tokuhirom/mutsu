@@ -16,7 +16,7 @@ use Test;
 # Before the fix these raced on one `Vec<Value>`: silently lost updates, and
 # `double free or corruption` from two concurrent `Vec::resize` calls.
 
-plan 4;
+plan 6;
 
 # A named sub is the aliasing edge: the `start` body mentions `&put-it`, never
 # `@a`, so nothing in the block's free variables says the container escapes to
@@ -51,6 +51,30 @@ plan 4;
     $supply.tap: { @seen[$_] //= $_ }
     await do for 1..20 { start { sleep rand / 10; $supplier.emit($_) } }
     is len(), 21, 'concurrent tap writers all land in the celled array';
+    is @seen[1..20].join(' '),
+        "1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz 16 17 Fizz 19 Buzz",
+        'and each element holds what the three writers composed';
+}
+
+# ADR-0068 §11, route 5: the same celled-container writes driven from a
+# `Channel.Supply` tap rather than a `Supplier` one. The route was the last one
+# §3 left "Exposed" on the path oracle; with the probe idiom corrected to a
+# SINGLE tap -- rakudo makes two taps on a channel-backed Supply competing
+# consumers, so a three-tap fan-out means something different there (#7604) --
+# the capture shape reaches the cell-keyed guard 100/100 and the unsynchronized
+# aliased store 0 times.
+{
+    my @seen;
+    sub chan-len() { @seen.elems }
+    my $chan = Channel.new;
+    $chan.Supply.tap: {
+        @seen[$_]   = "Fizz" if $_ %% 3;
+        @seen[$_]  ~= "Buzz" if $_ %% 5;
+        @seen[$_] //= $_;
+    }
+    await do for 1..20 { start { sleep rand / 10; $chan.send($_) } }
+    $chan.close;
+    is chan-len(), 21, 'three writers behind a Channel.Supply tap all land';
     is @seen[1..20].join(' '),
         "1 2 Fizz 4 Buzz Fizz 7 8 Fizz Buzz 11 Fizz 13 14 FizzBuzz 16 17 Fizz 19 Buzz",
         'and each element holds what the three writers composed';
