@@ -51,7 +51,7 @@ impl Interpreter {
     /// Unwrapping only the RECORDED value is safe for the round-trip: the
     /// `.WHICH` string the entry is filed under is still computed from the
     /// index as given, so a later `%h{$t}` finds the same entry.
-    fn object_hash_key_value(idx: &Value) -> Value {
+    pub(crate) fn object_hash_key_value(idx: &Value) -> Value {
         // `deref_container` first: the index arrives as the variable's own
         // `ContainerRef` cell when the key was written as `%h{$t}`, and
         // `deitemize_element` looks through a `Scalar`/itemized-kind wrapper,
