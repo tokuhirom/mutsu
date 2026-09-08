@@ -692,7 +692,7 @@ impl Compiler {
                 rw_block,
                 explicit_zero_params,
                 is_statement_modifier,
-                ..
+                uses_block_magic,
             } => {
                 self.compile_do_for_expr(
                     iterable,
@@ -706,6 +706,7 @@ impl Compiler {
                     label,
                     *is_statement_modifier,
                     *mode,
+                    *uses_block_magic,
                 );
             }
             Stmt::While {

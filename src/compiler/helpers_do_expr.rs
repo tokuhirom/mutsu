@@ -163,14 +163,10 @@ impl Compiler {
         self.patch_nested_block_state_reset(state_reset);
     }
 
-    /// Compile an `if`/`elsif` chain in value (expression) position, honouring an
-    /// optional per-branch topic binding
-    /// (`if EXPR -> $v { ... }`). When `binding_var` is `Some`, the condition
-    /// value is bound to `$v` for the `then` branch — desugared exactly like the
-    /// statement-form `if` (`{ my $v = EXPR; if $v { ... } }`) — so a value-mode
-    /// `if`/`elsif` with a topic binding does not leave `$v` (or `$_`) reading
-    /// the enclosing topic. Inner `elsif`s thread their own binding through the
-    /// recursion.
+    /// Compile an `if`/`elsif` chain in value (expression) position.
+    ///
+    /// A thin wrapper over the shared lowering in `control_if.rs`; the only
+    /// difference from the statement form is [`IfPosition::Value`].
     pub(super) fn compile_do_if_expr_bound(
         &mut self,
         cond: &Expr,
@@ -179,108 +175,21 @@ impl Compiler {
         binding_var: &Option<String>,
         is_statement_modifier: bool,
     ) {
-        // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like `for ->
-        // $_`), so its topic must NOT flow back to an enclosing `given $x`'s source
-        // variable. `EnterPointyTopic` saves + clears `topic_source_var` for the
-        // branch; `ExitPointyTopic` (at the end) restores it and the outer `$_`.
-        let pointy_topic_scope = binding_var
-            .as_deref()
-            .is_some_and(|v| v.trim_start_matches('$') == "_");
-        if pointy_topic_scope {
-            self.code.emit(OpCode::EnterPointyTopic);
-        }
-        // A bare `do if EXPR { ... $^a ... }` / `(if EXPR { ... })` block receives
-        // the condition value as `@_` and as a scalar placeholder (like `-> $a`),
-        // so `do if 9 { $^a + 1 }` is 10. Mirrors `compile_if_value`.
-        //
-        // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER (including the
-        // synthetic `If` `with`/`without` desugar to) has no block of its own,
-        // so this binding does not apply — mirrors the same guard in
-        // `compile_if_value`.
-        let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
-        let bind_cond_placeholders = binding_var.is_none() && !is_statement_modifier;
-        let binds_cond_placeholder =
-            bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
-        let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
-        let mut deferred_container_decl = None;
-        if let Some(var_name) = binding_var {
-            let (read_expr, deferred) = self.compile_if_binding_decl(var_name, cond);
-            deferred_container_decl = deferred;
-            self.compile_expr(&read_expr);
-        } else {
-            self.compile_expr(cond);
-        }
-        if needs_cond_value {
-            self.code.emit(OpCode::Dup);
-        }
-        let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
-        self.compile_if_binding_container_decl(&deferred_container_decl);
-        if needs_at_underscore {
-            self.code.emit(OpCode::FlattenSlurpy);
-            self.emit_set_named_var("@_");
-        } else if bind_cond_placeholders {
-            // ADR-0048 D3's shared bind: binds every placeholder the branch
-            // declares that the single condition value can satisfy, and raises
-            // raku's "Too few positionals passed" for the rest.
-            self.emit_inlined_body_placeholder_binds(then_branch, ArgSupply::Condition);
-        }
-        // The branch is a block literal re-cloned per execution of the enclosing
-        // block, so its own `state` restarts — see `OpCode::ResetStateLocals`.
-        let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
-        self.compile_block_inline(then_branch);
-        self.patch_nested_block_state_reset(then_state_reset);
-        let jump_end = self.code.emit(OpCode::Jump(0));
-        self.code.patch_jump(jump_else);
-        if needs_cond_value {
-            self.code.emit(OpCode::Pop);
-        }
-
-        if else_branch.is_empty() {
-            let empty_idx = self.code.add_constant(Value::slip(vec![]));
-            self.code.emit(OpCode::LoadConst(empty_idx));
-        } else if let [
-            Stmt::If {
-                cond: inner_cond,
-                then_branch: inner_then,
-                else_branch: inner_else,
-                binding_var: inner_binding,
-                is_statement_modifier: inner_is_modifier,
-                ..
-            },
-        ] = else_branch
-        {
-            self.compile_do_if_expr_bound(
-                inner_cond,
-                inner_then,
-                inner_else,
-                inner_binding,
-                *inner_is_modifier,
-            );
-        } else {
-            let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
-            self.compile_block_inline(else_branch);
-            self.patch_nested_block_state_reset(else_state_reset);
-        }
-        self.code.patch_jump(jump_end);
-        if pointy_topic_scope {
-            self.code.emit(OpCode::ExitPointyTopic);
-        }
+        self.compile_if_construct(
+            cond,
+            then_branch,
+            else_branch,
+            binding_var,
+            is_statement_modifier,
+            crate::compiler::control_if::IfPosition::Value,
+        );
     }
 
-    fn compile_collected_loop_body(&mut self, body: &[Stmt]) {
-        // `do { ... } for @xs`: the sole block IS the loop body, cloned once
-        // per loop statement — its `state` persists across iterations (see
-        // `loop_body_is_sole_block`).
-        self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(body);
-        // The `ForLoop` opcode brackets this body with
-        // `push_loop_local_scope`/`pop_loop_local_scope` just like the statement
-        // loop forms, so a `my TYPE $x` here is env-restored on exit and can use
-        // the env-only scoped constraint opcode (see
-        // `compile_scope_restored_loop_body`).
-        self.compile_scope_restored_body_value(body);
-    }
-
-    /// Compile `do for` expression: like a for loop but collects each iteration result.
+    /// Compile a `for` in expression position.
+    ///
+    /// Identical to the statement form apart from `collect`: the shared
+    /// lowering in `control_for.rs` gathers each iteration's value and leaves
+    /// the resulting list on the stack.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_do_for_expr(
         &mut self,
@@ -295,6 +204,7 @@ impl Compiler {
         label: &Option<String>,
         is_statement_modifier: bool,
         mode: crate::ast::ForMode,
+        uses_block_magic: bool,
     ) {
         // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
         // a dummy single-iteration `for Nil` with a label. Preserve block semantics
@@ -314,199 +224,21 @@ impl Compiler {
             self.compile_do_block_expr(body, label);
             return;
         }
-
-        let (_pre_stmts, mut loop_body, _post_stmts) =
-            self.expand_loop_phasers(body, label.as_deref());
-        let param_idx = param
-            .as_ref()
-            .map(|p| self.code.add_constant(Value::str(p.clone())));
-        let bind_stmts =
-            Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def, rw_block);
-        if !bind_stmts.is_empty() {
-            let mut merged = bind_stmts;
-            merged.extend(loop_body);
-            loop_body = merged;
-        }
-        // Mirrors the statement-form `has_rw`/`has_copy` computation in
-        // `stmt.rs` — multi-param defs live in `params_def`, not `param_def`.
-        let has_sigilless = param_def.as_ref().is_some_and(|def| def.sigilless)
-            || params_def.iter().any(|def| def.sigilless);
-        let has_rw = rw_block
-            || has_sigilless
-            || param_def
-                .as_ref()
-                .is_some_and(|def| def.traits.iter().any(|t| t == "rw"))
-            || params_def
-                .iter()
-                .any(|def| def.traits.iter().any(|t| t == "rw"));
-        let has_copy = param_def
-            .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
-        let arity = Self::for_chunk_arity(params, params_def);
-        let normalized_iterable = self.normalize_for_iterable(iterable);
-        // A `for`-loop handles `is rw` write-back through its own
-        // `TagContainerRef` mechanism, so the iterable's synthetic single-element
-        // wrap (`for $a` -> `ArrayLiteral([$a])`) must NOT also box `$a` into an
-        // aliasing `ContainerRef` cell — that shared cell would be written back
-        // into `$a`, creating a self-referential cycle that deadlocks on the next
-        // read (`try for $a -> $v is rw { $v++ }`). Mirror the statement-form
-        // guard in `stmt.rs` for the for-as-expression path (a `for` used as the
-        // tail value of `try`/`do`/a sub body).
-        let saved_suppress = self.suppress_list_var_alias;
-        self.suppress_list_var_alias = true;
-        self.compile_expr(&normalized_iterable);
-        self.suppress_list_var_alias = saved_suppress;
-        let source_container_local = Self::for_iterable_source_name(iterable)
-            .and_then(|name| self.local_map.get(&name).copied());
-        if let Some(source_name) = Self::for_iterable_source_name(iterable) {
-            let source_slot = self.local_map.get(source_name.as_str()).copied();
-            let source_idx = self.code.add_constant(Value::str(source_name));
-            self.code
-                .emit(OpCode::TagContainerRef(source_idx, source_slot));
-        }
-        let param_local = param
-            .as_ref()
-            .and_then(|p| self.local_map.get(p.as_str()).copied());
-        // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
-        let topic_local = param
-            .is_none()
-            .then(|| self.local_map.get("_").copied())
-            .flatten();
-        let source_var_names = Self::for_iterable_var_names(iterable);
-        let source_var_locals = self.for_source_var_locals(&source_var_names);
-        let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
-        // Mirrors `stmt.rs`'s `rw_param_names` / `multi_param_locals`
-        // construction — see the field docs on `ForLoopSpec` for why each
-        // param's writeback name and pre-bind local slot must be captured
-        // here (before `bind_stmts` above resolves them via `Stmt::Assign`).
-        let rw_param_names: Vec<String> = if has_rw && !params.is_empty() {
-            params
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    let stripped = p.strip_prefix('\\').unwrap_or(p).to_string();
-                    // A slurpy binds a fresh list of the chunk's leftovers, not an
-                    // element of it, so it has nothing to write back through.
-                    if params_def.get(i).is_some_and(|d| d.is_variadic()) {
-                        return String::new();
-                    }
-                    let per_param_rw = kv_mode
-                        || rw_block
-                        || params_def
-                            .get(i)
-                            .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw"))
-                        || (params_def.get(i).is_none() && p.starts_with('\\'));
-                    if per_param_rw {
-                        stripped
-                    } else {
-                        String::new()
-                    }
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let multi_param_locals: Vec<Option<u32>> = params
-            .iter()
-            .map(|p| {
-                let bare = p.strip_prefix('\\').unwrap_or(p);
-                self.local_map.get(bare).copied()
-            })
-            .collect();
-        let loop_idx = self
-            .code
-            .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
-                param_idx,
-                param_local,
-                topic_local,
-                source_container_local,
-                body_end: 0,
-                block_callable_local: None,
-                label: label.clone(),
-                arity,
-                collect: true,
-                threaded: matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper),
-                is_rw: has_rw || has_copy,
-                do_writeback: has_rw && !has_copy,
-                rw_param_names,
-                kv_mode,
-                source_var_names,
-                source_var_locals,
-                autothread_junctions: false,
-                zero_positional_params: Self::for_zero_positional_params(
-                    explicit_zero_params,
-                    param,
-                    params,
-                    params_def,
-                ),
-                multi_param_names: params
-                    .iter()
-                    .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
-                    .collect(),
-                multi_param_locals,
-                param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
-                multi_param_type_constraints: (0..params.len())
-                    .map(|i| params_def.get(i).and_then(|d| d.type_constraint.clone()))
-                    .collect(),
-                loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
-                values_mode: Self::for_iterable_is_values_alias(iterable),
-                direct_smartmatch: Self::for_direct_smartmatch(iterable),
-                single_array_source: Self::for_single_array_source(iterable),
-                single_array_source_local: self
-                    .for_single_array_source_local(&Self::for_single_array_source(iterable)),
-                body_declares_routines: Self::stmts_declare_routines(&loop_body),
-                source_items_are_bare: Self::for_iterable_yields_bare_items(iterable),
-                param_sigilless: param_def.as_ref().is_some_and(|d| d.sigilless),
-            })));
-        // Register sigilless for-params while compiling the (merged) body so
-        // their bind statements skip scalar-store itemization — mirrors the
-        // statement-form registration in `stmt.rs`.
-        let sigilless_param_names: Vec<String> = if has_sigilless {
-            let single_sigilless = param_def.as_ref().is_some_and(|def| def.sigilless);
-            param
-                .as_ref()
-                .filter(|_| single_sigilless)
-                .into_iter()
-                .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
-                .chain(
-                    params
-                        .iter()
-                        .zip(params_def.iter())
-                        .filter(|(_, def)| def.sigilless)
-                        .map(|(p, _)| p.strip_prefix('\\').unwrap_or(p).to_string()),
-                )
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let newly_registered: Vec<String> = sigilless_param_names
-            .iter()
-            .filter(|n| self.sigilless_locals.insert((*n).clone()))
-            .cloned()
-            .collect();
-        self.hoist_sub_decls(&loop_body, true);
-        // A `for` body is its own Raku call frame (see `callframe_block_depth`).
-        self.callframe_block_depth += 1;
-        // A statement MODIFIER's sole block is this loop's own body block,
-        // supplied one element per iteration -- not a separately-invoked,
-        // zero-argument nested block (ADR-0048 D3/D6). Mirrors the statement
-        // form in `stmt.rs`; without it `({ $^a * 2 } for 1, 2, 3)` died with
-        // the nested block's own "Too few positionals passed" arity failure.
-        if is_statement_modifier {
-            self.note_construct_body_block_stmts(&loop_body);
-        }
-        self.compile_collected_loop_body(&loop_body);
-        self.callframe_block_depth -= 1;
-        for n in &newly_registered {
-            self.sigilless_locals.remove(n);
-        }
-        self.code.patch_loop_end(loop_idx);
-        // Balance the ForLoop opcode's deferred param-restore push (see the
-        // Stmt::For compile path). Required even though this collected form has
-        // no post phasers, so the push/pop stay balanced.
-        if param.is_some() {
-            self.code.emit(OpCode::RestoreForParam);
-        }
+        self.compile_for_construct(crate::compiler::control_for::ForParts {
+            iterable,
+            param,
+            param_def,
+            params,
+            params_def,
+            body,
+            label,
+            mode,
+            rw_block,
+            explicit_zero_params,
+            is_statement_modifier,
+            uses_block_magic,
+            collect: true,
+        });
     }
 
     /// Compile `lazy for` expression: lower to `gather { for @items -> $param { take do { body } } }`.

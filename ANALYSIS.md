@@ -416,15 +416,25 @@ work, not blockers for the slot-addressed design.
 
 ## 3. Duplicate implementations
 
-### 3.1 Statement/expression dual compilation of control constructs
+### 3.1 Statement/expression dual compilation of control constructs — resolved for `for`/`if` (2026-09-08)
 
-Unchanged in shape, grown in size: `compiler/helpers_do_expr.rs` (609 lines as of rev13,
-rev12: 476; 6 `compile_do_*` entry points, unchanged count) duplicates `stmt.rs` logic for
-do/if/for/while/loop in expression position, including a `ForLoopSpec` construction
-(`opcode.rs:194`, now 27 fields, rev12: 21) maintained twice. Fix remains one
-value-returning pass. Filed as
-[`todo/deep/unify-statement-expression-control-construct-compilation.md`](todo/deep/unify-statement-expression-control-construct-compilation.md)
-(2026-08-21).
+`for` and `if`/`elsif` now have one lowering each, shared by both source positions:
+`compiler/control_for.rs` (`compile_for_construct`, keyed on `ForParts::collect`) and
+`compiler/control_if.rs` (`compile_if_construct`, keyed on `IfPosition`). `ForLoopSpec` is
+constructed in **exactly one place** in the compiler (rev13: two). `helpers_do_expr.rs` is
+398 lines (rev13: 609) and `stmt.rs` 4740 (rev13: 5191); the surviving `compile_do_*` entry
+points for `while`, C-style `loop` and `lazy for` were already thin `gather`-desugaring
+wrappers over the statement path and needed no change. Six value-position divergences the
+merge exposed (dropped loop phasers, a mirrored `.reverse` rw writeback, no junction
+autothreading, no `for_loop_param_syms` immunity, unmarked read-only multi-params, no
+`&?BLOCK`) plus a value-position `if`'s bare-regex condition are fixed and pinned by
+`t/control-construct-value-position.t`. See
+[`news/2026-09/unify-statement-expression-control-construct-compilation.md`](news/2026-09/unify-statement-expression-control-construct-compilation.md).
+
+**Remaining**: the bare `{ ... }` block, whose statement and value forms emit *different*
+opcodes (`BlockScope` vs `DoBlockExpr`) and therefore share neither skeleton nor payload
+struct — a separate and larger question, filed as
+[`todo/deep/unify-block-statement-and-value-compilation.md`](todo/deep/unify-block-statement-and-value-compilation.md).
 
 ### 3.2 Sub declaration registered twice
 
@@ -572,7 +582,7 @@ has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
 | 2 | **Supply panic propagation and parser panic-zero debt** (§2.3, PLAN §5) | correctness debt | Two concrete, actionable gaps: Supply detached-worker panics are silently swallowed instead of reaching QUIT (`PLAN.md` §5, unchecked), and `unwrap`/`expect`/`panic!`/`unreachable!` usage keeps rising every revision (§5: 1920→2227) against PLAN §8.3's "must never Rust-panic on any input" goal. |
-| 3 | **Unify statement/expression compilation of control constructs** (§3.1, [`todo/deep/unify-statement-expression-control-construct-compilation.md`](todo/deep/unify-statement-expression-control-construct-compilation.md)) | design cleanup | The duplicated `do`/`if`/loop compilation is real and growing (`helpers_do_expr.rs` 476→609 lines, `ForLoopSpec` 21→27 fields), not bounded and stable as previously stated. Opcode leftovers remain measurement-gated, not bundled into this task. |
+| 3 | **Unify statement/expression compilation of control constructs** (§3.1) — `for`/`if` done 2026-09-08; bare blocks remain ([`todo/deep/unify-block-statement-and-value-compilation.md`](todo/deep/unify-block-statement-and-value-compilation.md)) | design cleanup | `ForLoopSpec` now has one construction site and the `if` chain one lowering (`compiler/control_for.rs`, `compiler/control_if.rs`); `helpers_do_expr.rs` 609→398 lines. What is left is the bare `{ ... }` block, whose two forms emit different opcodes, so it is a design question (probably an ADR) rather than a merge. Opcode leftovers remain measurement-gated, not bundled into this task. |
 | 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 3263 lines and the >500/>1000 populations reached 336/100. The `registration_class_decl.rs` walker this row used to point at has already been split (ADR-0019 D0-D9, §1.1); touched oversized files should be split when ownership boundaries become clear as the next one is forced open. A standalone line-moving campaign is not the priority. |
 | 5 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
