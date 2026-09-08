@@ -283,7 +283,8 @@ mod tests {
         let mut interp = Interpreter::new();
         interp.stack.push(Value::int(1));
         interp.stack.push(Value::int(2));
-        interp.locals.push(Value::int(3));
+        interp.locals.resize_slots(1);
+        interp.locals[0] = Value::int(3);
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);

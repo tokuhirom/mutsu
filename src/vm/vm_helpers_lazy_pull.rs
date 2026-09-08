@@ -119,7 +119,7 @@ impl Interpreter {
             if !coro.finished && (coro.ip > 0 || coro.started) {
                 // Resume from saved state
                 ip = coro.ip;
-                self.locals = coro.locals.clone();
+                self.locals = crate::runtime::Locals::from_vec(coro.locals.clone());
                 self.stack = coro.stack.clone();
                 *self.env_mut() = coro.env.clone();
                 self.gather_for_loop_resume = coro.for_loop_resume.clone();
@@ -132,7 +132,7 @@ impl Interpreter {
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
                 *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-                self.locals = vec![Value::NIL; cc.locals.len()];
+                self.locals = crate::runtime::Locals::nils(cc.locals.len());
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.env().get(name) {
                         self.locals[i] = val.clone();
@@ -145,7 +145,7 @@ impl Interpreter {
             // Fresh start (no coroutine slot yet)
             ip = 0;
             *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-            self.locals = vec![Value::NIL; cc.locals.len()];
+            self.locals = crate::runtime::Locals::nils(cc.locals.len());
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.env().get(name) {
                     self.locals[i] = val.clone();
@@ -253,7 +253,7 @@ impl Interpreter {
             let for_loop_resume = self.gather_for_loop_resume.take();
             let coro_state = GatherCoroutineState {
                 ip,
-                locals: self.locals.clone(),
+                locals: self.locals.to_vec(),
                 stack: self.stack.clone(),
                 env: self.env().clone(),
                 finished: false,

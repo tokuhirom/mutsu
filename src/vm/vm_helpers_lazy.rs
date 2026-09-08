@@ -1238,7 +1238,7 @@ impl Interpreter {
         self.push_gather_take_limit(None);
 
         // Initialize locals for the compiled code
-        self.locals = vec![Value::NIL; cc.locals.len()];
+        self.locals = crate::runtime::Locals::nils(cc.locals.len());
         for (i, name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();

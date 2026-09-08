@@ -2964,6 +2964,7 @@ impl Interpreter {
             cur_source_line: 1,
             thread_spawn_origin: None,
             locals_pool: Vec::new(),
+            args_scratch_pool: Vec::new(),
             control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -3160,7 +3161,7 @@ impl Interpreter {
             // Merged VM execution registers (CP-3 collapse) — same defaults the
             // former `VM::new` installed.
             stack: Vec::new(),
-            locals: Vec::new(),
+            locals: crate::runtime::locals::Locals::new(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
             frame_owned: Vec::new(),

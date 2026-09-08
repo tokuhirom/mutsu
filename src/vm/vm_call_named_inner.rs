@@ -266,7 +266,7 @@ impl Interpreter {
             );
         }
 
-        self.locals = vec![Value::NIL; cf.code.locals.len()];
+        self.locals = crate::runtime::Locals::nils(cf.code.locals.len());
         // `locals_sym` is the pre-interned twin of `locals` (empty only for a
         // hand-built chunk that never ran `compute_locals_sym`); reading the
         // seed values through it saves one string intern per local per call.

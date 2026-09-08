@@ -866,7 +866,7 @@ impl Interpreter {
             }
         }
 
-        self.locals = vec![Value::NIL; cc.locals.len()];
+        self.locals = crate::runtime::Locals::nils(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
