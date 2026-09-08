@@ -87,7 +87,9 @@ MUTSU_FUDGE=1 rust-gdb -batch \
 
 Breakpoint 1 is the unsynchronized aliased element store (the site the crash backtrace named);
 breakpoint 2 is the synchronized lane. `already hit N times` on 1 with nothing on 2 means the
-workload is **exposed**. This oracle is deterministic, costs one debug run, and settled every
+workload is **exposed**. **STALE since §7 — read §13.1 before using this.** The guard §7 added
+lexically contains that store site, so breakpoint 1 now fires on covered writes too; the
+discriminator is the store site hit *without* the guard, which needs a third breakpoint. This oracle is deterministic, costs one debug run, and settled every
 route in §3 in minutes — where the stress harness needs hundreds of runs to say the same thing
 probabilistically.
 
@@ -666,8 +668,82 @@ also records the candidates this measurement does *not* exclude (the
 reaping state).
 
 With §11 and this section, **nothing in §3 is Exposed-and-unmeasured any more.**
-What is left of §4 step 3 is the §2 lane-decline reasons that no route has yet
-exercised: a twigil'd name, a name masked as re-declared, and a container that
-was never in a spawning frame's env. Each wants its own oracle-classified probe;
-§12.1 is the reminder to run the oracle rather than to reason from a route's
+What was left of §4 step 3 at that point — the §2 lane-decline reasons that no
+route had yet exercised — is measured in **§13**: a twigil'd name, a name masked
+as re-declared, and a container that was never in a spawning frame's env are all
+covered. §12.1 is the reminder to run the oracle rather than to reason from a
+route's shape, and §13.1 corrects the oracle recipe itself.
+
+## 13. Step 3, final slice (2026-09-08): the three unexercised §2 reasons, and a correction to §1.2
+
+§2 lists five reasons the name-keyed lane declines a container element store.
+Three had never been exercised by a probe: the name is not a plain lexical
+`@`/`%` (a twigil), the name is masked as re-declared, and the container was
+never in a spawning frame's env. Each now has its own oracle-classified probe
+and stress acceptance, and **all three are covered** — by one funnel or the
+other, with nothing reaching an unguarded store.
+
+### 13.1 Read this before using §1.2's recipe again — it is stale
+
+§1.2 says to break on "the unsynchronized aliased element store" and reads
+`already hit N times` there, with nothing on the lane, as **exposed**. That was
+true when it was written. It is **not true now**, and following it verbatim
+produces a false positive: §7 put `ContainerStructGuard::acquire_for` at
+`vm_var_assign_index_named.rs:2379`, and that guard is a scope guard whose
+region lexically contains both the hash store and the array store further down
+the same function. So the store site fires on covered writes too.
+
+The discriminator today is **the store site hit *without* the guard**. Break on
+three things, not two — `ContainerStructGuard::acquire_for`, the lane
+(`shared_array_elem_set`), and the store site — and read:
+
+| guard | lane | store site | verdict |
+|---|---|---|---|
+| N | 0 | N | covered by the cell-keyed guard |
+| 0 | N | 0 | covered by the name-keyed lane |
+| 0 | 0 | N | **exposed** |
+| 0 | 0 | 0 | the workload does no aliased container write at all (see §12) |
+
+### 13.2 The probes and what they measured
+
+Breakpoint 3 below is `assign_array_elem_to_shared_var`, the lane's *entry*: it
+counts declines as well as acceptances, so it confirms the probe really did put
+the intended §2 reason in front of the lane rather than missing it.
+
+| probe (§2 reason) | guard | lane entry | lane accept | array store | hash store | verdict |
+|---|---|---|---|---|---|---|
+| dynamic `@*log` via a named sub (not a plain lexical name) | 1000 | 1000 | 0 | 1000 | — | covered, cell |
+| dynamic `%*reg` via a named sub (the hash twin) | 1000 | — | — | — | 1000 | covered, cell |
+| `@seen` masked by a slurpy `*@seen` parameter (re-declared) | 0 | 1000 | **1000** | 0 | — | covered, lane |
+| `@a` reaching the writer only as a parameter (never in a spawning frame's env) | 1000 | 1000 | 0 | 1000 | — | covered, cell |
+
+The re-declared row is the interesting one: `thread_redeclared_vars` is keyed by
+**name, not by scope**, so a slurpy parameter anywhere in the program masks the
+outer container's writes too — and that decline lands them on the atomic
+`__mutsu_atomic_arr::` store rather than off the edge.
+
+### 13.3 Acceptance (debug build, `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`, 24-way)
+
+**0 / 96 failures on each of the four probes** — 0 / 384 in total.
+
+Pin: `t/concurrent-lane-decline-routes.t`. Note what it pins: rakudo gives
+concurrent `@a[$i] = ...` no atomicity at all and loses updates on three of the
+four blocks (1 of 4 passing, on each of three runs), so this is **mutsu's
+exclusion invariant**, not a Raku guarantee — which is precisely what this ADR
+set out to buy.
+
+### 13.4 Step 3 is complete
+
+All five §2 reasons are now classified, every §3 route is measured, and §12 took
+the one unexplained crash off this ledger. The evidence across §8, §10, §11 and
+§13 is consistent: this class has **three funnels** — the named element store,
+the attribute-rooted element store, and the mutating method — and every route
+tried since arrives at one of them. §8's advice stands for anything new: probe
+first, with the corrected §13.1 recipe, rather than reasoning from a route's
 shape.
+
+What remains is not exposure but a **measurement**, and it is a perf question
+rather than a correctness one: §7's read-side guard sits in `Value::with_deref`
+/ `into_deref`, which are hot, and a threaded program now takes a mutex on every
+celled-container read. Nothing has measured it. Tracked separately as
+[#7613](https://github.com/tokuhirom/mutsu/issues/7613).
