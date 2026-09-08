@@ -611,7 +611,12 @@ impl Interpreter {
         // Bind parameters
         let mut rw_bindings = match loan_env!(
             self,
-            bind_function_args_values(&data.param_defs, &data.params, &args)
+            bind_function_args_values_with_argspec(
+                &data.param_defs,
+                &data.params,
+                &args,
+                Some(cc.reads_args_array)
+            )
         ) {
             Ok(bindings) => bindings,
             Err(e) => {
