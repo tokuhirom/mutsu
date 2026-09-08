@@ -45,6 +45,43 @@ impl Interpreter {
         }
     }
 
+    /// The half-open `[start, end)` index window an *inclusive* `a..b` subscript
+    /// addresses over a container of `len` elements, or `None` when the range is
+    /// empty. An unbounded end (`@a[3..*]`) stops at `len`; a bounded one keeps
+    /// its own end so an over-long range still pads with the typed default
+    /// (`@a[0..5]` on a 3-element array is `(1, 2, 3, Any, Any, Any)`).
+    ///
+    /// Doing this in `i64` matters: `b` can be negative at runtime (`my $e = -1;
+    /// @a[0 .. $e]`), and casting that end to `usize` first turned `-1` into
+    /// `usize::MAX`, so the slice loop ran essentially forever instead of
+    /// answering the empty list raku answers.
+    ///
+    /// A negative *start* is an error rather than an empty slice, matching raku:
+    /// `@a[$s .. 2]` with `$s == -1` throws `X::OutOfRange`, the same way a plain
+    /// `@a[$s]` read does.
+    fn inclusive_range_window(
+        a: i64,
+        b: i64,
+        len: usize,
+    ) -> Result<Option<(usize, usize)>, RuntimeError> {
+        if a < 0 {
+            return Err(RuntimeError::out_of_range(
+                "Index",
+                Value::int(a),
+                "0..^Inf",
+            ));
+        }
+        let end_excl = if Self::range_end_is_unbounded(b) {
+            len as i64
+        } else {
+            b.saturating_add(1)
+        };
+        if end_excl <= a {
+            return Ok(None);
+        }
+        Ok(Some((a as usize, end_excl as usize)))
+    }
+
     /// The `.Int` of a numified subscript: an integer passes through exactly (so
     /// a big index keeps its value), anything else truncates toward zero the way
     /// `Int()` does — `@a["1.9"]` is `@a[1]`.
@@ -1093,19 +1130,18 @@ impl Interpreter {
                 }
             }
             (ValueView::Array(items, kind), ValueView::Range(a, b)) => {
-                let start = a.max(0) as usize;
-                let end = if Self::range_end_is_unbounded(b) {
-                    items.len().saturating_sub(1)
-                } else {
-                    b.max(-1) as usize
-                };
                 let source = Value::array_with_kind(items.clone(), kind);
-                let default = self.typed_container_default(&source);
-                let mut slice = Vec::new();
-                for i in start..=end {
-                    slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
+                match Self::inclusive_range_window(a, b, items.len())? {
+                    Some((start, end_excl)) => {
+                        let default = self.typed_container_default(&source);
+                        let mut slice = Vec::new();
+                        for i in start..end_excl {
+                            slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
+                        }
+                        self.slice_result_value(&source, slice)
+                    }
+                    None => self.slice_result_value(&source, Vec::new()),
                 }
-                self.slice_result_value(&source, slice)
             }
             (ValueView::Array(items, kind), ValueView::RangeExcl(a, b)) => {
                 let start = a.max(0) as usize;
@@ -1165,13 +1201,11 @@ impl Interpreter {
                 }
             }
             (ValueView::Seq(items), ValueView::Range(a, b)) => {
-                let start = a.max(0) as usize;
-                let end = b.max(-1) as usize;
-                let slice = if start >= items.len() {
-                    Vec::new()
-                } else {
-                    let end = end.min(items.len().saturating_sub(1));
-                    items[start..=end].to_vec()
+                let slice = match Self::inclusive_range_window(a, b, items.len())? {
+                    Some((start, end_excl)) if start < items.len() => {
+                        items[start..end_excl.min(items.len())].to_vec()
+                    }
+                    _ => Vec::new(),
                 };
                 Value::seq(slice)
             }
@@ -2018,24 +2052,26 @@ impl Interpreter {
                 let range = &target;
                 if let Some((start, end, _excl_start, excl_end)) = range_params(range) {
                     let actual_end = if excl_end { end - 1 } else { end };
+                    let len = usize::try_from((actual_end - start).saturating_add(1).max(0))
+                        .unwrap_or(usize::MAX);
                     let mut result = Vec::new();
-                    for i in a..=b {
-                        let val = start + i;
-                        if val > actual_end {
-                            break;
+                    if let Some((first, end_excl)) = Self::inclusive_range_window(a, b, len)? {
+                        for i in first..end_excl {
+                            let val = start + i as i64;
+                            if val > actual_end {
+                                break;
+                            }
+                            result.push(Value::int(val));
                         }
-                        result.push(Value::int(val));
                     }
                     Value::array(result)
                 } else {
                     let items = crate::runtime::utils::value_to_list(range);
-                    let start = a.max(0) as usize;
-                    let end = b.max(-1) as usize;
-                    if start >= items.len() {
-                        Value::array(Vec::new())
-                    } else {
-                        let end = end.min(items.len().saturating_sub(1));
-                        Value::array(items[start..=end].to_vec())
+                    match Self::inclusive_range_window(a, b, items.len())? {
+                        Some((start, end_excl)) if start < items.len() => {
+                            Value::array(items[start..end_excl.min(items.len())].to_vec())
+                        }
+                        _ => Value::array(Vec::new()),
                     }
                 }
             }
