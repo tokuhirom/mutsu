@@ -155,9 +155,20 @@ impl Interpreter {
             // an anonymous `(my % is default(...))` in expression position is
             // stored via SetGlobal, not a local, so the embedded default would
             // otherwise be skipped and lost when the value flows out.
+            // The slot-resolved read must actually BE a container. With no
+            // compile-time slot the read falls back to a by-NAME search of
+            // `code.locals`, and that list is shared by every bare block at the
+            // same level -- so a same-named `my %u` in a *disjoint sibling
+            // block* is found, and its slot is still uninitialized when this
+            // declaration runs. Tagging that Nil and storing it back clobbered
+            // the env binding the read-back reads, which is how a later
+            // `{ my %u; ... }` elsewhere in the file cancelled
+            // `(my %u is default(42))`. A non-container slot value is never
+            // this declaration's container, so fall through to env.
             if (name.starts_with('@') || name.starts_with('%'))
                 && let Some(container) = self
                     .read_var_trait_target(code, eff_slot, &name)
+                    .filter(|v| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(_)))
                     .or_else(|| self.get_env_with_main_alias(&name))
             {
                 let container = self.tag_container_default(container, default_value.clone());
