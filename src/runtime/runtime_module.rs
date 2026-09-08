@@ -715,22 +715,33 @@ impl Interpreter {
             }
 
             self.loaded_modules.insert(module.to_string());
-            // Record the module's own (package-qualified) routines so a later
+            // Record the routines this module load registered, so a later
             // registry restore cannot drop them while `loaded_modules` still
-            // claims the module is loaded. Collected BEFORE `import_module`, so
-            // the bare `GLOBAL::` aliases it creates are excluded — those are
-            // lexical to the importing scope and must still disappear with it
-            // (roast S11-modules/lexical.t). Mirrors the same distinction
-            // `pop_import_scope` already makes.
+            // claims the module is loaded.
+            //
+            // The delta is taken BEFORE `import_module`, and that timing is what
+            // separates the two kinds of `GLOBAL::` alias:
+            //
+            //  - one installed while the module's OWN body ran (its `use
+            //    NativeCall`, its `use Inner`) is in the delta. It is lexical to
+            //    *this module*, which stays loaded, so it has to survive any
+            //    scope the load happened to sit inside. Dropping it left a module
+            //    first loaded inside an `EVAL` -- `Test`'s `use-ok` is
+            //    `EVAL ( "use $code" )` -- unable to resolve its own imports ever
+            //    after, because `loaded_modules` still claimed it was loaded and
+            //    the later real `use` short-circuited. Measured against rakudo:
+            //    after `EVAL 'use Outer; 1'`, an outer `use Outer; outer-probe()`
+            //    works, so the module and its imports persist.
+            //  - one `import_module` installs for the IMPORTING scope is added
+            //    after this delta and so is excluded, keeping it lexical to that
+            //    scope: `{ use Foo } EVAL('foo()')` still dies
+            //    (roast S11-modules/lexical.t).
             let module_funcs: Vec<Symbol> = self
                 .registry()
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
-                .filter(|k| {
-                    let ks = k.resolve();
-                    ks.contains("::") && !ks.starts_with("GLOBAL::")
-                })
+                .filter(|k| k.resolve().contains("::"))
                 .copied()
                 .collect();
             self.module_registered_functions.extend(module_funcs);
