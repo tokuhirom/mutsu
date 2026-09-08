@@ -516,6 +516,13 @@ Level 1a collectable safepoints:
   - join / merge boundaries of `start` / `hyper` / `race`
 - `manual`
   - debug hook / explicit collect
+- `construct`
+  - top-level `Interpreter::new`. An embedder that builds one interpreter per
+    request (a language server, `analysis::check`) may never execute bytecode
+    and so never reach a dispatch-loop safepoint at all; without this kind the
+    candidate buffer grew without bound across construct-and-drop cycles
+    (#7572). Not emitted for `new_regex_scratch`, which is built from inside
+    regex/grammar evaluation rather than at a re-entry boundary.
 
 NOT collectable in Level 1a:
 

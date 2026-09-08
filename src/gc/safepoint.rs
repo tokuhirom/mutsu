@@ -69,6 +69,11 @@ pub(crate) enum SafepointKind {
     ThreadJoin,
     /// Explicit debug / manual collect.
     Manual,
+    /// Top-level `Interpreter::new` construction boundary. Emitted so an
+    /// embedder that builds one interpreter per request (a language server,
+    /// `analysis::check`) still reaches a safepoint even though it may never
+    /// execute bytecode; without it the candidate buffer grew unboundedly.
+    Construct,
 }
 
 impl SafepointKind {
@@ -85,6 +90,7 @@ impl SafepointKind {
             SafepointKind::NestedRun => "nested_run",
             SafepointKind::ThreadJoin => "thread_join",
             SafepointKind::Manual => "manual",
+            SafepointKind::Construct => "construct",
         }
     }
 
@@ -104,6 +110,7 @@ impl SafepointKind {
             "nested_run" => SafepointKind::NestedRun,
             "thread_join" => SafepointKind::ThreadJoin,
             "manual" => SafepointKind::Manual,
+            "construct" => SafepointKind::Construct,
             _ => return None,
         })
     }

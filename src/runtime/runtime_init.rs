@@ -69,6 +69,29 @@ impl Interpreter {
     /// scratch interpreter per subrule-with-arguments call and per embedded
     /// code block (207 of them on `benchmarks/bench-yaml-parse.raku`, where a
     /// callgrind profile attributed ~48% of the whole run to this work).
+    /// The built-in declaration registry, built **once per process** and shared
+    /// by every top-level interpreter.
+    ///
+    /// [`Self::build_builtin_registry`] is the single most expensive thing
+    /// `Interpreter::new` does — ~70% of a construct-and-drop cycle's
+    /// instructions (#7572), split between building ~450 `ClassDef`s plus
+    /// their seeded method entries and then dropping them again. The result is
+    /// the same for every interpreter in the process, so it is built once and
+    /// handed out as a shared `Arc`.
+    ///
+    /// Safe because the registry is already copy-on-write: every mutation goes
+    /// through [`RegistryWriteGuard`], whose `deref_mut` calls `Arc::make_mut`,
+    /// so the first write an interpreter performs forks it a private copy. This
+    /// is exactly the mechanism `clone_for_thread` has always used to share one
+    /// registry snapshot between threads — a shared process-wide template is
+    /// the same share, one level up.
+    ///
+    /// [`RegistryWriteGuard`]: crate::runtime::registry::RegistryWriteGuard
+    fn shared_builtin_registry() -> Arc<Registry> {
+        static TEMPLATE: std::sync::OnceLock<Arc<Registry>> = std::sync::OnceLock::new();
+        Arc::clone(TEMPLATE.get_or_init(|| Arc::new(Self::build_builtin_registry())))
+    }
+
     fn build_builtin_registry() -> Registry {
         let mut classes = rustc_hash::FxHashMap::default();
         classes.insert(
@@ -2848,10 +2871,25 @@ impl Interpreter {
         for class_name in class_names {
             registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
         }
+        Self::seed_builtin_enum_types(&mut registry);
         registry
     }
 
     pub fn new() -> Self {
+        // Constructing a top-level interpreter is a GC re-entry boundary (no
+        // borrow, no lock, no `gc_contents_mut` is held here), and for an
+        // embedder that drives mutsu by building one interpreter per request it
+        // may be the ONLY one it ever reaches: the candidate buffer is drained
+        // by `gc_safepoint`, which the VM emits from its dispatch loops, so a
+        // construct-and-drop loop that never runs bytecode buffered the dead
+        // nodes of every interpreter it dropped and never collected them (that
+        // was the whole of the ~7 KiB/construction retention in #7572 — with
+        // `MUTSU_GC=off`, which buffers nothing, it measured 0.08 KiB). A
+        // scratch interpreter is excluded: it is built from inside regex/grammar
+        // evaluation, which is not a re-entry boundary.
+        if !Self::is_building_scratch() {
+            crate::gc::gc_safepoint(crate::gc::SafepointKind::Construct);
+        }
         let mut env = HashMap::new();
         env.insert("*PID".to_string(), Value::int(current_process_id()));
         env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
@@ -2938,11 +2976,11 @@ impl Interpreter {
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,
-            registry: Arc::new(RwLock::new(Arc::new(if Self::is_building_scratch() {
-                Registry::default()
+            registry: Arc::new(RwLock::new(if Self::is_building_scratch() {
+                Arc::new(Registry::default())
             } else {
-                Self::build_builtin_registry()
-            }))),
+                Self::shared_builtin_registry()
+            })),
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
@@ -3253,11 +3291,15 @@ impl Interpreter {
             // process-wide immutables: collect them into the shared base tier
             // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
             let mut enum_base: HashMap<Symbol, Value> = HashMap::new();
-            interpreter.init_order_enum(&mut enum_base);
-            interpreter.init_endian_enum(&mut enum_base);
-            interpreter.init_protocol_family_enum(&mut enum_base);
-            interpreter.init_signal_enum(&mut enum_base);
-            interpreter.init_seek_type_enum(&mut enum_base);
+            // Only the base-tier `Value`s are built here; the enum TYPES
+            // themselves are already in the shared built-in registry template
+            // (`seed_builtin_enum_types`), so this no longer takes a registry
+            // write guard — which used to deep-clone the whole registry.
+            Self::init_order_enum(&mut enum_base);
+            Self::init_endian_enum(&mut enum_base);
+            Self::init_protocol_family_enum(&mut enum_base);
+            Self::init_signal_enum(&mut enum_base);
+            Self::init_seek_type_enum(&mut enum_base);
             // Hoist the immutable process-constant magic/dynamic vars out of every
             // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
             // 4c "natural extension"). These are set once at interpreter start and

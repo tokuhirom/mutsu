@@ -510,6 +510,99 @@ fn repeated_analysis_of_an_unchanged_document_is_stable() {
     }
 }
 
+/// The construct-and-drop shape ADR-0065 S2 briefly had, and the one any
+/// embedder driving mutsu per request has: one fresh `Interpreter` per unit of
+/// work, rather than one resident interpreter re-parsing.
+///
+/// #7572 measured this leaking ~7 KiB per construction (debug), growing
+/// strictly linearly from 1000 to 4000 constructions. The cause was not in
+/// `Interpreter::new` at all: the GC's cycle-candidate buffer is drained by
+/// `gc_safepoint`, which only the VM's dispatch loops emit, so a loop that
+/// constructs and drops interpreters without ever running bytecode buffered
+/// every dropped interpreter's dead nodes and never collected them.
+/// `Interpreter::new` now emits a `construct` safepoint of its own.
+///
+/// The bound below is therefore deliberately **independent of `n`**: the
+/// buffer is capped by the collector's size threshold, so the growth of a
+/// 4000-construction run must look like that of a 1000-construction one. A
+/// return of the per-construction leak fails this at
+/// `MUTSU_S0_ITERATIONS=4000`, where it was 28.9 MB.
+#[test]
+fn repeated_interpreter_construction_does_not_grow_without_bound() {
+    let _guard = exclusive();
+    let n = iterations();
+
+    // The first constructions build the process-wide things `Interpreter::new`
+    // shares rather than rebuilds (the built-in registry template, the symbol
+    // table's fixed names, the global base tier). Measure the steady state.
+    for _ in 0..3 {
+        drop(mutsu::Interpreter::new());
+    }
+
+    let rss_before = rss_kib();
+    let started = Instant::now();
+    for _ in 0..n {
+        std::hint::black_box(mutsu::Interpreter::new());
+    }
+    let elapsed = started.elapsed();
+    let rss_after = rss_kib();
+
+    println!("--- ADR-0065 S0 probe: {n} Interpreter::new constructions ---");
+    println!(
+        "  wall clock      : {elapsed:?} total, {:?} per construction",
+        elapsed / n as u32
+    );
+    if let (Some(before), Some(after)) = (rss_before, rss_after) {
+        println!(
+            "  resident memory : {:+} KiB ({:.3} KiB/construction)",
+            after as isize - before as isize,
+            (after as f64 - before as f64) / n as f64,
+        );
+    }
+
+    if let (Some(before), Some(after)) = (rss_before, rss_after) {
+        let growth = after.saturating_sub(before);
+        assert!(
+            growth < 16 * 1024,
+            "resident memory grew {growth} KiB over {n} interpreter constructions; \
+             the bound is n-independent on purpose (see this test's doc comment), \
+             so a growth that scales with MUTSU_S0_ITERATIONS is the regression"
+        );
+    }
+}
+
+/// Every interpreter starts from ONE shared, copy-on-write built-in
+/// declaration registry (`Interpreter::shared_builtin_registry`) instead of
+/// rebuilding ~450 `ClassDef`s per construction. The share is only sound
+/// because the first write forks a private copy, so pin the fork: a class
+/// declared in one live interpreter must be invisible to another constructed
+/// while it is still alive.
+#[test]
+fn a_declaration_in_one_interpreter_is_invisible_to_another() {
+    let _guard = exclusive();
+
+    let mut first = mutsu::Interpreter::new();
+    let declared = first
+        .run("class OnlyInTheFirst { method answer() { 42 } }\nsay OnlyInTheFirst.new.answer;")
+        .expect("the declaring program runs");
+    assert!(
+        declared.contains("42"),
+        "the probe's own declaration did not take effect: {declared:?}"
+    );
+
+    // Constructed while `first` is still alive, so the two really do share the
+    // template `Arc` rather than each getting a private build.
+    let mut second = mutsu::Interpreter::new();
+    let leaked = second.run("say OnlyInTheFirst.new.answer;");
+    assert!(
+        leaked
+            .as_ref()
+            .map(|out| !out.contains("42"))
+            .unwrap_or(true),
+        "a class declared in one interpreter was visible in another: {leaked:?}"
+    );
+}
+
 /// The other analysis entry point. `symbols` runs its own recovering parse, and
 /// a server calls it on every keystroke, so its leak would have been the larger
 /// of the two. Same rule, same zero.

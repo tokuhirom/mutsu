@@ -5,6 +5,7 @@
 //! Complex (`1+2i`), Inf, NaN, and U+2212 MINUS SIGN.
 
 use crate::value::{Value, ValueView};
+use std::borrow::Cow;
 
 /// Result of attempting to parse a Raku numeric string.
 /// Returns `Some(value)` on success, `None` on failure (invalid format).
@@ -16,7 +17,7 @@ pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
 
     // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
     let normalized = normalize_minus(s);
-    let s = normalized.as_str();
+    let s = normalized.as_ref();
 
     // If the string contains Unicode decimal digits (Nd category), normalize
     // them to their ASCII equivalents before further parsing.
@@ -171,11 +172,15 @@ fn numeric_prefix_end_byte(s: &str) -> usize {
 }
 
 /// Normalize U+2212 MINUS SIGN to ASCII hyphen-minus.
-fn normalize_minus(s: &str) -> String {
+fn normalize_minus(s: &str) -> Cow<'_, str> {
+    // Borrowed unless a MINUS SIGN is actually present: this runs on every
+    // string `val()` looks at, including all ~40 values of the `%*ENV` sweep
+    // `Interpreter::new` does, and copying each one just to leave it unchanged
+    // was a plain allocation per call (#7572).
     if s.contains('\u{2212}') {
-        s.replace('\u{2212}', "-")
+        Cow::Owned(s.replace('\u{2212}', "-"))
     } else {
-        s.to_string()
+        Cow::Borrowed(s)
     }
 }
 
@@ -230,11 +235,21 @@ fn validate_underscores(s: &str) -> bool {
 }
 
 /// Strip underscores from a string, returning None if underscores are invalid.
-fn strip_underscores(s: &str) -> Option<String> {
+///
+/// Borrowed when there is nothing to strip. Almost no string reaching the
+/// numeric parser contains an underscore, and the parser calls this on every
+/// candidate it tries — including the ones it is about to reject — so the
+/// unconditional `String` this used to build was the single largest allocation
+/// source in `val()` (18% of `Interpreter::new`'s instructions via the `%*ENV`
+/// sweep, #7572).
+fn strip_underscores(s: &str) -> Option<Cow<'_, str>> {
     if !validate_underscores(s) {
         return None;
     }
-    Some(s.chars().filter(|&c| c != '_').collect())
+    if !s.contains('_') {
+        return Some(Cow::Borrowed(s));
+    }
+    Some(Cow::Owned(s.chars().filter(|&c| c != '_').collect()))
 }
 
 fn try_parse_inf_nan(s: &str) -> Option<Value> {
@@ -525,7 +540,7 @@ fn parse_fraction_part(s: &str, allow_sign: bool) -> Option<(i64, i64)> {
         let int_clean = strip_underscores(int_str)?;
         let frac_clean = strip_underscores(frac_str)?;
         let int_clean = if int_clean.is_empty() {
-            "0".to_string()
+            Cow::Borrowed("0")
         } else {
             int_clean
         };
@@ -626,7 +641,7 @@ fn parse_mantissa(s: &str) -> Option<f64> {
         let int_clean = strip_underscores(int_str)?;
         let frac_clean = strip_underscores(frac_str)?;
         let int_clean = if int_clean.is_empty() {
-            "0".to_string()
+            Cow::Borrowed("0")
         } else {
             int_clean
         };
@@ -663,7 +678,7 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
 
     // Allow empty integer part (e.g., ".13" → "0.13")
     let int_clean = if int_clean.is_empty() {
-        "0".to_string()
+        Cow::Borrowed("0")
     } else {
         int_clean
     };
