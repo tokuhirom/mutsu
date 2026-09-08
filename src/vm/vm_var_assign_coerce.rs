@@ -815,9 +815,20 @@ impl Interpreter {
         self.set_env_with_main_alias(&resolved_source, container.clone());
         // Propagate the shared cell into saved call frames so the sharing
         // survives method returns (env restore).
+        // Slots now live in one shared stack (ADR-0077), so a saved frame is a
+        // `[base, end)` region rather than its own vector: walking downwards,
+        // the region a frame saved ends where that frame's own base begins, and
+        // the topmost one ends at the executing frame's base. Collect the writes
+        // during the walk (which borrows `call_frames` mutably for the env
+        // inserts) and apply them to the slot stack afterwards.
+        let mut end = self.locals.base();
+        let mut shared_slot_writes: Vec<usize> = Vec::new();
         for frame in self.call_frames.iter_mut().rev() {
+            let Some(base) = frame.saved_locals_base.as_ref().map(|c| c.base()) else {
+                continue;
+            };
             // `code.locals` is this frame's slot layout, not the parent's; only
-            // write a parent frame's `saved_locals` when that frame owns the source
+            // write a parent frame's slots when that frame owns the source
             // lexical (its saved env holds the name), else the callee slot index
             // clobbers an unrelated same-index local.
             if frame.saved_env.contains_key_own_tier(&resolved_source) {
@@ -825,11 +836,15 @@ impl Interpreter {
                     .saved_env
                     .insert(resolved_source.clone(), container.clone());
                 for (i, local_name) in code.locals.iter().enumerate() {
-                    if local_name == &resolved_source && i < frame.saved_locals.len() {
-                        frame.saved_locals[i] = container.clone();
+                    if local_name == &resolved_source && base + i < end {
+                        shared_slot_writes.push(base + i);
                     }
                 }
             }
+            end = base;
+        }
+        for slot in shared_slot_writes {
+            *self.locals.absolute_slot_mut(slot) = container.clone();
         }
         // Store the shared cell in the scalar target (itemized scalar).
         self.locals[idx] = container.clone();

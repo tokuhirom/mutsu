@@ -1,5 +1,4 @@
 use super::*;
-use crate::runtime::Locals;
 
 impl Interpreter {
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
@@ -14,39 +13,14 @@ impl Interpreter {
         }
     }
 
-    /// Grab a slot array from the recycle pool (or allocate the first time),
-    /// sized to `num_locals` with `Nil` slots. Pair with [`Self::recycle_locals`].
-    ///
-    /// These two functions are the *whole* of the pool's API (ADR-0077 Slice 0):
-    /// every other site speaks to [`Locals`] through indexing or `Deref`, so
-    /// Slice 2 retires the pool by rewriting this pair and the frame
-    /// save/restore sites, not the hundreds of slot accesses.
-    #[inline]
-    pub(super) fn take_locals_from_pool(&mut self, num_locals: usize) -> Locals {
-        let mut v = self.locals_pool.pop().unwrap_or_default();
-        v.refill(num_locals);
-        v
-    }
-
-    /// Return a used slot array to the recycle pool (bounded; excess is
-    /// simply dropped). Releasing here also drops the callee's slot values at a
-    /// well-defined point instead of inside the pool.
-    #[inline]
-    pub(super) fn recycle_locals(&mut self, mut used: Locals) {
-        const LOCALS_POOL_MAX: usize = 64;
-        if self.locals_pool.len() < LOCALS_POOL_MAX {
-            used.release();
-            self.locals_pool.push(used);
-        }
-    }
-
     /// Grab an argument buffer from the args-scratch pool. The named/spec light
     /// call paths drain `self.stack` into a contiguous `Vec<Value>` to bind
     /// from; `drain(..).collect()` was a malloc/free pair per call. Pair with
     /// [`Self::recycle_args_scratch`].
     ///
     /// This is deliberately *not* the locals pool, which it used to borrow: an
-    /// argument buffer is an owned vector, and ADR-0077 turns [`Locals`] into a
+    /// argument buffer is an owned vector, and ADR-0077 turns
+    /// [`crate::runtime::Locals`] into a
     /// window into a shared stack that cannot be handed out as one.
     #[inline]
     pub(super) fn take_args_scratch(&mut self) -> Vec<Value> {
@@ -84,7 +58,7 @@ impl Interpreter {
             saved_env: self.env().clone(),
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
-            saved_locals: std::mem::take(&mut self.locals),
+            saved_locals_base: Some(self.locals.push_frame(0)),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
@@ -117,7 +91,7 @@ impl Interpreter {
             saved_env: self.env().clone(),
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
-            saved_locals: std::mem::take(&mut self.locals),
+            saved_locals_base: Some(self.locals.push_frame(0)),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
@@ -143,7 +117,9 @@ impl Interpreter {
             .pop()
             .expect("pop_call_frame: no frame to pop");
         self.cur_source_line = frame.saved_cur_line;
-        self.locals = std::mem::take(&mut frame.saved_locals);
+        if let Some(caller) = frame.saved_locals_base.take() {
+            self.locals.pop_frame(caller);
+        }
         self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         self.loop_local_vars = std::mem::take(&mut frame.saved_loop_local_vars);

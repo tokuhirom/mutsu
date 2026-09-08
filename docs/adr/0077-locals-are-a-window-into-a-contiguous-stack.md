@@ -1,6 +1,6 @@
 # ADR-0077: A call's locals are a window into one contiguous stack, not a pooled `Vec`
 
-- Status: **Proposed** (Slice 0 implemented — see "What Slice 0 actually built"; Slices 1-3 open)
+- Status: **Accepted** (Slices 0 and 2 implemented; Slice 1 withdrawn into Slice 2; Slice 3 and the leading-parameter form open — see the two "What Slice N actually built" sections)
 - Date: 2026-09-08
 - Related: [#7562](https://github.com/tokuhirom/mutsu/issues/7562) (the perf
   finding this ADR unblocks), [#7579](https://github.com/tokuhirom/mutsu/issues/7579)
@@ -207,22 +207,94 @@ representation still has exactly one home. `Index` is implemented explicitly
 rather than left to `Deref` so that Slice 2 can address `stack[base + i]` with a
 single bounds check instead of slicing the window and then indexing it.
 
-**Slice 1 — frame bookkeeping.** `VmCallFrame::saved_locals: Vec<Value>` →
-`saved_locals_base: usize`; collapse `gc_roots`' per-frame visit into one slice
-visit. Still on a pooled `Vec` for the live frame, so this slice is testable on
-its own.
+**Slice 1 — frame bookkeeping. WITHDRAWN; folded into Slice 2.** It read
+"`VmCallFrame::saved_locals: Vec<Value>` → `saved_locals_base: usize`, still on
+a pooled `Vec` for the live frame, so this slice is testable on its own". That
+state does not exist: a base index means nothing until the frames share a stack,
+so there is nothing for the intermediate slice to be tested against. Its two
+pieces — the frame field and the `gc_roots` collapse — landed with Slice 2.
 
-**Slice 2 — the representation.** `locals_stack` + `locals_base`; delete
-`locals_pool`, `take_locals_from_pool`, `recycle_locals`; teach
-`vm_jit_layout`/`vm_jit_tier_b` the base; add the leading-parameter
-`locals_base = args_base` fast path. This is the slice the measurement below
-belongs to.
+**Slice 2 — the representation. SHIPPED, except the leading-parameter fast
+path; see "What Slice 2 actually built".** The shared stack, the deletion of
+`locals_pool`/`take_locals_from_pool`/`recycle_locals`, the frame field, the
+`gc_roots` collapse, and the JIT's base. The leading-parameter
+`locals_base = args_base` form is **not** in it — see open question 1, which the
+implementation settled differently from the way this ADR first framed it.
 
 **Slice 3 (optional, separable) — fold `outer_scope_locals` in.**
 `outer_scope_locals: Vec<Vec<Value>>` (`src/runtime/mod.rs:3582`) is a second
 stack-of-locals for block scopes. Once locals live on a contiguous stack, a
 block scope is just another base index and that field can go away. Not required
 by this ADR; recorded so the next reader sees the whole shape.
+
+### What Slice 2 actually built
+
+The representation is one vector plus the executing frame's base, both inside
+`Locals` rather than as two `Interpreter` fields:
+
+```rust
+pub(crate) struct Locals { slots: Vec<Value>, base: usize }
+```
+
+Keeping the stack *inside* the type is what makes the migration a local one: the
+`Interpreter` still has a single `locals` field, `Index` becomes
+`slots[base + slot]`, `Deref` becomes `slots[base..]`, and no call site needs to
+borrow two `Interpreter` fields at once. Slice 0's newtype paid off exactly as
+intended — the ~330 index sites and the ~100 `Deref` sites did not move again.
+
+The ~40 structural sites reduced to three shapes:
+
+| shape | API | example |
+| --- | --- | --- |
+| open / close a frame | `push_frame(n) -> CallerFrame`, `pop_frame(CallerFrame)` | every `mem::take(&mut self.locals)` … restore pair; `push_call_frame`/`pop_call_frame`; the retired pool |
+| replace the executing frame's slots | `refill_slots(n)`, `refill_from(&[Value])`, `resize_slots(n)` | `self.locals = vec![Nil; n]`; the top-level `run` entry, which sizes then seeds and so must keep surviving slots |
+| copy a frame out or in | `to_vec()`, `push_frame_from`, `install_root_frame` | a suspended `gather` coroutine, an inline `CATCH` handler, a hyper/race worker's seed |
+
+**A frame handle is not `Copy`, and `pop_frame` consumes it.** This is the one
+piece of the design that was *not* obvious up front, and it was found the hard
+way: an earlier version returned a bare `usize`, documented `pop_frame` as
+idempotent, and its own unit test failed — closing a frame twice truncates the
+*caller's* slots, because the second call truncates to a base that is already
+the caller's. The old moved `Vec<Value>` had made a double close a compile
+error, and several paths (e.g. `vm_arith_int_ops`) close on more than one
+exclusive exit branch, where that move was the only proof the branches really
+were exclusive. A non-`Copy` handle restores exactly that protection.
+`#[must_use]` then immediately found the hyper/race worker pushing a root frame
+it never closes — legitimate, since a worker VM is discarded whole, and now
+stated as `install_root_frame`.
+
+**The JIT.** Slice 0's `size_of::<Locals>()` assertion failed the build until
+Tier B's GetLocal emitter learned the base, which is what it was for. The
+emitter loads `locals_base` alongside the `Vec` header words on every slot
+access — a push can reallocate and every call moves the base, so neither may be
+cached — reads the absolute element `base + idx`, and bounds-checks against
+`len - base` behind a `base <= len` guard. `JitLayout::locals` now means the
+*stack* inside the field, with the two byte offsets exported from `Locals` as
+consts because its fields are private.
+
+**GC roots — the one way this slice could have broken silently.** `gc_roots`
+visited `&self.locals` plus each frame's `saved_locals`. `Deref` now yields only
+the executing frame, so a root scan reading through it would miss every
+suspended caller's slots and free live values while the program kept running. It
+visits `all_slots()` instead and the per-frame walk is gone, which also makes
+the scan one slice visit rather than one per frame.
+`t/locals-frame-stack-gc-roots.t` pins the end-to-end property (values, cyclic
+objects and containers held only by deeply suspended frames survive, including
+past the retired pool's 64-entry bound), and a unit test pins that `all_slots()`
+and the `Deref` window disagree in the direction they must.
+
+**Two deliberate copies remain.** `vm_call_method_compiled` reads the enclosing
+frame's slots through `outer_local_slots` *and* writes the block's
+free-variable writes back into them, then restores the whole array on exit — so
+the detached copy is the semantics, not an artifact of the old representation.
+Writing through to the live region below `base` instead would change behavior on
+the panic path (where the restore never runs), so it is left for its own slice.
+And the shared-container propagation in `vm_var_assign_coerce`, which walked
+`call_frames` writing `frame.saved_locals[i]`, now derives each saved frame's
+`[base, end)` region — walking downwards, a frame's region ends where its own
+base begins, and the topmost ends at the executing base — collects the absolute
+indices during the walk (which borrows `call_frames` mutably for the env
+inserts) and applies them afterwards.
 
 ### What Slice 0 actually built
 
@@ -356,21 +428,35 @@ could be much larger than a few percent.
   locals become the cheap store, which is the premise of making `env` a lazily
   materialized name view.
 
-## Open questions (for Slice 2, not blocking this ADR)
+## Open questions
 
-1. **One stack or two?** Reusing `self.stack` for locals makes
-   `locals_base = args_base` free but interleaves operand-stack and locals
-   traffic in one buffer, where a `push` during body execution would sit above
-   the callee's slots. A sibling `locals_stack` keeps the two disciplines
-   separate at the cost of copying arguments into it. Measure both; the
-   leading-parameter fast path is the reason to prefer reuse, and the operand
-   stack's own `truncate` discipline is the reason it might not work.
+1. **One stack or two? — settled as two, and the reasoning changed.** This was
+   framed as a measurement between reusing `self.stack` (making
+   `locals_base = args_base` free) and a sibling stack (costing an argument
+   copy). Slice 2 shipped the sibling — the slots live in `Locals` — and the
+   reason is not a measurement but the `Deref` contract Slice 0 established:
+   the executing frame is `[base ..]`, "everything above the base". An operand
+   push during body execution would land inside that window, so sharing
+   `self.stack` requires a per-frame *length* as well as a base, and every
+   `.len()` / `.iter()` / `&self.locals` site starts meaning something subtly
+   different. That is a second, larger change wearing the first one's clothes.
+
+   The leading-parameter `locals_base = args_base` form is therefore **not
+   shipped and not free**: it needs the fused stack, hence the per-frame length,
+   hence its own slice with its own measurement. Slice 2's win is the pool, the
+   `Vec` header traffic and the `mem::take` pairs; the remaining argument move
+   loop is the next thing to attack, not something this slice quietly dropped.
 2. **Overflow policy.** A growable `Vec` inherits Rust's allocation failure
    behavior on runaway recursion. mutsu has no explicit call-depth limit today;
    whether to add one (a real VM's stack limit, raising an `X::` rather than
-   aborting) is a separate decision and should not be smuggled in here.
-3. **The named light path.** `call_compiled_function_light` still copies into
-   the same buffer shape (#7579 item 1) and also uses
-   `take_locals_from_pool(0)` as a general scratch buffer
-   (`src/vm/vm_call_func_ops.rs:344`). Deleting the pool means giving those
-   sites a scratch `Vec` of their own; that is bookkeeping, not a design fork.
+   aborting) is a separate decision and was deliberately not smuggled into
+   Slice 2, which changes where slots live but not how deep they may go.
+3. **The named light path — closed by Slice 0.** `call_compiled_function_light`
+   used `take_locals_from_pool(0)` as a general argument buffer, which a window
+   into a shared stack cannot serve. Slice 0 gave those three sites their own
+   `args_scratch_pool`, so Slice 2 could delete the locals pool outright. What
+   remains of #7579 item 1 is the *copy* on the named path, not the pool.
+4. **The two remaining detached copies** (`vm_call_method_compiled`'s enclosing
+   frame, `vm_var_assign_coerce`'s cross-frame propagation) — see "What Slice 2
+   actually built". Both are now expressed against the shared stack; the first
+   still copies because writing through changes panic-path behavior.

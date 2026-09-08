@@ -87,7 +87,7 @@ impl Interpreter {
         // Save current Interpreter state
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.clone_env();
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
         // See the matching comment in `force_lazy_list_vm_inner`: this inline
         // exec bypasses closure dispatch, and `LazyList` has no upvalue array
@@ -119,7 +119,7 @@ impl Interpreter {
             if !coro.finished && (coro.ip > 0 || coro.started) {
                 // Resume from saved state
                 ip = coro.ip;
-                self.locals = crate::runtime::Locals::from_vec(coro.locals.clone());
+                self.locals.refill_from(&coro.locals.clone());
                 self.stack = coro.stack.clone();
                 *self.env_mut() = coro.env.clone();
                 self.gather_for_loop_resume = coro.for_loop_resume.clone();
@@ -132,7 +132,7 @@ impl Interpreter {
                 // accumulate across takes without forking `list.env`.
                 ip = 0;
                 *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-                self.locals = crate::runtime::Locals::nils(cc.locals.len());
+                self.locals.refill_slots(cc.locals.len());
                 for (i, name) in cc.locals.iter().enumerate() {
                     if let Some(val) = self.env().get(name) {
                         self.locals[i] = val.clone();
@@ -145,7 +145,7 @@ impl Interpreter {
             // Fresh start (no coroutine slot yet)
             ip = 0;
             *self.env_mut() = crate::env::Env::scoped_child(list.env.flattened());
-            self.locals = crate::runtime::Locals::nils(cc.locals.len());
+            self.locals.refill_slots(cc.locals.len());
             for (i, name) in cc.locals.iter().enumerate() {
                 if let Some(val) = self.env().get(name) {
                     self.locals[i] = val.clone();
@@ -302,7 +302,7 @@ impl Interpreter {
 
         // Restore Interpreter state
         self.state_scope_id.set(saved_state_scope);
-        self.locals = saved_locals;
+        self.locals.pop_frame(saved_locals_base);
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;
 

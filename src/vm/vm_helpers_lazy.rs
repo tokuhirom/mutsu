@@ -1194,7 +1194,7 @@ impl Interpreter {
         // here; we restore locals directly on return.
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.clone_env();
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
         // `LazyList` has no upvalue array of its own (its captures live in
         // `list.env`, installed as the scoped env below) -- this inline exec
@@ -1238,7 +1238,7 @@ impl Interpreter {
         self.push_gather_take_limit(None);
 
         // Initialize locals for the compiled code
-        self.locals = crate::runtime::Locals::nils(cc.locals.len());
+        self.locals.refill_slots(cc.locals.len());
         for (i, name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
@@ -1346,7 +1346,7 @@ impl Interpreter {
 
         // Restore Interpreter state
         self.state_scope_id.set(saved_state_scope);
-        self.locals = saved_locals;
+        self.locals.pop_frame(saved_locals_base);
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;
 

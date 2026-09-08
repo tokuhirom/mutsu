@@ -61,7 +61,7 @@ impl Interpreter {
             .map(|chunk| chunk.to_vec())
             .collect();
         let pre_shared_keys = self.shared_var_keys_snapshot();
-        let locals_snapshot = self.locals.clone();
+        let locals_snapshot = self.locals.to_vec();
         type ThreadResult = (Result<Vec<Value>, RuntimeError>, Vec<Value>, String, String);
         let mut batch_results: Vec<ThreadResult> = Vec::with_capacity(batches.len());
         let collect = spec.collect;
@@ -75,7 +75,7 @@ impl Interpreter {
             // GetLocal slots must exist. `clone_for_thread` starts a
             // fresh frame for `start {}` / Promise workers; copy the
             // current locals (and upvalues) so the body can run here.
-            vm.locals.clone_from(&locals_snapshot);
+            vm.locals.install_root_frame(&locals_snapshot);
             vm.upvalues.clone_from(&self.upvalues);
             // Joined hyper/race fan-out belongs on the elastic worker pool
             // (ADR-0020 §3.6), not on one fresh OS thread per batch.

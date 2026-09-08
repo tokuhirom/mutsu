@@ -547,8 +547,13 @@ impl TierB {
         let word_chk = b.create_block();
         b.ins().brif(spoiled, slow_blk, &[], word_chk, &[]);
 
-        // -- slot word load (bounds-checked: a non-standard runner may have
-        // installed a shorter locals vec; the shim handles that shape).
+        // -- slot word load. Slots live in one shared stack and the executing
+        // frame starts at `locals_base` (ADR-0077), so slot `idx` is the
+        // absolute element `base + idx`, and the frame's length is
+        // `len - base`. Both words are loaded per access — a push can
+        // reallocate the stack and every call moves the base, so neither may be
+        // cached across an access. Bounds-checked because a non-standard runner
+        // may have installed a shorter frame; the shim handles that shape.
         b.switch_to_block(word_chk);
         let lptr = b.ins().load(
             self.ptr_ty,
@@ -562,14 +567,31 @@ impl TierB {
             self.interp,
             self.lay.locals + self.lay.vec_len,
         );
+        let lbase = b
+            .ins()
+            .load(types::I64, Self::mf(), self.interp, self.lay.locals_base);
+        // `len - base` is the frame's slot count. An unsigned compare against
+        // it also rejects the (impossible, but not statically provable) case of
+        // a base past the length: the wrapped-around difference is huge, so
+        // guard the subtraction with `base <= len` first.
+        let base_ok = b.ins().icmp(IntCC::UnsignedLessThanOrEqual, lbase, llen);
+        let len_chk = b.create_block();
+        b.ins().brif(base_ok, len_chk, &[], slow_blk, &[]);
+        b.switch_to_block(len_chk);
+        let frame_len = b.ins().isub(llen, lbase);
         let inbounds = b
             .ins()
-            .icmp_imm(IntCC::UnsignedGreaterThan, llen, idx as i64);
+            .icmp_imm(IntCC::UnsignedGreaterThan, frame_len, idx as i64);
         let tag_chk = b.create_block();
         b.ins().brif(inbounds, tag_chk, &[], slow_blk, &[]);
 
         b.switch_to_block(tag_chk);
-        let word = b.ins().load(types::I64, Self::mf(), lptr, (idx as i32) * 8);
+        // byte offset = (base + idx) * 8, computed from the base register since
+        // only `idx` is a compile-time constant.
+        let abs = b.ins().iadd_imm(lbase, idx as i64);
+        let byte_off = b.ins().imul_imm(abs, 8);
+        let slot_addr = b.ins().iadd(lptr, byte_off);
+        let word = b.ins().load(types::I64, Self::mf(), slot_addr, 0);
         // Refcount-free scalar probe: small Int page, encoded-Num page range,
         // Bool kind, or Package kind. Everything else (Nil included — the arm
         // has a whole undeclared-check branch for it) goes to the shim.

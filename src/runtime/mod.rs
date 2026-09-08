@@ -1883,18 +1883,12 @@ pub struct Interpreter {
     /// rendered frame of its own; this origin supplies its enclosing location
     /// without inventing a mainline frame for every worker backtrace.
     pub(crate) thread_spawn_origin: Option<(Symbol, u32)>,
-    /// Recycled `locals` backing vectors. The frame-less VM fast paths take the
-    /// caller's `locals` aside and need a fresh Vec per call; popping one here
-    /// instead of allocating removes a malloc/free pair per call (recursion
-    /// otherwise allocates one per frame down the whole chain). Entries are
-    /// cleared before being returned to the pool; bounded by `LOCALS_POOL_MAX`.
-    pub(crate) locals_pool: Vec<Locals>,
     /// Recycled *argument* buffers for the named/spec light call paths, which
     /// need a contiguous `Vec<Value>` of the drained arguments rather than a
-    /// frame's slot array. These used to borrow `locals_pool`, which conflated
+    /// frame's slot array. These used to borrow the locals pool, which conflated
     /// two different things: ADR-0077 makes `Locals` a window into one
     /// contiguous stack, and a window cannot be handed out as an owned buffer.
-    /// Same bound and same clear-before-return discipline as `locals_pool`.
+    /// Bounded, and cleared before being returned to the pool.
     pub(crate) args_scratch_pool: Vec<Vec<Value>>,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
     /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
