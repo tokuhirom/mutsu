@@ -101,3 +101,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0073](0073-regex-atom-candidates-are-demand-driven.md) | Regex atom candidates are produced on demand, driven by the continuation — an embedded code block runs once per candidate ENTERED | Proposed (Slices 1 and 3 implemented; Slice 2, the `<subrule>` boundary, open) |
 | [0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md) | A channel-backed Supply broadcasts to its taps; the receiver is not an exclusive transfer | Accepted (implemented) |
 | [0075](0075-make-test-runs-tap-on-release-binary.md) | `make test` runs the TAP (`t/`) suite on the release binary (supersedes 0014); `gc-stress`/`jit-stress` keep the debug pass | Accepted |
+| [0076](0076-bare-block-keeps-two-opcodes-one-shape.md) | A bare block keeps two opcodes (`BlockScope`/`DoBlockExpr`), but has one shared shape classifier | Accepted |

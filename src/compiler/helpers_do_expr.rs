@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::block_shape::BlockShape;
 
 impl Compiler {
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
@@ -64,56 +65,84 @@ impl Compiler {
             }
             return;
         }
-        // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
-        if Self::has_catch_or_control(body) {
-            self.compile_implicit_try(body);
-            return;
-        }
-        // If the do block contains ENTER/LEAVE/KEEP/UNDO phasers, wrap in
-        // DoBlockExpr + BlockScope so phaser semantics are preserved.
-        if Self::has_block_enter_leave_phasers(body) {
-            let do_idx = self.code.emit(OpCode::DoBlockExpr {
-                body_end: 0,
-                label: label.clone(),
-                scope_isolate: false,
-                isolate_decls_idx: u32::MAX,
-                scope_routines: Self::stmts_declare_routines(body),
-            });
-            let saved = self.push_dynamic_scope_lexical();
-            self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
-            self.pop_dynamic_scope_lexical(saved);
-            self.code.patch_body_end(do_idx);
-            return;
-        }
-        // An import is lexical to the block that asked for it, and a `do {}`
-        // block is a block: `my (&plan) = do { use Test; (&plan) }` must take
-        // the routines it names as values and leave everything else the module
-        // exports out of the enclosing scope (roast/S32-list/skip.t imports
-        // selectively precisely so the CORE `skip` stays visible). The
-        // statement-form bare block already does this in `Stmt::Block`.
-        let import_scoped = Self::has_use_stmt(body);
-        if import_scoped {
-            self.code.emit(OpCode::PushImportScope);
-        }
         // A value-position block (`do { … }`, a routine's tail `{ … }`, a
         // string-interpolation `{ … }`) is a block literal re-cloned every time
         // its ENCLOSING block runs, so its own `state` restarts per execution —
         // see `OpCode::ResetStateLocals`. This is what makes raku's documented
         // trap `sub count-it { say "Count is {$++}" }` print `0` every call.
+        //
+        // Emitted BEFORE the shape dispatch, exactly as the statement form does
+        // it in `Stmt::Block`. It used to sit after the CATCH/phaser arms'
+        // early returns, so `do { state $n = 0; $n++; CATCH {…}; $n }` counted
+        // 1, 2, 3 across calls where the same block without the `CATCH` — and
+        // the statement-position spelling of either — correctly restarted at 1.
         let state_reset = self.emit_value_block_state_reset(body);
-        let idx = self.code.emit(OpCode::DoBlockExpr {
-            body_end: 0,
-            label: label.clone(),
-            scope_isolate: false,
-            isolate_decls_idx: u32::MAX,
-            scope_routines: Self::stmts_declare_routines(body),
-        });
-        self.compile_block_inline(body);
-        self.code.patch_body_end(idx);
-        self.patch_nested_block_state_reset(state_reset);
-        if import_scoped {
-            self.code.emit(OpCode::PopImportScope);
+        // The shape decision is shared with the statement-position form
+        // (`Stmt::Block`) so the two passes cannot disagree about what this
+        // block is — see `BlockShape`.
+        match Self::classify_block_shape(body) {
+            // Compile as try so exceptions are handled.
+            BlockShape::ImplicitTry => {
+                self.compile_implicit_try(body);
+            }
+            // Wrap in DoBlockExpr + BlockScope so phaser semantics are preserved.
+            BlockShape::PhaserScope => {
+                let do_idx = self.code.emit(OpCode::DoBlockExpr {
+                    body_end: 0,
+                    label: label.clone(),
+                    scope_isolate: false,
+                    isolate_decls_idx: u32::MAX,
+                    scope_routines: Self::stmts_declare_routines(body),
+                });
+                let saved = self.push_dynamic_scope_lexical();
+                self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
+                self.pop_dynamic_scope_lexical(saved);
+                self.code.patch_body_end(do_idx);
+            }
+            // `BlockShape::LetBlock` is deliberately NOT taken here, and falls
+            // through to the plain arm: `Expr::DoBlock` is not a Raku block.
+            // The parser and a dozen compiler desugars use it as a generic
+            // "run these statements, yield a value" node — item context
+            // (`$( let $a = 23; $a )`), the chained-comparison desugar, `cas`,
+            // compound-assignment lowering — and NONE of those introduce a
+            // scope a `let` may resolve at. Making this arm emit its own
+            // `LetBlock` resolved the save at the innermost wrapper instead of
+            // the enclosing block, so roast's
+            // `{ is($(let $a = 23; $a), 23, …); Mu }` stopped restoring `$a`
+            // (S04-blocks-and-statements/let.t, temp.t).
+            //
+            // A genuine source `do { let $x = 2; Nil }` therefore still fails
+            // to roll back, matching the behaviour that predates the shared
+            // classifier. Fixing it needs a marker distinguishing a real source
+            // block from a synthesized wrapper on the AST node itself — see
+            // GH-7635 and ADR-0076 §5.
+            shape @ (BlockShape::LetBlock | BlockShape::ImportScope | BlockShape::Plain) => {
+                // An import is lexical to the block that asked for it, and a
+                // `do {}` block is a block: `my (&plan) = do { use Test;
+                // (&plan) }` must take the routines it names as values and
+                // leave everything else the module exports out of the enclosing
+                // scope (roast/S32-list/skip.t imports selectively precisely so
+                // the CORE `skip` stays visible). The statement-form bare block
+                // already does this in `Stmt::Block`.
+                let import_scoped = shape == BlockShape::ImportScope;
+                if import_scoped {
+                    self.code.emit(OpCode::PushImportScope);
+                }
+                let idx = self.code.emit(OpCode::DoBlockExpr {
+                    body_end: 0,
+                    label: label.clone(),
+                    scope_isolate: false,
+                    isolate_decls_idx: u32::MAX,
+                    scope_routines: Self::stmts_declare_routines(body),
+                });
+                self.compile_block_inline(body);
+                self.code.patch_body_end(idx);
+                if import_scoped {
+                    self.code.emit(OpCode::PopImportScope);
+                }
+            }
         }
+        self.patch_nested_block_state_reset(state_reset);
     }
 
     /// [`Compiler::emit_nested_block_state_reset`] for a value-position block,

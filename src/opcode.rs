@@ -2711,6 +2711,12 @@ pub(crate) enum OpCode {
 
     /// Block with `let` scope management. Executes body, then checks
     /// the topic ($_) to decide whether to restore or discard let saves.
+    ///
+    /// Only the statement-position bare block emits this: its compile site
+    /// routes the block's last statement through the topic
+    /// (`compile_last_stmt_as_topic`), which is what makes the `$_` read here
+    /// the block's own value. The value-position form deliberately does not —
+    /// `Expr::DoBlock` is not a Raku block (see `compile_do_block_expr`).
     LetBlock {
         body_end: u32,
     },
