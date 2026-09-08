@@ -767,7 +767,16 @@ impl Compiler {
                         // must not lose it (`sub f { { state $c = 0; say $c++ } }`
                         // says `0` every call).
                         let state_reset = sub_compiler.emit_nested_block_state_reset(stmts);
-                        sub_compiler.compile_block_inline(stmts);
+                        // A tail block carrying ENTER/LEAVE/KEEP/UNDO/PRE/POST must
+                        // run them through a real `BlockScope`; inlining drops the
+                        // phasers entirely. Same rule as the mainline tail-block site
+                        // in `compiler/mod.rs` -- `{ ...; LEAVE $service.stop() }` as
+                        // a routine's last statement never cleaned up.
+                        if Self::has_block_enter_leave_phasers(stmts) {
+                            sub_compiler.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                        } else {
+                            sub_compiler.compile_block_inline(stmts);
+                        }
                         sub_compiler.patch_nested_block_state_reset(state_reset);
                         continue;
                     }
@@ -1278,7 +1287,13 @@ impl Compiler {
                     continue;
                 }
                 if is_value && let Stmt::Block(stmts) = stmt {
-                    sub_compiler.compile_block_inline(stmts);
+                    // See the tail-block site below: phasers must go through a
+                    // real `BlockScope` or they are silently dropped.
+                    if Self::has_block_enter_leave_phasers(stmts) {
+                        sub_compiler.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                    } else {
+                        sub_compiler.compile_block_inline(stmts);
+                    }
                     continue;
                 }
                 if is_value && let Stmt::SyntheticBlock(stmts) = stmt {
@@ -1436,6 +1451,15 @@ impl Compiler {
                                     .emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
                             {
                                 // fatal: the block never runs
+                            } else if Self::has_block_enter_leave_phasers(stmts) {
+                                // A tail block carrying ENTER/LEAVE/KEEP/UNDO/PRE/POST
+                                // must run them through a real `BlockScope` -- inlining
+                                // (below) drops the phasers entirely, so a closure
+                                // ending in `{ ...; LEAVE cleanup() }` never cleaned up.
+                                // Mirrors the mainline tail-block site in
+                                // `compiler/mod.rs`.
+                                sub_compiler
+                                    .compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
                             } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                                 // A parser wrapper, not a real scope -- see
                                 // `compile_synthetic_block_inline`.
