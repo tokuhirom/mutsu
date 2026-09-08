@@ -155,6 +155,12 @@ impl Compiler {
             }
             Expr::ArrayVar(name) => {
                 let sigiled = format!("@{}", name);
+                // ADR-0039 slice 2: a plain lexical container read resolves
+                // through its slot, exactly as a scalar read does.
+                if let Some(slot) = self.container_read_slot(&sigiled) {
+                    self.code.emit(OpCode::GetLocal(slot));
+                    return;
+                }
                 let var_name = if self.local_map.contains_key(sigiled.as_str()) {
                     sigiled
                 } else {
@@ -191,6 +197,11 @@ impl Compiler {
                     return;
                 }
                 let sigiled = format!("%{}", name);
+                // ADR-0039 slice 2 — see the `ArrayVar` twin above.
+                if let Some(slot) = self.container_read_slot(&sigiled) {
+                    self.code.emit(OpCode::GetLocal(slot));
+                    return;
+                }
                 let var_name = if self.local_map.contains_key(sigiled.as_str()) {
                     sigiled
                 } else {

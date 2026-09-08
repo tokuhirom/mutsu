@@ -192,8 +192,37 @@ impl Interpreter {
         // them would resurrect a foreign container over this frame's own `my
         // @a` (the write side is masked in `set_shared_var_sym`; this is its
         // read twin, mirroring the scalar gate further down).
-        let container_redeclared = self.container_name_is_redeclared(name);
-        if container_redeclared {
+        //
+        // Nor does any of it apply while THIS FRAME'S SLOT holds the very
+        // `ContainerRef` cell that `env` names under this key (ADR-0039 slice
+        // 2). `get_env_with_main_alias` has always preferred that cell — its
+        // first act is `unit_scope_lexical`, before its `_inner`'s lane probe —
+        // so once an `@`/`%` read resolves through its slot, consulting the
+        // name-keyed lanes FIRST is backwards: the lane entry is keyed by bare
+        // name across the whole process, and it wins over the binding this
+        // frame actually holds.
+        //
+        // Both neighbouring conditions were measured and are wrong. "the slot
+        // holds any cell" breaks `roast/S32-io/IO-Socket-Async.t` 37 — a
+        // `supply`/tap body's shared block lexical is cell-boxed too, but the
+        // lane does not write through that cell, so a tap callback's
+        // `@got.append` lands in the lane and in `env` while the cell stays
+        // empty. "the slot holds the *unit-lexical* cell" excludes the
+        // `my %h; await (^3).map: -> $i { start { %h{$i} = $i } }` case the
+        // gate exists for. The condition that holds is the identity one below:
+        // the slot's cell is still what this frame's `env` names.
+        let slot_cell_is_env_binding = (name.starts_with('@') || name.starts_with('%'))
+            && match self.locals[idx].view() {
+                ValueView::ContainerRef(slot_cell) => matches!(
+                    self.env().get(name).map(Value::view),
+                    Some(ValueView::ContainerRef(env_cell))
+                        if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
+                ),
+                _ => false,
+            };
+        let skip_name_keyed_store =
+            slot_cell_is_env_binding || self.container_name_is_redeclared(name);
+        if skip_name_keyed_store || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the local/env read
         } else if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
@@ -210,10 +239,28 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Shared @/% variables may be mutated by sibling threads while this Interpreter
-        // still holds an old local snapshot. Prefer the shared copy so reads
-        // observe the latest value without forcing array COW on every push.
-        if !container_redeclared
+        // A THREAD CLONE's `@`/`%` may have been mutated by a sibling thread
+        // while this Interpreter still holds an old local snapshot, so prefer
+        // the shared copy there — reads observe the latest value without
+        // forcing array COW on every push.
+        //
+        // ADR-0039 slice 2: only there. On the main thread the bare-name store
+        // is a FALLBACK, not a preference — that is exactly how the by-name
+        // read this op replaces treats it (`get_env_with_main_alias_inner`
+        // gates its own base-name probe on `is_thread_clone` and otherwise
+        // reads `env` first), and the Nil arm at the bottom of this function
+        // already supplies the fallback. Preferring it here made a read of a
+        // frame's OWN binding answer an unrelated frame's: `shared_vars` is
+        // keyed by bare name process-wide, and a plain non-slurpy `@`/`%`
+        // parameter is deliberately left unmasked by
+        // `mask_thread_redeclared_params` precisely because that entry is
+        // meant to serve as a fallback for a nested spawn. Cro::HTTP's
+        // `method !append-middleware(Supply $pipeline, @middleware, ...)` read
+        // a *different* handler's `@middleware` in 17 of 36 calls, so the
+        // before-matched auth middleware never ran and every request 401'd
+        // (`Cro::HTTP/router-auth.rakutest`).
+        if !skip_name_keyed_store
+            && self.is_thread_clone()
             && (name.starts_with('@') || name.starts_with('%'))
             && let Some(shared_val) = self.get_shared_var(name)
         {

@@ -387,6 +387,28 @@ impl Interpreter {
             *cell.lock().unwrap() = new_val;
             return;
         }
+        // ADR-0039 slice 2: otherwise write THROUGH the existing container
+        // node. The old fallback was `set_env_with_main_alias` plus
+        // `locals_set_by_name`, and the latter is a `position` search over
+        // `code.locals` — so under a same-named shadow (a file-scope `my @r;`
+        // plus a block's own `my @r = (1,2,3)`) it wrote the OUTER slot and
+        // `@r»++` answered `1 2 3`. Copying the result into the node the
+        // binding already holds reaches every holder — the slot, a by-value
+        // capture, a `:=` alias — and needs no slot search at all. That is also
+        // why a compiler-baked `HyperMethodCall` target slot is unnecessary
+        // here.
+        //
+        // Restricted to an `@`/`%` target on purpose. A scalar-held QuantHash
+        // (`my $b := <a b>.BagHash; $b>>--`) must keep its node: the hyper
+        // RETURNS the original QuantHash, and that return value shares the very
+        // node an in-place overwrite would rewrite (`t/hyper-postfix-quanthash.t`
+        // "returns the original").
+        if var.starts_with(['@', '%'])
+            && let Some(current) = self.get_env_with_main_alias(var)
+            && Self::container_rebuild_in_place(&current.into_deref(), &new_val).is_some()
+        {
+            return;
+        }
         self.set_env_with_main_alias(var, new_val.clone());
         self.locals_set_by_name(code, var, new_val);
     }

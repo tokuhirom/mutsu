@@ -350,6 +350,21 @@ impl Interpreter {
         needle: &crate::gc::Gc<crate::value::ArrayData>,
         replacement: Value,
     ) {
+        // ADR-0039 slice 2: copy the replacement's contents into `needle`
+        // ITSELF first, so every holder of that node observes the element
+        // write — a local slot, a by-value capture, a `:=` alias — not just the
+        // `env` keys the by-name sweep below can see. The sweep still runs, to
+        // give each env entry the replacement's array KIND and to reach any
+        // holder that has already moved off this node; but it is no longer the
+        // only route, which is what `$h.bag[2] = 'x'` needed: the mutation
+        // replaced `env`'s `@alias` while the binding's own slot kept the
+        // original node (`t/attribute-accessor-container-identity.t` 5/7).
+        let replacement = match replacement.view() {
+            ValueView::Array(new_gc, kind) if !crate::gc::Gc::ptr_eq(needle, &new_gc) => {
+                Self::array_inplace_reassign_inheriting_meta(needle, &new_gc, kind)
+            }
+            _ => replacement,
+        };
         let mut keys: Vec<Symbol> = Vec::new();
         // Slice 2a: a `=`-array-shared scalar (`my $n = @z`) holds the array
         // inside a shared `ContainerRef` cell, so its inner Arc — not the
@@ -393,6 +408,13 @@ impl Interpreter {
         needle: &crate::gc::Gc<crate::value::HashData>,
         replacement: Value,
     ) {
+        // ADR-0039 slice 2 — see the array counterpart above.
+        let replacement = match replacement.view() {
+            ValueView::Hash(new_gc) if !crate::gc::Gc::ptr_eq(needle, &new_gc) => {
+                Self::hash_inplace_reassign_inheriting_meta(needle, &new_gc)
+            }
+            _ => replacement,
+        };
         let mut keys: Vec<Symbol> = Vec::new();
         let mut cells: Vec<crate::gc::Gc<crate::value::ContainerCell>> = Vec::new();
         for (name, value) in self.env.iter() {

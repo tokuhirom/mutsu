@@ -182,8 +182,18 @@ impl Compiler {
                 // (including a captured ContainerRef cell) from being overwritten.
                 let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
                     self.local_map.get(name).copied()
+                } else if !*is_our
+                    && !is_promoted
+                    && (shadows_outer || Self::container_slot_read_applies(name))
+                {
+                    // ADR-0039 slice 2: a container declaration in expression
+                    // position must take the slot its own READS resolve to —
+                    // see `Compiler::container_slot_read_applies`. Without it
+                    // `(my @a)` stored into `env` alone while a popped
+                    // sibling's slot answered every read of the name.
+                    Some(self.declare_local(name))
                 } else {
-                    (!*is_our && !is_promoted && shadows_outer).then(|| self.declare_local(name))
+                    None
                 };
                 if decl_slot.is_some() {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
@@ -293,6 +303,19 @@ impl Compiler {
                         self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
                     self.code.emit(OpCode::MarkVarDeclContext);
+                    // A shaped declaration (`(my @b[3] = <a b c>)`) keeps its
+                    // declared shape; mark it so the `SetLocal` store does not
+                    // strip the shape the way an unshaped value-copy
+                    // (`my @u = @shaped`) does. The statement-position decl
+                    // emits the identical mark. Only reachable since ADR-0039
+                    // slice 2 gave a plain container decl in expression
+                    // position a slot: the `SetGlobal` route never needed it
+                    // (`roast/S06-signature/shape.t` 36-37).
+                    if decl_slot.is_some()
+                        && custom_traits.iter().any(|(t, _)| t == "__shaped_decl")
+                    {
+                        self.code.emit(OpCode::MarkShapedDeclContext);
+                    }
                     if let Some(slot) = decl_slot {
                         self.code.emit(OpCode::SetLocal(slot));
                     } else {

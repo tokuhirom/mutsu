@@ -21,7 +21,10 @@
   green `prove t/` AND a green full `make roast` with the flip on, and was
   stopped by the bundled-library battery gate. §12 records what it measured, the
   seven repairs it needed, and the one blocker left; the work item carries the
-  re-derivable detail.
+  re-derivable detail. **Attempt 4 (2026-09-08) LANDED the read side** — see
+  §13, which also records that §12's recorded blocker did not survive
+  re-measurement and should not be planned around. §4.2's second and third
+  bullets remain.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
@@ -1088,3 +1091,66 @@ shadow.
 **Process note for attempt 4.** `t/` and `make roast` are not sufficient evidence
 for this change — both were green. `scripts/battery-testsuite.sh` is, and it runs
 locally in about ten minutes.
+
+## 13. Attempt 4 (2026-09-08): slice 2's read side is LANDED
+
+The read flip shipped. `Expr::ArrayVar` / `Expr::HashVar` emit `GetLocal(slot)`
+for a plain user lexical (`Compiler::container_read_slot`), and §4.2's first
+bullet is done. `prove t/`, a full local `make roast` and the bundled-library
+battery gate are all green with it on. What is left of §4.2 is its second and
+third bullets (`compute_upvalues`'s `@`/`%` exclusion, and the unconditional env
+mirror on every container `SetLocal`); the container special cases §4.2 predicted
+could then be *deleted* are now deletable but have not been deleted.
+
+**§12's re-derivable detail was the whole reason this attempt worked**, and its
+own advice — re-measure, do not plan around a recorded diagnosis — again earned
+its keep. Of §12's two battery blockers, the zef one did not reproduce at all
+once the six unlanded repairs were re-derived (differently, in two cases), and
+the Cro one failed for a reason unrelated to the `gather`/atomic-lane story §12
+recorded. **That story should not be planned around**: no evidence for it
+survives this attempt.
+
+**The blocker that was actually there is `GetLocal`'s bare-name store probe.**
+§12 got the *class* of defect right and one instance of it: the lane probe
+ordering, fixed by the cell-identity gate. The second instance is its neighbour,
+and it is a preference-vs-fallback distinction rather than an ordering one.
+`get_env_with_main_alias_inner` — the by-name read this op replaces — gates its
+own `shared_vars` base-name probe on `is_thread_clone()` and otherwise reads
+`env` first, so on the main thread that store is a *fallback*. `GetLocal`'s
+`@`/`%` arm preferred it unconditionally. That is invisible while the by-name
+read answers, and wrong the moment the slot does: `shared_vars` is keyed by bare
+name process-wide, and `mask_thread_redeclared_params` deliberately leaves a
+plain non-slurpy `@`/`%` **parameter** unmasked precisely so its entry can serve
+as a fallback for a nested spawn that did not capture the name lexically. So
+`Cro::HTTP`'s `method !append-middleware(Supply $pipeline, @middleware, ...)`
+read a *different* handler's `@middleware` in 17 of 36 calls, the before-matched
+auth middleware never ran, and every request 401'd. Aligning the two read paths
+is the repair.
+
+**The reduction harness is worth keeping, and it is kept.**
+`MUTSU_SLOT_READ_DUMP` prints every name the flip applies to;
+`MUTSU_SLOT_READ_FILTER` restricts the flip to a comma-separated list. Setting
+the filter to a name that does not exist turns the flip off wholesale, which is
+also the cheapest way to ask "is this failure mine?" without a rebuild. ddmin
+over the 95 names a Cro::HTTP run touches took about four minutes to reach one
+name. Both are inert when unset.
+
+**Container identity generalised once more.** §12 named
+`store_container_preserving_identity` as the primitive; this attempt factored its
+kind-matching core out as `container_rebuild_in_place` and applied it at two more
+sites — the mutating-hyper writeback (§12's repair 6) and
+`overwrite_{array,hash}_bindings_by_identity`, whose by-name `env` sweep plus
+`pending_rw_writeback_sources` drain could not reach a `:=`-bound alias's slot at
+all (`t/attribute-accessor-container-identity.t` 5/7). The rule now has six call
+sites and no counterexample: **a runtime helper that rebuilds a variable's
+container copies the result into the existing backing node; every by-name slot
+search such a helper uses to "also update the slot" is both unnecessary and wrong
+under a shadow.** Its one exception is worth recording because it was measured:
+a helper whose caller RETURNS the pre-mutation container (`$b>>--` on a
+QuantHash) must not write in place, because the returned value shares the node —
+hence the mutating-hyper writeback is restricted to an `@`/`%` target.
+
+**Process note for whoever takes §4.2's remaining bullets.** `t/` and `make
+roast` are still not sufficient evidence for a change in this area — both were
+green for attempt 3 too. `scripts/battery-testsuite.sh` is, and it runs locally
+in about ten minutes.

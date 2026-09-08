@@ -801,3 +801,81 @@ impl Compiler {
         self.code.patch_smart_match_rhs_end(sm_idx);
     }
 }
+
+/// ADR-0039 slice 2 reduction harness. `MUTSU_SLOT_READ_FILTER` restricts the
+/// container read flip to a comma-separated list of sigiled names;
+/// `MUTSU_SLOT_READ_DUMP` prints every name the flip would apply to. Together
+/// they turn "a 3000-line vendored library misbehaves" into "one variable" by
+/// delta debugging over the names a run touches — the reduction that found
+/// attempt 3's blocker (see ADR-0039 §12). Both are inert when unset.
+fn slot_read_filter() -> Option<&'static Vec<String>> {
+    static FILTER: std::sync::OnceLock<Option<Vec<String>>> = std::sync::OnceLock::new();
+    FILTER
+        .get_or_init(|| {
+            std::env::var("MUTSU_SLOT_READ_FILTER").ok().map(|raw| {
+                raw.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+        })
+        .as_ref()
+}
+
+fn slot_read_dump_enabled() -> bool {
+    static DUMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *DUMP.get_or_init(|| std::env::var("MUTSU_SLOT_READ_DUMP").is_ok())
+}
+
+impl Compiler {
+    /// ADR-0039 slice 2: the local slot an `@`/`%` READ resolves to, or `None`
+    /// when the read must stay on the by-name `GetArrayVar`/`GetHashVar` path.
+    ///
+    /// A container read compiled to `GetLocal(slot)` is what makes container
+    /// lexical scoping *lexical*: a same-named declaration in an unrelated
+    /// scope can no longer hijack it, because the read never consults `env` by
+    /// name (§1.2, §4.2 first bullet).
+    ///
+    /// The flip is restricted to **plain user lexicals**, and that restriction
+    /// is a requirement rather than a safety margin (§12). The by-name read's
+    /// tail is load-bearing for every other shape: its `None` arm supplies the
+    /// empty container that makes `%_` read as `{}` on the fast
+    /// method-dispatch path that deliberately leaves it unbound, and its
+    /// cascade is the only route by which `%!attr`/`%.attr` reach `self`'s
+    /// attribute cell and `@*dyn` / `%?RESOURCES` / `::`-qualified names
+    /// resolve at all. Those are not lexical bindings of this frame; slice 2 is
+    /// about the ones that are. Any future widening has to supply those
+    /// behaviours first.
+    pub(super) fn container_read_slot(&self, sigiled: &str) -> Option<u32> {
+        if !Self::container_slot_read_applies(sigiled) {
+            return None;
+        }
+        let &slot = self.local_map.get(sigiled)?;
+        if slot_read_dump_enabled() {
+            eprintln!("mutsu-slot-read: {sigiled}");
+        }
+        Some(slot)
+    }
+
+    /// Whether ADR-0039 slice 2's read flip covers `sigiled` at all — the
+    /// name-shape predicate of [`Compiler::container_read_slot`], without
+    /// requiring that a slot already exists.
+    ///
+    /// The declaration side has to ask the same question: a container
+    /// declaration compiled in EXPRESSION position (`(my @a).push: ...`)
+    /// allocated no slot unless it shadowed an active outer, storing into `env`
+    /// alone. `local_map` is monotonic in the default build, so a popped
+    /// sibling block's `@a` slot stays reachable and the read resolved to a
+    /// slot the declaration never wrote (`{ my @a = 5,7,9 } (my @a).push: $_
+    /// for ^3`). `declare_local` resolves get-or-create by name in the default
+    /// build, so declaring here reuses the very slot the read resolves to.
+    pub(super) fn container_slot_read_applies(sigiled: &str) -> bool {
+        if !sigiled.starts_with(['@', '%']) || !crate::env::is_plain_user_lexical(sigiled) {
+            return false;
+        }
+        match slot_read_filter() {
+            Some(filter) => filter.iter().any(|n| n == sigiled),
+            None => true,
+        }
+    }
+}
