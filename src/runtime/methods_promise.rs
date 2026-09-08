@@ -361,15 +361,37 @@ impl Interpreter {
                     return Err(Self::channel_send_closed_error());
                 }
                 let value = args.into_iter().next().unwrap_or(Value::NIL);
+                use crate::runtime::native_methods::state::supplier_emit;
+                use crate::runtime::native_methods::state_supplier::{
+                    SupplierEmitAction, supplier_emit_callbacks_for_tap, supplier_live_tap_indices,
+                };
                 let sids = ch.supplier_ids();
                 for sid in &sids {
-                    use crate::runtime::native_methods::state::supplier_emit;
-                    use crate::runtime::native_methods::state_supplier::{
-                        SupplierEmitAction, supplier_emit_callbacks,
-                    };
                     supplier_emit(*sid, value.clone());
-                    let actions = supplier_emit_callbacks(*sid, &value);
-                    for action in actions {
+                }
+                // A `Channel` is a queue, not a broadcast point: rakudo's
+                // `Channel.Supply` is a view onto a `.receive` loop, so taps on
+                // it are COMPETING consumers and each sent value reaches
+                // exactly one of them. This used to hand the value to every tap
+                // of every one of the channel's Supplies, so a program fanning
+                // work out to N workers over one channel did every unit N times
+                // (#7604). A `Supplier` is the genuine broadcaster and never
+                // reaches this path, so it keeps fanning out.
+                //
+                // Only this eager send-time dispatch broadcast: a `whenever` on
+                // a channel-backed Supply already competes correctly, because
+                // the react drive loop drains the channel queue itself.
+                let mut targets: Vec<(u64, usize)> = Vec::new();
+                for sid in &sids {
+                    targets.extend(
+                        supplier_live_tap_indices(*sid)
+                            .into_iter()
+                            .map(|i| (*sid, i)),
+                    );
+                }
+                if !targets.is_empty() {
+                    let (sid, tap_index) = targets[ch.next_supply_turn() % targets.len()];
+                    for action in supplier_emit_callbacks_for_tap(sid, tap_index, &value) {
                         if let SupplierEmitAction::Call(tap, emitted, delay_seconds) = action {
                             Self::sleep_for_supply_delay(delay_seconds);
                             let _ = self.call_sub_value(tap, vec![emitted], true);

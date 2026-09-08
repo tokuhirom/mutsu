@@ -2354,6 +2354,11 @@ struct ChannelState {
     failure: Option<Value>,
     closed_promise: SharedPromise,
     supplier_ids: Vec<u64>,
+    /// Round-robin cursor over the live taps of this channel's Supplies. A
+    /// `Channel` is a queue, not a broadcast point, so each sent value goes to
+    /// exactly one of them; this is what picks which. Bumped once per `send`
+    /// that has a live tap to hand the value to.
+    supply_turn: usize,
     /// Drive-loop wakers to poke on every send/close/fail, so a react
     /// polling this channel wakes immediately instead of on its poll cap.
     wakers: Vec<crate::value::waker::ReactWaker>,
