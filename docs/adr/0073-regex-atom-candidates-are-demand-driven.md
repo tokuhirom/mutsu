@@ -309,9 +309,9 @@ it can be adopted incrementally.
   runtime fallback (redo the iteration with the full set) for the case a `{ … }`
   block re-enters the rule by hand.
 - **Slice 2 (streamed half) — IMPLEMENTED 2026-09-08.**
-  `drive_named_subrule_candidates` (`regex_match_lazy.rs`) walks the subrule's
-  body through a `MatchSink::Cont`, wrapping each end into the atom's capture
-  delta as it is produced, so end *k+1* is computed only once the real
+  `drive_named_subrule_candidates` (`regex_match_lazy_subrule.rs`) walks the
+  subrule's body through a `MatchSink::Cont`, wrapping each end into the atom's
+  capture delta as it is produced, so end *k+1* is computed only once the real
   continuation has rejected end *k*. It takes the separable case named above —
   no arguments, no proto, exactly one resolved candidate, no custom-HOW
   dispatch, no `:m`, no dynamic (`$*`) rule parameters anywhere in the program,
