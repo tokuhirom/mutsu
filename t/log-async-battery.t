@@ -6,6 +6,14 @@ use Test;
 # modules/ tree. This file pins the observable behavior of the general
 # logging slot; the exhaustive check is the release-time gate running the
 # full upstream suite (scripts/battery-testsuite.sh).
+#
+# NOTE ON ORDERING: `Log::Async`'s `send-msg` emits each message from its own
+# thread (`(start $.source.emit($m))`, modules/Log-Async/lib/Log/Async.rakumod),
+# so the ORDER in which a tap sees them is not guaranteed — it is whichever
+# `start` the scheduler runs first. Assert on the message->level mapping, never
+# on `@seen[N]`. Indexing positionally made this file fail roughly 2 runs in 25
+# under CPU contention (`scripts/flake-repro.sh -n 25 -l 4`), with a WARNING
+# where an INFO was expected.
 
 plan 8;
 
@@ -27,12 +35,16 @@ error   'an error line';
 
 logger.done;
 
+my %level-of = @seen.map({ .<msg> => .<level> });
+
 is @seen.elems, 5, 'all five severity levels reached the sink';
-is @seen[0]<msg>, 'a trace line', 'the first message carries its text';
-is @seen[0]<level>, TRACE, 'trace maps to the TRACE level';
-is @seen[2]<level>, INFO, 'info maps to the INFO level';
-is @seen[4]<level>, ERROR, 'error maps to the ERROR level';
-ok @seen[0]<when> ~~ DateTime, 'each message is timestamped';
+is @seen.map(*.<msg>).sort.join('|'),
+    'a debug line|a trace line|a warning line|an error line|an info line',
+    'every message carries its own text';
+is %level-of{'a trace line'}, TRACE, 'trace maps to the TRACE level';
+is %level-of{'an info line'}, INFO, 'info maps to the INFO level';
+is %level-of{'an error line'}, ERROR, 'error maps to the ERROR level';
+is @seen.grep({ .<when> ~~ DateTime }).elems, 5, 'each message is timestamped';
 
 # The severity enum is exported and ordered, which is what level filtering
 # (`use Log::Async <trace>`) relies on.
