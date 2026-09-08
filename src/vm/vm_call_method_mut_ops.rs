@@ -649,12 +649,8 @@ impl Interpreter {
                 .and_then(|sources| sources.get(1))
                 .and_then(|source| source.as_deref())
                 .filter(|source| !source.contains('\0'));
-            let result =
-                self.bind_stash_key(code, &target, &key, args[1].clone(), bind_source)?;
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "stash-bind-key",
-            );
+            let result = self.bind_stash_key(code, &target, &key, args[1].clone(), bind_source)?;
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "stash-bind-key");
             self.stack.push(result);
             return Ok(());
         }
