@@ -636,20 +636,26 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
-        if method == "BIND-KEY"
-            && args.len() == 2
-            && matches!(
-                target.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Stash"
-            )
-        {
+        let stash_target = if method == "BIND-KEY" && args.len() == 2 {
+            match target.view() {
+                ValueView::Instance { class_name, .. } if class_name == "Stash" => {
+                    Some(target.clone())
+                }
+                _ => Self::caller_stash_depth(&target_name)
+                    .map(|depth| self.caller_stash_value(&target_name, depth)),
+            }
+        } else {
+            None
+        };
+        if let Some(stash_target) = stash_target {
             let key = args[0].to_string_value();
             let bind_source = arg_sources
                 .as_ref()
                 .and_then(|sources| sources.get(1))
                 .and_then(|source| source.as_deref())
                 .filter(|source| !source.contains('\0'));
-            let result = self.bind_stash_key(code, &target, &key, args[1].clone(), bind_source)?;
+            let result =
+                self.bind_stash_key(code, &stash_target, &key, args[1].clone(), bind_source)?;
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "stash-bind-key");
             self.stack.push(result);
             return Ok(());
