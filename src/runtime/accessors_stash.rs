@@ -303,7 +303,7 @@ impl Interpreter {
             // `routine_stack` retains those frames for backtraces, so validate
             // against it and let the runtime-name carrier below cross whatever
             // physical VM frames happen to exist.
-            if depth == 0 || depth >= self.routine_stack.len() {
+            if depth == 0 || depth > self.routine_stack.len() {
                 return Err(RuntimeError::new(
                     "Cannot bind through CALLER stash: frame is gone",
                 ));
