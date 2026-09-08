@@ -15,7 +15,9 @@
 //! tree as a `raku_raw` marker that `raku_value` emits verbatim.
 
 use super::Interpreter;
-use crate::builtins::methods_0arg::raku_repr::{needs_raku_dispatch, raku_raw};
+use crate::builtins::methods_0arg::raku_repr::{
+    needs_raku_dispatch, raku_leaf_is_iterable, raku_raw, raku_raw_iterable,
+};
 use crate::value::{ArrayData, HashData, RuntimeError, Value, ValueView};
 
 /// Depth cap for the walk. Cycles are caught by container identity (below);
@@ -166,7 +168,18 @@ impl Interpreter {
     fn expand_container(&mut self, value: &Value, active: &mut Vec<usize>, depth: usize) -> Value {
         if needs_raku_dispatch(value) {
             return match self.dispatch_raku_leaf(value) {
-                Ok(rendered) => raku_raw(rendered.to_string_value()),
+                // The placeholder has to remember whether the leaf was
+                // Iterable: the container splicing it back in applies raku's
+                // trailing-comma rule to a lone Iterable element, and the
+                // rendered text alone cannot say.
+                Ok(rendered) => {
+                    let text = rendered.to_string_value();
+                    if raku_leaf_is_iterable(value) {
+                        raku_raw_iterable(text)
+                    } else {
+                        raku_raw(text)
+                    }
+                }
                 Err(_) => value.clone(),
             };
         }
