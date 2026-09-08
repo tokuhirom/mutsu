@@ -54,10 +54,25 @@ itself. Before any investigation:
    oldest-first; ids increase, `created_at` can tie). If that is not yours, post
    `Releasing: <your branch>` and take another issue.
 4. Only then add the `working` label and start.
+5. **Re-read the comments again at two later checkpoints** — before the pre-publication
+   `make test` + `make roast` run, and immediately before you open the PR (see "Publish"
+   below). Steps 1-3 settle only the claims that exist in the first few seconds; they cannot
+   see an agent who claims later and declines to yield, nor a sibling PR that lands while your
+   suites are running.
+
+**The lowest comment id is the whole tiebreaker.** It is exclusive by design — an ordered
+append-only log is the only thing every agent reads identically, so any criterion needing
+judgement reintroduces the race. "The earlier branch has nothing pushed yet" (a claim exists to
+cover exactly that window), "the user pointed me at this issue" (so, routinely, was the other
+agent — that is *why* two arrived), and "I am further along" are not overrides. An earlier
+claimant who has gone quiet is released only by a matching `Releasing:` comment. (Got wrong on
+[#7569](https://github.com/tokuhirom/mutsu/issues/7569): the later claim noted the earlier one,
+judged it forfeit for being unpushed, and proceeded; both agents ran the full suites and opened
+a PR for the same work.)
 
 When you are done — merged, stopped, or blocked — post `Releasing: <your branch>` and remove the
-`working` label. Read `docs/issue-workflow.md` for the full label scheme and why the comment log,
-not the label, is the record.
+`working` label. Read `docs/issue-workflow.md` for the full label scheme, why the comment log is
+the record, and what to salvage when a checkpoint shows you lost.
 
 **`working` is a lock, so there is no exception for a long-lived issue.** Taking one slice of a
 campaign issue that will stay open for many more slices still means claiming it and labelling it for
@@ -234,6 +249,11 @@ roast as publishable — a fourth file, or a different subtest range inside thos
 change.
 
 ## Publish, monitor, and verify merge
+
+**Before you open the PR, re-read the issue's comments one last time** and check whether a PR
+already closes it (`issue_read` `get` reports `closed_by_pull_requests`; an agent that skipped the
+claim protocol leaves no comment but does leave a PR). One tool call, and it is the checkpoint that
+saves a wasted PR — the claim you posted hours ago has not been looked at since.
 
 Commit the focused change, push it, and create a non-draft PR. Enable auto-merge using merge or
 rebase, then verify immediately:

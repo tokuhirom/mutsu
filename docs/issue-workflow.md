@@ -108,6 +108,20 @@ To claim an issue:
    `Releasing: <your-branch-name>` and take a different issue.
 4. **Only then add the `working` label** and start work. Re-reading *after*
    posting is what makes this converge; adding the label first defeats it.
+5. **Re-read the comments again before you spend, and again before you
+   publish.** Steps 1-3 settle only the claims that exist in the first few
+   seconds. They cannot see an agent who claims *later* and declines to yield,
+   and they cannot see work that lands while yours is running. Two checkpoints,
+   one `get_comments` call each:
+   - **before the expensive phase** — the pre-publication `make test` +
+     `make roast` run, or any long build/measurement campaign;
+   - **immediately before opening the PR** — together with a check for an open
+     or merged PR that already closes the issue, since an agent that skipped
+     the protocol entirely leaves no comment but does leave a PR.
+
+   If either checkpoint shows you lost, stop and follow "Losing a claim late"
+   below. A run that skips them can only discover the collision from a merge
+   conflict on a finished PR, which is the most expensive possible moment.
 
 To finish — the PR merged, you stopped, or you are blocked — post
 `Releasing: <your-branch-name>` **and** remove the `working` label. An abandoned
@@ -115,6 +129,50 @@ issue that keeps either one silently removes itself from every other agent's
 queue. A closing PR takes the issue out of the queue anyway, but release it
 explicitly: the label and the comment are what other agents read while your PR
 is still in CI.
+
+### The comment id is the whole tiebreaker
+
+Among live claims, the lowest comment id wins. That is the entire rule, and it
+is exclusive **by design**: an ordered append-only log is the only thing every
+agent reads identically, so any criterion that needs judgement reintroduces the
+race the log exists to settle. None of the following overrides an earlier claim,
+however true they are:
+
+- "the earlier branch has nothing pushed yet and no PR open" — a claim exists
+  precisely to cover the window *before* anything is pushed; if being unpushed
+  forfeited it, it would protect nothing;
+- "this session was pointed at the issue by the user" — so, routinely, was the
+  other one; that is *why* two agents arrived;
+- "this session is further along / already has the work finished and verified";
+- "this session's approach is better".
+
+If you are the later claim, you lost: post `Releasing:` and take another issue.
+An earlier claimant who has gone quiet is not thereby released — only a matching
+`Releasing:` comment releases a claim. If you believe an earlier claim is stale,
+say so in a comment and take another issue anyway; do not proceed on your own
+finding. (Got wrong on
+[#7569](https://github.com/tokuhirom/mutsu/issues/7569): the later of two claims
+noted the earlier one, judged it forfeit for being unpushed, and proceeded. Both
+agents then ran the full suites and opened a PR for the same work — one of which
+was thrown away.)
+
+### Losing a claim late
+
+Finding out at a checkpoint that someone else's work has landed is not a reason
+to bin yours silently. Before closing anything:
+
+1. **Read what landed** and check it against every finding you made. It usually
+   went further than yours in some places and not in others.
+2. **Verify, do not assume.** Run your own repro against the merged `main`. A
+   fix that covers your bug is a fact to establish, not to infer from a commit
+   message.
+3. **Close your PR with the comparison written down** — what superseded it, what
+   of yours was already covered, and what was not. The knowledge preservation
+   rule in CLAUDE.md applies to a PR closed as duplicate exactly as it does to
+   one closed for conflicts.
+4. **Offer the delta, do not push it unprompted.** A gap the landed work left —
+   an unpinned regression, a case it does not cover — is worth a small follow-up,
+   but a third PR on an issue that just collided is the user's call.
 
 ## Filing an issue
 
@@ -178,6 +236,8 @@ gh issue edit  <n> --repo tokuhirom/mutsu --add-label working
 gh issue edit  <n> --repo tokuhirom/mutsu --remove-label working
 gh issue view  <n> --repo tokuhirom/mutsu --comments   # check for a live claim
 gh issue comment <n> --repo tokuhirom/mutsu --body 'Claiming: <branch>'
+# the pre-publish checkpoint: has someone already opened a PR for this issue?
+gh pr list --repo tokuhirom/mutsu --state all --search '<n> in:body' --json number,state,title
 ```
 
 Otherwise use the GitHub MCP tools (`list_issues`, `issue_write`,
