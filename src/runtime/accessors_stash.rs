@@ -313,7 +313,7 @@ impl Interpreter {
                 .call_frames
                 .iter_mut()
                 .rev()
-                .find(|frame| frame.saved_env.contains_key_own_tier(&name))
+                .find(|frame| frame.saved_env.contains_key(&name))
             {
                 frame.saved_env.insert(name.clone(), binding.clone());
             }
