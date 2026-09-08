@@ -471,6 +471,30 @@ impl Interpreter {
         } else {
             idx_val
         };
+        // An ITEMIZED aggregate used as a HASH subscript is ONE key, not a
+        // slice, and the read / assign / `:exists` / `:delete` paths all
+        // normalize it to the same `Scalar` wrapper before keying
+        // (`vm_var_assign_index_named.rs`, "An ITEMIZED aggregate used as a
+        // HASH subscript"). The read-modify-write path skipped that
+        // normalization, so an object hash keyed the entry by the raw list
+        // node's per-node `.WHICH` identity while `=` keyed it by the wrapper's
+        // -- `%h{$k}++` landed in a second bucket and never accumulated.
+        // Positional subscripts keep their own rule (an itemized list is a
+        // single NUMERIC index there), so this is gated on a hash target.
+        let idx_val = if matches!(
+            idx_val.view(),
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::ItemList | crate::value::ArrayKind::ItemArray
+            )
+        ) && matches!(
+            container.as_ref().map(Value::view),
+            Some(ValueView::Hash(_))
+        ) {
+            Value::scalar(idx_val)
+        } else {
+            idx_val
+        };
         // QuantHash element stores are `.WHICH`-keyed (a plain hash/array keeps
         // the display-string key); the element object goes into `original_keys`
         // on the write side below.
@@ -942,9 +966,13 @@ impl Interpreter {
                 // Object hash: remember the key object under its `.WHICH` store
                 // key so `.keys`/`.kv`/`.raku` recover it (`typed_key`).
                 if object_hash_key_type.is_some() {
+                    // Record the key DE-ITEMIZED, exactly as the element-assign
+                    // path does (`Self::object_hash_key_value`): the `Scalar`
+                    // wrapper above is transport for the subscript, not part of
+                    // the key rakudo hands back from `.keys` / `.kv` / `.raku`.
                     data.original_keys
                         .get_or_insert_with(std::collections::HashMap::new)
-                        .insert(key.clone(), idx_val.clone());
+                        .insert(key.clone(), Self::object_hash_key_value(&idx_val));
                 }
                 Value::hash_insert_through(&mut data.map, key.clone(), new_val.clone());
                 true
