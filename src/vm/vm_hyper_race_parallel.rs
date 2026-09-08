@@ -97,7 +97,7 @@ impl Interpreter {
                     };
                     Ok(collected)
                 });
-                let wlocals = vm.locals.clone();
+                let wlocals = vm.locals.to_vec();
                 let output = vm.take_output();
                 let stderr = vm.take_stderr_output();
                 (run, wlocals, output, stderr)

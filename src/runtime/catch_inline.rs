@@ -25,7 +25,7 @@ use crate::value::CatchInlineVerdict;
 /// Saved execution state for a handler run against the *installing* frame's
 /// lexicals while `self.locals` belongs to the deep throw/raise site.
 pub(crate) struct InstallingFrame {
-    saved_locals: Vec<Value>,
+    saved_locals: crate::runtime::Locals,
     saved_upvalues: Vec<Option<Value>>,
     /// The reconstructed locals as seeded, so the flush writes back only slots
     /// the handler actually changed.
@@ -58,7 +58,10 @@ impl Interpreter {
             })
             .collect();
         let seeded = handler_locals.clone();
-        let saved_locals = std::mem::replace(&mut self.locals, handler_locals);
+        let saved_locals = std::mem::replace(
+            &mut self.locals,
+            crate::runtime::Locals::from_vec(handler_locals),
+        );
         let saved_upvalues = std::mem::take(&mut self.upvalues);
         InstallingFrame {
             saved_locals,

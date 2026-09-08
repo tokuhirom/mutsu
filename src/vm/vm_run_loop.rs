@@ -118,7 +118,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         Self::validate_labels(code)?;
         // Initialize local variable slots
-        self.locals = vec![Value::NIL; code.locals.len()];
+        self.locals = crate::runtime::Locals::nils(code.locals.len());
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
@@ -467,7 +467,7 @@ impl Interpreter {
         Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
-        self.locals.resize(code.locals.len(), Value::NIL);
+        self.locals.resize_slots(code.locals.len());
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();

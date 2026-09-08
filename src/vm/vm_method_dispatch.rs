@@ -773,7 +773,7 @@ impl Interpreter {
             crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, bind_param_defs.iter());
 
         // Initialize locals from env
-        self.locals = vec![Value::NIL; cc.locals.len()];
+        self.locals = crate::runtime::Locals::nils(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -1834,7 +1834,7 @@ impl Interpreter {
         // Populate locals directly. Attribute reads take one read guard over
         // the live cell for the whole loop (dropped before the body runs) —
         // no whole-map snapshot is materialized.
-        self.locals = vec![Value::NIL; cc.locals.len()];
+        self.locals = crate::runtime::Locals::nils(cc.locals.len());
 
         {
             let attrs_guard = attrs_cell.as_ref().map(|c| c.as_map());

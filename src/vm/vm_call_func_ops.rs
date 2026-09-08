@@ -341,7 +341,7 @@ impl Interpreter {
                     }
                 });
                 if !needs_slow {
-                    let mut args = self.take_locals_from_pool(0);
+                    let mut args = self.take_args_scratch();
                     args.extend(self.stack.drain(base..));
                     let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                     if cl.is_some() {
@@ -356,7 +356,7 @@ impl Interpreter {
                         code.const_sym(name_idx),
                         Some(spec),
                     );
-                    self.recycle_locals(args);
+                    self.recycle_args_scratch(args);
                     self.stack.push(result?);
                     self.drain_and_reconcile_after_cached_call(code);
                     return Ok(());
@@ -742,9 +742,9 @@ impl Interpreter {
                     {
                         let start = self.stack.len() - arity_usize;
                         // Pooled args buffer (J4d): `drain(..).collect()` was one
-                        // malloc/free per call; borrow the locals pool's recycled
-                        // `Vec<Value>` instead (mirrors the positional cached path).
-                        let mut args = self.take_locals_from_pool(0);
+                        // malloc/free per call; take one from the args-scratch
+                        // pool instead (mirrors the positional cached path).
+                        let mut args = self.take_args_scratch();
                         args.extend(self.stack.drain(start..));
                         // Extract callsite line for deprecation tracking
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
@@ -759,7 +759,7 @@ impl Interpreter {
                             name_str,
                             code.const_sym(name_idx),
                         );
-                        self.recycle_locals(args);
+                        self.recycle_args_scratch(args);
                         self.stack.push(result?);
                         // Slice F: drain captured-outer writes through to this
                         // caller frame's local slots (see the positional-light
@@ -815,8 +815,8 @@ impl Interpreter {
                         // per call on this path, which every block-local sub call
                         // takes. Only the cold `call_compiled_function_named` arm
                         // consumes the `Vec`; the light arms borrow it and it goes
-                        // back to the pool below.
-                        let mut args = self.take_locals_from_pool(0);
+                        // back to the args-scratch pool below.
+                        let mut args = self.take_args_scratch();
                         args.extend(self.stack.drain(start..));
 
                         // Extract callsite line for deprecation tracking
@@ -919,7 +919,7 @@ impl Interpreter {
                             }
                             r
                         };
-                        self.recycle_locals(args);
+                        self.recycle_args_scratch(args);
                         let result = result?;
                         // Slice F: drain this frame's recorded captured-outer
                         // writes, plus (env_dirty-gated) reconcile to catch a

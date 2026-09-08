@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::Locals;
 
 impl Interpreter {
     /// Collapse the interpreter's env to a flat (`parent=None`) env if it is
@@ -13,25 +14,56 @@ impl Interpreter {
         }
     }
 
-    /// Grab a locals vector from the recycle pool (or allocate the first time),
+    /// Grab a slot array from the recycle pool (or allocate the first time),
     /// sized to `num_locals` with `Nil` slots. Pair with [`Self::recycle_locals`].
+    ///
+    /// These two functions are the *whole* of the pool's API (ADR-0077 Slice 0):
+    /// every other site speaks to [`Locals`] through indexing or `Deref`, so
+    /// Slice 2 retires the pool by rewriting this pair and the frame
+    /// save/restore sites, not the hundreds of slot accesses.
     #[inline]
-    pub(super) fn take_locals_from_pool(&mut self, num_locals: usize) -> Vec<Value> {
+    pub(super) fn take_locals_from_pool(&mut self, num_locals: usize) -> Locals {
         let mut v = self.locals_pool.pop().unwrap_or_default();
-        v.clear();
-        v.resize(num_locals, Value::NIL);
+        v.refill(num_locals);
         v
     }
 
-    /// Return a used locals vector to the recycle pool (bounded; excess is
-    /// simply dropped). Clearing here also drops the callee's slot values at a
+    /// Return a used slot array to the recycle pool (bounded; excess is
+    /// simply dropped). Releasing here also drops the callee's slot values at a
     /// well-defined point instead of inside the pool.
     #[inline]
-    pub(super) fn recycle_locals(&mut self, mut used: Vec<Value>) {
+    pub(super) fn recycle_locals(&mut self, mut used: Locals) {
         const LOCALS_POOL_MAX: usize = 64;
         if self.locals_pool.len() < LOCALS_POOL_MAX {
-            used.clear();
+            used.release();
             self.locals_pool.push(used);
+        }
+    }
+
+    /// Grab an argument buffer from the args-scratch pool. The named/spec light
+    /// call paths drain `self.stack` into a contiguous `Vec<Value>` to bind
+    /// from; `drain(..).collect()` was a malloc/free pair per call. Pair with
+    /// [`Self::recycle_args_scratch`].
+    ///
+    /// This is deliberately *not* the locals pool, which it used to borrow: an
+    /// argument buffer is an owned vector, and ADR-0077 turns [`Locals`] into a
+    /// window into a shared stack that cannot be handed out as one.
+    #[inline]
+    pub(super) fn take_args_scratch(&mut self) -> Vec<Value> {
+        let mut v = self.args_scratch_pool.pop().unwrap_or_default();
+        v.clear();
+        v
+    }
+
+    /// Return an argument buffer to the args-scratch pool (bounded; excess is
+    /// dropped). Clearing here drops the argument values at a well-defined
+    /// point instead of inside the pool.
+    #[inline]
+    pub(super) fn recycle_args_scratch(&mut self, mut used: Vec<Value>) {
+        const ARGS_SCRATCH_POOL_MAX: usize = 64;
+        if self.args_scratch_pool.len() < ARGS_SCRATCH_POOL_MAX {
+            used.clear();
+            self.args_scratch_pool.push(used);
         }
     }
 

@@ -537,7 +537,7 @@ impl Interpreter {
             self.outer_scope_locals.push(Vec::new());
         } else {
             self.outer_scope_locals
-                .push(saved_locals.as_ref().expect("opt-out snapshot").clone());
+                .push(saved_locals.as_ref().expect("opt-out snapshot").to_vec());
         }
         // Baseline for the ENTER-result stack: any value captured by this block's
         // ENTER section (PushEnterResult) must be cleared on exit even if the body

@@ -605,6 +605,7 @@ impl Interpreter {
             cur_source_line: 1,
             thread_spawn_origin,
             locals_pool: Vec::new(),
+            args_scratch_pool: Vec::new(),
             control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),
@@ -866,7 +867,7 @@ impl Interpreter {
             // with fresh per-execution registers, exactly as the former
             // `VM::new(thread_interp)` did for a spawned thread.
             stack: Vec::new(),
-            locals: Vec::new(),
+            locals: crate::runtime::locals::Locals::new(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
             frame_owned: Vec::new(),

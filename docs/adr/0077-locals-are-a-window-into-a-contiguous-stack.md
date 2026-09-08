@@ -1,6 +1,6 @@
 # ADR-0077: A call's locals are a window into one contiguous stack, not a pooled `Vec`
 
-- Status: **Proposed**
+- Status: **Proposed** (Slice 0 implemented — see "What Slice 0 actually built"; Slices 1-3 open)
 - Date: 2026-09-08
 - Related: [#7562](https://github.com/tokuhirom/mutsu/issues/7562) (the perf
   finding this ADR unblocks), [#7579](https://github.com/tokuhirom/mutsu/issues/7579)
@@ -111,11 +111,16 @@ left to Slice 2's measurement (see "Open questions").
 
 ## Why this is worth an ADR rather than a slice
 
-`self.locals` is read or written at **507 sites across 65 files** (up from the
-484/60 #7562 recorded). The change is mechanical at 331 of them and structural
-at the rest, and it reaches the JIT's view of `Interpreter`'s layout. That is a
-migration to sequence deliberately, which is what the rest of this document
-does.
+`Interpreter::locals` is read or written at **464 sites across 62 files**, of
+which **330 are plain `self.locals[i]` indexing** and the rest are structural
+(frame save/restore, whole-array installs, snapshots). The change also reaches
+the JIT's view of `Interpreter`'s layout. That is a migration to sequence
+deliberately, which is what the rest of this document does.
+
+(#7562 counted 484/60 and this ADR first said 507/65; both over-count. A plain
+`self.locals` grep also matches `CompiledCode::locals: Vec<String>` — the local
+*names* — in `src/opcode.rs`, which is an unrelated field. The numbers above
+exclude it.)
 
 It is, however, **materially less dangerous than #7562 assumed**. Three of the
 four reasons that issue gives for its blast radius do not survive reading the
@@ -186,14 +191,21 @@ consumers; see Slice 3.
 
 ## Migration order
 
-**Slice 0 — accessors (no representation change).** Introduce
-`#[inline] fn local(&self, i) -> &Value`, `local_mut`, `set_local`,
-`locals_len`, `locals_slice`, `locals_slice_mut` on `Interpreter`, and convert
-the 331 `self.locals[i]` sites to them. Purely mechanical, zero behavior
-change, no perf change (everything inlines to the same code). Its value is that
-it shrinks the representation swap from 507 sites to ~50 and makes the
-two-frame-borrow sites (§4 above) show up as compile errors rather than as
-subtle aliasing later.
+**Slice 0 — a newtype chokepoint (no representation change). SHIPPED; see
+"What Slice 0 actually built" below, which supersedes the accessor plan this
+paragraph originally described.** The plan was to introduce
+`local(i)` / `local_mut(i)` / `set_local(i, v)` / `locals_slice()` accessors on
+`Interpreter` and convert every `self.locals[i]` site to them, so that the
+representation swap would touch ~50 sites instead of all of them.
+
+That was the wrong shape. Converting the index sites is churn in service of a
+boundary that a newtype provides for free, so what shipped is a
+`#[repr(transparent)] struct Locals(Vec<Value>)` with `Index`/`IndexMut` and
+`Deref<Target = [Value]>`: `self.locals[i]`, `.len()`, `.get()`, `.iter()` and
+the `&self.locals` → `&[Value]` coercions all keep working verbatim, and the
+representation still has exactly one home. `Index` is implemented explicitly
+rather than left to `Deref` so that Slice 2 can address `stack[base + i]` with a
+single bounds check instead of slicing the window and then indexing it.
 
 **Slice 1 — frame bookkeeping.** `VmCallFrame::saved_locals: Vec<Value>` →
 `saved_locals_base: usize`; collapse `gc_roots`' per-frame visit into one slice
@@ -211,6 +223,52 @@ belongs to.
 stack-of-locals for block scopes. Once locals live on a contiguous stack, a
 block scope is just another base index and that field can go away. Not required
 by this ADR; recorded so the next reader sees the whole shape.
+
+### What Slice 0 actually built
+
+`src/runtime/locals.rs` — `#[repr(transparent)] struct Locals(Vec<Value>)` with
+`Index`/`IndexMut`, `Deref`/`DerefMut` to `[Value]`, a hand-written `Clone` (so
+`clone_from` keeps `Vec`'s buffer reuse, which the hyper/race worker seeding
+relies on), and a five-method inherent API that names every *structural* thing
+the VM does to a frame: `new`, `nils(n)` (a fresh un-pooled frame),
+`resize_slots(n)` (`Vec::resize` semantics, for the top-level `run` entry that
+sizes then seeds), `refill(n)` + `release()` (the pool's whole API), and
+`from_vec`/`to_vec` (owned snapshots that outlive a frame — a suspended `gather`
+coroutine, an inline `CATCH` handler frame, a hyper/race worker's slots crossing
+a thread boundary).
+
+The result is 18 files changed, +94/−39, instead of the ~330 mechanical edits
+the accessor plan implied. The 330 index sites and the ~100 `Deref` sites
+(`.len()`, `.get()`, `.iter()`, `&self.locals`) did not have to be touched at
+all, which is the point: the representation now has one home without a churn
+commit in front of it.
+
+Two things fell out of it that the plan had not anticipated:
+
+- **The args-scratch pool had to be separated first.** Three sites in
+  `vm_call_func_ops.rs` called `take_locals_from_pool(0)` and `extend`ed it —
+  borrowing the *locals* pool as an argument buffer for the named/spec light
+  call paths. A window into a shared stack cannot be handed out as an owned
+  buffer, so this is a hard blocker for Slice 2 (it is ADR-0077 open question 3).
+  Slice 0 gives those sites their own `args_scratch_pool: Vec<Vec<Value>>` with
+  the same bound and the same clear-before-return discipline, so the two uses
+  stop being conflated. Behavior is unchanged; the only cost is up to 64 more
+  retained buffers.
+- **The JIT coupling now has a compile-time tripwire.** `vm_jit_layout` applies
+  the probed `Vec<Value>` word offsets at `offset_of!(Interpreter, locals)`,
+  which is sound only while `Locals` is transparent over the vector. A
+  `const { assert!(size_of::<Locals>() == size_of::<Vec<Value>>()) }` next to
+  the existing probe assertion makes Slice 2 fail to compile until
+  `vm_jit_tier_b`'s GetLocal emitter learns the base, rather than silently
+  emitting native code against the wrong words.
+
+`Locals`' module doc records the two contracts Slice 2 must preserve: `Index`
+addresses the *current* frame (so it must add the base), and `Deref` yields
+exactly the current frame's slots (so `.len()` and `.iter()` speak about this
+frame and nothing below it). The second is what makes open question 1 — one
+stack or two — a real question rather than a preference: a locals region sharing
+the operand stack would need a per-frame length here, not "everything above
+`base`".
 
 ## Measurement protocol
 

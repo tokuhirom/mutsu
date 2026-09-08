@@ -35,6 +35,14 @@ fn probe_vec_layout() -> Option<(i32, i32, i32)> {
     const WORD: usize = std::mem::size_of::<usize>();
     const {
         assert!(std::mem::size_of::<Vec<Value>>() == 3 * WORD);
+        // `Interpreter::locals` is a `Locals` (ADR-0077 Slice 0), and the
+        // GetLocal fast path applies the probed `Vec<Value>` word offsets at
+        // that field's address. That is sound only while `Locals` is
+        // `#[repr(transparent)]` over the vector. Slice 2 gives `Locals` a base
+        // index, at which point this assertion fires and the emitter in
+        // `vm_jit_tier_b` must learn the base — which is the intended tripwire,
+        // not an obstacle.
+        assert!(std::mem::size_of::<crate::runtime::Locals>() == std::mem::size_of::<Vec<Value>>());
     }
     let mut v: Vec<Value> = Vec::with_capacity(7);
     v.push(Value::int(1));

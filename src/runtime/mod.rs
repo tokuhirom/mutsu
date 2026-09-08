@@ -494,6 +494,7 @@ mod iterator_protocol;
 pub(crate) mod json;
 mod list_element_stringify;
 mod listop_functions;
+pub(crate) mod locals;
 mod lock_async_recursion;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
@@ -706,6 +707,7 @@ pub(crate) mod wasm_sched;
 mod which_identity;
 /// Elastic worker pool for short-lived user tasks (ADR-0020).
 pub(crate) mod worker_pool;
+pub(crate) use self::locals::Locals;
 pub(crate) use self::match_target::MatchTarget;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;
@@ -1886,7 +1888,14 @@ pub struct Interpreter {
     /// instead of allocating removes a malloc/free pair per call (recursion
     /// otherwise allocates one per frame down the whole chain). Entries are
     /// cleared before being returned to the pool; bounded by `LOCALS_POOL_MAX`.
-    pub(crate) locals_pool: Vec<Vec<Value>>,
+    pub(crate) locals_pool: Vec<Locals>,
+    /// Recycled *argument* buffers for the named/spec light call paths, which
+    /// need a contiguous `Vec<Value>` of the drained arguments rather than a
+    /// frame's slot array. These used to borrow `locals_pool`, which conflated
+    /// two different things: ADR-0077 makes `Locals` a window into one
+    /// contiguous stack, and a window cannot be handed out as an owned buffer.
+    /// Same bound and same clear-before-return discipline as `locals_pool`.
+    pub(crate) args_scratch_pool: Vec<Vec<Value>>,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
     /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
     /// EVAL) can observe handlers installed by the outer VM and propagate
@@ -3003,7 +3012,7 @@ pub struct Interpreter {
     // dissolved into the Interpreter; these were the per-execution fields of the
     // former `VM` struct). The Interpreter IS the bytecode VM now. ===
     pub(crate) stack: Vec<Value>,
-    pub(crate) locals: Vec<Value>,
+    pub(crate) locals: Locals,
     /// Current frame's captured upvalue array, indexed by the running
     /// `CompiledCode::upvalue_syms` order. Read by `GetUpvalue(i)`. Set from
     /// `SubData::upvalues` on closure entry and saved/restored across call frames

@@ -144,7 +144,7 @@ impl Interpreter {
         let saved_stack = std::mem::take(&mut self.stack);
 
         // Initialize locals for the block
-        self.locals = vec![Value::NIL; block_cc.locals.len()];
+        self.locals = crate::runtime::Locals::nils(block_cc.locals.len());
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
