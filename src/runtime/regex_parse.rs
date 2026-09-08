@@ -185,6 +185,36 @@ pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     true
 }
 
+/// The closing delimiter for a Raku quote opener, or `None` when `ch` does not
+/// open a quoted literal.
+///
+/// Raku's quoting language is not limited to `'`/`"`: the smart-quote pairs
+/// `‘...’` / `‚...’` and `“...”` / `„...”`, and the Q-lang corner brackets
+/// `｢...｣`, are ordinary string literals too. Their contents are DATA, so a
+/// structural scanner that walks a pattern looking for regex operators must
+/// skip them exactly as it skips `'...'` -- otherwise a `%`, `|`, `&`, `<` or
+/// `>` inside one is mistaken for the separated-quantifier operator, an
+/// alternation, a conjunction or an assertion bracket.
+///
+/// Every Unicode pair closes with a character that differs from its opener,
+/// which is why callers track the CLOSER returned here instead of comparing
+/// against the character that opened the span. That is the whole reason the
+/// `in_single_quote`/`in_double_quote` boolean pairs these scanners used could
+/// not simply be extended: a bool cannot say *which* delimiter ends the span.
+///
+/// Nesting is not modelled -- rakudo lets `‘a ‘b’ c’` nest, but the first closer
+/// ends the span here, matching how the `'`/`"` spans have always been scanned.
+pub(super) fn regex_quote_closer(ch: char) -> Option<char> {
+    match ch {
+        '\'' => Some('\''),
+        '"' => Some('"'),
+        '\u{2018}' | '\u{201A}' => Some('\u{2019}'),
+        '\u{201C}' | '\u{201E}' => Some('\u{201D}'),
+        '\u{FF62}' => Some('\u{FF63}'),
+        _ => None,
+    }
+}
+
 /// Return the character index immediately after a regex comment beginning at
 /// `start`, or `None` when `start` is not a comment marker.
 ///

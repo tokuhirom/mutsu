@@ -73,8 +73,12 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
             '\'' if apostrophe_in_ident => {
                 name.push(ch);
             }
-            '\'' | '"' if honor_quotes && bracket_depth == 0 => {
-                quote = Some(ch);
+            opener
+                if honor_quotes
+                    && bracket_depth == 0
+                    && super::regex_parse::regex_quote_closer(opener).is_some() =>
+            {
+                quote = super::regex_parse::regex_quote_closer(opener);
                 name.push(ch);
             }
             // `(`/`)`/`{`/`}` only nest outside an enumerated char class
@@ -2298,7 +2302,12 @@ impl Interpreter {
                             // A quoted literal inside the assertion may contain
                             // the angle brackets themselves (`<!before '%>' >`,
                             // `<!before '<%' >`), so its content must not move
-                            // the angle-depth count.
+                            // the angle-depth count. `regex_quote_closer`
+                            // recognizes the Unicode quote pairs as well as
+                            // `'`/`"` -- `<!before ‘<%’>` is how
+                            // `Template::Classic` writes exactly this -- and it
+                            // answers the CLOSER, which differs from the opener
+                            // for every Unicode pair.
                             let mut quote: Option<char> = None;
                             while let Some(ch) = chars.next() {
                                 if ch == '\\' {
@@ -2320,8 +2329,8 @@ impl Interpreter {
                                     inner.push(ch);
                                     continue;
                                 }
-                                if ch == '\'' || ch == '"' {
-                                    quote = Some(ch);
+                                if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
+                                    quote = Some(closer);
                                     inner.push(ch);
                                 } else if ch == '<' && {
                                     let mut la = chars.clone();

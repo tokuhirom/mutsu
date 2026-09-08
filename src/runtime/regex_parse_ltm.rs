@@ -110,8 +110,10 @@ impl Interpreter {
         let mut depth_brace = 0i32;
         let mut depth_angle = 0i32;
         let mut escaped = false;
-        let mut in_single_quote = false;
-        let mut in_double_quote = false;
+        // The closer of the quoted literal currently open, if any. Tracking the
+        // CLOSER (not a per-delimiter bool) is what lets the Unicode quote
+        // pairs be skipped too -- see `regex_quote_closer`.
+        let mut quote: Option<char> = None;
         let mut is_sequential = false;
         let mut chars = pattern.chars().peekable();
 
@@ -127,8 +129,7 @@ impl Interpreter {
                 continue;
             }
             if depth_angle == 0
-                && !in_single_quote
-                && !in_double_quote
+                && quote.is_none()
                 && consume_regex_comment(ch, &mut chars, &mut current)
             {
                 continue;
@@ -140,17 +141,17 @@ impl Interpreter {
             // following `||` never split. The split operators below all require
             // `depth_angle == 0` anyway, so an assertion's contents cannot produce
             // a spurious split and need no quote tracking at all.
-            if ch == '\'' && !in_double_quote && depth_angle == 0 {
-                in_single_quote = !in_single_quote;
+            if let Some(closer) = quote {
+                if ch == closer {
+                    quote = None;
+                }
                 current.push(ch);
                 continue;
             }
-            if ch == '"' && !in_single_quote && depth_angle == 0 {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-                continue;
-            }
-            if in_single_quote || in_double_quote {
+            if depth_angle == 0
+                && let Some(closer) = super::regex_parse::regex_quote_closer(ch)
+            {
+                quote = Some(closer);
                 current.push(ch);
                 continue;
             }
@@ -236,8 +237,10 @@ impl Interpreter {
         let mut depth_brace = 0i32;
         let mut depth_angle = 0i32;
         let mut escaped = false;
-        let mut in_single_quote = false;
-        let mut in_double_quote = false;
+        // The closer of the quoted literal currently open, if any. Tracking the
+        // CLOSER (not a per-delimiter bool) is what lets the Unicode quote
+        // pairs be skipped too -- see `regex_quote_closer`.
+        let mut quote: Option<char> = None;
         let mut chars = pattern.chars().peekable();
 
         while let Some(ch) = chars.next() {
@@ -252,8 +255,7 @@ impl Interpreter {
                 continue;
             }
             if depth_angle == 0
-                && !in_single_quote
-                && !in_double_quote
+                && quote.is_none()
                 && consume_regex_comment(ch, &mut chars, &mut current)
             {
                 continue;
@@ -261,17 +263,17 @@ impl Interpreter {
             // See `split_top_level_alternation`: `'`/`"` inside a `<...>` assertion
             // are literal word characters, and the `&`/`&&` split below requires
             // `depth_angle == 0`, so quote tracking must pause inside an assertion.
-            if ch == '\'' && !in_double_quote && depth_angle == 0 {
-                in_single_quote = !in_single_quote;
+            if let Some(closer) = quote {
+                if ch == closer {
+                    quote = None;
+                }
                 current.push(ch);
                 continue;
             }
-            if ch == '"' && !in_single_quote && depth_angle == 0 {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-                continue;
-            }
-            if in_single_quote || in_double_quote {
+            if depth_angle == 0
+                && let Some(closer) = super::regex_parse::regex_quote_closer(ch)
+            {
+                quote = Some(closer);
                 current.push(ch);
                 continue;
             }
@@ -334,8 +336,10 @@ impl Interpreter {
     }
 
     fn has_unquoted_ltm_separator(pattern: &str) -> bool {
-        let mut in_single = false;
-        let mut in_double = false;
+        // See `regex_quote_closer`: a `%` inside ANY quoted literal is data.
+        // Tracking only `'`/`"` here made `/ ‘a%b’ /` look like a separated
+        // quantifier, and the string rewrite below then mangled the pattern.
+        let mut quote: Option<char> = None;
         let mut escaped = false;
         let chars_vec: Vec<char> = pattern.chars().collect();
         let mut i = 0;
@@ -351,19 +355,21 @@ impl Interpreter {
                 i += 1;
                 continue;
             }
-            if ch == '\'' && !in_double {
-                in_single = !in_single;
+            if let Some(closer) = quote {
+                if ch == closer {
+                    quote = None;
+                }
                 i += 1;
                 continue;
             }
-            if ch == '"' && !in_single {
-                in_double = !in_double;
+            if let Some(closer) = super::regex_parse::regex_quote_closer(ch) {
+                quote = Some(closer);
                 i += 1;
                 continue;
             }
             // Skip <...> angle brackets — % inside assertions/character classes
             // is not a separator
-            if !in_single && !in_double && ch == '<' {
+            if quote.is_none() && ch == '<' {
                 i += 1;
                 let mut angle_depth = 1u32;
                 while i < chars_vec.len() && angle_depth > 0 {
@@ -383,7 +389,7 @@ impl Interpreter {
             }
             // Skip [...] bracket groups — % inside bracket character classes
             // is not a separator
-            if !in_single && !in_double && ch == '[' {
+            if quote.is_none() && ch == '[' {
                 i += 1;
                 let mut bracket_depth = 1u32;
                 while i < chars_vec.len() && bracket_depth > 0 {
@@ -403,7 +409,7 @@ impl Interpreter {
             }
             // Skip { ... } code blocks — a `%` inside embedded main-slang code
             // is not a regex separator.
-            if !in_single && !in_double && ch == '{' {
+            if quote.is_none() && ch == '{' {
                 i += 1;
                 let mut brace_depth = 1u32;
                 while i < chars_vec.len() && brace_depth > 0 {
@@ -419,7 +425,7 @@ impl Interpreter {
             // Skip an embedded declaration `:my … ;` / `:our …` / `:constant …` —
             // its body is main-slang code, so a `%*var` in it (`:my %*PLAYED = ()`)
             // is not a regex separator.
-            if !in_single && !in_double && ch == ':' {
+            if quote.is_none() && ch == ':' {
                 let rest: String = chars_vec[i + 1..].iter().collect();
                 if rest.starts_with("my ")
                     || rest.starts_with("our ")
@@ -437,7 +443,7 @@ impl Interpreter {
                     continue;
                 }
             }
-            if !in_single && !in_double && ch == '%' {
+            if quote.is_none() && ch == '%' {
                 // Check if this is hash aliasing: %<name>= or %ident=
                 let mut j = i + 1;
                 if j < chars_vec.len() && chars_vec[j] == '<' {
@@ -751,16 +757,9 @@ impl Interpreter {
                 }
                 j
             }
-            // Quoted strings: '...' / "..." and unicode quote pairs
-            '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}' => {
-                let close = match chars[0] {
-                    '\'' => '\'',
-                    '"' => '"',
-                    '\u{2018}' | '\u{201A}' => '\u{2019}',
-                    '\u{201C}' | '\u{201E}' => '\u{201D}',
-                    '\u{FF62}' => '\u{FF63}',
-                    _ => chars[0],
-                };
+            // Quoted strings: '...' / "..." and the unicode quote pairs.
+            c if super::regex_parse::regex_quote_closer(c).is_some() => {
+                let close = super::regex_parse::regex_quote_closer(chars[0]).unwrap_or(chars[0]);
                 let mut j = 1;
                 while j < chars.len() {
                     if chars[j] == '\\' {
