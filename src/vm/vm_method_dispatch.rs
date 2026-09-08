@@ -2379,6 +2379,36 @@ fn merge_method_env(
             if is_unwritten_capture(*k, v) {
                 return None;
             }
+            // An entry the callee overlay merely *inherited* would merge back a
+            // value the caller already holds. A nested method call flattens the
+            // scoped overlay, copying every parent lexical/global into the
+            // callee's (the same reason the `changed_caller_locals` scan below
+            // exists), so `submethod TWEAK(:$!spec) { }` -- an empty body --
+            // collected 26 of these on every call: `%*ENV`, `@*ARGS`, `$*OUT`,
+            // `$*CWD`, the type names in scope, `=pod`, and the caller's own
+            // lexicals. Re-inserting a value `cheaply_unchanged` proves identical
+            // is a no-op, so drop it here instead: it keeps the `writes` Vec
+            // empty and spares the caller env's `cow_mut` overlay clone.
+            //
+            // This cannot change `changed_caller_locals`: that scan pushes a key
+            // only when `saved.get_sym(k)` is absent or `cheaply_unchanged` is
+            // false, i.e. exactly the entries this test keeps.
+            //
+            // Ordered FIRST, ahead of the frame-key predicate below, because it
+            // is the cheap test that drops most keys: one Symbol-keyed
+            // `Env::get_sym` plus an O(1) compare, against a battery of string
+            // predicates that each need `Symbol::as_str()` (a thread-local
+            // round trip) and then scan the frame's params/locals/attributes by
+            // name. Both arms `return None`, so which one fires first cannot
+            // change the outcome for any key -- only how much it costs to reach
+            // it. On `benchmarks/bench-ctor.raku` the overlay carries ~24 keys
+            // per method call and this test alone accounts for ~19 of them.
+            if saved
+                .get_sym(*k)
+                .is_some_and(|old| cheaply_unchanged(old, v))
+            {
+                return None;
+            }
             // Skip keys introduced by the method frame (params, self, attributes,
             // locals) -- these must not leak back into the caller. The membership
             // test is a call-site predicate over the frame's params/locals/attr
@@ -2414,26 +2444,6 @@ fn merge_method_env(
                     // instead of the global map).
                     || s.strip_prefix("__mutsu_type::").is_some_and(is_method_local)
             }) {
-                return None;
-            }
-            // An entry the callee overlay merely *inherited* would merge back a
-            // value the caller already holds. A nested method call flattens the
-            // scoped overlay, copying every parent lexical/global into the
-            // callee's (the same reason the `changed_caller_locals` scan below
-            // exists), so `submethod TWEAK(:$!spec) { }` -- an empty body --
-            // collected 26 of these on every call: `%*ENV`, `@*ARGS`, `$*OUT`,
-            // `$*CWD`, the type names in scope, `=pod`, and the caller's own
-            // lexicals. Re-inserting a value `cheaply_unchanged` proves identical
-            // is a no-op, so drop it here instead: it keeps the `writes` Vec
-            // empty and spares the caller env's `cow_mut` overlay clone.
-            //
-            // This cannot change `changed_caller_locals`: that scan pushes a key
-            // only when `saved.get_sym(k)` is absent or `cheaply_unchanged` is
-            // false, i.e. exactly the entries this test keeps.
-            if saved
-                .get_sym(*k)
-                .is_some_and(|old| cheaply_unchanged(old, v))
-            {
                 return None;
             }
             let keep = saved.contains_key_sym(*k)
