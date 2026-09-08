@@ -272,6 +272,11 @@ impl Interpreter {
             .get("name")
             .map(Value::to_string_value)
             .unwrap_or_default();
+        // `attributes.insert` below takes the write side of this same cell.
+        // Release the metadata snapshot's read guard before any user-visible
+        // binding work, both to avoid deferring the symbol-table update and to
+        // keep arbitrary Proxy callbacks out of an outstanding attribute read.
+        drop(attrs);
         // A variable argument contributes its container identity, not merely
         // its current value.  Proxy is already a container in its own right;
         // ordinary values are promoted to the shared cell used by `:=`.
