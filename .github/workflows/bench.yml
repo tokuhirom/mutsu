@@ -28,6 +28,7 @@ on:
       - 'old-design-docs/**'
       - 'raku-doc/**'
       - '.claude/**'
+      - '.agents/**'
       - '*.md'
       - 'LICENSE'
   workflow_dispatch:
