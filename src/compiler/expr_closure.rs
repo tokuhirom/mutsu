@@ -183,6 +183,7 @@ impl Compiler {
     }
 
     /// Compile AnonSubParams expression.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_expr_anon_sub_params(
         &mut self,
         params: &[String],
