@@ -73,6 +73,19 @@ A one-parameter `WhateverCode` was never where the signature clone hurt, so its
 few percent is the floor; the win grows with the signature, which is what
 "O(signature) per creation" meant.
 
+The whole-program benchmarks move by a little, and none of them the wrong way
+(same callgrind method, the two binaries measured back to back):
+
+| | before | after | |
+|---|---|---|---|
+| `bench-ctor` | 1,327,445,176 | 1,313,646,631 | −1.04% |
+| `bench-class` | 1,171,901,705 | 1,162,528,513 | −0.80% |
+| `bench-grammar-parse` | 65,585,593 | 65,330,697 | −0.39% |
+| `bench-yaml-parse` | 12,986,021 | 12,938,248 | −0.37% |
+
+These are instruction counts, not the wall-clock series: the numbers that belong
+in a benchmark record still come from the bench CI history.
+
 ## What is still open on #7557
 
 The kept-set narrowing that Part B actually asks for. `capture_closure_env`
