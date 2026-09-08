@@ -33,7 +33,7 @@ mod vm;
 pub(crate) mod whatever_curry;
 
 pub use interpreter::Interpreter;
-pub use value::{RuntimeError, RuntimeErrorCode, Value};
+pub use value::{HashKey, RuntimeError, RuntimeErrorCode, Value};
 
 /// Print VM -> interpreter fallback statistics to stderr.
 ///
