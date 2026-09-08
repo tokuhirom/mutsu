@@ -2270,7 +2270,7 @@ impl Compiler {
                 is_until,
             } => {
                 let (pre_stmts, loop_body, post_stmts) =
-                    self.expand_loop_phasers(body, label.as_deref());
+                    self.expand_loop_phasers(body, label.as_deref(), false);
                 for s in &pre_stmts {
                     self.compile_stmt(s);
                 }
@@ -2450,7 +2450,7 @@ impl Compiler {
                 ..
             } if !*repeat => {
                 let (pre_stmts, loop_body, post_stmts) =
-                    self.expand_loop_phasers(body, label.as_deref());
+                    self.expand_loop_phasers(body, label.as_deref(), false);
                 // Compile init statement (if any) before the loop opcode
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
@@ -3090,7 +3090,7 @@ impl Compiler {
                 is_until,
             } if *repeat => {
                 let (pre_stmts, loop_body, post_stmts) =
-                    self.expand_loop_phasers(body, label.as_deref());
+                    self.expand_loop_phasers(body, label.as_deref(), false);
                 if let Some(init_stmt) = init {
                     self.compile_stmt(init_stmt);
                 }

@@ -351,10 +351,22 @@ impl Compiler {
             .collect()
     }
 
+    /// `wants_value` is set by a caller that COLLECTS the body's trailing value
+    /// (`ForParts::collect` — the expression form `do for ... { ... }`), and clear
+    /// for the statement forms, which sink it.
+    ///
+    /// It matters because the phaser lowering appends `NEXT`/`LEAVE` bodies to the
+    /// end of the loop body. In statement position that is invisible; in expression
+    /// position it made the phaser body's value the iteration's result, so
+    /// `do for 1,2,3 { NEXT { @seen.push: 'next' }; $_ * 2 }` collected the pushes
+    /// instead of `2, 4, 6`. The capture-into-a-temp mechanism this needs already
+    /// existed for KEEP/UNDO/POST; it was just keyed off which phasers were present
+    /// rather than off whether anyone wanted the value.
     pub(super) fn expand_loop_phasers(
         &mut self,
         body: &[Stmt],
         label: Option<&str>,
+        wants_value: bool,
     ) -> (Vec<Stmt>, Vec<Stmt>, Vec<Stmt>) {
         if !Self::has_phasers(body) && !Self::stmts_have_enter_phaser_expr(body) {
             return (Vec::new(), body.to_vec(), Vec::new());
@@ -433,6 +445,14 @@ impl Compiler {
         } else {
             Some(self.next_tmp_name("__mutsu_loop_post_topic_"))
         };
+        // A value-collecting caller needs the user's trailing expression held
+        // somewhere across the appended phaser bodies even when no KEEP/UNDO/POST
+        // phaser supplies a temp of its own.
+        let value_var = if wants_value && result_var.is_none() && post_topic_var.is_none() {
+            Some(self.next_tmp_name("__mutsu_loop_value_"))
+        } else {
+            None
+        };
 
         let mut pre = vec![
             Stmt::VarDecl {
@@ -477,6 +497,20 @@ impl Compiler {
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
                 name: last_topic_var,
+                expr: Expr::Literal(Value::NIL),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            });
+        }
+        if let Some(value_var) = value_var.clone() {
+            pre.push(Stmt::VarDecl {
+                name: value_var,
                 expr: Expr::Literal(Value::NIL),
                 type_constraint: None,
                 is_state: false,
@@ -588,7 +622,10 @@ impl Compiler {
         loop_body.extend(pre_ph);
         // When we have both result_var (KEEP/UNDO) and post_topic_var (POST),
         // we need to capture the body's last expression into both.
-        let capture_var = result_var.clone().or(post_topic_var.clone());
+        let capture_var = result_var
+            .clone()
+            .or(post_topic_var.clone())
+            .or(value_var.clone());
         let body_taken = matches!(
             body_main.last(),
             Some(Stmt::Take(_, false)) if capture_var.is_some()
@@ -680,18 +717,23 @@ impl Compiler {
             });
         }
         loop_body.extend(leave_ph);
-        if let Some(result_var) = result_var.clone() {
-            // Preserve loop-body value for expression contexts that collect
-            // iteration results. Not needed (and harmful — sinking a taken
-            // Failure would throw) when the body's value was already `take`n
-            // into the enclosing gather.
-            if !body_taken {
-                loop_body.push(Stmt::Expr(Expr::Var(result_var)));
-            }
-        }
         // NEXT runs after KEEP/UNDO, before the next iteration begins.
         // next_ph was already reversed above for LIFO order.
         loop_body.extend(next_ph);
+        // Re-emit the captured trailing value LAST, after every appended phaser
+        // body. This has to come after `leave_ph`/`next_ph`, not before them: those
+        // are spliced onto the end of the body, so a value emitted first is no
+        // longer the body's last statement and a collecting caller takes the
+        // phaser's value instead (`do for 1,2,3 { NEXT {...}; $_ * 2 }`).
+        //
+        // Not emitted (and harmful — sinking a taken Failure would throw) when the
+        // body's value was already `take`n into the enclosing gather.
+        if let Some(capture_var) = capture_var.clone()
+            && !body_taken
+            && (wants_value || result_var.is_some())
+        {
+            loop_body.push(Stmt::Expr(Expr::Var(capture_var)));
+        }
 
         let post = if last_ph.is_empty() {
             Vec::new()

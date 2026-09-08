@@ -101,7 +101,11 @@ impl Compiler {
             None
         };
 
-        let (pre_stmts, loop_body, post_stmts) = self.expand_loop_phasers(body, label.as_deref());
+        // `collect` is exactly "this caller wants the body's trailing value", which is
+        // what decides whether the phaser lowering must preserve it across appended
+        // NEXT/LEAVE bodies.
+        let (pre_stmts, loop_body, post_stmts) =
+            self.expand_loop_phasers(body, label.as_deref(), collect);
         for s in &pre_stmts {
             self.compile_stmt(s);
         }
