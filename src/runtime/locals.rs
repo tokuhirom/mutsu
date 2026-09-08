@@ -82,9 +82,14 @@ impl Clone for Locals {
 impl Locals {
     /// Byte offset of the slot vector inside `Locals`, for the Tier B JIT
     /// emitter, which loads the `Vec` header words itself. Kept here because
-    /// the fields are private (see `vm_jit_layout`).
+    /// the fields are private (see `vm_jit_layout`). Gated like its only
+    /// consumer: with `jit` off, `vm_jit_layout` is not compiled and these
+    /// would be dead code — a warning only the `--no-default-features
+    /// --features native` lint configuration can see.
+    #[cfg(feature = "jit")]
     pub(crate) const SLOTS_BYTE_OFFSET: usize = std::mem::offset_of!(Locals, slots);
     /// Byte offset of the executing frame's base, for the same reason.
+    #[cfg(feature = "jit")]
     pub(crate) const BASE_BYTE_OFFSET: usize = std::mem::offset_of!(Locals, base);
 
     /// An empty stack with no frame.
