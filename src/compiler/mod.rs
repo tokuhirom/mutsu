@@ -1103,6 +1103,8 @@ mod declaration_plan_tests {
     }
 }
 mod const_fold;
+mod control_for;
+mod control_if;
 mod decl_plan;
 mod expr;
 mod expr_binary;
