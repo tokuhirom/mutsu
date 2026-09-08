@@ -65,7 +65,12 @@ impl Interpreter {
         };
         let saved_unit = self.enter_compilation_unit(cf);
         // Save caller locals and create callee locals
-        let saved_locals_base = self.locals.push_frame(0);
+        // Open the callee's frame at its real size in one step: sizing it later
+        // (an empty `push_frame` plus a `refill_slots`) cost a second
+        // out-of-line `Vec::resize` per call. Nothing between here and the
+        // parameter bind reads `self.locals`.
+        let num_locals = cf.code.locals.len();
+        let saved_locals_base = self.locals.push_frame(num_locals);
         // Isolate the caller's loop-body-local declaration scope (mirrors
         // vm_call_fast.rs / the positional-light path). Without this a callee's
         // body-local `my $x` — e.g. a recursive call from inside the caller's
@@ -103,9 +108,6 @@ impl Interpreter {
                 crate::env::Env::scoped_child(parent),
             ))
         };
-
-        let num_locals = cf.code.locals.len();
-        self.locals.refill_slots(num_locals);
 
         // Borrow-deref a possibly-VarRef-wrapped argument without cloning it.
         #[inline]
