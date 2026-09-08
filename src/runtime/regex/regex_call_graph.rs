@@ -47,12 +47,95 @@ type RuleNode = (String, String);
 /// analysis exists to save work, not to spend it.
 const MAX_REACHABLE_RULES: usize = 512;
 
+/// Why a `<subrule>` call could not take the streamed path.
+///
+/// Each variant is one of the declined shapes #7548 enumerates, kept separate
+/// because they cost very different amounts to clear: widening the *analysis*
+/// (`NotKnowable`, `Arguments`, `Symbolic`) is cheap, while streaming through
+/// the growing-seed loop (`ReentersOwnName`), a proto's rank-then-match
+/// dispatch (`Proto`) or several candidates' interleaved walks
+/// (`SeveralCandidates`) is the expensive machinery. `Str` names are what the
+/// `MUTSU_VM_STATS` histogram reports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StreamDecline {
+    /// `<expr($p-1)>` — the arguments are part of the left-recursion key and
+    /// are evaluated per call, so the memoized verdict cannot apply.
+    Arguments,
+    /// `<::(EXPR)>` symbolic indirection: the target resolves per call.
+    Symbolic,
+    /// The name answers to no token/regex/rule here — a builtin assertion or
+    /// character class, or a plain grammar method (arbitrary user code).
+    NotARule,
+    /// Several resolved candidates without a proto: the eager arm deduplicates
+    /// ends *across* them, which a stream would have to interleave to preserve.
+    SeveralCandidates,
+    /// A proto/`multi` subrule: ADR-0046 dispatch wants the winning
+    /// candidate's whole end set.
+    Proto,
+    /// `:m` remaps positions across the whole result set.
+    IgnoreMark,
+    /// The rule really is part of a call cycle. Left recursion is why the
+    /// growing-seed loop exists; this is the genuinely hard residue.
+    ReentersOwnName,
+    /// Some rule in the call cone is a plain grammar METHOD — arbitrary user
+    /// code, whose dispatch targets are not a property of the token
+    /// generation. Nothing short of running it can widen this.
+    CalleeIsMethod,
+    /// Some rule in the call cone splices a value into its own pattern text
+    /// outside a `{ ... }` code block, so its call edges are not stable across
+    /// attempts. Widening this means tracking *which* interpolations can
+    /// introduce a rule call, rather than refusing on any of them.
+    CalleeInterpolates,
+    /// Some rule in the call cone contains a construct
+    /// (`<{ ... }>` closure interpolation, `<~~>`, ...) whose dispatch target
+    /// `collect_pattern_calls` will not name.
+    CalleeEdgeUnresolvable,
+    /// The reachable set hit [`MAX_REACHABLE_RULES`].
+    ReachableSetTooLarge,
+    /// A `$*`-twigil rule parameter is declared somewhere in the program, so
+    /// the call has to install and tear down a dynamic scope around itself.
+    DynamicRuleParam,
+    /// The grammar has a custom HOW, so dispatch is not static.
+    CustomHow,
+    /// This `(name, position)` key is already left-recursion-active.
+    LrKeyActive,
+    /// An embedded `{ ... }` block re-entered the key mid-stream, so the single
+    /// pass was not the growing-seed loop's answer and the call was handed back
+    /// to the eager arm.
+    SeedConsulted,
+}
+
+impl StreamDecline {
+    /// Short stable name for the `MUTSU_VM_STATS` histogram.
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Arguments => "call-arguments",
+            Self::Symbolic => "symbolic-indirection",
+            Self::NotARule => "not-a-rule",
+            Self::SeveralCandidates => "several-candidates",
+            Self::Proto => "proto-candidate",
+            Self::IgnoreMark => "ignore-mark",
+            Self::ReentersOwnName => "reenters-own-name",
+            Self::CalleeIsMethod => "callee-is-grammar-method",
+            Self::CalleeInterpolates => "callee-interpolates",
+            Self::CalleeEdgeUnresolvable => "callee-edge-unresolvable",
+            Self::ReachableSetTooLarge => "reachable-set-too-large",
+            Self::DynamicRuleParam => "dynamic-rule-param",
+            Self::CustomHow => "custom-how-grammar",
+            Self::LrKeyActive => "lr-key-active",
+            Self::SeedConsulted => "seed-consulted",
+        }
+    }
+}
+
 thread_local! {
-    /// `(name, pkg) -> the rules its candidates call directly`, or `None` when
+    /// `(name, pkg) -> the rules its candidates call directly`, or the reason
     /// some construct in one of them cannot be resolved. Same generation key.
     #[allow(clippy::type_complexity)]
-    static DIRECT_CALLS: RefCell<(u64, HashMap<RuleNode, Option<std::sync::Arc<Vec<RuleNode>>>>)> =
-        RefCell::new((0, HashMap::new()));
+    static DIRECT_CALLS: RefCell<(
+        u64,
+        HashMap<RuleNode, Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline>>,
+    )> = RefCell::new((0, HashMap::new()));
 
     /// `pkg -> subrule atom text -> may this call be streamed?`. This is the
     /// hot lookup: it is consulted before the call is resolved (and before its
@@ -60,8 +143,12 @@ thread_local! {
     /// borrowed hash lookups rather than a resolution plus a graph walk. The
     /// two-level shape is what keeps it allocation-free — a `(String, String)`
     /// key would have to be built to probe it. Same generation key.
+    ///
+    /// `None` is "streamable"; `Some(reason)` names the shape that declined it,
+    /// so the memoized answer still feeds the per-call histogram
+    /// ([`crate::vm::vm_stats::record_subrule_stream`]) without recomputing.
     #[allow(clippy::type_complexity)]
-    static STREAMABLE: RefCell<(u64, HashMap<String, HashMap<String, bool>>)> =
+    static STREAMABLE: RefCell<(u64, HashMap<String, HashMap<String, Option<StreamDecline>>>)> =
         RefCell::new((0, HashMap::new()));
 }
 
@@ -71,30 +158,34 @@ fn token_defs_gen() -> u64 {
 
 impl Interpreter {
     /// The reachability walk itself: is a call to `name` reachable from
-    /// `(pkg, name)`?
-    fn cannot_reenter(&mut self, name: &str, pkg: &str) -> bool {
+    /// `(pkg, name)`? `None` when it is proven unreachable; otherwise the
+    /// reason the walk gave up, which is not the same question -- a real cycle
+    /// and an unresolvable edge both mean "may re-enter" but cost entirely
+    /// different work to clear.
+    fn reenter_decline(&mut self, name: &str, pkg: &str) -> Option<StreamDecline> {
         let start: RuleNode = (pkg.to_string(), name.to_string());
         let mut seen: HashSet<RuleNode> = HashSet::from([start.clone()]);
         let mut queue: VecDeque<RuleNode> = VecDeque::from([start]);
         while let Some((cur_pkg, cur_name)) = queue.pop_front() {
-            let Some(calls) = self.direct_rule_calls(&cur_name, &cur_pkg) else {
-                return false;
+            let calls = match self.direct_rule_calls(&cur_name, &cur_pkg) {
+                Ok(calls) => calls,
+                Err(reason) => return Some(reason),
             };
             for callee in calls.iter() {
                 // Reaching the starting NAME again closes the loop the
                 // growing-seed algorithm exists for.
                 if callee.1 == name {
-                    return false;
+                    return Some(StreamDecline::ReentersOwnName);
                 }
                 if seen.len() >= MAX_REACHABLE_RULES {
-                    return false;
+                    return Some(StreamDecline::ReachableSetTooLarge);
                 }
                 if seen.insert(callee.clone()) {
                     queue.push_back(callee.clone());
                 }
             }
         }
-        true
+        None
     }
 
     /// The rules every candidate of `<name>` in `pkg` calls directly, or `None`
@@ -108,7 +199,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         pkg: &str,
-    ) -> Option<std::sync::Arc<Vec<RuleNode>>> {
+    ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
         let generation = token_defs_gen();
         let key = (pkg.to_string(), name.to_string());
         if let Some(hit) = DIRECT_CALLS.with(|c| {
@@ -136,7 +227,7 @@ impl Interpreter {
                 let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
                 self.rule_calls_of(name, pkg, &candidates, raw_empty)
             }
-            None => None,
+            None => Err(StreamDecline::CalleeInterpolates),
         };
         DIRECT_CALLS.with(|c| {
             let mut c = c.borrow_mut();
@@ -156,17 +247,16 @@ impl Interpreter {
         pkg: &str,
         candidates: &[super::regex_token_resolve::ParsedTokenCandidate],
         raw_empty: bool,
-    ) -> Option<std::sync::Arc<Vec<RuleNode>>> {
+    ) -> Result<std::sync::Arc<Vec<RuleNode>>, StreamDecline> {
         if raw_empty || candidates.is_empty() {
             // No token/regex/rule answers to this name here. It is either a
             // builtin assertion or character class (`<alpha>`, `<ws>` with no
             // grammar override, `<sym>`), which cannot dispatch to a user rule,
             // or a plain grammar METHOD — arbitrary user code, so unknowable.
-            return self
-                .registry()
-                .user_method_overloads(pkg, name)
-                .is_none()
-                .then(|| std::sync::Arc::new(Vec::new()));
+            return match self.registry().user_method_overloads(pkg, name) {
+                None => Ok(std::sync::Arc::new(Vec::new())),
+                Some(_) => Err(StreamDecline::CalleeIsMethod),
+            };
         }
         let mut out: Vec<RuleNode> = Vec::new();
         for (parsed, sub_pkg, _) in candidates.iter() {
@@ -174,12 +264,12 @@ impl Interpreter {
             // references against the package that DEFINED it, not against the
             // caller's — the same rule `subrule_candidate_ends` matches under.
             if !collect_pattern_calls(parsed, sub_pkg, &mut out) {
-                return None;
+                return Err(StreamDecline::CalleeEdgeUnresolvable);
             }
         }
         out.sort();
         out.dedup();
-        Some(std::sync::Arc::new(out))
+        Ok(std::sync::Arc::new(out))
     }
 }
 
@@ -191,7 +281,11 @@ impl Interpreter {
     ///
     /// `atom_text` is the subrule atom exactly as written,
     /// so `<foo>` and `<&foo>` get their own entries rather than sharing one.
-    pub(super) fn subrule_call_is_streamable(&mut self, atom_text: &str, pkg: &str) -> bool {
+    pub(super) fn subrule_call_stream_decline(
+        &mut self,
+        atom_text: &str,
+        pkg: &str,
+    ) -> Option<StreamDecline> {
         let generation = token_defs_gen();
         if let Some(hit) = STREAMABLE.with(|c| {
             let c = c.borrow();
@@ -201,7 +295,7 @@ impl Interpreter {
         }) {
             return hit;
         }
-        let verdict = self.compute_streamable(atom_text, pkg);
+        let verdict = self.compute_stream_decline(atom_text, pkg);
         STREAMABLE.with(|c| {
             let mut c = c.borrow_mut();
             if c.0 != generation {
@@ -215,12 +309,15 @@ impl Interpreter {
         verdict
     }
 
-    fn compute_streamable(&mut self, atom_text: &str, pkg: &str) -> bool {
+    fn compute_stream_decline(&mut self, atom_text: &str, pkg: &str) -> Option<StreamDecline> {
         let spec = Self::parse_named_regex_lookup_spec(atom_text);
         // A rule call with arguments, and `<::(EXPR)>` symbolic indirection,
         // both resolve per call; neither is a shape this path handles.
-        if !spec.arg_exprs.is_empty() || spec.lookup_name == "::" {
-            return false;
+        if !spec.arg_exprs.is_empty() {
+            return Some(StreamDecline::Arguments);
+        }
+        if spec.lookup_name == "::" {
+            return Some(StreamDecline::Symbolic);
         }
         let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
         // Exactly one plain candidate. A proto keeps its rank-then-match
@@ -229,9 +326,19 @@ impl Interpreter {
         // result set. All three are properties of the rule's DEFINITIONS, so the
         // verdict holds for the whole token generation even when the body's
         // parse does not.
-        let shape_ok = !raw_empty
-            && matches!(&candidates[..], [(parsed, _, sym)] if sym.is_none() && !parsed.ignore_mark);
-        shape_ok && self.cannot_reenter(&spec.lookup_name, pkg)
+        if raw_empty || candidates.is_empty() {
+            return Some(StreamDecline::NotARule);
+        }
+        let [(parsed, _, sym)] = &candidates[..] else {
+            return Some(StreamDecline::SeveralCandidates);
+        };
+        if sym.is_some() {
+            return Some(StreamDecline::Proto);
+        }
+        if parsed.ignore_mark {
+            return Some(StreamDecline::IgnoreMark);
+        }
+        self.reenter_decline(&spec.lookup_name, pkg)
     }
 
     /// `true` when every definition answering to `<name>` in `pkg` compiles to
