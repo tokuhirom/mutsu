@@ -83,7 +83,12 @@ impl Interpreter {
         }
         let saved_env = self.env.clone();
         let saved_readonly = self.enter_readonly_frame();
-        let rw_bindings = match self.bind_function_args_values(&def.param_defs, &def.params, args) {
+        let rw_bindings = match self.bind_function_args_values_with_argspec(
+            &def.param_defs,
+            &def.params,
+            args,
+            Some(crate::ast::body_reads_args_array(&def.body)),
+        ) {
             Ok(bindings) => bindings,
             Err(e) => {
                 self.env = saved_env;

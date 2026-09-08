@@ -3253,6 +3253,24 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
     false
 }
 
+/// Whether `stmts` reads the legacy argument array `@_` anywhere.
+///
+/// This is the ONE thing that makes a routine accept more positional arguments
+/// than its signature names: rakudo refuses a surplus for `sub f { $^x }` but
+/// allows it for `sub f { $^x; @_.elems }`, where the leftovers flow into `@_`.
+/// Measured 2026-09-08 — and note that a `%_` read does NOT buy the same
+/// leniency (`sub f { $^x; %_.elems }` called with three positionals dies),
+/// because `%_` is about *named* arguments and has no bearing on positional
+/// arity.
+///
+/// The debug-format probe is the same one `make_anon_sub` has always used for
+/// the signature-less-block case; it is deliberately conservative, since a
+/// false positive only makes a call more permissive than rakudo and a false
+/// negative only leaves the pre-existing behaviour.
+pub(crate) fn body_reads_args_array(stmts: &[Stmt]) -> bool {
+    format!("{stmts:?}").contains("ArrayVar(\"_\")")
+}
+
 /// Create an `Expr::AnonSub` or `Expr::AnonSubParams` depending on whether
 /// the block body contains placeholder variables (`$^a`, `$^b`, etc.).
 pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
@@ -3261,8 +3279,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         // A signature-less block has an implicit `*@_` when it reads the
         // legacy argument array. Keep that distinction from an explicitly
         // empty `-> {}` signature, which still rejects positional arguments.
-        let body_debug = format!("{stmts:?}");
-        let uses_at_underscore = body_debug.contains("ArrayVar(\"_\")");
+        let uses_at_underscore = body_reads_args_array(&stmts);
         if uses_at_underscore {
             let legacy_params = vec!["@_".to_string()];
             let param_defs = legacy_params

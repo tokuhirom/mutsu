@@ -697,16 +697,20 @@ impl Interpreter {
                 self.exit_readonly_frame(saved_readonly);
                 return Err(Self::reject_args_for_empty_sig(&call_args));
             }
-            let rw_bindings =
-                match self.bind_function_args_values(&data.param_defs, &data.params, &call_args) {
-                    Ok(bindings) => bindings,
-                    Err(e) => {
-                        self.pop_caller_env();
-                        self.env = saved_env;
-                        self.exit_readonly_frame(saved_readonly);
-                        return Err(e);
-                    }
-                };
+            let rw_bindings = match self.bind_function_args_values_with_argspec(
+                &data.param_defs,
+                &data.params,
+                &call_args,
+                Self::routine_reads_args_array(&data),
+            ) {
+                Ok(bindings) => bindings,
+                Err(e) => {
+                    self.pop_caller_env();
+                    self.env = saved_env;
+                    self.exit_readonly_frame(saved_readonly);
+                    return Err(e);
+                }
+            };
             new_env = self.env.clone();
             if data.params.is_empty() {
                 for arg in &sanitized_args {

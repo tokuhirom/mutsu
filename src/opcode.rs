@@ -4431,6 +4431,23 @@ pub(crate) struct CompiledCode {
     /// `logging.rakutest` reported the OUTER task's id for the inner task's
     /// end entry).
     pub(crate) writes_topic: bool,
+    /// Whether this code READS the legacy argument array `@_`.
+    ///
+    /// This is the one thing that lets a routine accept more positional
+    /// arguments than its signature names: rakudo refuses a surplus for
+    /// `sub f { $^x }` but allows it for `sub f { $^x; @_.elems }`, where the
+    /// leftovers flow into `@_`. Measured against rakudo 2026.07 (#7619); note
+    /// a `%_` read does NOT buy the same leniency, because `%_` is about
+    /// *named* arguments and has no bearing on positional arity.
+    ///
+    /// It lives here rather than being derived from the body at bind time
+    /// because a compiled closure's `SubData::body` is EMPTY — the AST is gone
+    /// once `cc` exists — so the binder cannot re-derive it. This is the
+    /// "dedicated field threaded from the AST through to the runtime `Sub`"
+    /// that `news/2026-08/template-mojo-triage-closed.md` said the fix needed;
+    /// the alternative it rejected (reserving a synthetic `params` entry) leaks
+    /// into every site that reads a Sub's raw `params`.
+    pub(crate) reads_args_array: bool,
     /// Whether this code contains opcodes that write to env (SetGlobal,
     /// AssignExpr, PostIncrement, etc.). Used by call_compiled_method to
     /// skip the expensive env merge when the method body is read-only.
@@ -5329,6 +5346,7 @@ impl CompiledCode {
             pointy_alias_param: false,
             immutable_topic: false,
             writes_topic: false,
+            reads_args_array: false,
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
@@ -7549,6 +7567,16 @@ impl CompiledCode {
             && name.as_ref() == "_"
         {
             self.writes_topic = true;
+        }
+        // NOTE the sigil: `GetArrayVar`'s constant is the SIGILED name `"@_"`,
+        // unlike the topic, whose env key is a bare `"_"` (which is exactly the
+        // trap `CLAUDE.md`'s debugging section records — do not guess the key).
+        if !self.reads_args_array
+            && let OpCode::GetArrayVar(idx) = &op
+            && let Some(ValueView::Str(name)) = self.constants.get(*idx as usize).map(Value::view)
+            && matches!(name.as_str(), "@_" | "_")
+        {
+            self.reads_args_array = true;
         }
         if !self.has_env_writes {
             self.has_env_writes = matches!(

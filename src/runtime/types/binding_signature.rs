@@ -472,7 +472,43 @@ impl Interpreter {
         params: &[String],
         args: &[Value],
     ) -> Result<Vec<(String, String)>, RuntimeError> {
-        let result = self.bind_function_args_values_inner(param_defs, params, args);
+        self.bind_function_args_values_with_argspec(param_defs, params, args, None)
+    }
+
+    /// Whether `data`'s body reads the legacy argument array `@_`, or `None`
+    /// when it cannot be told.
+    ///
+    /// A COMPILED routine carries the answer on its `CompiledCode`; its
+    /// `SubData::body` is empty, because the AST is gone once the bytecode
+    /// exists, so asking the body there would answer a confident and wrong
+    /// "no". An interpreted one still has its body and is asked directly.
+    pub(crate) fn routine_reads_args_array(data: &crate::value::SubData) -> Option<bool> {
+        if let Some(cc) = data.compiled_code.as_ref() {
+            return Some(cc.reads_args_array);
+        }
+        if data.body.is_empty() {
+            return None;
+        }
+        Some(crate::ast::body_reads_args_array(&data.body))
+    }
+
+    /// [`Interpreter::bind_function_args_values`] plus the one fact about the
+    /// routine the params list cannot carry: whether its body reads the legacy
+    /// argument array `@_`.
+    ///
+    /// That decides whether a `^`-placeholder routine may be over-supplied with
+    /// positionals — see [`crate::opcode::CompiledCode::reads_args_array`] and
+    /// #7619. `None` means the caller cannot tell, and keeps the historical
+    /// lenient behaviour.
+    pub(crate) fn bind_function_args_values_with_argspec(
+        &mut self,
+        param_defs: &[ParamDef],
+        params: &[String],
+        args: &[Value],
+        reads_args_array: Option<bool>,
+    ) -> Result<Vec<(String, String)>, RuntimeError> {
+        let result =
+            self.bind_function_args_values_inner(param_defs, params, args, reads_args_array);
         let declares_self = crate::ast::signature_declares_self_lexical(param_defs)
             // The legacy binding path: a single pointy-block parameter
             // (`-> $self { }`) arrives as a bare name with no `ParamDef`.
@@ -488,6 +524,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         params: &[String],
         args: &[Value],
+        reads_args_array: Option<bool>,
     ) -> Result<Vec<(String, String)>, RuntimeError> {
         let filtered_args: Vec<Value> = args
             .iter()
@@ -758,32 +795,53 @@ impl Interpreter {
                     )));
                 }
             }
-            // A `^`-twigil placeholder or named (`:name`) placeholder sub may
-            // legitimately accept more positionals than its placeholders
-            // declare, via a bare `@_`/`%_` read in its body (see the comment
-            // above `required_positional_count`) -- so the "too many" check
-            // below is confined to a params list made ENTIRELY of plain
-            // (non-placeholder) identifiers. That shape only arises from an
-            // explicit single-param pointy block (`-> $a { }`, compiled via
-            // `Expr::Lambda`) or a non-mutating WhateverCode (`*+1`), neither
-            // of which can coexist with a body `@_`/`%_` read -- Raku rejects
-            // that combination at compile time (`X::Signature::Placeholder`,
-            // "Placeholder variable '@_' cannot override existing
-            // signature"), so a caret/colon-free params list here is never
-            // ambiguous (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
-            let all_plain_positional = params.iter().all(|p| {
-                !p.starts_with('^')
-                    && !p.starts_with("@^")
-                    && !p.starts_with("%^")
-                    && !p.starts_with("&^")
-                    && !p.starts_with(':')
-                    && !p.starts_with("@:")
-                    && !p.starts_with("%:")
-            });
-            if all_plain_positional && positional_idx < positional_args.len() {
+            // A params list made ENTIRELY of plain (non-placeholder)
+            // identifiers always rejects a surplus. That shape only arises
+            // from an explicit single-param pointy block (`-> $a { }`,
+            // compiled via `Expr::Lambda`) or a non-mutating WhateverCode
+            // (`*+1`), neither of which can coexist with a body `@_`/`%_`
+            // read -- Raku rejects that combination at compile time
+            // (`X::Signature::Placeholder`, "Placeholder variable '@_' cannot
+            // override existing signature"), so it is never ambiguous.
+            let has_placeholder = |p: &String| {
+                p.starts_with('^')
+                    || p.starts_with("@^")
+                    || p.starts_with("%^")
+                    || p.starts_with("&^")
+            };
+            let has_named_placeholder =
+                |p: &String| p.starts_with(':') || p.starts_with("@:") || p.starts_with("%:");
+            let all_plain_positional = params
+                .iter()
+                .all(|p| !has_placeholder(p) && !has_named_placeholder(p));
+            // A `^`-twigil placeholder routine rejects a surplus too -- UNLESS
+            // its body reads a bare `@_`, which is where the leftovers go.
+            // Measured against rakudo 2026.07 (#7619):
+            //
+            //   sub a { $^x }              f(1,2,3)  dies, "expected 1 argument but got 3"
+            //   sub b { $^x; @_.elems }    f(1,2,3)  answers 2 -- the surplus IS `@_`
+            //   sub d { $^x; %_.elems }    f(1,2,3)  dies -- `%_` does NOT buy it
+            //
+            // A caller that cannot tell `a` from `b` passes `None` and stays
+            // lenient. A `:name` placeholder is left alone: mutsu does not yet
+            // bind one in a named sub at all (rakudo rejects the call at
+            // compile time), so there is no measured behaviour to match.
+            let caret_placeholders_reject_surplus = !all_plain_positional
+                && !params.iter().any(has_named_placeholder)
+                && reads_args_array == Some(false);
+            if (all_plain_positional || caret_placeholders_reject_surplus)
+                && positional_idx < positional_args.len()
+            {
                 return Err(RuntimeError::new(format!(
-                    "Too many positionals passed; expected {} arguments but got {}",
+                    // Rakudo says "1 argument", not "1 arguments"; the
+                    // same `argument{}` shape the "too few" arm above uses.
+                    "Too many positionals passed; expected {} argument{} but got {}",
                     required_positional_count,
+                    if required_positional_count == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
                     positional_args.len()
                 )));
             }
