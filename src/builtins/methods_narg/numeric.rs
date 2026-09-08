@@ -93,8 +93,22 @@ pub(crate) fn int_to_subscript(n: i64) -> String {
 // ── 1-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 1-argument method call on a Value.
 /// Compute the nth roots of a number. Used by both the `.roots` method and the
-/// `roots()` builtin function. Handles edge cases: n <= 0 returns `NaN`,
-/// NaN/Inf inputs with n=1 return the input as Complex.
+/// `roots()` builtin function.
+///
+/// Rakudo's `Numeric.roots` is `(^$n).map: { Complex.new-from-polar($mag ** (1/$n),
+/// ($angle + $_ * 2 * pi) / $n) }`, guarded by three scalar early returns, and
+/// this mirrors it exactly:
+///
+/// - `$n < 1` answers a bare `NaN` (a `Num`, not a one-element list);
+/// - `$n == 1` answers the receiver coerced to `Complex` (`4.roots(1)` is
+///   `4+0i`, `Inf.roots(1)` is `Inf+0i`);
+/// - a non-finite polar magnitude or angle answers a bare `NaN`
+///   (`Inf.roots(2)`, `NaN.roots(2)`, `(Inf+1i).roots(2)`).
+///
+/// Every element of the list form is a `Complex`. The tempting cleanup -- turn
+/// a root whose imaginary part is a rounding-error epsilon back into a `Num` --
+/// is what made `4.roots(2)` answer `(2e0, -2e0)` where Rakudo answers
+/// `(2+0i, -2+2.4492935982947064e-16i)`.
 pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
     let n_int = match n_arg.view() {
         ValueView::Int(i) => i,
@@ -115,9 +129,9 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
         _ => runtime::to_int(n_arg),
     };
 
-    // n <= 0: return [NaN]
-    if n_int <= 0 {
-        return Value::array(vec![Value::num(f64::NAN)]);
+    // n < 1: a bare NaN, not a list.
+    if n_int < 1 {
+        return Value::num(f64::NAN);
     }
 
     let n = n_int as usize;
@@ -132,62 +146,24 @@ pub(crate) fn compute_roots(target: &Value, n_arg: &Value) -> Value {
         }
     };
 
-    // Handle NaN: return [NaN+0i] (Complex NaN)
-    if re.is_nan() || im.is_nan() {
-        let mut roots = Vec::with_capacity(n);
-        for _ in 0..n {
-            roots.push(Value::complex(f64::NAN, 0.0));
-        }
-        return Value::array(roots);
+    // n == 1: the receiver itself, as a Complex.
+    if n == 1 {
+        return Value::complex(re, im);
     }
 
-    // Handle Inf/-Inf: return [Inf+0i] or [-Inf+0i] etc.
-    if re.is_infinite() || im.is_infinite() {
-        let mut roots = Vec::with_capacity(n);
-        // For n=1, return the value itself as Complex
-        // For n>1, the roots involve Inf which is complex
-        for k in 0..n {
-            if n == 1 {
-                roots.push(Value::complex(re, im));
-            } else {
-                // Infinity roots: magnitude is Inf, angles vary
-                let theta = im.atan2(re);
-                let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
-                let rr = f64::INFINITY * angle.cos();
-                let ii = f64::INFINITY * angle.sin();
-                if ii.abs() < 1e-12 {
-                    roots.push(Value::num(rr));
-                } else {
-                    roots.push(Value::complex(rr, ii));
-                }
-            }
-        }
-        return Value::array(roots);
-    }
-
-    // Check if target is zero
-    if re == 0.0 && im == 0.0 {
-        let mut roots = Vec::with_capacity(n);
-        for _ in 0..n {
-            roots.push(Value::complex(0.0, 0.0));
-        }
-        return Value::array(roots);
-    }
-
-    // Normal case: compute nth roots using polar form
+    // Polar form. A non-finite magnitude or angle has no meaningful root set;
+    // Rakudo answers a bare NaN rather than a list of Inf/NaN components.
     let r = (re * re + im * im).sqrt();
     let theta = im.atan2(re);
+    if !r.is_finite() || !theta.is_finite() {
+        return Value::num(f64::NAN);
+    }
+
     let mag = r.powf(1.0 / n as f64);
     let mut roots = Vec::with_capacity(n);
     for k in 0..n {
         let angle = (theta + 2.0 * std::f64::consts::PI * k as f64) / n as f64;
-        let rr = mag * angle.cos();
-        let ii = mag * angle.sin();
-        if ii.abs() < 1e-12 {
-            roots.push(Value::num(rr));
-        } else {
-            roots.push(Value::complex(rr, ii));
-        }
+        roots.push(Value::complex(mag * angle.cos(), mag * angle.sin()));
     }
     Value::array(roots)
 }

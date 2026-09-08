@@ -188,6 +188,45 @@ fn format_num_scientific(f: f64) -> String {
     }
 }
 
+/// Format a `Num` exactly as Rakudo's `Num.Str` does.
+///
+/// This is the single definition of Raku `Num` rendering: `Complex.Str` builds
+/// its two components with it too (Rakudo's `Complex.Str` is literally
+/// `$!re ~ sign ~ $!im.abs ~ 'i'`), so the scientific-notation threshold cannot
+/// drift between `say 6.1e-17` and `say 6.1e-17 + 1i`.
+pub fn format_num(f: f64) -> String {
+    if f.is_nan() {
+        "NaN".to_string()
+    } else if f.is_infinite() {
+        if f > 0.0 {
+            "Inf".to_string()
+        } else {
+            "-Inf".to_string()
+        }
+    } else if f == 0.0 && f.is_sign_negative() {
+        "-0".to_string()
+    } else if f.fract() == 0.0 {
+        let abs = f.abs();
+        if abs >= 1e15 || (abs != 0.0 && abs < 1e-4) {
+            // Scientific notation for very large/small integer-valued Nums
+            format_num_scientific(f)
+        } else {
+            format!("{}", f as i64)
+        }
+    } else {
+        // Fractional Num: Raku renders in scientific notation once the
+        // magnitude leaves [1e-4, 1e15) -- e.g. `1e-5` prints `1e-05`,
+        // not `0.00001`. Rust's `{}` never switches to scientific, so
+        // apply the same threshold as the integer-valued branch.
+        let abs = f.abs();
+        if !(1e-4..1e15).contains(&abs) {
+            format_num_scientific(f)
+        } else {
+            format!("{}", f)
+        }
+    }
+}
+
 /// Apply tclc (titlecase first char, lowercase rest) to a string.
 pub fn tclc_str(s: &str) -> String {
     let mut result = String::new();
@@ -274,34 +313,10 @@ pub fn wordcase_with(s: &str, mut transform: impl FnMut(&str) -> String) -> Stri
 }
 
 pub fn format_complex(r: f64, i: f64) -> String {
-    /// Format a float component of a Complex, preserving the sign of negative zero.
-    fn fmt_num(v: f64) -> String {
-        if v.is_nan() {
-            "NaN".to_string()
-        } else if v.is_infinite() {
-            if v.is_sign_positive() {
-                "Inf".to_string()
-            } else {
-                "-Inf".to_string()
-            }
-        } else if v.fract() == 0.0 {
-            // Preserve sign of -0.0
-            // Check if value fits in i64 range before casting (large floats saturate)
-            let abs_v = v.abs();
-            if abs_v <= i64::MAX as f64 {
-                if v.is_sign_negative() {
-                    format!("-{}", (-v) as i64)
-                } else {
-                    format!("{}", v as i64)
-                }
-            } else {
-                // Large float that doesn't fit in i64: use scientific notation
-                format!("{:e}", v)
-            }
-        } else {
-            format!("{}", v)
-        }
-    }
+    // A Complex component renders exactly as the `Num` it is: Rakudo's
+    // `Complex.Str` concatenates `$!re.Str` and `$!im.abs.Str`, so the
+    // scientific-notation threshold is `Num.Str`'s, not a second one.
+    let fmt_num = format_num;
     // Use \i notation when imaginary part is Inf, -Inf, or NaN
     let imag_special = i.is_infinite() || i.is_nan();
     let suffix = if imag_special { "\\i" } else { "i" };
@@ -402,38 +417,7 @@ impl Value {
             ValueView::RakuAst(node) => crate::rakuast::node_gist(node),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
-            ValueView::Num(f) => {
-                if f.is_nan() {
-                    "NaN".to_string()
-                } else if f.is_infinite() {
-                    if f > 0.0 {
-                        "Inf".to_string()
-                    } else {
-                        "-Inf".to_string()
-                    }
-                } else if f == 0.0 && f.is_sign_negative() {
-                    "-0".to_string()
-                } else if f.fract() == 0.0 && f.is_finite() {
-                    let abs = f.abs();
-                    if abs >= 1e15 || (abs != 0.0 && abs < 1e-4) {
-                        // Scientific notation for very large/small integer-valued Nums
-                        format_num_scientific(f)
-                    } else {
-                        format!("{}", f as i64)
-                    }
-                } else {
-                    // Fractional Num: Raku renders in scientific notation once the
-                    // magnitude leaves [1e-4, 1e15) — e.g. `1e-5` prints `1e-05`,
-                    // not `0.00001`. Rust's `{}` never switches to scientific, so
-                    // apply the same threshold as the integer-valued branch.
-                    let abs = f.abs();
-                    if !(1e-4..1e15).contains(&abs) {
-                        format_num_scientific(f)
-                    } else {
-                        format!("{}", f)
-                    }
-                }
-            }
+            ValueView::Num(f) => format_num(f),
             ValueView::Str(s) => (**s).clone(),
             ValueView::Bool(true) => "True".to_string(),
             ValueView::Bool(false) => "False".to_string(),
