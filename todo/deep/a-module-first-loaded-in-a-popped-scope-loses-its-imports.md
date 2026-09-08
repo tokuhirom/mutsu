@@ -104,6 +104,37 @@ boundary, not a local repair. The partial change was measured and then reverted
 rather than shipped, because a change to module-load semantics that still leaves
 the headline consumer failing is not worth its blast radius.
 
+### Which state rakudo implies: persistent, with lexical imports
+
+Measured, so the choice above does not have to be guessed:
+
+| after `EVAL 'use Outer; 1'` | rakudo |
+| --- | --- |
+| `EVAL 'outer-probe()'` (a fresh EVAL) | `X::Undeclared::Symbols` |
+| `use Outer; outer-probe()` (the outer scope) | `visible` |
+| `EVAL 'use Outer; outer-probe()'` (same EVAL) | `visible` |
+
+So rakudo scopes the **imports** to whichever scope ran the `use` — a later,
+unrelated EVAL cannot see them — while the **module and its own state stay
+loaded process-wide**, which is what lets the outer scope's own `use` re-import
+and work.
+
+mutsu's `eval_eval_string` therefore rolls back the wrong thing. It discards the
+module's *registrations*, which should persist, instead of scoping only the
+*aliases the EVAL imported*, which is exactly what `pop_import_scope` already
+does for a block and what its keep-rule ("a module's own fully-qualified source
+definitions persist, because a sibling block's later `use` re-imports from
+them") is built around. Rolling `loaded_modules` back — the partial fix above —
+pushes in the opposite direction and is why the second layer (`our` package
+state lost across the reload) appeared: it made the module reload when it should
+never have been unloaded.
+
+Target state, then: leave the module loaded and its registrations intact across
+the EVAL, and scope only the imported aliases, so the later `use` re-imports
+from the persistent definitions. Mechanism 1's `GLOBAL::`-qualified aliasing for
+a `unit module`'s own imports is the remaining obstacle to that, since those
+aliases are indistinguishable from a genuine GLOBAL import today.
+
 ## Reproducing
 
 Write the two modules above under `tmp/nclib/`, then the three scripts, and
