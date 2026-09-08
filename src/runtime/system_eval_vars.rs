@@ -665,6 +665,19 @@ impl Interpreter {
         expr: &Expr,
         declared: &HashSet<String>,
     ) -> Option<(&'static str, String, Vec<String>)> {
+        // An extended identifier whose adverb value still awaits BEGIN-time
+        // evaluation (`$a:foo«$c»`) does not yet spell the name it will look
+        // up -- only the compiler knows the `constant` environment that
+        // decides it (`compiler::adverb_interp`). Comparing the unevaluated
+        // spelling against `declared` would reject `my $a:foo<42>; $a:foo«$c»`
+        // even though the two name the same variable.
+        if matches!(
+            expr,
+            Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) | Expr::CodeVar(n)
+                if crate::adverb_name::needs_interp(n)
+        ) {
+            return None;
+        }
         match expr {
             Expr::Var(name) => {
                 // Skip special variables, variables with twigils, and capture vars ($0, $1, ...)

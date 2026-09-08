@@ -432,6 +432,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if (rest.starts_with(":[") || rest.starts_with(":\u{00AB}"))
                 && let Some((canonical, r)) =
                     crate::parser::primary::var::parse_adverb_value_pub(&rest[1..])
+                // A value the parser left for BEGIN-time evaluation
+                // (`infix:«$op»`) is not a compile-time string lookup: it names
+                // the operator dynamically and is handled by the `&infix:«$op»`
+                // symbolic-deref branch. Fall through rather than interning a
+                // Symbol around the unevaluated spelling.
+                && !crate::adverb_name::needs_interp(&canonical)
             {
                 let op_name = canonical
                     .strip_prefix('<')

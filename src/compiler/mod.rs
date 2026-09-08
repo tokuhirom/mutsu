@@ -1102,6 +1102,7 @@ mod declaration_plan_tests {
         );
     }
 }
+mod adverb_interp;
 mod const_fold;
 mod control_for;
 mod control_if;
