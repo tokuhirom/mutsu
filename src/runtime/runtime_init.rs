@@ -3205,7 +3205,7 @@ impl Interpreter {
             shaped_decl_context: false,
             vardecl_init_raw: None,
             pending_rw_writeback_sources: Vec::new(),
-            pending_caller_var_writeback: Vec::new(),
+            pending_caller_var_writeback: rustc_hash::FxHashSet::default(),
             inline_control_env_writes: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),

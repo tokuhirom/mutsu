@@ -2072,7 +2072,7 @@ impl Interpreter {
                     {
                         self.locals[slot] = val;
                     }
-                } else if !self.pending_caller_var_writeback.contains(&source) {
+                } else {
                     // The owning slot is not in THIS frame. Don't drop the source:
                     // it belongs to a frame further up the stack (e.g. a sibling
                     // `submethod BUILD`'s `$counter++` queued for the outer `.new`
@@ -2080,7 +2080,7 @@ impl Interpreter {
                     // S12-construction/BUILD.t). Move it to the retain-on-miss
                     // caller-var list so the owning frame's drain refreshes its slot
                     // instead of leaving it stale.
-                    self.pending_caller_var_writeback.push(source);
+                    self.pending_caller_var_writeback.insert(source);
                 }
             }
         }
@@ -2142,30 +2142,55 @@ impl Interpreter {
         self.apply_pending_caller_var_writeback_slow(code);
     }
 
+    /// The search runs **frame-locals outwards**, not pending-sources inwards:
+    /// walk this frame's `code.locals` once and ask the pending set about each,
+    /// rather than asking `find_local_slot` — a linear `code.locals` scan — about
+    /// each pending source. Same answer (a source names one variable, so no two
+    /// can want the same slot, and taking slots in index order still resolves a
+    /// duplicated name to its first slot exactly as `find_local_slot` did), at
+    /// O(locals) hash lookups instead of O(pending * locals) string comparisons.
+    ///
+    /// That matters because the pending set is long-lived and large. Retain-on-miss
+    /// never removes a name no frame will ever own, and `merge_method_env` feeds it
+    /// every caller-visible env key a method changed — which, while a module loads,
+    /// means its enum values, constants and exported symbols. Running
+    /// `Cro::HTTP2::RequestParser`'s HTTP/2 header path left 313 such permanently
+    /// unclaimable names (`PROTOCOL_ERROR`, `State::header-c`,
+    /// `CBOR::Simple::CBORMajorType::CBOR_Array`, …), and rescanning all of them on
+    /// every call return made this function 8.0% of all instructions executed in a
+    /// local `callgrind` run — second only to `malloc`. See
+    /// [#7667](https://github.com/tokuhirom/mutsu/issues/7667).
+    ///
+    /// The names themselves still accumulate; what stops costing is looking at
+    /// them. Dropping an unclaimed source instead is NOT sound: a proxy-bound
+    /// writeback (`my $r := substr-rw($s, 0, 5); $r = "..."`) is recorded while a
+    /// `code` without the slot is current and is claimed by a later drain in the
+    /// very same frame (`t/substr-rw-lvalue-writeback-coherence.t`).
     #[inline(never)]
     fn apply_pending_caller_var_writeback_slow(&mut self, code: &CompiledCode) {
-        let sources = std::mem::take(&mut self.pending_caller_var_writeback);
-        let mut retained = Vec::new();
-        for source in sources {
-            if let Some(slot) = self.find_local_slot(code, &source) {
-                if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
-                    && let Some(val) = self.env().get(&source).cloned()
-                {
-                    self.locals[slot] = val;
-                }
-                // matched (slot exists in this frame) → applied, do not retain.
-                // Keep the runtime-name list in step: once the frame that owns the
-                // slot has absorbed the value there is nothing left to carry across
-                // further frame exits, and leaving the entry behind would keep
-                // replaying a stale value upward.
-                if !self.pending_runtime_name_writes.is_empty() {
-                    self.pending_runtime_name_writes.retain(|n| n != &source);
-                }
-            } else {
-                retained.push(source);
+        // `code.locals` can in principle outrun the frame's live slot region; only
+        // slots that exist are writable, and a name past the end stays pending.
+        let live = self.locals.len();
+        for (slot, name) in code.locals.iter().enumerate().take(live) {
+            // `remove` is the membership test and the "matched -> do not retain"
+            // step in one: a source is applied at most once, at the first slot
+            // bearing its name.
+            if !self.pending_caller_var_writeback.remove(name.as_str()) {
+                continue;
+            }
+            if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
+                && let Some(val) = self.env().get(name).cloned()
+            {
+                self.locals[slot] = val;
+            }
+            // Keep the runtime-name list in step: once the frame that owns the
+            // slot has absorbed the value there is nothing left to carry across
+            // further frame exits, and leaving the entry behind would keep
+            // replaying a stale value upward.
+            if !self.pending_runtime_name_writes.is_empty() {
+                self.pending_runtime_name_writes.retain(|n| n != name);
             }
         }
-        self.pending_caller_var_writeback = retained;
     }
 
     /// Drain `pending_local_updates` logged by an embedded regex `{ ... }` block

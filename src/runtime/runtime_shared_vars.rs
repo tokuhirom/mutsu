@@ -706,9 +706,7 @@ impl Interpreter {
         // (`pending_caller_var_writeback`) instead, which carries the source up the
         // frame chain until the frame whose `code` actually has the slot drains it.
         for (key, val) in updates {
-            if !self.pending_caller_var_writeback.contains(&key) {
-                self.pending_caller_var_writeback.push(key.clone());
-            }
+            self.pending_caller_var_writeback.insert(key.clone());
             // ADR-0024: a mainline named sub's captured free variable may be
             // reassigned from a worker thread (e.g. `$port = await
             // $tap.socket-port` completing a real async I/O wait, not a

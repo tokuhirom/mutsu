@@ -1119,7 +1119,7 @@ impl Interpreter {
                 let pending: Vec<String> = self
                     .pending_rw_writeback_sources
                     .drain(..)
-                    .chain(self.pending_caller_var_writeback.drain(..))
+                    .chain(self.pending_caller_var_writeback.drain())
                     .collect();
                 for name in pending {
                     self.record_caller_var_writeback(&name);

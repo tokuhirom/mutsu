@@ -240,8 +240,8 @@ impl Interpreter {
     /// the write happens inside a nested callee/closure (e.g. a Proxy STORE whose
     /// referent lexical is owned by the caller of the `$proxy = v` assignment).
     pub(crate) fn record_caller_var_writeback(&mut self, name: &str) {
-        if !self.pending_caller_var_writeback.iter().any(|n| n == name) {
-            self.pending_caller_var_writeback.push(name.to_string());
+        if !self.pending_caller_var_writeback.contains(name) {
+            self.pending_caller_var_writeback.insert(name.to_string());
         }
     }
 

@@ -3226,7 +3226,16 @@ pub struct Interpreter {
     /// intervening *deeper* call (the writer making another call before returning)
     /// must not consume it; (2) the value is read from env at drain time, same as
     /// the rw list. Drained at the same call sites, with retain-on-miss semantics.
-    pub(crate) pending_caller_var_writeback: Vec<String>,
+    ///
+    /// A **set**, not a list: the entries are an unordered pending-work set (each
+    /// names a distinct variable, so no two of them target the same slot and the
+    /// drain order cannot matter), every producer already deduplicated against it
+    /// before pushing, and retain-on-miss means it is long-lived — after loading a
+    /// handful of modules it holds hundreds of names that no frame will ever own
+    /// (enum values, constants, exported symbols; see
+    /// `apply_pending_caller_var_writeback_slow`). A `Vec` made both the
+    /// dedup-on-insert and the drain linear in that accumulated size.
+    pub(crate) pending_caller_var_writeback: rustc_hash::FxHashSet<String>,
     /// Appended every time a resume-safe `CONTROL` handler is run INLINE at a
     /// warn raise site (`try_resume_safe_control_inline`) and writes one of the
     /// installing frame's lexicals into `env`; each entry is the `Symbol` of
