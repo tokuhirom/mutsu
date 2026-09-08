@@ -23,7 +23,13 @@ cp tmp/sweep-final/{summary.txt,progress.txt} docs/doc-diff-sweep/
 cp -r tmp/sweep-final/reports docs/doc-diff-sweep/reports
 ```
 
-**Cap captured output before committing** — the harness does not (see `todo/tickets/doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md`); the 2026-09-07b sweep needed 11 MB → 412 KB of truncation. Keep only the reports for files listed in `summary.txt`.
+Captured output is capped by the harness itself now (#7590): each section is cut to
+40 lines with an explicit `... [truncated by doc-diff-harness: N more line(s) of M]`
+marker, and every block runs in a scratch directory rather than the repo root. Before
+that, the recipe above was not safe as written — the 2026-09-07b sweep needed 11 MB →
+412 KB of truncation BY HAND (one `sub MAIN` that `.dir`-walks its cwd produced a
+131_492-line, 8.4 MB report), and it left stray `bar` / `foo.txt` files behind. Keep
+only the reports for files listed in `summary.txt`.
 
 Then regenerate the survey table + Corpus snapshot in
 [../doc-diff-backlog.md](../doc-diff-backlog.md) from the new `summary.txt`, and

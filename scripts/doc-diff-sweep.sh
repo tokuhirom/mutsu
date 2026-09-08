@@ -25,8 +25,14 @@
 #                                         (mismatch + crash), high-signal first
 #
 # Re-verify each finding directly before treating it as a real bug — the oracle
-# gate keeps the report honest, but doc examples drift and some divergences are
-# raku-version drift (bucketed separately as `raku-drift-from-doc`).
+# gate keeps the report honest, but the harness can only compare what a doc block
+# actually prints.
+#
+# `nondet` counts blocks dropped because the ORACLE disagreed with itself across two
+# runs (unordered-container order, addresses, thread ids). It is the noise floor, not
+# a finding. There is no longer a `raku-drift-from-doc` bucket: whether raku still
+# matches the doc's own `# OUTPUT:` is provenance, not priority, and is reported as an
+# annotation on the finding instead.
 set -u
 
 JOBS=8
@@ -74,19 +80,19 @@ xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} < "$FILELIST" \
 awk '
   / :: / {
     idx = index($0, " :: "); file = substr($0, 1, idx - 1)
-    m = 0; mm = 0; cr = 0; dr = 0
+    m = 0; mm = 0; cr = 0; nd = 0
     nn = split(substr($0, idx), T, " ")
     for (k = 1; k <= nn; k++) {
       if      (T[k] ~ /^match=/)        { s = T[k]; sub(/^match=/, "", s);        m  = s + 0 }
       else if (T[k] ~ /^mismatch=/)     { s = T[k]; sub(/^mismatch=/, "", s);     mm = s + 0 }
       else if (T[k] ~ /^mutsu-crash=/)  { s = T[k]; sub(/^mutsu-crash=/, "", s);  cr = s + 0 }
-      else if (T[k] ~ /^raku-drift=/)   { s = T[k]; sub(/^raku-drift=/, "", s);   dr = s + 0 }
+      else if (T[k] ~ /^skipped-oracle-nondet=/) { s = T[k]; sub(/^skipped-oracle-nondet=/, "", s); nd = s + 0 }
     }
-    tm += m; tmm += mm; tcr += cr; tdr += dr
+    tm += m; tmm += mm; tcr += cr; tnd += nd
     sig = mm + cr
-    if (sig > 0) printf "%4d  mism=%-3d crash=%-3d drift=%-3d  %s\n", sig, mm, cr, dr, file
+    if (sig > 0) printf "%4d  mism=%-3d crash=%-3d nondet=%-3d  %s\n", sig, mm, cr, nd, file
   }
-  END { printf "\n==== corpus totals ====\nmatch=%d  mismatch=%d  crash=%d  raku-drift=%d\n", tm, tmm, tcr, tdr }
+  END { printf "\n==== corpus totals ====\nmatch=%d  mismatch=%d  crash=%d  oracle-nondet=%d\n", tm, tmm, tcr, tnd }
 ' "$OUTDIR/progress.txt" | sort -rn > "$OUTDIR/summary.txt"
 
 echo "SWEEP-DONE" >> "$OUTDIR/progress.txt"
