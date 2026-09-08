@@ -27,15 +27,15 @@ PROVE_JOBS ?= 4
 # `prove -e scripts/run-t-test.sh`: routes t/ through the same per-file timeout
 # + flaky-quarantine wrapper the roast suite uses (docs/flaky-test-policy.md).
 #
-# `MUTSU_BIN=.../debug/mutsu`: run t/ on the DEBUG binary, matching CI's TAP
-# step (ci.yml runs `prove t/` on target/debug/mutsu). The release build is
-# reserved for `make roast`. Building release here too cost ~19 min (a full
-# optimized recompile of the mutsu crate) for only a ~4 min t/ runtime saving
-# vs debug — it dominated `make test` wall-clock for no correctness gain. See
-# docs/adr/0014-make-test-runs-tap-on-debug-binary.md.
+# `MUTSU_BIN=.../release/mutsu`: run t/ on the RELEASE binary, the same one
+# `make roast` uses, matching CI's TAP step. `cargo test` still builds and runs
+# the Rust unit tests in debug, so `debug_assert!` keeps its coverage there, and
+# the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
+# See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
+# ADR-0014.
 test: check-value-wall check-flaky-list
 	@mkdir -p tmp
-	(cargo build && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/debug/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build

@@ -72,8 +72,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: ubuntu-latest
-    # The job does two full cargo builds (debug for `prove t/`, release for
-    # roast) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
+    # The job does one full cargo build (release, shared by `prove t/` and
+    # roast; ADR-0075 retired the separate debug build the TAP step used to
+    # need) plus clippy, unit tests, and the ~7 min roast suite. At 15 min the
     # job was hitting the limit and getting canceled even when every test
     # passed (roast printing "Result: PASS" immediately before cancellation).
     # 25 min gave headroom for a cold/partial cargo cache; 30 since the Clippy
@@ -163,8 +164,18 @@ jobs:
           cargo clippy -p mutsu-lsp --all-targets -- -D warnings
           cargo test -p mutsu-lsp
 
-      - name: Build (debug, for TAP tests)
-        run: cargo build
+      - name: Build (release, for TAP tests and roast)
+        # The repo sets `[profile.release] debug = true` for local perf
+        # profiling. CI never profiles, and full debug info bloats the binary
+        # (~250MB -> ~27MB) and slows codegen/linking by ~70s. Override it to
+        # off for CI only; Cargo.toml stays debug=true for local use.
+        #
+        # One build now serves both `prove t/` and roast. The TAP suite used to
+        # run on a separate debug build; on release it is ~3.3x faster and this
+        # job no longer compiles the crate twice. See ADR-0075.
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
 
       - name: TAP tests (prove t/)
         # Via the wrapper (not a bare `timeout 30 <bin>`) so t/ gets the same
@@ -177,16 +188,18 @@ jobs:
         # stderr into its stdout so a panic stays attached to its own test
         # under interleaved `-j` output, same reasoning as the roast step.
         #
-        # MUTSU_T_TIMEOUT bumped 30 -> 45: a local repro of this change found
+        # MUTSU_T_TIMEOUT bumped 30 -> 45: a local repro of that change found
         # t/cro-http-battery.t (Cro::HTTP + Cro::TLS + JSON::JWT, ~5s
         # standalone) occasionally pushed past 30s under -j4 CPU contention
         # from 3300 concurrently-running files, timing out once in a handful
         # of full-suite runs. Per docs/flaky-test-policy.md §3 ("wall-clock
         # sensitivity ... prefer raising the budget ... a precise fix"),
         # widen the budget rather than quarantining a real (if heavy) test.
+        # Kept at 45 on the release binary too: the budget exists for the
+        # heaviest file under contention, and headroom there is free.
         run: prove -j4 --merge -e 'scripts/run-t-test.sh' t/
         env:
-          MUTSU_BIN: target/debug/mutsu
+          MUTSU_BIN: target/release/mutsu
           MUTSU_T_TIMEOUT: "45"
 
       - name: Site snippets still produce their documented output
@@ -196,15 +209,6 @@ jobs:
         # raku cross-check is skipped and this is a pure regression gate; the
         # cross-check runs locally when the expectations are regenerated.
         run: node scripts/check-site-snippets.mjs
-
-      - name: Build (release, for roast)
-        # The repo sets `[profile.release] debug = true` for local perf
-        # profiling. CI never profiles, and full debug info bloats the binary
-        # (~250MB -> ~27MB) and slows codegen/linking by ~70s. Override it to
-        # off for CI only; Cargo.toml stays debug=true for local use.
-        run: cargo build --release
-        env:
-          CARGO_PROFILE_RELEASE_DEBUG: "false"
 
       - name: Roast whitelist is sorted
         run: make check-roast-whitelist
