@@ -395,22 +395,51 @@ impl Interpreter {
                 Err(_) => Ok(Value::NIL),
             },
             "close" => {
+                use crate::runtime::native_methods::state::supplier_done;
+                use crate::runtime::native_methods::take_supplier_done_callbacks;
                 let sids = ch.supplier_ids();
-                if !sids.is_empty() {
-                    use crate::runtime::native_methods::state::supplier_done;
-                    for sid in &sids {
-                        supplier_done(*sid);
-                    }
+                for sid in &sids {
+                    supplier_done(*sid);
                 }
                 ch.close();
+                // `supplier_done` only raises the terminal flag and wakes the
+                // sinks; the `done => { ... }` callbacks a `.tap` registered on
+                // the supplier stay in its pending list, and for a
+                // channel-backed Supply nothing else ever drained them, so
+                // closing the channel delivered every value but never signalled
+                // completion. Run them here, exactly once per tap, the way
+                // `Supplier.done` does for a supplier-backed Supply.
+                for sid in &sids {
+                    for done_cb in take_supplier_done_callbacks(*sid) {
+                        if self.invoke_done_callback_or_quit(done_cb, *sid)? {
+                            break;
+                        }
+                    }
+                }
                 Ok(Value::NIL)
             }
             "fail" => {
+                use crate::runtime::native_methods::state::supplier_quit;
+                use crate::runtime::native_methods::take_supplier_quit_callbacks;
                 let reason = args
                     .into_iter()
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
-                ch.fail(Self::as_exception_value(reason));
+                let reason = Self::as_exception_value(reason);
+                // The same completion edge as `close` above, on the failing
+                // side: a tap's `quit => { ... }` handler is the only thing that
+                // observes `$channel.fail`, so the supplier has to carry the
+                // quit reason and its handlers have to run.
+                let sids = ch.supplier_ids();
+                for sid in &sids {
+                    supplier_quit(*sid, reason.clone());
+                }
+                ch.fail(reason.clone());
+                for sid in &sids {
+                    for quit_cb in take_supplier_quit_callbacks(*sid) {
+                        self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                    }
+                }
                 Ok(Value::NIL)
             }
             "list" | "List" | "Array" | "Seq" => {
