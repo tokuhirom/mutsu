@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     /// Dispatch remaining methods by name (Supply, networking, temporal, misc).
@@ -823,7 +824,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => {
+            } if is_stash_class_name(class_name.as_str()) => {
                 let keys = match attributes.as_map().get("symbols").map(Value::view) {
                     Some(ValueView::Hash(map)) => {
                         map.keys().cloned().map(Value::str).collect::<Vec<Value>>()
@@ -878,7 +879,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => {
+            } if is_stash_class_name(class_name.as_str()) => {
                 let vals = match attributes.as_map().get("symbols").map(Value::view) {
                     Some(ValueView::Hash(map)) => map.values().cloned().collect(),
                     _ => Vec::new(),
@@ -922,7 +923,7 @@ impl Interpreter {
                 );
                 return Some(Ok(Value::truth(exists)));
             }
-            if class_name == "Stash" {
+            if is_stash_class_name(class_name.as_str()) {
                 // Exact-key membership only — unlike the Stash `AT-KEY` arm, raku's
                 // `EXISTS-KEY` does NOT sigil-fallback (`Foo::.EXISTS-KEY('baz')` is
                 // False even when `$baz` exists). Dists query the full sigil'd name
@@ -1009,7 +1010,7 @@ impl Interpreter {
                     ..
                 },
                 idx,
-            ) if class_name == "Stash" => {
+            ) if is_stash_class_name(class_name.as_str()) => {
                 if let Some(ValueView::Hash(symbols)) =
                     attributes.as_map().get("symbols").map(Value::view)
                 {

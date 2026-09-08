@@ -8,6 +8,7 @@ use num_traits::{ToPrimitive, Zero};
 use std::sync::Arc;
 
 use super::parse_raku_int_from_str;
+use crate::value::types::is_stash_class_name;
 
 /// Build the `X::Str::Numeric` attribute map for a string that cannot be
 /// numified, deriving `pos`/`reason` from the same analyzer the numeric
@@ -1218,7 +1219,7 @@ pub(super) fn dispatch(
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => {
+                } if is_stash_class_name(class_name.as_str()) => {
                     let count = match attributes.as_map().get("symbols").map(Value::view) {
                         Some(ValueView::Hash(map)) => map.len() as i64,
                         _ => 0,

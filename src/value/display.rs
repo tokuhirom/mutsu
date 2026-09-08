@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::types::is_stash_class_name;
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{Signed, Zero};
 
@@ -947,7 +948,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Stash" => attributes
+            } if is_stash_class_name(class_name.as_str()) => attributes
                 .as_map()
                 .get("name")
                 .map(|v: &Value| v.to_string_value())

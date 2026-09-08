@@ -422,6 +422,7 @@ impl Interpreter {
                 | "WhateverCode"
                 | "HyperWhatever"
                 | "Stash"
+                | "PseudoStash"
                 | "StrDistance"
                 | "Scalar"
                 | "SetHash"

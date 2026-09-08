@@ -932,12 +932,11 @@ impl Interpreter {
                     // (`try_native_builtin_construct`).
                     return Ok(Value::channel(SharedChannel::new()));
                 }
-                "Stash" => {
-                    // Stash is essentially a Hash but with type Stash
-                    return Ok(Value::make_instance(
-                        Symbol::intern("Stash"),
-                        HashMap::new(),
-                    ));
+                name if crate::value::types::is_stash_class_name(name) => {
+                    // A Stash is essentially a Hash but with type Stash; a
+                    // PseudoStash is its lexical-pad sibling and constructs the
+                    // same way.
+                    return Ok(Value::make_instance(Symbol::intern(name), HashMap::new()));
                 }
                 // A Supply cannot be constructed directly (Rakudo throws
                 // X::Supply::New); live supplies come from a Supplier, on-demand

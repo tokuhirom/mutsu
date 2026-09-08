@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::types::is_stash_class_name;
 
 /// True when a method call on `Nil` is absorbed by Raku's `Nil.FALLBACK` — i.e.
 /// `Nil` does not actually define it, so the call yields `Nil` instead of a
@@ -712,7 +713,7 @@ impl Interpreter {
             && args.len() == 2
             && matches!(
                 target.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Stash"
+                ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str())
             )
         {
             let key = args[0].to_string_value();
@@ -1277,7 +1278,7 @@ impl Interpreter {
         }
         if !skip_native
             && matches!(method, "AT-KEY" | "keys" | "values")
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))
         {
             skip_native = true;
         }

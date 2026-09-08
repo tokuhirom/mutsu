@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::types::is_stash_class_name;
 
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
@@ -283,7 +284,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 return a_which == b_which;
             }
             if a_name == b_name
-                && (a_name == "Stash" || a_name == "Supply" || a_name == "IO::Special")
+                && (is_stash_class_name(a_name.as_str())
+                    || a_name == "Supply"
+                    || a_name == "IO::Special")
             {
                 left.eqv(right)
             } else if a_name == b_name && (a_name == "ObjAt" || a_name == "ValueObjAt") {

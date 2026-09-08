@@ -7,6 +7,8 @@
 use super::*;
 use crate::value::ArrayKind;
 
+use crate::value::types::is_stash_class_name;
+
 use super::builtins_multidim::{
     has_multi_indices, leaf_key_tuple, make_key_tuple, multidim_collect_leaves, multidim_delete,
     multidim_index_with_hole,
@@ -47,7 +49,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Stash"
+            && is_stash_class_name(class_name.as_str())
             && let Some(ValueView::Hash(symbols)) =
                 attributes.as_map().get("symbols").map(Value::view)
         {

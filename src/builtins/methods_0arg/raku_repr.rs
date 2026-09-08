@@ -342,6 +342,7 @@ fn element_needs_trailing_comma(v: &Value) -> bool {
                 | "Map"
                 | "Hash"
                 | "Stash"
+                | "PseudoStash"
         ),
         _ => false,
     }

@@ -1,6 +1,7 @@
 use super::resolution_sequence::ResolvedCandidate;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     /// Check if a metamodel class name is a HOW type.
@@ -294,7 +295,7 @@ impl Interpreter {
             // misread an Instance receiver as a one-element list instead of
             // reading the Stash's own hash (step 7). `Stash.AT-KEY` needs no
             // gate — it has no cascade arm at all.
-            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if is_stash_class_name(class_name.as_str()))
                 && matches!(method, "keys" | "values"))
             || (method == "keys"
                 && args.is_empty()

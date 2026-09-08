@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     /// Rich :exists adverb handler supporting negation, parameterized arg,
@@ -188,7 +189,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Stash" => {
+                } if is_stash_class_name(class_name.as_str()) => {
                     match attributes.as_map().get("symbols").map(Value::view) {
                         Some(ValueView::Hash(map)) => Some(map.clone()),
                         _ => None,
@@ -554,7 +555,8 @@ impl Interpreter {
                 ..
             } = target.view()
             {
-                let is_stash = class_name == "Stash" && attributes.contains_key("symbols");
+                let is_stash =
+                    is_stash_class_name(class_name.as_str()) && attributes.contains_key("symbols");
                 if !is_stash
                     && let Some(result) = self.instance_exists_pos_result(
                         &target,
@@ -686,7 +688,7 @@ impl Interpreter {
                                     ..
                                 },
                                 ValueView::Str(key),
-                            ) if class_name == "Stash" => {
+                            ) if is_stash_class_name(class_name.as_str()) => {
                                 if let Some(ValueView::Hash(symbols)) =
                                     attributes.as_map().get("symbols").map(Value::view)
                                 {
@@ -702,7 +704,7 @@ impl Interpreter {
                                     ..
                                 },
                                 _,
-                            ) if class_name == "Stash" => {
+                            ) if is_stash_class_name(class_name.as_str()) => {
                                 if let Some(ValueView::Hash(symbols)) =
                                     attributes.as_map().get("symbols").map(Value::view)
                                 {

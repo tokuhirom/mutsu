@@ -468,8 +468,8 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            self.stack
-                .push(Value::hash_with_data(Value::hash_arc(entries)));
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
             return;
         }
         if name.strip_suffix("::") == Some("OUR") {
@@ -479,8 +479,8 @@ impl Interpreter {
         }
         if name.strip_suffix("::") == Some("DYNAMIC") {
             let entries = self.dynamic_pseudo_stash_entries();
-            self.stack
-                .push(Value::hash_with_data(Value::hash_arc(entries)));
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
             return;
         }
         if let Some(kind) = name.strip_suffix("::")
@@ -535,8 +535,29 @@ impl Interpreter {
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
-        self.stack
-            .push(Value::hash_with_data(Value::hash_arc(entries)));
+        let stash = self.pseudo_stash_hash(entries);
+        self.stack.push(stash);
+    }
+
+    /// Wrap a lexical-pad snapshot as a `PseudoStash`.
+    ///
+    /// Raku reports every pseudo-package view of a pad (`MY::`, `OUTER::`,
+    /// `LEXICAL::`, `DYNAMIC::`) as `PseudoStash`, a `Map` descendant that is a
+    /// *sibling* of `Stash`, not a subclass. mutsu keeps the snapshot as an
+    /// ordinary hash — its `.keys`, `.{...}` and iteration all ride the Hash
+    /// paths — so the type travels as the hash's declared type, exactly the way
+    /// a `Map` does. Without this the spellings answered a bare `Hash`, with no
+    /// symbol-table type at all.
+    fn pseudo_stash_hash(&mut self, entries: HashMap<String, Value>) -> Value {
+        let hash = Value::hash_with_data(Value::hash_arc(entries));
+        self.tag_container_metadata(
+            hash,
+            crate::runtime::ContainerTypeInfo {
+                value_type: String::new(),
+                key_type: None,
+                declared_type: Some("PseudoStash".to_string()),
+            },
+        )
     }
 
     /// Build a pseudo-stash hash for a given pseudo-package name.
@@ -552,7 +573,7 @@ impl Interpreter {
                 let display_key = Self::add_sigil_prefix(&key_str);
                 entries.insert(display_key, val.clone());
             }
-            return Value::hash_with_data(Value::hash_arc(entries));
+            return self.pseudo_stash_hash(entries);
         }
         if name == "OUR" {
             return self.our_pseudo_stash();
@@ -576,7 +597,7 @@ impl Interpreter {
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
         self.add_visible_routines_to_pseudo_stash(&mut entries);
-        Value::hash_with_data(Value::hash_arc(entries))
+        self.pseudo_stash_hash(entries)
     }
 
     fn add_visible_routines_to_pseudo_stash(&self, entries: &mut HashMap<String, Value>) {

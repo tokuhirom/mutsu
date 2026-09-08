@@ -4,6 +4,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 use super::raku_repr::{promise_raku_repr, raku_value};
 use super::{format_temporal_num, gist_array_wrap, range_gist_string};
+use crate::value::types::is_stash_class_name;
 
 /// Rakudo caps an aggregate's `.gist` at the first 100 elements, then appends
 /// ` ...`, so a huge array/list does not flood terminal output.
@@ -525,7 +526,7 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Stash" && (method == "gist" || method == "Str") => {
+        } if is_stash_class_name(class_name.as_str()) && (method == "gist" || method == "Str") => {
             // Stash.gist and Stash.Str return the package name
             if let Some(ValueView::Str(name)) = attributes.as_map().get("name").map(Value::view) {
                 Some(Ok(Value::str(name.to_string())))

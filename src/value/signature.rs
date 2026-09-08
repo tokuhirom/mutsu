@@ -1340,6 +1340,7 @@ fn is_supertype_of(t1: &str, t2: &str) -> bool {
                 | "Map"
                 | "Pair"
                 | "Stash"
+                | "PseudoStash"
                 | "QuantHash"
                 | "Set"
                 | "Bag"

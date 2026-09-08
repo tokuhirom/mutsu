@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::types::is_stash_class_name;
 
 /// Read a `:as(...)` / `:with(...)` adverb argument regardless of Pair
 /// flavour (ADR-0021 P3a prep): these are always written as literal named
@@ -110,7 +111,7 @@ impl Interpreter {
                     if seen_id == 0
                         && key_id == 0
                         && seen_class == key_class
-                        && seen_class.resolve() != "Stash"
+                        && !is_stash_class_name(seen_class.as_str())
                         && seen_class.resolve() != "Supply"
                     {
                         false
@@ -201,7 +202,7 @@ impl Interpreter {
                     if seen_id == 0
                         && key_id == 0
                         && seen_class == key_class
-                        && seen_class.resolve() != "Stash"
+                        && !is_stash_class_name(seen_class.as_str())
                         && seen_class.resolve() != "Supply"
                     {
                         false

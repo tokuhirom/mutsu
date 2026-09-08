@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
+use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
     pub(crate) fn try_native_io_path_construct(
@@ -389,7 +390,7 @@ impl Interpreter {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {
             Some(Ok(Self::build_native_strdistance_value(args)))
-        } else if cn == "Stash" {
+        } else if is_stash_class_name(cn.as_str()) {
             // A `Stash` is an empty Hash-typed instance.
             Some(Ok(Value::make_instance(class_name, HashMap::new())))
         } else if matches!(

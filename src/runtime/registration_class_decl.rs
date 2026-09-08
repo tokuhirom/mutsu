@@ -102,6 +102,7 @@ pub(crate) const BUILTIN_PARENT_TYPES: &[&str] = &[
     "Proxy",
     "Signature",
     "Stash",
+    "PseudoStash",
     "Metamodel::ClassHOW",
     "Perl6::Metamodel::ClassHOW",
     "Metamodel::GrammarHOW",

@@ -39,6 +39,19 @@ fn anon_role_entries(
         })
 }
 
+/// Whether `class_name` names one of the two symbol-table classes.
+///
+/// Raku splits a package symbol table (`Stash`) from a pseudo-package view of
+/// a lexical pad (`PseudoStash`); they are siblings under `Map`, not parent
+/// and child. mutsu represents both as an instance carrying a `symbols`
+/// attribute and every stash code path treats them alike, so this is the
+/// predicate those paths ask instead of naming one class. Which spelling
+/// produces which class is decided by
+/// `Interpreter::stash_class_for_package`.
+pub(crate) fn is_stash_class_name(class_name: &str) -> bool {
+    matches!(class_name, "Stash" | "PseudoStash")
+}
+
 /// Returns the Raku type name for a value (used in error messages).
 /// The name one argument of a CURRIED parametric role contributes to the
 /// role's own name. Rakudo names `R["x"]` after the argument's TYPE
