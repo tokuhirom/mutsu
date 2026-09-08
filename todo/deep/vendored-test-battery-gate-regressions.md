@@ -49,32 +49,13 @@ passing under the native provider **for the wrong reason** — (b) supplied the
 answer rakudo gets from (a). `use-ok`'s EVAL rolls the (b) leak back, and the
 absence of (a) becomes visible.
 
-### The actual defect
+### A wrong turn worth recording
 
-`install_export_symbol` (`src/runtime/runtime_module_export_sub.rs:149`) installs
-every exported symbol with `self.env.insert(env_key, value)`. That is right for
-`$scalar`/`@array`/`%hash`/`&sub`, but a **sigilless type object** is not read out
-of `env` — a bare type name and `::('Name')` resolve through the type/class
-registry. The entry lands somewhere nothing reads, so:
-
-```raku
-# tmp/ex/CustomExp2.rakumod:
-#   use v6;
-#   sub EXPORT(|) { my %h = 'MyAlias' => Int; %h }
-#   unit module CustomExp2;
-use lib <tmp/ex>;
-use CustomExp2;
-say (try { MyAlias.gist }) // 'MISSING';   # rakudo: (Int)     mutsu: MyAlias
-say ::('MyAlias') ~~ Failure;              # rakudo: False     mutsu: True
-```
-
-mutsu answers the bare name with the **bareword string** `MyAlias`, i.e. the name
-never resolved at all. Note this reproduces with a plain `Hash` as well as a
-`Map`, so it is not the `ValueView::Hash`-only match in `install_export_map`.
-
-**The fix**: when an exported symbol is sigilless and its value is a type object,
-register it in the type/class registry under that name (what `::()` and a bare
-type name consult), not only in `env`.
+The first hypothesis was that `install_export_symbol`
+(`src/runtime/runtime_module_export_sub.rs:149`) installs everything with
+`self.env.insert(env_key, value)`, which would be wrong for a sigilless type
+object. **That is not the defect** — `exec_get_bare_word_op` does consult env and
+would have resolved it. Do not spend time there; the real cause is below.
 
 ### The one-line fix, and why it must NOT land alone (measured)
 
@@ -117,27 +98,51 @@ should be fixed on its own. Fixing it will make this test fail under the *native
 provider too until (a) lands, which is correct: the test asks for the custom
 export.
 
-## 2. `Digest t/rfc4231.t` — HMAC returns wrong bytes
+## 2. `Digest t/rfc4231.t` — narrowed to `subtest`, not to HMAC
 
-Measured: 0 failures under the native provider, 3 under the vendored one. This
-one is alarming because it is a **wrong computed value**, not a reporting
-difference:
+Measured: 0 failures under the native provider, 3 under the vendored one. It
+looks alarming — a **wrong computed value**, not a reporting difference:
 
 ```
-# expected: Blob[uint8].new(149,233,160,219,150,32,149,173,...)
-#      got: Blob[uint8].new(118,223,40,84,193,151,143,42,...)
+# expected: Blob[uint8].new(149,233,160,219,150,32,149,173,...)   <- the RFC value, correct
+#      got: Blob[uint8].new(118,223,40,84,193,151,143,42,...)     <- what hmac returned
 ```
 
-Almost certainly the same family as the deferred-grep capture-merge bug: only
-observable once `reflective_name_access_possible()` has latched, which every file
-loading the real `Test` does.
+### The one-line result
 
-**Not yet reduced.** The isolated shapes all give the *correct* answer — the
-131-byte-key (longer than block size) case direct, via the `constant %sha224 =
-hash => &sha224, block-size => 64` flattening, with `use Test` loaded, and inside
-a `subtest`. Failures start at the 5th of the file's 7 subtests, so something
-accumulates across them; reduce by bisecting the real file's subtests rather than
-rebuilding it from scratch.
+**Replacing `subtest {` with a plain `{` in the file makes all failures vanish.**
+
+```
+sed -e 's/^subtest  *{/{/' t/rfc4231.t   ->  0 failures
+t/rfc4231.t unchanged                    ->  3 failures
+```
+
+Same assertions, same order, same data. So the defect is **not** in `hmac`, the
+SHA functions, or the digest maths — it is state that the *vendored* `subtest`
+perturbs across its boundary and that a later `hmac` call then reads. The native
+provider's `subtest` is Rust and does not disturb it; the vendored one is Raku
+code that runs between the calls, which is why only the switch exposes this.
+
+### The reduction, and what it rules out
+
+- Subtests 5-7 **pass in isolation**; any single earlier subtest poisons them.
+- Within that earlier subtest, **any one** of its four `is` lines suffices —
+  sha224/256/384/512 all poison equally, so the hash function is irrelevant.
+- Trimming the *later* subtest to a single assertion makes it pass, so several
+  accumulated `hmac` calls are needed, not one.
+- **Not the JIT**: `MUTSU_JIT=off` gives the same 3 failures.
+
+Measured and does **NOT** reproduce (do not re-walk these): direct `hmac` calls
+in any order — `Blob`-then-`Str` message, block-size 64-then-128, 128-then-64;
+the `constant %sha224 = hash => &sha224, block-size => 64` flattening via
+`|%sha224`; a `hex-to-blob` call interleaved between two `hmac` calls; and a
+hand-built two-`subtest` file with the same shape. Reconstruction from scratch
+kept passing — the productive method was **reducing the real file downward**
+(header + one earlier subtest trimmed to one `is`, plus the failing subtest).
+
+Next step: instrument what `subtest` leaves changed — its own env/closure
+save-and-restore is the prime suspect, which puts this in the same family as the
+deferred-grep capture-merge bug already fixed in this PR.
 
 ## 3-4. `Cro::HTTP http-middleware.rakutest`, `http2-request-parser.rakutest`
 
