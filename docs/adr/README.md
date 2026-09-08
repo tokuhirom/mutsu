@@ -102,3 +102,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0074](0074-a-channel-backed-supply-broadcasts-to-its-taps.md) | A channel-backed Supply broadcasts to its taps; the receiver is not an exclusive transfer | Accepted (implemented) |
 | [0075](0075-make-test-runs-tap-on-release-binary.md) | `make test` runs the TAP (`t/`) suite on the release binary (supersedes 0014); `gc-stress`/`jit-stress` keep the debug pass | Accepted |
 | [0076](0076-bare-block-lowering-and-block-scope-opcodes.md) | One bare-block lowering shared by both source positions; `BlockScope` and `DoBlockExpr` stay two opcodes | Accepted (shared lowering landed; opcode merge deferred — §6) |
+| [0077](0077-locals-are-a-window-into-a-contiguous-stack.md) | A call's locals are a window into one contiguous stack, not a pooled `Vec` | Proposed (design only; no implementation) |
