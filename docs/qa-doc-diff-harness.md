@@ -19,11 +19,21 @@ disagree.
 - **Noise control.**
   - Non-deterministic examples (`rand`/`.pick`/`.roll`/`now`/`Supply`/…) and explicit
     `# ERROR` examples are skipped by heuristic.
-  - Every mismatch is cross-checked against the block's own `# OUTPUT: «…»` annotation.
-    When raku no longer matches the doc, the finding is bucketed as
-    **`raku-drift-from-doc`** (raku changed since the doc was written; mutsu may well
-    match the doc) and de-prioritised versus a true `output-mismatch` where raku and the
-    doc agree but mutsu is wrong. This implements the §8.4 language-version caveat.
+  - **The oracle is run twice and the block is dropped unless raku agrees with
+    itself.** This is the whole nondeterminism policy, and it deliberately replaces
+    growing the pattern list above: no list can practically enumerate unordered
+    container iteration (`Set`/`Bag`/`Mix`/`*Hash`/`Map`/`Hash.kv`/enum `.keys`),
+    object addresses and `WHICH` ids, thread ids, `$*DISTRO`/`$*VM`/`dir` order. Such
+    blocks otherwise diverge on the unreproducible token alone, every run, forever.
+    They are counted as `skipped (oracle not reproducible)` — the noise floor, not
+    findings.
+  - Every mismatch is cross-checked against the block's own `# OUTPUT: «…»` annotation,
+    and when *mutsu* matches the doc the finding carries a note saying so. That is an
+    **annotation, not a bucket**: it records provenance (the doc was written against an
+    older raku), never priority. There used to be a separate `raku-drift-from-doc`
+    bucket described as "not mutsu bugs, lowest priority"; because it was only
+    reachable once mutsu already differed from raku, 67 of its 114 blocks were real
+    mutsu bugs against 5 the name fit, and nine bugs hid there. See #7590.
 
 ## Usage
 
@@ -37,9 +47,10 @@ Defaults: `--mutsu=target/debug/mutsu`, `--timeout=10`, corpus =
 The debug and release binaries produce identical output, so the debug build is fine
 for correctness triage (only speed differs).
 
-The report groups findings by kind (`output-mismatch`, `mutsu-error`,
-`raku-drift-from-doc`), each with the exact program, raku stdout, and mutsu
-stdout/stderr — i.e. a ready-made minimal repro.
+The report groups findings by kind (`output-mismatch`, `mutsu-error`), each with the
+exact program, raku stdout, and mutsu stdout/stderr — i.e. a ready-made minimal repro.
+Each captured section is capped at 40 lines with an explicit truncation marker, so one
+runaway example cannot bury a sweep.
 
 The harness writes each candidate program to a per-PID scratch file
 (`tmp/ddh/prog-<pid>.raku`), so multiple invocations may run **concurrently**
@@ -59,14 +70,14 @@ Defaults: `-j8`, `-o tmp/sweep`, `-m target/debug/mutsu`, corpus = Type +
 Language. Outputs `OUTDIR/reports/<file>.txt` (per file), `OUTDIR/progress.txt`
 (one stats line per file), and `OUTDIR/summary.txt` (corpus totals + files
 ranked by `mismatch + crash`, high-signal first). Always re-verify a finding
-directly before treating it as a real bug — doc examples drift, and version
-drift is bucketed separately as `raku-drift-from-doc`.
+directly before treating it as a real bug — the harness can only compare what a
+doc block actually prints.
 
 ## First run (2026-07-18, 8 core Type files: Str/Array/List/Hash/Num/Rat/Range/Map)
 
 525 blocks extracted → 270 raku-clean comparisons → **50 high-signal divergences
-(18.5%)**: 25 `output-mismatch` + 25 `mutsu-error`, plus 8 low-priority
-`raku-drift-from-doc`. ~2 min wall-clock (debug mutsu). The signal is dense and the
+(18.5%)**: 25 `output-mismatch` + 25 `mutsu-error`, plus 8 in the since-retired
+`raku-drift-from-doc` bucket (#7590). ~2 min wall-clock (debug mutsu). The signal is dense and the
 findings are genuine and cluster by root cause — validating §8.1's premise.
 
 ### First root-cause cluster found: sequence/lazy argument truncation

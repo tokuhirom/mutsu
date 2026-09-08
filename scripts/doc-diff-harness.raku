@@ -22,6 +22,15 @@ sub MAIN(
     Str  :$report  = 'tmp/doc-diff-report.txt',
     Bool :$verbose = False,
 ) {
+    # Every run below happens with its cwd set to a scratch directory, so a relative
+    # `--mutsu=` (the default `target/debug/mutsu`) would no longer resolve. Absolutize
+    # it here, once, against the cwd the user actually invoked the harness from.
+    my $mutsu-bin = $mutsu.IO.absolute;
+    unless $mutsu-bin.IO.e {
+        note "doc-diff-harness: mutsu binary not found at $mutsu-bin — build it first.";
+        exit 2;
+    }
+
     my @files = collect-files(@paths);
     note "Scanning { +@files } .rakudoc files ...";
 
@@ -35,11 +44,18 @@ sub MAIN(
     # Per-process scratch file so concurrent harness invocations (a parallel sweep
     # over many files) never clobber each other's program between the raku run and
     # the mutsu run — a shared path races and yields phantom "divergences".
-    my $prog-path = "tmp/ddh/prog-{$*PID}.raku";
+    # ABSOLUTE, because every run below executes with its cwd set to the scratch
+    # directory rather than the repo root.
+    my $prog-path = "tmp/ddh/prog-{$*PID}.raku".IO.absolute;
+    # A doc example that `spurt`s or `open`s a relative path writes into its cwd.
+    # Run every block inside a throwaway directory so a sweep cannot leave strays
+    # in the repository root (the 2026-09-07b sweep left `bar` and `foo.txt`).
+    my $scratch = "tmp/ddh/run-{$*PID}".IO.absolute;
 
     my %stat = skipped-marker => 0, skipped-nondet => 0,
+               skipped-oracle-nondet => 0,
                no-oracle => 0, match => 0, mismatch => 0,
-               mutsu-crash => 0, raku-drift => 0;
+               mutsu-crash => 0, matches-doc => 0;
     my @findings;
 
     my $i = 0;
@@ -60,14 +76,28 @@ sub MAIN(
         my $path = $prog-path;
         spurt $path, $program;
 
-        my $r = run-capture('raku', $path, $timeout);
+        my $r = run-capture('raku', $path, $timeout, $scratch);
         # Oracle gate: raku must run it cleanly and produce output.
         unless $r<exit> == 0 && $r<out>.chars > 0 && $r<err> !~~ /SORRY/ {
             %stat<no-oracle>++;
             next;
         }
 
-        my $m = run-capture($mutsu, $path, $timeout);
+        # Reproducibility gate: run the ORACLE twice and drop the block unless raku
+        # agrees with itself. This is the whole nondeterminism policy — one rule, no
+        # pattern list. It catches what no pattern list practically can: unordered
+        # container iteration (`Set`/`Bag`/`Mix`/`*Hash`/`Map`/`Hash.kv`/enum `.keys`),
+        # object addresses and `WHICH` ids, thread ids, `$*DISTRO`/`$*VM`/`dir` order.
+        # Those blocks used to be compared, diverge on the unreproducible token alone,
+        # and then get filed under the lowest-priority bucket forever — which is how
+        # nine real mutsu bugs stayed hidden (see #7587).
+        my $r2 = run-capture('raku', $path, $timeout, $scratch);
+        unless $r2<exit> == 0 && normalize($r2<out>) eq normalize($r<out>) {
+            %stat<skipped-oracle-nondet>++;
+            next;
+        }
+
+        my $m = run-capture($mutsu-bin, $path, $timeout, $scratch);
 
         if normalize($m<out>) eq normalize($r<out>) {
             %stat<match>++;
@@ -77,19 +107,21 @@ sub MAIN(
             @findings.push: finding(%b, $program, $r, $m, 'mutsu-error');
         }
         else {
-            # Cross-check against the doc's own `# OUTPUT:` annotation. When raku
-            # itself no longer matches the doc, this is version drift (raku changed
-            # since the doc was written) and mutsu may well match the doc — lower
-            # priority than a case where raku and the doc agree but mutsu is wrong.
+            # Every mutsu-vs-raku divergence is one finding: `output-mismatch`.
+            #
+            # The doc's own `# OUTPUT:` annotation used to select a SEPARATE, lower-
+            # priority `raku-drift-from-doc` bucket whenever raku no longer matched the
+            # doc. That read a *provenance* fact as a *priority* one: the branch is only
+            # reachable once mutsu already differs from raku, so it filed real
+            # divergences under "not mutsu bugs". Measured on the 2026-09-07b sweep, 67
+            # of its 114 blocks were real mutsu bugs against 5 that the name described.
+            # The comparison survives as an ANNOTATION on the finding.
             my $expected = doc-expected(%b<code>);
-            if $expected.defined && normalize($expected) ne normalize($r<out>) {
-                %stat<raku-drift>++;
-                @findings.push: finding(%b, $program, $r, $m, 'raku-drift-from-doc');
-            }
-            else {
-                %stat<mismatch>++;
-                @findings.push: finding(%b, $program, $r, $m, 'output-mismatch');
-            }
+            my $matches-doc = $expected.defined
+                              && normalize($expected) eq normalize($m<out>);
+            %stat<matches-doc>++ if $matches-doc;
+            %stat<mismatch>++;
+            @findings.push: finding(%b, $program, $r, $m, 'output-mismatch', $matches-doc);
         }
 
         if $verbose && $i %% 50 {
@@ -98,6 +130,7 @@ sub MAIN(
     }
 
     unlink $prog-path if $prog-path.IO.e;
+    rm-rf($scratch);
     write-report($report, %stat, @findings);
     print-summary(%stat, @findings, $report);
 }
@@ -251,11 +284,34 @@ sub doc-expected(Str $code) {
 }
 
 #| Run a program through `timeout N bin file`, returning { out, err, exit }.
-sub run-capture(Str $bin, Str $file, Int $timeout) {
-    my $proc = run 'timeout', "$timeout", $bin, $file, :out, :err;
+#|
+#| `$cwd` is a scratch directory, recreated empty before every run: a doc example
+#| that writes a relative path must not touch the repo, and the two oracle runs of
+#| the reproducibility gate must each start from the same (empty) state, or a block
+#| that merely appends to a file would look non-reproducible.
+sub run-capture(Str $bin, Str $file, Int $timeout, Str $cwd) {
+    rm-rf($cwd);
+    mkdir $cwd;
+    my $proc = run 'timeout', "$timeout", $bin, $file, :out, :err, :$cwd;
     my $out = $proc.out.slurp(:close);
     my $err = $proc.err.slurp(:close);
     { out => $out, err => $err, exit => $proc.exitcode };
+}
+
+#| Recursively delete `$dir` if it exists. Confined to the harness's own scratch
+#| tree by its callers; there is no core `rmtree`.
+sub rm-rf(Str $dir) {
+    my $io = $dir.IO;
+    return unless $io.e;
+    if $io.d {
+        for $io.dir -> $e {
+            $e.d ?? rm-rf($e.absolute) !! unlink($e);
+        }
+        rmdir $io;
+    }
+    else {
+        unlink $io;
+    }
 }
 
 #| Normalize output for comparison: strip trailing whitespace on each line and overall.
@@ -263,7 +319,7 @@ sub normalize(Str $s) {
     $s.lines.map(*.trim-trailing).join("\n").trim-trailing;
 }
 
-sub finding(%b, Str $program, %raku, %mutsu, Str $kind) {
+sub finding(%b, Str $program, %raku, %mutsu, Str $kind, Bool $matches-doc = False) {
     {
         kind     => $kind,
         file     => %b<file>,
@@ -273,7 +329,33 @@ sub finding(%b, Str $program, %raku, %mutsu, Str $kind) {
         mutsu-out => %mutsu<out>,
         mutsu-err => %mutsu<err>,
         mutsu-exit => %mutsu<exit>,
+        matches-doc => $matches-doc,
     };
+}
+
+#| Lines kept per captured section in the report.
+#|
+#| Without a cap a single example can bury the sweep: `Type/IO/Path.rakudoc:509` is a
+#| `sub MAIN` that recursively `.dir`-walks its working directory and produced a
+#| 131_492-line, 8.4 MB report, and `Language/ipc.rakudoc:34` shells out and captured
+#| a 1.6 MB git log. The 2026-09-07b sweep could only be committed after truncating
+#| 11 MB down to 412 KB BY HAND, which is what the refresh recipe in
+#| `docs/doc-diff-sweep/README.md` told the reader to do. Capping here makes that
+#| recipe safe as written.
+constant SECTION-CAP = 40;
+
+#| Emit `$text` under `$label`, keeping at most SECTION-CAP lines and marking the cut
+#| explicitly so a truncated section is never mistaken for the whole output.
+sub say-capped($fh, Str $label, Str $text) {
+    $fh.say: $label;
+    my @lines = $text.trim-trailing.lines;
+    if @lines > SECTION-CAP {
+        $fh.say: @lines.head(SECTION-CAP).join("\n");
+        $fh.say: "... [truncated by doc-diff-harness: { @lines - SECTION-CAP } more line(s) of { +@lines }]";
+    }
+    else {
+        $fh.say: @lines.join("\n");
+    }
 }
 
 sub write-report(Str $report, %stat, @findings) {
@@ -284,12 +366,12 @@ sub write-report(Str $report, %stat, @findings) {
     for @findings.kv -> $idx, %f {
         $fh.say: "=" x 78;
         $fh.say: "[{ $idx + 1 }] { %f<kind> }  { %f<file> }:{ %f<line> }";
-        $fh.say: "--- program ---";
-        $fh.say: %f<program>;
-        $fh.say: "--- raku stdout ---";
-        $fh.say: %f<raku-out>.trim-trailing;
-        $fh.say: "--- mutsu stdout (exit { %f<mutsu-exit> }) ---";
-        $fh.say: %f<mutsu-out>.trim-trailing;
+        # Provenance, not priority: this used to select a separate low-priority bucket.
+        $fh.say: "note: mutsu matches the doc's own `# OUTPUT:` here; raku does not."
+            if %f<matches-doc>;
+        say-capped($fh, "--- program ---", %f<program>);
+        say-capped($fh, "--- raku stdout ---", %f<raku-out>);
+        say-capped($fh, "--- mutsu stdout (exit { %f<mutsu-exit> }) ---", %f<mutsu-out>);
         if %f<kind> eq 'mutsu-error' && %f<mutsu-err>.trim ne '' {
             $fh.say: "--- mutsu stderr ---";
             $fh.say: %f<mutsu-err>.trim-trailing.lines.head(6).join("\n");
@@ -304,14 +386,15 @@ sub print-summary(%stat, @findings, Str $report) {
     say "";
     say "==== doc-diff-harness summary ====";
     say "  skipped (marker):        %stat<skipped-marker>";
-    say "  skipped (nondet):        %stat<skipped-nondet>";
+    say "  skipped (nondet pattern): %stat<skipped-nondet>";
+    say "  skipped (oracle not reproducible): %stat<skipped-oracle-nondet>   (raku disagreed with itself — the noise floor)";
     say "  no oracle (raku unclean): %stat<no-oracle>";
     say "  ------------------------------------";
     say "  compared (raku-clean):   $compared";
     say "    match:                 %stat<match>";
     say "    output mismatch (★real): %stat<mismatch>";
     say "    mutsu error/crash (★real): %stat<mutsu-crash>";
-    say "    raku drifted from doc:  %stat<raku-drift>   (lower priority — raku changed since doc)";
+    say "      of which mutsu matches the doc: %stat<matches-doc>   (annotation only — still a real divergence)";
     if $compared > 0 {
         my $real = %stat<mismatch> + %stat<mutsu-crash>;
         my $rate = (100 * $real / $compared).round(0.1);

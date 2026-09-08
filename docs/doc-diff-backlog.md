@@ -21,8 +21,8 @@ minimal-repro reports), `progress.txt` (one stats line per file), `summary.txt`
 `summary.txt`, and the counts drop as fixes land — that is the visible progress
 signal.
 
-**When a finding is confirmed real (not raku-drift, not a harness false positive —
-see "Known harness false positive" below), file it as an issue immediately** on
+**When a finding is confirmed real (not a harness false positive — see "Known
+harness false positive" below), file it as an issue immediately** on
 `tokuhirom/mutsu`, labelled `todo:ticket` (or `todo:deep` for high-blast-radius
 ones) per `docs/issue-workflow.md`, and add a row to
 [Ticketed](#ticketed-open--linked-to-todo) below linking the doc location to that
@@ -36,14 +36,25 @@ repros without re-running the sweep. Re-copy it (see that dir's `README.md`) whe
 you refresh the survey.
 
 **Always re-verify a finding directly before treating it as a real bug.** The
-harness oracle-gates on raku, but doc examples drift and the harness can only compare
-`# OUTPUT:`-style blocks.
+harness oracle-gates on raku, but it can only compare what a doc block actually
+prints.
 
-**Do NOT skip the `raku-drift` bucket.** It used to be described here as
-"version skew, not mutsu bugs — lowest priority". That was measured wrong on
-2026-09-07b: the bucket is only reachable *after* mutsu has already been found to
-differ from raku, and 67 of its 114 blocks are confirmed real mutsu bugs against
-5 that the name actually describes. See the ⚠ section under Corpus snapshot.
+**The `raku-drift` bucket no longer exists** (#7590). It was described here as
+"version skew, not mutsu bugs — lowest priority", and that was measured wrong on
+2026-09-07b: the bucket was only reachable *after* mutsu had already been found to
+differ from raku, so it filed real divergences as non-bugs — 67 of its 114 blocks
+were confirmed real mutsu bugs against 5 that the name actually described. Whether
+raku still matches the doc's own `# OUTPUT:` is **provenance, not priority**, so it
+now rides along as an annotation on an ordinary `output-mismatch` finding
+("mutsu matches the doc's own `# OUTPUT:` here; raku does not").
+
+**`nondet` in a summary is the noise floor, not a finding.** The harness runs the
+oracle twice and drops any block whose *raku* output is not reproducible — unordered
+container iteration (`Set`/`Bag`/`Mix`/`*Hash`/`Map`/`Hash.kv`/enum `.keys`), object
+addresses and `WHICH` ids, thread ids. Those blocks used to be compared, diverge on
+the unreproducible token alone, and land in the low-priority bucket on every run
+forever; nine real mutsu bugs hid there, #7587 among them. A rising `nondet` count
+means the corpus has more such examples, not that mutsu got worse.
 
 ## Corpus snapshot
 
@@ -59,7 +70,7 @@ differ from raku, and 67 of its 114 blocks are confirmed real mutsu bugs against
   day: the blocks are not disappearing from the corpus, they are being answered
   correctly.
 
-### ⚠ `raku-drift` is NOT a "not a mutsu bug" bucket — measured 2026-09-07b
+### ⚠ `raku-drift` was NOT a "not a mutsu bug" bucket — measured 2026-09-07b (bucket retired by #7590)
 
 **Read this before using the survey table to pick work.** The harness bucketing
 (`scripts/doc-diff-harness.raku:72-93`) is:
@@ -301,7 +312,7 @@ delete the row here.
 | `Language/traps.rakudoc:858` | a lazy Seq (`.map`/`.grep`/`...`/`gather`) passed to a user `*@a` slurpy arrives **empty**; the `.grep` face is a **regression bisected to PR #7501** | [lazy-seq-argument-vanishes-into-a-user-slurpy.md](../todo/tickets/lazy-seq-argument-vanishes-into-a-user-slurpy.md) |
 | `Language/objects.rakudoc:1397` | `@a[0 .. $n]` **hangs forever** when `$n` holds a negative value (raku: `()`) | [array-slice-with-a-runtime-empty-reversed-range-hangs.md](../todo/tickets/array-slice-with-a-runtime-empty-reversed-range-hangs.md) |
 | `Type/Code.rakudoc:140` | a `Block` inside a list renders as the empty string, so a one-element list prints as `()` | [code-object-renders-as-nothing-inside-a-list.md](../todo/tickets/code-object-renders-as-nothing-inside-a-list.md) |
-| *(harness itself)* | no output cap, and `raku-drift` used as a priority bucket when it only ever contains mutsu-vs-oracle divergences | [doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md](../todo/tickets/doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md) |
+| *(harness itself)* | no output cap, and `raku-drift` used as a priority bucket when it only ever contains mutsu-vs-oracle divergences | [#7590](https://github.com/tokuhirom/mutsu/issues/7590) — **fixed** |
 
 #### Triaged real, not yet filed (2026-09-07b)
 
@@ -464,8 +475,11 @@ full or the tree has moved. Re-verify each block against `raku` before writing a
 ## Survey — files with divergences (high-signal first)
 
 `mism` = output-mismatch · `crash` = mutsu exited non-zero where raku succeeded ·
-`drift` = raku-drift-from-doc — **not low priority**: 59% of that bucket is
-confirmed-real mutsu divergence (see the ⚠ section under Corpus snapshot).
+`drift` = the retired `raku-drift-from-doc` bucket, as this (2026-09-07b) sweep
+recorded it — **not low priority**: 59% of it is confirmed-real mutsu divergence
+(see the ⚠ section under Corpus snapshot). #7590 removed that bucket; a summary
+produced after it has a `nondet` column instead, counting blocks dropped because
+raku disagreed with itself — the noise floor, not findings.
 
 **This table under-reports.** It ranks by `mism + crash`, so a file whose only
 findings are `drift` scores 0 and does not appear at all — that is **61 findings
