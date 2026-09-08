@@ -3361,6 +3361,14 @@ impl Interpreter {
                     )? {
                         return Ok(true);
                     }
+                    // A slot that already holds a DEFINED non-container value
+                    // is not autovivifiable: rakudo refuses the store instead
+                    // of clobbering the value.
+                    if let Some(err) =
+                        Self::subscript_descent_refusal(&arr[inner_i], outer_positional)
+                    {
+                        return Err(err);
+                    }
                     // Autovivify the slot if it's not already a container. A
                     // `:=`-bound element is a shared `ContainerRef` cell holding a
                     // container — descend through it (below) instead of clobbering it.
@@ -3469,6 +3477,15 @@ impl Interpreter {
                         })
                         .itemize_for_element_store()
                     });
+                    // An EXISTING entry holding a defined non-container value
+                    // is refused, not descended into: `%h<a>[0] = 9` over
+                    // `a => 1` dies in rakudo, and mutsu used to drop the
+                    // write silently (`assign_into_nested_container` no-ops on
+                    // a non-container target).
+                    if let Some(err) = Self::subscript_descent_refusal(inner_val, outer_positional)
+                    {
+                        return Err(err);
+                    }
                     Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
                     Ok(())
                 })
@@ -3541,6 +3558,103 @@ impl Interpreter {
     /// its `ArrayKind` tag (a `Hash`, a bool on the repr), so the shared
     /// backing `Gc` — and therefore the `&mut` the caller takes into the slot
     /// to keep descending — is untouched.
+    /// Whether a chained subscript store may autovivify *through* the value a
+    /// slot already holds, and the error rakudo raises when it may not.
+    ///
+    /// Autovivification only applies to an *undefined* slot. Rakudo refuses a
+    /// store that would descend through a slot already holding a defined value
+    /// with no writable container behind it:
+    ///
+    /// ```text
+    /// my @a = 1,2,3; @a[1][0] = 9   X::Assignment::RO  "Cannot modify an immutable Int (2)"
+    /// my @a = 1,2,3; @a[1]<k> = 9   X::AdHoc           "Type Int does not support associative indexing."
+    /// my @a = (1,2),3; @a[0][0] = 9 X::Assignment::RO  "Cannot modify an immutable List ((1 2))"
+    /// ```
+    ///
+    /// mutsu treated "not an `Array`/`Hash`/`ContainerRef`" as "vivify me", so
+    /// a defined `Int` fell into the vivify bucket and was silently clobbered
+    /// (or, through a hash root, the write was dropped on the floor). The root
+    /// probe in `exec_index_assign_expr_nested_op` already draws this line
+    /// correctly — `root_needs_viv` deliberately excludes a *defined* value —
+    /// and this is the same distinction one level down.
+    ///
+    /// `None` means the slot is a legitimate descent target (a mutable
+    /// container, a `:=`-bound cell, an object that owns its own element
+    /// storage) or is genuinely undefined and so autovivifies.
+    ///
+    /// Two shapes are deliberately left alone, because rakudo's refusal for
+    /// them is decided by the ELEMENT the next subscript reaches and not by
+    /// the slot, which is more than a predicate over the slot can see:
+    ///
+    /// * a reifiable sequence (`Seq`, `LazyList`, `Slip`) — rakudo reifies it
+    ///   and refuses the element ("Cannot modify an immutable Int (3)");
+    /// * a `List`-kind array. `my @a = (1,2),3; @a[0][0] = 9` does die in
+    ///   rakudo, but purely because that `List` holds bare values: a `List`
+    ///   whose elements ARE containers is written through, which is what
+    ///   `take-rw` builds (`@n[0] = eager gather { take-rw @spot[1] };
+    ///   @n[0][0] = 999` updates `@spot[1]`, pinned by
+    ///   `t/take-rw-shared-cell.t`). Refusing on the array's KIND regresses
+    ///   that; the refusal belongs at the inner element store, which is
+    ///   separate work.
+    ///
+    /// TODO: compile to bytecode — see the two paragraphs above for the rows
+    /// this predicate cannot decide.
+    pub(crate) fn subscript_descent_refusal(
+        slot: &Value,
+        outer_positional: bool,
+    ) -> Option<RuntimeError> {
+        let view = slot.view();
+        let descendable = matches!(
+            view,
+            // A Positional/Associative container, or a `:=`-bound cell holding
+            // one: the store writes through it. Every `ArrayKind` counts —
+            // see the `List` paragraph in the doc comment.
+            ValueView::Array(..) | ValueView::Hash(..)
+                | ValueView::ContainerRef(..)
+                | ValueView::ContainerView(..)
+                | ValueView::Scalar(..)
+                | ValueView::Proxy { .. }
+                // An object owns its element storage (a `Buf`, or a user class
+                // with its own `AT-POS`/`AT-KEY`); the arms above hand the
+                // store to it rather than clobbering it.
+                | ValueView::Instance { .. }
+                | ValueView::BufStorage(..)
+                | ValueView::CustomTypeInstance(..)
+                | ValueView::Mixin(..)
+                // Reifiable sequences: see the TODO above.
+                | ValueView::Seq(..)
+                | ValueView::HyperSeq(..)
+                | ValueView::RaceSeq(..)
+                | ValueView::Slip(..)
+                | ValueView::LazyList(..)
+                | ValueView::LazyThunk(..)
+                | ValueView::HashEntryRef { .. }
+                // Undefined: an absent slot, `Nil`, or a type object. This is
+                // the only shape that really autovivifies.
+                | ValueView::Nil
+                | ValueView::Package(..)
+        );
+        if descendable {
+            return None;
+        }
+        let type_name = crate::runtime::utils::value_type_name(slot);
+        Some(if outer_positional {
+            // Rakudo renders the offending value with `.gist`, which is what
+            // makes a `List` read `(1 2)` and a `Set` read `Set(1 2)` rather
+            // than as their space-joined string coercion.
+            RuntimeError::assignment_ro_typename(
+                type_name,
+                &crate::runtime::utils::gist_value(slot),
+            )
+        } else {
+            // `X::AdHoc`, the class rakudo's `Any.AT-KEY` raises.
+            RuntimeError::new(format!(
+                "Type {} does not support associative indexing.",
+                type_name
+            ))
+        })
+    }
+
     pub(crate) fn fresh_autoviv_container(positional: bool) -> Value {
         // A brand-new autovivified row tracks its gaps from birth
         // (`real_array_unassigned`, an empty `initialized` set), so a slot the
@@ -4066,6 +4180,14 @@ impl Interpreter {
                             if let Ok(i) = key.parse::<usize>() {
                                 let arr = crate::value::gc_data_mut(arr_arc);
                                 Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;
+                                // A defined non-container value in the slot is
+                                // refused rather than clobbered, the same rule
+                                // the two-level chain applies.
+                                if let Some(err) =
+                                    Self::subscript_descent_refusal(&arr[i], next_positional)
+                                {
+                                    return Err(err);
+                                }
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
                                 // a container on the next iteration; treating it
