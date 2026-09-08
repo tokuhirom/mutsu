@@ -194,6 +194,12 @@ pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
             !(v.is_match_instance() || class_name == "ObjAt" || class_name == "ValueObjAt")
         }
         ValueView::CustomType(_) | ValueView::CustomTypeInstance(_) => true,
+        // A Code leaf needs dispatch for the same reason it does on the gist
+        // side: the pure renderer has no Code arm, so a block inside a list
+        // rendered as nothing at all (`(&b,).raku` came out as `(,)`). The
+        // real `Code.raku` -- `-> $a { #`(Block|N) ... }` / `sub f { ... }` --
+        // lives in the `Sub` method handler.
+        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
         _ => false,
     }
 }

@@ -2749,6 +2749,18 @@ impl Interpreter {
                         | ValueView::CustomTypeInstance(_)
                         | ValueView::Mixin(..)
                         | ValueView::Package(..)
+                        // A Code object needs dispatch for a different reason:
+                        // `gist_value` has no arm for one, so it fell through to
+                        // `to_string_value()` — which is Code's *`.Str`* rule,
+                        // the bare name. Inside a list that renders an anonymous
+                        // block as the EMPTY STRING (`say (&b,)` printed `()`,
+                        // so a one-element list read as empty) and drops a named
+                        // routine's sigil (`(&f)` printed as `(f)`). The real
+                        // `Code.gist` lives in the `Sub` method handler; route
+                        // to it rather than growing a second implementation.
+                        | ValueView::Sub(_)
+                        | ValueView::WeakSub(_)
+                        | ValueView::Routine { .. }
                 ) {
                     return true;
                 }

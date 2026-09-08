@@ -32,7 +32,21 @@ fn contains_instance_seen(
     if depth > GIST_PROBE_MAX_DEPTH {
         return false;
     }
-    if matches!(value.view(), ValueView::Instance { .. }) {
+    if matches!(
+        value.view(),
+        ValueView::Instance { .. }
+            // A Code element needs interpreter dispatch for a different reason
+            // than a user `method gist`: `gist_value` has no Code arm, so it
+            // fell through to `to_string_value()` -- Code's `.Str` rule, the
+            // bare name. That rendered an anonymous block as the EMPTY STRING
+            // inside a list (`say (&b,)` printed `()`, so a one-element list
+            // read as empty) and dropped a named routine's sigil (`(&f)` came
+            // out as `(f)`). The real `Code.gist` lives in the `Sub` method
+            // handler, so defer to it rather than growing a second copy.
+            | ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Routine { .. }
+    ) {
         return true;
     }
     if let Some(id) = container_id(value)
