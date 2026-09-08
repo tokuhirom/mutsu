@@ -102,10 +102,18 @@ Then create a fresh focused branch from that updated `main`, without overwriting
 Follow the Parser -> Compiler -> VM architecture, add focused regressions, and run targeted tests
 while iterating.
 
-Before publishing an implementation PR, run `cargo fmt --all`,
-`cargo clippy -- -D warnings`, `make test`, and `make roast` once each. Inspect
-`tmp/make-test.log` and `tmp/make-roast.log`. Do not publish an implementation
-PR until both full suites succeed.
+Before publishing an implementation PR, run `cargo fmt --all`, `make lint`, `make test`, and
+`make roast` once each (`make lint` rather than a bare `cargo clippy` — it adds the three
+configurations CI's `lint-configs` job gates on and the default clippy is blind to). Inspect
+`tmp/make-test.log` and `tmp/make-roast.log` with the Grep tool rather than rerunning a suite for
+its output. Do not publish an implementation PR until both full suites succeed.
+
+In a remote container `make roast` has a fixed set of three environment-only failures it cannot
+avoid (`uid 0` breaks two `chmod`-based file-test files; the network sandbox times out one socket
+file). Confirm the failing set is a subset of the table in
+[docs/agent-environments.md](../../../docs/agent-environments.md) **by name** before treating a red
+roast as publishable — a fourth file, or a different subtest range inside those three, is your
+change.
 
 ## Publish, monitor, and verify merge
 
