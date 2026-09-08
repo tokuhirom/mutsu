@@ -332,7 +332,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     if let Ok(r) = try_kw("Empty", Value::slip_arc(std::sync::Arc::new(vec![]))) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Any", Value::package(Symbol::intern("Any"))) {
+    if let Ok(r) = try_kw("Any", Value::package(crate::symbol::wk::any())) {
         return Ok(r);
     }
     // Unicode: ∅ (U+2205 EMPTY SET)

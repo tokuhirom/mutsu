@@ -119,7 +119,7 @@ impl Interpreter {
             // (`Any`), like a single-dim out-of-range read; a List miss
             // stays Nil (S32-array/multislice-6e.t).
             if kind.is_real_array() {
-                return Ok(Value::package(Symbol::intern("Any")));
+                return Ok(Value::package(crate::symbol::wk::any()));
             }
             return Ok(Value::NIL);
         }

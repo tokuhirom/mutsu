@@ -124,10 +124,10 @@ impl Interpreter {
             // `get`), not an empty string: `prompt(...).defined` is False.
             return Ok(match self.read_line_from_handle_value(&handle)? {
                 Some(line) => Value::str(line),
-                None => Value::package(crate::symbol::Symbol::intern("Any")),
+                None => Value::package(crate::symbol::wk::any()),
             });
         }
-        Ok(Value::package(crate::symbol::Symbol::intern("Any")))
+        Ok(Value::package(crate::symbol::wk::any()))
     }
 
     pub(super) fn builtin_get(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

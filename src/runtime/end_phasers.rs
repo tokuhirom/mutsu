@@ -166,7 +166,7 @@ impl Interpreter {
             Some('%') => crate::value::Value::hash(std::collections::HashMap::new()),
             // Scalars are stored under their BARE name (no `$`), the same
             // convention `Stmt::VarDecl::name` uses — see `push_lexical`.
-            _ => crate::value::Value::package(Symbol::intern("Any")),
+            _ => crate::value::Value::package(crate::symbol::wk::any()),
         }
     }
 

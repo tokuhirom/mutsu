@@ -387,7 +387,7 @@ impl Interpreter {
             // object hash with only a key type) defaults like an untyped
             // container: `Any`.
             if info.value_type.is_empty() {
-                return Value::package(Symbol::intern("Any"));
+                return Value::package(crate::symbol::wk::any());
             }
             Value::package(Symbol::intern(&info.value_type))
         } else if matches!(target.view(), ValueView::Hash(_))
@@ -397,13 +397,13 @@ impl Interpreter {
             // type object (raku: `my @a; @a[5]` is `Any`), not `Nil`. A *List*
             // (`(1,2,3)[11]`, `()[0]`) is out-of-range → `Nil`, so only a real
             // `Array` (`[...]`/`my @a`) gets the `Any` default.
-            Value::package(Symbol::intern("Any"))
+            Value::package(crate::symbol::wk::any())
         } else if let ValueView::Instance { class_name, .. } = target.view() {
             // A user subclass of Array/Hash (`class A is Array {}`) defaults
             // its missing elements to `Any` like its base container does
             // (S12-introspection/WHAT.t: `A.new[0].WHAT === Any`).
             if self.class_inherits_array_or_hash(&class_name.resolve()) {
-                Value::package(Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             } else {
                 Value::NIL
             }

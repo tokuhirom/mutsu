@@ -72,7 +72,7 @@ impl Interpreter {
         // but only after the queue has drained -- rakudo's `LEAVE self.unlock`
         // hands the lock on regardless of how the block ended.
         result?;
-        Ok(Value::package(crate::symbol::Symbol::intern("Any")))
+        Ok(Value::package(crate::symbol::wk::any()))
     }
 
     /// `Lock::Async.with-lock-hidden-from-recursion-check(&code)`: run `&code`

@@ -432,6 +432,49 @@ impl Interpreter {
         } else {
             Vec::new()
         });
+        // Attribute name -> index, and the per-attribute no-initializer seed.
+        // Both are pure class shape that `dispatch_bless` / the native default
+        // constructor otherwise re-derive on every single construction (a
+        // linear name scan per named argument, and a
+        // `nominal_type_object_name_for_constraint` + `Symbol::intern` per
+        // unfilled attribute).
+        let attr_index = std::sync::Arc::new({
+            let mut m: rustc_hash::FxHashMap<Box<str>, u32> =
+                rustc_hash::FxHashMap::with_capacity_and_hasher(
+                    class_attrs.len(),
+                    Default::default(),
+                );
+            // First-wins, matching the `iter().position(..)` scan this replaces:
+            // an MRO can collect two same-named attributes (a child re-declaring
+            // a parent's), and the earlier entry is the one construction used.
+            for (i, a) in class_attrs.iter().enumerate() {
+                m.entry(a.name.as_str().into()).or_insert(i as u32);
+            }
+            m
+        });
+        let attr_seeds = std::sync::Arc::new(
+            class_attrs
+                .iter()
+                .map(|a| {
+                    if a.sigil == '@' || a.sigil == '%' {
+                        return super::AttrSeed::Container;
+                    }
+                    match type_constraints.get(&a.name).map(String::as_str) {
+                        Some(
+                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
+                            | "uint16" | "uint32" | "uint64" | "byte" | "atomicint",
+                        ) => super::AttrSeed::NativeInt,
+                        Some("num" | "num32" | "num64") => super::AttrSeed::NativeNum,
+                        Some("str") => super::AttrSeed::NativeStr,
+                        Some(tc) => {
+                            let nominal = self.nominal_type_object_name_for_constraint(tc);
+                            super::AttrSeed::TypeObject(crate::symbol::Symbol::intern(&nominal))
+                        }
+                        None => super::AttrSeed::TypeObject(crate::symbol::wk::any()),
+                    }
+                })
+                .collect::<Vec<_>>(),
+        );
         let probe_skeleton = std::sync::Arc::new(
             attr_syms
                 .iter()
@@ -451,6 +494,8 @@ impl Interpreter {
             has_custom_bless,
             has_container_defaults,
             attr_is_types,
+            attr_index,
+            attr_seeds,
             build_steps,
             tweak_steps,
             probe_skeleton,

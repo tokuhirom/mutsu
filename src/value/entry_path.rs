@@ -279,7 +279,7 @@ impl EntryTerminal {
     /// what the eventual write leaves behind.
     pub(crate) fn unwritten_read(&self) -> Value {
         match self {
-            EntryTerminal::Hash(..) => Value::Package(crate::symbol::Symbol::intern("Any")),
+            EntryTerminal::Hash(..) => Value::Package(crate::symbol::wk::any()),
             // SAFETY: a shared read of the aliased container, mirroring `peek`.
             // The clone ends the borrow before any caller can mutate through
             // `gc_contents_mut`.

@@ -2228,9 +2228,9 @@ pub(crate) fn native_method_1arg(
                     Value::NIL
                 }))
             }
-            ValueView::Nil => Some(Ok(Value::package(Symbol::intern("Any")))),
+            ValueView::Nil => Some(Ok(Value::package(crate::symbol::wk::any()))),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
-                Some(Ok(Value::package(Symbol::intern("Any"))))
+                Some(Ok(Value::package(crate::symbol::wk::any())))
             }
             // Anything else does not do `Associative`, and raku's `Any.AT-KEY`
             // fails for it. An Instance/Mixin/Package may carry a user-defined

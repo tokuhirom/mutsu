@@ -253,6 +253,13 @@ impl Interpreter {
             .get(name)
             .is_none_or(|existing| existing.is_stub_role || type_params.is_empty())
         {
+            // A role-composed `DESTROY` submethod is dispatched straight off
+            // `RoleDef::methods` (6.e role-submethod DESTROY), never through
+            // the class method table, so it needs its own arming of the
+            // "some user DESTROY exists" latch instance death consults.
+            if role_def.methods.contains_key("DESTROY") {
+                crate::value::note_destroy_method_declared();
+            }
             self.registry_mut().roles.insert(name.to_string(), role_def);
             self.registry_mut()
                 .user_declared_roles

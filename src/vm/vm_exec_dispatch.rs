@@ -506,12 +506,12 @@ impl Interpreter {
                             // S02-types/nil.t 39). Only the not-found fallback:
                             // a topic explicitly set to Nil (e.g. `Xorelse`
                             // topicalizing a Nil operand) must stay Nil.
-                            Ok(Value::package(Symbol::intern("Any")))
+                            Ok(Value::package(crate::symbol::wk::any()))
                         } else if name.starts_with("__ANON_STATE_") {
                             // An anonymous scalar (`$`) is a declared but
                             // uninitialized scalar: it reads as the Any type
                             // object, like `my $x` (S03-operators/context.t).
-                            Ok(Value::package(Symbol::intern("Any")))
+                            Ok(Value::package(crate::symbol::wk::any()))
                         } else if self.strict_mode && !Self::strict_read_exempt(name) {
                             // Read-side counterpart of the `SetGlobal` write
                             // check above: a plain scalar name that resolved
@@ -5583,7 +5583,7 @@ impl Interpreter {
                 // `:=` binding (e.g. binding to a readonly sub parameter
                 // in a closure).  The readonly_vars set is scope-local
                 // and gets restored on frame pop, but the env key persists.
-                if crate::env::closure_meta_keys_possible() {
+                if crate::env::sigilless_readonly_keys_possible() {
                     let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
                     if matches!(
                         self.env().get(&readonly_key).map(Value::view),
@@ -5651,7 +5651,7 @@ impl Interpreter {
                         // never carries this marker.
                         Some((name, _, _)) => {
                             return !name.with_str(|s| {
-                                crate::env::closure_meta_keys_possible()
+                                crate::env::sigilless_readonly_keys_possible()
                                     && matches!(
                                         self.env()
                                             .get(&crate::runtime::sigilless_readonly_key(s))

@@ -295,7 +295,7 @@ impl Interpreter {
                 self.var_type_constraint(source_name)
                     .map(|tc| Value::package(Symbol::intern(&tc)))
             })
-            .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+            .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
         attributes.insert("default".to_string(), default_val);
         let of_type = container
             .as_ref()
@@ -673,7 +673,7 @@ impl Interpreter {
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
             "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
             "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
-            "undefine" => Ok(Value::package(crate::symbol::Symbol::intern("Any"))),
+            "undefine" => Ok(Value::package(crate::symbol::wk::any())),
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.

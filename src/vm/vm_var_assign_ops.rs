@@ -26,12 +26,12 @@ impl Interpreter {
                     .trim_end_matches(":D")
                     .trim_end_matches(":U");
                 if base.is_empty() || base == "Any" || base == "Mu" || base.contains('[') {
-                    Value::package(Symbol::intern("Any"))
+                    Value::package(crate::symbol::wk::any())
                 } else {
                     Value::package(Symbol::intern(base))
                 }
             }
-            None => Value::package(Symbol::intern("Any")),
+            None => Value::package(crate::symbol::wk::any()),
         }
     }
 
@@ -221,7 +221,7 @@ impl Interpreter {
                         Self::autoviv_resize(
                             &mut updated,
                             max_idx + 1,
-                            Value::package(Symbol::intern("Any")),
+                            Value::package(crate::symbol::wk::any()),
                         )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
@@ -231,7 +231,7 @@ impl Interpreter {
                     Self::autoviv_resize(
                         &mut updated,
                         i + 1,
-                        Value::package(Symbol::intern("Any")),
+                        Value::package(crate::symbol::wk::any()),
                     )?;
                     updated[i] = val.clone();
                 } else {
@@ -253,7 +253,7 @@ impl Interpreter {
                         Self::autoviv_resize(
                             &mut updated,
                             max_idx + 1,
-                            Value::package(Symbol::intern("Any")),
+                            Value::package(crate::symbol::wk::any()),
                         )?;
                     }
                     for (offset, i) in slice_indices.iter().enumerate() {
@@ -263,7 +263,7 @@ impl Interpreter {
                     Self::autoviv_resize(
                         &mut updated,
                         i + 1,
-                        Value::package(Symbol::intern("Any")),
+                        Value::package(crate::symbol::wk::any()),
                     )?;
                     updated[i] = val.clone();
                 } else {
@@ -340,7 +340,7 @@ impl Interpreter {
                 };
                 if let Some(res) = container.with_array_mut(|items, _| {
                     let arr = crate::value::gc_data_mut(items);
-                    Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
+                    Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
                     arr[i] = value.take().unwrap_or(Value::NIL);
                     Ok(())
                 }) {
@@ -370,7 +370,7 @@ impl Interpreter {
             };
             let Some(res) = container.with_array_mut(|items, _| {
                 let arr = crate::value::gc_data_mut(items);
-                Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
+                Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
                 arr[i] = value;
                 Ok(())
             }) else {

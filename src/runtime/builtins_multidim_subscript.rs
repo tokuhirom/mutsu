@@ -465,7 +465,7 @@ impl Interpreter {
                 .or(type_constraint_default)
                 .unwrap_or_else(|| {
                     if target_is_real_array {
-                        Value::package(Symbol::intern("Any"))
+                        Value::package(crate::symbol::wk::any())
                     } else {
                         Value::NIL
                     }
@@ -621,7 +621,7 @@ impl Interpreter {
                             .and_then(|name| self.var_type_constraint(name))
                             .map(|t| Value::package(Symbol::intern(&t)))
                     })
-                    .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                    .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                 // Object hashes (`my %h{Int}`) store `.WHICH`-encoded keys, so
                 // the subscript value must be encoded the same way to find the
                 // entry; the *displayed* key is the original typed subscript.
@@ -748,7 +748,7 @@ impl Interpreter {
     /// `Int<a>:!v` is `Any` where `5<a>:!v` is the Failure.
     pub(crate) fn any_at_key_value(target: &Value) -> Value {
         match target.view() {
-            ValueView::Package(_) => Value::package(Symbol::intern("Any")),
+            ValueView::Package(_) => Value::package(crate::symbol::wk::any()),
             _ => {
                 RuntimeError::assoc_indexing_failure(crate::runtime::utils::value_type_name(target))
             }

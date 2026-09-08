@@ -383,18 +383,20 @@ impl Interpreter {
                 .cloned()
         };
 
-        // Set ::?CLASS / ::?ROLE
-        self.env_mut().insert(
-            "?CLASS".to_string(),
-            Value::package(crate::symbol::Symbol::intern(owner_class)),
-        );
+        // Set ::?CLASS / ::?ROLE. Symbol-keyed via the well-known accessors
+        // (as the fast path already does): a `String` allocation plus a
+        // re-intern of two fixed key names on every method call otherwise.
+        // `owner_sym` is reused by the routine frame push below.
+        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::class_decl(), Value::package(owner_sym));
         if let Some(role_name) = role_context {
-            self.env_mut().insert(
-                "?ROLE".to_string(),
+            self.env_mut().insert_sym(
+                crate::symbol::wk::role_decl(),
                 Value::package(crate::symbol::Symbol::intern(&role_name)),
             );
         } else {
-            self.env_mut().remove("?ROLE");
+            self.env_mut().remove_sym(crate::symbol::wk::role_decl());
         }
 
         // Set current_package so class-scoped subs are found during method execution.
@@ -804,7 +806,7 @@ impl Interpreter {
 
         // Push routine_stack so &?ROUTINE can find the current method
         self.push_method_routine_with_location(
-            Symbol::intern(owner_class),
+            owner_sym,
             Symbol::intern(&method_def.lexical_package),
             Symbol::intern(method_name),
             self.current_source_line(),
@@ -1641,8 +1643,11 @@ impl Interpreter {
                     // type object). The slow path records this via its exit
                     // attr-local sync through `write_attr_cell_by_key`; the
                     // fast path records it here. No-op outside BUILD.
-                    self.record_build_attr_write(cell, crate::symbol::Symbol::intern(attr_name));
-                    cell.insert(attr_name.to_string(), val.clone());
+                    // One intern for both uses: the symbol-keyed insert also
+                    // saves the `String` allocation the name-keyed one paid.
+                    let attr_sym = crate::symbol::Symbol::intern(attr_name);
+                    self.record_build_attr_write(cell, attr_sym);
+                    cell.insert(attr_sym, val.clone());
                 }
                 param_values.push((param_name, val));
                 continue;
@@ -1695,10 +1700,13 @@ impl Interpreter {
 
         crate::alloc_scope_end!(_sc_bind);
         crate::alloc_scope_named!(_sc_env, "mfast:env-setup");
-        // Build class value for ?CLASS
-        let class_val = Value::package(crate::symbol::Symbol::intern(owner_class));
+        // Build class value for ?CLASS. Interned once and reused by the routine
+        // frame push at the bottom — re-interning a name is a thread-local
+        // string-hash round trip, not free.
+        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        let class_val = Value::package(owner_sym);
         let method_callable_id = crate::value::next_instance_id();
-        let any_val = Value::package(crate::symbol::Symbol::intern("Any"));
+        let any_val = Value::package(crate::symbol::wk::any());
 
         // For can_skip_merge methods with no closures, reduce env inserts.
         // Only insert ?CLASS/?ROLE (used by ::?CLASS/::?ROLE resolution and
@@ -1928,7 +1936,7 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_loc);
         crate::alloc_scope_named!(_sc_body, "mfast:body");
         self.push_method_routine_with_location(
-            Symbol::intern(owner_class),
+            owner_sym,
             Symbol::intern(&method_def.lexical_package),
             Symbol::intern(method_name),
             self.current_source_line(),

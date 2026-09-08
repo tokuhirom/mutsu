@@ -24,8 +24,10 @@ impl Interpreter {
         let class_attrs = &*plan.class_attrs;
         let type_constraints = &*plan.type_constraints;
 
+        // One hash lookup instead of a linear `class_attrs` name scan per
+        // named argument (`NativeCtorPlan::attr_index`).
         let attr_idx_of =
-            |name: &str| -> Option<usize> { class_attrs.iter().position(|a| a.name == name) };
+            |name: &str| -> Option<usize> { plan.attr_index.get(name).map(|&i| i as usize) };
         let sigil_of = |name: &str| -> char {
             attr_idx_of(name)
                 .map(|i| class_attrs[i].sigil)
@@ -248,7 +250,7 @@ impl Interpreter {
                         '%' => Value::hash(HashMap::new()),
                         _ => match type_constraints.get(attr_name) {
                             Some(c) => Self::native_scalar_default(c).unwrap_or(Value::NIL),
-                            None => Value::package(crate::symbol::Symbol::intern("Any")),
+                            None => Value::package(crate::symbol::wk::any()),
                         },
                     };
                     attrs.insert(attr_sym, empty);

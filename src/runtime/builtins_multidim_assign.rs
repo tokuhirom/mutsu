@@ -157,7 +157,7 @@ impl Interpreter {
                         Self::autoviv_resize(
                             items,
                             index + 1,
-                            Value::package(crate::symbol::Symbol::intern("Any")),
+                            Value::package(crate::symbol::wk::any()),
                         )?;
                         Value::assign_element_slot(&mut items[index], value.clone());
                         if let Some(root) = method_args.first() {
@@ -450,10 +450,7 @@ impl Interpreter {
                         if crate::runtime::utils::is_shaped_array(&current) {
                             return Err(RuntimeError::new("Index out of bounds"));
                         }
-                        new_items.resize(
-                            idx + 1,
-                            Value::package(crate::symbol::Symbol::intern("Any")),
-                        );
+                        new_items.resize(idx + 1, Value::package(crate::symbol::wk::any()));
                     }
                     new_items[idx] = effective_value.clone();
                     Value::array_with_kind(crate::gc::Gc::new(new_items), kind)
@@ -627,10 +624,7 @@ impl Interpreter {
                 let idx = dims[0];
                 let mut new_items = (**items).clone();
                 if idx >= new_items.len() {
-                    new_items.resize(
-                        idx + 1,
-                        Value::package(crate::symbol::Symbol::intern("Any")),
-                    );
+                    new_items.resize(idx + 1, Value::package(crate::symbol::wk::any()));
                 }
                 if dims.len() == 1 {
                     new_items[idx] = value;
@@ -650,8 +644,7 @@ impl Interpreter {
                 // If it's not an array, wrap the assignment in a fresh array
                 if dims.len() == 1 {
                     let idx = dims[0];
-                    let mut new_items =
-                        vec![Value::package(crate::symbol::Symbol::intern("Any")); idx + 1];
+                    let mut new_items = vec![Value::package(crate::symbol::wk::any()); idx + 1];
                     new_items[idx] = value;
                     Ok(Value::real_array(new_items))
                 } else {

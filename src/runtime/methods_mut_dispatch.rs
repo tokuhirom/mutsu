@@ -347,7 +347,7 @@ impl Interpreter {
                 // (S02-types/nil.t: `$/.VAR.default === Nil`).
                 Value::NIL
             } else {
-                Value::package(Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             };
             attributes.insert("default".to_string(), default_val);
             // ADR-0064: the value this container currently holds. The descriptor

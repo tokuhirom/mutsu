@@ -357,7 +357,22 @@ impl Interpreter {
         let mut attributes = AttrMap::with_capacity(plan.class_attrs.len());
         let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
             Vec::new();
-        for (attr, &attr_sym) in plan.class_attrs.iter().zip(plan.attr_syms.iter()) {
+        // Resolve every named argument to its declared-attribute index ONCE (a
+        // hash lookup each) instead of re-scanning `class_attrs` linearly per
+        // argument below, and per `@`/`%` attribute in the seed loop.
+        let arg_attr_idx: Vec<Option<u32>> = args
+            .iter()
+            .map(|a| match a.view() {
+                ValueView::Pair(key, _) => plan.attr_index.get(key.as_str()).copied(),
+                _ => None,
+            })
+            .collect();
+        for (i, (attr, &attr_sym)) in plan
+            .class_attrs
+            .iter()
+            .zip(plan.attr_syms.iter())
+            .enumerate()
+        {
             let attr_name = &attr.name;
             let default = &attr.default;
             let sigil = &attr.sigil;
@@ -369,9 +384,7 @@ impl Interpreter {
             // HashData/ArrayData allocation per unfilled construction.
             if default.is_none()
                 && (*sigil == '@' || *sigil == '%')
-                && args
-                    .iter()
-                    .any(|a| matches!(a.view(), ValueView::Pair(k, _) if k == attr_name))
+                && arg_attr_idx.contains(&Some(i as u32))
             {
                 continue;
             }
@@ -430,18 +443,18 @@ impl Interpreter {
                 // A non-native attribute with no default seeds its nominal
                 // type object (`has $!z` reads as Any, `has Int $!x` as Int),
                 // matching raku — not Nil.
-                match plan.type_constraints.get(attr_name).map(String::as_str) {
-                    Some(
-                        "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-                        | "uint32" | "uint64" | "byte" | "atomicint",
-                    ) => Value::int(0),
-                    Some("num" | "num32" | "num64") => Value::num(0.0),
-                    Some("str") => Value::str("".to_string()),
-                    Some(tc) => {
-                        let nominal = self.nominal_type_object_name_for_constraint(tc);
-                        Value::package(crate::symbol::Symbol::intern(&nominal))
-                    }
-                    None => Value::package(crate::symbol::Symbol::intern("Any")),
+                // The seed is pure class shape, precomputed in the plan: this
+                // used to re-run a `type_constraints` lookup, a
+                // `nominal_type_object_name_for_constraint` walk and a
+                // `Symbol::intern` for EVERY unfilled attribute of EVERY bless.
+                match plan.attr_seeds[i] {
+                    super::AttrSeed::NativeInt => Value::int(0),
+                    super::AttrSeed::NativeNum => Value::num(0.0),
+                    super::AttrSeed::NativeStr => Value::str(String::new()),
+                    super::AttrSeed::TypeObject(sym) => Value::package(sym),
+                    // `@`/`%` attributes never reach here (the container arm
+                    // above handles them); seed defensively as raku's `Any`.
+                    super::AttrSeed::Container => Value::package(crate::symbol::wk::any()),
                 }
             };
             if is_deferred {
@@ -460,13 +473,9 @@ impl Interpreter {
         // Override with named args from bless call. A key that names a declared
         // attribute reuses its pre-interned Symbol (the common case — `|%_`
         // passthrough in a user `new`); anything else interns as before.
-        for arg in &args {
+        for (arg, attr_idx) in args.iter().zip(arg_attr_idx.iter()) {
             if let ValueView::Pair(key, value) = arg.view() {
-                match plan
-                    .class_attrs
-                    .iter()
-                    .position(|a| a.name.as_str() == &**key)
-                {
+                match attr_idx.map(|i| i as usize) {
                     Some(i) => {
                         // Sigil-coerce like `dispatch_new` does: a `%`-attribute
                         // provided as a (list of) Pair(s) becomes a Hash, a
@@ -839,7 +848,7 @@ impl Interpreter {
                     let nominal = self.nominal_type_object_name_for_constraint(tc);
                     Value::package(crate::symbol::Symbol::intern(&nominal))
                 }
-                None => Value::package(crate::symbol::Symbol::intern("Any")),
+                None => Value::package(crate::symbol::wk::any()),
             };
             attributes.insert(attr_name, val);
         }

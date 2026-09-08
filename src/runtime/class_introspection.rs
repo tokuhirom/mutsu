@@ -253,12 +253,15 @@ impl Interpreter {
 
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
+        // Symbol-keyed: the MRO is already `Symbol`s, so the per-level probe
+        // interns nothing (the `&str` API re-interned owner AND name at every
+        // level) and clones no candidate list (see
+        // `Registry::user_method_public_presence`).
+        let name_sym = crate::symbol::Symbol::intern(method_name);
+        let registry = self.registry();
         for cn in mro.iter() {
-            if let Some(defs) = self
-                .registry()
-                .user_method_overloads(cn.as_str(), method_name)
-            {
-                return defs.iter().any(|d| !d.is_private);
+            if let Some(any_public) = registry.user_method_public_presence(*cn, name_sym) {
+                return any_public;
             }
         }
         false
@@ -290,8 +293,12 @@ impl Interpreter {
     /// this sits on the per-call method-dispatch path.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
+        // Symbol-keyed per level: the MRO entries already ARE symbols, and the
+        // method name is interned once for the whole walk.
+        let name_sym = crate::symbol::Symbol::intern(method_name);
+        let registry = self.registry();
         for cn in mro.iter() {
-            if let Some(is_public) = self.registry().accessor_is_public(cn.as_str(), method_name) {
+            if let Some(is_public) = registry.accessor_is_public_sym(*cn, name_sym) {
                 return is_public;
             }
         }
@@ -315,17 +322,18 @@ impl Interpreter {
         method_name: &str,
     ) -> Option<UserMethodOrAccessor> {
         let mro = self.class_mro(class_name);
+        // The method name is interned once for the whole walk, and each level's
+        // own name is already a `Symbol` -- the `&str` probes below re-interned
+        // both on every MRO level of every dispatch.
+        let name_sym = crate::symbol::Symbol::intern(method_name);
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
             let (has_local_method, has_role_method, has_attr, has_native) = {
                 let registry = self.registry();
                 if let Some(class_def) = registry.classes.get(cn.as_str()) {
-                    let (local, role) = registry.user_method_local_role_presence(
-                        cn.as_str(),
-                        method_name,
-                        is_ancestor,
-                    );
-                    let attr = registry.accessor_is_public(cn.as_str(), method_name) == Some(true);
+                    let (local, role) =
+                        registry.user_method_local_role_presence_sym(*cn, name_sym, is_ancestor);
+                    let attr = registry.accessor_is_public_sym(*cn, name_sym) == Some(true);
                     // A built-in class (e.g. Proc) may register a public attribute
                     // for `.raku`/introspection while a native method of the same
                     // name is the real getter (its computed fallbacks differ from

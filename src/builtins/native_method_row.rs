@@ -1057,7 +1057,7 @@ mod tests {
         match_interp.run("'foo' ~~ /f(o)(o)/;").unwrap();
         let match_sample = match_interp.env().get("/").cloned().unwrap();
         let samples: &[(&str, Value)] = &[
-            ("Any", Value::package(Symbol::intern("Any"))),
+            ("Any", Value::package(crate::symbol::wk::any())),
             ("Mu", Value::package(Symbol::intern("Mu"))),
             ("Nil", Value::NIL),
             ("Version", get("version")),
@@ -1476,7 +1476,7 @@ mod tests {
         // "small spread" discipline as `native_method_arities`).
         let int_sample = Value::int(2);
         let numeric_str_sample = Value::str_from("5");
-        let any_type_obj = Value::package(Symbol::intern("Any"));
+        let any_type_obj = Value::package(crate::symbol::wk::any());
         let mu_type_obj = Value::package(Symbol::intern("Mu"));
 
         let mut sub_interp = crate::runtime::Interpreter::new();
