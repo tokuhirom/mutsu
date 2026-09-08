@@ -491,6 +491,17 @@ pub(crate) enum PhaserKind {
     Close,
 }
 
+/// Sentinel [`Expr::DoBlock`] label for `$( stmt; ... )`, the statement-list
+/// contextualizer.
+///
+/// `$( ... )` is lowered to a `DoBlock` because it carries a statement list,
+/// but it is NOT a Raku block: a `let`/`temp` written inside it belongs to the
+/// ENCLOSING block's save frame, so `{ $(let $a = 23; $a); Mu }` still restores
+/// `$a` when that block fails (roast `S04-blocks-and-statements/let.t`,
+/// `temp.t`). `Compiler::compile_block_construct` reads this label to skip the
+/// `let`/`temp` scope, and never forwards it to `OpCode::DoBlockExpr`.
+pub(crate) const STMT_LIST_CONTEXTUALIZER_LABEL: &str = "__mutsu_stmt_list_contextualizer__";
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -859,6 +870,10 @@ pub(crate) enum Expr {
     },
     DoBlock {
         body: Vec<Stmt>,
+        /// The block's own label, or one of the compiler sentinels
+        /// ([`STMT_LIST_CONTEXTUALIZER_LABEL`], `__mutsu_check_phaser__`) that
+        /// mark a `DoBlock` the parser synthesized for something that is not a
+        /// source-level `do { ... }`.
         label: Option<String>,
     },
     DoStmt(Box<Stmt>),

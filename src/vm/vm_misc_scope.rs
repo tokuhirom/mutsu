@@ -675,6 +675,20 @@ impl Interpreter {
         let lexical_class_names: Vec<String> = self.lexical_class_scope_names().to_vec();
         let mut restored_env = saved_env.clone();
         for (k, v) in current_env {
+            // `$!` is implicitly declared in EVERY Raku scope, and a `try`/CATCH
+            // in a nested block assigns the one the enclosing scope sees too:
+            // `{ try die("b") }; say $!` prints `b` in rakudo. mutsu only stores
+            // the env key once something has written it, so a `try` in a block
+            // that runs before any outer `try` created a `!` key would otherwise
+            // be dropped here as a block-local declaration -- making `$!`
+            // propagate out of a block only if some EARLIER statement happened
+            // to set it (`roast/integration/error-reporting.t`'s "Backtrace does
+            // not change on additional .backtrace" was passing on exactly that
+            // accident). Propagate it unconditionally instead.
+            if k.with_str(|s| s == "!") {
+                restored_env.insert_sym(k, v);
+                continue;
+            }
             // Package-qualified names (e.g. Test1::ns, Foo::Bar) are package-global
             // and must propagate out of any block scope where they were declared.
             // Sigils may appear before the qualifier (e.g. &Test1::ns, $Foo::var).

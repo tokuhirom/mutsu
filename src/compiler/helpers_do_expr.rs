@@ -1,166 +1,27 @@
 use super::*;
 
 impl Compiler {
+    /// Compile a bare block in value position (`do { ... }`, a block used as a
+    /// term). A thin wrapper over the shared lowering in `control_block.rs`;
+    /// the only difference from the statement form is
+    /// [`BlockPosition::Value`](crate::compiler::control_block::BlockPosition).
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
-        // A `do {}` block does not take a signature, so a placeholder variable
-        // used directly inside it cannot be captured -> X::Placeholder::Block.
-        // Exception: inside a method, the legacy argument variable `%_` refers
-        // to the method's implicit `*%_` slurpy and is valid here. `@_` is NOT
-        // exempted: `raku` only auto-adds `*%_` to a method, never `*@_` —
-        // referencing `@_` anywhere in a method body (directly or nested in a
-        // `do {}`) is a compile-time error there too (`raku -e 'class A {
-        // method m { @_.raku.say } }'` => "Placeholder variables (eg. @_)
-        // cannot be used in a method. Please specify an explicit signature").
-        // Pin: t/placeholder-named-in-method-do.t.
-        // Exception: a placeholder that is already a bound parameter of the
-        // ENCLOSING block — its local exists in `local_map` — is attached, not
-        // stray. The chained-comparison desugar (`{ 0 <= $^p <= 5 }`) wraps the
-        // body in a compiler-generated DoBlock inside the very AnonSubParams
-        // that owns `^p`; dying here broke every subset/where written that way
-        // (Cro::Core's `Cro::Port`). Pin: t/subset-where-placeholder-chain.t.
-        if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
-            .into_iter()
-            .find(|ph| {
-                if self.lexically_in_method && ph == "%_" {
-                    return false;
-                }
-                // A CARET placeholder (`$^p`) already bound as the enclosing
-                // block's parameter is attached, not stray: the local exists in
-                // `local_map` (same-compiler case), or the interpret-path
-                // caller bound it in env and seeded `prebound_placeholder_params`
-                // (re-entrant block eval — `call_sub_value` → `eval_block_value`
-                // re-compiles the body alone). The chained-comparison desugar
-                // (`{ 0 <= $^p <= 5 }`) wraps the body in a compiler-generated
-                // DoBlock inside the very block that owns `^p`; dying here broke
-                // every subset/where written that way (Cro::Core's `Cro::Port`).
-                // Pin: t/subset-where-placeholder-chain.t. The `%_`/`@_` implicit
-                // slurpies keep the strict rule (only a METHOD provides them) —
-                // pin: t/placeholder-named-in-method-do.t.
-                let bare = ph.trim_start_matches(['$', '@', '%', '&']);
-                let attached_caret = bare.starts_with('^')
-                    && (self.local_map.contains_key(ph.as_str())
-                        || self.local_map.contains_key(bare)
-                        || self.prebound_placeholder_params.contains(bare));
-                !attached_caret
-            })
-        {
-            let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
-            let idx = self.code.add_constant(err);
-            self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die { user_throw: false });
-            return;
-        }
-        // DoBlocks from lifted CHECK phasers carry a sentinel label so we can
-        // wrap them in CheckPhaserStart/CheckPhaserEnd, ensuring errors inside
-        // are wrapped in X::Comp::BeginTime.
-        if matches!(label, Some(l) if l == "__mutsu_check_phaser__") {
-            let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
-            // Compile the inner DoBlock normally (without the sentinel label)
-            self.compile_do_block_expr(body, &None);
-            self.code.emit(OpCode::CheckPhaserEnd);
-            let end_ip = self.code.ops.len() as u32;
-            if let OpCode::CheckPhaserStart { end_ip: ref mut e } = self.code.ops[start_idx] {
-                *e = end_ip;
-            }
-            return;
-        }
-        // If the do block contains CATCH/CONTROL, compile as try so exceptions are handled.
-        if Self::has_catch_or_control(body) {
-            self.compile_implicit_try(body);
-            return;
-        }
-        // If the do block contains ENTER/LEAVE/KEEP/UNDO phasers, wrap in
-        // DoBlockExpr + BlockScope so phaser semantics are preserved.
-        if Self::has_block_enter_leave_phasers(body) {
-            let do_idx = self.code.emit(OpCode::DoBlockExpr {
-                body_end: 0,
-                label: label.clone(),
-                scope_isolate: false,
-                isolate_decls_idx: u32::MAX,
-                scope_routines: Self::stmts_declare_routines(body),
-            });
-            let saved = self.push_dynamic_scope_lexical();
-            self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
-            self.pop_dynamic_scope_lexical(saved);
-            self.code.patch_body_end(do_idx);
-            return;
-        }
-        // An import is lexical to the block that asked for it, and a `do {}`
-        // block is a block: `my (&plan) = do { use Test; (&plan) }` must take
-        // the routines it names as values and leave everything else the module
-        // exports out of the enclosing scope (roast/S32-list/skip.t imports
-        // selectively precisely so the CORE `skip` stays visible). The
-        // statement-form bare block already does this in `Stmt::Block`.
-        let import_scoped = Self::has_use_stmt(body);
-        if import_scoped {
-            self.code.emit(OpCode::PushImportScope);
-        }
-        // A value-position block (`do { … }`, a routine's tail `{ … }`, a
-        // string-interpolation `{ … }`) is a block literal re-cloned every time
-        // its ENCLOSING block runs, so its own `state` restarts per execution —
-        // see `OpCode::ResetStateLocals`. This is what makes raku's documented
-        // trap `sub count-it { say "Count is {$++}" }` print `0` every call.
-        let state_reset = self.emit_value_block_state_reset(body);
-        let idx = self.code.emit(OpCode::DoBlockExpr {
-            body_end: 0,
-            label: label.clone(),
-            scope_isolate: false,
-            isolate_decls_idx: u32::MAX,
-            scope_routines: Self::stmts_declare_routines(body),
-        });
-        self.compile_block_inline(body);
-        self.code.patch_body_end(idx);
-        self.patch_nested_block_state_reset(state_reset);
-        if import_scoped {
-            self.code.emit(OpCode::PopImportScope);
-        }
+        self.compile_block_construct(
+            body,
+            label,
+            crate::compiler::control_block::BlockPosition::Value { isolate: false },
+        );
     }
 
-    /// [`Compiler::emit_nested_block_state_reset`] for a value-position block,
-    /// honouring the sole-block loop-body suppression the statement form
-    /// consumes in `Stmt::Block` (`do { state $n … } for @xs` is the loop's own
-    /// body, cloned once for the whole loop).
-    fn emit_value_block_state_reset(&mut self, body: &[Stmt]) -> Option<usize> {
-        let suppress = std::mem::take(&mut self.suppress_loop_block_state_reset);
-        (!suppress)
-            .then(|| self.emit_nested_block_state_reset(body))
-            .flatten()
-    }
-
+    /// [`Compiler::compile_do_block_expr`] with `OpCode::DoBlockExpr`'s
+    /// `scope_isolate` on: the block's own scalar/array `my`/`state`
+    /// declarations revert on exit while mutations of outer variables persist.
     pub(super) fn compile_do_block_expr_scoped(&mut self, body: &[Stmt], label: &Option<String>) {
-        // Same per-execution `state` restart as the unscoped sibling above.
-        let state_reset = self.emit_value_block_state_reset(body);
-        let idx = self.code.emit(OpCode::DoBlockExpr {
-            body_end: 0,
-            label: label.clone(),
-            scope_isolate: true,
-            isolate_decls_idx: u32::MAX,
-            scope_routines: Self::stmts_declare_routines(body),
-        });
-        // Record every `my`/`state` declaration compiled in the body (including
-        // ones nested in expressions like `(state $a)++` and ones shadowing an
-        // outer same-name) so the scope-isolating exit reverts exactly those
-        // while letting OUTER-variable mutations persist. A nested closure
-        // compiles in a fresh `Compiler`, so it never contributes here.
-        self.block_decl_tracker.push(Vec::new());
-        self.compile_block_inline(body);
-        let mut decls = self.block_decl_tracker.pop().unwrap_or_default();
-        // Hashes are intentionally NOT isolated: a `my %h` (e.g.
-        // `:into(my %h := :{})`) must survive into the enclosing scope.
-        decls.retain(|n| !n.starts_with('%') && !n.starts_with('&'));
-        if !decls.is_empty() {
-            let decls_idx = self.code.add_constant(Value::array(
-                decls.into_iter().map(Value::str).collect::<Vec<_>>(),
-            ));
-            if let OpCode::DoBlockExpr {
-                isolate_decls_idx, ..
-            } = &mut self.code.ops[idx]
-            {
-                *isolate_decls_idx = decls_idx;
-            }
-        }
-        self.code.patch_body_end(idx);
-        self.patch_nested_block_state_reset(state_reset);
+        self.compile_block_construct(
+            body,
+            label,
+            crate::compiler::control_block::BlockPosition::Value { isolate: true },
+        );
     }
 
     /// Compile an `if`/`elsif` chain in value (expression) position.
