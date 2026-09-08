@@ -184,7 +184,20 @@ impl Interpreter {
         }
         match body_result {
             Ok(()) => {
-                self.discard_let_saves(let_mark);
+                // A `try`/implicit-CATCH region is a block, so it owns the
+                // `let`/`temp` saves its body recorded: `temp` restores here and
+                // `let` restores when the body produced an undefined value
+                // (#7646). A routine body carrying a `CATCH` phaser is compiled
+                // as exactly this region, so without it such a body never
+                // resolved its saves at all. When the body left no value on the
+                // stack there is nothing to judge failure by, so it counts as a
+                // successful exit (`temp` still restores).
+                if self.stack.len() > saved_depth {
+                    let body_value = self.stack.last().cloned().unwrap_or(Value::NIL);
+                    self.resolve_frame_let_saves(let_mark, &body_value);
+                } else {
+                    self.resolve_let_saves_on_success(let_mark, true);
+                }
                 // A `try` that completes normally but yields a soft Failure value
                 // (e.g. the result of an expression that returned a Failure rather
                 // than throwing) handles that Failure: its value is now "caught",

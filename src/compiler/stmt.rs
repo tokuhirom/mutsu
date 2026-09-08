@@ -4397,6 +4397,16 @@ impl Compiler {
                 let slot = self.alloc_local(&var_name);
                 self.code.emit(OpCode::GetLocal(slot));
             }
+            // `sub f { let $x = 42 }` yields 42, exactly like the bare
+            // assignment arm below: the save is bookkeeping, the value is the
+            // assignment's. The block's value is what decides whether the
+            // frame's `let` saves are kept or restored, so a tail `let` that
+            // yielded the fallback `True`/`Nil` made that decision on a value
+            // the source never produced (#7646).
+            Stmt::Let { name, .. } => {
+                let name = name.clone();
+                self.compile_let_stmt_as_value(stmt, &name);
+            }
             Stmt::Assign { name, .. } => {
                 self.compile_stmt(stmt);
                 if let Some(&slot) = self.local_map.get(name) {
