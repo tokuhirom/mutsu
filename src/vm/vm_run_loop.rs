@@ -1144,7 +1144,7 @@ impl Interpreter {
     /// Look up the declared type constraint of an attribute of the current
     /// `self` instance, walking the MRO.
     pub(crate) fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
-        let self_val = self.get_env_with_main_alias("self")?;
+        let self_val = self.get_env_self()?;
         let class_name = self_val.with_deref(|v| match v.view() {
             crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
             crate::value::ValueView::Mixin(inner, _) => match inner.view() {

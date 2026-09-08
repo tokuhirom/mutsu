@@ -232,7 +232,7 @@ impl Interpreter {
             matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         let def = MethodDef {
-            lexical_package: self.current_package(),
+            lexical_package: self.current_package_sym(),
             params: effective_params,
             param_defs: effective_param_defs,
             body: std::sync::Arc::new(decl.body.clone()),

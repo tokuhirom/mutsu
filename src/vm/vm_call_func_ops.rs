@@ -1428,10 +1428,8 @@ impl Interpreter {
         // attributes when available.
         if target.is_nil()
             && let Some(attr_name) = name.strip_prefix('!').filter(|n| !n.is_empty())
-            && let Some(ValueView::Instance { attributes, .. }) = self
-                .get_env_with_main_alias("self")
-                .as_ref()
-                .map(Value::view)
+            && let Some(ValueView::Instance { attributes, .. }) =
+                self.get_env_self().as_ref().map(Value::view)
             && let Some(attr_val) = attributes.as_map().get(attr_name)
         {
             target = attr_val.clone();

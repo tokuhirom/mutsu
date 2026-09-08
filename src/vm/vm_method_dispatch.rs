@@ -807,7 +807,7 @@ impl Interpreter {
         // Push routine_stack so &?ROUTINE can find the current method
         self.push_method_routine_with_location(
             owner_sym,
-            Symbol::intern(&method_def.lexical_package),
+            method_def.lexical_package,
             Symbol::intern(method_name),
             self.current_source_line(),
             self.current_source_file_sym(),
@@ -1937,7 +1937,7 @@ impl Interpreter {
         crate::alloc_scope_named!(_sc_body, "mfast:body");
         self.push_method_routine_with_location(
             owner_sym,
-            Symbol::intern(&method_def.lexical_package),
+            method_def.lexical_package,
             Symbol::intern(method_name),
             self.current_source_line(),
             self.current_source_file_sym(),

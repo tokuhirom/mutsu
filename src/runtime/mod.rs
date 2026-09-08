@@ -3459,7 +3459,11 @@ pub struct Interpreter {
     /// showed up as ~7% of a native-method-dispatch loop's profile
     /// (`has_user_method` + `class_mro` + `user_method_overloads`) purely to
     /// re-derive "no, nobody augmented Int".
-    pub(crate) native_lever_a_override_cache: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// Memo for [`Interpreter::native_lever_a_user_override_sym`], keyed by
+    /// `(address of the receiver's `&'static str` type name, method symbol)`.
+    /// See that function for why the type half is an address and not a
+    /// `Symbol`.
+    pub(crate) native_lever_a_override_cache: rustc_hash::FxHashMap<(usize, Symbol), bool>,
     /// Memoized `(class, method) -> does this name have >= 2 structural dispatch
     /// candidates across the MRO` (counting overloads BEFORE arg-matching).
     /// `false` means the name resolves to at most one candidate, so

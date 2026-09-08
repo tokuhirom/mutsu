@@ -1069,7 +1069,7 @@ impl Interpreter {
                     .cloned()
                     .collect();
                 let def = MethodDef {
-                    lexical_package: sub_data.package.resolve(),
+                    lexical_package: sub_data.package,
                     params: filtered_params,
                     param_defs: filtered_param_defs,
                     body: method_body,
@@ -1150,7 +1150,7 @@ impl Interpreter {
                     return Ok(Value::NIL);
                 };
                 let def = MethodDef {
-                    lexical_package: sub_data.package.resolve(),
+                    lexical_package: sub_data.package,
                     params: sub_data.params.clone(),
                     param_defs: sub_data.param_defs.clone(),
                     body: sub_data.body.clone(),

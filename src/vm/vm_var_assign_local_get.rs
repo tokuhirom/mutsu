@@ -294,7 +294,7 @@ impl Interpreter {
         if name.starts_with('!')
             && name.len() > 1
             && !name.starts_with("__")
-            && let Some(self_val) = self.get_env_with_main_alias("self")
+            && let Some(self_val) = self.get_env_self()
             && !self_val.with_deref(|value| {
                 matches!(
                     value.view(),

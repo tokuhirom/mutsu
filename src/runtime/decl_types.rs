@@ -94,7 +94,13 @@ pub(crate) struct SubsetDef {
 pub(crate) struct MethodDef {
     /// Package containing the method declaration lexically. This can differ
     /// from the owning class for an explicitly qualified class declaration.
-    pub(crate) lexical_package: String,
+    ///
+    /// Interned: every method dispatch pushes it into the `RoutineFrame`
+    /// (`push_method_routine_with_location` takes `Symbol`s), and re-interning
+    /// the same package name there is a thread-local round trip plus a string
+    /// hash on a path that runs per call. Registration already knows the name,
+    /// so the intern is paid once, where the declaration is read.
+    pub(crate) lexical_package: crate::symbol::Symbol,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     /// Method body AST. Wrapped in Arc to make MethodDef clones O(1) since

@@ -237,7 +237,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let rewritten = Self::rewrite_proto_dispatch_stmts(&proto.body);
         let mut method_def = MethodDef {
-            lexical_package: proto.package.resolve(),
+            lexical_package: proto.package,
             params: proto.params.clone(),
             param_defs: proto.param_defs.clone(),
             body: std::sync::Arc::new(rewritten),

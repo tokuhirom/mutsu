@@ -131,7 +131,7 @@ fn delegation_slurpy_param() -> ParamDef {
 /// on the object in `attr_var_name`.
 pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -> MethodDef {
     MethodDef {
-        lexical_package: "GLOBAL".to_string(),
+        lexical_package: crate::symbol::wk::global_package(),
         params: vec!["@_".to_string(), "%_".to_string()],
         param_defs: vec![delegation_slurpy_param(), delegation_double_slurpy_param()],
         body: std::sync::Arc::new(Vec::new()),
@@ -363,7 +363,7 @@ pub(super) fn substitute_type_params_in_method(
         .map(|pd| substitute_param_def(pd, type_subs))
         .collect();
     MethodDef {
-        lexical_package: method.lexical_package.clone(),
+        lexical_package: method.lexical_package,
         params: method.params.clone(),
         param_defs: new_param_defs,
         body: method.body.clone(),

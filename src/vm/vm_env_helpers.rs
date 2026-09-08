@@ -1122,9 +1122,24 @@ impl Interpreter {
         self.get_env_with_main_alias_sym(name, Symbol::intern(name))
     }
 
+    /// The invocant, `self`, read through the same by-name chokepoint.
+    ///
+    /// `self` is the single most-read name on the dispatch path (a mutating
+    /// method's receiver, every `$!attr` cell read, the `$!x`-without-`self`
+    /// diagnostics, ...), and reading it by string re-interned `"self"` on
+    /// every one of them: a thread-local round trip plus a string hash and a
+    /// `memcmp`, ~16 times per construction on `benchmarks/bench-ctor.raku`
+    /// (issue #7568 round 7). The well-known symbol resolves once per process,
+    /// so the 19 `self` readers pay nothing for the name.
+    #[inline]
+    pub(crate) fn get_env_self(&self) -> Option<Value> {
+        self.get_env_with_main_alias_sym("self", crate::symbol::wk::self_())
+    }
+
     /// [`Self::get_env_with_main_alias`] for a caller that already holds
     /// `name`'s interned form — an opcode whose name operand is a constant-pool
-    /// index, which [`CompiledCode::const_sym`] memoizes per chunk.
+    /// index, which [`CompiledCode::const_sym`] memoizes per chunk, or a fixed
+    /// name with a well-known symbol (see [`Self::get_env_self`]).
     ///
     /// The env is `Symbol`-keyed, so this chokepoint interned its `&str`
     /// argument again on every read. That is a thread-local `RefCell` borrow

@@ -465,7 +465,7 @@ impl Interpreter {
         // Guard for the whole "lever A" native block below — see
         // `native_lever_a_user_override`'s doc comment (mut path twin of the
         // non-mut guard in `try_compiled_method_or_interpret_inner`).
-        let lever_a_blocked = self.native_lever_a_user_override(&target, method);
+        let lever_a_blocked = self.native_lever_a_user_override_sym(&target, method_sym);
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
         if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
             return result;
@@ -513,7 +513,7 @@ impl Interpreter {
         if !lever_a_blocked
             && args.is_empty()
             && method == "Seq"
-            && !self.native_lever_a_user_override(&target, method)
+            && !self.native_lever_a_user_override_sym(&target, method_sym)
             && let Some(result) = self.try_element_container_producer(&target, method, &args)
         {
             return Ok(result);

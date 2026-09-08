@@ -498,7 +498,7 @@ impl Interpreter {
                                 .next()
                                 .is_some_and(|c| c.is_alphanumeric() || c == '_')
                         {
-                            if self.get_env_with_main_alias("self").is_some() {
+                            if self.get_env_self().is_some() {
                                 Ok(Value::NIL)
                             } else {
                                 Err(RuntimeError::new(format!(
@@ -573,7 +573,7 @@ impl Interpreter {
             }
             OpCode::GetSelfOrNoSelf(name_idx) => {
                 // Load `self` for a `$.attr` accessor from the captured env.
-                if let Some(self_val) = self.get_env_with_main_alias("self") {
+                if let Some(self_val) = self.get_env_self() {
                     self.stack.push(self_val);
                     *ip += 1;
                 } else {
@@ -598,7 +598,7 @@ impl Interpreter {
                 if let Some(bare) = name.strip_prefix("@!")
                     && !bare.is_empty()
                     && bare.as_bytes()[0].is_ascii_alphabetic()
-                    && self.get_env_with_main_alias("self").is_none()
+                    && self.get_env_self().is_none()
                 {
                     return Err(RuntimeError::new(format!(
                         "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
@@ -655,7 +655,7 @@ impl Interpreter {
                         if attr_name.is_empty() {
                             return None;
                         }
-                        let self_val = self.get_env_with_main_alias("self")?;
+                        let self_val = self.get_env_self()?;
                         if let ValueView::Instance { attributes, .. } = self_val.view() {
                             attributes.as_map().get(attr_name).cloned()
                         } else {
@@ -722,7 +722,7 @@ impl Interpreter {
                 if let Some(bare) = name.strip_prefix("%!")
                     && !bare.is_empty()
                     && bare.as_bytes()[0].is_ascii_alphabetic()
-                    && self.get_env_with_main_alias("self").is_none()
+                    && self.get_env_self().is_none()
                 {
                     return Err(RuntimeError::new(format!(
                         "X::Syntax::NoSelf: Variable {} used where no 'self' is available",
@@ -762,7 +762,7 @@ impl Interpreter {
                         if attr_name.is_empty() {
                             return None;
                         }
-                        let self_val = self.get_env_with_main_alias("self")?;
+                        let self_val = self.get_env_self()?;
                         if let ValueView::Instance { attributes, .. } = self_val.view() {
                             attributes.as_map().get(attr_name).cloned()
                         } else {
@@ -1032,7 +1032,7 @@ impl Interpreter {
                     if bare.starts_with('!')
                         && bare.len() > 1
                         && bare.as_bytes()[1].is_ascii_alphabetic()
-                        && self.get_env_with_main_alias("self").is_none()
+                        && self.get_env_self().is_none()
                     {
                         // Reconstruct the display name with sigil
                         let display = if name.starts_with('!') {

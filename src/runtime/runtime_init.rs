@@ -2694,7 +2694,7 @@ impl Interpreter {
                     args: vec![],
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
-                    lexical_package: "GLOBAL".to_string(),
+                    lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
                     param_defs: Vec::new(),
                     body: std::sync::Arc::new(body),
@@ -2753,7 +2753,7 @@ impl Interpreter {
                     args: vec![],
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
-                    lexical_package: "GLOBAL".to_string(),
+                    lexical_package: crate::symbol::wk::global_package(),
                     params: Vec::new(),
                     param_defs: Vec::new(),
                     body: std::sync::Arc::new(body),

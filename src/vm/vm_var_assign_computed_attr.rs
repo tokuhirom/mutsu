@@ -234,7 +234,7 @@ impl Interpreter {
         bare: crate::symbol::Symbol,
         is_private: bool,
     ) -> Option<Value> {
-        if let Some(self_val) = self.get_env_with_main_alias("self")
+        if let Some(self_val) = self.get_env_self()
             && let Some(attributes) = Self::self_instance_attrs(&self_val)
         {
             let map = attributes.as_map();
@@ -313,7 +313,7 @@ impl Interpreter {
         if !is_private {
             return None;
         }
-        let self_val = self.get_env_with_main_alias("self")?;
+        let self_val = self.get_env_self()?;
         let (class_sym, attributes) = Self::instance_class_and_attrs(&self_val)?;
         {
             let map = attributes.as_map();
@@ -404,7 +404,7 @@ impl Interpreter {
     /// Mixin). No-op when `self` is not a concrete instance or the attribute does
     /// not exist on it.
     fn write_attr_cell_by_key(&self, bare: crate::symbol::Symbol, is_private: bool, val: Value) {
-        if let Some(self_val) = self.get_env_with_main_alias("self")
+        if let Some(self_val) = self.get_env_self()
             && let Some(attributes) = Self::self_instance_attrs(&self_val)
         {
             let key = {

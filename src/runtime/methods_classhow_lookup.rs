@@ -104,7 +104,7 @@ impl Interpreter {
                     // proto, so introspection and dispatch agree on what the proto
                     // looks like as a method.
                     vec![MethodDef {
-                        lexical_package: proto.package.resolve(),
+                        lexical_package: proto.package,
                         params: proto.params.clone(),
                         param_defs: proto.param_defs.clone(),
                         body: std::sync::Arc::new(proto.body.clone()),
