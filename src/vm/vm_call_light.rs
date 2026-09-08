@@ -705,6 +705,22 @@ impl Interpreter {
         // the callee's own overlay.
         self.finish_positional_light_env(cf, caller_env);
         self.leave_routine_package(saved_package);
+        // Leave the callee's compilation unit HERE, alongside every other
+        // piece of per-call state, and not after the return-type check below:
+        // that check has its own `return Err(...)`, and with the restore after
+        // it the caller resumed with `current_unit` still naming the callee's
+        // unit. `current_unit` is what user-declared operator scoping resolves
+        // against (`user_infix_override` -> `declaring_unit_is_in_scope`), so a
+        // caught return-type failure would silently re-scope the caller's
+        // operators. Found while working #7558, whose closed branch made
+        // cross-unit light calls reachable; on `main` the leak is latent,
+        // because a call into another compilation unit does not take this path
+        // today (verified under `rust-gdb`: neither `bad-return(1)`,
+        // `Mod::bad-return(1)` nor `&bad-return(1)` for a `use`d module reaches
+        // this function). Nothing between here and the old restore point reads
+        // `current_unit`, so moving it up is behaviour-preserving today and
+        // correct once such a call does arrive.
+        self.current_unit = saved_unit;
 
         // Return type check (if specified). Allows type objects, Nil, and Failure through.
         if result.is_ok()
@@ -737,7 +753,6 @@ impl Interpreter {
             });
         }
 
-        self.current_unit = saved_unit;
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
