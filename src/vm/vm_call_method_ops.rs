@@ -1031,6 +1031,29 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A pure native method on an immutable scalar receiver touches no env,
+        // so -- like the accessor read above -- it is answered before the
+        // flatten below. This is the `CallMethodMut` gate (#7554) applied to the
+        // plain opcode: `(...).sqrt` inside a method body is a `CallMethod`, and
+        // it was paying a whole-scope env clone per call (#7563). See
+        // `try_env_pure_scalar_native_dispatch` for why nothing between here and
+        // the native probe needs the flat view for such a receiver.
+        if let Some(result) = self.try_env_pure_scalar_native_dispatch(
+            "callmethod",
+            &target,
+            method,
+            method_sym,
+            &args,
+            modifier,
+            quoted,
+        ) {
+            self.stack.push(result?);
+            // The tail this early return replaces: `mark_dirty` is false for a
+            // pure dispatch (its body is empty anyway) and `hyper_race_wrap` is
+            // not yet set, so the drain is all that is left of it.
+            self.drain_and_reconcile_after_cached_call(code);
+            return Ok(());
+        }
         // Full method dispatch from here on may capture the env into a Sub /
         // closure or run an interpreter fallback that iterates it; collapse a
         // transient scoped overlay env to a flat env first so the full lexical
