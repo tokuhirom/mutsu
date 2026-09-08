@@ -315,7 +315,12 @@ impl Interpreter {
             self.call_frames[frame_idx]
                 .saved_env
                 .insert(name.clone(), binding.clone());
-            self.record_caller_var_writeback(&name);
+            // The key is known only at runtime, so carry both its value and its
+            // pending slot refresh across every intervening frame exactly as
+            // `$::($name) = value` does. Keeping it in the current env supplies
+            // `propagate_pending_caller_writes` at each return boundary.
+            self.env_mut().insert(name.clone(), binding.clone());
+            self.record_runtime_name_write(&name);
         } else {
             let package = Self::normalize_stash_package(&package);
             let (sigil, bare) = match raw_key.chars().next() {
