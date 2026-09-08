@@ -162,7 +162,9 @@ already had a serialize group, so the `.act` fix does not obviously cover it. **
 not explain it.** What it does supply is a reason the earlier hunts failed — every one of them
 ran below the oversubscription threshold §1.1 identifies — and a cheap next step: run that file
 under the §1.1 harness at 24-way, and run the §1.2 oracle over it to see whether its containers
-are on the lane at all. Left recorded, not chased.
+are on the lane at all. Left recorded, not chased. **ANSWERED in §12 (2026-09-08):**
+both were run; the file has no containers on either lane and stresses 0 / 48 at 24-way, so
+it is not this class and it leaves this ADR.
 
 ## 4. Decision
 
@@ -603,8 +605,69 @@ full under real rakudo as well as under mutsu.
 
 ### 11.4 Still open
 
+*(Narrowed by §12, which removes `S17-procasync/stress.t` from this ledger.)*
+
 Of §3's routes, none is now Exposed-and-unmeasured. What remains of step 3 is
 §3.1's `S17-procasync/stress.t` SIGSEGV, still unexplained and never
 reproduced, and the §2 lane-decline reasons that no route has yet exercised
 (twigil'd names, a name masked as re-declared, a container never in a spawning
 frame's env). Probe before assuming any of them needs a fourth funnel.
+
+## 12. §3.1's `S17-procasync/stress.t` SIGSEGV is not this class (2026-09-08)
+
+§3.1 recorded the 2026-07-30 CI SIGSEGV (run 30590633128, the rakudo#3299
+block) as unexplained, and named the cheap next step: run the file under the
+§1.1 harness at 24-way, and run the §1.2 oracle over it to see whether its
+containers are on the lane at all. Both were done. The answer is that **the file
+has no containers on either lane**, so this ADR's class cannot be its cause.
+
+### 12.1 The oracle: essentially no aliased container mutation at all
+
+Instrumenting has one wrinkle worth writing down. Most of this file's blocks run
+their program in a **child** process through `is_run` / `doesn't-hang`, and a
+breakpoint on the parent sees nothing of them — which is very likely why earlier
+hunts learned nothing from instrumenting the file. So each block was extracted
+and run directly.
+
+| probe | `ContainerStructGuard` | `shared_array_elem_set` | unsynchronized aliased store | `gc_contents_mut<ArrayData>` |
+|---|---|---|---|---|
+| rakudo#3299 block (1200 → 100 `Proc::Async` in a `react`) | 0 | 0 | 0 | **1** |
+| block 1 (400 `Proc::Async`, `.tap` writing a captured `$output`, `@got.push`) | 0 | 0 | 0 | **1** |
+
+The single `gc_contents_mut` call in each is not a thread doing anything: its
+backtrace is `exec_set_local_op` → `stamp_descriptor_name` for the `my @target`
+/ `my @got` declaration, on the main thread, before any `Proc::Async` exists.
+
+Block 1 is worth calling out because it *looks* exactly like route 1 — a `.tap`
+callback closing over `$output`, with `@got` pushed from the main loop. It is
+not: `$output` is a `Str`, not a container, and the `@got` push is unaliased, so
+it never reaches the primitive. A route's shape is not evidence that it is on
+the lane; the oracle is.
+
+### 12.2 The §1.1 harness at 24-way
+
+Debug build, `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`,
+24-way on 12 cores — the oversubscription that §1.1 identifies as the necessary
+ingredient, and that every earlier hunt ran below:
+
+| workload | result |
+|---|---|
+| the whole `roast/S17-procasync/stress.t` through `prove` | **0 / 48** |
+| the rakudo#3299 block as a standalone program | **0 / 48** |
+
+### 12.3 Consequence
+
+§3.1 is answered and leaves this ADR. The crash remains a real, unexplained
+one-off, but it is not a cross-thread aliased container write, and keeping it on
+this campaign's ledger only makes the ledger wrong. It is tracked on its own
+from here, as [#7609](https://github.com/tokuhirom/mutsu/issues/7609), which
+also records the candidates this measurement does *not* exclude (the
+`react`/`whenever` bookkeeping, `signal()` handler churn, `Proc::Async`
+reaping state).
+
+With §11 and this section, **nothing in §3 is Exposed-and-unmeasured any more.**
+What is left of §4 step 3 is the §2 lane-decline reasons that no route has yet
+exercised: a twigil'd name, a name masked as re-declared, and a container that
+was never in a spawning frame's env. Each wants its own oracle-classified probe;
+§12.1 is the reminder to run the oracle rather than to reason from a route's
+shape.
