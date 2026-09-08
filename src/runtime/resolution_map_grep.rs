@@ -938,9 +938,19 @@ impl Interpreter {
 
         let underscore = "_".to_string();
         let dollar_topic = "$_".to_string();
+        // Caller-priority capture merge, identical to `eval_map_over_items` /
+        // `eval_grep_over_items_with_mutated`: overwriting every captured name
+        // while saving only the ones the caller lacked clobbered a name held by
+        // both with its capture-time value and never put it back.
+        let free_vars = data
+            .compiled_code
+            .as_ref()
+            .map(|cc| cc.capture_free_var_set());
+        let capture_wins =
+            |k: &crate::symbol::Symbol, v: &Value| capture_wins_over_caller(free_vars, k, v);
         let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
-        for k in data.env.keys() {
-            if !self.env.contains_key_sym(*k) {
+        for (k, v) in &data.env {
+            if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
                 touched_keys.push(k.resolve());
             }
         }
@@ -968,9 +978,11 @@ impl Interpreter {
             .map(|k| (k.clone(), self.env.get(k).cloned()))
             .collect();
 
-        // Pre-insert closure env
+        // Pre-insert closure env (caller-priority, see above).
         for (k, v) in &data.env {
-            self.env.insert_sym(*k, v.clone());
+            if capture_wins(k, v) || k.with_str(|s| s == "self") || !self.env.contains_key_sym(*k) {
+                self.env.insert_sym(*k, v.clone());
+            }
         }
 
         let keeps_outer_topic = block_keeps_outer_topic(&data);

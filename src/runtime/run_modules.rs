@@ -280,13 +280,23 @@ impl Interpreter {
         } else {
             std::env::current_exe().ok().and_then(|exe| {
                 let dir = exe.parent()?.to_path_buf();
-                [
+                let mut candidates = vec![
                     dir.join("..").join("share").join("mutsu").join("modules"),
                     dir.join("..").join("..").join("modules"),
                     dir.join("modules"),
-                ]
-                .into_iter()
-                .find(|c| c.is_dir())
+                ];
+                // A cargo test binary lives one level deeper, in
+                // `target/<profile>/deps/`, so the dev-build candidate above
+                // lands on `target/modules` and finds nothing — every `use`
+                // of a bundled battery inside a `#[test]` then failed with
+                // "Could not find <Module> in: (module repositories)". Only
+                // taken when the binary really sits in a `deps` directory, so
+                // an installed layout can't reach a stray `modules/` three
+                // levels up.
+                if dir.file_name().is_some_and(|n| n == "deps") {
+                    candidates.push(dir.join("..").join("..").join("..").join("modules"));
+                }
+                candidates.into_iter().find(|c| c.is_dir())
             })
         };
         let Some(base) = base.filter(|b| b.is_dir()) else {

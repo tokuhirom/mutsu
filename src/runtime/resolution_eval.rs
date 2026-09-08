@@ -522,7 +522,7 @@ impl Interpreter {
             // A `use` inside this block registered the module's own routines;
             // they outlive the block (`loaded_modules` does), so put them back
             // before the snapshot lands. See `reinstate_module_functions`.
-            self.reinstate_module_functions(&mut saved_functions);
+            self.reinstate_module_functions(&mut saved_functions, is_eval_unit);
             {
                 let mut reg = self.registry_mut();
                 reg.functions = saved_functions;

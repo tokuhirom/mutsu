@@ -5,19 +5,31 @@ impl Interpreter {
     /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
     /// no-op that leaves mutsu's native TAP provider in charge.
     ///
-    /// Step 2 of `todo/tickets/vendor-real-test-module.md` calls for exercising
-    /// the real module *without* removing the interception, because every `t/`
-    /// file and every roast file stands on `Test`: swapping the implementation
-    /// swaps the foundation of the whole suite, and a subtle difference in
-    /// `is`/`is-deeply`/`todo`/`subtest` shows up as thousands of diffs at once.
-    /// Until step 3 flips it for good, `MUTSU_REAL_TEST=1` is how the real module
-    /// is driven — the sweep tooling uses it, and it replaces the throwaway
-    /// `unit module Test2;` rename the exercise ran under before.
+    /// **Opt-in.** The native TAP provider in `runtime/test_functions.rs` stays
+    /// in charge by default; `MUTSU_REAL_TEST=1` is how the vendored module is
+    /// driven, and the dual-provider sweeps
+    /// (`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`)
+    /// use it.
+    ///
+    /// Making it the default was attempted and **withdrawn** (2026-09-08). The
+    /// roast and `t/` suites both go green under the vendored module, but the
+    /// `Bundled-library test suites` gate does not: four upstream distributions
+    /// regress, on four unrelated interpreter gaps that only the real module's
+    /// code shapes reach. None is a `Test` compatibility problem, and none has a
+    /// fix small enough to ride along with the flip — the `NativeLibs` one was
+    /// tried and made things worse. They are recorded, root-caused as far as
+    /// they got, in `todo/deep/vendored-test-battery-gate-regressions.md`, which
+    /// is the entry point for resuming this.
+    ///
+    /// The interpreter fixes the exercise turned up were the campaign's real
+    /// product and are independent of which provider is default, so they landed
+    /// without it. Rung 2 of `BATTERIES.md` remains the goal: flip this once the
+    /// gate's four root causes are fixed, not before.
     pub(crate) fn real_test_module_enabled() -> bool {
         // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '1'` set
-        // mid-run in a parent process (as `t/vendored-real-test-module.t` does)
-        // does NOT retroactively silence the native TAP provider already in
-        // charge of that process.
+        // mid-run in a parent process (as `t/vendored-real-test-module.t` does,
+        // to steer its `is_run` children) does NOT retroactively silence the
+        // native TAP provider already in charge of that process.
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ENABLED.get_or_init(|| {
             std::env::var("MUTSU_REAL_TEST")
@@ -715,22 +727,33 @@ impl Interpreter {
             }
 
             self.loaded_modules.insert(module.to_string());
-            // Record the module's own (package-qualified) routines so a later
+            // Record the routines this module load registered, so a later
             // registry restore cannot drop them while `loaded_modules` still
-            // claims the module is loaded. Collected BEFORE `import_module`, so
-            // the bare `GLOBAL::` aliases it creates are excluded — those are
-            // lexical to the importing scope and must still disappear with it
-            // (roast S11-modules/lexical.t). Mirrors the same distinction
-            // `pop_import_scope` already makes.
+            // claims the module is loaded.
+            //
+            // The delta is taken BEFORE `import_module`, and that timing is what
+            // separates the two kinds of `GLOBAL::` alias:
+            //
+            //  - one installed while the module's OWN body ran (its `use
+            //    NativeCall`, its `use Inner`) is in the delta. It is lexical to
+            //    *this module*, which stays loaded, so it has to survive any
+            //    scope the load happened to sit inside. Dropping it left a module
+            //    first loaded inside an `EVAL` -- `Test`'s `use-ok` is
+            //    `EVAL ( "use $code" )` -- unable to resolve its own imports ever
+            //    after, because `loaded_modules` still claimed it was loaded and
+            //    the later real `use` short-circuited. Measured against rakudo:
+            //    after `EVAL 'use Outer; 1'`, an outer `use Outer; outer-probe()`
+            //    works, so the module and its imports persist.
+            //  - one `import_module` installs for the IMPORTING scope is added
+            //    after this delta and so is excluded, keeping it lexical to that
+            //    scope: `{ use Foo } EVAL('foo()')` still dies
+            //    (roast S11-modules/lexical.t).
             let module_funcs: Vec<Symbol> = self
                 .registry()
                 .functions
                 .keys()
                 .filter(|k| !func_keys_before.contains(k))
-                .filter(|k| {
-                    let ks = k.resolve();
-                    ks.contains("::") && !ks.starts_with("GLOBAL::")
-                })
+                .filter(|k| k.resolve().contains("::"))
                 .copied()
                 .collect();
             self.module_registered_functions.extend(module_funcs);

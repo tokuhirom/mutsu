@@ -151,7 +151,7 @@ impl Interpreter {
         // `resolve_function_with_types` + `args_match_param_types` over the
         // routine's multi candidates, and under the real module every single
         // assertion arrives here — that probe alone was ~20% of the vendored
-        // provider's per-assertion cost (todo/deep/vendor-real-test-module.md).
+        // provider's per-assertion cost (todo/deep/vendor-real-test-module-flip.md).
         if !Self::real_test_module_enabled()
             && !self.user_test_decl_beats_native(name, &args)
             && let Some(result) = self.call_test_function(name, &args)?

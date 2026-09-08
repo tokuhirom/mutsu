@@ -23,22 +23,27 @@ genuine upstream implementation instead of reimplementing it natively.
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
-### `Test` is vendored but not yet the default
+### `Test` runs verbatim, behind `MUTSU_REAL_TEST=1`
 
-`Test` is here because it is measurably reachable
-(`todo/deep/vendor-real-test-module.md`), but `use Test` still resolves to
-mutsu's native TAP provider by default. Every `t/` file and every roast file
-stands on `Test`, so swapping the implementation swaps the foundation of the
-whole suite; step 3 of that ticket flips it once the residue is gone. Until
-then set **`MUTSU_REAL_TEST=1`** to load this file instead:
+This file is the unmodified upstream `Test.rakumod`, and mutsu runs it verbatim
+-- it was never renamed or shimmed. It is **not** yet what a bare `use Test`
+resolves to: mutsu's native TAP provider (`src/runtime/test_functions.rs`) is
+still the default, and this file is selected with **`MUTSU_REAL_TEST=1`**, which
+is also how the dual-provider sweeps (`scripts/test-module-sweep.sh`,
+`scripts/roast-test-module-sweep.sh`) compare the two.
 
 ```
-MUTSU_REAL_TEST=1 mutsu t/some-test.t
+mutsu t/some-test.t                        # the native provider (default)
+MUTSU_REAL_TEST=1 mutsu t/some-test.t      # this file
 ```
 
-The switch replaced the throwaway `unit module Test2;` rename the exercise ran
-under before, so the file under test is now the unmodified upstream one that
-ships in the repository. Pinned by `t/vendored-real-test-module.t`.
+Every `t/` file and every roast file stands on `Test`, so the switch is held
+until nothing regresses under it. The roast and `t/` suites already pass; the
+`Bundled-library test suites` gate does not, on four unrelated interpreter gaps.
+The flip was attempted on 2026-09-07/08 and withdrawn -- see
+`todo/deep/vendor-real-test-module-flip.md` for the measurements and
+`todo/deep/vendored-test-battery-gate-regressions.md` for what is left. Pinned by
+`t/vendored-real-test-module.t`.
 
 ## Why this directory exists
 

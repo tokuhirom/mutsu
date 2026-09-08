@@ -891,17 +891,27 @@ impl Interpreter {
         // `throws-like { %h = ... }` block) the hash is a captured lexical held in
         // `env`, not `self.locals[idx]`. Resolve the instance from either place and
         // remember where it came from so the bound result is written back there.
-        let (instance, from_local) = match self.locals[idx].clone() {
+        let (raw, from_local) = match self.locals[idx].clone() {
             v if Self::is_tie_bindable(&v) => (v, true),
             _ => match self.tied_candidate_outside_slot(&name) {
                 Some(v) => (v, false),
                 None => return Ok(None),
             },
         };
+        // The tie may be held inside a capture cell (see
+        // `tied_instance_type_name`); dispatch on the instance, publish through
+        // the cell.
+        let instance = raw.deref_container();
         if !self.instance_is_tied(&instance) {
             return Ok(None);
         }
         let bound = self.tied_store_dispatch(instance)?;
+        let slot = from_local.then_some(idx);
+        if self.publish_tied_bound(slot, &name, &bound) {
+            self.write_self_attr_cell(&name, bound.clone());
+            self.stack.push(bound);
+            return Ok(Some(()));
+        }
         if from_local {
             self.locals[idx] = bound.clone();
         }
@@ -940,14 +950,17 @@ impl Interpreter {
         if !(name.starts_with('%') || name.starts_with('@')) {
             return Ok(None);
         }
-        let Some(instance) = self.tied_candidate_outside_slot(name) else {
+        let Some(raw) = self.tied_candidate_outside_slot(name) else {
             return Ok(None);
         };
+        let instance = raw.deref_container();
         if !self.instance_is_tied(&instance) {
             return Ok(None);
         }
         let bound = self.tied_store_dispatch(instance)?;
-        self.set_env_with_main_alias(name, bound.clone());
+        if !self.publish_tied_bound(None, name, &bound) {
+            self.set_env_with_main_alias(name, bound.clone());
+        }
         self.write_self_attr_cell(name, bound.clone());
         self.stack.push(bound);
         Ok(Some(()))
@@ -992,12 +1005,53 @@ impl Interpreter {
     /// *role* (`my %h is TypeConverter`, `has %.C is TypeConverter`) puns the
     /// role, and a punned role is a `Mixin` wrapping the instance — so matching
     /// `Instance` alone would silently skip every role-typed tie.
+    ///
+    /// A `ContainerRef` is looked through as well. Since the by-name `is <Type>`
+    /// capture-cell exclusion was dropped, an `is <Type>` declaration's value
+    /// lives INSIDE a shared cell, so matching `Instance`/`Mixin` alone stopped
+    /// recognizing a user-defined tied container at all: `my %h is OT; %h = "a"`
+    /// fell through to the plain-Hash path and raised mutsu's own
+    /// `X::Hash::Store::OddNumber` instead of calling `OT`'s `STORE`. The
+    /// consumers converted at the time (`exec_apply_var_trait_op`, the
+    /// declaration store's metadata tagging, `coerce_hash_var_value`) cover the
+    /// built-in `is SetHash`/`is BagHash`/`is MixHash` coercions; the tie
+    /// dispatch is the fourth, and it is the one only a user-defined container
+    /// class reaches.
     pub(crate) fn tied_instance_type_name(val: &Value) -> Option<crate::symbol::Symbol> {
         match val.view() {
             ValueView::Instance { class_name, .. } => Some(class_name),
             ValueView::Mixin(inner, _) => Self::tied_instance_type_name(inner),
+            ValueView::ContainerRef(cell) => {
+                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                Self::tied_instance_type_name(&inner)
+            }
             _ => None,
         }
+    }
+
+    /// Publish a tied `STORE`'s bound instance for `name`, writing THROUGH the
+    /// capture cell whenever one holds the tie rather than replacing it.
+    ///
+    /// Returns whether it went through a cell. When it did, the caller must NOT
+    /// also `set_env_with_main_alias`: the env mirror is that same
+    /// `ContainerRef` and already sees the new contents, so overwriting it with
+    /// the bare instance would leave env de-celled while the slot stayed celled,
+    /// and the two halves would disagree about the variable's identity. Same
+    /// contract as `write_var_trait_target`.
+    #[must_use]
+    fn publish_tied_bound(&mut self, slot: Option<usize>, name: &str, bound: &Value) -> bool {
+        let mut through_cell = false;
+        if let Some(s) = slot
+            && let ValueView::ContainerRef(cell) = self.locals[s].view()
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = bound.clone();
+            through_cell = true;
+        }
+        if let Some(ValueView::ContainerRef(cell)) = self.env().get(name).map(|v| v.view()) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = bound.clone();
+            through_cell = true;
+        }
+        through_cell
     }
 
     /// Whether `val` is a value a tie can be bound to: an instance, or the

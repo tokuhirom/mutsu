@@ -442,8 +442,20 @@ mod tests {
     fn preprocess_rakudo_todo_marks_backend_specific_todo() {
         let src = "#?rakudo todo 'NYI'\nok True, 'still runs';\n#?rakudo 2 todo 'later'\nis 42, 42, 'also runs';\n";
         let out = Interpreter::preprocess_roast_directives(src);
-        assert!(out.contains("todo '__mutsu_backend_todo__:NYI', 1;"));
-        assert!(out.contains("todo '__mutsu_backend_todo__:later', 2;"));
+        // The `__mutsu_backend_todo__:` marker is the NATIVE provider's
+        // convention for "drop the `# TODO` annotation if this passes"; the
+        // vendored upstream `Test` has no such convention, so under it the
+        // bare reason is emitted. Assert whichever provider is in charge.
+        let (a, b) = if Interpreter::real_test_module_enabled() {
+            ("todo 'NYI', 1;", "todo 'later', 2;")
+        } else {
+            (
+                "todo '__mutsu_backend_todo__:NYI', 1;",
+                "todo '__mutsu_backend_todo__:later', 2;",
+            )
+        };
+        assert!(out.contains(a), "output: {out}");
+        assert!(out.contains(b), "output: {out}");
     }
 
     #[test]
@@ -480,7 +492,15 @@ mod tests {
         );
         let result = interp.run(&src);
         assert!(result.is_ok(), "run failed: {:?}", result.err());
-        assert_eq!(interp.output_sink().output, "1..1\nok 1 - pass\n");
+        // The native provider drops the annotation for a PASSING backend-specific
+        // todo (mutsu is not the rakudo the directive speaks about); the vendored
+        // upstream module reports it the way rakudo itself does.
+        let expected = if Interpreter::real_test_module_enabled() {
+            "1..1\nok 1 - pass # TODO NYI\n"
+        } else {
+            "1..1\nok 1 - pass\n"
+        };
+        assert_eq!(interp.output_sink().output, expected);
     }
 
     #[test]
@@ -498,7 +518,9 @@ mod tests {
             interp
                 .output_sink()
                 .output
-                .starts_with("1..1\nnot ok 1 - fail # TODO NYI\n")
+                .starts_with("1..1\nnot ok 1 - fail # TODO NYI\n"),
+            "output: {}",
+            interp.output_sink().output
         );
     }
 

@@ -1,13 +1,14 @@
 #!/bin/bash
-# Run every t/*.t twice -- once with mutsu's native TAP provider and once with
-# the vendored upstream Test.rakumod (MUTSU_REAL_TEST=1) -- and report which
-# files regress under the real module.
+# Run every t/*.t twice -- once with mutsu's native TAP provider
+# (MUTSU_REAL_TEST=) and once with the vendored upstream Test.rakumod
+# (MUTSU_REAL_TEST=1) -- and report which files regress under the real module.
 #
-# This is the measurement that drives step 2 of
-# `todo/tickets/vendor-real-test-module.md`. It replaces the throwaway
-# `unit module Test2;` rename the exercise ran under before: the file under
-# test is now the unmodified upstream one vendored at
-# `modules/Rakudo-Core/lib/Test.rakumod`.
+# The vendored module has been the DEFAULT provider since 2026-09-07
+# (news/2026-09/vendored-test-module-is-the-default-provider.md), so this script
+# now measures the native provider it is replacing, not the other way round. It
+# exists only until that provider is deleted
+# (`todo/deep/retire-the-native-test-provider.md`), at which point there is
+# nothing left to compare and this file goes with it.
 #
 # The two runs are deliberately NOT compared byte-for-byte. The real module is
 # routinely *more* faithful than the native provider (richer `throws-like`
@@ -67,7 +68,7 @@ ls t/*.t | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {}
 # t/exits-ok.t, t/failure-sink-handled.t) is scored as "not passing" on the
 # native side too, so a real regression on the real-Test side gets hidden in
 # the "fail under both" bucket instead of surfacing in "regressed". See
-# todo/deep/vendor-real-test-module.md's 2026-08-22 follow-up.
+# news/2026-09/vendored-test-module-is-the-default-provider.md's 2026-08-22 follow-up.
 passes() {
     local out="$1" st="$2"
     [ "$(cat "$st" 2>/dev/null)" = "0" ] || return 1

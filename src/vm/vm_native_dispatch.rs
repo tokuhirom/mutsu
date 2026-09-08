@@ -676,7 +676,21 @@ impl Interpreter {
         // its arguments' elements directly, so a still-deferred `.map` Seq has
         // to be pulled first (otherwise `join`/`say`/... read its empty seed).
         // No-op for every other value and every other `SeqSource`.
-        if let Err(e) = self.reify_map_grep_seq_args(args) {
+        //
+        // Exception: rakudo's `list` LISTOP on a single `Seq` is a pure no-op —
+        // `(list $s) =:= $s`, and `builtin_list` hands the very same value back
+        // without ever reading an element. Reifying it here buys nothing and
+        // costs correctness: `reify` is the one thing that marks a body
+        // `retained`, and a retained body is exempt from every later CONSUMING
+        // touch. So a single `list s` permanently disarmed the Seq's one-shot
+        // gate — `my \s = (list 1..5).grep(* > 0); list s; s>>.abs; s>>.abs`
+        // stopped throwing `X::Seq::Consumed`, which raku does throw (roast
+        // S03-operators/context-forcers.t, "list listop doesn't cache"). With
+        // more than one argument `list` genuinely flattens and does need the
+        // elements, so the exemption is exactly the one-Seq-argument shape.
+        let list_is_noop =
+            args.len() == 1 && args[0].is_seq_value() && name_sym.with_str(|s| s == "list");
+        if !list_is_noop && let Err(e) = self.reify_map_grep_seq_args(args) {
             return Some(Err(e));
         }
         if args

@@ -561,9 +561,35 @@ impl Interpreter {
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();
 
+            // Same caller-priority merge `eval_map_over_items` makes, and for
+            // the same reasons (see the long comment there): a captured
+            // `ContainerRef` cell and a captured value for one of the block's
+            // own free variables are LEXICAL and win over a same-named lexical
+            // that happens to be live in the consuming frame; everything else
+            // keeps caller priority.
+            //
+            // Grep used to overwrite EVERY captured name unconditionally while
+            // saving only the names the caller did not already have, so a name
+            // present in both was clobbered with the capture-time value and
+            // never put back. That was invisible while `.grep` ran its callback
+            // at the call site -- the captured env was the same frame's, an
+            // instant earlier -- and became visible the moment ADR-0058 step 3b
+            // deferred grep to its pull: `my $s = (1,2,3,4).grep({ $_ %% 2 });
+            // $s.elems` left `$s` as `Any`, because `s` was captured while the
+            // `my $s = ...` statement was still evaluating its own RHS. (Only
+            // with `reflective_name_access_possible()` latched, where the env
+            // mirror is authoritative -- so in practice any program that EVALs,
+            // which is every file that loads the real `Test`.)
+            let free_vars = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| cc.capture_free_var_set());
+            let capture_wins = |k: &crate::symbol::Symbol, v: &Value| {
+                super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v)
+            };
             let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
-            for k in data.env.keys() {
-                if !self.env.contains_key_sym(*k) {
+            for (k, v) in &data.env {
+                if !self.env.contains_key_sym(*k) || capture_wins(k, v) {
                     touched_keys.push(k.resolve());
                 }
             }
@@ -594,9 +620,14 @@ impl Interpreter {
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
                 .collect();
 
-            // Pre-insert closure env
+            // Pre-insert closure env (caller-priority, see above).
             for (k, v) in &data.env {
-                self.env.insert_sym(*k, v.clone());
+                if capture_wins(k, v)
+                    || k.with_str(|s| s == "self")
+                    || !self.env.contains_key_sym(*k)
+                {
+                    self.env.insert_sym(*k, v.clone());
+                }
             }
 
             let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);

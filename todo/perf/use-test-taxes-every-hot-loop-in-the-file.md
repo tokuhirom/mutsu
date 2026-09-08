@@ -1,7 +1,7 @@
 # `use Test` taxes every hot loop in the file that loads it
 
 Loading the vendored upstream `Test` module — which is what every `use Test`
-does once PR #7523 lands (`news/2026-09/vendored-test-module-is-the-default-provider.md`)
+does once PR #7523 lands (`todo/deep/vendor-real-test-module-flip.md`)
 — makes unrelated hot loops in the *same file* several times slower. The module
 is not running; merely having loaded it is enough.
 
@@ -95,6 +95,6 @@ each other. Anything that ends up in a document must come from the bench CI
   linear-in-env-size cost, framed narrowly as a dispatch problem.
 - `todo/perf/interpreter-call-path-in-hot-loops.md` — the call path this loop
   spends its time in. Read its stale-diagnosis warnings before starting.
-- `news/2026-09/vendored-test-module-is-the-default-provider.md` (PR #7523) —
+- `todo/deep/vendor-real-test-module-flip.md` (PR #7523) —
   the measurement that surfaced this, including the per-file distribution
   showing every other file pays a flat ~94 ms and this one does not.

@@ -163,11 +163,15 @@ bench CI, never a local run.
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
       [todo/perf/interpreter-call-path-in-hot-loops.md](todo/perf/interpreter-call-path-in-hot-loops.md).
-      Its concrete consumer is retiring the native `Test` provider
-      ([todo/deep/vendor-real-test-module.md](todo/deep/vendor-real-test-module.md)), which is a
+      Its consumer is retiring the native `Test` provider
+      ([todo/deep/vendor-real-test-module-flip.md](todo/deep/vendor-real-test-module-flip.md)), a
       BATTERIES.md rung-3 retirement and therefore a §1 goal item, not polish. **Read that ticket's
-      2026-09-04 re-measurement first**: the `&`-sigil signature gate it long blamed is closed, while
-      the symptom (~40× raku per real-`Test` assertion) is undiminished.
+      numbers first** — the `&`-sigil signature gate this file long blamed is closed, and five
+      callgrind passes took the per-assertion cost 492k -> 235k instructions, so the cost is now
+      inside the roast budget (`make roast` 1.24x, `t/` 2.0x). Perf is **no longer what blocks the
+      flip**: it was attempted 2026-09-07/08 and withdrawn on four bundled-library regressions
+      ([todo/deep/vendored-test-battery-gate-regressions.md](todo/deep/vendored-test-battery-gate-regressions.md)),
+      which are ordinary interpreter gaps, not assertion cost.
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
       [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome.

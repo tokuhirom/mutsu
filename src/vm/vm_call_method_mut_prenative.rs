@@ -67,7 +67,7 @@ impl Interpreter {
     /// env drop from overlay-sized into scope-sized. Measured on the vendored
     /// `Test` assertion loop the guard and its consequences were ~7.5% of the
     /// per-assertion budget, with these two calls the only dispatches that
-    /// paid it (`todo/deep/vendor-real-test-module.md`, and the record of the
+    /// paid it (`todo/deep/vendor-real-test-module-flip.md`, and the record of the
     /// wholesale relocation that did NOT pay in
     /// `todo/perf/method-dispatch-flattens-the-env-on-every-call.md`).
     ///

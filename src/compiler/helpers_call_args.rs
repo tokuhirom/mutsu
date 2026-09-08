@@ -540,6 +540,23 @@ impl Compiler {
                 name_idx,
                 slot: u32::MAX,
             });
+        } else if matches!(arg, Expr::Index { .. }) && Self::index_arg_is_static_slice(arg) {
+            // A *slice* subscript argument (`f(@a[1..*])`, `f(@a[0,1])`,
+            // `f(%h{1..3})`) is a list of VALUES, not a storage location, so no
+            // `is rw` parameter can ever bind to it — rakudo rejects the bind
+            // outright with `X::Parameter::RW` ("Parameter '$x' expects a
+            // writable container (variable) as an argument"). Queueing the
+            // snapshot/writeback temps for it is therefore never right, and it
+            // is actively harmful twice over: `sub f($x is rw) { $x = 9 }; my
+            // @a = 1,2,3; f(@a[1..*])` wrote the scalar back over the slice and
+            // left `@a` as `(1, 9)` where rakudo leaves it untouched, and the
+            // writeback's own guards (a `===`/`eqv` pair over compile-time-fixed
+            // global temps) are defeated whenever the call site re-executes
+            // later than it was compiled for — a recursive descent whose result
+            // is a deferred `.map` Seq reified after the frame is gone, which
+            // is `roast/integration/99problems-21-to-30.t`'s P26 `group` under
+            // the vendored `Test` module ("Cannot modify an immutable List").
+            // Compile the argument as the plain value read it is.
         } else if matches!(arg, Expr::Index { .. }) {
             let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
             let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
@@ -823,6 +840,34 @@ impl Compiler {
             && let OpCode::Index { is_positional } = *last
         {
             *last = OpCode::IndexInvocantRef { is_positional };
+        }
+    }
+
+    /// True when `arg` is a subscript whose index is *statically* a slice — a
+    /// range (`@a[1..*]`, `@a[0..^2]`), a sequence (`@a[1...*]`), a bare
+    /// `*`/`**`, or a literal index list (`@a[0,1]`, `%h<a b>`).
+    ///
+    /// Such a subscript yields a list of values rather than one element's
+    /// container, so it can neither bind to an `is rw` parameter nor receive a
+    /// writeback. Only the shapes visible in the AST are recognized: a subscript
+    /// whose index only turns out to be a Range at runtime (`@a[$r]`) keeps the
+    /// existing treatment.
+    pub(super) fn index_arg_is_static_slice(arg: &Expr) -> bool {
+        let Expr::Index { index, .. } = arg else {
+            return false;
+        };
+        match index.as_ref() {
+            Expr::Binary { op, .. } => matches!(
+                op,
+                TokenKind::DotDot
+                    | TokenKind::DotDotCaret
+                    | TokenKind::CaretDotDot
+                    | TokenKind::CaretDotDotCaret
+                    | TokenKind::DotDotDot
+                    | TokenKind::DotDotDotCaret
+            ),
+            Expr::Whatever | Expr::HyperWhatever | Expr::ArrayLiteral(_) => true,
+            _ => false,
         }
     }
 
