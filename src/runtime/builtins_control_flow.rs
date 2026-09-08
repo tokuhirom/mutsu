@@ -423,22 +423,40 @@ impl Interpreter {
     ///
     /// rakudo refuses to hand back a regex's source text in string context: it
     /// warns "Regex object coerced to string (please use .gist or .raku to do
-    /// that)" and yields the EMPTY string. `.gist` and `.raku` legitimately
-    /// show the source and are untouched -- the two consumers used to share
-    /// one answer (`to_string_value`), which is what made
-    /// `(/a/).Str` be `"/a/"`.
+    /// that)" and resumes with the regex's `.name` -- which is the EMPTY string
+    /// for an anonymous `/.../`, `rx/.../` or `rx:i/.../`, and the declared name
+    /// for a `regex`/`token`/`rule` routine (`~&foo` is `"foo"`, matching
+    /// `Code.Str`). `.gist` and `.raku` legitimately show the source and are
+    /// untouched -- the two consumers used to share one answer
+    /// (`to_string_value`), which is what made `(/a/).Str` be `"/a/"`.
     ///
     /// It matters beyond the coercion itself: a smartmatch of a `Regex`
     /// against a `Regex` stringifies the LHS to give the RHS a subject, and
     /// `"/a/"` really does contain an `a`, so `$_ ~~ $_` on a regex topic
     /// reported a spurious `Match` where rakudo answers `Nil`.
+    ///
+    /// The named case is what lets the vendored `Test`'s `is` compare two
+    /// regex routines: its `$got eq $expected` stringifies both, and returning
+    /// the empty string for every one of them made *any* two named regexes
+    /// compare equal to each other and unequal to nothing
+    /// (roast S02-magicals/sub.t, `&?ROUTINE is correct inside a regex`).
     pub(crate) fn regex_str_coercion(&mut self, v: &Value) -> Option<Result<Value, RuntimeError>> {
         if !Self::is_regex_like_value(v) {
             return None;
         }
+        // Only a `Routine` carries a declared name; the two anonymous shapes
+        // stringify to the empty string, as rakudo's nameless `Code.Str` does.
+        let name = match v.view() {
+            ValueView::Routine {
+                is_regex: true,
+                name,
+                ..
+            } => name.resolve().to_string(),
+            _ => String::new(),
+        };
         Some(self.raise_resumable_warning(
             "Regex object coerced to string (please use .gist or .raku to do that)",
-            Value::str(String::new()),
+            Value::str(name),
         ))
     }
 
