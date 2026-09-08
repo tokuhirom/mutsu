@@ -360,7 +360,11 @@ pub(crate) struct VmCallFrame {
     /// The caller's `cur_source_line` at frame push, restored on pop (the line
     /// the callee body's ops advanced to must not leak into the caller).
     pub saved_cur_line: i64,
-    pub saved_locals: crate::runtime::locals::Locals,
+    /// Handle to the caller's slot frame, closed by `pop_call_frame` (ADR-0077:
+    /// a frame is a region of the shared slot stack, not its own vector). In an
+    /// `Option` only so that pop can move the handle out — closing a frame
+    /// consumes it — while still handing the frame back to its caller.
+    pub saved_locals_base: Option<crate::runtime::locals::CallerFrame>,
     pub saved_upvalues: Vec<Option<Value>>,
     pub saved_stack_depth: usize,
     /// Rollback mark of this frame's readonly scope (see

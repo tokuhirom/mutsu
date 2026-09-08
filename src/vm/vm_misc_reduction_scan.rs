@@ -291,7 +291,7 @@ impl Interpreter {
         let body_end = body_end as usize;
         let saved = self.current_package().to_string();
         let saved_env = self.env().clone();
-        let saved_locals = self.locals.clone();
+        let saved_locals = self.locals.to_vec();
         self.set_current_package(name.clone());
         self.run_range(code, *ip + 1, body_end, compiled_fns)?;
         self.set_current_package(saved);
@@ -373,7 +373,7 @@ impl Interpreter {
                 restored_env.insert_sym(*k, v.clone());
             }
         }
-        self.locals = saved_locals;
+        self.locals.refill_from(&saved_locals);
         // Only pull a slot's value back from `env` when the compiler actually
         // keeps that slot's env mirror live (`code.needs_env_sync`,
         // `compute_needs_env_sync` in `opcode.rs`). `env`'s bare keys are

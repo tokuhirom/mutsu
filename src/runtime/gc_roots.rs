@@ -61,7 +61,9 @@ impl Interpreter {
     /// execution registers.
     fn visit_vm_registers(&self, visitor: &mut dyn RootVisitor) {
         visit_slice(visitor, &self.stack);
-        visit_slice(visitor, &self.locals);
+        // Every frame's slots, not just the executing window (ADR-0077):
+        // suspended callers below `base` hold live values too.
+        visit_slice(visitor, self.locals.all_slots());
         for v in &self.upvalues {
             visit_opt(visitor, v);
         }
@@ -75,7 +77,6 @@ impl Interpreter {
         }
         for frame in &self.call_frames {
             frame.saved_env.visit_values(visitor);
-            visit_slice(visitor, &frame.saved_locals);
             for v in &frame.saved_upvalues {
                 visit_opt(visitor, v);
             }

@@ -15,9 +15,17 @@ use super::*;
 pub(super) struct JitLayout {
     /// Byte offset of `Interpreter::stack` (a `Vec<Value>`).
     pub(super) stack: i32,
-    /// Byte offset of `Interpreter::locals` (a `Vec<Value>`) — the Tier B
-    /// GetLocal fast path reads slot words in place (ADR-0004 J4d).
+    /// Byte offset of the slot `Vec<Value>` inside `Interpreter::locals` — the
+    /// Tier B GetLocal fast path reads slot words in place (ADR-0004 J4d).
+    /// `locals` is a [`crate::runtime::Locals`] (ADR-0077): one shared stack
+    /// plus the executing frame's base, so this is the *stack*, and slot `i` of
+    /// the current frame is at `locals_base + i`.
     pub(super) locals: i32,
+    /// Byte offset of the executing frame's base word (a `usize`) inside
+    /// `Interpreter::locals`. Tier B must add it to every slot index and
+    /// subtract it from the length when bounds-checking; it changes on every
+    /// call, so it is loaded per access exactly like the `Vec` header words.
+    pub(super) locals_base: i32,
     /// Byte offsets of the per-Interpreter gate flags the GetLocal fast path
     /// loads (both plain `bool` fields).
     pub(super) atomic_var_seen: i32,
@@ -35,14 +43,6 @@ fn probe_vec_layout() -> Option<(i32, i32, i32)> {
     const WORD: usize = std::mem::size_of::<usize>();
     const {
         assert!(std::mem::size_of::<Vec<Value>>() == 3 * WORD);
-        // `Interpreter::locals` is a `Locals` (ADR-0077 Slice 0), and the
-        // GetLocal fast path applies the probed `Vec<Value>` word offsets at
-        // that field's address. That is sound only while `Locals` is
-        // `#[repr(transparent)]` over the vector. Slice 2 gives `Locals` a base
-        // index, at which point this assertion fires and the emitter in
-        // `vm_jit_tier_b` must learn the base — which is the intended tripwire,
-        // not an obstacle.
-        assert!(std::mem::size_of::<crate::runtime::Locals>() == std::mem::size_of::<Vec<Value>>());
     }
     let mut v: Vec<Value> = Vec::with_capacity(7);
     v.push(Value::int(1));
@@ -75,7 +75,10 @@ pub(super) fn layout() -> Option<&'static JitLayout> {
             let (vec_ptr, vec_len, vec_cap) = probe_vec_layout()?;
             Some(JitLayout {
                 stack: std::mem::offset_of!(Interpreter, stack) as i32,
-                locals: std::mem::offset_of!(Interpreter, locals) as i32,
+                locals: (std::mem::offset_of!(Interpreter, locals)
+                    + crate::runtime::Locals::SLOTS_BYTE_OFFSET) as i32,
+                locals_base: (std::mem::offset_of!(Interpreter, locals)
+                    + crate::runtime::Locals::BASE_BYTE_OFFSET) as i32,
                 atomic_var_seen: std::mem::offset_of!(Interpreter, atomic_var_seen) as i32,
                 sigilless_attrs_active: std::mem::offset_of!(Interpreter, sigilless_attrs_active)
                     as i32,

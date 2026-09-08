@@ -118,7 +118,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         Self::validate_labels(code)?;
         // Initialize local variable slots
-        self.locals = crate::runtime::Locals::nils(code.locals.len());
+        self.locals.refill_slots(code.locals.len());
         for (i, name) in code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
@@ -311,7 +311,7 @@ impl Interpreter {
         // Save the per-execution registers (the fields `Interpreter::new` initializes
         // fresh) and reset them to their fresh-Interpreter defaults for the nested run.
         let saved_stack = std::mem::take(&mut self.stack);
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         let saved_upvalues = std::mem::take(&mut self.upvalues);
         let saved_call_frames = std::mem::take(&mut self.call_frames);
         let saved_resume_ip = self.resume_ip.take();
@@ -405,7 +405,7 @@ impl Interpreter {
 
         // Restore the outer execution registers.
         self.stack = saved_stack;
-        self.locals = saved_locals;
+        self.locals.pop_frame(saved_locals_base);
         self.upvalues = saved_upvalues;
         self.call_frames = saved_call_frames;
         self.resume_ip = saved_resume_ip;

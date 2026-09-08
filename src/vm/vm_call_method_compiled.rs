@@ -140,11 +140,20 @@ impl Interpreter {
         // protect block's own vardecl/store opcodes.
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Save/swap stack and locals for the block
-        let mut saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
+        // A detached copy of the enclosing frame's slots. This path reads the
+        // enclosing lexicals through `outer_local_slots` *and* writes the
+        // block's free-variable writes back into them, then restores the whole
+        // array on exit — so the copy is the semantics, not an artifact of the
+        // old per-frame `Vec` (ADR-0077 Slice 2 kept it deliberately; making it
+        // copy-free means writing through to the live region below `base`,
+        // which is a behavior change on the panic path and belongs in its own
+        // slice).
+        let mut saved_locals = self.locals.frame_slots(&saved_locals_base).to_vec();
 
         // Initialize locals for the block
-        self.locals = crate::runtime::Locals::nils(block_cc.locals.len());
+        self.locals.refill_slots(block_cc.locals.len());
         if captured_env.is_some() {
             for (slot, name) in captured_bindings.iter() {
                 if (name.starts_with('@') || name.starts_with('%'))
@@ -266,8 +275,10 @@ impl Interpreter {
         // Get return value before restoring state
         let ret_val = self.stack.pop().unwrap_or(Value::NIL);
 
-        // Restore outer state
-        self.locals = saved_locals;
+        // Restore outer state: close the block's frame, then write the enclosing
+        // frame's slots back from the copy the writeback above mutated.
+        self.locals.pop_frame(saved_locals_base);
+        self.locals.refill_from(&saved_locals);
         self.stack = saved_stack;
 
         match exec_err {

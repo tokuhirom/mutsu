@@ -89,7 +89,7 @@ impl Interpreter {
         // declares a routine, so the common case pays nothing.
         let routine_snapshot = scope_routines.then(|| self.snapshot_routine_registry());
         let saved_env = if scope_isolate {
-            Some((self.env().clone(), self.locals.clone()))
+            Some((self.env().clone(), self.locals.to_vec()))
         } else {
             None
         };

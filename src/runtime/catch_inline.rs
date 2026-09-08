@@ -25,7 +25,7 @@ use crate::value::CatchInlineVerdict;
 /// Saved execution state for a handler run against the *installing* frame's
 /// lexicals while `self.locals` belongs to the deep throw/raise site.
 pub(crate) struct InstallingFrame {
-    saved_locals: crate::runtime::Locals,
+    saved_locals_base: crate::runtime::locals::CallerFrame,
     saved_upvalues: Vec<Option<Value>>,
     /// The reconstructed locals as seeded, so the flush writes back only slots
     /// the handler actually changed.
@@ -58,13 +58,10 @@ impl Interpreter {
             })
             .collect();
         let seeded = handler_locals.clone();
-        let saved_locals = std::mem::replace(
-            &mut self.locals,
-            crate::runtime::Locals::from_vec(handler_locals),
-        );
+        let saved_locals_base = self.locals.push_frame_from(&handler_locals);
         let saved_upvalues = std::mem::take(&mut self.upvalues);
         InstallingFrame {
-            saved_locals,
+            saved_locals_base,
             saved_upvalues,
             seeded,
         }
@@ -76,11 +73,14 @@ impl Interpreter {
     /// blast radius minimal.
     pub(crate) fn leave_installing_frame(&mut self, code: &CompiledCode, st: InstallingFrame) {
         let InstallingFrame {
-            saved_locals,
+            saved_locals_base,
             saved_upvalues,
             seeded,
         } = st;
-        let handler_locals = std::mem::replace(&mut self.locals, saved_locals);
+        // The flush below reads the handler's slots, so copy them out before
+        // closing the frame — a frame's slots do not outlive it (ADR-0077).
+        let handler_locals = self.locals.to_vec();
+        self.locals.pop_frame(saved_locals_base);
         self.upvalues = saved_upvalues;
         for (i, name) in code.locals.iter().enumerate() {
             if name.is_empty() {

@@ -205,7 +205,7 @@ impl Interpreter {
         // Run N times, collecting results
         let mut out = Vec::with_capacity(n);
         let saved_stack = std::mem::take(&mut self.stack);
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         // `run_reuse` executes the thunk's compiled ops directly on `self`
         // without resetting `self.upvalues` (unlike `with_nested_registers`,
         // which the map/grep eager loops go through) -- so a `GetUpvalue` in
@@ -230,7 +230,7 @@ impl Interpreter {
                 }
                 Err(e) => {
                     self.stack = saved_stack;
-                    self.locals = saved_locals;
+                    self.locals.pop_frame(saved_locals_base);
                     self.upvalues = saved_upvalues;
                     // Restore env
                     for (k, orig) in saved {
@@ -249,7 +249,7 @@ impl Interpreter {
         }
 
         self.stack = saved_stack;
-        self.locals = saved_locals;
+        self.locals.pop_frame(saved_locals_base);
         self.upvalues = saved_upvalues;
         // Restore env, but keep mutations to arrays (e.g. shift/pop
         // inside the thunk should persist).

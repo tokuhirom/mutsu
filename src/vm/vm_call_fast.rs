@@ -102,7 +102,7 @@ impl Interpreter {
         } else {
             None
         };
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         let saved_stack_depth = self.stack.len();
         // Isolate the caller's loop-body-local declaration scope. `run()` saves
         // and restores these per invocation; this fast path bypasses `run()` and
@@ -152,7 +152,7 @@ impl Interpreter {
 
         // Reuse a pooled locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
-        self.locals = self.take_locals_from_pool(num_locals);
+        self.locals.refill_slots(num_locals);
         // Seed from the pre-interned local names (see the matching comment in
         // `call_compiled_function_positional_light`).
         if cf.code.locals_sym.len() == num_locals {
@@ -296,8 +296,7 @@ impl Interpreter {
         // are visible in env for the merge step below.
 
         // Restore state
-        let used = std::mem::replace(&mut self.locals, saved_locals);
-        self.recycle_locals(used);
+        self.locals.pop_frame(saved_locals_base);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.active_loop_param_names = saved_active_loop_param_names;

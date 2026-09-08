@@ -65,7 +65,7 @@ impl Interpreter {
         };
         let saved_unit = self.enter_compilation_unit(cf);
         // Save caller locals and create callee locals
-        let saved_locals = std::mem::take(&mut self.locals);
+        let saved_locals_base = self.locals.push_frame(0);
         // Isolate the caller's loop-body-local declaration scope (mirrors
         // vm_call_fast.rs / the positional-light path). Without this a callee's
         // body-local `my $x` — e.g. a recursive call from inside the caller's
@@ -105,7 +105,7 @@ impl Interpreter {
         };
 
         let num_locals = cf.code.locals.len();
-        self.locals = self.take_locals_from_pool(num_locals);
+        self.locals.refill_slots(num_locals);
 
         // Borrow-deref a possibly-VarRef-wrapped argument without cloning it.
         #[inline]
@@ -374,8 +374,7 @@ impl Interpreter {
                     }
                 }
             }
-            let used = std::mem::replace(&mut self.locals, saved_locals);
-            self.recycle_locals(used);
+            self.locals.pop_frame(saved_locals_base);
             self.loop_local_vars = saved_loop_local_vars;
             self.loop_local_saved_env = saved_loop_local_saved_env;
             self.active_loop_param_names = saved_active_loop_param_names;
@@ -604,8 +603,7 @@ impl Interpreter {
                 self.restore_pragma_state(saved_pragmas);
                 self.stack.truncate(saved_stack_depth.min(self.stack.len()));
                 self.cur_source_line = saved_line;
-                let used = std::mem::replace(&mut self.locals, saved_locals);
-                self.recycle_locals(used);
+                self.locals.pop_frame(saved_locals_base);
                 self.loop_local_vars = saved_loop_local_vars;
                 self.loop_local_saved_env = saved_loop_local_saved_env;
                 self.active_loop_param_names = saved_active_loop_param_names;
@@ -655,8 +653,7 @@ impl Interpreter {
 
         self.cur_source_line = saved_line;
         // Restore locals
-        let used = std::mem::replace(&mut self.locals, saved_locals);
-        self.recycle_locals(used);
+        self.locals.pop_frame(saved_locals_base);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.active_loop_param_names = saved_active_loop_param_names;
