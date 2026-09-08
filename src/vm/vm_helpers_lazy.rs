@@ -783,12 +783,17 @@ impl Interpreter {
     /// collapse it into a finite Array (raku: `@a.is-lazy` stays `True`,
     /// `@a.elems` keeps throwing `X::Cannot::Lazy`, and a later out-of-range
     /// read keeps pulling from the live source). (L2, bounded reify follow-up)
+    ///
+    /// `sym` is `name`'s interned form, passed in rather than re-interned: this
+    /// probe runs on EVERY element store and delete, and a lazy `@`-array is
+    /// rare, so the probe itself must not cost a string hash.
     pub(super) fn reify_lazy_array_slot(
         &mut self,
         name: &str,
+        sym: crate::symbol::Symbol,
         touched_index: Option<i64>,
     ) -> Result<Option<crate::gc::Gc<LazyList>>, RuntimeError> {
-        let lazy = match self.env().get(name).map(Value::view) {
+        let lazy = match self.env().get_sym(sym).map(Value::view) {
             // Any `@`-array-context lazy list must materialize before an element
             // mutation, not just the cache-backed infinite specs: a finite
             // `(1..10).lazy` / `lazy gather {...}` is also a `LazyList` value with

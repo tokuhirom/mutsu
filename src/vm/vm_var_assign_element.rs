@@ -232,6 +232,12 @@ impl Interpreter {
         if !var_name.starts_with('%') {
             return None;
         }
+        // Resolved once through the chunk's memoized constant-symbol table and
+        // threaded through every env probe below (`get_sym`/`get_mut_sym`/
+        // `is_readonly_sym`). This path re-interned `var_name` at each of them
+        // -- a thread-local `RefCell` borrow plus a string hash per probe, four
+        // per store, for a name the compiler already knew.
+        let var_sym = code.const_sym(name_idx);
         // Peek at stack to check for bind-mode marker and complex indices
         // without popping (we'll pop only if we commit to the fast path)
         let stack_len = self.stack.len();
@@ -287,10 +293,10 @@ impl Interpreter {
         // instead of 2, permanently falling off the fast path and losing its
         // itemization (`t/hash-key-single-itemize.t`).
         {
-            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            let current = self.env().get_sym(var_sym).cloned().unwrap_or(Value::NIL);
             if self.container_type_metadata(&current).is_some()
                 || self.var_default(var_name).is_some()
-                || self.is_readonly(var_name)
+                || self.is_readonly_sym(var_sym)
             {
                 return None;
             }
@@ -315,7 +321,7 @@ impl Interpreter {
         // Check that the variable exists in env as a plain Hash
         // and that it has no container type metadata
         let env = self.env();
-        match env.get(var_name).map(Value::view) {
+        match env.get_sym(var_sym).map(Value::view) {
             Some(ValueView::Hash(hash_arc)) => {
                 let strong_count = crate::gc::Gc::strong_count_of(&hash_arc);
                 // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
@@ -338,9 +344,12 @@ impl Interpreter {
                 if hash_arc.has_type_meta() {
                     return None;
                 }
-                // Peek at the key to check if the existing element is a bound ref
-                let peek_key = self.stack[stack_len - 1].to_string_value();
-                if let Some(existing) = hash_arc.get(&peek_key) {
+                // Peek at the key to check if the existing element is a bound
+                // ref. This is the key the commit below stores under, so it is
+                // stringified ONCE here and moved into the insert -- `%h{$k} =
+                // $v` used to build the same `String` twice per store.
+                let key = self.stack[stack_len - 1].to_string_value();
+                if let Some(existing) = hash_arc.get(&key) {
                     let is_bound = match existing.view() {
                         ValueView::HashEntryRef { .. } | ValueView::Scalar(..) => true,
                         // Slice 2b: a `=`-shared (or `:=`-bound) element holds a
@@ -355,30 +364,35 @@ impl Interpreter {
                     }
                 }
                 // All checks passed — commit to fast path
-                let idx = self.stack.pop().unwrap();
+                self.stack.pop();
                 let val = self.stack.pop().unwrap();
-                let key = idx.to_string_value();
+                // `key` is moved into the insert below. `%*ENV` is the one
+                // destination that needs it afterwards, so only that
+                // destination pays the clone -- an ordinary hash store keeps
+                // the single `String` it built at the peek above.
+                #[cfg(not(target_family = "wasm"))]
+                let os_env_key = (var_name == "%*ENV").then(|| key.clone());
                 // When locals and env share the same Arc (strong_count == 2),
                 // drop the local ref first so Arc::make_mut can mutate in-place
                 // instead of cloning the entire HashMap (O(n) → O(1) per insert).
                 if let Some(slot) = local_slot {
                     self.locals[slot] = Value::NIL;
                 }
-                if let Some(entry) = self.env_mut().get_mut(var_name) {
+                if let Some(entry) = self.env_mut().get_mut_sym(var_sym) {
                     entry.with_hash_mut(|hash| {
                         // ADR-0040 slice 1: itemize the stored value, not the
                         // rvalue pushed below (that push is a pre-existing,
                         // separate scalar-context-itemization concern).
                         Value::hash_insert_through(
                             &mut crate::gc::Gc::make_mut(hash).map,
-                            key.clone(),
+                            key,
                             Self::itemize_value(val.clone()),
                         );
                     });
                 }
                 // Restore the local slot to point to the (now mutated) env Arc
                 if let Some(slot) = local_slot
-                    && let Some(env_val) = self.env().get(var_name).cloned()
+                    && let Some(env_val) = self.env().get_sym(var_sym).cloned()
                 {
                     self.locals[slot] = env_val;
                 }
@@ -398,13 +412,13 @@ impl Interpreter {
                 // identical) — it only matters on the single-store path.
                 if local_slot.is_none()
                     && let Some(slot) = self.find_local_slot(code, var_name)
-                    && let Some(env_val) = self.env().get(var_name).cloned()
+                    && let Some(env_val) = self.env().get_sym(var_sym).cloned()
                 {
                     self.locals[slot] = env_val;
                 }
                 // Sync OS environment when %*ENV is modified
                 #[cfg(not(target_family = "wasm"))]
-                if var_name == "%*ENV" {
+                if let Some(key) = os_env_key {
                     // SAFETY: std::env::set_var is unsafe because mutating the
                     // process environment races with any concurrent env access
                     // on another thread. mutsu writes %*ENV from the executing
@@ -584,10 +598,10 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(value));
         }
-        let var_name = Self::const_str(code, name_idx);
+        let var_sym = code.const_sym(name_idx);
         if let Some(value) = self
             .env()
-            .get(var_name)
+            .get_sym(var_sym)
             .map(|value| value.deref_container().descalarize().clone())
             .filter(|value| value.is_range())
         {
@@ -643,18 +657,21 @@ impl Interpreter {
         // temporarily seed env with the cell's inner container, run the op,
         // write the mutated result back through the cell, then restore env to
         // whatever it held before.
-        let var_name_for_cell = Self::const_str(code, name_idx).to_string();
-        let unit_cell = self.unit_lexical_container_cell(&var_name_for_cell);
+        // Borrowed from the constant pool, not copied: `code` outlives the op
+        // and is a distinct borrow from `&mut self`, so this probe -- which runs
+        // on EVERY element store -- no longer allocates a `String` per store.
+        let var_name_for_cell = Self::const_str(code, name_idx);
+        let unit_cell = self.unit_lexical_container_cell(var_name_for_cell);
         let saved_env_entry = unit_cell.as_ref().map(|cell| {
-            let saved = self.env().get(&var_name_for_cell).cloned();
+            let saved = self.env().get_sym(var_sym).cloned();
             let inner = cell.lock().unwrap().clone();
-            self.env_mut().insert(var_name_for_cell.clone(), inner);
+            self.env_mut().insert(var_name_for_cell.to_string(), inner);
             saved
         });
         let result =
             self.exec_index_assign_expr_named_op_seeded(code, name_idx, is_positional, target_slot);
         if let Some(cell) = unit_cell {
-            if let Some(mutated) = self.env().get(&var_name_for_cell).cloned() {
+            if let Some(mutated) = self.env().get_sym(var_sym).cloned() {
                 *cell.lock().unwrap() = mutated;
             }
             // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
@@ -664,10 +681,10 @@ impl Interpreter {
             // "did we even seed" flag.
             match saved_env_entry.flatten() {
                 Some(v) => {
-                    self.env_mut().insert(var_name_for_cell.clone(), v);
+                    self.env_mut().insert(var_name_for_cell.to_string(), v);
                 }
                 None => {
-                    self.env_mut().remove(&var_name_for_cell);
+                    self.env_mut().remove(var_name_for_cell);
                 }
             }
         }
@@ -691,12 +708,13 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let var_name = Self::const_str(code, name_idx).to_string();
+        let var_name = Self::const_str(code, name_idx);
         let touched_index = self.stack.last().and_then(|idx| match idx.view() {
             ValueView::Int(n) if n >= 0 => Some(n),
             _ => None,
         });
-        let lazy_source = self.reify_lazy_array_slot(&var_name, touched_index)?;
+        let lazy_source =
+            self.reify_lazy_array_slot(var_name, code.const_sym(name_idx), touched_index)?;
         let result = self.exec_index_assign_expr_named_op_seeded_inner(
             code,
             name_idx,
@@ -704,7 +722,7 @@ impl Interpreter {
             target_slot,
         );
         if let Some(ll) = lazy_source {
-            self.restore_lazy_array_slot(code, &var_name, ll);
+            self.restore_lazy_array_slot(code, var_name, ll);
         }
         result
     }
@@ -821,7 +839,7 @@ impl Interpreter {
         if self.stack.len() >= 2
             && let Some(target) = target_slot
                 .and_then(|slot| self.locals.get(slot as usize).cloned())
-                .or_else(|| self.env().get(Self::const_str(code, name_idx)).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
         {
             if matches!(target.view(), ValueView::Seq(body)
                 if body.has_element_containers() || !body.has_deferred_source())
@@ -912,21 +930,22 @@ impl Interpreter {
         // reconstruct the array Arc, changing the pointer used as the
         // metadata key. Reapply them on the final container so typed-array
         // hole semantics and `is default(...)` are preserved.
-        let save_var_name = Self::const_str(code, name_idx).to_string();
+        let save_var_name = Self::const_str(code, name_idx);
+        let save_var_sym = code.const_sym(name_idx);
         // Hash type metadata (including the object-hash key constraint) is now
         // embedded in `HashData` and travels with the hash across copy-on-write,
         // so the old name-based reconcile healing is no longer needed.
         let saved_type_meta_outer = self
             .env()
-            .get(&save_var_name)
+            .get_sym(save_var_sym)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v));
         // Guard against stale pointer-keyed defaults (Arc reuse across
         // allocations): only trust the saved default when a name-based
         // var_default is also registered.
-        let saved_default_outer = if self.var_default(&save_var_name).is_some() {
+        let saved_default_outer = if self.var_default(save_var_name).is_some() {
             self.env()
-                .get(&save_var_name)
+                .get_sym(save_var_sym)
                 .and_then(|v| self.container_default(v))
         } else {
             None
@@ -939,7 +958,7 @@ impl Interpreter {
         // the write back to the caller.
         let saved_hash_subclass_instance = save_var_name
             .starts_with('$')
-            .then(|| self.env().get(&save_var_name).cloned())
+            .then(|| self.env().get_sym(save_var_sym).cloned())
             .flatten()
             .and_then(|v| {
                 let instance = v.deref_container();
@@ -960,10 +979,10 @@ impl Interpreter {
         if result.is_ok()
             && let Some(instance) = saved_hash_subclass_instance
             && let ValueView::Instance { attributes, .. } = instance.view()
-            && let Some(ValueView::Hash(hash)) = self.env().get(&save_var_name).map(Value::view)
+            && let Some(ValueView::Hash(hash)) = self.env().get_sym(save_var_sym).map(Value::view)
         {
             attributes.commit_attrs(hash.map.clone().into());
-            self.env_mut().insert(save_var_name.clone(), instance);
+            self.env_mut().insert(save_var_name.to_string(), instance);
         }
         // Restore metadata on the post-assignment container when the
         // identity-keyed map lost it OR holds a stale entry. Copy-on-write
@@ -976,7 +995,7 @@ impl Interpreter {
         // (the read op has no variable name to fall back on), so a stale/lost
         // entry silently degrades them to string-keyed lookups returning Nil.
         if let Some(info) = saved_type_meta_outer
-            && let Some(container) = self.env().get(&save_var_name).cloned()
+            && let Some(container) = self.env().get_sym(save_var_sym).cloned()
             && self.container_type_metadata(&container).as_ref() != Some(&info)
         {
             // Hashes embed metadata in `HashData`, so the re-tagged value must
@@ -984,16 +1003,18 @@ impl Interpreter {
             // (`tag_container_metadata` returns the same Arc for non-hash
             // containers, whose Arc-pointer side table is updated in place).
             let tagged = self.tag_container_metadata(container, info);
-            self.env_mut().insert(save_var_name.clone(), tagged.clone());
-            self.locals_set_by_name(code, &save_var_name, tagged);
+            self.env_mut()
+                .insert(save_var_name.to_string(), tagged.clone());
+            self.locals_set_by_name(code, save_var_name, tagged);
         }
         if let Some(def) = saved_default_outer
-            && let Some(container) = self.env().get(&save_var_name).cloned()
+            && let Some(container) = self.env().get_sym(save_var_sym).cloned()
             && self.container_default(&container).is_none()
         {
             let tagged = self.tag_container_default(container, def);
-            self.env_mut().insert(save_var_name.clone(), tagged.clone());
-            self.locals_set_by_name(code, &save_var_name, tagged);
+            self.env_mut()
+                .insert(save_var_name.to_string(), tagged.clone());
+            self.locals_set_by_name(code, save_var_name, tagged);
         }
         // Object-hash original keys are embedded in `HashData` and travel with
         // the hash across copy-on-write, so no pointer migration is needed.
@@ -1015,12 +1036,12 @@ impl Interpreter {
         // as an Instance/Mixin, so this only fires for object subscript targets.
         if result.is_ok()
             && matches!(
-                self.env().get(&save_var_name).map(Value::view),
+                self.env().get_sym(save_var_sym).map(Value::view),
                 Some(ValueView::Instance { .. }) | Some(ValueView::Mixin(..))
             )
-            && let Some(v) = self.env().get(&save_var_name).cloned()
+            && let Some(v) = self.env().get_sym(save_var_sym).cloned()
         {
-            self.locals_set_by_name(code, &save_var_name, v);
+            self.locals_set_by_name(code, save_var_name, v);
         }
         result
     }

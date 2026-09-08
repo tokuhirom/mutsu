@@ -208,7 +208,8 @@ impl Interpreter {
             ValueView::Int(n) if n >= 0 => Some(n),
             _ => None,
         });
-        let lazy_source = self.reify_lazy_array_slot(&var_name, delete_touched_index)?;
+        let lazy_source =
+            self.reify_lazy_array_slot(&var_name, code.const_sym(name_idx), delete_touched_index)?;
         // A lazy array's reified prefix has a live tail beyond it, so
         // deleting its LAST touched slot must NOT shrink the array the way
         // `trim_trailing_array_holes` shrinks a genuinely finite one (raku:

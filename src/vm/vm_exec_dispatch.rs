@@ -360,7 +360,13 @@ impl Interpreter {
                     // NB: `get_env_with_main_alias` is also where a file-scope `my`
                     // of the running routine's own compunit resolves — `env` is not
                     // authoritative for that name. See `unit_lexicals`.
-                    .or_else(|| self.get_env_with_main_alias(name))
+                    // The name is a constant-pool entry, so hand over its
+                    // memoized `Symbol` rather than making the chokepoint
+                    // re-intern it on every read. This is the only read path an
+                    // `@`/`%` name has -- the scalar shortcut above excludes
+                    // those sigils -- so a container-heavy program paid one
+                    // intern per element access without it.
+                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     .or_else(|| {
                         // Fall back to the persistent our_vars store for `our`-scoped
                         // variables accessed via package-qualified names (e.g., $Pkg::var).
@@ -630,7 +636,9 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
-                    .get_env_with_main_alias(name)
+                    // Constant-pool name: hand over the chunk's memoized
+                    // `Symbol` instead of re-interning it on every array read.
+                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         // Fallback: check bare name in env (for closures capturing params)
@@ -736,7 +744,9 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
-                    .get_env_with_main_alias(name)
+                    // Constant-pool name: hand over the chunk's memoized
+                    // `Symbol` instead of re-interning it on every hash read.
+                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         name.strip_prefix('%')

@@ -515,6 +515,14 @@ impl Interpreter {
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        // Same gate [`Self::unit_lexical_slot`] opens with, hoisted above the
+        // MAINLINE bucket probe below: a program with no unit lexicals at all
+        // (no mainline sub captured a file-scope `my`) cannot have a cell here,
+        // and this runs on EVERY element store and delete. Without it those
+        // stores paid two SipHash string lookups plus a name scan each.
+        if self.unit_lexicals.is_empty() {
+            return None;
+        }
         if crate::runtime::utils::has_anon_marker(name) {
             return None;
         }
@@ -1077,7 +1085,23 @@ impl Interpreter {
         self.unit_scope_lexical(name).map(Value::into_deref)
     }
 
+    #[inline]
     pub(crate) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {
+        self.get_env_with_main_alias_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::get_env_with_main_alias`] for a caller that already holds
+    /// `name`'s interned form — an opcode whose name operand is a constant-pool
+    /// index, which [`CompiledCode::const_sym`] memoizes per chunk.
+    ///
+    /// The env is `Symbol`-keyed, so this chokepoint interned its `&str`
+    /// argument again on every read. That is a thread-local `RefCell` borrow
+    /// plus a string hash per variable read, and it is the *only* read path for
+    /// an `@`/`%` name (the `GetGlobal` scalar shortcut excludes those sigils by
+    /// construction), so a hash-heavy program paid it once per element access.
+    /// Every branch below the direct env probe is a miss-path alias cascade
+    /// building its own fresh name, so only that probe takes the symbol.
+    pub(crate) fn get_env_with_main_alias_sym(&self, name: &str, sym: Symbol) -> Option<Value> {
         // A file-scope lexical of the running routine's own compunit is NOT in
         // `env` — that key belongs to whatever scope loaded the module. This is
         // the by-name chokepoint every remaining reader goes through (a mutating
@@ -1113,14 +1137,14 @@ impl Interpreter {
         // Try the kebab-case equivalent first if the name contains underscores.
         if name.contains('_') {
             let kebab = name.replace('_', "-");
-            if let Some(val) = self.get_env_with_main_alias_inner(&kebab) {
+            if let Some(val) = self.get_env_with_main_alias_inner(&kebab, Symbol::intern(&kebab)) {
                 return Some(val);
             }
         }
-        self.get_env_with_main_alias_inner(name)
+        self.get_env_with_main_alias_inner(name, sym)
     }
 
-    fn get_env_with_main_alias_inner(&self, name: &str) -> Option<Value> {
+    fn get_env_with_main_alias_inner(&self, name: &str, sym: Symbol) -> Option<Value> {
         // Atomic array/hash CAS stores the authoritative copy under an internal
         // key. Always check it first so both thread-clone and non-clone reads
         // observe the latest CAS'd value. Without the hash arm, a thread's own
@@ -1169,7 +1193,7 @@ impl Interpreter {
         // lexical variables take precedence over shared_vars. Without this,
         // recursive `start` blocks can read stale parameter values from
         // shared_vars instead of the locally-bound ones.
-        if let Some(val) = self.env().get(name) {
+        if let Some(val) = self.env().get_sym(sym) {
             return Some(val.clone());
         }
         // $*DISTRO/$*PERL/$*RAKU/$*VM/$*KERNEL are not in env or the base
