@@ -19,7 +19,6 @@ $backing = 99;
 say $scalar;
 "#;
     let output = Command::new(env!("CARGO_BIN_EXE_mutsu"))
-        .env("MUTSU_VM_STATS", "1")
         .args(["-e", source])
         .output()
         .expect("run mutsu");
@@ -32,8 +31,7 @@ say $scalar;
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "41\n73\n99\n",
-        "stderr:\n{}\nbytecode:\n{}",
+        "stderr:\n{}",
         String::from_utf8_lossy(&output.stderr),
-        mutsu::dump_bytecode(source).expect("compile bytecode"),
     );
 }
