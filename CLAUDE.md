@@ -387,13 +387,30 @@ abort with "cannot run test while file ... exists".
 
 The `t/` TAP suite is **fatal** in CI (`prove ... t/`, no `|| echo` fallback) — a deterministic `t/` failure fails the CI job, same as roast.
 
-## Delegate the full roast run to CI
+## Run both full suites yourself before publishing a PR — do NOT delegate that to CI
 
-Running the entire roast suite locally is wasteful and slow — **let CI run the full `make roast`.** Locally, run only the specific tests relevant to your change:
+**Before opening a PR, run `cargo fmt --all`, `make lint`, `make test` and `make roast` once each,
+and do not publish until both suites are green.** CI is the safety net for what you could not
+foresee, not the thing that tells you whether your change works. Discovering a regression from a red
+CI costs a wake, a fix-up commit and a reviewer's attention; discovering it locally costs one run.
+
+(This supersedes the older "let CI run the full roast, push and rely on it" rule, which contradicted
+`.agents/skills/mutsu-ticket-flow/SKILL.md` and lost that trade.)
+
+**While you are iterating**, still run only the specific tests relevant to your change — the full
+suites are a pre-publication gate, not an inner loop:
 
 - Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
+- Read the saved logs (`tmp/make-test.log`, `tmp/make-roast.log`) with the Grep tool instead of re-running a suite to see its output.
+- **Some `make roast` failures are the container, not your change** — running as `uid 0` makes the
+  `chmod`-based file tests meaningless, and the sandboxed network breaks one socket test. The exact
+  files, the discriminator for each, and how to tell them from a real failure are in
+  [docs/agent-environments.md](docs/agent-environments.md). That list is the ONLY licence to ship
+  with a red `make roast`; anything else failing is yours, per "do NOT dismiss them as pre-existing"
+  above.
 - CI does not invoke `make test`; its `test` job runs the steps individually. It builds **release once** and runs **both** the TAP suite (`prove t/`) and `make roast` on it (`MUTSU_BIN=target/release/mutsu`); local `make test` matches (see `docs/adr/0075-make-test-runs-tap-on-release-binary.md`, superseding ADR-0014). The **`gc-stress` and `jit-stress` jobs still run `prove t/` on the debug binary**, serially — that is where the 75 `debug_assert!`s in `src/` get their suite-wide pass, so do not "align" those jobs onto release. `cargo test` is debug everywhere. A *debug* run of a heavy file is ~3.3x slower than release, so a local timeout on one does not by itself indicate a real failure — confirm on `target/release/mutsu` before assuming a regression.
-- Push the branch and rely on CI for the comprehensive roast result rather than running the whole suite locally.
+- The one exception is a **documentation-only** change, where CI skips the build jobs too
+  (`scripts/ci-docs-only.sh`) and there is nothing for the suites to catch.
 - To pick roast work, or to investigate why one file fails, read `.agents/skills/roast-triage/SKILL.md`.
 
 ## Build profiles and benchmark numbers
@@ -593,7 +610,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 - **Sub-agents are allowed (policy updated 2026-06-15).** Use them where they help — read-only fan-out searches (Explore), independent non-conflicting implementation slices, or sweeping across many files where you only need the conclusion. Be deliberate, not reflexive: Rust builds are expensive and each parallel worktree agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees, so reach for a sub-agent when the task genuinely fans out, not for trivial single-file work you can do inline. Read-only Explore/research agents are cheap; worktree-isolated build agents are not.
 - **Keep at most 3 concurrent agents that build** (user decision, 2026-08-22, tightening the previous cap of 4). This caps agents actually *doing work*, not agents idling on a CI run: an agent whose PR is open and waiting on GitHub Actions uses no local CPU, so it is fine to launch a fresh agent past the nominal cap while others are purely CI-pending (user-confirmed 2026-08-20). **Even so, never exceed 10 agents in total (working + CI-idle combined)** (user-confirmed 2026-08-20) — check `ListAgents` before launching a new one when the count is already high. Read-only Explore/research agents do not count against the build cap. Clean up worktrees per the "Disk cleanup" section.
-  - **That cap is a 12-core number — scale it to the box you actually have.** A remote container has roughly 4 cores, where one building agent is the equivalent and running the work inline (no worktree copy of `target/`) is usually better; see [docs/agent-environments.md](docs/agent-environments.md). The same goes for every wall-clock figure quoted in this file (`make lint` "about 5 minutes", roast timings): budget more on a smaller box, and let CI run the full suite.
+  - **That cap is a 12-core number — scale it to the box you actually have.** A remote container has roughly 4 cores, where one building agent is the equivalent and running the work inline (no worktree copy of `target/`) is usually better; see [docs/agent-environments.md](docs/agent-environments.md). The same goes for every wall-clock figure quoted in this file (`make lint` "about 5 minutes", roast timings): budget more on a smaller box. A slower box makes the pre-publication full-suite gate cost more, not make it optional.
   - **Why 3 and not more:** on this 12-core box, five worktree agents drove the load average to 70 with 17 concurrent `rustc` processes, and builds stopped completing. That does not merely slow the batch down — it makes agents *unable to verify their own work*: the `residual-try-cell-eager-seq-reification-divergences` agent had to revert a measured prototype and downgrade to a `Proposed` ADR because its from-scratch `cargo build` never finished under load. Over-parallelising costs correctness, not just wall-clock. When in doubt, check `uptime` and `pgrep -c -x rustc` before launching (a two-digit `rustc` count on 12 cores is already oversubscribed).
 - **Task selection order:**
   1. PLAN.md current quarter priorities

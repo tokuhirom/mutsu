@@ -98,9 +98,40 @@ before launching anything parallel; a two-digit `rustc` count is oversubscribed 
 boxes.
 
 The same ratio applies to timings quoted anywhere in the repo: `make lint` at "about 5 minutes" and
-the roast suite's wall-clock are 12-core numbers, so budget more on a smaller container and prefer
-running only the specific tests your change touches — the full roast run belongs to CI regardless of
-which environment you are in.
+the roast suite's wall-clock are 12-core numbers, so budget more on a smaller container. Run only
+the specific tests your change touches while you iterate — but the pre-publication gate (`make test`
+and `make roast` once each, both green, before opening the PR) is the same in both environments. A
+smaller box makes that gate slower, not optional.
+
+## Environment-only `make roast` failures — the remote container's fixed set
+
+`make roast` cannot come back fully green in a remote container, for reasons that have nothing to do
+with any change. Re-deriving this every session is pure waste, so here is the whole set. **These
+three files, and only these three, may be red when you publish**; anything else is a real failure and
+the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
+
+| File | Shape | Why |
+|---|---|---|
+| `roast/6.c/S32-io/file-tests.t` | `Failed: 4` — tests 6-8, 10 | runs as `uid 0` |
+| `roast/S16-filehandles/filetest.t` | `Failed: 25` — tests 57-64, 69-72, 77-80, and 101/103/105/107/109/111/117/121/125 | runs as `uid 0` |
+| `roast/S32-io/IO-Socket-Async.t` | exit 124, "planned 40 ran 17" | sandboxed network |
+
+The first two are the same cause: both `chmod` a file and then assert `.r` / `.w` / `.x` is `False`,
+and **root bypasses the permission bits**, so every such assertion is `True`. Check with `id -u` —
+`0` means these cannot pass, no matter how correct the interpreter is. They pass in CI, which runs as
+an ordinary user.
+
+`IO-Socket-Async.t` times out part-way through in this container and passes in CI; the container's
+network sandbox is the difference. The mechanism has not been pinned down further, so treat a *new*
+failure shape there (a concrete `not ok`, rather than the timeout) as real.
+
+Two things this list is not:
+
+- **It is not a licence to skim the summary.** Read the `Test Summary Report` and confirm the failing
+  set is a subset of these three by name. A fourth file, or a different subtest range inside these,
+  is your change.
+- **It does not apply to the local box**, which runs as an ordinary user with a working network.
+  There, `make roast` is expected to be green.
 
 ## Disk
 
