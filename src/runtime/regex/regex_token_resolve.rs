@@ -91,7 +91,7 @@ impl Interpreter {
     /// (pkg, name). Returns `None` when any candidate's pattern is non-static
     /// (its parse depends on runtime variable interpolation) or fails to
     /// parse — callers fall back to the uncached per-call path.
-    fn resolve_parsed_token_candidates_in_pkg(
+    pub(super) fn resolve_parsed_token_candidates_in_pkg(
         &mut self,
         name: &str,
         pkg: &str,
