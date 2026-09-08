@@ -102,7 +102,12 @@ impl Interpreter {
         } else {
             None
         };
-        let saved_locals_base = self.locals.push_frame(0);
+        // Open the callee's frame at its real size in one step: sizing it later
+        // (an empty `push_frame` plus a `refill_slots`) cost a second
+        // out-of-line `Vec::resize` per call. Nothing between here and the
+        // parameter bind reads `self.locals`.
+        let num_locals = cf.code.locals.len();
+        let saved_locals_base = self.locals.push_frame(num_locals);
         let saved_stack_depth = self.stack.len();
         // Isolate the caller's loop-body-local declaration scope. `run()` saves
         // and restores these per invocation; this fast path bypasses `run()` and
@@ -151,8 +156,6 @@ impl Interpreter {
         });
 
         // Reuse a pooled locals vec to avoid per-call allocation
-        let num_locals = cf.code.locals.len();
-        self.locals.refill_slots(num_locals);
         // Seed from the pre-interned local names (see the matching comment in
         // `call_compiled_function_positional_light`).
         if cf.code.locals_sym.len() == num_locals {

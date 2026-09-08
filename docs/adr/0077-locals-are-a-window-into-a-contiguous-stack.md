@@ -357,9 +357,63 @@ governs here. In particular:
   be reported as a win.
 - Any number that reaches a document comes from the **bench CI**
   (`git show origin/bench-data:bench-history.tsv`), not from a session's local
-  runs.
+  runs — but see "The bench CI could not resolve Slice 2" below: on this
+  benchmark set, at this size of change, it cannot, and retired instructions are
+  the only honest oracle.
 - `bench-tak` and `bench-fib` are the targets (call-shaped); pick a control that
   the change cannot affect.
+
+### The bench CI could not resolve Slice 2 (2026-09-08)
+
+Slice 2 merged as `e5c260c`. Its `bench-history.tsv` rows look like a win —
+`bench-fib+jit` 0.1345 → 0.1306 s, `bench-tak+jit` 0.1690 → 0.1583,
+`method-call+jit` 0.1453 → 0.1329, `bench-ctor+jit` 0.3472 → 0.2341 — and
+**every one of them is noise**. The next, unrelated commit bounces back:
+`bench-ctor+jit` reads 0.3472 / 0.2341 / 0.3495 / 0.2326 / 0.3475 / 0.3604 over
+six consecutive main commits, a ~48% bimodal swing with nothing in the diffs to
+explain it, and plain `bench-fib` jumps to 0.2974 (+13%) on an unrelated commit
+too. The `runner` column reads `4c-x86_64-ubuntu24` throughout, so this is not
+the host-class effect `docs/triage.md` already corrects for — the same class
+evidently spans hosts that differ by more than the change being measured.
+
+So a single-commit change of a few percent is **below this series' resolution**,
+and "the bench CI is the source of truth" cannot be satisfied here by waiting for
+more rows. What it can still do is catch a large regression, and it did not show
+one.
+
+### What Slice 2 actually cost, in retired instructions (2026-09-08)
+
+Measured with callgrind on `--profile profiling` builds of the merge commit and
+its parent — exact, load-independent, and the oracle #7579's method notes
+prescribe for a change whose effect is in code shape rather than in work done.
+`fib(22)`, 57 312 calls. Output verified identical (17711) before comparing, per
+the same notes.
+
+| build | JIT on | | JIT off | |
+| --- | ---: | ---: | ---: | ---: |
+| `9cf38ab` (pre-Slice-2) | 152 721 942 | — | 260 873 311 | — |
+| `e5c260c` (Slice 2 as merged) | 152 831 725 | **+0.07%** | 259 743 537 | **−0.43%** |
+| one-step frame sizing | 149 633 356 | **−2.02%** | 253 330 506 | **−2.89%** |
+
+**Slice 2 as merged was instruction-count neutral**, and the reason is a defect
+in it rather than a limit of the design. Deleting the pool removed
+`recycle_locals` (2.98M Ir, 1.95%) as intended, but the migration opened each
+callee frame in two steps — `push_frame(0)` at the save point, then
+`refill_slots(num_locals)` once the size was known — so every call paid **two**
+out-of-line `Vec::resize`/`extend_with` calls where the pool had paid one:
+`Vec::resize` inclusive went 3.11M → 5.28M, giving back 2.17M of the 2.98M.
+
+Opening the frame at its real size in one step (the three light call paths;
+nothing between the save point and the parameter bind reads `self.locals`) puts
+`Vec::resize` back at 3.10M and yields the numbers in the third row. `push_frame`
+and `refill_slots` also skip the resize entirely for an empty frame, which every
+`push_call_frame` opens.
+
+That leaves the *remaining* half of the original cluster exactly where the
+cross-check below put it: `resize` itself, ~2% — which is what the
+leading-parameter form removes, since an argument already sitting in the cell its
+slot wants needs no fill at all. Slice 2 is the precondition for that, not a
+substitute for it.
 
 ### Cross-check of the ~5.7% claim (2026-09-08)
 
@@ -368,8 +422,9 @@ before this ADR was written. `perf` was unavailable in the container used (not
 installed; `perf_event_paranoid=2`), so the cross-check used **callgrind**,
 whose instruction counts are exact and load-independent — the right tool for
 confirming a cluster is still worth attacking, and the wrong one for any
-wall-clock claim. **These are not bench-CI numbers and must not be quoted as
-the win**; Slice 2 owes the bench CI a real measurement.
+wall-clock claim. **These are not bench-CI numbers**; and per the section above,
+the bench CI turned out unable to resolve a change of this size on this runner,
+so the retired-instruction table there is the measurement Slice 2 owed.
 
 `--profile profiling` build, JIT on (default), `fib(22)` — 57 312 calls,
 152 774 784 Ir total. Inclusive cost, so each row already contains the

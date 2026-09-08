@@ -109,7 +109,13 @@ impl Locals {
     pub(crate) fn push_frame(&mut self, num_locals: usize) -> CallerFrame {
         let caller_base = self.base;
         self.base = self.slots.len();
-        self.slots.resize(self.base + num_locals, Value::NIL);
+        // `resize` is out-of-line (`Vec::extend_with`), and opening an *empty*
+        // frame is common enough — every `push_call_frame`, and the paths that
+        // size their frame later — that paying a call to grow by zero was worth
+        // 2.17M instructions on `fib(22)`.
+        if num_locals > 0 {
+            self.slots.resize(self.base + num_locals, Value::NIL);
+        }
         CallerFrame(caller_base)
     }
 
@@ -150,7 +156,9 @@ impl Locals {
     #[inline]
     pub(crate) fn refill_slots(&mut self, num_locals: usize) {
         self.slots.truncate(self.base);
-        self.slots.resize(self.base + num_locals, Value::NIL);
+        if num_locals > 0 {
+            self.slots.resize(self.base + num_locals, Value::NIL);
+        }
     }
 
     /// Replace the executing frame's slots with a copy of `slots`, keeping its
