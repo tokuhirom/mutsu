@@ -48,6 +48,19 @@ impl Interpreter {
     /// Pushes the raw local value, preserving container references for `=:=` checks.
     pub(super) fn exec_get_local_raw_op(&mut self, idx: u32) {
         let idx = idx as usize;
+        // A Stash.BIND-KEY call can replace a caller lexical with a Proxy by
+        // name while that lexical's slot is suspended in a call frame. Unlike
+        // ContainerRef, Proxy is already the container and must be adopted as
+        // such rather than dereferenced or copied as a plain value.
+        if !self.locals[idx].is_proxy_value()
+            && let Some(proxy) = self
+                .env()
+                .get(name)
+                .filter(|v| v.is_proxy_value())
+                .cloned()
+        {
+            self.locals[idx] = proxy;
+        }
         let val = self.locals[idx].clone();
         self.stack.push(val);
     }
