@@ -89,9 +89,22 @@ pub(super) enum BlockShape {
     /// `ENTER`/`LEAVE`/`KEEP`/`UNDO` make it a real phaser block scope.
     PhaserScope,
     /// `let`/`temp` need the save/restore frame of `OpCode::LetBlock`.
+    ///
+    /// This is the plain shape PLUS a save frame, not an alternative to it: the
+    /// frame nests inside the position's ordinary scope opcode so a `let` block
+    /// keeps the env restore that stops its own `my` from leaking (GH-7645).
     LetScope,
     /// An ordinary block scope.
     Plain,
+}
+
+/// The `let`/`temp` save frame a block body is bracketed by.
+#[derive(Clone, Copy)]
+pub(super) struct LetFrame {
+    /// A real `let` (not just a `temp`) is present, so the block's own value
+    /// decides whether the saves are kept or rolled back and has to reach the
+    /// place `exec_let_block_op` reads it from.
+    pub(super) needs_value: bool,
 }
 
 /// Every question both positions used to answer for themselves.
@@ -109,9 +122,7 @@ pub(super) struct BlockPlan {
     /// routine registry has to be snapshotted around it (`OpCode::DoBlockExpr`'s
     /// `scope_routines`; `OpCode::BlockScope` always snapshots).
     declares_routines: bool,
-    /// A real `let` (not just a `temp`) is present, so the block's own value
-    /// decides whether the saves are kept or rolled back and has to reach the
-    /// topic register `exec_let_block_op` reads.
+    /// A real `let` (not just a `temp`) is present. See [`LetFrame::needs_value`].
     let_needs_value: bool,
     /// An escaping `when`/`default` succeed stops unwinding at this block.
     /// Statement position only: the value form catches `succeed` inside
@@ -137,6 +148,13 @@ impl BlockPlan {
             let_needs_value: shape == BlockShape::LetScope && Compiler::has_real_let_deep(stmts),
             succeed_barrier: !position.is_value() && Compiler::body_has_toplevel_when(stmts),
         }
+    }
+
+    /// The save frame this block's body is bracketed by, if any.
+    fn let_frame(&self) -> Option<LetFrame> {
+        (self.shape == BlockShape::LetScope).then_some(LetFrame {
+            needs_value: self.let_needs_value,
+        })
     }
 }
 
@@ -368,42 +386,35 @@ impl Compiler {
                     self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
                 }
             }
-            BlockShape::LetScope => {
-                // Block contains `let`/`temp` — wrap in LetBlock for
-                // save/restore. `exec_let_block_op` never touches the value
-                // stack, so the inner shape decides the block's value.
-                //
-                // A real `let` rolls its saves back unless the block succeeded,
-                // so `exec_let_block_op` needs the block's own value — and the
-                // two positions leave it in different places. The statement form
-                // routes its last statement through `compile_last_stmt_as_topic`
-                // and the op reads the topic; the value form already has the
-                // value on the stack and must NOT write the topic, or a
-                // `do { ... }` would clobber `$_` for the enclosing scope
-                // (GH-7635). `value_on_stack` is which of the two the op reads.
+            // A `let`/`temp` block is the plain block PLUS an
+            // `OpCode::LetBlock` save frame, so both arms go through
+            // `emit_plain_block` and differ only in where the frame nests.
+            //
+            // A real `let` rolls its saves back unless the block succeeded, so
+            // `exec_let_block_op` needs the block's own value — and the two
+            // positions leave it in different places. The statement form routes
+            // its last statement through `compile_last_stmt_as_topic` and the op
+            // reads the topic; the value form already has the value on the stack
+            // and must NOT write the topic, or a `do { ... }` would clobber `$_`
+            // for the enclosing scope (GH-7635). `value_on_stack` is which of the
+            // two the op reads.
+            //
+            // Value position: the frame wraps `OpCode::DoBlockExpr`, whose value
+            // is on the stack for the op to peek once the block is done.
+            // Statement position: the frame nests INSIDE `OpCode::BlockScope`
+            // (`emit_body_let_frame`), because the topic it reads is one
+            // `BlockScope`'s exit deliberately does not propagate outwards.
+            BlockShape::LetScope if position.is_value() => {
                 let idx = self.code.emit(OpCode::LetBlock {
                     body_end: 0,
-                    value_on_stack: position.is_value(),
+                    value_on_stack: true,
                 });
-                if position.is_value() {
-                    self.emit_plain_block(stmts, label, position, plan, is_bare);
-                } else {
-                    // Raku's "declarations are in effect at block start" rule
-                    // (see `hoist_typed_var_decls`).
-                    self.hoist_typed_var_decls(stmts);
-                    for (i, s) in stmts.iter().enumerate() {
-                        if i == stmts.len() - 1 && plan.let_needs_value {
-                            // For `let` blocks, set topic from the last
-                            // statement's value so we can check success/failure.
-                            self.compile_last_stmt_as_topic(s);
-                        } else {
-                            self.compile_stmt(s);
-                        }
-                    }
-                }
+                self.emit_plain_block(stmts, label, position, plan, is_bare);
                 self.code.patch_let_block_end(idx);
             }
-            BlockShape::Plain => self.emit_plain_block(stmts, label, position, plan, is_bare),
+            BlockShape::LetScope | BlockShape::Plain => {
+                self.emit_plain_block(stmts, label, position, plan, is_bare)
+            }
         }
     }
 
@@ -418,7 +429,7 @@ impl Compiler {
         is_bare: bool,
     ) {
         if !position.is_value() {
-            self.emit_statement_block_scope(stmts, is_bare);
+            self.emit_statement_block_scope(stmts, is_bare, plan.let_frame());
             return;
         }
         let idx = self.emit_do_block_expr(label, position, plan);

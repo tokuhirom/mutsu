@@ -7,13 +7,25 @@
 //! deserve its own file.
 
 use super::*;
+use crate::compiler::control_block::LetFrame;
 
 impl Compiler {
     /// Emit `OpCode::BlockScope` around `stmts` compiled as statements.
     ///
     /// `is_bare` distinguishes a genuine source `{ ... }` (a Raku callframe)
     /// from a synthesized `if`/`while`/`loop` body re-wrapped in `Stmt::Block`.
-    pub(super) fn emit_statement_block_scope(&mut self, stmts: &[Stmt], is_bare: bool) {
+    ///
+    /// `let_frame` asks for an `OpCode::LetBlock` *inside* this scope, around
+    /// the body statements: a `let`/`temp` block is an ordinary block that also
+    /// owns a save frame, not a different kind of block (GH-7645). See
+    /// [`Compiler::emit_body_let_frame`] for why the frame nests inside rather
+    /// than outside.
+    pub(super) fn emit_statement_block_scope(
+        &mut self,
+        stmts: &[Stmt],
+        is_bare: bool,
+        let_frame: Option<LetFrame>,
+    ) {
         // Plain blocks still create a lexical routine scope.
         // `BlockScope` snapshots env before the body and restores
         // it after (dropping any new env key), so a `my TYPE $x`
@@ -126,14 +138,45 @@ impl Compiler {
         // lost its declared types just because a statement followed
         // it (`t/typed-decl-hoist-block-forms.t`).
         self.hoist_typed_var_decls(stmts);
-        for s in stmts {
-            self.compile_stmt(s);
-        }
+        self.emit_body_let_frame(stmts, let_frame);
         self.code.patch_block_body_end(idx);
         self.code.patch_block_keep_start(idx);
         self.code.patch_block_undo_start(idx);
         self.code.patch_block_post_start(idx);
         self.code.patch_loop_end(idx);
         self.lexically_in_block = saved_lexically_in_block;
+    }
+
+    /// Compile `stmts` as the body of a statement-position block, optionally
+    /// bracketed by the `let`/`temp` save frame `let_frame` describes.
+    ///
+    /// The frame nests INSIDE `OpCode::BlockScope` rather than wrapping it,
+    /// because `exec_let_block_op` decides success from the block's own value
+    /// and the statement form delivers that value through the topic
+    /// (`compile_last_stmt_as_topic`). `BlockScope`'s exit deliberately does not
+    /// write a block-bound topic back to the enclosing scope, so a frame placed
+    /// outside would read the *enclosing* topic instead of the block's value.
+    pub(super) fn emit_body_let_frame(&mut self, stmts: &[Stmt], let_frame: Option<LetFrame>) {
+        let Some(frame) = let_frame else {
+            for s in stmts {
+                self.compile_stmt(s);
+            }
+            return;
+        };
+        let idx = self.code.emit(OpCode::LetBlock {
+            body_end: 0,
+            value_on_stack: false,
+        });
+        for (i, s) in stmts.iter().enumerate() {
+            if i == stmts.len() - 1 && frame.needs_value {
+                // A real `let` rolls its saves back unless the block succeeded,
+                // so route the last statement's value through the topic for
+                // `exec_let_block_op` to test.
+                self.compile_last_stmt_as_topic(s);
+            } else {
+                self.compile_stmt(s);
+            }
+        }
+        self.code.patch_let_block_end(idx);
     }
 }
