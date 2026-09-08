@@ -47,6 +47,17 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
+        // An extended identifier whose adverb value the parser could not
+        // canonicalize (`$a:foo«$c»`) is finished here, against the `constant`
+        // environment built by the statements compiled so far
+        // (`compiler::adverb_interp`).
+        if adverb_interp::expr_needs_interp(expr) {
+            match self.resolve_expr_name(expr) {
+                Ok(resolved) => self.compile_expr(&resolved),
+                Err(err) => self.emit_adverb_name_error(&err),
+            }
+            return;
+        }
         match expr {
             Expr::Whatever => {
                 let idx = self.code.add_constant(Value::WHATEVER);

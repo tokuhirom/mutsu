@@ -915,6 +915,15 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
+        // See `Compiler::compile_expr` — the declaration side of a BEGIN-time
+        // interpolated extended identifier (`my $a:foo«$c» = 1`).
+        if adverb_interp::stmt_needs_interp(stmt) {
+            match self.resolve_stmt_name(stmt) {
+                Ok(resolved) => self.compile_stmt(&resolved),
+                Err(err) => self.emit_adverb_name_error(&err),
+            }
+            return;
+        }
         self.note_construct_body_block(stmt);
         match stmt {
             Stmt::Expr(expr) => {

@@ -1,3 +1,4 @@
+pub(crate) mod adverb_name;
 pub mod alloc_stats;
 pub mod analysis;
 pub mod anon_names;
