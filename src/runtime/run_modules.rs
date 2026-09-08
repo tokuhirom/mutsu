@@ -522,10 +522,11 @@ impl Interpreter {
         // builtin `Pointer` prelude class too — the main-program injection only
         // sees the main source, so a NativeCall binding distributed as a module
         // would otherwise hit an undeclared `Pointer`.
-        Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
-        Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
-        Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
-        Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
+        let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
+        Self::inject_nativecall_prelude(&code, &mut stmts);
+        Self::inject_nativecall_subs_prelude(&code, &mut stmts);
+        Self::inject_iosocket_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_does_prelude(&code, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {

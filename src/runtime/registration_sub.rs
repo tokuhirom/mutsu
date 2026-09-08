@@ -749,6 +749,11 @@ impl Interpreter {
             .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
         {
             let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
+            // Remember that this `GLOBAL::` key is a prelude splice, not an
+            // import alias. `reinstate_module_functions` needs the distinction
+            // to put it back after a scope rollback — see
+            // `prelude_registered_functions`.
+            self.prelude_registered_functions.insert(global_key);
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.

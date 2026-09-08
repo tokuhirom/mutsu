@@ -87,7 +87,14 @@ impl Interpreter {
             if functions.contains_key(key) {
                 continue;
             }
-            if !include_global_aliases && key.resolve().starts_with("GLOBAL::") {
+            // A `GLOBAL::` key is normally left out unless the EVAL rollback
+            // asked for it, because it may be an alias installed for the
+            // importing scope. A PRELUDE splice is never that (see
+            // `prelude_registered_functions`), so it comes back either way.
+            if !include_global_aliases
+                && key.resolve().starts_with("GLOBAL::")
+                && !self.prelude_registered_functions.contains(key)
+            {
                 continue;
             }
             if let Some(def) = registry.functions.get(key) {

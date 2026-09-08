@@ -2,6 +2,7 @@ use super::run::{
     IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE,
     NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
 };
+use super::source_code_text::CodeText;
 use super::*;
 
 impl Interpreter {
@@ -9,7 +10,11 @@ impl Interpreter {
     /// references them. Currently this provides the parametric `Rational` role
     /// for user classes written as `does Rational[...]`. The prelude is parsed
     /// once and cached.
-    pub(super) fn inject_prelude_roles(source: &str, stmts: &mut Vec<Stmt>) {
+    ///
+    /// Like every gate in this file it is asked of a [`CodeText`], not of the
+    /// raw source: a name that appears only in a comment or a Pod block is
+    /// prose, and prose must not switch a prelude on (GH #7611).
+    pub(super) fn inject_prelude_roles(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         // Only inject when the program mentions `Rational` and does not declare
         // its own role of that name (which would conflict).
         if !source.contains("Rational") || source.contains("role Rational") {
@@ -38,7 +43,12 @@ impl Interpreter {
     /// source also naming `Pointer` meant `use NativeCall; say void.^name` --
     /// or any of the other three -- saw an undeclared bareword, since only one
     /// of the four names gated all of them.
-    pub(super) fn inject_nativecall_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    ///
+    /// It reads a [`CodeText`], so `# use NativeCall` in a comment no longer
+    /// counts; a real `use` anywhere in the compunit -- inside a block, inside
+    /// a module body -- still does, because the prelude is a whole-compunit
+    /// splice.
+    pub(super) fn inject_nativecall_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains("NativeCall")
             || source.contains("class Pointer")
             || source.contains("class void")
@@ -80,7 +90,7 @@ impl Interpreter {
     /// that merely *uses* NativeCall would re-export the helper to its own
     /// importers, and the re-exported copy collides with the importer's own
     /// injected copy as an `X::Redeclaration` (see [`NATIVECALL_SUB_PRELUDES`]).
-    pub(super) fn inject_nativecall_subs_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    pub(super) fn inject_nativecall_subs_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains("NativeCall") {
             return;
         }
@@ -148,7 +158,7 @@ impl Interpreter {
     /// (`does IO::Socket`) without declaring its own. Enables the community
     /// `IO::Socket::SSL` binding, whose class header is
     /// `class IO::Socket::SSL does IO::Socket`. Parsed once and cached.
-    pub(super) fn inject_iosocket_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    pub(super) fn inject_iosocket_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains("does IO::Socket") || source.contains("role IO::Socket") {
             return;
         }
@@ -170,14 +180,15 @@ impl Interpreter {
     /// Prepend the `trait_mod:<does>` CORE.setting candidates when the source
     /// calls it as a plain function (`trait_mod:<does>(v, role)`, the
     /// `Hash::Restricted`/`Injector` idiom for mixing a role into a declared
-    /// variable at `is`-trait time). Gated on the literal name appearing in
-    /// source, like the other preludes in this file — a program that never
-    /// mentions it pays nothing. Not gated on "does the source already
-    /// declare its own candidate": Rakudo's builtin coexists with (and can
+    /// variable at `is`-trait time). Gated on the literal name appearing in the
+    /// compunit's CODE, like the other preludes in this file — a program that
+    /// never mentions it pays nothing, and a comment that mentions it is prose,
+    /// not a mention. Not gated on "does the source already declare its own
+    /// candidate": Rakudo's builtin coexists with (and can
     /// collide with) a user-declared candidate of the same name, and that
     /// collision is exactly what proves the builtin is registered correctly
     /// (see `TRAIT_MOD_DOES_PRELUDE`'s doc comment).
-    pub(super) fn inject_trait_mod_does_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    pub(super) fn inject_trait_mod_does_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains("trait_mod:<does>") {
             return;
         }
@@ -206,7 +217,7 @@ impl Interpreter {
     /// programs that merely introspect. A program declaring its own role of
     /// either name keeps it (the prelude would collide with it), exactly as
     /// [`Self::inject_prelude_roles`] treats `role Rational`.
-    pub(super) fn inject_metamodel_role_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+    pub(super) fn inject_metamodel_role_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         let wants_naming =
             source.contains("Metamodel::Naming") && !source.contains("role Metamodel::Naming");
         let wants_stashing =

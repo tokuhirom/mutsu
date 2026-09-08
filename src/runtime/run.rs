@@ -522,12 +522,15 @@ impl Interpreter {
         // Inject builtin prelude role definitions (e.g. the parametric `Rational`
         // role) when the program references them. These are registered through the
         // normal RoleDecl/VM path by prepending their statements to the body.
-        Self::inject_prelude_roles(&preprocessed, &mut stmts);
-        Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
-        Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
-        Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
-        Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
-        Self::inject_metamodel_role_prelude(&preprocessed, &mut stmts);
+        // Gated on the PROSE-FREE view of the source: a module named only in a
+        // comment or a Pod block must not switch a prelude on (GH #7611).
+        let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
+        Self::inject_prelude_roles(&code, &mut stmts);
+        Self::inject_nativecall_prelude(&code, &mut stmts);
+        Self::inject_nativecall_subs_prelude(&code, &mut stmts);
+        Self::inject_iosocket_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_does_prelude(&code, &mut stmts);
+        Self::inject_metamodel_role_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
         // statement, in source order. That is what rakudo does (it installs at
