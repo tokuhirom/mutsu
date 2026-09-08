@@ -826,6 +826,27 @@ impl Interpreter {
             )
             && (vtc_native || ct_native);
         let expand_range = var_name.starts_with('%') || array_var_is_native;
+        // A finite Range subscript on a PLAIN positional array is a slice too,
+        // exactly like a comma list — so expand it here and let the one slice
+        // arm below both store the values and report what it stored. Left
+        // unexpanded, the Range fell through to the shared tail, where
+        // `idx_is_single_element` is false for a Range and the fallback simply
+        // returns the raw RHS: `(@d[0..0] = 5)` answered the bare `5` where
+        // rakudo answers `(5,)`, and a short RHS (`@d[0..2] = 5,`) answered
+        // `(5,)` instead of the padded `(5, Any, Any)`. The multi-element case
+        // only looked right by accident, the raw RHS list happening to equal
+        // the stored one. (#7651; #7589 fixed the `@d[0,]` comma spelling,
+        // whose root cause was a different one.)
+        //
+        // Guarded on a finite end: an infinite or `Whatever`-ended Range
+        // (`@a[0..*]`, `@a[^Inf]`) must not be enumerated. That is the same
+        // `b != i64::MAX` precedent the Buf slice arm below uses.
+        let expand_positional_range = !var_name.starts_with('%')
+            && matches!(
+                index_target_deref.as_ref().map(Value::view),
+                Some(ValueView::Array(..))
+            );
+        let finite_positional_range = |b: i64| expand_positional_range && b != i64::MAX && b >= 0;
         let idx = match idx.view() {
             ValueView::Seq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
@@ -835,28 +856,28 @@ impl Interpreter {
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            ValueView::Range(a, b) if expand_range => {
+            ValueView::Range(a, b) if expand_range || finite_positional_range(b) => {
                 let items: Vec<Value> = (a..=b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExcl(a, b) if expand_range => {
+            ValueView::RangeExcl(a, b) if expand_range || finite_positional_range(b) => {
                 let items: Vec<Value> = (a..b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExclStart(a, b) if expand_range => {
+            ValueView::RangeExclStart(a, b) if expand_range || finite_positional_range(b) => {
                 let items: Vec<Value> = ((a + 1)..=b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExclBoth(a, b) if expand_range => {
+            ValueView::RangeExclBoth(a, b) if expand_range || finite_positional_range(b) => {
                 let items: Vec<Value> = ((a + 1)..b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
