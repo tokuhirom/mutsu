@@ -763,7 +763,25 @@ impl Env {
                 }
             }
         }
-        let mut out = SymMap::default();
+        // Pre-size from the chain's total overlay count. That is an upper
+        // bound on the result (`keep` can only reject entries, and a shadowing
+        // leaf entry overwrites a parent's rather than adding to it), so the
+        // map is allocated once instead of growing through hashbrown's
+        // `reserve_rehash` ladder. This runs per closure creation and the
+        // capture memo cannot help a closure created inside a *method* frame
+        // (its env is fresh on every call, so the tier addresses never repeat)
+        // -- on `benchmarks/bench-ctor.raku` that is 31 inserts into a map
+        // starting at zero capacity, i.e. five reallocations and ~52 entry
+        // moves, on every construction.
+        let mut cap = 0usize;
+        {
+            let mut cur = Some(self);
+            while let Some(env) = cur {
+                cap += env.inner.len();
+                cur = env.parent.as_deref();
+            }
+        }
+        let mut out = SymMap::with_capacity_and_hasher(cap, Default::default());
         collect(self, &mut out, keep);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
@@ -877,6 +895,19 @@ impl Env {
             crate::vm::vm_stats::record_env_deep_copy();
         }
         Arc::make_mut(&mut self.inner)
+    }
+
+    /// Reserve room in this env's own overlay for `additional` more entries.
+    ///
+    /// A method frame's overlay starts empty and immediately takes a known,
+    /// fixed set of entry-time writes (`self`, `?CLASS`, the topic, `$!`, the
+    /// callable id, then one per bound parameter), which otherwise walk
+    /// hashbrown's `reserve_rehash` growth ladder — 0 -> 3 -> 7 -> 14 — on
+    /// every single call. The caller knows the count, so it can pay one
+    /// allocation instead. Takes the copy-on-write path exactly as the first
+    /// `insert` would, so this does not bring a deep copy forward.
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        self.cow_mut().reserve(additional);
     }
 
     /// Clear a tombstone for `key` (it is being re-inserted, so it is no longer

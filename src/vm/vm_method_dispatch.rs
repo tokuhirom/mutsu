@@ -1720,6 +1720,9 @@ impl Interpreter {
         self.inject_class_body_statics(owner_class);
         if skip_env_setup {
             let env = self.env_mut();
+            // 4 fixed keys below (`self`, `__ANON_STATE__`, `?CLASS`, the
+            // topic) plus one per bound parameter -- see `Env::reserve`.
+            env.reserve(4 + param_values.len());
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
             env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
@@ -1735,6 +1738,9 @@ impl Interpreter {
             Self::insert_fast_param_values(env, &param_values);
         } else {
             let env = self.env_mut();
+            // 6 fixed keys below plus one per bound parameter -- see
+            // `Env::reserve`.
+            env.reserve(6 + param_values.len());
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
             env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
