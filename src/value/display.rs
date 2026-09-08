@@ -130,7 +130,11 @@ const NATIVECALL_TYPE_NAMES: &[&str] = &[
 fn qualify_nativecall_type_name(base: &str) -> Option<String> {
     let split_at = base.find('[').unwrap_or(base.len());
     let (head, rest) = base.split_at(split_at);
-    if !NATIVECALL_TYPE_NAMES.contains(&head) {
+    let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
+    if user_declared_nativecall_name(slot) {
+        // The program declared its OWN type under this name, so the name is
+        // that type's, not NativeCall's: rakudo reports `class void { }` as
+        // `void`. See `note_user_declared_type_name`.
         return None;
     }
     // The type PARAMETER is a type name too, so it gets the same treatment:
@@ -142,6 +146,43 @@ fn qualify_nativecall_type_name(base: &str) -> Option<String> {
         None => rest.to_string(),
     };
     Some(format!("NativeCall::Types::{head}{rest}"))
+}
+
+/// Which entries of [`NATIVECALL_TYPE_NAMES`] the running program has declared
+/// a type of its own under, as a bitmask (bit `i` is `NATIVECALL_TYPE_NAMES[i]`).
+///
+/// The qualification above is purely name-keyed, so without this a user
+/// `class void { }` reported `NativeCall::Types::void` in a program that never
+/// mentions NativeCall. It is process-global rather than interpreter state
+/// because [`user_facing_type_name`] is a pure function with no interpreter
+/// context -- the same reason ADR-0056 put the qualification here in the first
+/// place. Ten names fit a `u16`, so a declaration costs one relaxed `fetch_or`
+/// and a render costs one relaxed load; the mask is zero in every program that
+/// does not declare one of these names.
+static USER_DECLARED_NATIVECALL_NAMES: std::sync::atomic::AtomicU16 =
+    std::sync::atomic::AtomicU16::new(0);
+
+fn user_declared_nativecall_name(slot: usize) -> bool {
+    USER_DECLARED_NATIVECALL_NAMES.load(std::sync::atomic::Ordering::Relaxed) & (1 << slot) != 0
+}
+
+/// Record that the program declared its own type called `name`, so a name that
+/// collides with a NativeCall builtin stops rendering under
+/// `NativeCall::Types::`.
+///
+/// Called from the class / role / subset / enum registration ops for a
+/// declaration written at the *top level* under its bare name. NativeCall's own
+/// prelude spells its types `class GLOBAL::Pointer` / `class GLOBAL::void`, so
+/// passing the SOURCE-written name (not the resolved one) is what keeps the
+/// prelude out of this set; a nested `module M { class void { } }` registers
+/// `M::void`, which never collides in the first place.
+pub(crate) fn note_user_declared_type_name(name: &str) {
+    if name.contains("::") {
+        return;
+    }
+    if let Some(slot) = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == name) {
+        USER_DECLARED_NATIVECALL_NAMES.fetch_or(1 << slot, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// Format a value for display inside a Capture gist.
