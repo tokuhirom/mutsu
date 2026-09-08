@@ -22,8 +22,8 @@ A file path is not a durable reference. A resolved finding is `git mv`d to
 `news/YYYY-MM/<slug>.md`, so every code comment, ADR and news entry that cited
 its `todo/...md` path rots the moment it is fixed — at migration time **108 of
 the 122 distinct `todo/` paths cited from `src/` were already dangling**. An
-issue number survives being closed, so `#7520` in a code comment keeps
-resolving forever, and GitHub shows the PR that closed it.
+issue number survives being closed, so an issue reference in a code comment
+keeps resolving forever, and GitHub shows the PR that closed it.
 
 Issues also give the backlog things a directory of files cannot: cross-linking
 between findings, the PR that closed one, a comment thread recording an
@@ -140,7 +140,11 @@ gh issue edit  <n> --repo tokuhirom/mutsu --remove-label working
 
 Otherwise use the GitHub MCP tools (`list_issues`, `issue_write`,
 `add_issue_comment`, `issue_read`), always with
-`owner: tokuhirom`, `repo: mutsu`.
+`owner: tokuhirom`, `repo: mutsu`. **`issue_write` with `method: "update"`
+*replaces* the whole label set**, so to add `working` you must pass the issue's
+existing labels alongside it — read them first, or you will silently drop its
+kind and tier. `gh issue edit --add-label` / `--remove-label` do not have this
+hazard.
 
 Do **not** wrap `gh` in `dotenvx run --`: the `GH_TOKEN` in `.env` is stale and
 would override the working token with bad credentials.

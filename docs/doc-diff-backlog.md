@@ -22,12 +22,13 @@ minimal-repro reports), `progress.txt` (one stats line per file), `summary.txt`
 signal.
 
 **When a finding is confirmed real (not raku-drift, not a harness false positive —
-see "Known harness false positive" below), file it as a ticket immediately** under
-`todo/tickets/<slug>.md` (or `todo/deep/` for high-blast-radius ones) per the root
-`CLAUDE.md` conventions, and add a row to [Ticketed](#ticketed-open--linked-to-todo)
-below linking the doc location to the ticket file. This is what keeps this backlog
-and the `todo/` queue in sync — a finding sitting only in a sweep report or only in a
-ticket file with no cross-link is easy to lose track of.
+see "Known harness false positive" below), file it as an issue immediately** on
+`tokuhirom/mutsu`, labelled `todo:ticket` (or `todo:deep` for high-blast-radius
+ones) per `docs/issue-workflow.md`, and add a row to
+[Ticketed](#ticketed-open--linked-to-todo) below linking the doc location to that
+issue. This is what keeps this backlog and the issue queue in sync — a finding
+sitting only in a sweep report, or only in an issue with no cross-link, is easy to
+lose track of.
 
 The **raw output of the latest committed sweep** is checked in under
 [doc-diff-sweep/](doc-diff-sweep/) — read a per-file report there to get the minimal
