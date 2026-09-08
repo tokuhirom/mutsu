@@ -165,6 +165,18 @@ pub(crate) mod flags {
     /// this name dispatches straight to the op table
     /// (`Interpreter::exec_nqp_call_op`).
     pub(crate) const NQP_OP: u8 = 1 << 3;
+    /// A *plain user lexical* env key. Mirrors
+    /// `crate::env::is_plain_user_lexical`.
+    pub(crate) const PLAIN_USER_LEXICAL: u8 = 1 << 4;
+    /// An attribute-twigil env key (`!x`, `@!x`, `%.x`). Mirrors
+    /// `crate::env::is_attr_twigil_env_key`.
+    ///
+    /// This bit and the one above are the two questions the closure-capture
+    /// filter asks about EVERY visible env key, and it asked them by resolving
+    /// the symbol to a `&str` and re-scanning the bytes twice per key. Fusing
+    /// them into the memoized byte makes the filter one thread-local lookup
+    /// instead of two plus two string scans.
+    pub(crate) const ATTR_TWIGIL_ENV_KEY: u8 = 1 << 5;
     /// Set once the byte has been computed (so a symbol with no flags is not
     /// recomputed on every lookup).
     pub(crate) const COMPUTED: u8 = 1 << 7;
@@ -190,6 +202,12 @@ fn compute_flags(s: &str) -> u8 {
     }
     if s.starts_with(NQP_OP_PREFIX) {
         f |= flags::NQP_OP;
+    }
+    if crate::env::is_plain_user_lexical(s) {
+        f |= flags::PLAIN_USER_LEXICAL;
+    }
+    if crate::env::is_attr_twigil_env_key(s) {
+        f |= flags::ATTR_TWIGIL_ENV_KEY;
     }
     f
 }
@@ -249,6 +267,10 @@ pub(crate) mod wk {
         /// The routine-frame name a nameless compiled routine is pushed under
         /// (so `&?ROUTINE` works inside an anonymous sub).
         anon_routine => "<anon>";
+        /// The empty package name, i.e. "no package set".
+        empty_package => "";
+        /// The default top-level package every unqualified declaration lands in.
+        global_package => "GLOBAL";
     }
 
     /// Whether `key` is one of the fixed per-call env keys the well-known
@@ -410,6 +432,18 @@ impl Symbol {
             cache[idx] = f;
         });
         f
+    }
+
+    /// Memoized [`crate::env::is_plain_user_lexical`] for this symbol's string.
+    #[inline]
+    pub(crate) fn is_plain_user_lexical(self) -> bool {
+        self.flags() & flags::PLAIN_USER_LEXICAL != 0
+    }
+
+    /// Memoized [`crate::env::is_attr_twigil_env_key`] for this symbol's string.
+    #[inline]
+    pub(crate) fn is_attr_twigil_env_key(self) -> bool {
+        self.flags() & flags::ATTR_TWIGIL_ENV_KEY != 0
     }
 
     /// Resolve the symbol back to its string representation.

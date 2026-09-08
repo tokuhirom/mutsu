@@ -150,6 +150,7 @@ mod vm_call_named_inner;
 mod vm_call_nqp;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
+pub(crate) mod vm_capture_cache;
 mod vm_catch_dispatch;
 mod vm_closure_dispatch;
 mod vm_coerce_concat_ops;

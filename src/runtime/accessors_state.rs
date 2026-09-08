@@ -594,7 +594,13 @@ impl Interpreter {
     /// invoked later from a foreign frame. `current_package` is only switched to
     /// the class for some method shapes (class-scoped subs, package lexicals, a
     /// `::`-qualified owner), so fall back to the running method's class.
-    pub(crate) fn lexical_closure_package(&self) -> String {
+    ///
+    /// Answers with the interned `Symbol` every caller wants: each closure
+    /// literal stamps this onto its `SubData`, and building the `String` first
+    /// cost a heap allocation plus a re-intern (a thread-local hash of the whole
+    /// package name) per creation. The common answer — the current package, with
+    /// no method frame in the way — is an atomic load.
+    pub(crate) fn lexical_closure_package_sym(&self) -> crate::symbol::Symbol {
         // An attribute default (`has $.x = -> { helper() }`) is lowered at class
         // declaration time but RUN inside the constructing caller's frame, so
         // the routine walk below would see the caller's method and stamp the
@@ -606,7 +612,7 @@ impl Interpreter {
         // attribute default of this class", so it is the authoritative answer
         // here.
         if let Some(class) = &self.constructing_class {
-            return class.clone();
+            return crate::symbol::Symbol::intern(class);
         }
         // A closure created inside a METHOD body lexically belongs to that
         // method's class, even when `current_package` still holds the CALLER's
@@ -625,15 +631,15 @@ impl Interpreter {
             if f.is_method
                 && let Some(class) = self.method_class_stack.last()
             {
-                return class.clone();
+                return crate::symbol::Symbol::intern(class);
             }
             break;
         }
-        let pkg = self.current_package();
-        if (pkg.is_empty() || pkg == "GLOBAL")
+        let pkg = self.current_package_sym();
+        if (pkg == crate::symbol::wk::empty_package() || pkg == crate::symbol::wk::global_package())
             && let Some(class) = self.method_class_stack.last()
         {
-            return class.clone();
+            return crate::symbol::Symbol::intern(class);
         }
         pkg
     }

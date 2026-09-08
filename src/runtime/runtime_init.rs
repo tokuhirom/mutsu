@@ -3006,6 +3006,7 @@ impl Interpreter {
             chain_declared_packages: HashSet::new(),
             module_packages: HashMap::new(),
             closure_env_overrides: HashMap::new(),
+            capture_cache: Default::default(),
             pending_eval_sigilless: Vec::new(),
             pending_eval_placeholder_params: Vec::new(),
             pending_eval_rw_tail: false,
