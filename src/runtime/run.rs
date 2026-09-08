@@ -242,6 +242,53 @@ multi sub trait_mod:<does>(Mu $doee, Mu $role) is export {
 }
 "#;
 
+/// `Metamodel::Naming` and `Metamodel::Stashing` -- the two metaroles a custom
+/// HOW composes to become a *named* metaobject.
+///
+/// `Type/Metamodel/Stashing.rakudoc:45` is the worked example, and it is a
+/// `does` clause, not a `Metamodel::`-prefixed name a match happens to accept:
+///
+/// ```raku
+/// class WithStashHOW does Metamodel::Naming does Metamodel::Stashing {
+///     method new_type(WithStashHOW:_: Str:D :$name! --> Mu) {
+///         my WithStashHOW:D $meta := self.new;
+///         my Mu             $type := Metamodel::Primitives.create_type: $meta, 'Uninstantiable';
+///         $meta.set_name: $type, $name;
+///         self.add_stash: $type
+///     }
+/// }
+/// ```
+///
+/// They are provided as real roles rather than as names the `does` validator is
+/// taught to wave through, because a user HOW has to be able to `.^does` them,
+/// call them on `self`, and override them.
+///
+/// **The name is state on the METAOBJECT, not on the type.** That is Rakudo's
+/// shape (`role Metamodel::Naming { has $!name; method name($obj) { $!name } }`)
+/// and it is load-bearing, not an implementation detail: `.^name` is
+/// `$type.HOW.name($type)`, so a type minted by `create_type` reports the name
+/// its own `$meta` was told, and a *different* instance of the same HOW class
+/// reports nothing. Verified against `raku`: after the example above,
+/// `WithStashHOW.new.name(WithStash)` answers the empty string, while
+/// `WithStash.^name` answers `WithStash`. Storing the name against the type
+/// instead would make those two agree and be wrong.
+///
+/// `add_stash` "creates and sets a stash for a type, returning `$type_obj`"
+/// (`Type/Metamodel/Stashing.rakudoc`). mutsu's package stashes are created on
+/// demand and keyed by the type's name, so asking for the type's `.WHO` is the
+/// creation step; the method still has to answer `$type_obj`, since the
+/// documented HOW ends `new_type` with it.
+pub(super) const METAMODEL_ROLE_PRELUDE: &str = r#"
+role GLOBAL::Metamodel::Naming {
+    has $!name;
+    method name(Mu $obj) { $!name // '' }
+    method set_name(Mu $obj, $new_name) { $!name = $new_name }
+}
+role GLOBAL::Metamodel::Stashing {
+    method add_stash(Mu $type_obj) { $type_obj.WHO; $type_obj }
+}
+"#;
+
 impl Interpreter {
     /// Populate `$=pod` and the declarator doc-comment table (what `.WHY`
     /// reads) from the program source.
@@ -480,6 +527,7 @@ impl Interpreter {
         Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
+        Self::inject_metamodel_role_prelude(&preprocessed, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
         // statement, in source order. That is what rakudo does (it installs at
