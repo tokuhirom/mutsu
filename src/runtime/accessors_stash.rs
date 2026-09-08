@@ -305,15 +305,17 @@ impl Interpreter {
             }
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
             let env_idx = self.caller_env_stack.len() - depth;
+            let addressed_env = self.caller_env_stack[env_idx].clone();
             self.caller_env_stack[env_idx].insert(name.clone(), binding.clone());
             // The VM and reflection call stacks do not have a guaranteed
-            // one-to-one depth mapping (light/inlined call paths differ).
-            // Patch the nearest saved VM frame that actually owns this name.
+            // one-to-one depth mapping (light/inlined call paths differ). The
+            // caller stack entry and its VM frame do share the original Env
+            // handle, however, so use that identity to patch the exact frame.
             if let Some(frame) = self
                 .call_frames
                 .iter_mut()
                 .rev()
-                .find(|frame| frame.saved_env.contains_key(&name))
+                .find(|frame| frame.saved_env.ptr_eq(&addressed_env))
             {
                 frame.saved_env.insert(name.clone(), binding.clone());
             }
