@@ -228,7 +228,7 @@ impl Compiler {
         self.const_operand_mode(expr, false)
     }
 
-    /// [`const_operand`] for a BEGIN-time context that is *not* an
+    /// [`Compiler::const_operand`] for a BEGIN-time context that is *not* an
     /// optimization: it ignores the folding gate and additionally resolves a
     /// sigilled `constant $c` read (`Expr::Var`). Used only to evaluate the
     /// `(...)`/`[...]` adverb value of an extended identifier, where raku
