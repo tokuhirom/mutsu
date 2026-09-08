@@ -112,6 +112,50 @@ pub(crate) fn make_x_immutable_error(method_name: &str, typename: &str) -> Runti
     err
 }
 
+/// `X::Multi::NoMatch` in rakudo's "there are no candidates at all" spelling:
+///
+/// ```text
+/// Cannot resolve caller splice(List:D, Int:D, Int:D); Routine does not have
+/// any candidates.  Is only the proto defined?
+/// ```
+///
+/// (Two spaces before "Is", as rakudo prints it.) This is what a method the
+/// invocant's type simply does not have produces, as distinct from
+/// [`make_multi_no_match_error`]'s "none of these signatures matches", which is
+/// for a routine that HAS candidates and none of them bound.
+///
+/// The signature lists the invocant first and then each argument, each rendered
+/// as its type name plus a `:D`/`:U` smiley.
+pub(crate) fn make_no_candidates_error(
+    method_name: &str,
+    invocant: &Value,
+    args: &[Value],
+) -> RuntimeError {
+    fn typed(v: &Value) -> String {
+        let smiley = if crate::runtime::types::value_is_defined(v) {
+            ":D"
+        } else {
+            ":U"
+        };
+        format!("{}{}", crate::runtime::utils::value_type_name(v), smiley)
+    }
+    let mut sig = String::from(typed(invocant).as_str());
+    for arg in args {
+        sig.push_str(", ");
+        sig.push_str(&typed(arg));
+    }
+    let msg = format!(
+        "Cannot resolve caller {}({}); Routine does not have any candidates.  Is only the proto defined?",
+        method_name, sig
+    );
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Create a structured X::Multi::NoMatch error.
 pub(crate) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("No matching candidates for method: {}", method_name);

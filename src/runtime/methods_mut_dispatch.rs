@@ -115,6 +115,16 @@ impl Interpreter {
                 "callmethodmutwithvalues",
                 "immutable-list-reject",
             );
+            // `splice` is an Array-only routine in rakudo, so a List invocant
+            // resolves no candidate rather than hitting an immutability check.
+            // See the twin arm in methods_call_dispatch.rs.
+            if method == "splice" {
+                return Err(
+                    crate::runtime::methods_signature_errors::make_no_candidates_error(
+                        method, &target, &args,
+                    ),
+                );
+            }
             return Err(make_x_immutable_error(method, "List"));
         }
         if scalar_like_target
