@@ -2016,6 +2016,22 @@ pub struct Interpreter {
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
     module_registered_functions: HashSet<Symbol>,
+    /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
+    /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
+    ///
+    /// `module_registered_functions` deliberately does not let its `GLOBAL::`
+    /// members be reinstated after an ordinary scope rollback, because a file
+    /// with no `unit module` runs its body at `current_package() == GLOBAL` and
+    /// its `sub foo is export` is then indistinguishable from an alias
+    /// installed *for the importing scope* (`{ require NoModule <&bar>; }` must
+    /// not leak `&bar`). A prelude routine carries no such ambiguity: it is
+    /// ambient compunit machinery, never an import alias, and every compunit
+    /// that needs one carries an identical copy of which only the first
+    /// registration wins. Dropping it on a rollback therefore left a module
+    /// loaded inside a routine call — `lives-ok { EVAL 'use M' }` — permanently
+    /// unable to resolve the helper its own body calls, since `loaded_modules`
+    /// still claimed it was loaded and the later real `use` short-circuited.
+    prelude_registered_functions: HashSet<Symbol>,
     /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
     /// loaded module declared with `our`, keyed by module name.
     ///

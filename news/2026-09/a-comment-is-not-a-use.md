@@ -52,6 +52,43 @@ A real `use` is untouched, including one nested inside a block or inside a
 module body: the prelude remains a whole-compunit splice, gated on the code
 rather than on the prose around it.
 
+## The bug it was masking
+
+Removing the masking turned `t/nativecall-helpers-are-not-reexported.t` red,
+and the failure was real. mutsu splices NativeCall's helper routines into every
+compunit that calls one, registering each under `GLOBAL::`
+(`PRELUDE_SUB_TRAIT`). A routine call restores the routine registry on the way
+out, and that rollback dropped `GLOBAL::` entries wholesale -- including the
+splice a module's own body had received while it loaded. `loaded_modules` is
+never rolled back, so the later real `use` was a no-op that could not put it
+back, and the module's routine died with "Unknown function: nativecast" ever
+after:
+
+```raku
+lives-ok { EVAL 'use NativeCallHelperUser; 1' }, 'loads';   # a routine call
+use NativeCallHelperUser;
+cast-through(Str, Pointer);   # Unknown function: nativecast
+```
+
+That file passed only because its own header paragraph names `nativecast`
+several times, which gave the *main* compunit a copy of the helper that the
+module then found. The same masking, one file over.
+
+`reinstate_module_functions` already puts a loaded module's own routines back
+after such a rollback, but deliberately withholds the `GLOBAL::`-qualified ones
+unless the caller is the `EVAL` rollback: a file with no `unit module` runs its
+body at `current_package() == GLOBAL`, so its `sub foo is export` registers
+`GLOBAL::foo` -- indistinguishable from an alias installed *for the importing
+scope*, and reinstating those leaked `&bar` past the block in
+`{ require NoModule <&bar>; }` (`roast/S11-modules/require.t` test 10).
+
+A prelude splice carries no such ambiguity. It is ambient compunit machinery,
+never an import alias, and `registration_sub` already treats it that way when
+it declines the block-lexical escape hatch for one. So the `GLOBAL::` keys that
+came from a prelude splice are now tracked (`prelude_registered_functions`) and
+reinstated either way; every other `GLOBAL::` key keeps the old rule, and the
+`require` constraint is untouched.
+
 ## Pins
 
 - `t/comment-does-not-load-provider.t` — a header paragraph and a Pod block that
@@ -63,5 +100,7 @@ rather than on the prose around it.
   itself: trailing comments, a `#` inside a string, Raku's identifier-internal
   apostrophe (`don't`), unterminated quotes, delimited and abbreviated Pod, and
   `=finish`.
+- `t/module-loaded-in-a-call-keeps-its-prelude.t` — the unmasked bug on its own,
+  independent of which comments the file happens to carry.
 
 Closes GH #7611.
