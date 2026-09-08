@@ -754,6 +754,20 @@ impl Interpreter {
             | ValueView::GenericRange { .. } => false,
             _ => true,
         };
+        // Whether the subscript is a single SCALAR index rather than a list of
+        // one. Both name one slot, so `idx_is_single_element` cannot tell them
+        // apart -- and it must not, because the itemized-key logic below
+        // depends on a one-element list answering "single". But raku does tell
+        // them apart for the assignment's VALUE: a slice yields the list it
+        // stored however short, so `(@a[0,] = 5)` is `(5,)` where
+        // `(@a[0] = 5)` is a bare `5`. The raw index carries the difference --
+        // `@a[0,]` arrives as a one-element non-itemized Array, `@a[0]` as a
+        // bare `Int` -- and only the rvalue shape consults it.
+        let idx_is_scalar_subscript = match idx.view() {
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Seq(_) | ValueView::Slip(_) => false,
+            _ => true,
+        };
         // An *itemized* list/Range subscript is a SINGLE subscript, not a slice
         // — itemization makes it one item. A bare `@a[7,8,9] = …` stays a
         // slice. It reaches here as `ArrayKind::ItemList` or a `Scalar`-wrapped
@@ -1739,13 +1753,14 @@ impl Interpreter {
                     if bind_mode {
                         self.mark_bound_index(&var_name, encoded_idx);
                     }
-                    // A 1-element slice (`@a[0,]`) names a single scalar slot, so
-                    // its rvalue itemizes like a single-index assignment. A
-                    // nested-key assignment (`@a[1,(lazy 3,4,5)] = ...`) instead
-                    // returns the nested shape built while assigning.
+                    // A slice keeps the list it stored as its value, however
+                    // short: `(@a[0,] = 5)` is `(5,)`, not `5`. Only a genuinely
+                    // scalar subscript itemizes. A nested-key assignment
+                    // (`@a[1,(lazy 3,4,5)] = ...`) instead returns the nested
+                    // shape built while assigning.
                     let result = if let Some(nested) = nested_result {
                         nested
-                    } else if idx_is_single_element {
+                    } else if idx_is_single_element && idx_is_scalar_subscript {
                         Self::itemize_value(val)
                     } else if !assigned_values.is_empty() {
                         Value::array(assigned_values)
