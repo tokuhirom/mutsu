@@ -305,20 +305,16 @@ impl Interpreter {
             }
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
             let env_idx = self.caller_env_stack.len() - depth;
-            let addressed_env = self.caller_env_stack[env_idx].clone();
             self.caller_env_stack[env_idx].insert(name.clone(), binding.clone());
-            // The VM and reflection call stacks do not have a guaranteed
-            // one-to-one depth mapping (light/inlined call paths differ). The
-            // caller stack entry and its VM frame do share the original Env
-            // handle, however, so use that identity to patch the exact frame.
-            if let Some(frame) = self
-                .call_frames
-                .iter_mut()
-                .rev()
-                .find(|frame| frame.saved_env.ptr_eq(&addressed_env))
-            {
-                frame.saved_env.insert(name.clone(), binding.clone());
-            }
+            // CompiledCode::emit marks routines containing a CALLER pseudo-stash
+            // as callframe users, disabling the light/inlined paths. Its lexical
+            // depth therefore maps directly to the suspended VM frame here.
+            let frame_idx = self.call_frames.len().checked_sub(depth).ok_or_else(|| {
+                RuntimeError::new("Cannot bind through CALLER stash: frame is gone")
+            })?;
+            self.call_frames[frame_idx]
+                .saved_env
+                .insert(name.clone(), binding.clone());
             self.record_caller_var_writeback(&name);
         } else {
             let package = Self::normalize_stash_package(&package);
