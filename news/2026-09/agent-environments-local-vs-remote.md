@@ -30,4 +30,5 @@ The differences are now recorded once, in **`docs/agent-environments.md`**:
 a command that half of all sessions do not have (PR open, auto-merge, mergeability check, CI watch,
 PR diff, release workflow dispatch). The two `gh`-heavy skills (`mutsu-ticket-flow`, `cut-release`)
 now say up front that their commands are the local form and point at the mapping table, and
-`docs/issue-workflow.md` — which already handled both worlds for issues — cross-links it.
+`docs/issue-workflow.md` and `AGENTS.md` — which already said in prose that a remote session has no
+`gh` — cross-link it for the command-by-command translation.

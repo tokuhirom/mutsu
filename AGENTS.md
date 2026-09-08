@@ -128,4 +128,6 @@ actually mis-filed a mutsu issue before.
 Some sessions have no `gh` (ephemeral remote containers generally do not, and
 direct `api.github.com` calls from them are rejected by the session proxy).
 There, use the GitHub MCP tools with `owner: tokuhirom`, `repo: mutsu` for the
-same steps.
+same steps; `docs/agent-environments.md` maps each `gh` command above to its
+tool, and records the other differences between the two environments (cores,
+disk, provisioning) — `git` itself and every build/test command are identical.
