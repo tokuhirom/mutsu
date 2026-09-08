@@ -24,7 +24,6 @@ on:
     paths-ignore:
       - 'docs/**'
       - 'news/**'
-      - 'todo/**'
       - 'TODO_roast/**'
       - 'old-design-docs/**'
       - 'raku-doc/**'

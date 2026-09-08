@@ -6,13 +6,21 @@ artifacts (code, tests, documentation, commits, and PR text) must be in English.
 ## Start Here
 
 Before planning or changing code, read this file in full and then read the
-task-relevant primary material: the selected todo item, its linked ADRs and
-design documents, and the affected code/tests. Re-check ADR status lines rather
-than relying on an old ticket's description.
+task-relevant primary material: the selected issue, its linked ADRs and design
+documents, and the affected code/tests. Re-check ADR status lines rather than
+relying on an old issue's description.
 
-For a request to implement a file in `todo/tickets/`, use the
-`mutsu-ticket-flow` skill. It defines the required lifecycle through a verified
-merge and selection of the next ticket.
+The open-findings backlog is **GitHub issues on `tokuhirom/mutsu`**, labelled
+`todo:ticket` / `todo:deep` / `todo:perf`; `docs/issue-workflow.md` is the
+operating manual and `docs/triage.md` ranks the backlog. Only ever file, label,
+comment on or close issues in `tokuhirom/mutsu` — never in any other
+repository. Agents run in parallel, so **claim an issue before starting it**:
+comment that you are starting, add the `working` label, and remove that label
+when you finish. Skip any issue that already carries `working`.
+
+For a request to implement a `todo:ticket` issue, use the `mutsu-ticket-flow`
+skill. It defines the required lifecycle through a verified merge and selection
+of the next ticket.
 
 Self-contained procedures live under `.agents/skills/<name>/SKILL.md` rather
 than in this file; read the matching one before starting such a task. Currently:
@@ -40,8 +48,8 @@ Key directories:
 - `roast/`: read-only upstream specification tests.
 - `docs/adr/`: architectural decisions; read applicable ADRs before changing
   their area.
-- `todo/`: work queue. `tickets/` contains self-contained slices; `deep/`
-  contains work that needs architectural design or a broader campaign.
+- `docs/issue-workflow.md`: how the GitHub-issue work queue is run.
+  `docs/todo-issue-map.md` resolves the `todo/...md` paths older records cite.
 
 Do not implement ecosystem modules as native replacements. Grow the interpreter
 so vendored upstream modules run unchanged, unless the user explicitly approves
@@ -66,11 +74,12 @@ once each. After either full command runs, inspect its saved log. A failing
 full test belongs to the branch: diagnose it and use targeted checks as needed
 for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
 
-Documentation-only PRs, including moving a triaged item from `todo/tickets/`
-to `todo/deep/`, do not require Rust formatting, linting, or either full test
-suite. Verify their patch with `git diff --check` and run a focused check only
-when the documentation change affects generated output, executable scripts, or
-test configuration.
+Documentation-only PRs do not require Rust formatting, linting, or either full
+test suite. Re-triaging an issue (relabelling `todo:ticket` to `todo:deep`,
+adding an investigation comment) touches no files at all and needs neither.
+Verify a documentation patch with `git diff --check` and run a focused check
+only when it affects generated output, executable scripts, or test
+configuration.
 
 Full-suite reruns are allowed when evidence requires them, but never run the
 same full suite concurrently. The suites share Cargo build locks, temporary
@@ -110,4 +119,11 @@ reports `state == MERGED`, and verify its merge commit is reachable from
 `origin/main` before reporting completion or taking the next ticket.
 
 Do not create stacked PRs or close a PR simply to discard its work. Do not open
-PRs or issues against Raku organization repositories from this workspace.
+PRs or issues against any repository other than `tokuhirom/mutsu` — above all
+not a Raku organization one (`roast`, `raku-doc`, `rakudo`), where an AI has
+actually mis-filed a mutsu issue before.
+
+Some sessions have no `gh` (ephemeral remote containers generally do not, and
+direct `api.github.com` calls from them are rejected by the session proxy).
+There, use the GitHub MCP tools with `owner: tokuhirom`, `repo: mutsu` for the
+same steps.

@@ -6,14 +6,14 @@
 > | kind of information | where it lives |
 > |---|---|
 > | completed work | [news/](news/) — one file per accomplishment |
-> | open findings, small | [todo/tickets/](todo/tickets/) — one file per finding |
-> | open findings, deep | [todo/deep/](todo/deep/) — needs design or an ADR |
+> | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
+> | which finding to pick up next | [docs/triage.md](docs/triage.md) — a ranked, periodically regenerated snapshot |
 > | architectural decisions | [docs/adr/](docs/adr/) |
 > | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
 > | performance numbers | the bench CI (`bench-data` branch), [PERFORMANCE.md](PERFORMANCE.md) |
 >
-> Do **not** append progress notes here. A new file under `todo/` or `news/` conflicts with nothing
-> on merge; an append to this file conflicts with every other in-flight PR.
+> Do **not** append progress notes here. A GitHub issue or a new file under `news/` conflicts with
+> nothing on merge; an append to this file conflicts with every other in-flight PR.
 
 ## Goal — a batteries-included Raku implementation
 
@@ -116,8 +116,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       rung-3 provider — [todo/deep/nativecall-cannot-be-vendored.md](todo/deep/nativecall-cannot-be-vendored.md));
       native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
       pick up only when a real consumer needs it).
-- [ ] Other open module-compat findings are individual files under
-      [todo/tickets/](todo/tickets/) and [todo/deep/](todo/deep/).
+- [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 
 ---
 
@@ -201,8 +200,7 @@ deriving from the real dispatch table is also done (ADR-0019 F1/F2, closed 2026-
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
       deep-recursion `fatal runtime error: stack overflow` process abort for crashes.
-- Individual concurrency bugs are files under [todo/tickets/](todo/tickets/) and
-  [todo/deep/](todo/deep/).
+- Individual concurrency bugs are individual `todo:ticket` / `todo:deep` issues.
 
 ---
 
