@@ -298,14 +298,17 @@ impl Interpreter {
         };
 
         if let Some(depth) = caller_depth {
-            if depth == 0 || depth > self.caller_env_stack.len() {
+            // `caller_env_stack` deliberately omits light/inlined call paths,
+            // while repeated CALLER components count semantic routine frames.
+            // `routine_stack` retains those frames for backtraces, so validate
+            // against it and let the runtime-name carrier below cross whatever
+            // physical VM frames happen to exist.
+            if depth == 0 || depth >= self.routine_stack.len() {
                 return Err(RuntimeError::new(
                     "Cannot bind through CALLER stash: frame is gone",
                 ));
             }
             let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
-            let env_idx = self.caller_env_stack.len() - depth;
-            self.caller_env_stack[env_idx].insert(name.clone(), binding.clone());
             // The key is known only at runtime, so carry both its value and its
             // pending slot refresh across every intervening frame exactly as
             // `$::($name) = value` does. Keeping it in the current env supplies
