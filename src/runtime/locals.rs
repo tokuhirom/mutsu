@@ -10,8 +10,9 @@
 //! VM already relies on them:
 //!
 //! - **`self.locals[i]` addresses slot `i` of the *current* frame**, so
-//!   [`Index`] must add the frame base rather than index the raw stack.
-//! - **[`Deref`] yields exactly the current frame's slots**, so `.len()`,
+//!   [`std::ops::Index`] must add the frame base rather than index the raw
+//!   stack.
+//! - **[`std::ops::Deref`] yields exactly the current frame's slots**, so `.len()`,
 //!   `.get()`, `.iter()` and the `&self.locals` → `&[Value]` coercions all
 //!   speak about this frame and nothing below it. That is what makes
 //!   ADR-0077's open question 1 (one stack or two) a real question: a locals
