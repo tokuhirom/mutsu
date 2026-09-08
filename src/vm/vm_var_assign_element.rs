@@ -222,6 +222,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         _is_positional: bool,
+        target_slot: Option<u32>,
     ) -> Option<Result<(), RuntimeError>> {
         // Reject if there are any local bind pairs (`:=` bindings in scope)
         if !self.local_bind_pairs.is_empty() {
@@ -332,8 +333,15 @@ impl Interpreter {
                     return None;
                 }
                 let local_slot = if strong_count == 2 {
-                    // The extra ref should be from locals — verify
-                    match self.find_local_slot(code, var_name) {
+                    // The extra ref should be from locals — verify.
+                    //
+                    // ADR-0039 slice 2: through the compiler-baked
+                    // `target_slot`, never a by-name search. `find_local_slot`
+                    // is a `position` over `code.locals`, so with a same-named
+                    // shadow (`code.locals == ["%h", "%h"]`) it answered the
+                    // OUTER binding's slot — which this path then nil'd and
+                    // re-seeded, corrupting a variable the store never touched.
+                    match self.resolve_local_slot(code, target_slot, var_name) {
                         Some(slot) => Some(slot),
                         None => return None,
                     }
@@ -411,7 +419,7 @@ impl Interpreter {
                 // default build's blanket reconcile makes it redundant (byte-
                 // identical) — it only matters on the single-store path.
                 if local_slot.is_none()
-                    && let Some(slot) = self.find_local_slot(code, var_name)
+                    && let Some(slot) = self.resolve_local_slot(code, target_slot, var_name)
                     && let Some(env_val) = self.env().get_sym(var_sym).cloned()
                 {
                     self.locals[slot] = env_val;
@@ -922,7 +930,9 @@ impl Interpreter {
         // --- Fast path for simple hash element assignment ---
         // Handles the common case: %h{$key} = $val with no type constraints,
         // no binding, no special containers. Skips ~16 HashMap lookups.
-        if let Some(result) = self.try_fast_hash_element_assign(code, name_idx, is_positional) {
+        if let Some(result) =
+            self.try_fast_hash_element_assign(code, name_idx, is_positional, target_slot)
+        {
             return result;
         }
         // Save type metadata and container default by pointer BEFORE the

@@ -545,6 +545,36 @@ impl Interpreter {
                 }
                 // Set type constraint so future assignments are coerced correctly
                 self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
+                // ADR-0039 slice 2: that registration re-tags `env`'s value via
+                // `register_var_container_type_metadata` ->
+                // `tag_container_metadata` -> `Gc::make_mut`, which COPIES a
+                // node whose only other holder is the slot written just above.
+                // `env` therefore ends up on the tagged copy while the slot
+                // keeps the untagged original — invisible while `%h` reads
+                // resolve by name, wrong the moment they resolve through the
+                // slot (`my %h is MixHash = ...; %h<a>--`). Read `env` back and
+                // re-store it.
+                //
+                // Two neighbouring repairs were measured and are WRONG. Making
+                // `register_var_container_type_metadata` itself store
+                // identity-preservingly breaks `t/typed-bind-recursion.t`: a
+                // call frame's flattened env carries the caller's same-named
+                // entry, so a recursive `my @ret := Array[T].new` re-tags the
+                // CALLER's container, and restricting it to the frame's own
+                // overlay does not help. Moving the registration to run BEFORE
+                // the trait's own stores breaks `t/quanthash-hyper-funcop.t`,
+                // `t/pairs-element-container.t` and
+                // `t/quanthash-declared-init-identity.t`.
+                //
+                // A celled binding needs nothing: the cell IS the identity and
+                // both halves already share it.
+                if let Some(tagged) = self.env().get(&name_str).cloned()
+                    && !tagged.is_container_ref()
+                    && let Some(s) = self.resolve_local_slot(code, eff_slot, &name_str)
+                    && !self.locals[s].is_container_ref()
+                {
+                    self.locals[s] = tagged;
+                }
                 return Ok(());
             }
         }

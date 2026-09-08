@@ -714,47 +714,9 @@ impl Interpreter {
         // entry into this frame's overlay, which is a real change in env shape
         // for a `:=`-bound target (`:into(my %b := BagHash.new)`).
         let current = self.env().get(var_name).map(|v| v.clone().into_deref());
-        let rebuilt = match &current {
-            Some(cur) => {
-                let old_view = cur.view();
-                let new_view = new_val.view();
-                match (&old_view, &new_view) {
-                    (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
-                        if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
-                    {
-                        Some(Self::array_inplace_reassign(old_gc, new_gc, *kind))
-                    }
-                    (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                        if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
-                    {
-                        Some(Self::hash_inplace_reassign(old_gc, new_gc))
-                    }
-                    // ADR-0039 slice 2: the QuantHash kinds, for the same reason
-                    // and by the same rule. `classify(..., :into(my %b :=
-                    // BagHash.new))` rebuilds the bag and used to drop the fresh
-                    // node into `env`, which only a by-name read could see; the
-                    // binding's own slot kept the empty original
-                    // (`roast/S32-list/classify.t` 25-27).
-                    (ValueView::Set(old_gc, _), ValueView::Set(new_gc, m)) => {
-                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
-                            Value::set_parts(gc, *m)
-                        })
-                    }
-                    (ValueView::Bag(old_gc, _), ValueView::Bag(new_gc, m)) => {
-                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
-                            Value::bag_parts(gc, *m)
-                        })
-                    }
-                    (ValueView::Mix(old_gc, _), ValueView::Mix(new_gc, m)) => {
-                        Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| {
-                            Value::mix_parts(gc, *m)
-                        })
-                    }
-                    _ => None,
-                }
-            }
-            None => None,
-        };
+        let rebuilt = current
+            .as_ref()
+            .and_then(|cur| Self::container_rebuild_in_place(cur, &new_val));
         drop(current);
         match rebuilt {
             Some(updated) => {
@@ -765,6 +727,47 @@ impl Interpreter {
             None => {
                 self.env_mut().insert(var_name.to_string(), new_val);
             }
+        }
+    }
+
+    /// Copy `new_val`'s container contents into the node `current` already
+    /// holds, when the two are the same container kind backed by different
+    /// nodes. Returns the value backed by the ORIGINAL node — every holder of
+    /// it (a local slot, a by-value capture, a `:=` alias) therefore observes
+    /// the rebuild. `None` means this is a genuine REBINDING rather than a
+    /// mutation (autovivification, a type change, a `Bag` replacing a `Hash`,
+    /// or the two already being the same node), and the caller should store
+    /// `new_val` normally.
+    pub(crate) fn container_rebuild_in_place(current: &Value, new_val: &Value) -> Option<Value> {
+        let old_view = current.view();
+        let new_view = new_val.view();
+        match (&old_view, &new_view) {
+            (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
+                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+            {
+                Some(Self::array_inplace_reassign(old_gc, new_gc, *kind))
+            }
+            (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
+                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+            {
+                Some(Self::hash_inplace_reassign(old_gc, new_gc))
+            }
+            // ADR-0039 slice 2: the QuantHash kinds, for the same reason
+            // and by the same rule. `classify(..., :into(my %b :=
+            // BagHash.new))` rebuilds the bag and used to drop the fresh
+            // node into `env`, which only a by-name read could see; the
+            // binding's own slot kept the empty original
+            // (`roast/S32-list/classify.t` 25-27).
+            (ValueView::Set(old_gc, _), ValueView::Set(new_gc, m)) => {
+                Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| Value::set_parts(gc, *m))
+            }
+            (ValueView::Bag(old_gc, _), ValueView::Bag(new_gc, m)) => {
+                Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| Value::bag_parts(gc, *m))
+            }
+            (ValueView::Mix(old_gc, _), ValueView::Mix(new_gc, m)) => {
+                Self::quanthash_inplace_reassign(old_gc, new_gc, |gc| Value::mix_parts(gc, *m))
+            }
+            _ => None,
         }
     }
 
@@ -796,13 +799,45 @@ impl Interpreter {
     /// a `\param`) — and redirect any self-reference that (after circular-ref
     /// fixup) pointed at the about-to-be-dropped `new_gc` back to `old_gc`. Returns
     /// the `Array` value that should be stored in the slot (backed by `old_gc`).
-    pub(super) fn array_inplace_reassign(
+    pub(crate) fn array_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::ArrayData>,
         new_gc: &crate::gc::Gc<crate::value::ArrayData>,
         kind: ArrayKind,
     ) -> Value {
+        Self::array_inplace_reassign_inner(old_gc, new_gc, kind, false)
+    }
+
+    /// [`Interpreter::array_inplace_reassign`] for a caller whose `new_gc` is an
+    /// ELEMENT-level rebuild rather than a whole rebuilt container: the
+    /// declared container metadata (`my CSV::Field @f`'s element type, an `is
+    /// default(...)`, a shape) lives on `old_gc` and the rebuild does not carry
+    /// it, so the plain form's wholesale overwrite would erase it. Fields the
+    /// rebuild *does* set still win. ADR-0039 slice 2.
+    pub(crate) fn array_inplace_reassign_inheriting_meta(
+        old_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        new_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        kind: ArrayKind,
+    ) -> Value {
+        Self::array_inplace_reassign_inner(old_gc, new_gc, kind, true)
+    }
+
+    fn array_inplace_reassign_inner(
+        old_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        new_gc: &crate::gc::Gc<crate::value::ArrayData>,
+        kind: ArrayKind,
+        inherit_meta: bool,
+    ) -> Value {
         let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
         let mut new_data = (**new_gc).clone();
+        if inherit_meta {
+            new_data.value_type = new_data.value_type.or_else(|| old_gc.value_type.clone());
+            new_data.key_type = new_data.key_type.or_else(|| old_gc.key_type.clone());
+            new_data.declared_type = new_data
+                .declared_type
+                .or_else(|| old_gc.declared_type.clone());
+            new_data.default = new_data.default.or_else(|| old_gc.default.clone());
+            new_data.shape = new_data.shape.or_else(|| old_gc.shape.clone());
+        }
         let mut seen = Vec::new();
         for item in new_data.items_mut().iter_mut() {
             Self::replace_array_refs_in_value(item, new_ptr, old_gc, kind, &mut seen);
@@ -1031,12 +1066,40 @@ impl Interpreter {
 
     /// The `Hash` analogue of [`Self::array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
-    pub(super) fn hash_inplace_reassign(
+    pub(crate) fn hash_inplace_reassign(
         old_gc: &crate::gc::Gc<crate::value::HashData>,
         new_gc: &crate::gc::Gc<crate::value::HashData>,
     ) -> Value {
+        Self::hash_inplace_reassign_inner(old_gc, new_gc, false)
+    }
+
+    /// The `Hash` twin of
+    /// [`Interpreter::array_inplace_reassign_inheriting_meta`].
+    pub(crate) fn hash_inplace_reassign_inheriting_meta(
+        old_gc: &crate::gc::Gc<crate::value::HashData>,
+        new_gc: &crate::gc::Gc<crate::value::HashData>,
+    ) -> Value {
+        Self::hash_inplace_reassign_inner(old_gc, new_gc, true)
+    }
+
+    fn hash_inplace_reassign_inner(
+        old_gc: &crate::gc::Gc<crate::value::HashData>,
+        new_gc: &crate::gc::Gc<crate::value::HashData>,
+        inherit_meta: bool,
+    ) -> Value {
         let new_ptr = crate::gc::Gc::as_ptr(new_gc) as usize;
         let mut new_data = (**new_gc).clone();
+        if inherit_meta {
+            new_data.value_type = new_data.value_type.or_else(|| old_gc.value_type.clone());
+            new_data.key_type = new_data.key_type.or_else(|| old_gc.key_type.clone());
+            new_data.declared_type = new_data
+                .declared_type
+                .or_else(|| old_gc.declared_type.clone());
+            new_data.default = new_data.default.or_else(|| old_gc.default.clone());
+            new_data.descriptor_name = new_data
+                .descriptor_name
+                .or_else(|| old_gc.descriptor_name.clone());
+        }
         for v in new_data.map.values_mut() {
             if let ValueView::Hash(inner) = v.view()
                 && crate::gc::Gc::as_ptr(&inner) as usize == new_ptr
