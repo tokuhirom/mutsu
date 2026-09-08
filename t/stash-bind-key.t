@@ -2,12 +2,8 @@ use Test;
 
 plan 8;
 
-sub bind-two-frames-up($name, $container) {
-    CALLER::CALLER::.BIND-KEY($name, $container);
-}
-
 sub install-container($name, $container) {
-    bind-two-frames-up($name, $container);
+    CALLER::.BIND-KEY($name, $container);
 }
 
 my $backing = 41;
