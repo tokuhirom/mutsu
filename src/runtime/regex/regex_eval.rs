@@ -27,6 +27,19 @@ impl Interpreter {
         &self,
         code: &str,
     ) -> Option<Arc<Vec<crate::ast::Stmt>>> {
+        self.parse_regex_code_cached_with_id(code).map(|(s, _)| s)
+    }
+
+    /// `parse_regex_code_cached`, additionally returning the entry's stable
+    /// compile-cache id (see `CachedCodeParse`). A caller that evaluates the
+    /// body in *this* interpreter passes the id to `eval_block_value_cached`,
+    /// so the body is compiled once per code string rather than once per
+    /// cursor position; a caller that spins up a scratch interpreter has
+    /// nowhere to keep the compile and uses the plain entry point.
+    pub(in crate::runtime) fn parse_regex_code_cached_with_id(
+        &self,
+        code: &str,
+    ) -> Option<(Arc<Vec<crate::ast::Stmt>>, u64)> {
         use crate::runtime::regex_parse::REGEX_CODE_PARSE_CACHE;
         let cur_gen = self
             .registry_write_gen
@@ -34,7 +47,7 @@ impl Interpreter {
         if let Some(hit) = REGEX_CODE_PARSE_CACHE.with(|c| {
             c.borrow()
                 .get(code)
-                .and_then(|(g, stmts)| (*g == cur_gen).then(|| Arc::clone(stmts)))
+                .and_then(|(g, stmts, id)| (*g == cur_gen).then(|| (Arc::clone(stmts), *id)))
         }) {
             crate::vm::vm_stats::record_regex_code_parse(true);
             return Some(hit);
@@ -42,11 +55,12 @@ impl Interpreter {
         crate::vm::vm_stats::record_regex_code_parse(false);
         let (stmts, _) = crate::parse_dispatch::parse_source(code).ok()?;
         let stmts = Arc::new(stmts);
+        let id = crate::value::next_instance_id();
         REGEX_CODE_PARSE_CACHE.with(|c| {
             c.borrow_mut()
-                .insert(code.to_string(), (cur_gen, Arc::clone(&stmts)));
+                .insert(code.to_string(), (cur_gen, Arc::clone(&stmts), id));
         });
-        Some(stmts)
+        Some((stmts, id))
     }
 
     /// Install `self`'s declaration registry into a freshly-built
@@ -212,7 +226,7 @@ impl Interpreter {
         matched_so_far: &str,
         writes_back_to_caller: bool,
     ) -> InlineCodeOutcome {
-        let Some(stmts) = self.parse_regex_code_cached(code) else {
+        let Some((stmts, code_cache_id)) = self.parse_regex_code_cached_with_id(code) else {
             return InlineCodeOutcome {
                 value: None,
                 writes: HashMap::new(),
@@ -350,7 +364,7 @@ impl Interpreter {
         // harvest below sees nothing. Same flag the reduce-time replay uses.
         let result = if writes_back_to_caller {
             let before = self.pending_local_updates.len();
-            let body_result = self.eval_regex_code_block_body(&stmts);
+            let body_result = self.eval_regex_code_block_body(&stmts, code_cache_id);
             // The body itself can drain the log (any call it makes runs
             // `drain_pending_local_updates_after_call`), so the list may be
             // SHORTER than it was on entry — clamp before splitting.
@@ -375,7 +389,11 @@ impl Interpreter {
         } else {
             let saved_in_block = self.in_regex_code_block;
             self.in_regex_code_block = true;
-            let r = self.eval_block_value(&stmts);
+            // Cached compile: an assertion is evaluated once per cursor
+            // position, and recompiling its handful of statements every time
+            // was the dominant cost of a `<?{ … }>`-driven match (see
+            // `news/2026-09/regex-inline-code-recompiled-per-cursor-position.md`).
+            let r = self.eval_block_value_cached(&stmts, code_cache_id);
             self.in_regex_code_block = saved_in_block;
             r
         };

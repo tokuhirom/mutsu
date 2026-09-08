@@ -224,9 +224,14 @@ impl Interpreter {
     /// Returns `Err` when the block threw a genuine exception (a `die`), which
     /// Rakudo propagates out of the match rather than treating as a mismatch.
     /// Env writeback still happens before the error is returned.
+    /// `cache_id`: the code string's stable compile-cache id (see
+    /// `parse_regex_code_cached_with_id`), so a block re-run at every cursor
+    /// position reuses its compiled chunk instead of recompiling the same few
+    /// statements per position.
     pub(in crate::runtime) fn eval_regex_code_block_body(
         &mut self,
         stmts: &[crate::ast::Stmt],
+        cache_id: u64,
     ) -> Result<(), RuntimeError> {
         // Snapshot the env by *binding identity* — the cloned `Value` is an Arc
         // bump, and holding it also keeps the old allocation alive so a freed
@@ -245,7 +250,7 @@ impl Interpreter {
             self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
         let saved_in_block = self.in_regex_code_block;
         self.in_regex_code_block = true;
-        let eval_result = self.eval_block_value(stmts);
+        let eval_result = self.eval_block_value_cached(stmts, cache_id);
         self.in_regex_code_block = saved_in_block;
         // Record changed env variables as pending local updates for the outer VM
         for (k, v) in &self.env {

@@ -114,8 +114,17 @@ impl Drop for TopLevelSourceScope {
 }
 
 /// A `REGEX_CODE_PARSE_CACHE` entry: the `registry_write_gen` the code string
-/// was parsed under, and the parsed statements.
-pub(crate) type CachedCodeParse = (u64, std::sync::Arc<Vec<crate::ast::Stmt>>);
+/// was parsed under, the parsed statements, and a stable compile-cache id for
+/// them.
+///
+/// The id is drawn from the same global counter as `SubData::id`, so it can
+/// never collide with a closure's `carrier_compile_cache` entry, and it lets
+/// `eval_regex_inline_code` reuse the *compiled* chunk for an embedded
+/// `{ … }` / `<?{ … }>` body across cursor positions instead of recompiling
+/// the same handful of statements on every evaluation. A fresh id is minted
+/// on every (re)parse, so an entry invalidated by a `registry_write_gen` bump
+/// can never serve the compile made from the statements it replaced.
+pub(crate) type CachedCodeParse = (u64, std::sync::Arc<Vec<crate::ast::Stmt>>, u64);
 
 /// Generation counter for the grammar-token registry (`Registry.token_defs`).
 /// Bumped on every token (re)definition / wholesale restore; used to invalidate
