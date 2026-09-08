@@ -212,13 +212,17 @@ impl Interpreter {
     /// `RegexCaptures::ast`, where the match trail can undo them on
     /// backtracking.
     ///
-    /// `writes_back_to_caller` selects how a write to an *outer* lexical is
-    /// propagated. A plain `{ … }` block must reach the caller's compiled local
-    /// slots (`'123' ~~ / (\d) { $seen = $/.Str } \d+ /` has to leave `$seen`
-    /// set), which is the env-diff → `pending_local_updates` bookkeeping the
-    /// reduce-time replay does; an assertion keeps ADR-0009's cheaper behaviour of
-    /// simply leaving the write in `env`, so the hot `<?{ … }>` path does not take
-    /// on a full env snapshot per cursor position.
+    /// `writes_back_to_caller` selects *how* a write to an *outer* lexical is
+    /// propagated — both routes reach the caller's compiled local slots, they
+    /// just pay for the name set differently. A plain `{ … }` block
+    /// (`'123' ~~ / (\d) { $seen = $/.Str } \d+ /` has to leave `$seen` set)
+    /// takes the env-diff → `pending_local_updates` bookkeeping of
+    /// [`Interpreter::eval_regex_code_block_body`], which sees a write however
+    /// it was spelled. An assertion is evaluated at every cursor position, so
+    /// ADR-0009 kept its path free of that per-position snapshot: it uses the
+    /// compiled body's `free_var_writes` instead
+    /// (`writeback_assertion_free_var_writes` below), which the compiler already
+    /// computed, so an assertion that assigns nothing pays nothing.
     pub(super) fn eval_regex_inline_code(
         &mut self,
         code: &str,
@@ -393,8 +397,14 @@ impl Interpreter {
             // position, and recompiling its handful of statements every time
             // was the dominant cost of a `<?{ … }>`-driven match (see
             // `news/2026-09/regex-inline-code-recompiled-per-cursor-position.md`).
-            let r = self.eval_block_value_cached(&stmts, code_cache_id);
+            let mut free_var_writes: Vec<String> = Vec::new();
+            let r = self.eval_block_value_cached_reporting_writes(
+                &stmts,
+                code_cache_id,
+                &mut free_var_writes,
+            );
             self.in_regex_code_block = saved_in_block;
+            self.writeback_assertion_free_var_writes(&free_var_writes, &scoped);
             r
         };
         // Harvest writes to the in-regex lexicals *before* restoring them: the
@@ -446,6 +456,67 @@ impl Interpreter {
             value,
             writes,
             made,
+        }
+    }
+
+    /// Carry an assertion body's assignments to *outer* lexicals through to the
+    /// caller's compiled local slots.
+    ///
+    /// A plain `{ … }` block gets this from `eval_regex_code_block_body`'s env
+    /// snapshot + binding-identity diff. An assertion is evaluated at every
+    /// cursor position, so ADR-0009 kept its path snapshot-free — and the write
+    /// consequently only ever landed in `env`. That is enough for a later atom
+    /// of the same match to read it back, and enough for a *mutated* container
+    /// (the caller's slot already shares that allocation), but a scalar
+    /// rebinding died with the match: `my $n = 0; "aaaa" ~~ / [ <?{ $n++; True }> . ]+ /`
+    /// left `$n` at 0 where rakudo leaves 5. The compiler's `free_var_writes` is
+    /// exactly the set the diff would have found, at no per-position cost — an
+    /// assertion that assigns nothing reports nothing and returns immediately.
+    ///
+    /// `scoped` holds the names this evaluation installed and is about to
+    /// restore (the regex's own `:my`/`:let` lexicals, `$/` / `$¢` / `$0`…, and
+    /// the body's own `my` declarations); none of them is a caller lexical.
+    /// `made` is engine state, not a variable the caller can declare.
+    fn writeback_assertion_free_var_writes(&mut self, names: &[String], scoped: &[String]) {
+        if names.is_empty() {
+            return;
+        }
+        // A body compiled inside `grammar G { … }` records a write to an outer
+        // `$x` under the auto-package-qualified `G::x`, while
+        // `in_regex_code_block` redirects the write itself back onto the bare
+        // lexical in `env` — strip the package so the two names agree (the same
+        // adjustment the deferred class/role body drain in `run.rs` makes).
+        let pkg = self.current_package();
+        let pkg_prefix = if pkg == "GLOBAL" {
+            String::new()
+        } else {
+            format!("{pkg}::")
+        };
+        for name in names {
+            let name = if pkg_prefix.is_empty() {
+                name.as_str()
+            } else {
+                name.strip_prefix(&pkg_prefix).unwrap_or(name.as_str())
+            };
+            if matches!(name, "made" | "_" | "$_" | "@_" | "%_") || scoped.iter().any(|s| s == name)
+            {
+                continue;
+            }
+            let Some(v) = self.env.get(name).cloned() else {
+                continue;
+            };
+            if let Some(set) = self.carrier_writes.as_mut() {
+                set.insert(name.to_string());
+            }
+            // Both drains (`drain_pending_local_updates_after_call`,
+            // `vm_smartmatch_ops`) key on the NAME and re-read the value from
+            // `env`, so a repeat of a name already logged is redundant. Skipping
+            // it keeps the log bounded by the number of distinct names rather
+            // than by the number of cursor positions the assertion ran at.
+            if self.pending_local_updates.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            self.pending_local_updates.push((name.to_string(), v));
         }
     }
 
