@@ -265,12 +265,31 @@ impl Interpreter {
         }
     }
 
-    /// Update captured envs of ALL END phasers, but only for the specified
-    /// variable names.  Used after closure calls to propagate changes to
+    /// True when at least one key of `captured` names a live (non-frozen) entry
+    /// of some END phaser's captured env — i.e. when
+    /// [`Self::update_end_phaser_envs_for_keys`] has anything at all to do.
+    ///
+    /// This is the cheap half of that update: it asks the same two membership
+    /// questions but skips the third lookup and, crucially, lets the caller
+    /// skip flattening the live env (`clone_env`, O(env) for a scoped frame)
+    /// when the answer is no. A closure whose capture shares no name with any
+    /// phaser — the overwhelmingly common case, and every case at all once a
+    /// module with a wide export list has widened the capture — then costs two
+    /// integer-keyed lookups per captured name instead of a whole-env flatten.
+    pub(crate) fn end_phasers_watch_any(&self, captured: &Env) -> bool {
+        self.end_phasers.iter().any(|phaser| {
+            captured
+                .keys()
+                .any(|k| !phaser.dead_keys.contains(k) && phaser.env.contains_key_sym(*k))
+        })
+    }
+
+    /// Update captured envs of ALL END phasers, but only for the names
+    /// `captured` holds.  Used after closure calls to propagate changes to
     /// captured variables without overwriting unrelated variables.
     ///
-    /// `keys` names the *calling closure's* own captured free variables, which
-    /// only coincidentally share a name with a phaser's captured entry — they
+    /// `captured` is the *calling closure's* own captured env, whose names only
+    /// coincidentally share a name with a phaser's captured entry — they
     /// are not necessarily the same binding (a same-named `my` in a sibling
     /// scope is a common case: `{ my $a = 42; END { say $a } }; my $a = 0;
     /// callit { $a }` calls a closure that captured the SECOND `$a`, which must
@@ -279,21 +298,27 @@ impl Interpreter {
     /// see `update_end_phaser_envs`) is the phaser's authoritative surviving
     /// binding for that name and must never be overwritten by an unrelated
     /// same-named capture from elsewhere.
-    pub(crate) fn update_end_phaser_envs_for_keys(
-        &mut self,
-        keys: &std::collections::HashSet<&str>,
-        current_env: &Env,
-    ) {
+    ///
+    /// The names are taken as interned [`Symbol`]s straight off `captured`'s
+    /// own overlay, never resolved back to strings. This runs on EVERY closure
+    /// return once any END phaser exists, over a capture whose width is set by
+    /// the *creating scope* rather than by the closure — so a program that
+    /// `use`s a module with a wide export list, or one the reflective latch has
+    /// widened to a whole-env snapshot, walks hundreds of names here per call.
+    /// Resolving each to a `String` and re-interning it three times over
+    /// (`dead_keys`, the phaser env, the live env) made this ~30% of the hot
+    /// loop of a program that merely had `use Test` at the top (#7565).
+    pub(crate) fn update_end_phaser_envs_for_keys(&mut self, captured: &Env, current_env: &Env) {
         for phaser in self.end_phasers.iter_mut() {
-            let captured = &mut phaser.env;
-            for k in keys {
-                if phaser.dead_keys.contains(&Symbol::intern(k)) {
+            for k in captured.keys() {
+                if phaser.dead_keys.contains(k) {
                     continue;
                 }
-                if captured.contains_key(k)
-                    && let Some(v) = current_env.get(k)
+                if phaser.env.contains_key_sym(*k)
+                    && let Some(v) = current_env.get_sym(*k)
                 {
-                    captured.insert(k.to_string(), v.clone());
+                    let v = v.clone();
+                    phaser.env.insert_sym(*k, v);
                 }
             }
         }
