@@ -430,7 +430,7 @@ impl Interpreter {
             }
             // ADR-0019 E3: resolve via the cached candidate sequence instead
             // of a live per-call MRO walk. See
-            // `todo/deep/adr0019-e2-e4-resolver-core.md` design decision 5.
+            // adr0019-e2-e4-resolver-core (#7540) design decision 5.
             let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
             if !self.dispatch_ambiguous {
@@ -441,7 +441,7 @@ impl Interpreter {
         // 4. Resolve fresh; cache the result when it is non-multi.
         // ADR-0019 E3: resolve via the cached candidate sequence instead of a
         // live per-call MRO walk. See
-        // `todo/deep/adr0019-e2-e4-resolver-core.md` design decision 5.
+        // adr0019-e2-e4-resolver-core (#7540) design decision 5.
         let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
         let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {

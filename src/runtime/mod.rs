@@ -3363,7 +3363,7 @@ pub struct Interpreter {
     pub(crate) method_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     /// ADR-0019 E3: the generation-keyed resolved-sequence cache (design
-    /// decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`). Caches the
+    /// decision 5, adr0019-e2-e4-resolver-core (#7540)). Caches the
     /// ordered candidate universe for `(receiver TypeId, method, call shape)`
     /// — not a resolved winner, so unlike `multi_resolve_cache` an ambiguous
     /// per-call ranking never disqualifies an entry from being cached; ranking

@@ -707,7 +707,7 @@ fn unexplained_calls(stmts: &[Stmt]) -> Option<Unexplained> {
 /// constructing one costs about 9 ms and retains roughly 7 KiB (measured on a
 /// debug build, 2026-09-03, `tests/long_lived_parse.rs`), which a resident
 /// process would pay on every keystroke. See
-/// `todo/perf/interpreter-new-is-expensive-and-retains-memory.md`.
+/// interpreter-new-is-expensive-and-retains-memory (#7572).
 pub(crate) fn check_undeclared_routines_without_interpreter(
     stmts: &[Stmt],
 ) -> Result<(), RuntimeError> {

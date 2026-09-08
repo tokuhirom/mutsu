@@ -86,7 +86,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5b:
       `references`** — the one remaining method that genuinely needs per-occurrence positions,
       since a line may hold several and text scanning cannot rank them soundly. **Start from
-      [todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md](todo/deep/lsp-references-needs-a-side-table-not-ast-spans.md),
+      [#7547](https://github.com/tokuhirom/mutsu/issues/7547),
       not from D6**: reconnaissance during S5a found the parser already knows every byte offset,
       so a thread-local occurrence table behind the analysis flag is likely cheaper than spans on
       AST variants and touches neither `Expr`'s size nor the bincode cache. Its blocker is parser
@@ -113,7 +113,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       op set is a threshold function. Implement an individual op when a real dist needs it (as
       `nqp::sha1` was for zef).
 - [ ] **NativeCall**: `nativecall-cannot-be-vendored.md` (measured non-vendorable, stays a justified
-      rung-3 provider — [todo/deep/nativecall-cannot-be-vendored.md](todo/deep/nativecall-cannot-be-vendored.md));
+      rung-3 provider — [#7560](https://github.com/tokuhirom/mutsu/issues/7560));
       native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
       pick up only when a real consumer needs it).
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
@@ -161,15 +161,15 @@ bench CI, never a local run.
 
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
-      [todo/perf/interpreter-call-path-in-hot-loops.md](todo/perf/interpreter-call-path-in-hot-loops.md).
+      [#7573](https://github.com/tokuhirom/mutsu/issues/7573).
       Its consumer is retiring the native `Test` provider
-      ([todo/deep/vendor-real-test-module-flip.md](todo/deep/vendor-real-test-module-flip.md)), a
+      ([#7554](https://github.com/tokuhirom/mutsu/issues/7554)), a
       BATTERIES.md rung-3 retirement and therefore a §1 goal item, not polish. **Read that ticket's
       numbers first** — the `&`-sigil signature gate this file long blamed is closed, and five
       callgrind passes took the per-assertion cost 492k -> 235k instructions, so the cost is now
       inside the roast budget (`make roast` 1.24x, `t/` 2.0x). Perf is **no longer what blocks the
       flip**: it was attempted 2026-09-07/08 and withdrawn on four bundled-library regressions
-      ([todo/deep/vendored-test-battery-gate-regressions.md](todo/deep/vendored-test-battery-gate-regressions.md)),
+      ([#7555](https://github.com/tokuhirom/mutsu/issues/7555)),
       which are ordinary interpreter gaps, not assertion cost.
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
@@ -186,7 +186,7 @@ The [shared worker pool](docs/adr/0020-shared-worker-pool.md) is done (Accepted,
 2026-08-05) — do not re-plan it. Its only open follow-up: the pool alone recovered only ~10% of
 per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
 levers, tracked in
-[todo/perf/digest-ripemd-start-per-block-overhead.md](todo/perf/digest-ripemd-start-per-block-overhead.md)
+[#7571](https://github.com/tokuhirom/mutsu/issues/7571)
 (actively worked, see its own status log). The whole-`locals` clone/restore in `BlockScope` is also
 already gone under the default shadow-slots path (`exec_block_scope_op`, `vm/vm_misc_scope.rs`,
 closed via [ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md)) —

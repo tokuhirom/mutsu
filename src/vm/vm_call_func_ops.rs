@@ -1098,7 +1098,7 @@ impl Interpreter {
         // `has_multi_candidates` scans per op, which is most of why the vendored
         // `Test.rakumod` was ~40x slower per assertion than rakudo's: `proclaim`
         // runs four `nqp::join`/`nqp::split` calls for every single assertion
-        // (todo/deep/vendor-real-test-module-flip.md).
+        // (vendor-real-test-module-flip, #7554).
         //
         // Placed after the argument normalization above, not before it, so the
         // ops still see exactly the arguments they saw when they were reached

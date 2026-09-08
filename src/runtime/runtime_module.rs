@@ -18,7 +18,7 @@ impl Interpreter {
     /// code shapes reach. None is a `Test` compatibility problem, and none has a
     /// fix small enough to ride along with the flip — the `NativeLibs` one was
     /// tried and made things worse. They are recorded, root-caused as far as
-    /// they got, in `todo/deep/vendored-test-battery-gate-regressions.md`, which
+    /// they got, in vendored-test-battery-gate-regressions (#7555), which
     /// is the entry point for resuming this.
     ///
     /// The interpreter fixes the exercise turned up were the campaign's real

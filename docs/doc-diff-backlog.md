@@ -281,9 +281,9 @@ section (11 MB → 412 KB); a `... [N more lines truncated]` marker shows where.
 
 ### Ticketed (open — linked to todo/)
 
-Confirmed-real findings that have a filed ticket but are not yet fixed. When the
-ticket is resolved, move its content to `news/` (per `todo/README.md`) and delete
-the row here.
+Confirmed-real findings that have a filed issue but are not yet fixed. When the
+issue is resolved, write it up in `news/` (per `docs/issue-workflow.md`) and
+delete the row here.
 
 > **The 2026-08-22 rounds' table was removed on 2026-09-07b: every one of its 25
 > ticket links was dead** — all 25 tickets had been fixed and their files deleted
@@ -291,7 +291,7 @@ the row here.
 > push`, `make return-rw call results assignable`, `preserve Win32 path
 > separators`, `preserve captures across regex alternation`, `implement repl
 > routine`, …). The rows were left in place long after the work landed, which is
-> exactly the drift `todo/README.md` warns about. Read `git log -- docs/doc-diff-backlog.md`
+> exactly the drift this backlog is prone to. Read `git log -- docs/doc-diff-backlog.md`
 > for the historical table.
 
 #### Filed from the 2026-09-07b sweep

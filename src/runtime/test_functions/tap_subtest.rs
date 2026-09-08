@@ -88,7 +88,7 @@ impl Interpreter {
     ///
     /// Reverted from a compiled-first attempt
     /// (`vm_call_on_value`/`call_compiled_closure`, see
-    /// todo/deep/subtest-compiled-dispatch-async-middleware-regression.md):
+    /// subtest-compiled-dispatch-async-middleware-regression (#7552)):
     /// the bundled-library gate caught a real regression in `Cro::HTTP`'s
     /// `http-middleware.rakutest`, where the early/conditional-response half
     /// of middleware silently stopped running. Re-measured 2026-08-20: the

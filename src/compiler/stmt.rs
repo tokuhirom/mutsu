@@ -4390,7 +4390,7 @@ impl Compiler {
             // = Mu` prepended to the body compiles as its own unit and neither
             // binds the later statements' `$^c` nor stops `compile_unit`'s
             // `is_mainline` placeholder check from firing on them. See
-            // `todo/deep/role-body-placeholder-mu-supply.md`.
+            // role-body-placeholder-mu-supply (#7550).
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
             Stmt::RoleDecl { .. } => {
                 // Same as RegisterClass above: a role method has no creation op,

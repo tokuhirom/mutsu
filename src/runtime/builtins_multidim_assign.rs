@@ -65,7 +65,7 @@ impl Interpreter {
         // measurement shows it identical on all six writes from both threads.
         //
         // Extending the region over the accessor dispatch is the decision
-        // `todo/deep/gc-contents-mut-cross-thread-aliased-writes.md` asked for.
+        // gc-contents-mut-cross-thread-aliased-writes (#7543) asked for.
         // It is safe against the obvious re-entrancy: a thread holds at most one
         // container-structure lock (`container_lock`'s at-most-one rule), so an
         // accessor that itself stores into a container takes no second lock and
