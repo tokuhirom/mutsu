@@ -140,9 +140,47 @@ hand-built two-`subtest` file with the same shape. Reconstruction from scratch
 kept passing — the productive method was **reducing the real file downward**
 (header + one earlier subtest trimmed to one `is`, plus the failing subtest).
 
-Next step: instrument what `subtest` leaves changed — its own env/closure
-save-and-restore is the prime suspect, which puts this in the same family as the
-deferred-grep capture-merge bug already fixed in this PR.
+### Narrowed further: only `sha512` miscomputes, and its inputs are provably correct
+
+Instrumenting the candidate to dump every `IN=`/`OUT=` byte pair and checking each
+against Python's `hashlib` (the technique that settles this in one run — it
+separates "wrong input" from "wrong hash" immediately):
+
+```
+call0: inlen=114 outlen=28 matches=['sha224']   call5: inlen=96  outlen=32 matches=['sha256']
+call1: inlen=92  outlen=28 matches=['sha224']   call6: inlen=148 outlen=48 matches=['sha384']
+call2: inlen=84  outlen=28 matches=['sha224']   call7: inlen=176 outlen=48 matches=['sha384']
+call3: inlen=92  outlen=28 matches=['sha224']   call8: inlen=148 outlen=64 matches=[]   <- sha512
+call4: inlen=84  outlen=32 matches=['sha256']   call9: inlen=192 outlen=64 matches=[]   <- sha512
+```
+
+Every sha224/sha256/sha384 call in the same run reproduces its reference digest
+exactly. **Only the two `sha512` calls do not**, and their *inputs* are
+byte-for-byte what they should be. So this is not HMAC, not the key padding, not
+the `Z[+^]` zip, not the `reduce` accumulator, and not `samewith`'s return path —
+each of those was instrumented and found correct.
+
+Ruled out, all measured:
+
+- `hmac`'s intermediate values: padded key length, `blob8.new(@$key Z[+^] $i xx *)`
+  contents, the `reduce` accumulator at both steps, and `&hash`'s own output size
+  are correct on every call, including the failing ones.
+- `samewith` is faithful — the wrong bytes are already wrong when the
+  `Blob`/`Blob` candidate returns them (instrumented on both sides of the call).
+- `sha512` in isolation is correct: for every input length 100..200, and for the
+  **exact 148-byte input of the failing call**, cold, after a `sha384` call,
+  called by name, through `my &h = &sha512`, and through a `:&hash` named
+  parameter flattened from a `constant`. All match the reference.
+
+So `sha512` returns wrong bytes for inputs it hashes correctly outside the file.
+The trigger lives in state the run accumulates, which is why reconstruction from
+scratch never reproduces it and only downward reduction of the real file does.
+
+Next step: bisect with `MUTSU_VM_STATS` / a breakpoint inside `Digest::SHA2`'s
+sha512 rather than in `HMAC` — the divergence is now known to be inside that
+routine, with known-good inputs, so a `rust-gdb` break on its entry comparing
+its first block of state between the standalone and in-file runs should localize
+it directly.
 
 ## 3-4. `Cro::HTTP http-middleware.rakutest`, `http2-request-parser.rakutest`
 
