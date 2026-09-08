@@ -102,6 +102,50 @@ Then create a fresh focused branch from that updated `main`, without overwriting
 Follow the Parser -> Compiler -> VM architecture, add focused regressions, and run targeted tests
 while iterating.
 
+### When the session pins you to ONE branch
+
+Some sessions (Claude Code on the web, and any run started with a *designated branch*) hand you a
+single branch name and forbid pushing anywhere else. That is a **session** setting, not a repository
+rule — nothing here can lift it, and you must not push to a different branch to work around it.
+
+It does not change one-ticket-one-PR. You satisfy both by **reusing** the one branch across tickets,
+never by stacking two tickets into one PR. Substitute this loop for the fresh-branch step above:
+
+```sh
+# 1. Land the current ticket's PR, then PROVE it is in main before touching the branch.
+git fetch origin main
+git merge-base --is-ancestor <your last commit> origin/main   # must succeed
+
+# 2. Drop the remote-tracking ref for the branch GitHub just deleted on merge.
+git remote prune origin
+
+# 3. Restart the SAME branch name from the merged main, and take the next ticket.
+git checkout -B <the designated branch> origin/main
+```
+
+**Step 2 is not optional, and skipping it fails in two confusing ways.** GitHub deletes the head
+branch when a PR merges, but your local `refs/remotes/origin/<branch>` keeps pointing at your old
+commit. From then on:
+
+- `git push --force-with-lease` is refused with `! [rejected] … (stale info)`, because the lease is
+  checked against a ref that no longer exists upstream;
+- anything that counts "unpushed commits" against the tracking ref miscounts **main's own new
+  commits as yours** — a stop hook reported "9 unpushed commit(s)" in a session where
+  `git rev-list --count origin/main..HEAD` was `0` and everything was merged.
+
+Two rules that go with the loop:
+
+- **Never `checkout -B` the branch while its PR is still open** — that discards the commit the PR
+  points at. Step 1's `--is-ancestor` check is what makes the reset safe; if it fails, the work is
+  not merged and you must not reset.
+- **Expect the run to be strictly serial.** You cannot push ticket N+1 while ticket N's PR is
+  waiting on CI (15-20 minutes per PR). Use that wait to read the next issue, reproduce it, and
+  measure — just keep the result uncommitted (or stashed) until the current PR merges, then reset
+  and commit onto the fresh branch. Do not open a second PR from the same branch.
+
+If a ticket genuinely needs two branches in flight, stop and ask the user rather than pushing
+elsewhere.
+
 Before publishing an implementation PR, run `cargo fmt --all`, `make lint`, `make test`, and
 `make roast` once each (`make lint` rather than a bare `cargo clippy` — it adds the three
 configurations CI's `lint-configs` job gates on and the default clippy is blind to). Inspect
@@ -144,7 +188,8 @@ git merge-base --is-ancestor "$merge_oid" origin/main
 
 After each verified merge, close the issue (the PR body's `Closes #NNNN` does this; verify it
 actually closed), remove any lingering `working` label, and write the accomplishment up as
-`news/YYYY-MM/<slug>.md`.
+`news/YYYY-MM/<slug>.md`. If the session pinned you to one branch, this is also where you run the
+prune-and-reset loop above before starting the next ticket.
 
 Then choose the next actionable open issue **from the slice the user named** (the whole
 `todo:ticket` queue, or the `tier:N` / no-tier subset they asked for) — oldest first, **skipping
