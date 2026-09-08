@@ -2008,8 +2008,8 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Lazy sync: if the local is not a ContainerRef but env has one
-        // (from a cross-scope `:=` binding), adopt the ContainerRef so the
+        // Lazy sync: if the local is not a container but env has one (from a
+        // cross-scope `:=` or Stash.BIND-KEY binding), adopt it so the
         // write-through below preserves shared container identity.
         // Skip for type objects and complex values.
         if !is_bind
@@ -2023,12 +2023,13 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
             )
-            && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
-                ValueView::ContainerRef(arc) => Some(arc.clone()),
+            && let Some(container) = self.env().get(name).and_then(|v| match v.view() {
+                ValueView::ContainerRef(arc) => Some(Value::container_ref(arc.clone())),
+                ValueView::Proxy { .. } => Some(v.clone()),
                 _ => None,
             })
         {
-            self.locals[idx] = Value::container_ref(arc);
+            self.locals[idx] = container;
         }
         // Write through ContainerRef in slow path: update inner value
         if !is_bind

@@ -1250,7 +1250,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+    pub(crate) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
         self.set_env_with_main_alias_inner(name, None, value, false);
     }
 
@@ -2274,7 +2274,7 @@ impl Interpreter {
         code.locals.iter().position(|n| n == name)
     }
 
-    pub(super) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
+    pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
             self.locals[slot] = val.clone();
         }

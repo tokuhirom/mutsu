@@ -447,6 +447,15 @@ impl Interpreter {
 
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
+        if let Some(depth) = Self::caller_stash_depth(name) {
+            let origin = self.caller_frame_package();
+            let origin_routine = self.caller_frame_enclosing_routine();
+            let stash = self.caller_stash_value(name, depth);
+            Self::stamp_stash_origin_package(&stash, &origin);
+            Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
+            self.stack.push(stash);
+            return;
+        }
         if name.strip_suffix("::") == Some("OUTER") {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
@@ -475,7 +484,7 @@ impl Interpreter {
             return;
         }
         if let Some(kind) = name.strip_suffix("::")
-            && (kind == "CALLER" || kind == "CALLERS")
+            && kind == "CALLERS"
         {
             // `CALLER::` is only useful as an `EVAL` context here, and that use
             // needs the package of the frame it was taken from — which is gone

@@ -126,6 +126,12 @@ impl Interpreter {
     /// `eval_context_routine` treats identically to "key not found".
     pub(crate) const STASH_ORIGIN_ROUTINE_ATTR: &str = "__mutsu_origin_routine";
 
+    /// Attribute carried by a `CALLER::...::` stash to identify the live caller
+    /// frame whose lexical pad it reflects.  The visible `symbols` hash is a
+    /// snapshot; mutating operations such as `BIND-KEY` need this depth to reach
+    /// the frame's authoritative saved environment instead.
+    pub(crate) const STASH_CALLER_DEPTH_ATTR: &str = "__mutsu_caller_depth";
+
     /// Stamp `origin` onto a pseudo-stash value. `CALLER::` names the frame that
     /// was current *where the stash was taken*, which is not recoverable later:
     /// `Test.rakumod` writes `my $ctx = CALLER::` in `throws-like` and uses it
@@ -203,11 +209,139 @@ impl Interpreter {
         }
     }
 
-    fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
+    pub(crate) fn make_stash_instance(package: &str, symbols: HashMap<String, Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(package.to_string()));
         attrs.insert("symbols".to_string(), Value::hash(symbols));
         Value::make_instance(Symbol::intern("Stash"), attrs)
+    }
+
+    /// Parse a stash made exclusively from repeated `CALLER` components.
+    /// `CALLER::` is depth one and `CALLER::CALLER::` is depth two.
+    pub(crate) fn caller_stash_depth(name: &str) -> Option<usize> {
+        let trimmed = name.trim_end_matches("::");
+        let parts: Vec<&str> = trimmed.split("::").collect();
+        (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
+    }
+
+    /// Build a `Stash` view that retains the address of one caller frame for
+    /// container operations without exposing the hidden pad through iteration.
+    pub(crate) fn caller_stash_value(&self, name: &str, depth: usize) -> Value {
+        // CALLER stash enumeration is intentionally empty in mutsu.  Existing
+        // EVAL-context behavior depends on that reflection surface; the hidden
+        // depth below is enough for addressed container operations.
+        let stash = Self::make_stash_instance(name, HashMap::new());
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_CALLER_DEPTH_ATTR.to_string(),
+                Value::int(depth as i64),
+            );
+        }
+        stash
+    }
+
+    /// Bind a key in a `Stash` to a new container.  Caller stashes replace the
+    /// binding in the addressed lexical pad; package stashes install the symbol
+    /// under its fully-qualified environment/`our` name.
+    pub(crate) fn bind_stash_key(
+        &mut self,
+        code: &CompiledCode,
+        stash: &Value,
+        raw_key: &str,
+        value: Value,
+        source_name: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = stash.view()
+        else {
+            return Err(RuntimeError::new("BIND-KEY requires a Stash invocant"));
+        };
+        if class_name != "Stash" {
+            return Err(RuntimeError::new("BIND-KEY requires a Stash invocant"));
+        }
+
+        let attrs = attributes.as_map();
+        let caller_depth = attrs
+            .get(Self::STASH_CALLER_DEPTH_ATTR)
+            .and_then(Value::as_int)
+            .and_then(|depth| usize::try_from(depth).ok());
+        let package = attrs
+            .get("name")
+            .map(Value::to_string_value)
+            .unwrap_or_default();
+        // `attributes.insert` below takes the write side of this same cell.
+        // Release the metadata snapshot's read guard before any user-visible
+        // binding work, both to avoid deferring the symbol-table update and to
+        // keep arbitrary Proxy callbacks out of an outstanding attribute read.
+        drop(attrs);
+        // A variable argument contributes its container identity, not merely
+        // its current value.  Proxy is already a container in its own right;
+        // ordinary values are promoted to the shared cell used by `:=`.
+        let binding = if let Some(source_name) = source_name {
+            if matches!(value.view(), ValueView::Proxy { .. }) {
+                value.clone()
+            } else if let Some(existing) = self.env().get(source_name).cloned()
+                && existing.is_container_ref()
+            {
+                existing
+            } else {
+                let cell = value.clone().into_container_ref();
+                self.set_env_with_main_alias(source_name, cell.clone());
+                self.update_local_if_exists(code, source_name, &cell);
+                cell
+            }
+        } else {
+            value.clone()
+        };
+
+        if let Some(depth) = caller_depth {
+            // `caller_env_stack` deliberately omits light/inlined call paths,
+            // while repeated CALLER components count semantic routine frames.
+            // `routine_stack` retains those frames for backtraces, so validate
+            // against it and let the runtime-name carrier below cross whatever
+            // physical VM frames happen to exist.
+            if depth == 0 || depth > self.routine_stack.len() {
+                return Err(RuntimeError::new(
+                    "Cannot bind through CALLER stash: frame is gone",
+                ));
+            }
+            let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
+            // The key is known only at runtime, so carry both its value and its
+            // pending slot refresh across every intervening frame exactly as
+            // `$::($name) = value` does. Keeping it in the current env supplies
+            // `propagate_pending_caller_writes` at each return boundary.
+            self.env_mut().insert(name.clone(), binding.clone());
+            self.record_runtime_name_write(&name);
+        } else {
+            let package = Self::normalize_stash_package(&package);
+            let (sigil, bare) = match raw_key.chars().next() {
+                Some(sigil @ ('$' | '@' | '%' | '&')) => (Some(sigil), &raw_key[1..]),
+                _ => (None, raw_key),
+            };
+            let qualified = Self::qualify_stash_name(&package, bare);
+            let env_name = match sigil {
+                Some('$') | None => qualified,
+                Some(sigil) => format!("{sigil}{qualified}"),
+            };
+            self.env_mut().insert(env_name.clone(), binding.clone());
+            self.set_our_var(env_name, binding.clone());
+        }
+
+        // Keep the already-materialized stash coherent for an immediate read.
+        let mut symbols = attributes
+            .as_map()
+            .get("symbols")
+            .and_then(|symbols| match symbols.view() {
+                ValueView::Hash(map) => Some((**map).clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        symbols.insert(raw_key.to_string(), binding);
+        attributes.insert("symbols".to_string(), Value::hash(symbols));
+        Ok(value)
     }
 
     fn package_export_tag_parts(package: &str) -> Option<(&str, &str)> {
