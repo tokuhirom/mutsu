@@ -279,6 +279,94 @@ impl Interpreter {
             .any(|parent| CONTAINER_BASES.contains(&parent.resolve().as_str()))
     }
 
+    /// The error rakudo raises for a SINGLE-level subscript store into a `$`
+    /// that already holds a defined value the subscript's protocol does not
+    /// apply to, or `None` when the store is legitimate.
+    ///
+    /// ```text
+    /// my $s = (1,2,3).Seq; $s<k> = 5   X::AdHoc  "Type Seq does not support associative indexing."
+    /// my $s = 42;          $s<k> = 5   X::AdHoc  "Type Int does not support associative indexing."
+    /// my $s = 42;          $s[0] = 5   X::Assignment::RO  "Cannot modify an immutable Int (42)"
+    /// ```
+    ///
+    /// mutsu replaced the value with a fresh `Hash` (`$s` became `{k => 5}`)
+    /// or, for an `Array`, answered "Index out of bounds". An UNDEFINED `$`
+    /// still autovivifies -- `my $s; $s<k> = 5` is `{k => 5}` in rakudo too --
+    /// and so does a type object, so this asks about a defined value only.
+    ///
+    /// This is section E of #7556, and it is deliberately NOT
+    /// [`Interpreter::subscript_descent_refusal`]: that one answers "may a
+    /// chained store DESCEND through this slot", where an `Array` of any kind
+    /// is a legitimate target. Here the subscript is the LAST one, so the
+    /// question is whether the value does `Positional`/`Associative` at all --
+    /// and an `Array` does not do `Associative`.
+    ///
+    /// The refusal sets are explicit rather than "everything that is not a
+    /// container": a `$` can hold an `Instance` doing `Associative`, a `Buf`, a
+    /// `Proxy`, a `Mixin` or a user container subclass, and every one of those
+    /// has its own store path that must keep working.
+    fn scalar_subscript_protocol_error(
+        &self,
+        target: &Value,
+        is_positional: bool,
+    ) -> Option<RuntimeError> {
+        let view = target.view();
+        // Scalar numeric/string values do neither protocol.
+        let bare_scalar = matches!(
+            view,
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+        );
+        if is_positional {
+            // A `List`/`Array`/`Range`/`Seq` DOES do Positional, so a positional
+            // store into one is a store, refused (or not) by the element rules
+            // that already run below.
+            if !bare_scalar {
+                return None;
+            }
+            return Some(RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(target),
+                &crate::runtime::utils::gist_value(target),
+            ));
+        }
+        // Associative: the Positional shapes do not do it either.
+        //
+        // TODO: compile to bytecode -- a `Buf` is missing from this set. It
+        // reaches this store as an `Instance` carrying `__mutsu_array_storage`
+        // and is served by the instance arm far above, which coerces the key
+        // and answers "Index out of range" where rakudo answers "Type Buf does
+        // not support associative indexing."; refusing it belongs there, not
+        // here.
+        let positional_only = matches!(
+            view,
+            ValueView::Array(..)
+                | ValueView::Seq(_)
+                | ValueView::HyperSeq(_)
+                | ValueView::RaceSeq(_)
+                | ValueView::Slip(_)
+                | ValueView::LazyList(_)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+        );
+        if !bare_scalar && !positional_only {
+            return None;
+        }
+        Some(RuntimeError::new(format!(
+            "Type {} does not support associative indexing.",
+            crate::runtime::utils::value_type_name(target)
+        )))
+    }
+
     pub(crate) fn exec_index_assign_expr_named_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -795,6 +883,29 @@ impl Interpreter {
             }
             _ => (raw_val, false, Vec::new()),
         };
+        // A `$` holding a DEFINED value the subscript's protocol does not apply
+        // to refuses the store instead of being replaced by a fresh container.
+        // Restricted to a `$`/sigilless name: an `@`/`%` name's sigil already
+        // fixes the container kind, and `%h<k> = v` on a real Hash is the whole
+        // point. A `:=` bind is excluded -- rakudo answers a different error
+        // there ("Cannot bind to Seq"), which is a separate row.
+        // The VM local slot is authoritative for a lexical scalar between env
+        // synchronization points, so consult it first exactly as the Range
+        // guard in `exec_index_assign_expr_named_op` does; and look THROUGH the
+        // `Scalar`/`ContainerRef` wrapper, or the predicate would see the
+        // container rather than the value it holds.
+        if !bind_mode
+            && !var_name.starts_with(['@', '%'])
+            && let Some(target) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize))
+                .cloned()
+                .or_else(|| self.get_env_with_main_alias(&var_name))
+                .map(|v| v.deref_container().descalarize().clone())
+            && crate::runtime::types::value_is_defined(&target)
+            && let Some(err) = self.scalar_subscript_protocol_error(&target, is_positional)
+        {
+            return Err(err);
+        }
         // An element ASSIGNMENT stores a COPY of the value; only the `:=` bind
         // handled just above aliases. The RHS can still BE a first-class element
         // cell whenever it came from a read that does not decontainerize (a
