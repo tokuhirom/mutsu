@@ -219,6 +219,9 @@ mod error;
 mod error_construct;
 mod error_typed;
 mod guards;
+/// The hash key type ([`HashKey`]): inline for short keys, `Arc<str>` beyond.
+pub mod hash_key;
+pub use hash_key::HashKey;
 /// ADR-0016 P5 seam: `Match`-representation accessor helpers.
 mod match_lazy;
 mod match_view;
