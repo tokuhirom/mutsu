@@ -4,12 +4,13 @@ use std::process::Command;
 fn caller_stash_bind_key_installs_proxy_container() {
     let source = r#"
 my $backing = 41;
-sub install-container($name) {
-    CALLER::.BIND-KEY($name, Proxy.new(
+sub bind-two-frames-up($name) {
+    CALLER::CALLER::.BIND-KEY($name, Proxy.new(
         FETCH => -> $ { $backing },
         STORE => -> $, $value { $backing = $value },
     ));
 }
+sub install-container($name) { bind-two-frames-up($name) }
 my $scalar = 1;
 install-container('$scalar');
 say $scalar;
