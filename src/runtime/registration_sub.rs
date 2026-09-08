@@ -807,9 +807,25 @@ impl Interpreter {
         {
             let fq = format!("{}::{}", self.current_package(), name);
             let fq_sym = Symbol::intern(&fq);
-            if self.registered_fn_fingerprints.get(&fq_sym) == Some(&site_fp)
-                && self.registry().functions.contains_key(&fq_sym)
-            {
+            // Identity, not mere presence: `restore_routine_registry` puts a
+            // whole snapshot of `registry.functions` back when a routine scope
+            // ends, so this name can now hold a DIFFERENT declaration (another
+            // routine's same-named inner `sub`) than the one recorded here. A
+            // `contains_key` test would then report "already installed" and
+            // leave that other routine's definition live inside this body —
+            // `Digest::SHA2`'s `sha256` computing with `sha512`'s `rotr`.
+            let already_installed =
+                self.registered_fn_fingerprints
+                    .get(&fq_sym)
+                    .is_some_and(|(fp, installed)| {
+                        *fp == site_fp
+                            && self
+                                .registry()
+                                .functions
+                                .get(&fq_sym)
+                                .is_some_and(|current| std::sync::Arc::ptr_eq(current, installed))
+                    });
+            if already_installed {
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                 self.env.insert(
@@ -845,10 +861,11 @@ impl Interpreter {
                     .filter(|(fp, _)| *fp == site_fp)
                     .map(|(_, arc)| arc.clone())
             {
-                self.registry_mut().functions.insert(fq_sym, cached);
+                self.registry_mut().functions.insert(fq_sym, cached.clone());
                 // Invalidate name-keyed resolution caches.
                 self.fn_resolve_gen += 1;
-                self.registered_fn_fingerprints.insert(fq_sym, site_fp);
+                self.registered_fn_fingerprints
+                    .insert(fq_sym, (site_fp, cached));
                 if pkg != "GLOBAL" {
                     self.mark_my_scoped_package_item(fq);
                 }
@@ -1330,7 +1347,8 @@ impl Interpreter {
             // which (for a `my sub` whose lexical scope is snapshot/restored each
             // enclosing call) is exactly the per-call cost this is meant to avoid.
             if let Some(fp) = site_fingerprint {
-                self.registered_fn_fingerprints.insert(fq_sym, fp);
+                self.registered_fn_fingerprints
+                    .insert(fq_sym, (fp, arc.clone()));
                 // A stub site is remembered permanently (not just as the last
                 // fingerprint): the real definition it forward-declares will
                 // overwrite `registered_fn_fingerprints`, and the stub's own

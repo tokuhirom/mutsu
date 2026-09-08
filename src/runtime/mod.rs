@@ -3356,14 +3356,27 @@ pub struct Interpreter {
     /// (rakudo rejects it at compile time). Populated at proto registration;
     /// checked cheaply (guarded by `is_empty()`) on each call.
     pub(crate) empty_sig_proto_names: std::collections::HashSet<Symbol>,
-    /// Fingerprint of the sub declaration currently installed under each
-    /// `package::name` (single, non-multi) routine key. A re-executed
-    /// `RegisterSub` whose compile-time fingerprint matches the installed one is
-    /// an idempotent no-op (see [`crate::ast::sub_registration_fingerprint`]),
-    /// so the registrar can return early without re-deriving the FunctionDef and
-    /// without invalidating the resolution caches. Entries are best-effort: a
-    /// miss simply takes the full registration path.
-    pub(crate) registered_fn_fingerprints: rustc_hash::FxHashMap<Symbol, u64>,
+    /// Fingerprint of the sub declaration this registrar last installed under
+    /// each `package::name` (single, non-multi) routine key, together with the
+    /// exact `FunctionDef` it installed. A re-executed `RegisterSub` whose
+    /// compile-time fingerprint matches -- AND whose recorded definition is
+    /// still the one the registry holds -- is an idempotent no-op (see
+    /// [`crate::ast::sub_registration_fingerprint`]), so the registrar can
+    /// return early without re-deriving the FunctionDef and without
+    /// invalidating the resolution caches.
+    ///
+    /// The recorded `Arc` is what makes the identity check exact. This map is
+    /// name-keyed and is NOT updated by `restore_routine_registry`, which puts
+    /// a whole snapshot of `registry.functions` back when a routine scope ends
+    /// -- so after an inner `sub r` of routine A returns, the key `Pkg::r` can
+    /// again hold a DIFFERENT routine B's inner `sub r`, while this map still
+    /// names A's. A presence-only check ("something is installed under this
+    /// name") then wrongly reports A's declaration as already installed and
+    /// leaves B's definition live inside A's body. `Digest::SHA2` is the real
+    /// case: `sha256` and `sha512` each declare `rotr`/`Σ0`/`Σ1`/`σ0`/`σ1`, and
+    /// `sha256` silently computed with `sha512`'s 64-bit rotations.
+    pub(crate) registered_fn_fingerprints:
+        rustc_hash::FxHashMap<Symbol, (u64, std::sync::Arc<FunctionDef>)>,
     /// Declaration sites (fully-qualified name, compile-time site fingerprint)
     /// that registered a yada-stub routine. A `RegisterSub` executes both
     /// hoisted at block top and in place, so a stub's in-place re-arrival can
