@@ -13,6 +13,11 @@ GitHub and in `origin/main`.
 
 Never file, label, comment on or close an issue in any repository other than `tokuhirom/mutsu`.
 
+The `gh` commands below are the local-dev-box form. A remote container has no `gh` — translate them
+with the mapping table in [docs/agent-environments.md](../../../docs/agent-environments.md) and use
+the GitHub MCP tools instead. Every step of the flow is available in both; only the command surface
+differs.
+
 ## Claim the issue before you start
 
 Agents run in parallel, and every one of them posts as the same GitHub user, so a claim has to name

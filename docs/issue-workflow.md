@@ -161,7 +161,9 @@ happen to hit via a roast test still gets a `todo:deep` issue.)
 Some sessions have the `gh` CLI (already authenticated via
 `~/.config/gh/hosts.yml`); ephemeral remote containers generally do **not**, and
 direct `api.github.com` calls from them are rejected by the proxy. Use whichever
-is actually present:
+is actually present — the full environment comparison and the `gh` → MCP mapping
+for PRs and workflows are in
+[agent-environments.md](agent-environments.md):
 
 ```sh
 # gh, where it exists

@@ -20,6 +20,28 @@ before starting one of these tasks:
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast*.t`) |
 
+## Where this session is running — check before following any shell recipe
+
+Sessions run in **two different environments**, and the recipes in this file are written for the
+first one:
+
+- the maintainer's **local dev box** (an LXC container): `gh` is installed and authenticated, 12
+  cores, a warm `target/`;
+- an **ephemeral remote container** (a session started from the Claude app or Claude Code on the
+  web): **no `gh` at all**, direct `api.github.com` calls rejected by the session proxy, ~4 cores, a
+  fixed disk allowance, reclaimed when the session ends.
+
+`command -v gh || echo remote` settles which one you are in — **check, don't assume**, and don't
+conclude a task is impossible just because the command this file names is missing.
+
+**[docs/agent-environments.md](docs/agent-environments.md) is the single place the differences are
+recorded**: the `gh` → GitHub-MCP-tool mapping table (`create_pull_request`, `pull_request_read`,
+`enable_pr_auto_merge`, `issue_write`, ...; all with `owner: tokuhirom`, `repo: mutsu`), how rust and
+raku get provisioned, how to scale the parallel-agent caps to the box you actually have, and what
+stays identical in both (every `cargo`/`make`/`prove` command, all `git` operations, and the whole PR
+policy). Read it when a recipe below does not fit your environment; the rest of this file names the
+`gh` form only for brevity.
+
 ## Build & run
 
 - Build: `cargo build`
@@ -36,7 +58,7 @@ before starting one of these tasks:
   - Example: `cargo run -- -I lib script.raku`
   - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
 - Help: `cargo run -- --help`
-- GitHub operations: use the `gh` CLI where it exists. It is already authenticated via `~/.config/gh/hosts.yml`. Do NOT wrap `gh` in `dotenvx run --` — the `GH_TOKEN` in `.env` is stale and would override the working token with bad credentials. **Ephemeral remote containers generally have no `gh` at all**, and direct `api.github.com` calls from them are rejected by the session proxy; there, use the GitHub MCP tools (`list_issues`, `issue_write`, `pull_request_read`, ...) with `owner: tokuhirom`, `repo: mutsu`. Check which is present rather than assuming.
+- GitHub operations: on the local box use the `gh` CLI (already authenticated via `~/.config/gh/hosts.yml`; never wrap it in `dotenvx run --` — the `GH_TOKEN` in `.env` is stale and would override the working token). In a remote container `gh` does not exist and the GitHub MCP tools are the only path — see the mapping table in [docs/agent-environments.md](docs/agent-environments.md). `git` itself is identical in both.
 
 ## Architecture
 
@@ -133,17 +155,17 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - PR workflow:
   1. Create a feature branch from main: `git checkout -b <branch-name>`
   2. Commit changes to the feature branch.
-  3. Push and open a PR with `gh pr create`. No version-bump label is needed — the release version is chosen by hand at release time (see "Cutting a release" below), not aggregated from PR labels.
-  4. Enable auto-merge: `gh pr merge --auto --merge <pr-number>`. **Use `--merge`, not `--squash`** — squash merging is disabled on this repository, and `--squash` fails with `GraphQL: Merge method squash merging is not allowed on this repository (enablePullRequestAutoMerge)`, silently leaving auto-merge off. (`--rebase` is also allowed if you prefer it.)
-  5. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`. If `mergeStateStatus` is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
+  3. Push (`git push -u origin <branch>` — identical in both environments) and open a PR: `gh pr create`, or the `create_pull_request` MCP tool where there is no `gh`. No version-bump label is needed — the release version is chosen by hand at release time (see "Cutting a release" below), not aggregated from PR labels.
+  4. Enable auto-merge: `gh pr merge --auto --merge <pr-number>`, or the `enable_pr_auto_merge` MCP tool with `mergeMethod: "MERGE"`. **Use merge, not squash** — squash merging is disabled on this repository, and `--squash` / `mergeMethod: "SQUASH"` fails with `GraphQL: Merge method squash merging is not allowed on this repository (enablePullRequestAutoMerge)`, silently leaving auto-merge off. (Rebase is also allowed if you prefer it.)
+  5. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'` (remote: `pull_request_read` method `get`, whose payload carries the same `mergeable`/`mergeable_state`). If it is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`, or `actions_list` method `list_workflow_runs` filtered to the branch), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
   6. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
-     - **A documentation-only PR skips the five build jobs on purpose.** `ci.yml`'s `changes` job classifies the diff (`scripts/ci-docs-only.sh`); when every changed path is under `docs/`, `news/`, `TODO_roast/`, `old-design-docs/`, `raku-doc/`, or is a top-level `*.md`, the `test` / `lint-configs` / `wasm-e2e` / `gc-stress` / `jit-stress` jobs report `skipped`, which counts as success for branch protection. So `gh pr checks` showing those as skipped on a docs PR is **correct**, not a stuck CI — the PR is mergeable. Anything else in the diff (including `.github/**` and any nested `README.md`) runs the full suite. If you add a new documentation directory, add it to the allowlist in that script *and* to `bench.yml`'s `paths-ignore`, and extend the script's `--self-test` cases.
-  7. **Watch the new PR's CI in the background, never foreground-block on it.** Use a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
+     - **A documentation-only PR skips the five build jobs on purpose.** `ci.yml`'s `changes` job classifies the diff (`scripts/ci-docs-only.sh`); when every changed path is under `docs/`, `news/`, `TODO_roast/`, `old-design-docs/`, `raku-doc/`, or is a top-level `*.md`, the `test` / `lint-configs` / `wasm-e2e` / `gc-stress` / `jit-stress` jobs report `skipped`, which counts as success for branch protection. So a checks listing showing those as skipped on a docs PR is **correct**, not a stuck CI — the PR is mergeable. Anything else in the diff (including `.github/**` and any nested `README.md`) runs the full suite. If you add a new documentation directory, add it to the allowlist in that script *and* to `bench.yml`'s `paths-ignore`, and extend the script's `--self-test` cases.
+  7. **Watch the new PR's CI in the background, never foreground-block on it.** Locally: a `run_in_background` bash poll loop on `gh pr checks <pr-number>` that exits when no check is `pending` (the harness notifies you on completion). Do NOT use foreground `gh pr checks --watch` — it blocks ~13 min and wastes the session. In a remote container there is no command to loop on: either call `pull_request_read` method `get_check_runs` again after doing other work, or `subscribe_pr_activity` so CI results and review comments wake the session; never `sleep` to wait for CI. The background watch surfaces a red CI within minutes so you can fix-forward instead of leaving it unnoticed; auto-merge still lands the PR on its own once CI is green. If you have genuinely-independent, non-conflicting work, do it in parallel; in the final stretch there usually isn't any, so the watch itself is the productive thing.
   8. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
 - **Do NOT use stacked PRs (`gh stack`).** Even when the change spans several ordered slices, use the single-branch flow above (one PR, or a sequence of PRs off `main`).
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
-- **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
+- **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`, or `pull_request_read` method `get_diff`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
 - Write all documents, code comments, and commit messages in English. This explicitly includes ADRs (`docs/adr/`), everything under `news/` (`news/*.md` and `news/YYYY-MM/*.md`), `PLAN.md`, `TODO_roast/*.md`, design docs under `docs/`, and PR titles/descriptions. Conversing with the user in Japanese does NOT change this — repository artifacts are always English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
@@ -152,7 +174,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 
 ## Cutting a release
 
-Releases are cut by **one manual trigger** — `gh workflow run tag-release.yml -f version=X.Y.Z` (no `v` prefix). tagpr was removed (2026-07-25): there is no release PR, no `CHANGELOG.md`, and no version-bump label on ordinary PRs. **Keep the `type:` / `type(scope):` PR title convention** — it drives the auto-applied category label and hence the release-note section.
+Releases are cut by **one manual trigger** — `gh workflow run tag-release.yml -f version=X.Y.Z` (no `v` prefix; remotely, `actions_run_trigger` method `run_workflow` with `workflow_id: "tag-release.yml"`, `ref: "main"`, `inputs: {version: "X.Y.Z"}`). tagpr was removed (2026-07-25): there is no release PR, no `CHANGELOG.md`, and no version-bump label on ordinary PRs. **Keep the `type:` / `type(scope):` PR title convention** — it drives the auto-applied category label and hence the release-note section.
 
 Full procedure — version choice, what the two workflows do, how to verify the tarballs/npm/Release actually landed, and the one-time infra prerequisites — is in **`.agents/skills/cut-release/SKILL.md`**. Read it before releasing.
 
@@ -434,11 +456,18 @@ timeout 30 target/debug/mutsu --dump-ast <file>
 
 Agent worktrees under `.claude/worktrees/` and cargo caches under `target/` are the two disk hogs; both are disposable. **Clean up worktrees at least once per hour** during long sessions and between agent batches. The commands — worktree removal, `cargo sweep`, nuking `target/*/incremental` (the dominant offender), and the optional mold + sccache setup — are in **`.agents/skills/reclaim-disk/SKILL.md`**.
 
-## LXC container environment
+In a remote container the writable disk is a **fixed per-session allowance**, so `df` misleads: a
+near-zero "Avail" with a low "Used" means the allowance is spent, not that the machine is broken.
+Deletes still succeed while writes fail, so free space with the same commands and keep going.
 
-This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
+## Container environments — both are disposable
 
-### Ephemeral containers self-provision via a SessionStart hook
+Whichever of the two environments you are in (see "Where this session is running" at the top), the
+container may be destroyed at any time: the local LXC container can be rebuilt, and a remote
+container is reclaimed when the session ends. **Always commit important changes and push promptly** —
+anything not on `origin` is not saved.
+
+### Remote containers self-provision via a SessionStart hook
 
 Sessions started from the Claude app / Claude Code on the web get a **fresh container** whose base
 image usually ships a rustc older than this repo compiles under and no `raku` at all. Both are fixed
@@ -451,10 +480,11 @@ local checkout unless `MUTSU_SETUP_FORCE=1` is set — a developer machine is pi
 and owns its own toolchain.
 
 So **do not hand-install rustc or rakudo at the start of a remote session** — it has already
-happened. If a build still fails with `E0658`, the hook did not run (check for its
-`session-start: environment ready` line) and `.claude/skills/rustc-too-old/SKILL.md` applies.
-Whenever a version pin moves, the hook follows it with no edit; only the *sources* of the pins are
-hardcoded, so add a new one there if the repo ever grows a `rust-toolchain.toml`.
+happened, and the `raku` oracle is available there too. If a build still fails with `E0658`, the hook
+did not run (check for its `session-start: environment ready` line) and
+`.claude/skills/rustc-too-old/SKILL.md` applies. Whenever a version pin moves, the hook follows it
+with no edit; only the *sources* of the pins are hardcoded, so add a new one there if the repo ever
+grows a `rust-toolchain.toml`.
 
 ## Test::Util function workout
 
@@ -563,6 +593,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 - **Sub-agents are allowed (policy updated 2026-06-15).** Use them where they help — read-only fan-out searches (Explore), independent non-conflicting implementation slices, or sweeping across many files where you only need the conclusion. Be deliberate, not reflexive: Rust builds are expensive and each parallel worktree agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees, so reach for a sub-agent when the task genuinely fans out, not for trivial single-file work you can do inline. Read-only Explore/research agents are cheap; worktree-isolated build agents are not.
 - **Keep at most 3 concurrent agents that build** (user decision, 2026-08-22, tightening the previous cap of 4). This caps agents actually *doing work*, not agents idling on a CI run: an agent whose PR is open and waiting on GitHub Actions uses no local CPU, so it is fine to launch a fresh agent past the nominal cap while others are purely CI-pending (user-confirmed 2026-08-20). **Even so, never exceed 10 agents in total (working + CI-idle combined)** (user-confirmed 2026-08-20) — check `ListAgents` before launching a new one when the count is already high. Read-only Explore/research agents do not count against the build cap. Clean up worktrees per the "Disk cleanup" section.
+  - **That cap is a 12-core number — scale it to the box you actually have.** A remote container has roughly 4 cores, where one building agent is the equivalent and running the work inline (no worktree copy of `target/`) is usually better; see [docs/agent-environments.md](docs/agent-environments.md). The same goes for every wall-clock figure quoted in this file (`make lint` "about 5 minutes", roast timings): budget more on a smaller box, and let CI run the full suite.
   - **Why 3 and not more:** on this 12-core box, five worktree agents drove the load average to 70 with 17 concurrent `rustc` processes, and builds stopped completing. That does not merely slow the batch down — it makes agents *unable to verify their own work*: the `residual-try-cell-eager-seq-reification-divergences` agent had to revert a measured prototype and downgrade to a `Proposed` ADR because its from-scratch `cargo build` never finished under load. Over-parallelising costs correctness, not just wall-clock. When in doubt, check `uptime` and `pgrep -c -x rustc` before launching (a two-digit `rustc` count on 12 cores is already oversubscribed).
 - **Task selection order:**
   1. PLAN.md current quarter priorities
@@ -577,9 +608,9 @@ When working through the issue backlog (as opposed to a single focused task), ru
 - **One fresh agent per ticket, never reused.** Every `todo:deep` / `todo:ticket` issue gets its own `Agent` call with `isolation: "worktree"` and a fully self-contained prompt (the ticket's own content summarized + exact task steps + the PR workflow instructions) — a subagent starts with zero context, so the prompt must stand alone. Once an agent's PR is merged, it is done; do not send it a new, unrelated ticket. The next ticket always gets a brand-new `Agent` call, not a `SendMessage` to a "graduated" one.
 - **Oldest-first, `todo:deep` and `todo:ticket` interleaved, skipping anything labelled `working`.** Pick a small batch (3, per the build-agent cap above) from the oldest open issues each round (**not** `todo:perf` — see the perf rule below), read each issue first to write an informed prompt (don't dispatch blind) — a ticket's stated blast radius/priority often changes what the right prompt asks for (e.g. "check whether this is worth it before implementing" needs a corpus-grep triage step, not a straight implementation).
 - **Every agent claims its issue before it starts**, by the `Claiming:` / re-read / `Releasing:` protocol above. The orchestrator must not hand two agents the same issue; the claim comment is how a *different* session finds that out, and the `working` label is the cheap filter that keeps it out of the next round's listing.
-- **Every agent prompt must include the full PR workflow**, not just "fix the bug": branch off `main`, commit (English, explain root cause, `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer), push, `gh pr create`, immediately verify `mergeStateStatus` isn't `DIRTY`, enable auto-merge (`gh pr merge --auto --merge`, never `--squash`), and watch its own CI in the background until green or red — the agent should land its own PR end-to-end, not hand back a diff for the orchestrator to land.
+- **Every agent prompt must include the full PR workflow**, not just "fix the bug": branch off `main`, commit (English, explain root cause, `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer), push, open the PR, immediately verify `mergeStateStatus` isn't `DIRTY`, enable auto-merge (merge method, never squash), and watch its own CI until green or red — a subagent inherits this environment, so tell it to use `gh` or the GitHub MCP tools per [docs/agent-environments.md](docs/agent-environments.md) rather than hardcoding one. The agent should land its own PR end-to-end, not hand back a diff for the orchestrator to land.
 - **A ticket does not always end in a code fix.** A large fraction of investigations correctly conclude one of: the ticket is stale (already fixed by something else) — verify, close the issue, write it up in `news/`, and pin a regression test so it can't silently regress; the ticket needs a priority/scope judgment call before any code (e.g. "is deep MOP machinery worth it for one dist?") — grep the available corpus for other consumers of the same gap and let that evidence decide implement-vs-defer; or the real fix is genuinely bigger than the ticket assumed — file a narrower, better-scoped issue (or write an ADR) recording exactly what was learned, rather than forcing an undersized fix through. All of these are legitimate, valuable outcomes — do not treat "closed the ticket without shipping code" as a failure.
-- **The orchestrator monitors PRs directly via `gh`, not by trusting an agent's self-report of "still waiting."** A known harness quirk: a worktree-subagent's own `run_in_background` jobs (its `cargo build`/`prove t/` chains) don't reliably notify it back, so it can report "completed" while stuck re-polling its own build with no new information, burning tokens each cycle. When a `<task-notification>` says "still waiting" with no new evidence, check `gh pr checks <n>` / `git log`/`ps` in that agent's worktree yourself first. If genuinely still building, just wait (schedule the next check, don't nudge). If the agent seems to have lost track of a job that's actually done, `SendMessage` it a nudge with what you observed. If CI has actually finished (merged or clearly green/red) and the agent is *still* polling redundantly, `SendMessage` it to stand down — you're handling it directly.
+- **The orchestrator monitors PRs itself (via `gh` or the MCP tools), not by trusting an agent's self-report of "still waiting."** A known harness quirk: a worktree-subagent's own `run_in_background` jobs (its `cargo build`/`prove t/` chains) don't reliably notify it back, so it can report "completed" while stuck re-polling its own build with no new information, burning tokens each cycle. When a `<task-notification>` says "still waiting" with no new evidence, check the PR's checks (`gh pr checks <n>`, or `pull_request_read` method `get_check_runs`) and `git log`/`ps` in that agent's worktree yourself first. If genuinely still building, just wait (schedule the next check, don't nudge). If the agent seems to have lost track of a job that's actually done, `SendMessage` it a nudge with what you observed. If CI has actually finished (merged or clearly green/red) and the agent is *still* polling redundantly, `SendMessage` it to stand down — you're handling it directly.
 - **Rebase-on-`DIRTY` is common and expected** when several of these agents land PRs in the same rough time window, especially when two tickets touch overlapping files (e.g. two slices of the same ADR). Handle it by messaging the specific agent whose PR went `DIRTY` — it understands its own diff best — asking it to rebase onto `main`, resolve conflicts by composing both changes (not blindly picking one side), re-verify, force-push, and re-arm its CI watch.
 - **`todo:perf` is worked separately, and its implementation agent runs SOLO.** Never put a perf finding into the parallel batch above: two perf agents on one box produce measurements that drift and never converge, and the whole point of a perf finding is a trustworthy number. Batch several `todo:perf` issues into one profiling-heavy session instead, so the profiler setup is amortized. Numbers that end up in a document must come from the bench CI (see "Benchmark numbers in documents come from the bench CI" above), not from that session's local runs.
 - **Clean up worktrees between batches**, once every agent in the round has either merged or been confirmed stopped — `git worktree remove --force` each `.claude/worktrees/agent-*`, then `git worktree prune`.
