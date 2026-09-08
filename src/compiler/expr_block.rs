@@ -807,7 +807,16 @@ impl Compiler {
                 self.compile_stmt(stmt);
             }
             Stmt::Block(inner) => {
-                self.compile_do_block_expr_scoped(inner, &None);
+                // Not a `let`/`temp` save frame, measured against Rakudo. The
+                // shape that reaches here is a contextualizer wrapping a
+                // statement list -- string interpolation builds
+                // `DoStmt(Stmt::Block(...))` -- and `temp`, which restores
+                // unconditionally at the block that owns the save, does NOT
+                // restore across one: `my $x = 1; my $s = "{ temp $x = 2; 'v' }"`
+                // leaves `$x` at 2 in `raku`. A genuine value-position block
+                // arrives as an `Expr::DoBlock` carrying
+                // `DoBlockOrigin::SourceBlock` instead (GH-7635).
+                self.compile_do_block_expr_scoped(inner, &None, crate::ast::DoBlockOrigin::Desugar);
             }
             Stmt::SyntheticBlock(inner)
                 if inner.last().is_some_and(|s| {
@@ -910,7 +919,9 @@ impl Compiler {
                 self.compile_expr(&Expr::ArrayLiteral(values));
             }
             Stmt::SyntheticBlock(inner) => {
-                self.compile_do_block_expr_scoped(inner, &None);
+                // Synthesized by a compile site, not written as braces, so it
+                // opens no scope a save could resolve at.
+                self.compile_do_block_expr_scoped(inner, &None, crate::ast::DoBlockOrigin::Desugar);
             }
             Stmt::Let {
                 name,

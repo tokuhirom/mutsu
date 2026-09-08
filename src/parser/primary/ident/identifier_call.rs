@@ -518,7 +518,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         ));
                     }
                 }
-                return Ok((r, Expr::DoBlock { body, label: None }));
+                // The one site that parses the `do` keyword's own braces, and
+                // so the one that mints a value-position node which really is
+                // a Raku block — `let`/`temp` inside it resolve here, not at
+                // the enclosing block (GH-7635).
+                return Ok((
+                    r,
+                    Expr::DoBlock {
+                        body,
+                        label: None,
+                        origin: crate::ast::DoBlockOrigin::SourceBlock,
+                    },
+                ));
             }
             // do if/unless/given/for/while — wrap the control flow statement
             {
@@ -983,13 +994,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         // One candidate of an anonymous `multi sub` -- still a sub.
                         is_sub: true,
                     };
-                    return Ok((
-                        r2,
-                        Expr::DoBlock {
-                            body: vec![stmt, Stmt::Expr(anon_sub)],
-                            label: None,
-                        },
-                    ));
+                    return Ok((r2, Expr::desugar_block(vec![stmt, Stmt::Expr(anon_sub)])));
                 }
                 // Check for anonymous multi sub
                 let after_sub = keyword("sub", r).unwrap();
@@ -1052,7 +1057,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 // lazy-gather coroutine suspend at each take (it can only
                 // suspend at the body's top level, not inside a nested
                 // DoBlockExpr frame).
-                if let crate::ast::Stmt::Expr(Expr::DoBlock { body, label: None }) = &stmt {
+                if let crate::ast::Stmt::Expr(Expr::DoBlock {
+                    body, label: None, ..
+                }) = &stmt
+                {
                     return Ok((r_after, Expr::Gather(body.clone())));
                 }
                 return Ok((r_after, Expr::Gather(vec![stmt])));
@@ -1605,7 +1613,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // As for `gather`, the statement parse eats the terminating `;` but the
         // supply expression must stop before it.
         let r_after = restore_do_stmt_terminator(r, r_after);
-        if let crate::ast::Stmt::Expr(Expr::DoBlock { body, label: None }) = &stmt {
+        if let crate::ast::Stmt::Expr(Expr::DoBlock {
+            body, label: None, ..
+        }) = &stmt
+        {
             return Ok((r_after, supply_method_call(body.clone())));
         }
         return Ok((r_after, supply_method_call(vec![stmt])));

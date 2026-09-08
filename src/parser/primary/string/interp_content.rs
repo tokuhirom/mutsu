@@ -148,10 +148,7 @@ fn parse_braced_closure_body_scoped(inner: &str) -> Option<Expr> {
         return Some(if stmts.len() == 1 {
             Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap()))
         } else {
-            Expr::DoBlock {
-                body: stmts,
-                label: None,
-            }
+            Expr::desugar_block(stmts)
         });
     }
     if let Ok((leftover, expr)) = expression(inner)
@@ -165,10 +162,7 @@ fn parse_braced_closure_body_scoped(inner: &str) -> Option<Expr> {
             };
             return Some(expr);
         }
-        return Some(Expr::DoBlock {
-            body: stmts,
-            label: None,
-        });
+        return Some(Expr::desugar_block(stmts));
     }
     None
 }

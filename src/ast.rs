@@ -491,17 +491,6 @@ pub(crate) enum PhaserKind {
     Close,
 }
 
-/// Sentinel [`Expr::DoBlock`] label for `$( stmt; ... )`, the statement-list
-/// contextualizer.
-///
-/// `$( ... )` is lowered to a `DoBlock` because it carries a statement list,
-/// but it is NOT a Raku block: a `let`/`temp` written inside it belongs to the
-/// ENCLOSING block's save frame, so `{ $(let $a = 23; $a); Mu }` still restores
-/// `$a` when that block fails (roast `S04-blocks-and-statements/let.t`,
-/// `temp.t`). `Compiler::compile_block_construct` reads this label to skip the
-/// `let`/`temp` scope, and never forwards it to `OpCode::DoBlockExpr`.
-pub(crate) const STMT_LIST_CONTEXTUALIZER_LABEL: &str = "__mutsu_stmt_list_contextualizer__";
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -876,13 +865,23 @@ pub(crate) enum Expr {
         append: bool,
         left_is_source: bool,
     },
+    /// Run `body` and yield its last value.
+    ///
+    /// This node is overloaded: it is *both* the AST for a genuine source
+    /// `do { ... }` block *and* the generic "run these statements, yield a
+    /// value" vehicle that around forty parser/compiler desugars build (the
+    /// chained-comparison temp-var lowering, `cas`, compound assignment,
+    /// `.=` writeback, item context `$( ... )`, ...). Only the first kind is a
+    /// Raku block, and `origin` is what tells them apart — see
+    /// [`DoBlockOrigin`]. Build a desugar's node with
+    /// [`Expr::desugar_block`] rather than writing the origin out by hand.
     DoBlock {
         body: Vec<Stmt>,
-        /// The block's own label, or one of the compiler sentinels
-        /// ([`STMT_LIST_CONTEXTUALIZER_LABEL`], `__mutsu_check_phaser__`) that
-        /// mark a `DoBlock` the parser synthesized for something that is not a
-        /// source-level `do { ... }`.
+        /// The block's own label, or the `__mutsu_check_phaser__` sentinel a
+        /// lifted CHECK phaser body carries. Whether the node is a source-level
+        /// block is `origin`'s job, not this field's.
         label: Option<String>,
+        origin: DoBlockOrigin,
     },
     DoStmt(Box<Stmt>),
     ControlFlow {
@@ -917,6 +916,33 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         adverb: HyperSliceAdverb,
     },
+}
+
+/// What a [`Expr::DoBlock`] node actually is.
+///
+/// The node has two unrelated jobs, and telling them apart matters wherever a
+/// question is really being asked about *Raku block scope* rather than about
+/// "some statements that yield a value". The motivating one is `let`/`temp`:
+/// those save the previous value and resolve it — restore on failure, commit
+/// on success — **at the end of the enclosing block**. A synthesized wrapper
+/// is not that block, so resolving a save at one would resolve it far too
+/// early (GH-7635).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum DoBlockOrigin {
+    /// Real `{ ... }` braces the user wrote, which *are* a Raku block: `do {
+    /// ... }`, a labelled `L: { ... }`, and the statement prefixes whose block
+    /// runs inline in the current frame (`lazy`/`sink`/`quietly`).
+    SourceBlock,
+    /// A parser or compiler desugar using the node as a generic sequencing
+    /// vehicle. It introduces no scope of its own, so a `let` inside one still
+    /// belongs to whatever real block encloses it.
+    ///
+    /// Item context `$( ... )` is deliberately here: `{ $seen = $(let $a = 23;
+    /// $a); Mu }` restores `$a` when the *outer* block fails, an idiom roast
+    /// leans on throughout (`S04-blocks-and-statements/let.t`). String
+    /// interpolation `"{ ... }"` is here too — measured against Rakudo, its
+    /// block does not resolve a save either.
+    Desugar,
 }
 
 /// Secondary adverb on :exists subscript adverb
@@ -1864,6 +1890,21 @@ fn collect_assign_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
 }
 
 impl Expr {
+    /// A [`DoBlockOrigin::Desugar`] [`Expr::DoBlock`]: run `body`, yield its
+    /// last value, introduce no scope.
+    ///
+    /// This is the constructor every parser/compiler desugar wants. A genuine
+    /// source `do { ... }` writes the struct literal out instead, with
+    /// [`DoBlockOrigin::SourceBlock`] — there are only a handful of those, and
+    /// spelling them the verbose way keeps them greppable.
+    pub(crate) fn desugar_block(body: Vec<Stmt>) -> Expr {
+        Expr::DoBlock {
+            body,
+            label: None,
+            origin: DoBlockOrigin::Desugar,
+        }
+    }
+
     /// Look through the parenthesization markers the parser records, returning
     /// the expression the source actually wrote inside the parentheses.
     ///

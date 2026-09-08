@@ -420,19 +420,11 @@ fn parse_dollar_paren_block(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("statement block with multiple statements"));
     }
     let (rest, _) = parse_char(rest, ')')?;
-    Ok((
-        rest,
-        Expr::DoBlock {
-            body: stmts,
-            // `$( ... )` is a statement-list CONTEXTUALIZER, not a block: raku
-            // scopes a `let`/`temp` inside it to the enclosing block, so
-            // `{ $(let $a = 23; $a); Mu }` still restores `$a` when the
-            // enclosing block fails (roast S04-blocks-and-statements/let.t,
-            // temp.t). We reuse `Expr::DoBlock` to carry the statement list, so
-            // the compiler is told by this sentinel label not to open a
-            // `let`/`temp` save frame of its own -- see
-            // `Compiler::compile_block_construct`.
-            label: Some(crate::ast::STMT_LIST_CONTEXTUALIZER_LABEL.to_string()),
-        },
-    ))
+    // `$( ... )` is a statement-list CONTEXTUALIZER, not a block: raku scopes a
+    // `let`/`temp` inside it to the enclosing block, so `{ $(let $a = 23; $a);
+    // Mu }` still restores `$a` when the enclosing block fails (roast
+    // S04-blocks-and-statements/let.t, temp.t). `Expr::DoBlock` is reused here
+    // only to carry the statement list, which is exactly what
+    // `DoBlockOrigin::Desugar` marks.
+    Ok((rest, Expr::desugar_block(stmts)))
 }

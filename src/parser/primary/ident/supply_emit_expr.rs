@@ -101,9 +101,14 @@ pub(crate) fn rewrite_expr(expr: Expr, emitter: &str) -> Expr {
         // Inline blocks run in this frame, so their `emit`s belong to this
         // supply — hand them back to the statement rewriter.
         Expr::Block(body) => Expr::Block(rewrite_stmts(body, emitter)),
-        Expr::DoBlock { body, label } => Expr::DoBlock {
+        Expr::DoBlock {
+            body,
+            label,
+            origin,
+        } => Expr::DoBlock {
             body: rewrite_stmts(body, emitter),
             label,
+            origin,
         },
         other => other,
     }

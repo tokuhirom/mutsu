@@ -1248,6 +1248,9 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::DoBlock {
                 body: lower_block(block)?,
                 label: None,
+                // The round-trip of a source `do { … }`, so it carries the same
+                // block identity the parser gives that form (GH-7635).
+                origin: crate::ast::DoBlockOrigin::SourceBlock,
             })
         }
         // `try { … }` -> a try expression over the lowered block body.

@@ -48,13 +48,10 @@ fn chained_assign_writeback(
         Expr::Var(assign_name.clone())
     };
     let method_result = method_call_fn(var_expr);
-    Expr::DoBlock {
-        body: vec![
-            Stmt::Expr(target),
-            Stmt::Expr(dot_assign_to_name(assign_name, method_result)),
-        ],
-        label: None,
-    }
+    Expr::desugar_block(vec![
+        Stmt::Expr(target),
+        Stmt::Expr(dot_assign_to_name(assign_name, method_result)),
+    ])
 }
 
 /// The `.=` expansion for a simple-variable lvalue, tagged with its
@@ -140,29 +137,26 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 is_positional: *is_positional,
             };
             let assigned_value = method_call_fn(lhs_expr);
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp_idx.clone(),
-                        expr: *index.clone(),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::IndexAssign {
-                        target: idx_target.clone(),
-                        index: Box::new(tmp_idx_expr),
-                        value: Box::new(assigned_value),
-                        is_positional: *is_positional,
-                    }),
-                ],
-                label: None,
-            }
+            Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_idx.clone(),
+                    expr: *index.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::IndexAssign {
+                    target: idx_target.clone(),
+                    index: Box::new(tmp_idx_expr),
+                    value: Box::new(assigned_value),
+                    is_positional: *is_positional,
+                }),
+            ])
         }
         // ($var = expr).=method => evaluate the assignment, then $var = $var.method
         Expr::AssignExpr { name, .. } => {
@@ -193,7 +187,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
         // Re-read `@a[idx]` (now holding m1's result, via the already-declared `idx`
         // temp), apply this method, and write it back to the same element so the
         // chain keeps mutating `@a[i]` rather than a detached copy.
-        Expr::DoBlock { body, .. }
+        Expr::DoBlock { body, origin, .. }
             if matches!(body.last(), Some(Stmt::Expr(Expr::IndexAssign { .. }))) =>
         {
             let (idx_target, index, is_positional) = match body.last() {
@@ -218,9 +212,12 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 value: Box::new(new_value),
                 is_positional,
             }));
+            // A rewrap of the node that came in: appending the writeback does
+            // not change whether it was a block, so carry its origin over.
             Expr::DoBlock {
                 body: new_body,
                 label: None,
+                origin: *origin,
             }
         }
         // A `do { … }` block whose value is an lvalue (`do { …; ($x .= new) }.= new`)
@@ -300,10 +297,8 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 modifier: None,
                 quoted: false,
             };
-            let then_expr = Expr::DoBlock {
-                body: vec![Stmt::Expr(store_call), Stmt::Expr(cur_var.clone())],
-                label: None,
-            };
+            let then_expr =
+                Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(cur_var.clone())]);
             // Writeback branch: `$inv.attr = $cur.meth` through the accessor slot.
             let writeback = crate::parser::stmt::assign::method_lvalue_assign_expr(
                 inv_var,
@@ -324,36 +319,33 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 then_expr: Box::new(then_expr),
                 else_expr: Box::new(writeback),
             };
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: inv_tmp,
-                        expr: *inv.clone(),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::VarDecl {
-                        name: cur_tmp,
-                        expr: read_expr,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(ternary),
-                ],
-                label: None,
-            }
+            Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: inv_tmp,
+                    expr: *inv.clone(),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::VarDecl {
+                    name: cur_tmp,
+                    expr: read_expr,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(ternary),
+            ])
         }
         // A non-lvalue target (`(Foo.new).=meth`, `Foo.new.=meth`, ...). In Raku
         // `X.=meth` is `X = X.meth`; when X (evaluated once) provides a `STORE`
@@ -391,33 +383,28 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 modifier: None,
                 quoted: false,
             };
-            let then_expr = Expr::DoBlock {
-                body: vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())],
-                label: None,
-            };
+            let then_expr =
+                Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())]);
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
                 then_expr: Box::new(then_expr),
                 else_expr: Box::new(meth_result),
             };
-            Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp,
-                        expr: target,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(ternary),
-                ],
-                label: None,
-            }
+            Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp,
+                    expr: target,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(ternary),
+            ])
         }
     }
 }

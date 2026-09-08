@@ -413,6 +413,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        value_on_stack: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -421,8 +422,15 @@ impl Interpreter {
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
-                let success = Self::is_let_success(&topic);
+                // A value-position block left its value on the stack for the
+                // enclosing expression; peek it rather than reading the topic,
+                // which it never wrote (see `OpCode::LetBlock`).
+                let result = if value_on_stack {
+                    self.stack.last().cloned().unwrap_or(Value::NIL)
+                } else {
+                    self.env().get("_").cloned().unwrap_or(Value::NIL)
+                };
+                let success = Self::is_let_success(&result);
                 loan_env!(self, resolve_let_saves_on_success(mark, success));
                 // `let`/`temp` restore writes the saved value back into `env` only;
                 // the matching local slot still holds the in-block value. The restore

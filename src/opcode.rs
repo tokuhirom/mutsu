@@ -2709,10 +2709,24 @@ pub(crate) enum OpCode {
         slot: Option<u32>,
     },
 
-    /// Block with `let` scope management. Executes body, then checks
-    /// the topic ($_) to decide whether to restore or discard let saves.
+    /// Block with `let` scope management. Executes body, then decides from the
+    /// block's own value whether to restore the `let` saves (the block failed)
+    /// or discard them (it succeeded).
+    ///
+    /// Where that value is read from depends on the source position, because
+    /// the two block lowerings leave it in different places:
+    ///
+    /// - `value_on_stack: false` — statement position. The body's last
+    ///   statement was compiled through `compile_last_stmt_as_topic`, so the
+    ///   value is in the topic (`$_`) and the stack is balanced.
+    /// - `value_on_stack: true` — value position (`do { ... }`). The body
+    ///   leaves its value on the value stack for the enclosing expression to
+    ///   consume, so the success test peeks the stack top instead. Routing it
+    ///   through the topic here would clobber `$_` for the enclosing scope,
+    ///   which a `do { ... }` must not do.
     LetBlock {
         body_end: u32,
+        value_on_stack: bool,
     },
 }
 

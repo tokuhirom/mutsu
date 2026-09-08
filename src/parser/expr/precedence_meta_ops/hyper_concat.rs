@@ -151,8 +151,8 @@ fn hyper_assign_shape(target: &Expr) -> Expr {
 fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
     match target {
         Expr::Grouped(inner) => lower_hyper_assign_target(*inner, source),
-        Expr::ArrayLiteral(items) => Expr::DoBlock {
-            body: items
+        Expr::ArrayLiteral(items) => Expr::desugar_block(
+            items
                 .into_iter()
                 .enumerate()
                 .map(|(index, item)| {
@@ -166,8 +166,7 @@ fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
                     ))
                 })
                 .collect(),
-            label: None,
-        },
+        ),
         target => crate::parser::expr::precedence::assign_to_target_expr(target, source),
     }
 }
@@ -232,22 +231,19 @@ fn lower_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right
         custom_traits: Vec::new(),
         where_constraint: None,
     };
-    Expr::DoBlock {
-        body: vec![
-            temp_decl(shape_name, hyper_assign_shape(&target)),
-            temp_decl(temp_name.clone(), distributed),
-            crate::ast::Stmt::Expr(lower_hyper_assign_target(
-                target,
-                Expr::Var(temp_name.clone()),
-            )),
-            // The assignment's own value is the distributed list, not the last
-            // element stored: `my $r = (($x, $y) »=» (5, 6))` is `$(5, 6)` in
-            // raku. The temp is itemized by its `my $` declaration, which is
-            // the itemization raku shows.
-            crate::ast::Stmt::Expr(Expr::Var(temp_name)),
-        ],
-        label: None,
-    }
+    Expr::desugar_block(vec![
+        temp_decl(shape_name, hyper_assign_shape(&target)),
+        temp_decl(temp_name.clone(), distributed),
+        crate::ast::Stmt::Expr(lower_hyper_assign_target(
+            target,
+            Expr::Var(temp_name.clone()),
+        )),
+        // The assignment's own value is the distributed list, not the last
+        // element stored: `my $r = (($x, $y) »=» (5, 6))` is `$(5, 6)` in
+        // raku. The temp is itemized by its `my $` declaration, which is
+        // the itemization raku shows.
+        crate::ast::Stmt::Expr(Expr::Var(temp_name)),
+    ])
 }
 
 /// Parse hyper operator with function reference: `>>[&func]<<`, `<<[&func]>>`, etc.

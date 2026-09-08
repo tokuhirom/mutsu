@@ -334,10 +334,7 @@ pub(crate) fn try_interpolate_var<'a>(
                     if stmts.len() == 1 {
                         Some(Expr::DoStmt(Box::new(stmts.into_iter().next().unwrap())))
                     } else {
-                        Some(Expr::DoBlock {
-                            body: stmts,
-                            label: None,
-                        })
+                        Some(Expr::desugar_block(stmts))
                     }
                 } else if let Ok((leftover, expr)) = expression(inner.trim())
                     && leftover.trim().is_empty()

@@ -78,28 +78,25 @@ fn build_chain_cmp_expr(
     let tmp_var = Expr::Var(tmp_name.clone());
     let cmp = make_chain_cmp(left, op, tmp_var.clone(), negated);
     let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var.clone());
-    Expr::DoBlock {
-        body: vec![
-            Stmt::VarDecl {
-                name: tmp_name,
-                expr: operands[index + 1].clone(),
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            },
-            Stmt::Expr(Expr::Binary {
-                left: Box::new(cmp),
-                op: TokenKind::AndAnd,
-                right: Box::new(rest),
-            }),
-        ],
-        label: None,
-    }
+    Expr::desugar_block(vec![
+        Stmt::VarDecl {
+            name: tmp_name,
+            expr: operands[index + 1].clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        },
+        Stmt::Expr(Expr::Binary {
+            left: Box::new(cmp),
+            op: TokenKind::AndAnd,
+            right: Box::new(rest),
+        }),
+    ])
 }
 
 /// Expand an `Expr::ChainedCompare { operands, ops }` marker into its runtime

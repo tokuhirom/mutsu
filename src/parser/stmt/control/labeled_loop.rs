@@ -187,6 +187,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Expr(Expr::DoBlock {
                 body,
                 label: Some(label),
+                origin: crate::ast::DoBlockOrigin::SourceBlock,
             }),
         ));
     }
@@ -197,6 +198,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Expr(Expr::DoBlock {
                 body,
                 label: Some(label),
+                origin: crate::ast::DoBlockOrigin::SourceBlock,
             }),
         ));
     }

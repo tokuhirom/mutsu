@@ -626,10 +626,11 @@ impl Compiler {
                     modifier: None,
                     quoted: false,
                 };
-                self.compile_expr(&Expr::DoBlock {
-                    body: vec![Stmt::MarkBind, bind_decl, Stmt::Expr(delete_through)],
-                    label: None,
-                });
+                self.compile_expr(&Expr::desugar_block(vec![
+                    Stmt::MarkBind,
+                    bind_decl,
+                    Stmt::Expr(delete_through),
+                ]));
                 return;
             }
             if let Some(var_name) = Self::postfix_index_name(delete_target) {

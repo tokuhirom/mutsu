@@ -33,7 +33,7 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
         .into_iter()
         .any(|ph| ph != "%_")
     {
-        return Expr::DoBlock { body, label: None };
+        return Expr::desugar_block(body);
     }
     // Each `supply { ... }` block gets a UNIQUE emitter variable name. The
     // emitter is bound as the on-demand lambda's parameter and `emit` is

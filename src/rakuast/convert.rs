@@ -1146,9 +1146,20 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // structurally at lowering. Convert straight through to the body.
         Expr::WhateverCurry(body) => convert_expr(body),
         // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
-        Expr::DoBlock { body, label } => {
+        Expr::DoBlock {
+            body,
+            label,
+            origin,
+        } => {
             if label.is_some() {
                 return Err(unsupported("labelled do block"));
+            }
+            // `StatementPrefixDo` round-trips back through `lower.rs` as a
+            // genuine source block. A desugar's node is not one, so converting
+            // it would hand back a node with block semantics (`let`/`temp`
+            // resolution) the original never had -- GH-7635.
+            if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                return Err(unsupported("desugared do-block"));
             }
             Ok(RakuAstNode {
                 class: RakuAstClass::StatementPrefixDo,

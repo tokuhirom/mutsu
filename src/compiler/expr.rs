@@ -673,7 +673,12 @@ impl Compiler {
                 // which reuses the ordinary list `.lazy` marking.
                 let do_block = Expr::DoBlock {
                     body: body.clone(),
+                    // The braces are the user's own block, merely re-hosted to
+                    // run inline instead of as a closure, so it keeps that
+                    // block's identity: `lazy { let $x = 2; Nil }` resolves the
+                    // save here (GH-7635).
                     label: None,
+                    origin: crate::ast::DoBlockOrigin::SourceBlock,
                 };
                 self.compile_expr(&Expr::MethodCall {
                     target: Box::new(do_block),
@@ -1004,10 +1009,12 @@ impl Compiler {
             Expr::Try { body, catch } => {
                 self.compile_try(body, catch);
             }
-            Expr::DoBlock { .. } => {
-                if let Expr::DoBlock { body, label } = expr {
-                    self.compile_do_block_expr(body, label);
-                }
+            Expr::DoBlock {
+                body,
+                label,
+                origin,
+            } => {
+                self.compile_do_block_expr(body, label, *origin);
             }
             Expr::DoStmt(stmt) => {
                 self.compile_expr_do_stmt(stmt);
