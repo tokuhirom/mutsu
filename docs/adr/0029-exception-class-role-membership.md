@@ -465,9 +465,11 @@ Only after Slice 3, and framed as measurement rather than payoff:
    dismissed.
 6. Slice 4's measured outcome is recorded honestly in the news entry, including
    a null or near-null result.
-7. On completion, `git mv todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`
-   to `news/2026-XX/` and rewrite it as an accomplishment, per `todo/README.md`;
-   this ADR gains an "Outcome" section and its Status moves to `Accepted`.
+7. On completion, close [#7545](https://github.com/tokuhirom/mutsu/issues/7545)
+   (formerly `todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) and
+   write the accomplishment up as a `news/2026-XX/` entry, per
+   `docs/issue-workflow.md`; this ADR gains an "Outcome" section and its Status
+   moves to `Accepted`.
 
 ## Risks
 

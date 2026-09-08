@@ -310,8 +310,10 @@ the one that carries the measured user-visible gap.
 
 ### Slice 3 — retire the ticket
 
-`git mv todo/deep/cold-supply-whenever-source-replayed-not-tapped.md
-news/YYYY-MM/…` and rewrite as an accomplishment, per `todo/README.md`. Re-check
+Write the accomplishment up as a `news/YYYY-MM/…` entry per
+`docs/issue-workflow.md`. (The planned
+`todo/deep/cold-supply-whenever-source-replayed-not-tapped.md` was never
+filed, so there is no ticket to retire and no issue to close.) Re-check
 `Test::Scheduler`'s `t/synopsis.rakutest` and `t/virtualized-time.rakutest`
 (`TODO_dist` T-037) and record the new counts.
 

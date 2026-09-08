@@ -237,4 +237,5 @@ both.
 5. `make test` locally; full `make roast` delegated to CI (this touches
    cross-thread visibility machinery — a local subset is not sufficient).
 
-On completion, `git mv` the ticket to `news/2026-08/` per `todo/README.md`.
+On completion, write the accomplishment up as a `news/2026-08/` entry per
+`docs/issue-workflow.md`.

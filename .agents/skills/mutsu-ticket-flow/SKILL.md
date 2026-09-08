@@ -15,10 +15,19 @@ Never file, label, comment on or close an issue in any repository other than `to
 
 ## Claim the issue before you start
 
-Agents run in parallel. Before any investigation, comment on the issue saying you are starting it
-and add the `working` label; remove that label the moment you are done, whether the PR merged, you
-stopped, or you found it blocked. Never pick up an issue that already carries `working` — it belongs
-to another agent. Read `docs/issue-workflow.md` for the full label scheme.
+Agents run in parallel, and every one of them posts as the same GitHub user, so a claim has to name
+itself. Before any investigation:
+
+1. Read the issue's comments. A live claim by a different branch means it is taken — move on.
+2. Post a comment whose first line is exactly `Claiming: <the branch you will push>`.
+3. Read the comments again. The live claim with the **lowest comment id** wins (they come back
+   oldest-first; ids increase, `created_at` can tie). If that is not yours, post
+   `Releasing: <your branch>` and take another issue.
+4. Only then add the `working` label and start.
+
+When you are done — merged, stopped, or blocked — post `Releasing: <your branch>` and remove the
+`working` label. Read `docs/issue-workflow.md` for the full label scheme and why the comment log,
+not the label, is the record.
 
 Process at most **five tickets in one user-triggered run**, and only continue beyond the first
 when the user explicitly asks to process multiple tickets or the queue. Count a ticket when its
