@@ -838,7 +838,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 body,
                                 is_rw: false,
                                 is_whatever_code: false,
-                                is_sub: false,
+                                // `anon Type sub { }` IS a sub: this selects the
+                                // Sub compile path, so `(anon Str sub {}).^name`
+                                // stays `Sub+{Callable[Str]}` rather than
+                                // becoming a `Block`.
+                                is_sub: true,
                             },
                         ));
                     }
@@ -976,7 +980,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         body: body.clone(),
                         is_rw,
                         is_whatever_code: false,
-                        is_sub: false,
+                        // One candidate of an anonymous `multi sub` -- still a sub.
+                        is_sub: true,
                     };
                     return Ok((
                         r2,

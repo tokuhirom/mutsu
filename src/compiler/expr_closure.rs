@@ -183,6 +183,7 @@ impl Compiler {
     }
 
     /// Compile AnonSubParams expression.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_expr_anon_sub_params(
         &mut self,
         params: &[String],
@@ -191,6 +192,7 @@ impl Compiler {
         body: &[Stmt],
         is_rw: bool,
         is_whatever_code: bool,
+        is_sub: bool,
     ) {
         // Validate for placeholder conflicts
         if let Some(err_val) = self.check_placeholder_conflicts(params, body, None) {
@@ -262,10 +264,22 @@ impl Compiler {
             return;
         }
         // Check if this is a pointy block (-> { }) vs a named anonymous sub.
-        // Pointy blocks inject a SetLine as the first body statement.
-        let is_pointy = body
-            .first()
-            .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
+        //
+        // `is_sub` is the source spelling the parser recorded: true only when
+        // the `sub` declarator was actually written. Every other closure that
+        // lands on this node -- a pointy block, a PLACEHOLDER block (`{ $^a }`),
+        // a `method (...) { }` literal -- is a `Block` in raku, so it must take
+        // the block path: `Mu`-typed params, no `return` boundary, and a
+        // `Block` gist (`-> $a { ... }`, not `sub ($^a) { ... }`).
+        //
+        // The `SetLine` probe below is the older heuristic ("pointy blocks
+        // inject a SetLine as the first body statement"). It is kept as a
+        // fallback for the closures the compiler and runtime synthesize, which
+        // reach here without a source spelling to record.
+        let is_pointy = !is_sub
+            || body
+                .first()
+                .is_some_and(|s| matches!(s, crate::ast::Stmt::SetLine(_)));
         // Block params have Mu (not Any) as their implicit nominal type;
         // mark them here so an unpassed untyped optional seeds Mu.
         let marked_defs: Vec<crate::ast::ParamDef>;

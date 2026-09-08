@@ -1070,7 +1070,11 @@ fn render_param(p: &SigParam) -> String {
     } else {
         result.push(p.sigil);
         if !p.name.is_empty() {
-            result.push_str(&p.name);
+            // The `^` of a placeholder (`{ $^a }`) is declaration syntax, not
+            // part of the parameter's name: raku renders that block's signature
+            // as `-> $a { ... }`. `SigParam.name` keeps the twigil (the twigil
+            // probe above reads it off the name), so drop it here.
+            result.push_str(p.name.strip_prefix('^').unwrap_or(&p.name));
         }
 
         if let Some(ref sub) = p.sub_signature {

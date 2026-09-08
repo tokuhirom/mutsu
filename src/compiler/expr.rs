@@ -1076,9 +1076,11 @@ impl Compiler {
                 body,
                 is_rw,
                 is_whatever_code,
-                // `is_sub` records only the source spelling for the RakuAST
-                // converter; both spellings compile identically.
-                is_sub: _,
+                // `is_sub` records the source spelling. It selects the Block
+                // vs Sub compile path (see `compile_expr_anon_sub_params`), so
+                // a placeholder block `{ $^a }` is a `Block` like raku's, not
+                // an anonymous `Sub`.
+                is_sub,
             } => {
                 self.compile_expr_anon_sub_params(
                     params,
@@ -1087,6 +1089,7 @@ impl Compiler {
                     body,
                     *is_rw,
                     *is_whatever_code,
+                    *is_sub,
                 );
             }
             Expr::Lambda {

@@ -736,9 +736,18 @@ impl Interpreter {
             // for gist/Str/raku alike (an anon *sub* is a `Sub` even without
             // a name, so blockness is decided by is_bare_block, not the name).
             if data.is_bare_block {
+                // Rakudo writes a Block's signature BARE after the arrow --
+                // `-> $a { ... }`, not `-> ($a) { ... }` -- where `.raku` of a
+                // Sub keeps the parens (`sub ($a) { ... }`). `sig_gist` is the
+                // Signature's own gist, which is parenthesized, so strip one
+                // layer for this form only.
+                let sig_bare = sig_gist
+                    .strip_prefix('(')
+                    .and_then(|s| s.strip_suffix(')'))
+                    .unwrap_or(&sig_gist);
                 return Some(Ok(Value::str(format!(
                     "-> {} {{ #`(Block|{}) ... }}",
-                    sig_gist, id
+                    sig_bare, id
                 ))));
             }
             if method == "gist" {
