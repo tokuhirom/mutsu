@@ -13,7 +13,7 @@
 //!
 //! Three invariants the rest of the VM depends on:
 //!
-//! - **The executing frame is always the top region.** [`Self::push_frame`]
+//! - **The executing frame is always the top region.** [`Locals::push_frame`]
 //!   sets `base` to the current length, so `[base ..]` is exactly this frame
 //!   and nothing else. `Index` and `Deref` are defined in those terms.
 //! - **A frame handle is an index, never a pointer.** Pushing a frame can
@@ -21,11 +21,11 @@
 //!   data pointer across a push. The JIT reloads it per access already
 //!   (`vm_jit_tier_b`'s GetLocal fast path), which is what makes this cheap.
 //! - **An enclosing frame is reached only through its base**, with
-//!   [`Self::frame_slots`], which stops at the executing frame's base. Reading
+//!   [`Locals::frame_slots`], which stops at the executing frame's base. Reading
 //!   past a lower frame's length must not silently reach into the frame above
 //!   it.
 //!
-//! GC roots must visit [`Self::all_slots`], not the `Deref` window: the window
+//! GC roots must visit [`Locals::all_slots`], not the `Deref` window: the window
 //! is one frame, and every frame below it holds live values too.
 
 use crate::value::Value;

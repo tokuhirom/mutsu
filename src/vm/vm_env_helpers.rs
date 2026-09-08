@@ -19,7 +19,8 @@ impl Interpreter {
     /// [`Self::recycle_args_scratch`].
     ///
     /// This is deliberately *not* the locals pool, which it used to borrow: an
-    /// argument buffer is an owned vector, and ADR-0077 turns [`Locals`] into a
+    /// argument buffer is an owned vector, and ADR-0077 turns
+    /// [`crate::runtime::Locals`] into a
     /// window into a shared stack that cannot be handed out as one.
     #[inline]
     pub(super) fn take_args_scratch(&mut self) -> Vec<Value> {
