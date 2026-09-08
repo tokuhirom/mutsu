@@ -24,6 +24,15 @@ For a request to implement a `todo:ticket` issue, use the `mutsu-ticket-flow`
 skill. It defines the required lifecycle through a verified merge and selection
 of the next ticket.
 
+A request to work a *slice* of that queue ("the `tier:N` tickets", "the ones
+with no tier yet", "one after another, open the PRs") is a complete standing
+instruction, not the start of a negotiation. The mechanics are already settled
+— one issue per PR, oldest-first within the named slice, claim before starting,
+a regression test and a `news/` entry per fix, auto-merge enabled, straight on
+to the next after each verified merge — so do not ask them back. Raise only a
+decision that is genuinely the user's, and raise it in the final report while
+the rest of the batch continues.
+
 Self-contained procedures live under `.agents/skills/<name>/SKILL.md` rather
 than in this file; read the matching one before starting such a task. Currently:
 `cut-release` (releasing), `install-raku` (installing the Rakudo oracle when

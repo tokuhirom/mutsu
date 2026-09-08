@@ -1,6 +1,6 @@
 ---
 name: mutsu-ticket-flow
-description: Implement up to five mutsu backlog issues end-to-end, including deep-ticket triage, PR publication, and verified merges. Use when asked to fix or work through the todo:ticket issue queue.
+description: Implement up to five mutsu backlog issues end-to-end, including deep-ticket triage, PR publication, and verified merges. Use when asked to fix, process or work through todo:ticket issues — the whole queue or a named slice of it, such as the tier:N tickets, the ones with no tier label yet, or "keep opening PRs for them".
 metadata:
   short-description: Deliver up to five mutsu tickets through merge
 ---
@@ -17,6 +17,30 @@ The `gh` commands below are the local-dev-box form. A remote container has no `g
 with the mapping table in [docs/agent-environments.md](../../../docs/agent-environments.md) and use
 the GitHub MCP tools instead. Every step of the flow is available in both; only the command surface
 differs.
+
+## The request is already complete — do not ask what this file settles
+
+A request to work a slice of the queue ("the `todo:ticket` issues with no `tier:*` yet, oldest
+first, open the PRs", "process the `tier:N` tickets and keep the PRs coming") is a standing
+instruction. Everything about *how* is decided here, so asking it back — "one PR per issue?", "shall
+I continue with the next one?", "should I open the PR now?" — costs a round-trip and answers
+nothing. The settled defaults:
+
+| Question you might be tempted to ask | The standing answer |
+| --- | --- |
+| One PR per issue, or one for the batch? | **One issue, one PR.** Never bundle, never stack. |
+| Which issues are in scope? | The filter the user named, oldest-first, skipping `working` / live claims. No `tier:*` is a workable state, not a blocker. |
+| Should I claim it / add `working`? | Yes — the protocol below, every time. |
+| Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
+| May I open the PR / enable auto-merge? | Yes. The request already said so; use the merge method, then watch CI and fix forward. |
+| Shall I continue to the next ticket? | Yes, straight on, up to the five-ticket run cap below. |
+| This one turns out to be deep / already fixed — is that OK? | Yes. Re-triage to `todo:deep` or close it with the evidence; both are legitimate outcomes. |
+
+Ask only when the answer is genuinely the user's — a decision `CLAUDE.md` reserves for them (a
+rung-3 native provider, a new or superseding ADR, weakening a CI gate, dropping a whitelisted test),
+or two readings of the issue that give materially different implementations and cannot be settled
+from its own evidence. Even then: park that one issue, finish the rest of the batch, and raise the
+question in the final report instead of idling the queue.
 
 ## Claim the issue before you start
 
@@ -35,7 +59,10 @@ When you are done — merged, stopped, or blocked — post `Releasing: <your bra
 not the label, is the record.
 
 Process at most **five tickets in one user-triggered run**, and only continue beyond the first
-when the user explicitly asks to process multiple tickets or the queue. Count a ticket when its
+when the user explicitly asks to process multiple tickets or the queue. Any request that names a
+*set* — "the `tier:N` tickets", "the ones with no tier", "the queue", "one after another", "keep the
+PRs coming" — **is** that explicit ask; do not treat it as a single-ticket request and do not ask
+for confirmation before the second one. Count a ticket when its
 re-triage or implementation PR has merged. For a single-ticket request, report the next actionable
 issue number after its verified merge but do not start it. After the fifth verified merge, report
 the next actionable issue number but do not start it. A later user request starts a new run and
@@ -111,8 +138,10 @@ After each verified merge, close the issue (the PR body's `Closes #NNNN` does th
 actually closed), remove any lingering `working` label, and write the accomplishment up as
 `news/YYYY-MM/<slug>.md`.
 
-Then choose the next actionable open `todo:ticket` issue — oldest first, **skipping every issue
-labelled `working`**, plus deliberate non-divergence records, blocked tickets, and items whose
+Then choose the next actionable open issue **from the slice the user named** (the whole
+`todo:ticket` queue, or the `tier:N` / no-tier subset they asked for) — oldest first, **skipping
+every issue labelled `working`** or carrying a live claim, plus deliberate non-divergence records,
+blocked tickets, and items whose
 current evidence makes them deep (relabel the latter through this workflow). Never start a dependent
 ticket before its prerequisite merge is verified. For a single-ticket request, report that issue
 number and stop. Continue only when the user explicitly requested multiple tickets or queue
