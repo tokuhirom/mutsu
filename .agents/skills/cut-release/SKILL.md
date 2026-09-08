@@ -11,6 +11,11 @@ Releases are cut by **one manual trigger** — the `tag-release.yml` workflow. t
 (2026-07-25): there is no release PR, no `CHANGELOG.md`, and no `minor`/`major` version-bump
 label to apply on ordinary PRs.
 
+The `gh` commands below are the local-dev-box form. A remote container has no `gh` — translate them
+with the mapping table in [docs/agent-environments.md](../../../docs/agent-environments.md)
+(`actions_run_trigger` fires the workflow, `actions_list` / `get_job_logs` follow the run,
+`get_release_by_tag` verifies the Release).
+
 ## 1. Pick the version by hand
 
 There is no label-driven *version* automation. Use semver judgment over what actually merged
