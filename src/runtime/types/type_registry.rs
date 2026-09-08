@@ -92,15 +92,8 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    pub(in crate::runtime) fn init_endian_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
-        let variants = vec![
-            ("NativeEndian".to_string(), EnumValue::Int(0)),
-            ("LittleEndian".to_string(), EnumValue::Int(1)),
-            ("BigEndian".to_string(), EnumValue::Int(2)),
-        ];
-        self.registry_mut()
-            .enum_types
-            .insert("Endian".to_string(), variants.clone());
+    pub(in crate::runtime) fn init_endian_enum(base: &mut HashMap<Symbol, Value>) {
+        let variants = Self::endian_enum_variants();
         base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::enum_parts(
@@ -118,21 +111,8 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn init_protocol_family_enum(
-        &mut self,
-        base: &mut HashMap<Symbol, Value>,
-    ) {
-        let variants = vec![
-            ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
-            ("PF_INET".to_string(), EnumValue::Int(1)),
-            ("PF_INET6".to_string(), EnumValue::Int(2)),
-            ("PF_LOCAL".to_string(), EnumValue::Int(3)),
-            ("PF_UNIX".to_string(), EnumValue::Int(3)),
-            ("PF_MAX".to_string(), EnumValue::Int(4)),
-        ];
-        self.registry_mut()
-            .enum_types
-            .insert("ProtocolFamily".to_string(), variants.clone());
+    pub(in crate::runtime) fn init_protocol_family_enum(base: &mut HashMap<Symbol, Value>) {
+        let variants = Self::protocol_family_enum_variants();
         base.insert(
             Symbol::intern("ProtocolFamily"),
             Value::package(Symbol::intern("ProtocolFamily")),
@@ -152,15 +132,8 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn init_order_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
-        let variants = vec![
-            ("Less".to_string(), EnumValue::Int(-1)),
-            ("Same".to_string(), EnumValue::Int(0)),
-            ("More".to_string(), EnumValue::Int(1)),
-        ];
-        self.registry_mut()
-            .enum_types
-            .insert("Order".to_string(), variants.clone());
+    pub(in crate::runtime) fn init_order_enum(base: &mut HashMap<Symbol, Value>) {
+        let variants = Self::order_enum_variants();
         base.insert(Symbol::intern("Order"), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::enum_parts(
@@ -174,19 +147,12 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn init_seek_type_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
+    pub(in crate::runtime) fn init_seek_type_enum(base: &mut HashMap<Symbol, Value>) {
         // The `SeekType` enum used by IO::Handle.seek (and user IO classes that
         // subclass it, e.g. IO::Blob): SeekFromBeginning(0)/SeekFromCurrent(1)/
         // SeekFromEnd(2). Registering it as a real enum makes `SeekType:D`
         // parameter/default type checks pass and the values smartmatch SeekType.
-        let variants = vec![
-            ("SeekFromBeginning".to_string(), EnumValue::Int(0)),
-            ("SeekFromCurrent".to_string(), EnumValue::Int(1)),
-            ("SeekFromEnd".to_string(), EnumValue::Int(2)),
-        ];
-        self.registry_mut()
-            .enum_types
-            .insert("SeekType".to_string(), variants.clone());
+        let variants = Self::seek_type_enum_variants();
         base.insert(Symbol::intern("SeekType"), Value::str_from("SeekType"));
         for (index, (key, val)) in variants.iter().enumerate() {
             let enum_val = Value::enum_parts(
@@ -203,9 +169,78 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn init_signal_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
+    pub(in crate::runtime) fn init_signal_enum(base: &mut HashMap<Symbol, Value>) {
+        let variants = Self::signal_enum_variants();
+        base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
+        for (index, (key, val)) in variants.iter().enumerate() {
+            let enum_val = Value::enum_parts(
+                Symbol::intern("Signal"),
+                Symbol::intern(key),
+                val.clone(),
+                index,
+            );
+            base.insert(
+                Symbol::intern(&format!("Signal::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(key), enum_val);
+        }
+    }
+
+    /// The `Endian` enum's variants. Shared by [`Self::init_endian_enum`] (which
+    /// builds their `Value`s for the global base tier) and
+    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
+    /// built-in registry template).
+    fn endian_enum_variants() -> Vec<(String, EnumValue)> {
+        vec![
+            ("NativeEndian".to_string(), EnumValue::Int(0)),
+            ("LittleEndian".to_string(), EnumValue::Int(1)),
+            ("BigEndian".to_string(), EnumValue::Int(2)),
+        ]
+    }
+    /// The `ProtocolFamily` enum's variants. Shared by [`Self::init_protocol_family_enum`] (which
+    /// builds their `Value`s for the global base tier) and
+    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
+    /// built-in registry template).
+    fn protocol_family_enum_variants() -> Vec<(String, EnumValue)> {
+        vec![
+            ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
+            ("PF_INET".to_string(), EnumValue::Int(1)),
+            ("PF_INET6".to_string(), EnumValue::Int(2)),
+            ("PF_LOCAL".to_string(), EnumValue::Int(3)),
+            ("PF_UNIX".to_string(), EnumValue::Int(3)),
+            ("PF_MAX".to_string(), EnumValue::Int(4)),
+        ]
+    }
+    /// The `Order` enum's variants. Shared by [`Self::init_order_enum`] (which
+    /// builds their `Value`s for the global base tier) and
+    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
+    /// built-in registry template).
+    fn order_enum_variants() -> Vec<(String, EnumValue)> {
+        vec![
+            ("Less".to_string(), EnumValue::Int(-1)),
+            ("Same".to_string(), EnumValue::Int(0)),
+            ("More".to_string(), EnumValue::Int(1)),
+        ]
+    }
+    /// The `SeekType` enum's variants. Shared by [`Self::init_seek_type_enum`] (which
+    /// builds their `Value`s for the global base tier) and
+    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
+    /// built-in registry template).
+    fn seek_type_enum_variants() -> Vec<(String, EnumValue)> {
+        vec![
+            ("SeekFromBeginning".to_string(), EnumValue::Int(0)),
+            ("SeekFromCurrent".to_string(), EnumValue::Int(1)),
+            ("SeekFromEnd".to_string(), EnumValue::Int(2)),
+        ]
+    }
+    /// The `Signal` enum's variants. Shared by [`Self::init_signal_enum`] (which
+    /// builds their `Value`s for the global base tier) and
+    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
+    /// built-in registry template).
+    fn signal_enum_variants() -> Vec<(String, EnumValue)> {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
-        let variants = vec![
+        vec![
             // Signals that share value 0 on this platform (Rakudo lists them so
             // `Signal.keys` is complete, e.g. `Signal.keys.sort[^3]` needs SIGBREAK).
             ("SIGINFO".to_string(), EnumValue::Int(Self::sig_num(0))),
@@ -243,24 +278,34 @@ impl Interpreter {
             ("SIGIO".to_string(), EnumValue::Int(Self::sig_num(29))),
             ("SIGPWR".to_string(), EnumValue::Int(Self::sig_num(30))),
             ("SIGSYS".to_string(), EnumValue::Int(Self::sig_num(31))),
-        ];
-        self.registry_mut()
+        ]
+    }
+
+    /// Record the process-constant built-in enum types (`Endian`,
+    /// `ProtocolFamily`, `Order`, `SeekType`, `Signal`) in a registry.
+    ///
+    /// Called while BUILDING the shared built-in registry template, not per
+    /// interpreter: these five entries are identical in every interpreter, but
+    /// writing them through `registry_mut()` from `Interpreter::new` took a
+    /// write guard on the shared registry and so deep-cloned all ~450 built-in
+    /// `ClassDef`s on every single construction (#7572).
+    pub(in crate::runtime) fn seed_builtin_enum_types(registry: &mut Registry) {
+        registry
             .enum_types
-            .insert("Signal".to_string(), variants.clone());
-        base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("Signal"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            base.insert(
-                Symbol::intern(&format!("Signal::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(key), enum_val);
-        }
+            .insert("Endian".to_string(), Self::endian_enum_variants());
+        registry.enum_types.insert(
+            "ProtocolFamily".to_string(),
+            Self::protocol_family_enum_variants(),
+        );
+        registry
+            .enum_types
+            .insert("Order".to_string(), Self::order_enum_variants());
+        registry
+            .enum_types
+            .insert("SeekType".to_string(), Self::seek_type_enum_variants());
+        registry
+            .enum_types
+            .insert("Signal".to_string(), Self::signal_enum_variants());
     }
 
     /// Get signal number — use the POSIX default value on all platforms.
