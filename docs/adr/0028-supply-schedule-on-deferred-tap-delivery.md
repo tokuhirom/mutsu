@@ -372,8 +372,8 @@ stand-in.
 6. No `make test` regressions locally; full `make roast` delegated to CI
    (this touches Supply tap dispatch — a local subset is not sufficient).
    `S17-*` failures on CI get the flaky-triage protocol, not a shrug.
-7. On completion, `git mv` the deep ticket to a `news/2026-08/` entry and
-   rewrite it as an accomplishment, per `todo/README.md`.
+7. On completion, close the tracking issue and write the accomplishment up as
+   a `news/2026-08/` entry, per `docs/issue-workflow.md`.
 
 ## Outcome (Slice 1, 2026-08-13)
 

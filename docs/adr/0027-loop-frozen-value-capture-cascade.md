@@ -498,6 +498,6 @@ campaign's ADR and supersede this one.
    a design bug, per the flaky-triage protocol).
 4. No `make test` regressions locally; full `make roast` delegated to CI
    (this touches closure dispatch — a local subset is not sufficient).
-5. On completion, `git mv` the deep ticket to
-   `news/2026-08/for-loop-var-shared-across-nested-closure-captures.md`
-   and rewrite it as an accomplishment, per `todo/README.md`.
+5. On completion, write the accomplishment up as
+   `news/2026-08/for-loop-var-shared-across-nested-closure-captures.md`,
+   per `docs/issue-workflow.md`.
