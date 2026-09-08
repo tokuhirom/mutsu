@@ -28,5 +28,10 @@ say $scalar;
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "41\n73\n99\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "41\n73\n99\n",
+        "bytecode:\n{}",
+        mutsu::dump_bytecode(source).expect("compile bytecode")
+    );
 }
