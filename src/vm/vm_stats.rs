@@ -778,6 +778,19 @@ fn dispatch_entry_outcome_by_key() -> &'static Mutex<HashMap<String, u64>> {
     BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Per-reason histogram of `<subrule>` streaming verdicts (only populated when
+/// stats are on). One entry per *call* through
+/// `Interpreter::drive_named_subrule_candidates`, so it reports how often each
+/// declined shape actually occurs rather than how many distinct rules have it.
+/// This is the measurement #7548 asks for before any of its six residues is
+/// opened: the streamed path is correct today, so the only thing a residue buys
+/// is fewer `{ ... }` block runs on paths raku never enters, and the counts say
+/// which one is worth the machinery.
+fn subrule_stream_by_reason() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_REASON: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_REASON.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn dispatch_entry_intercept_by_arm() -> &'static Mutex<HashMap<String, u64>> {
     static BY_ARM: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
     BY_ARM.get_or_init(|| Mutex::new(HashMap::new()))
@@ -807,6 +820,21 @@ pub(crate) fn record_dispatch_entry_intercept(entry: &str, arm: &str) {
     record_dispatch_entry_outcome(entry, "intercept");
     if let Ok(mut map) = dispatch_entry_intercept_by_arm().lock() {
         *map.entry(format!("{entry}:{arm}")).or_insert(0) += 1;
+    }
+}
+
+/// Record one `<subrule>` call's streaming verdict. `reason` is `"streamed"`
+/// for a call the streamed path took, and otherwise a short stable name for the
+/// shape that declined it -- see
+/// `runtime::regex::regex_call_graph`'s `StreamDecline` (a private module,
+/// so this is not an intra-doc link).
+#[inline]
+pub(crate) fn record_subrule_stream(reason: &str) {
+    if !enabled() {
+        return;
+    }
+    if let Ok(mut map) = subrule_stream_by_reason().lock() {
+        *map.entry(reason.to_string()).or_insert(0) += 1;
     }
 }
 
@@ -1475,6 +1503,27 @@ pub(crate) fn dump() {
             total,
             top.len(),
             top.join(" ")
+        );
+    }
+    if let Ok(map) = subrule_stream_by_reason().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let streamed = map.get("streamed").copied().unwrap_or(0);
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let rows: Vec<String> = entries
+            .iter()
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] subrule-stream verdicts total={total} streamed={streamed} ({:.1}%): {}",
+            if total == 0 {
+                0.0
+            } else {
+                100.0 * streamed as f64 / total as f64
+            },
+            rows.join(" ")
         );
     }
     if let Ok(map) = function_carrier_by_name().lock()

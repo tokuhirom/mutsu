@@ -16,6 +16,7 @@
 //! wrong.
 
 use super::super::*;
+use super::regex_call_graph::StreamDecline;
 use super::regex_match_core::MatchSink;
 use super::regex_match_lazy::AtomCandidateCont;
 use super::regex_trail::CapStore;
@@ -64,33 +65,36 @@ impl Interpreter {
         if crate::runtime::regex::regex_dynparams::ANY_DYNAMIC_TOKEN_PARAM
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            return None;
+            return decline(StreamDecline::DynamicRuleParam);
         }
         if !self.registry().grammar_custom_how.is_empty() {
-            return None;
+            return decline(StreamDecline::CustomHow);
         }
         // Memoized per (package, atom text), and asked FIRST: the rule resolves
         // to exactly one plain argument-less candidate AND the call graph proves
         // it cannot reach a call to its own name. A call that fails this costs
         // two borrowed hash lookups — no name parse, no resolution the eager arm
         // would then repeat.
-        if !self.subrule_call_is_streamable(name, pkg) {
-            return None;
+        if let Some(reason) = self.subrule_call_stream_decline(name, pkg) {
+            return decline(reason);
         }
         let spec = Self::parse_named_regex_lookup_spec(name);
         let lr_key = (spec.lookup_name.clone(), chars.len() - pos);
         if super::regex_match_atom::lr_key_is_active(&lr_key) {
-            return None;
+            return decline(StreamDecline::LrKeyActive);
         }
         // Same resolution the eager arm performs (memoized for a static body,
         // per-call otherwise). The shape was settled above, but a body that is
         // re-parsed per call is re-checked rather than assumed.
         let (candidates, _) = self.parsed_subrule_candidates(&spec, pkg, &[]);
         let [(parsed, sub_pkg, sym_key)] = &candidates[..] else {
-            return None;
+            return decline(StreamDecline::SeveralCandidates);
         };
-        if sym_key.is_some() || parsed.ignore_mark {
-            return None;
+        if sym_key.is_some() {
+            return decline(StreamDecline::Proto);
+        }
+        if parsed.ignore_mark {
+            return decline(StreamDecline::IgnoreMark);
         }
         let parsed = std::sync::Arc::clone(parsed);
         let sub_pkg = sub_pkg.clone();
@@ -141,8 +145,22 @@ impl Interpreter {
             // pass above is not the growing-seed loop's answer. Nothing has
             // committed (the continuation rejected every streamed end), so hand
             // the call back to the eager arm.
-            return None;
+            return decline(StreamDecline::SeedConsulted);
         }
+        crate::vm::vm_stats::record_subrule_stream("streamed");
         Some(unwind)
     }
+}
+
+/// Count one declined call in the `MUTSU_VM_STATS` histogram and answer `None`,
+/// so every `return` in the eligibility cascade above reads as one expression.
+///
+/// The histogram is the measurement #7548 asks for before any of its six
+/// residues is opened: the streamed path is correct today, and what a residue
+/// buys is only fewer `{ ... }` block runs on paths raku never enters, so the
+/// per-call counts are what say which residue is worth its machinery.
+#[inline]
+fn decline(reason: StreamDecline) -> Option<bool> {
+    crate::vm::vm_stats::record_subrule_stream(reason.as_str());
+    None
 }
