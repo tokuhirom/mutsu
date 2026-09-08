@@ -11,7 +11,7 @@ use Test;
 # ADR-0076). This file pins the three divergences that unification fixed, plus
 # the shapes that must NOT change with it.
 
-plan 30;
+plan 34;
 
 # --- 1. `temp` is restored by BOTH positions ------------------------------
 # The statement pass wrapped a `let`/`temp`-bearing block in `OpCode::LetBlock`;
@@ -130,6 +130,31 @@ ok $caught.defined || !$caught.defined, 'a CATCH in a value block swallows the t
 my $ran = 0;
 { CATCH { default { $ran = 1 } }; die "boom"; }
 is $ran, 1, 'a CATCH in a statement block swallows the throw';
+
+# The `state` reset and the shape dispatch are INDEPENDENT: a `state` restarts
+# per execution in every shape, not just the plain one. The value pass used to
+# emit its `ResetStateLocals` only on the paths below its CATCH/CONTROL and
+# ENTER/LEAVE early returns, so adding either phaser to an otherwise identical
+# `do` block silently turned the counter into a persistent one (1 2 3 instead of
+# 1 1 1) while the plain form above and both statement spellings stayed correct.
+# The unified skeleton emits the reset before the dispatch; these pin that it
+# stays there.
+sub counted-catch() { do { state $n = 0; $n++; CATCH { default { } }; $n } }
+is counted-catch() ~ counted-catch(), '11', 'state restarts in a CATCH-bearing value block';
+sub counted-enter() { do { state $n = 0; $n++; ENTER { }; $n } }
+is counted-enter() ~ counted-enter(), '11', 'state restarts in an ENTER-bearing value block';
+
+my $stmt-catch;
+sub counted-catch-stmt() { { state $n = 0; $n++; $stmt-catch = $n; CATCH { default { } } } }
+counted-catch-stmt();
+counted-catch-stmt();
+is $stmt-catch, 1, 'state restarts in a CATCH-bearing statement block';
+
+my $stmt-enter;
+sub counted-enter-stmt() { { state $n = 0; $n++; $stmt-enter = $n; ENTER { } } }
+counted-enter-stmt();
+counted-enter-stmt();
+is $stmt-enter, 1, 'state restarts in an ENTER-bearing statement block';
 
 # ENTER/LEAVE still run, and the block still yields its body value.
 my @order;
