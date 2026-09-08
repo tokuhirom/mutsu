@@ -2,16 +2,17 @@ use Test;
 
 plan 8;
 
-sub install-container($name, $container) {
-    CALLER::.BIND-KEY($name, $container);
+my $backing = 41;
+
+sub install-container($name) {
+    CALLER::.BIND-KEY($name, Proxy.new(
+        FETCH => -> $ { $backing },
+        STORE => -> $, $value { $backing = $value },
+    ));
 }
 
-my $backing = 41;
 my $scalar = 1;
-install-container('$scalar', Proxy.new(
-    FETCH => -> $ { $backing },
-    STORE => -> $, $value { $backing = $value },
-));
+install-container('$scalar');
 is $scalar, 41, 'CALLER stash BIND-KEY replaces the lexical container';
 $scalar = 73;
 is $backing, 73, 'assignment uses the bound Proxy STORE';
