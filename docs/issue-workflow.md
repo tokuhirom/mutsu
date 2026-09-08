@@ -134,6 +134,11 @@ A `todo:deep` issue naturally carries more analysis than a `todo:ticket` one.
 Write it so a session that has never seen the problem can pick it up cold; the
 body is the handoff, and there is no other record.
 
+This page defines the labels; **how to actually work an issue that already
+carries `todo:deep`** — the campaign-versus-single-problem split, the slice loop,
+and when such an issue may be closed — is in
+[`.agents/skills/mutsu-ticket-flow/SKILL.md`](../.agents/skills/mutsu-ticket-flow/SKILL.md).
+
 Do not let a hard finding evaporate at the end of a session. Filing the issue
 costs one tool call and is always worth it.
 

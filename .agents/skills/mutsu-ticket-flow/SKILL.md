@@ -1,15 +1,16 @@
 ---
 name: mutsu-ticket-flow
-description: Implement up to five mutsu backlog issues end-to-end, including deep-ticket triage, PR publication, and verified merges. Use when asked to fix, process or work through todo:ticket issues — the whole queue or a named slice of it, such as the tier:N tickets, the ones with no tier label yet, or "keep opening PRs for them".
+description: Implement up to five mutsu backlog issues end-to-end, including slices of a deep campaign issue, deep-ticket triage, PR publication, and verified merges. Use when asked to fix, process or work through todo:ticket or todo:deep issues — the whole queue or a named slice of it, such as the tier:N tickets, the ones with no tier label yet, or "keep opening PRs for them".
 metadata:
   short-description: Deliver up to five mutsu tickets through merge
 ---
 
 # Mutsu Ticket Flow
 
-Use this skill for requests to fix or process `todo:ticket` issues on `tokuhirom/mutsu`. A
-processed ticket ends as either a correctly relabelled deep item or a PR whose merge is verified on
-GitHub and in `origin/main`.
+Use this skill for requests to fix or process `todo:ticket` or `todo:deep` issues on
+`tokuhirom/mutsu`. A processed ticket ends as either a correctly relabelled deep item or a PR whose
+merge is verified on GitHub and in `origin/main`. An issue that already carries `todo:deep` has its
+own section below — it is worked one named remainder at a time, not deferred.
 
 Never file, label, comment on or close an issue in any repository other than `tokuhirom/mutsu`.
 
@@ -58,15 +59,28 @@ When you are done — merged, stopped, or blocked — post `Releasing: <your bra
 `working` label. Read `docs/issue-workflow.md` for the full label scheme and why the comment log,
 not the label, is the record.
 
+**`working` is a lock, so there is no exception for a long-lived issue.** Taking one slice of a
+campaign issue that will stay open for many more slices still means claiming it and labelling it for
+the duration of that slice — two agents inside the same ADR collide even when their slices sound
+unrelated. (This was got wrong on [#7543](https://github.com/tokuhirom/mutsu/issues/7543): three
+slices were worked with no claim and no label, on the reasoning that the issue was not being "taken".
+That reasoning is wrong — the lock is over the *work*, not over the issue's lifetime.)
+
 Process at most **five tickets in one user-triggered run**, and only continue beyond the first
 when the user explicitly asks to process multiple tickets or the queue. Any request that names a
 *set* — "the `tier:N` tickets", "the ones with no tier", "the queue", "one after another", "keep the
 PRs coming" — **is** that explicit ask; do not treat it as a single-ticket request and do not ask
 for confirmation before the second one. Count a ticket when its
-re-triage or implementation PR has merged. For a single-ticket request, report the next actionable
+re-triage or implementation PR has merged, and count **one slice of a campaign issue as one ticket**
+(see the next section). For a single-ticket request, report the next actionable
 issue number after its verified merge but do not start it. After the fifth verified merge, report
 the next actionable issue number but do not start it. A later user request starts a new run and
 resets this limit.
+
+**The cap bounds the session's context length, not its output.** A long session degrades however
+much it has shipped, which is why a slice that merged no `src/` change at all still spends one of
+the five: it cost the same reading, measuring and reporting as any other. Do not argue your way past
+the cap on the grounds that a slice was "small" — start a fresh run instead.
 
 ## Triage before implementation
 
@@ -89,7 +103,67 @@ test-harness state; wait for one to finish before rerunning it for evidence.
 
 Do not special-case one method or test where the ticket establishes a general mechanism.
 
+## Working an issue that is ALREADY `todo:deep`
+
+The step above treats `todo:deep` as a *destination* — a label you move a ticket to. But
+`CLAUDE.md`'s task-selection order works the two queues in parallel, so you will also be handed an
+issue that already carries it. Two shapes hide under the one label and they want different first
+moves:
+
+- **A campaign issue** names an owning ADR and lists its own open remainders.
+  [#7543](https://github.com/tokuhirom/mutsu/issues/7543) is the archetype: "ADR-0068 §4 step 3",
+  followed by a bulleted list of the specific routes still unclassified. It is workable *now*, and
+  **the unit of work is one named remainder, not the issue.**
+- **A single deep problem** has no design yet — one bug or feature too big for a PR. Here the first
+  deliverable is usually a `Proposed` ADR, or a narrower issue recording what you learned, **not
+  code**. Shipping an undersized fix to look productive is the failure mode; `CLAUDE.md`'s "Working
+  on complex features" governs once a design exists.
+
+### The slice loop for a campaign issue
+
+Claim and label it per the section above — for the slice, not for the issue's lifetime — then:
+
+1. **Take one named remainder.** Not two, and not "the campaign".
+2. **Re-verify the owning ADR's own recipes before you trust them.** A campaign document's
+   measurement recipe rots as the code it points at moves. ADR-0068 §1.2's `rust-gdb` oracle told
+   the reader to break on one line and read a hit there as "exposed"; a later slice had put a scope
+   guard *around* that line, so the recipe had silently become a false-positive generator. Re-derive
+   it against current source, and **fix the recipe in the same PR** when it is wrong — a stale
+   recipe costs every future slice, not just yours.
+3. **Produce the acceptance the owning ADR asks for**, not a weaker one you find convenient.
+4. **Pin any invariant the slice establishes**, and say in the test what it pins — a concurrency pin
+   often encodes *mutsu's* guarantee rather than a Raku one, and a reader needs to know which.
+5. **Record it as a numbered section in the ADR**, and post a comment on the campaign issue saying
+   what is now settled and what is left.
+
+**A slice that changes no `src/` line is a complete slice, not a failure.** Two of the three
+[#7543](https://github.com/tokuhirom/mutsu/issues/7543) slices shipped zero interpreter change and
+were the most valuable of the three, because they removed wrong entries from the campaign's ledger:
+one route turned out to be already covered, and one long-tracked crash turned out not to belong to
+the campaign at all. Do not manufacture a code change to make a slice feel finished, and do not stop
+because you found nothing to fix.
+
+**Do not widen the slice.** Findings outside it get their own issue with the right label — that run
+produced a `todo:ticket`, a `todo:deep` and a `todo:perf` this way
+([#7604](https://github.com/tokuhirom/mutsu/issues/7604),
+[#7609](https://github.com/tokuhirom/mutsu/issues/7609),
+[#7613](https://github.com/tokuhirom/mutsu/issues/7613)) — and get named in the ADR section and the
+issue comment so they are not lost.
+
+### Closing a campaign issue
+
+Close it when **the remainders it names** are resolved, having first filed anything genuinely still
+open as its own issue. Say in the PR body (`Closes #NNNN`) and in a final comment which remainders
+were resolved by which PR, and where the residue went. That is the whole test: not whether the
+underlying subject is "finished" in some larger sense, and not whether you are tired of it. A
+campaign issue left open as a graveyard for one follow-up is as wrong as closing one with named
+remainders still unaddressed.
+
 ## Implement and validate a ticket-sized fix
+
+Everything from here on applies to a campaign slice too — only the *unit of work* differs, and the
+section above settles that. The branch hygiene, the pre-publication gate, the publish/monitor/verify
+steps and the queue rules below are the same either way.
 
 Before starting **every** ticket, return to `main` and update it from the remote:
 
