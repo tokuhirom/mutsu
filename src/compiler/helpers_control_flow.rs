@@ -88,7 +88,7 @@ impl Compiler {
                     // tail arm already routes this way — this mirrors it.
                     Stmt::Block(inner) => {
                         if Self::has_block_enter_leave_phasers(inner) {
-                            self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                            self.compile_phaser_block_literal_inline(inner);
                         } else {
                             self.compile_bare_block_inline(inner);
                         }
