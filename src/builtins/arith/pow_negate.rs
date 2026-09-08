@@ -1,8 +1,8 @@
 //! Power (exponentiation) and unary negation operators.
 
-use super::rat::{bigint_ratio_to_f64, is_fat_rat_like, make_fat_rat};
+use super::rat::{bigint_ratio_to_f64, make_fat_rat};
 use crate::value::{
-    RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith, make_rat,
+    RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat, make_big_rat_arith, make_rat,
 };
 use num_bigint::{BigInt as NumBigInt, Sign};
 use num_traits::{ToPrimitive, Zero};
@@ -380,10 +380,17 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
             }
         }
         ValueView::BigRat(n, d) => {
-            if is_fat_rat_like(&val) {
+            // `prefix:<->` cannot change the denominator, so it never degrades:
+            // rakudo hands back the same `Rational` type with a negated
+            // numerator (`(-1.1234567890123456789012345).^name` is `Rat`).
+            // The arithmetic constructor used here degraded an over-`uint64`
+            // denominator, and `is_fat_rat_like` reads such a denominator as
+            // proof of FatRat-ness -- together they turned a negated big-Rat
+            // LITERAL into a FatRat. The stored flag is the authoritative one.
+            if val.is_bigfatrat() {
                 Ok(make_big_fat_rat(-n.clone(), d.clone()))
             } else {
-                Ok(make_big_rat_arith(-n.clone(), d.clone()))
+                Ok(make_big_rat(-n.clone(), d.clone()))
             }
         }
         ValueView::Complex(r, i) => {
