@@ -343,6 +343,15 @@ pub fn format_complex(r: f64, i: f64) -> String {
 ///   FatRat: |denom| < 100_000 ? 6 : chars(|denom|) + chars(whole) + 5
 /// then `round(fract * 10^digits)`, left-zero-padded to `digits`, trailing
 /// zeros stripped.
+///
+/// `Rat` is `Rational[Int, uint64]` in Rakudo, so an arithmetic result whose
+/// denominator does not fit `uint64` degrades to `Num`. `Rational.Str` reaches
+/// its fractional part through such an operation, which means a `Rat` with an
+/// over-64-bit denominator computes `round(fract * 10^digits)` in **f64**, not
+/// exactly -- `0.1234567890123456789012345.Str` is `0.1234567890123456824475648`
+/// there, the f64 value re-expanded to the digit budget, and not the exact
+/// `0.1234567890123456789012345`. `FatRat` is `Rational[Int, Int]` and never
+/// degrades, so it keeps the exact expansion. See `f64_scaled_fraction` below.
 fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) -> String {
     // Callers guarantee denom != 0.
     let sign = numer.is_negative() ^ denom.is_negative();
@@ -374,8 +383,22 @@ fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) 
     // s = round(fract * 10^digits) = round(rem * 10^digits / d), rounding half
     // up (Rakudo `.round` = floor(x + 1/2); rem/d is non-negative).
     let scale = NumBigInt::from(10u8).pow(digits as u32);
-    let scaled = &rem * &scale;
-    let rounded = (&scaled * 2u8 + &d) / (&d * 2u8);
+    // A `Rat` whose denominator does not fit `uint64` reaches this product
+    // through a degraded (`Num`) operation in Rakudo, so the multiply and the
+    // rounding both happen in f64 there. Falls back to the exact computation
+    // when f64 cannot carry the scale at all (a denominator of a few hundred
+    // digits overflows to infinity; rakudo itself is not self-consistent in
+    // that regime, so staying finite and exact is the better answer).
+    let rounded = match (!is_fatrat && d > NumBigInt::from(u64::MAX))
+        .then(|| f64_scaled_fraction(&rem, &d, &scale))
+        .flatten()
+    {
+        Some(via_f64) => via_f64,
+        None => {
+            let scaled = &rem * &scale;
+            (&scaled * 2u8 + &d) / (&d * 2u8)
+        }
+    };
 
     let mut s = rounded.to_string();
     // Defensive carry guard: if rounding rolled fract over to 10^digits, the
@@ -393,6 +416,30 @@ fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) 
     } else {
         format!("{}{}.{}", sign_str, whole, trimmed)
     }
+}
+
+/// `round(rem / d * scale)` evaluated in f64, as Rakudo's degraded-`Rat`
+/// `Rational.Str` does it: the fraction and the power of ten each become a
+/// `Num` first, so the product carries only f64 precision and the digits the
+/// caller emits are the f64 value's, not the fraction's.
+///
+/// Returns `None` when the f64 route cannot produce an answer at all -- the
+/// scale overflows to infinity -- leaving the caller on its exact path. (Rakudo
+/// is not self-consistent for a denominator that large; an exact expansion is
+/// the better answer there than an `Inf`.)
+fn f64_scaled_fraction(rem: &NumBigInt, d: &NumBigInt, scale: &NumBigInt) -> Option<NumBigInt> {
+    use num_traits::{FromPrimitive, ToPrimitive};
+    let fract = crate::value::bigrat_to_f64(rem, d);
+    if fract == 0.0 {
+        // The fraction underflowed f64, so every digit rakudo emits is a zero
+        // and the whole part is the answer (`Rat.new(1, 10**400).Str` is `0`).
+        return Some(NumBigInt::from(0u8));
+    }
+    let rounded = (fract * scale.to_f64()? + 0.5).floor();
+    if !rounded.is_finite() {
+        return None;
+    }
+    NumBigInt::from_f64(rounded)
 }
 
 impl Value {
@@ -622,19 +669,16 @@ impl Value {
                     // computes the decimal directly, so a huge denominator never
                     // produces `Inf`, unlike an f64 fallback).
                     format_rat_str_bigint(n, d, true)
-                } else if d.abs().to_string().len() > 20 {
-                    // A plain Rat with an astronomically large denominator (beyond
-                    // ~u64 range) is a degenerate Rat: raku stringifies it via its
-                    // Num value, so a vanishingly small ratio prints as `0` rather
-                    // than a thousand-digit fraction. A denominator that merely
-                    // overflows i64 but stays around u64 range still uses the exact
-                    // budget below (e.g. `<1/99999999999999999999>`).
-                    let val = crate::value::bigrat_to_f64(n, d);
-                    Value::Num(val).to_string_value()
                 } else {
-                    // A big Rat with an in-range denominator follows raku's fixed
-                    // digit-budget rounding (`Rational.Str`): `|denom| < 100_000 ?
-                    // 6 : chars(|denom|) + 1`. Mirrors the i64 Rat arm above.
+                    // A big Rat follows raku's fixed digit-budget rounding
+                    // (`Rational.Str`): `|denom| < 100_000 ? 6 : chars(|denom|) + 1`.
+                    // Mirrors the i64 Rat arm above. An over-`uint64` denominator
+                    // additionally makes the digits come out of f64, as rakudo's
+                    // degraded-`Rat` arithmetic does -- `format_rat_str_bigint`
+                    // owns that rule, so this arm does not need to know about it.
+                    // (It used to shortcut such a Rat through its `Num` value
+                    // entirely, which is what dropped
+                    // `0.1234567890123456789012345.Str` to 17 significant digits.)
                     format_rat_str_bigint(n, d, false)
                 }
             }
