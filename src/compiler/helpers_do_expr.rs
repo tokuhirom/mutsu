@@ -5,22 +5,42 @@ impl Compiler {
     /// term). A thin wrapper over the shared lowering in `control_block.rs`;
     /// the only difference from the statement form is
     /// [`BlockPosition::Value`](crate::compiler::control_block::BlockPosition).
-    pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
+    ///
+    /// `origin` says whether the node is a Raku block at all: `Expr::DoBlock` is
+    /// also the generic "run these statements, yield a value" vehicle of some
+    /// forty desugars, and only a real one owns a `let`/`temp` save frame.
+    pub(super) fn compile_do_block_expr(
+        &mut self,
+        body: &[Stmt],
+        label: &Option<String>,
+        origin: crate::ast::DoBlockOrigin,
+    ) {
         self.compile_block_construct(
             body,
             label,
-            crate::compiler::control_block::BlockPosition::Value { isolate: false },
+            crate::compiler::control_block::BlockPosition::Value {
+                isolate: false,
+                origin,
+            },
         );
     }
 
     /// [`Compiler::compile_do_block_expr`] with `OpCode::DoBlockExpr`'s
     /// `scope_isolate` on: the block's own scalar/array `my`/`state`
     /// declarations revert on exit while mutations of outer variables persist.
-    pub(super) fn compile_do_block_expr_scoped(&mut self, body: &[Stmt], label: &Option<String>) {
+    pub(super) fn compile_do_block_expr_scoped(
+        &mut self,
+        body: &[Stmt],
+        label: &Option<String>,
+        origin: crate::ast::DoBlockOrigin,
+    ) {
         self.compile_block_construct(
             body,
             label,
-            crate::compiler::control_block::BlockPosition::Value { isolate: true },
+            crate::compiler::control_block::BlockPosition::Value {
+                isolate: true,
+                origin,
+            },
         );
     }
 
@@ -83,7 +103,11 @@ impl Compiler {
                         && matches!(&items[0], Expr::Literal(lit) if lit.is_nil())
             )
         {
-            self.compile_do_block_expr(body, label);
+            // Behaviour-preserving: this dummy `for Nil` shape has no producer
+            // left in the parser (a labelled block lowers straight to a
+            // labelled `Expr::DoBlock`), so keep it off the block path rather
+            // than granting it `let` resolution this cannot exercise.
+            self.compile_do_block_expr(body, label, crate::ast::DoBlockOrigin::Desugar);
             return;
         }
         self.compile_for_construct(crate::compiler::control_for::ForParts {

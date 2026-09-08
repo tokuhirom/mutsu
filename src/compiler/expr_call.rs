@@ -1344,10 +1344,8 @@ impl Compiler {
                         _ => true,
                     },
                 };
-                let do_block = Expr::DoBlock {
-                    body: vec![Stmt::Expr(viv_assign), Stmt::Expr(writeback)],
-                    label: None,
-                };
+                let do_block =
+                    Expr::desugar_block(vec![Stmt::Expr(viv_assign), Stmt::Expr(writeback)]);
                 self.compile_expr(&do_block);
             } else {
                 let method_call = Expr::MethodCall {
@@ -1373,10 +1371,13 @@ impl Compiler {
                 // compile it as a genuine arity-N closure and merely sink the
                 // closure *value* itself.
                 Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
-                    // sink { ... } -- execute the block body inline via do block
+                    // sink { ... } -- execute the block body inline via do block.
+                    // Re-hosted user braces, so the node keeps that block's
+                    // identity (GH-7635).
                     let do_block = Expr::DoBlock {
                         body: body.clone(),
                         label: None,
+                        origin: crate::ast::DoBlockOrigin::SourceBlock,
                     };
                     self.compile_expr(&do_block);
                     // Discard the block result and push Nil
@@ -1422,11 +1423,14 @@ impl Compiler {
         else if name == "quietly" && args.len() == 1 {
             match &args[0] {
                 Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
-                    // `quietly { ... }` -- run the block body inline as a do-block.
+                    // `quietly { ... }` -- run the block body inline as a
+                    // do-block. Re-hosted user braces, so the node keeps that
+                    // block's identity (GH-7635).
                     self.code.emit(OpCode::WarnSuppressPush);
                     let do_block = Expr::DoBlock {
                         body: body.clone(),
                         label: None,
+                        origin: crate::ast::DoBlockOrigin::SourceBlock,
                     };
                     self.compile_expr(&do_block);
                     self.code.emit(OpCode::WarnSuppressPop);
@@ -1543,36 +1547,33 @@ impl Compiler {
                         "__mutsu_cas_seen_{}",
                         STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
                     );
-                    let cas_expr = Expr::DoBlock {
-                        body: vec![
-                            Stmt::VarDecl {
-                                name: seen_name.clone(),
-                                expr: args[0].clone(),
-                                type_constraint: None,
-                                is_state: false,
-                                is_our: false,
-                                is_dynamic: false,
-                                is_export: false,
-                                export_tags: Vec::new(),
-                                custom_traits: Vec::new(),
-                                where_constraint: None,
+                    let cas_expr = Expr::desugar_block(vec![
+                        Stmt::VarDecl {
+                            name: seen_name.clone(),
+                            expr: args[0].clone(),
+                            type_constraint: None,
+                            is_state: false,
+                            is_our: false,
+                            is_dynamic: false,
+                            is_export: false,
+                            export_tags: Vec::new(),
+                            custom_traits: Vec::new(),
+                            where_constraint: None,
+                        },
+                        Stmt::If {
+                            cond: Expr::Binary {
+                                left: Box::new(Expr::Var(seen_name.clone())),
+                                op: TokenKind::EqEq,
+                                right: Box::new(args[1].clone()),
                             },
-                            Stmt::If {
-                                cond: Expr::Binary {
-                                    left: Box::new(Expr::Var(seen_name.clone())),
-                                    op: TokenKind::EqEq,
-                                    right: Box::new(args[1].clone()),
-                                },
-                                then_branch: vec![assign_stmt],
-                                else_branch: vec![],
-                                binding_var: None,
-                                is_statement_modifier: false,
-                                is_unless: false,
-                            },
-                            Stmt::Expr(Expr::Var(seen_name)),
-                        ],
-                        label: None,
-                    };
+                            then_branch: vec![assign_stmt],
+                            else_branch: vec![],
+                            binding_var: None,
+                            is_statement_modifier: false,
+                            is_unless: false,
+                        },
+                        Stmt::Expr(Expr::Var(seen_name)),
+                    ]);
                     self.compile_expr(&cas_expr);
                 } else {
                     let arity = args.len() as u32;

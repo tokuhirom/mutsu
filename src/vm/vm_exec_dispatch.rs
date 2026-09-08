@@ -5736,9 +5736,12 @@ impl Interpreter {
                 self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp, *slot);
                 *ip += 1;
             }
-            OpCode::LetBlock { body_end } => {
+            OpCode::LetBlock {
+                body_end,
+                value_on_stack,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_let_block_op(code, *body_end, ip, compiled_fns)?;
+                self.exec_let_block_op(code, *body_end, *value_on_stack, ip, compiled_fns)?;
             }
         }
         Ok(())

@@ -255,13 +255,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 // Wrap multiple step expressions in a DoBlock
                 let stmts: Vec<Stmt> = exprs.into_iter().map(Stmt::Expr).collect();
-                (
-                    r,
-                    Some(Expr::DoBlock {
-                        body: stmts,
-                        label: None,
-                    }),
-                )
+                (r, Some(Expr::desugar_block(stmts)))
             }
         };
         let (rest, _) = ws(rest)?;

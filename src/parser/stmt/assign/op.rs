@@ -258,24 +258,21 @@ pub(crate) fn short_circuit_compound_assign_expr(
         },
         ShortCircuitKeep::True | ShortCircuitKeep::False => tmp_var.clone(),
     };
-    let cond = Expr::DoBlock {
-        body: vec![
-            Stmt::VarDecl {
-                name: tmp_name.clone(),
-                expr: lhs,
-                type_constraint: None,
-                is_state: false,
-                is_our: false,
-                is_dynamic: false,
-                is_export: false,
-                export_tags: Vec::new(),
-                custom_traits: Vec::new(),
-                where_constraint: None,
-            },
-            Stmt::Expr(test),
-        ],
-        label: None,
-    };
+    let cond = Expr::desugar_block(vec![
+        Stmt::VarDecl {
+            name: tmp_name.clone(),
+            expr: lhs,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        },
+        Stmt::Expr(test),
+    ]);
     let store = Expr::AssignExpr {
         name: name.to_string(),
         expr: Box::new(rhs),
@@ -298,10 +295,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
             args: vec![Expr::Literal(Value::str(name.to_string()))],
         }),
         then_expr: Box::new(Expr::Var(name.to_string())),
-        else_expr: Box::new(Expr::DoBlock {
-            body: vec![Stmt::Expr(tmp_var)],
-            label: None,
-        }),
+        else_expr: Box::new(Expr::desugar_block(vec![Stmt::Expr(tmp_var)])),
     };
     let (then_expr, else_expr) = match keep {
         // `&&=` stores when the LHS is TRUE, keeps it otherwise.
@@ -323,27 +317,24 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         );
         let tmp_var = Expr::Var(tmp_name.clone());
         Expr::Ternary {
-            cond: Box::new(Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp_name.clone(),
-                        expr: lhs,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("defined"),
-                        args: vec![tmp_var.clone()],
-                    }),
-                ],
-                label: None,
-            }),
+            cond: Box::new(Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_name.clone(),
+                    expr: lhs,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("defined"),
+                    args: vec![tmp_var.clone()],
+                }),
+            ])),
             then_expr: Box::new(tmp_var),
             else_expr: Box::new(rhs),
         }
@@ -361,27 +352,24 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             (tmp_var.clone(), rhs)
         };
         Expr::Ternary {
-            cond: Box::new(Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp_name.clone(),
-                        expr: lhs,
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("defined"),
-                        args: vec![tmp_var.clone()],
-                    }),
-                ],
-                label: None,
-            }),
+            cond: Box::new(Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_name.clone(),
+                    expr: lhs,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::Call {
+                    name: Symbol::intern("defined"),
+                    args: vec![tmp_var.clone()],
+                }),
+            ])),
             then_expr: Box::new(then_branch),
             else_expr: Box::new(else_branch),
         }

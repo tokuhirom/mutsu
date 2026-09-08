@@ -47,6 +47,11 @@ pub(super) enum BlockPosition {
         /// scalar/array `my`/`state` declarations on exit while letting
         /// mutations of outer variables persist.
         isolate: bool,
+        /// Whether the node came from real source braces that *are* a Raku
+        /// block, or from one of the ~40 desugars that use `Expr::DoBlock` as a
+        /// generic sequencing vehicle. Only the first owns a `let`/`temp` save
+        /// frame — see [`crate::ast::DoBlockOrigin`] and GH-7635.
+        origin: crate::ast::DoBlockOrigin,
     },
 }
 
@@ -56,7 +61,20 @@ impl BlockPosition {
     }
 
     fn isolate(self) -> bool {
-        matches!(self, Self::Value { isolate: true })
+        matches!(self, Self::Value { isolate: true, .. })
+    }
+
+    /// Whether a `let`/`temp` in the body resolves at THIS block.
+    ///
+    /// A statement `{ ... }` always is a block. A value-position node is one
+    /// only when the parser minted it from source braces; a desugar's node
+    /// opens no scope, so a save inside it belongs to whatever real block
+    /// encloses it.
+    fn owns_let_scope(self) -> bool {
+        match self {
+            Self::Statement => true,
+            Self::Value { origin, .. } => origin == crate::ast::DoBlockOrigin::SourceBlock,
+        }
     }
 }
 
@@ -102,15 +120,12 @@ pub(super) struct BlockPlan {
 }
 
 impl BlockPlan {
-    /// `owns_let_scope` is false for a `DoBlock` the parser synthesized for
-    /// something that is not a source-level block -- see
-    /// [`crate::ast::STMT_LIST_CONTEXTUALIZER_LABEL`].
-    fn analyze(stmts: &[Stmt], position: BlockPosition, owns_let_scope: bool) -> Self {
+    fn analyze(stmts: &[Stmt], position: BlockPosition) -> Self {
         let shape = if Compiler::has_catch_or_control(stmts) {
             BlockShape::ImplicitTry
         } else if Compiler::has_block_enter_leave_phasers(stmts) {
             BlockShape::PhaserScope
-        } else if owns_let_scope && Compiler::has_let_deep(stmts) {
+        } else if position.owns_let_scope() && Compiler::has_let_deep(stmts) {
             BlockShape::LetScope
         } else {
             BlockShape::Plain
@@ -154,17 +169,7 @@ impl Compiler {
             return;
         }
 
-        // `$( stmt; ... )` carries a statement list in a `DoBlock` but is not a
-        // Raku block: a `let`/`temp` in it belongs to the ENCLOSING block's save
-        // frame. Strip the sentinel here so it can never reach
-        // `OpCode::DoBlockExpr`'s `leave LABEL` matching.
-        let (label, owns_let_scope) = if matches!(label, Some(l) if l == crate::ast::STMT_LIST_CONTEXTUALIZER_LABEL)
-        {
-            (&None, false)
-        } else {
-            (label, true)
-        };
-        let plan = BlockPlan::analyze(stmts, position, owns_let_scope);
+        let plan = BlockPlan::analyze(stmts, position);
 
         // A bare block is where an escaping `when`/`default` succeed stops
         // unwinding when nothing closer (a `given`, another bare block, an `if`
@@ -367,18 +372,21 @@ impl Compiler {
                 // Block contains `let`/`temp` — wrap in LetBlock for
                 // save/restore. `exec_let_block_op` never touches the value
                 // stack, so the inner shape decides the block's value.
-                let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
+                //
+                // A real `let` rolls its saves back unless the block succeeded,
+                // so `exec_let_block_op` needs the block's own value — and the
+                // two positions leave it in different places. The statement form
+                // routes its last statement through `compile_last_stmt_as_topic`
+                // and the op reads the topic; the value form already has the
+                // value on the stack and must NOT write the topic, or a
+                // `do { ... }` would clobber `$_` for the enclosing scope
+                // (GH-7635). `value_on_stack` is which of the two the op reads.
+                let idx = self.code.emit(OpCode::LetBlock {
+                    body_end: 0,
+                    value_on_stack: position.is_value(),
+                });
                 if position.is_value() {
                     self.emit_plain_block(stmts, label, position, plan, is_bare);
-                    if plan.let_needs_value {
-                        // A real `let` rolls its saves back unless the block
-                        // succeeded, and `exec_let_block_op` reads that verdict
-                        // off the topic register. The statement form routes its
-                        // last statement through `compile_last_stmt_as_topic`;
-                        // the value form already has the value on the stack.
-                        self.code.emit(OpCode::Dup);
-                        self.code.emit(OpCode::SetTopic);
-                    }
                 } else {
                     // Raku's "declarations are in effect at block start" rule
                     // (see `hoist_typed_var_decls`).

@@ -251,9 +251,14 @@ impl Interpreter {
                 expanded: Box::new(Self::rewrite_proto_dispatch_expr(expanded)),
             },
             Expr::Block(stmts) => Expr::Block(Self::rewrite_proto_dispatch_stmts(stmts)),
-            Expr::DoBlock { body, label } => Expr::DoBlock {
+            Expr::DoBlock {
+                body,
+                label,
+                origin,
+            } => Expr::DoBlock {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 label: label.clone(),
+                origin: *origin,
             },
             Expr::Try { body, catch } => Expr::Try {
                 body: Self::rewrite_proto_dispatch_stmts(body),

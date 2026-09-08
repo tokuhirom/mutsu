@@ -408,9 +408,6 @@ pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
     };
     Ok((
         rest,
-        Expr::DoBlock {
-            body: vec![decl, Stmt::Expr(Expr::BareWord(name))],
-            label: None,
-        },
+        Expr::desugar_block(vec![decl, Stmt::Expr(Expr::BareWord(name))]),
     ))
 }

@@ -349,29 +349,26 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_positional,
                 };
                 let assigned_value = make_rhs(lhs_expr);
-                let stmt = Stmt::Expr(Expr::DoBlock {
-                    body: vec![
-                        Stmt::VarDecl {
-                            name: tmp_idx.clone(),
-                            expr: *index,
-                            type_constraint: None,
-                            is_state: false,
-                            is_our: false,
-                            is_dynamic: false,
-                            is_export: false,
-                            export_tags: Vec::new(),
-                            custom_traits: Vec::new(),
-                            where_constraint: None,
-                        },
-                        Stmt::Expr(Expr::IndexAssign {
-                            target,
-                            index: Box::new(tmp_idx_expr),
-                            value: Box::new(assigned_value),
-                            is_positional: true,
-                        }),
-                    ],
-                    label: None,
-                });
+                let stmt = Stmt::Expr(Expr::desugar_block(vec![
+                    Stmt::VarDecl {
+                        name: tmp_idx.clone(),
+                        expr: *index,
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(Expr::IndexAssign {
+                        target,
+                        index: Box::new(tmp_idx_expr),
+                        value: Box::new(assigned_value),
+                        is_positional: true,
+                    }),
+                ]));
                 return parse_statement_modifier(r, stmt);
             }
             _ => {
@@ -506,29 +503,26 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_positional,
                 };
                 let assigned_value = make_rhs(lhs_expr);
-                let stmt = Stmt::Expr(Expr::DoBlock {
-                    body: vec![
-                        Stmt::VarDecl {
-                            name: tmp_idx.clone(),
-                            expr: *index,
-                            type_constraint: None,
-                            is_state: false,
-                            is_our: false,
-                            is_dynamic: false,
-                            is_export: false,
-                            export_tags: Vec::new(),
-                            custom_traits: Vec::new(),
-                            where_constraint: None,
-                        },
-                        Stmt::Expr(Expr::IndexAssign {
-                            target,
-                            index: Box::new(tmp_idx_expr),
-                            value: Box::new(assigned_value),
-                            is_positional: true,
-                        }),
-                    ],
-                    label: None,
-                });
+                let stmt = Stmt::Expr(Expr::desugar_block(vec![
+                    Stmt::VarDecl {
+                        name: tmp_idx.clone(),
+                        expr: *index,
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(Expr::IndexAssign {
+                        target,
+                        index: Box::new(tmp_idx_expr),
+                        value: Box::new(assigned_value),
+                        is_positional: true,
+                    }),
+                ]));
                 return parse_statement_modifier(r, stmt);
             }
             Expr::BareWord(ref name) => {
@@ -962,16 +956,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::LiteralSrc(v, _) => Expr::Literal(v),
                     other => other,
                 };
-                Stmt::Expr(Expr::DoBlock {
-                    body: vec![
-                        Stmt::Expr(rhs),
-                        Stmt::Expr(Expr::Call {
-                            name: Symbol::intern("__mutsu_assignment_ro"),
-                            args: vec![lit],
-                        }),
-                    ],
-                    label: None,
-                })
+                Stmt::Expr(Expr::desugar_block(vec![
+                    Stmt::Expr(rhs),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: vec![lit],
+                    }),
+                ]))
             }
             Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
@@ -1303,29 +1294,26 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 op: set_tok,
                 right: Box::new(rhs),
             };
-            let stmt = Stmt::Expr(Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp_idx.clone(),
-                        expr: (*index.clone()),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::IndexAssign {
-                        target: target.clone(),
-                        index: Box::new(tmp_idx_expr),
-                        value: Box::new(assigned_value),
-                        is_positional: *is_positional,
-                    }),
-                ],
-                label: None,
-            });
+            let stmt = Stmt::Expr(Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_idx.clone(),
+                    expr: (*index.clone()),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::IndexAssign {
+                    target: target.clone(),
+                    index: Box::new(tmp_idx_expr),
+                    value: Box::new(assigned_value),
+                    is_positional: *is_positional,
+                }),
+            ]));
             return parse_statement_modifier(r, stmt);
         }
         if let Expr::MethodCall {
@@ -1422,29 +1410,26 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     right: Box::new(rhs),
                 }
             };
-            let expanded = Expr::DoBlock {
-                body: vec![
-                    Stmt::VarDecl {
-                        name: tmp_idx.clone(),
-                        expr: (*index.clone()),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    },
-                    Stmt::Expr(Expr::IndexAssign {
-                        target: target.clone(),
-                        index: Box::new(tmp_idx_expr),
-                        value: Box::new(assigned_value),
-                        is_positional: true,
-                    }),
-                ],
-                label: None,
-            };
+            let expanded = Expr::desugar_block(vec![
+                Stmt::VarDecl {
+                    name: tmp_idx.clone(),
+                    expr: (*index.clone()),
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits: Vec::new(),
+                    where_constraint: None,
+                },
+                Stmt::Expr(Expr::IndexAssign {
+                    target: target.clone(),
+                    index: Box::new(tmp_idx_expr),
+                    value: Box::new(assigned_value),
+                    is_positional: true,
+                }),
+            ]);
             let stmt = Stmt::Expr(compound_assign_marker(
                 expr.clone(),
                 op,
@@ -1527,29 +1512,23 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 Stmt::Expr(Expr::Binary {
                     left: Box::new(expr),
                     op: op.token_kind(),
-                    right: Box::new(Expr::DoBlock {
-                        body: vec![
-                            Stmt::Expr(rhs),
-                            Stmt::Expr(Expr::Call {
-                                name: Symbol::intern("__mutsu_assignment_ro"),
-                                args: Vec::new(),
-                            }),
-                        ],
-                        label: None,
-                    }),
-                })
-            } else {
-                Stmt::Expr(Expr::DoBlock {
-                    body: vec![
-                        Stmt::Expr(expr),
+                    right: Box::new(Expr::desugar_block(vec![
                         Stmt::Expr(rhs),
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
                         }),
-                    ],
-                    label: None,
+                    ])),
                 })
+            } else {
+                Stmt::Expr(Expr::desugar_block(vec![
+                    Stmt::Expr(expr),
+                    Stmt::Expr(rhs),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: Vec::new(),
+                    }),
+                ]))
             };
         return parse_statement_modifier(r, stmt);
     }

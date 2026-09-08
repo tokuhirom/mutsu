@@ -1,17 +1,14 @@
 use super::*;
 
 pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
-    Expr::DoBlock {
-        body: vec![
-            Stmt::Expr(lhs),
-            Stmt::Expr(rhs),
-            Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_assignment_ro"),
-                args: Vec::new(),
-            }),
-        ],
-        label: None,
-    }
+    Expr::desugar_block(vec![
+        Stmt::Expr(lhs),
+        Stmt::Expr(rhs),
+        Stmt::Expr(Expr::Call {
+            name: Symbol::intern("__mutsu_assignment_ro"),
+            args: Vec::new(),
+        }),
+    ])
 }
 
 pub(crate) fn unwrap_grouped_lvalue(target: Expr) -> Expr {

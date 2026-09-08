@@ -47,7 +47,7 @@ where
         is_positional,
     };
     body.push(Stmt::Expr(store(build_assigned_value(lhs_expr))));
-    Expr::DoBlock { body, label: None }
+    Expr::desugar_block(body)
 }
 
 /// [`compound_index_assign_expr`] for a plain compound-assignment operator,
@@ -95,7 +95,7 @@ fn compound_index_assign_op_expr(
     };
     let tail = short_circuit_subscript_assign(keep, lhs_expr, rhs, &mut body, store);
     body.push(Stmt::Expr(tail));
-    Expr::DoBlock { body, label: None }
+    Expr::desugar_block(body)
 }
 
 /// The subscript twin of [`short_circuit_compound_assign_expr`]: `//=`/`||=`/
@@ -288,7 +288,7 @@ pub(crate) fn build_compound_assign_expr(
                 }
             };
             body.push(Stmt::Expr(tail));
-            Expr::DoBlock { body, label: None }
+            Expr::desugar_block(body)
         }
         Expr::MethodCall {
             target,
@@ -501,29 +501,23 @@ pub(crate) fn build_compound_assign_expr(
                 Expr::Binary {
                     left: Box::new(other),
                     op: op.token_kind(),
-                    right: Box::new(Expr::DoBlock {
-                        body: vec![
-                            Stmt::Expr(rhs),
-                            Stmt::Expr(Expr::Call {
-                                name: Symbol::intern("__mutsu_assignment_ro"),
-                                args: Vec::new(),
-                            }),
-                        ],
-                        label: None,
-                    }),
-                }
-            } else {
-                Expr::DoBlock {
-                    body: vec![
-                        Stmt::Expr(other),
+                    right: Box::new(Expr::desugar_block(vec![
                         Stmt::Expr(rhs),
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
                         }),
-                    ],
-                    label: None,
+                    ])),
                 }
+            } else {
+                Expr::desugar_block(vec![
+                    Stmt::Expr(other),
+                    Stmt::Expr(rhs),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: Vec::new(),
+                    }),
+                ])
             }
         }
     })

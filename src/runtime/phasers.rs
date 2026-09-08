@@ -326,7 +326,15 @@ fn extract_phasers_from_stmts(
                 };
                 let assign = Stmt::Assign {
                     name: temp_name,
-                    expr: Expr::DoBlock { body, label },
+                    // The phaser body's braces are real, but this node is
+                    // only the vehicle of the `my $tmp; $tmp = do{BODY}` hoist
+                    // -- the save resolution measured against Rakudo already
+                    // matches without claiming block identity here (GH-7635).
+                    expr: Expr::DoBlock {
+                        body,
+                        label,
+                        origin: crate::ast::DoBlockOrigin::Desugar,
+                    },
                     op: AssignOp::Assign,
                 };
                 match kind {
@@ -380,7 +388,7 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
                 };
                 let assign = Stmt::Assign {
                     name: temp_name,
-                    expr: Expr::DoBlock { body, label: None },
+                    expr: Expr::desugar_block(body),
                     op: AssignOp::Assign,
                 };
                 begin.push(var_decl);
@@ -457,7 +465,11 @@ fn lift_phasers_from_expr_inner(
             };
             let assign = Stmt::Assign {
                 name: temp_name,
-                expr: Expr::DoBlock { body, label },
+                expr: Expr::DoBlock {
+                    body,
+                    label,
+                    origin: crate::ast::DoBlockOrigin::Desugar,
+                },
                 op: AssignOp::Assign,
             };
             match kind {

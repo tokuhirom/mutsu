@@ -161,16 +161,15 @@ impl Compiler {
     /// immutable value". Used to desugar a ternary lvalue on the LHS of `=` where
     /// one branch may not be assignable.
     pub(super) fn ternary_branch_assign(target: &Expr, value: &Expr) -> Expr {
-        Self::assign_expr_for_lvalue(target, value).unwrap_or_else(|| Expr::DoBlock {
-            body: vec![
+        Self::assign_expr_for_lvalue(target, value).unwrap_or_else(|| {
+            Expr::desugar_block(vec![
                 Stmt::Expr(target.clone()),
                 Stmt::Expr(value.clone()),
                 Stmt::Expr(Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
                     args: Vec::new(),
                 }),
-            ],
-            label: None,
+            ])
         })
     }
 

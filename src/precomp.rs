@@ -98,7 +98,9 @@ fn interpreter_version() -> String {
     // serialized `SerValue` discriminants after `Array`.
     // 10: `BufStorage`'s element descriptor became `ElemKind` (ADR-0015 P3),
     // so its third field serializes as an enum rather than a bool.
-    const CACHE_FORMAT_VERSION: u32 = 10;
+    // 11: `Expr::DoBlock` gained `origin: DoBlockOrigin` (GH-7635), so a
+    // cached node from an older build deserializes a field short.
+    const CACHE_FORMAT_VERSION: u32 = 11;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
