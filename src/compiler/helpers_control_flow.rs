@@ -74,7 +74,25 @@ impl Compiler {
                         binding_var,
                         *is_statement_modifier,
                     ),
-                    Stmt::Block(inner) => self.compile_block_inline(inner),
+                    // A genuine source `{ ... }` in tail position is a block
+                    // literal the enclosing block re-clones on every run, so its
+                    // own `state` restarts per execution. That is what
+                    // `compile_bare_block_inline` adds over the raw inline
+                    // compile (an `OpCode::ResetStateLocals` bracket, plus the
+                    // `PushBlockFrame` that makes it an anonymous callframe in a
+                    // backtrace); calling the raw one here made the value-
+                    // collecting `for` body the one path that kept a nested
+                    // block's `state` across iterations, so
+                    // `do for ^3 { { state $x = 0; $x++ } }` gave `[0 1 2]`
+                    // where raku gives `[0 0 0]`. `compile_block_inline`'s own
+                    // tail arm already routes this way — this mirrors it.
+                    Stmt::Block(inner) => {
+                        if Self::has_block_enter_leave_phasers(inner) {
+                            self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                        } else {
+                            self.compile_bare_block_inline(inner);
+                        }
+                    }
                     Stmt::SyntheticBlock(inner) => self.compile_synthetic_block_inline(inner),
                     Stmt::VarDecl { name, .. } => {
                         self.compile_stmt(stmt);
