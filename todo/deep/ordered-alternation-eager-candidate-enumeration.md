@@ -10,9 +10,9 @@ ratcheted half (`news/2026-09/ratcheted-subrule-calls-are-first-only.md`).
 
 ## What is left
 
-`drive_named_subrule_candidates` (`src/runtime/regex/regex_match_lazy.rs`) takes
-one shape and one only: an argument-less call resolving to exactly one non-proto
-candidate, with no custom-HOW dispatch, no `:m`, no dynamic (`$*`) rule
+`drive_named_subrule_candidates` (`src/runtime/regex/regex_match_lazy_subrule.rs`)
+takes one shape and one only: an argument-less call resolving to exactly one
+non-proto candidate, with no custom-HOW dispatch, no `:m`, no dynamic (`$*`) rule
 parameters declared anywhere in the program, a key that is not already LR-active,
 and a rule the call graph (`regex_call_graph.rs`) proves cannot reach a call to
 its own name. Everything else still goes to the eager `Named` arm in

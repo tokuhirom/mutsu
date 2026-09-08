@@ -31,7 +31,7 @@
 //! principle re-enter the same rule at the same position by hand; the callers
 //! keep a runtime escape for that (`regex_match_atom.rs`'s `first_only`
 //! retry, and the streamed subrule's seed-consulted fallback in
-//! `regex_match_lazy.rs`), exactly as the first half of Slice 2 does.
+//! `regex_match_lazy_subrule.rs`), exactly as the first half of Slice 2 does.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -184,9 +184,9 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    /// Whether the streamed `<subrule>` path in `regex_match_lazy.rs` may take
-    /// this call at all: the memoized front door, consulted BEFORE the call is
-    /// resolved so an ineligible one costs a hash lookup instead of a
+    /// Whether the streamed `<subrule>` path in `regex_match_lazy_subrule.rs`
+    /// may take this call at all: the memoized front door, consulted BEFORE the
+    /// call is resolved so an ineligible one costs a hash lookup instead of a
     /// resolution plus a call-graph walk.
     ///
     /// `atom_text` is the subrule atom exactly as written,

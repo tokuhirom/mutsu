@@ -100,16 +100,16 @@ work exists for — would have been ineligible.
 
 With re-entry ruled out, the growing-seed loop is a formality — one iteration,
 seed unconsulted, first result final — and the call can be **streamed**.
-`drive_named_subrule_candidates` (`regex_match_lazy.rs`) walks the subrule body
-through a `MatchSink::Cont`, wrapping each end into the atom's capture delta as
-it is produced, so end *k+1* is computed only after the real continuation has
-rejected end *k*. It takes only the shape where none of the `Named` arm's other
-machinery is in play: an argument-less call, exactly one non-proto candidate, no
-custom-HOW dispatch, no `:m`, no dynamic (`$*`) rule parameters anywhere in the
-program, and a key that is not already LR-active. A ratchet on the calling token
-simply stops the stream after the first end, which is what the ratcheted half
-used `first_only` for — so non-leaf rules under a ratcheted caller are now
-streamed too.
+`drive_named_subrule_candidates` (`regex_match_lazy_subrule.rs`) walks the
+subrule body through a `MatchSink::Cont`, wrapping each end into the atom's
+capture delta as it is produced, so end *k+1* is computed only after the real
+continuation has rejected end *k*. It takes only the shape where none of the
+`Named` arm's other machinery is in play: an argument-less call, exactly one
+non-proto candidate, no custom-HOW dispatch, no `:m`, no dynamic (`$*`) rule
+parameters anywhere in the program, and a key that is not already LR-active. A
+ratchet on the calling token simply stops the stream after the first end, which
+is what the ratcheted half used `first_only` for — so non-leaf rules under a
+ratcheted caller are now streamed too.
 
 The one construct the call graph deliberately treats as harmless is an embedded
 `{ … }` block: it is user code and could re-enter the rule by hand. The
