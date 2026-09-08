@@ -8,7 +8,7 @@ use Test;
 # rows that already agreed before the change are just as important as the rows
 # that did not: they are what a laziness change is most likely to break.
 
-plan 87;
+plan 94;
 
 my $c;
 
@@ -174,13 +174,11 @@ is $c, 1, 'D3  no continuation, first branch wins';
 my $e = 0;
 grammar E1G { regex TOP { <part> 'c' }; regex part { \w* { $e++ } } }
 $e = 0; E1G.parse('aaac');
-todo 'ADR-0073 Slice 2: the <subrule> boundary is still collect-then-pick';
 is $e, 2, 'E1  regex subrule under a regex caller';
 
 my $e2 = 0;
 grammar E2G { regex TOP { <a> 'c' }; regex a { <b> }; regex b { \w* { $e2++ } } }
 $e2 = 0; E2G.parse('aaac');
-todo 'ADR-0073 Slice 2: the <subrule> boundary is still collect-then-pick';
 is $e2, 2, 'E2  nested regex subrules';
 
 my $e3 = 0;
@@ -257,7 +255,6 @@ grammar E6G {
     regex part { 'a' [ 'b' { @e6.push('one') } || 'bc' { @e6.push('two') } ] }
 }
 @e6 = (); E6G.parse('abcd');
-todo 'ADR-0073 Slice 2: the <subrule> boundary is still collect-then-pick';
 is @e6.join(','), 'one', 'E6  ordered alternation inside a non-ratcheted subrule';
 
 my $e7 = 0;
@@ -269,6 +266,47 @@ my $e8 = 0;
 grammar E8G { token TOP { <part> 'c' }; token part { (\w*) { $e8++; make ~$0 } } }
 $e8 = 0; E8G.parse('aaac');
 is $e8, 1, 'E8  a make-bearing block runs once';
+
+# E9: a NON-LEAF rule under a ratcheted caller. The first half of Slice 2 kept
+# such a rule on the full walk (its syntactic guard admitted leaf bodies only);
+# the call-graph analysis proves `part` cannot reach a call to `part`, so it is
+# streamed like any other.
+my $e9 = 0;
+grammar E9G {
+    token TOP   { <part> 'c' }
+    regex part  { <inner> }
+    regex inner { \w* { $e9++ } }
+}
+E9G.parse('aaac');
+is $e9, 1, 'E9  a non-leaf subrule under a ratcheted caller runs its block once';
+
+# E10: mutual recursion. `a` can reach `a` (through `b`), so the call graph
+# refuses it and the growing-seed loop keeps the full end set. No raku oracle --
+# Rakudo hangs on this grammar -- so this pins mutsu's own capability, exactly
+# as E3d/E3e do.
+grammar E10G {
+    regex TOP { <a> 'c' }
+    regex a   { <b> | 'zz' }
+    regex b   { <a> | \w* }
+}
+is ~(E10G.parse('aaac') // ''), 'aaac', 'E10 mutual recursion still parses';
+
+# E11/E12/E13 were measured against raku and agreed before this change; they are
+# the shapes a streamed `<subrule>` is most likely to break.
+my $e11 = 0;
+grammar E11G { rule TOP { <part> 'c' }; token part { \w+ { $e11++ } } }
+is ~(E11G.parse('aaa c') // ''), 'aaa c', 'E11 a `rule` caller (with <.ws>) still parses';
+is $e11, 1, 'E11a and runs the subrule block once';
+
+my $e12 = 0;
+grammar E12G { regex TOP { <part>+ 'c' }; regex part { \w { $e12++ } } }
+E12G.parse('aaac');
+is $e12, 4, 'E12 a quantified subrule under a NON-ratcheted caller';
+
+my $e13 = 0;
+grammar E13G { regex TOP { <a> 'c' }; regex a { <b> 'a' }; regex b { \w* { $e13++ } } }
+is ~(E13G.parse('aaac') // ''), 'aaac', 'E13 backtracking through two subrule levels';
+is $e13, 3, 'E13a and the innermost block runs once per end entered';
 
 # --- Family F: separated quantifiers ---------------------------------------
 

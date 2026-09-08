@@ -1,3 +1,4 @@
+mod regex_call_graph;
 mod regex_casefold;
 pub(crate) mod regex_dynparams;
 mod regex_eval;
@@ -13,6 +14,7 @@ mod regex_match_core;
 mod regex_match_delta;
 mod regex_match_find;
 mod regex_match_lazy;
+mod regex_match_lazy_subrule;
 mod regex_match_nocap;
 mod regex_match_public;
 mod regex_match_sep;

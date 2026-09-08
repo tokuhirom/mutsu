@@ -36,6 +36,43 @@ thread_local! {
 /// with its PLURAL ends (highest-priority-first).
 type RankedAlternationBranch = ((usize, usize), Vec<(usize, RegexCaptures)>);
 
+/// The left-recursion key a `<subrule>` call at `pos` is evaluated under:
+/// `(written rule name, chars remaining)`. It carries no package, so two
+/// grammars that define the same rule name share it — see
+/// `regex_call_graph::subrule_cannot_reenter_itself`.
+pub(super) type LrKey = (String, usize);
+
+/// `true` when this key is already being evaluated further up the stack, i.e.
+/// entering it again would be a left-recursive re-entry.
+pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
+    LR_ACTIVE.with(|a| a.borrow().contains_key(key))
+}
+
+/// Mark `key` as under evaluation with an empty seed, returning the enclosing
+/// activation's "seed was consulted" flag for [`lr_end_activation`] to restore.
+pub(super) fn lr_begin_activation(key: &LrKey) -> bool {
+    LR_MEMO.with(|m| m.borrow_mut().insert(key.clone(), Vec::new()));
+    LR_ACTIVE.with(|a| a.borrow_mut().insert(key.clone(), ()));
+    LR_SEED_READ.with(|s| s.borrow_mut().remove(key))
+}
+
+/// Undo [`lr_begin_activation`], reporting whether anything re-entered `key`
+/// and read its seed while it was active.
+pub(super) fn lr_end_activation(key: &LrKey, outer_seed_read: bool) -> bool {
+    LR_ACTIVE.with(|a| a.borrow_mut().remove(key));
+    LR_MEMO.with(|m| m.borrow_mut().remove(key));
+    LR_SEED_READ.with(|s| {
+        let mut s = s.borrow_mut();
+        let consulted = s.contains(key);
+        if outer_seed_read {
+            s.insert(key.clone());
+        } else {
+            s.remove(key);
+        }
+        consulted
+    })
+}
+
 impl Interpreter {
     /// An alternation alternative that is a lone plain `{ … }` code block
     /// (`|| { die "no match" }`). Such a branch matches zero-width and exists
