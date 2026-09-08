@@ -145,6 +145,24 @@ impl Compiler {
         self.patch_nested_block_state_reset(state_reset);
     }
 
+    /// [`Compiler::compile_bare_block_inline`]'s twin for a tail block that
+    /// carries an ENTER/LEAVE/KEEP/UNDO phaser: those must run through a real
+    /// `BlockScope` (inlining would silently drop them), but the block is still
+    /// a genuine source `{ … }` its enclosing block re-clones on every run, so
+    /// its own `state` restarts per execution just the same.
+    ///
+    /// The `ResetStateLocals` bracket has to live here, at the call site, rather
+    /// than inside [`Compiler::compile_phaser_block_scope`]: that function is
+    /// shared with `if`/`unless` branches, and a postfix statement modifier
+    /// introduces no block at all, so its `state` must NOT restart — the
+    /// distinction [`Compiler::emit_branch_state_reset`] exists to make.
+    /// Bracketing unconditionally would break those callers.
+    pub(super) fn compile_phaser_block_literal_inline(&mut self, stmts: &[Stmt]) {
+        let state_reset = self.emit_nested_block_state_reset(stmts);
+        self.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+        self.patch_nested_block_state_reset(state_reset);
+    }
+
     /// Compile a block inline (for blocks without placeholders).
     pub(super) fn compile_block_inline(&mut self, stmts: &[Stmt]) {
         let saved = self.push_dynamic_scope_lexical();
@@ -223,7 +241,11 @@ impl Compiler {
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
                         if Self::has_block_enter_leave_phasers(inner) {
-                            self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                            if matches!(stmt, Stmt::Block(_)) {
+                                self.compile_phaser_block_literal_inline(inner);
+                            } else {
+                                self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                            }
                         } else if matches!(stmt, Stmt::Block(_)) {
                             // Genuine source `{ ... }` is a callframe.
                             self.compile_bare_block_inline(inner);
