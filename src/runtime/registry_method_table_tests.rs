@@ -2,7 +2,7 @@ use super::*;
 
 fn dummy_method_def() -> MethodDef {
     MethodDef {
-        lexical_package: "GLOBAL".to_string(),
+        lexical_package: crate::symbol::wk::global_package(),
         params: Vec::new(),
         param_defs: Vec::new(),
         body: std::sync::Arc::new(Vec::new()),

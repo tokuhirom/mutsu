@@ -151,7 +151,7 @@ impl Interpreter {
         // which the shared loop's `__mutsu_rw_map_topic__` assignment mirror
         // does not see. It declines everything else, including every
         // read-only block, for which it is 4-7.6x slower (see its module doc).
-        if !self.native_lever_a_user_override(&source, "map")
+        if !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
             && let Some(args) = func.clone().map(|f| vec![f])
             && let Some(native) = self.try_native_rw_map_over(&source, &args)
         {

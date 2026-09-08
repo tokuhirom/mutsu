@@ -285,6 +285,13 @@ pub(crate) mod wk {
         empty_package => "";
         /// The default top-level package every unqualified declaration lands in.
         global_package => "GLOBAL";
+        /// `.map`, probed by name on every map/grep reification to ask whether
+        /// an `augment class Array { method map {...} }` shadows the native
+        /// loop (`native_lever_a_user_override`).
+        map => "map";
+        /// `.gist`, probed by the same gate before the native stringification
+        /// of a value reaches `note`/`say`.
+        gist => "gist";
     }
 
     /// Whether `key` is one of the fixed per-call env keys the well-known

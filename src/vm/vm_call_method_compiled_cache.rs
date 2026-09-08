@@ -346,17 +346,43 @@ impl Interpreter {
     /// uncached it re-walked the receiver's whole MRO (`Int` -> `Cool` -> `Any`
     /// -> `Mu`) asking `user_method_overloads` at each level, just to re-derive
     /// "no, nobody augmented `Int`".
+    ///
+    /// Prefer [`Self::native_lever_a_user_override_sym`] wherever the method
+    /// name is already an interned `Symbol` (both compiled dispatch entries
+    /// hold one): this `&str` form has to intern it to build the key, and the
+    /// gate is hot enough that the intern showed up on its own — 10 calls per
+    /// construction on `benchmarks/bench-ctor.raku` (issue #7568 round 7).
     pub(crate) fn native_lever_a_user_override(&mut self, target: &Value, method: &str) -> bool {
+        self.native_lever_a_user_override_sym(target, crate::symbol::Symbol::intern(method))
+    }
+
+    /// [`Self::native_lever_a_user_override`] for a caller that already holds
+    /// the method name interned.
+    ///
+    /// The memo's *type* half is keyed by the ADDRESS of the type name rather
+    /// than by an interned `Symbol` for it. [`value_type_name`] returns a
+    /// `&'static str` — a string literal, or `RakuAstClass::printed_name`'s —
+    /// so the same address always denotes the same text, which is all a cache
+    /// key has to guarantee. (The converse does not hold: two equal `&'static
+    /// str`s could in principle live at different addresses and take two
+    /// entries. Both entries then answer identically, so that costs a slot, not
+    /// correctness.) Keying this way is what lets the gate run with no
+    /// interning at all: a `Symbol::intern` is a thread-local round trip plus a
+    /// string hash and a `memcmp`, and this ran twice per call.
+    ///
+    /// [`value_type_name`]: crate::runtime::utils::value_type_name
+    pub(crate) fn native_lever_a_user_override_sym(
+        &mut self,
+        target: &Value,
+        method_sym: crate::symbol::Symbol,
+    ) -> bool {
         let type_name = crate::runtime::utils::value_type_name(target);
         self.refresh_method_caches_for_generation();
-        let key = (
-            crate::symbol::Symbol::intern(type_name),
-            crate::symbol::Symbol::intern(method),
-        );
+        let key = (type_name.as_ptr() as usize, method_sym);
         if let Some(&hit) = self.native_lever_a_override_cache.get(&key) {
             return hit;
         }
-        let answer = self.has_user_method(type_name, method);
+        let answer = self.has_user_method(type_name, method_sym.as_str());
         self.native_lever_a_override_cache.insert(key, answer);
         answer
     }

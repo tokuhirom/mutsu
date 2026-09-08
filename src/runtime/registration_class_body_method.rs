@@ -162,7 +162,7 @@ impl Interpreter {
             matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         let def = MethodDef {
-            lexical_package: cx.saved_package.clone(),
+            lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
             params: effective_params.clone(),
             param_defs: effective_param_defs.clone(),
             body: std::sync::Arc::new(if needs_placeholder_die {

@@ -1508,7 +1508,7 @@ mod tests {
         registry.seed_builtin_method_entries();
         let seeded_generation = registry.method_generation;
         let method = MethodDef {
-            lexical_package: "GLOBAL".to_string(),
+            lexical_package: crate::symbol::wk::global_package(),
             params: Vec::new(),
             param_defs: Vec::new(),
             body: std::sync::Arc::new(Vec::new()),

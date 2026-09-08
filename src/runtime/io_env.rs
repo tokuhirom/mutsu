@@ -414,7 +414,7 @@ impl Interpreter {
         // native `Str` row, and `say $str` is what every TAP line the vendored
         // `Test.rakumod` prints comes down to (`$output.say: $tap`).
         if let ValueView::Str(s) = value.view()
-            && !self.native_lever_a_user_override(value, "gist")
+            && !self.native_lever_a_user_override_sym(value, crate::symbol::wk::gist())
         {
             return Ok(s.to_string());
         }

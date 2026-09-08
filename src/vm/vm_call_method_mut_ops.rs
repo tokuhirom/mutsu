@@ -448,7 +448,7 @@ impl Interpreter {
         // mut dispatch path does not restore it. Without this, a later `self` read
         // in an enclosing nested sub (resolved from env via `GetSelfOrNoSelf`)
         // would see `$obj` leaked in. See try_compiled_method_or_interpret.
-        let saved_self = self.get_env_with_main_alias("self");
+        let saved_self = self.get_env_self();
         let saved_topic = self.get_env_with_main_alias("_");
         let call_result = if matches!(
             name_val.view(),

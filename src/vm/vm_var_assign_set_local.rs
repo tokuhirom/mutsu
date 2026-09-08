@@ -450,7 +450,7 @@ impl Interpreter {
         let local_name = &code.locals[idx];
         if local_name.starts_with('!')
             && local_name.len() > 1
-            && let Some(self_val) = self.get_env_with_main_alias("self")
+            && let Some(self_val) = self.get_env_self()
             // Read through a ContainerRef: `$outer := self` rewrites the frame's
             // `self` into the bind's shared cell, but it still holds the instance.
             && !self_val.with_deref(|v| {

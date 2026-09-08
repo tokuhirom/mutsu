@@ -92,7 +92,7 @@ impl Interpreter {
         if attr.is_empty() || attr.starts_with(['@', '%', '&']) {
             return Ok(false);
         }
-        let Some(self_val) = self.get_env_with_main_alias("self") else {
+        let Some(self_val) = self.get_env_self() else {
             return Ok(false);
         };
         let self_val = self_val.deref_container();
