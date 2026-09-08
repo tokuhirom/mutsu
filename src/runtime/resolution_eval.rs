@@ -215,7 +215,33 @@ impl Interpreter {
         body: &[Stmt],
         cache_id: u64,
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, false, Some(cache_id))
+        self.eval_block_value_inner(body, false, false, Some(cache_id), None)
+    }
+
+    /// [`Interpreter::eval_block_value_cached`], additionally reporting the
+    /// block's compile-time `free_var_writes` — the free variables the body
+    /// *assigns* — into `free_var_writes_out`.
+    ///
+    /// The regex engine's `<?{ … }>` / `<!{ … }>` assertion path uses this to
+    /// carry an assignment through to the caller's compiled local slot without
+    /// the env snapshot + binding-identity diff a plain `{ … }` block pays
+    /// (`eval_regex_code_block_body`): an assertion is evaluated at *every*
+    /// cursor position, and ADR-0009 deliberately kept that path snapshot-free.
+    /// The compiler already knows the exact set, so an assertion that assigns
+    /// nothing reports nothing and costs nothing.
+    pub(crate) fn eval_block_value_cached_reporting_writes(
+        &mut self,
+        body: &[Stmt],
+        cache_id: u64,
+        free_var_writes_out: &mut Vec<String>,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(
+            body,
+            false,
+            false,
+            Some(cache_id),
+            Some(free_var_writes_out),
+        )
     }
 
     /// `eval_block_value`, additionally recording the block's compile-time
@@ -233,7 +259,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, true, None)
+        self.eval_block_value_inner(body, false, true, None, None)
     }
 
     /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
@@ -255,7 +281,7 @@ impl Interpreter {
         // retain-on-miss list then refreshes the slot in whichever frame declares
         // the lexical, and `propagate_pending_caller_writes` carries the value
         // across each intervening frame exit.
-        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None)
+        self.eval_block_value_inner(body, is_eval_unit, is_eval_unit, None, None)
     }
 
     /// The ambient compile context `compile_block_value_opts` folds into a
@@ -336,6 +362,7 @@ impl Interpreter {
         is_eval_unit: bool,
         record_free_var_writes: bool,
         cache_id: Option<u64>,
+        free_var_writes_out: Option<&mut Vec<String>>,
     ) -> Result<Value, RuntimeError> {
         // Taken first, unconditionally: it belongs to THIS body's compile only
         // (see the field doc), and an empty body must not leave it armed.
@@ -417,6 +444,13 @@ impl Interpreter {
         // frames, so the by-name write survives the owner frame's env restore.
         // No-op in the default build (gated on cell_boxing_active).
         self.box_carrier_free_var_writes(&code);
+        // Report (rather than act on) the compile-time free-variable writes, for
+        // a caller that owns the writeback policy itself — the regex assertion
+        // path, which has to filter the regex's own scoped bindings out of the
+        // set before it reaches the caller's slots.
+        if let Some(out) = free_var_writes_out {
+            out.extend(code.free_var_writes.iter().map(|sym| sym.resolve()));
+        }
         if record_free_var_writes {
             for sym in &code.free_var_writes {
                 let name = sym.resolve();
