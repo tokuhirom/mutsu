@@ -88,6 +88,10 @@ impl Compiler {
             return;
         }
         self.compile_expr(expr);
+        // An `@` target whose RHS is a `$` scalar variable itemizes, exactly as
+        // the statement-position store does: `(@j = $c)` must be one element,
+        // like `@j = $c` written as a statement.
+        self.emit_array_target_itemize(name, expr);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::AssignExprLocal(slot));
         } else {

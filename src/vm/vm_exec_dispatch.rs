@@ -1372,6 +1372,13 @@ impl Interpreter {
                         let old = self.env().get(&name).cloned().unwrap_or(Value::NIL);
                         let coerced = runtime::coerce_to_array(raw_val);
                         self.array_assign_nil_container_default(&name, &old, coerced)
+                    } else if let Some(decomposed) =
+                        self.array_assign_decomposed_instance(&raw_val)?
+                    {
+                        // An assignment written where its RESULT is consumed
+                        // (`say (my @b = @a).raku`) compiles to this store
+                        // rather than SetLocal, and had none of its rule.
+                        decomposed
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }
@@ -2279,6 +2286,19 @@ impl Interpreter {
                         | ValueView::RangeExclStart(..)
                         | ValueView::RangeExclBoth(..)
                         | ValueView::GenericRange { .. } => Value::scalar(val),
+                        // A scalar holding an instance an `@`-assignment would
+                        // otherwise DECOMPOSE — a `does Iterable` class with its
+                        // own `iterator`, or an `is Array`/`is List` subclass —
+                        // stays a single item for the same reason as the arms
+                        // above: it is Positional but has no itemized container
+                        // kind of its own. `my $c = SA.new(3,2,1,4); my @w = $c`
+                        // is `[[3, 2, 1, 4],]` in rakudo, while the unitemized
+                        // `my @u = @a` over a bound one is `[3, 2, 1, 4]`.
+                        ValueView::Instance { .. }
+                            if self.instance_decomposes_on_array_assign(&val) =>
+                        {
+                            Value::scalar(val)
+                        }
                         _ => Self::itemize_value(val),
                     }
                 };

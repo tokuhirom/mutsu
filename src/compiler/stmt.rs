@@ -372,6 +372,18 @@ impl Compiler {
         {
             self.code.emit(OpCode::ScalarizeRegexMatchResult);
         }
+        self.emit_array_target_itemize(name, expr);
+    }
+
+    /// Emit the `ItemizeVar` an `@` target needs when its RHS is a `$` scalar
+    /// VARIABLE, so the value is stored as one item rather than flattened.
+    ///
+    /// Split out of [`Self::compile_assignment_rhs_for_target`] so the
+    /// EXPRESSION-position stores can emit it too: `(my @i = $c)` and
+    /// `(@d = $c)` compile through `expr_block.rs`, which called `compile_expr`
+    /// directly and so never itemized — the same assignment flattened only
+    /// when written where its result is consumed.
+    pub(super) fn emit_array_target_itemize(&mut self, name: &str, expr: &Expr) {
         // When assigning a `$` scalar variable to an `@` target, itemize
         // the value so it is treated as a single item (not flattened).
         // Sigilless variables (BareWord) are not itemized. A scalar bound
