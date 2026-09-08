@@ -208,6 +208,55 @@ impl Interpreter {
         None
     }
 
+    /// Store `new_value` into the container the attribute `existing` already
+    /// holds, keeping that container's identity. Returns `false` when the two
+    /// are not the same kind of container, in which case the caller falls back
+    /// to rebinding the attribute.
+    ///
+    /// `method items { @!items }` hands back the attribute's own Array -- in
+    /// raku it *is* that object -- so `$obj.items = LIST` and
+    /// `$obj.items[$i] = v` store INTO that container; they do not rebind the
+    /// attribute to a fresh one. mutsu rebuilt the whole attribute map around a
+    /// new node instead, which was wrong twice over:
+    ///
+    /// - every alias went stale: `my @a := $obj.items; $obj.items = (1,2,3)`
+    ///   left `@a` empty where raku shows `[1 2 3]`;
+    /// - the container node moved on every write, so the ADR-0068 element-store
+    ///   guard -- which keys on the container node when the container is not
+    ///   celled -- locked a different stripe each time and excluded nothing.
+    ///   Twenty threads writing 1000 distinct indices through such an accessor
+    ///   landed 304-543 of them (rakudo: 1000), and the whole-map commit in
+    ///   `write_back_sharing` clobbered concurrent writes to *other* attributes
+    ///   as well. Storing in place removes both the stale map copy and the
+    ///   moving key.
+    ///
+    /// The auto-generated accessor for the same attribute already behaved this
+    /// way, which is why `has @.seen` was measured clean at 0/240 while
+    /// `method seen { @!seen }` lost half its writes.
+    pub(crate) fn store_into_attr_container(existing: &Value, new_value: &Value) -> bool {
+        match (existing.view(), new_value.view()) {
+            (ValueView::Array(dst, _), ValueView::Array(src, _)) => {
+                if crate::gc::Gc::ptr_eq(&dst, &src) {
+                    return true;
+                }
+                let _guard =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, existing);
+                unsafe { crate::value::gc_contents_mut(&dst) }.adopt_state_from(&src);
+                true
+            }
+            (ValueView::Hash(dst), ValueView::Hash(src)) => {
+                if crate::gc::Gc::ptr_eq(&dst, &src) {
+                    return true;
+                }
+                let _guard =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, existing);
+                unsafe { crate::value::gc_contents_mut(&dst) }.adopt_state_from(&src);
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Assign `value` into element `index_value` of the array/hash attribute
     /// `attr_name` on the instance, then write the updated instance back through
     /// `target_var`. Backs `$obj.rw-method(idx) = value` where the method

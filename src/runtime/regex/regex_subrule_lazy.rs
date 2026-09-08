@@ -34,9 +34,15 @@
 //! that hazard out: a body that cannot invoke a named rule at all cannot
 //! re-enter *itself*, so its seed can never be consulted and the growing loop
 //! is guaranteed to stop after one iteration whether or not the walk was cut
-//! short. It is an over-approximation — a non-leaf rule that is provably not
-//! part of a call cycle is eligible in principle — and tightening it needs a
-//! rule-call-graph cycle analysis, which is deliberately out of this slice.
+//! short. It is an over-approximation — it admits leaf rules only.
+//!
+//! The rule-call-graph analysis that answers the real question lives in
+//! [`super::regex_call_graph`] and gates the *streamed* subrule path
+//! (`regex_match_lazy::drive_named_subrule_candidates`), which handles a
+//! single-candidate, argument-less call under either kind of caller. This
+//! predicate is what the eager arm still falls back on for everything that path
+//! declines — a proto, several candidates, a call with arguments — where the
+//! ratchet is the only thing making truncation legal.
 //!
 //! The predicate lists the safe atom kinds explicitly and answers `false` for
 //! anything else, so a newly added `RegexAtom` variant is excluded until

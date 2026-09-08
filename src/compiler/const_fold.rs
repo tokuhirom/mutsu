@@ -169,6 +169,19 @@ impl Compiler {
         if !self.const_fold_enabled() {
             return None;
         }
+        self.compile_time_constant(name)
+    }
+
+    /// The compile-time value of an in-scope `constant` NAME, *without* the
+    /// `const_fold_enabled` gate.
+    ///
+    /// Inlining a constant read is an optimization, so it is switched off with
+    /// folding (`MUTSU_CONST_FOLD=0`, or a unit that declares its own
+    /// operators). BEGIN-time interpolation of an adverb value into a variable
+    /// *name* (`$a:foo«$c»`, `compiler::adverb_interp`) is not an optimization
+    /// — it decides which variable the program is talking about — so it reads
+    /// the same environment unconditionally.
+    pub(super) fn compile_time_constant(&self, name: &str) -> Option<&Value> {
         // mutsu strips sigils in the AST, so a `my $DEBUG` / a parameter `$DEBUG`
         // and a sigilless `constant DEBUG` collide on the same `local_map` key.
         // Anything holding that key which is not the constant itself shadows it:
@@ -186,10 +199,12 @@ impl Compiler {
 
     /// Record `constant NAME = <expr>` when its value is a constant scalar, so
     /// later reads compile to `LoadConst` instead of a package/global lookup.
+    ///
+    /// Recorded even when folding is off: `compile_time_constant` (BEGIN-time
+    /// adverb-value interpolation) needs the value regardless, and nothing
+    /// else reads `constant_values` without going through the gated
+    /// [`Compiler::constant_value`].
     pub(super) fn note_constant_decl(&mut self, name: &str, init: &Expr) {
-        if !self.const_fold_enabled() {
-            return;
-        }
         match self.const_operand(init) {
             Some(value) => {
                 self.constant_values.insert(name.to_string(), value);
@@ -210,25 +225,55 @@ impl Compiler {
     /// Evaluate an expression to a constant scalar, resolving in-scope
     /// `constant` reads. `None` = not a compile-time constant.
     pub(super) fn const_operand(&self, expr: &Expr) -> Option<Value> {
+        self.const_operand_mode(expr, false)
+    }
+
+    /// [`Compiler::const_operand`] for a BEGIN-time context that is *not* an
+    /// optimization: it ignores the folding gate and additionally resolves a
+    /// sigilled `constant $c` read (`Expr::Var`). Used only to evaluate the
+    /// `(...)`/`[...]` adverb value of an extended identifier, where raku
+    /// likewise evaluates the expression before the name exists.
+    pub(super) fn const_operand_begin_time(&self, expr: &Expr) -> Option<Value> {
+        self.const_operand_mode(expr, true)
+    }
+
+    fn const_operand_mode(&self, expr: &Expr, begin_time: bool) -> Option<Value> {
         match expr {
             Expr::Literal(v) | Expr::LiteralSrc(v, _) => const_scalar(v).then(|| v.clone()),
-            Expr::Grouped(inner) => self.const_operand(inner),
-            Expr::Unary { op, expr } => self.fold_unary(op, expr),
+            Expr::Grouped(inner) => self.const_operand_mode(inner, begin_time),
+            Expr::Unary { op, expr } => self.fold_unary_mode(op, expr, begin_time),
             Expr::Binary { left, op, right } => {
-                let l = self.const_operand(left)?;
-                let r = self.const_operand(right)?;
+                let l = self.const_operand_mode(left, begin_time)?;
+                let r = self.const_operand_mode(right, begin_time)?;
                 fold_values(op, l, r)
             }
             // Only sigilless constant reads (`constant DEBUG = False`) resolve
-            // here. A `constant $x` is read as `Expr::Var`, which shares its
-            // `local_map` key with an ordinary `my $x`, so it is left alone.
-            Expr::BareWord(name) => self.constant_value(name).cloned(),
+            // in the ordinary folding mode. A `constant $x` is read as
+            // `Expr::Var`, which shares its `local_map` key with an ordinary
+            // `my $x`, so inlining it would need shadowing rules the folder
+            // does not have (ADR-0006 §2.2) — it is left alone there and only
+            // resolved in the BEGIN-time mode, whose result is a *name*, not a
+            // value substituted into running code.
+            Expr::BareWord(name) => self.lookup_const(name, begin_time).cloned(),
+            Expr::Var(name) if begin_time => self.compile_time_constant(name).cloned(),
             _ => None,
         }
     }
 
+    fn lookup_const(&self, name: &str, begin_time: bool) -> Option<&Value> {
+        if begin_time {
+            self.compile_time_constant(name)
+        } else {
+            self.constant_value(name)
+        }
+    }
+
     fn fold_unary(&self, op: &TokenKind, expr: &Expr) -> Option<Value> {
-        let value = self.const_operand(expr)?;
+        self.fold_unary_mode(op, expr, false)
+    }
+
+    fn fold_unary_mode(&self, op: &TokenKind, expr: &Expr, begin_time: bool) -> Option<Value> {
+        let value = self.const_operand_mode(expr, begin_time)?;
         match op {
             // `-"3"` goes through the VM's string→numeric coercion (which can
             // raise X::Str::Numeric), so only numeric constants fold.

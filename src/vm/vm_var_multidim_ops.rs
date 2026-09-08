@@ -46,7 +46,7 @@ impl Interpreter {
             // with a bare `Nil` because the whole intermediate is missing, not
             // just the leaf.
             if result.is_nil() {
-                result = Value::package(crate::symbol::Symbol::intern("Any"));
+                result = Value::package(crate::symbol::wk::any());
             }
             result = Value::array(vec![result]);
         }
@@ -680,7 +680,7 @@ impl Interpreter {
                             // A missing slot of a real Array reads as its
                             // element default, Any (indexing further into the
                             // Any type object stays Any, matching raku).
-                            Value::package(Symbol::intern("Any"))
+                            Value::package(crate::symbol::wk::any())
                         } else {
                             self.multi_dim_index_read(&Value::NIL, rest)?
                         }
@@ -725,7 +725,7 @@ impl Interpreter {
                     } else if is_real {
                         // Out of bounds on a real Array: the element default
                         // (Any), like a single-dim OOB read; a List stays Nil.
-                        Ok(Value::package(Symbol::intern("Any")))
+                        Ok(Value::package(crate::symbol::wk::any()))
                     } else {
                         // Out of bounds — return Nil for scalar index
                         Ok(Value::NIL)
@@ -741,7 +741,7 @@ impl Interpreter {
                         if i < items.len() {
                             self.multi_dim_index_read(&items[i], rest)
                         } else if is_real {
-                            Ok(Value::package(Symbol::intern("Any")))
+                            Ok(Value::package(crate::symbol::wk::any()))
                         } else {
                             Ok(Value::NIL)
                         }
@@ -776,7 +776,7 @@ impl Interpreter {
                         };
                         this.multi_dim_index_read(&inner, rest)
                     }
-                    None => Ok(Value::package(crate::symbol::Symbol::intern("Any"))),
+                    None => Ok(Value::package(crate::symbol::wk::any())),
                 }
             };
 
@@ -1212,7 +1212,7 @@ impl Interpreter {
                 let existed = map.contains_key(&key);
                 let entry = map
                     .entry(key.clone())
-                    .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                    .or_insert_with(|| Value::package(crate::symbol::wk::any()));
                 let r = self.assign_chain_into_slot(entry, rest, dims, value, is_positional);
                 if r.is_err() && !existed {
                     map.remove(&key);
@@ -1481,7 +1481,7 @@ impl Interpreter {
         let k = Value::hash_key_encode(key);
         let entry = map
             .entry(k)
-            .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+            .or_insert_with(|| Value::package(crate::symbol::wk::any()));
         if !is_leaf && matches!(entry.view(), ValueView::Nil | ValueView::Package(..)) {
             *entry = Self::fresh_assoc_level();
         }
@@ -1511,7 +1511,7 @@ impl Interpreter {
             let v = values
                 .get(*vi)
                 .cloned()
-                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
             *vi += 1;
             // Write through a `ContainerRef` leaf (Track B element cell /
             // `:=`-bound element) so every snapshot holder observes the write.
@@ -1571,9 +1571,9 @@ impl Interpreter {
                 target
                     .with_hash_mut(|map| {
                         let map = crate::value::gc_data_mut(map);
-                        let entry = map.entry(s.as_str().to_string()).or_insert_with(|| {
-                            Value::package(crate::symbol::Symbol::intern("Any"))
-                        });
+                        let entry = map
+                            .entry(s.as_str().to_string())
+                            .or_insert_with(|| Value::package(crate::symbol::wk::any()));
                         self.multi_dim_assign_slice(entry, rest, values, vi, is_positional)
                     })
                     .transpose()?;
@@ -1653,7 +1653,7 @@ impl Interpreter {
                     let map = crate::value::gc_data_mut(map);
                     let entry = map
                         .entry(s.as_str().to_string())
-                        .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                        .or_insert_with(|| Value::package(crate::symbol::wk::any()));
                     self.multi_dim_assign_scalar(entry, rest, value, is_positional)
                 })
                 .transpose()?;
@@ -1772,10 +1772,7 @@ impl Interpreter {
                 if items.len() < min_size {
                     let old_len = items.len();
                     let items = crate::value::gc_data_mut(items);
-                    items.resize(
-                        min_size,
-                        Value::package(crate::symbol::Symbol::intern("Any")),
-                    );
+                    items.resize(min_size, Value::package(crate::symbol::wk::any()));
                     // The newly appended slots are unassigned gaps
                     // (`ArrayData::hole_at`, ADR-0049 §1.6/§4 slice 5). An
                     // array that never tracked gaps (`initialized: None`,
@@ -1791,10 +1788,7 @@ impl Interpreter {
             && matches!(target.view(), ValueView::Nil | ValueView::Package(..))
         {
             let mut items = Vec::with_capacity(min_size);
-            items.resize(
-                min_size,
-                Value::package(crate::symbol::Symbol::intern("Any")),
-            );
+            items.resize(min_size, Value::package(crate::symbol::wk::any()));
             // A brand-new autovivified array/row: every slot is an
             // unassigned gap until a later multidim leaf write marks its
             // index (see `multi_dim_assign_scalar`'s `initialized.insert`).

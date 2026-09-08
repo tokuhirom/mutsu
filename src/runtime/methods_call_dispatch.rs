@@ -2334,7 +2334,7 @@ impl Interpreter {
                     let enc = match cn.as_str() {
                         "utf8" => Value::str("utf-8".to_string()),
                         "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
+                        _ => Value::package(crate::symbol::wk::any()),
                     };
                     return Ok(enc);
                 }
@@ -2346,7 +2346,7 @@ impl Interpreter {
                     let enc = match cn.as_str() {
                         "utf8" => Value::str("utf-8".to_string()),
                         "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
+                        _ => Value::package(crate::symbol::wk::any()),
                     };
                     return Ok(enc);
                 }
@@ -3120,7 +3120,7 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro(None));
                     }
                     if index >= updated.len() {
-                        updated.resize(index + 1, Value::package(Symbol::intern("Any")));
+                        updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
                     }
                     updated[index] = value.clone();
                     let replacement = Value::array_with_kind(
@@ -3147,7 +3147,7 @@ impl Interpreter {
                     };
                     let mut updated = items.to_vec();
                     if index >= updated.len() {
-                        updated.resize(index + 1, Value::package(Symbol::intern("Any")));
+                        updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
                     }
                     updated[index] = Value::scalar(value.clone());
                     let replacement = Value::array_with_kind(

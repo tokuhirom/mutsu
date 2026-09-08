@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 
 use crate::ast::{ParamDef, Stmt};
@@ -323,6 +323,32 @@ thread_local! {
     static IN_DESTROY_HANDLER: RefCell<bool> = const { RefCell::new(false) };
 }
 
+/// Whether the program has EVER registered a user `DESTROY` submethod (on a
+/// class or in a role). Monotonic and process-global: registration only ever
+/// adds one, so a `false` reading means no `DESTROY` exists anywhere, and the
+/// whole queue-and-walk dance around instance death is provably a no-op.
+///
+/// Without this every user instance death cloned its entire attribute map into
+/// a pending queue, and `run_pending_instance_destroys` then walked the MRO
+/// looking for a `DESTROY` that cannot exist -- two `Symbol::intern`s per MRO
+/// level, per dead instance. On `bench-ctor` (a 21-attribute class) that was
+/// ~8 interns plus a 21-entry map clone per construction, all discarded.
+/// Read at DROP time, not at construction, so a `DESTROY` added later (an
+/// `.^add_method`, an `EVAL`ed class) still fires for everything that dies
+/// after it is registered.
+static ANY_DESTROY_DECLARED: AtomicBool = AtomicBool::new(false);
+
+/// Record that a user `DESTROY` submethod now exists (see
+/// [`ANY_DESTROY_DECLARED`]). Idempotent; never cleared.
+pub(crate) fn note_destroy_method_declared() {
+    ANY_DESTROY_DECLARED.store(true, Ordering::Release);
+}
+
+/// Whether any user `DESTROY` submethod has been registered.
+pub(crate) fn any_destroy_method_declared() -> bool {
+    ANY_DESTROY_DECLARED.load(Ordering::Acquire)
+}
+
 /// Set the in-destroy-handler flag to suppress recursive DESTROY queuing.
 pub(crate) fn set_in_destroy_handler(value: bool) {
     IN_DESTROY_HANDLER.with(|flag| *flag.borrow_mut() = value);
@@ -376,6 +402,32 @@ thread_local! {
 /// A deferred cell write: `(cell address, cell, new map)`. See
 /// [`PENDING_CELL_WRITES`].
 type PendingCellWrite = (usize, AttrCell, AttrMap);
+
+/// How many deferred cell writes exist across all threads. Deferral is a rare
+/// self-deadlock escape hatch, but EVERY [`AttrReadGuard`] drop had to consult
+/// the (per-thread) queue to find out -- a second thread-local access plus a
+/// `RefCell` borrow and a `Vec::retain` per attribute read, ~40 reads per
+/// `bench-ctor` construction. A relaxed load of this counter answers "nothing
+/// is deferred anywhere" in a couple of instructions. Global rather than
+/// per-thread on purpose: over-reporting (another thread has a deferral) only
+/// makes this thread run the correct, and empty, scan.
+static PENDING_CELL_WRITE_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether any deferred cell write may exist; see [`PENDING_CELL_WRITE_COUNT`].
+pub(super) fn pending_cell_writes_possible() -> bool {
+    PENDING_CELL_WRITE_COUNT.load(Ordering::Relaxed) > 0
+}
+
+/// Record that a deferred cell write was queued / drained.
+pub(super) fn note_pending_cell_write_pushed() {
+    PENDING_CELL_WRITE_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+pub(super) fn note_pending_cell_writes_drained(n: usize) {
+    if n > 0 {
+        PENDING_CELL_WRITE_COUNT.fetch_sub(n, Ordering::Relaxed);
+    }
+}
 
 fn cell_addr(cell: &RwLock<AttrMap>) -> usize {
     cell as *const RwLock<AttrMap> as usize
@@ -640,6 +692,7 @@ fn write_cell_respecting_reads(cell: &AttrCell, map: AttrMap) {
     let addr = cell_addr(cell);
     if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
         PENDING_CELL_WRITES.with(|p| p.borrow_mut().push((addr, cell.clone(), map)));
+        note_pending_cell_write_pushed();
         return;
     }
     *write_attrs(cell) = map;

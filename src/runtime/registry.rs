@@ -507,18 +507,35 @@ impl Registry {
             .map(|entry| entry.user_candidates.clone())
     }
 
-    /// Visibility of the auto-generated accessor `method_name` declares
-    /// directly on `class_name`, if any (ADR-0019 D2d). `None` means this
-    /// class does not declare an attribute of that name at all — distinct
-    /// from `Some(false)` (a private attribute, which still occupies the
-    /// name and must not fall through to an ancestor's same-named accessor).
-    pub(crate) fn accessor_is_public(&self, class_name: &str, method_name: &str) -> Option<bool> {
+    /// Visibility of the auto-generated accessor `name` declares directly on
+    /// `owner`, if any (ADR-0019 D2d). `None` means this class does not
+    /// declare an attribute of that name at all — distinct from `Some(false)`
+    /// (a private attribute, which still occupies the name and must not fall
+    /// through to an ancestor's same-named accessor).
+    /// Keyed by already-interned symbols; see
+    /// [`Self::user_method_local_role_presence_sym`] for why the MRO walks
+    /// need this form.
+    pub(crate) fn accessor_is_public_sym(&self, owner: Symbol, name: Symbol) -> Option<bool> {
         self.method_entries
-            .get(&MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
+            .get(&MethodEntryKey { owner, name })
             .and_then(|entry| entry.accessor)
+    }
+
+    /// Whether `(owner, name)` has any live user candidate, and if so whether
+    /// any of them is public -- `None` when the class does not declare the
+    /// name at all.
+    ///
+    /// The Symbol-keyed, allocation-free twin of
+    /// [`Self::user_method_overloads`] for the presence question. The MRO walk
+    /// in `has_user_method` asked it per level through the `&str` API, which
+    /// re-interned BOTH names per level and then CLONED the whole
+    /// `Vec<MethodDef>` (a ~300-byte struct with Strings, Arcs and Vecs) purely
+    /// to read one boolean off it -- 1.6% of `bench-ctor`.
+    pub(crate) fn user_method_public_presence(&self, owner: Symbol, name: Symbol) -> Option<bool> {
+        self.method_entries
+            .get(&MethodEntryKey { owner, name })
+            .filter(|entry| !entry.user_candidates.is_empty())
+            .map(|entry| entry.user_candidates.iter().any(|d| !d.is_private))
     }
 
     /// Per-level (`has_local_method`, `has_role_method`) presence used by
@@ -528,16 +545,16 @@ impl Registry {
     /// in a composed role. A table probe against `method_entries` instead of
     /// `class_def.methods.get(...)` plus a `Vec<MethodDef>` clone — same data,
     /// no allocation, since only the two booleans are needed here.
-    pub(crate) fn user_method_local_role_presence(
+    /// Keyed by already-interned symbols -- the form the MRO walks want, since
+    /// their level names are `Symbol`s already and re-interning them per level
+    /// is pure overhead.
+    pub(crate) fn user_method_local_role_presence_sym(
         &self,
-        class_name: &str,
-        method_name: &str,
+        owner: Symbol,
+        name: Symbol,
         is_ancestor: bool,
     ) -> (bool, bool) {
-        let Some(entry) = self.method_entries.get(&MethodEntryKey {
-            owner: Symbol::intern(class_name),
-            name: Symbol::intern(method_name),
-        }) else {
+        let Some(entry) = self.method_entries.get(&MethodEntryKey { owner, name }) else {
             return (false, false);
         };
         let (mut local, mut role) = (false, false);

@@ -88,7 +88,7 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
 
 /// Delete element from a multi-dimensional array, returning the deleted value.
 pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
-    let default = || Value::package(crate::symbol::Symbol::intern("Any"));
+    let default = || Value::package(crate::symbol::wk::any());
     // A file-scoped `@a`/`%h` shared across frames (or a nested cell-promoted
     // element) is a `ContainerRef` cell: mutate the inner container in place
     // through the lock so every alias (env entry + caller local slot, which

@@ -169,7 +169,7 @@ impl Interpreter {
         self.catch_handlers.push(entry);
 
         match outcome {
-            Ok(()) => Ok(Value::package(crate::symbol::Symbol::intern("Any"))),
+            Ok(()) => Ok(Value::package(crate::symbol::wk::any())),
             Err((verdict, mut e)) => {
                 e.set_catch_inline_verdict(Some((token, verdict)));
                 Err(e)

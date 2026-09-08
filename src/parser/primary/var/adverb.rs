@@ -3,6 +3,7 @@
 /// Handles `:adverb<value>` suffixes on variable names and the various bracket
 /// forms (`<...>`, `«...»`, `[...]`, `(...)`) used to spell adverb values.
 use super::ident::parse_ident_with_hyphens;
+use crate::adverb_name;
 
 /// Consume any `:adverb<value>` suffixes that follow a variable name.
 /// Stops before postfix adverbs (`delete`, `exists`, `v`, `kv`, `k`, `p`).
@@ -58,6 +59,13 @@ pub(crate) fn parse_anon_adverb_value(input: &str) -> Option<(String, &str)> {
 }
 
 /// Parse adverb value brackets and canonicalize to `<word1 word2>` form.
+///
+/// A spelling whose value is only known once the compile-time `constant`
+/// environment is available (`«$c»`, `(1+1)`) cannot be canonicalized here --
+/// the parser is a pure `&str -> AST` pass and its results are memoized. Those
+/// keep their source spelling, wrapped in [`adverb_name::INTERP_MARK`], and
+/// `compiler::adverb_interp` finishes the job at BEGIN time.
+///
 /// Returns (canonical_string, remaining_input) or None if no adverb value follows.
 fn parse_adverb_value(input: &str) -> Option<(String, &str)> {
     let first_char = input.chars().next()?;
@@ -68,40 +76,48 @@ fn parse_adverb_value(input: &str) -> Option<(String, &str)> {
             if let Some(inner) = input.strip_prefix("<<")
                 && let Some(close) = inner.find(">>")
             {
-                return Some((format!("<{}>", &inner[..close]), &inner[close + 2..]));
+                return Some((canonical(&inner[..close]), &inner[close + 2..]));
             }
-            // Angle brackets: <a b>
+            // Angle brackets: <a b>. Single-quote-like: never interpolates.
             let close = input.find('>')?;
             let content = &input[1..close];
             let rest = &input[close + 1..];
-            Some((format!("<{}>", content), rest))
+            Some((canonical(content), rest))
         }
         '\u{00AB}' => {
-            // French quotes: « »
+            // French quotes: « » — `qqw`, so a sigil in there interpolates.
             let close_char = '\u{00BB}';
             let close = input[first_char.len_utf8()..].find(close_char)?;
             let content = &input[first_char.len_utf8()..first_char.len_utf8() + close];
             let rest = &input[first_char.len_utf8() + close + close_char.len_utf8()..];
-            Some((format!("<{}>", content), rest))
+            if adverb_name::guillemet_interpolates(content) {
+                return Some((adverb_name::mark_unevaluated('\u{00AB}', content), rest));
+            }
+            Some((canonical(content), rest))
         }
-        '[' => {
-            // Square brackets: ['a','b']
-            let close = find_matching_bracket(input, '[', ']')?;
+        '[' | '(' => {
+            // Square brackets / parentheses: ['a','b'], (1+1). The content is
+            // an expression list; only the all-quoted-words spelling can be
+            // canonicalized without evaluating anything.
+            let close_delim = if first_char == '[' { ']' } else { ')' };
+            let close = find_matching_bracket(input, first_char, close_delim)?;
             let content = &input[1..close];
             let rest = &input[close + 1..];
-            let words = parse_comma_separated_values(content);
-            Some((format!("<{}>", words.join(" ")), rest))
-        }
-        '(' => {
-            // Parentheses: ('a','b')
-            let close = find_matching_bracket(input, '(', ')')?;
-            let content = &input[1..close];
-            let rest = &input[close + 1..];
-            let words = parse_comma_separated_values(content);
-            Some((format!("<{}>", words.join(" ")), rest))
+            if content.trim().is_empty() || adverb_name::is_all_quoted_items(content) {
+                return Some((
+                    format!("<{}>", adverb_name::literal_paren_words(content)),
+                    rest,
+                ));
+            }
+            Some((adverb_name::mark_unevaluated('(', content), rest))
         }
         _ => None,
     }
+}
+
+/// Wrap already-literal adverb-value words in the canonical `<...>` spelling.
+fn canonical(content: &str) -> String {
+    format!("<{}>", adverb_name::normalize_words(content))
 }
 
 /// Find the position of a matching closing bracket, handling nesting.
@@ -129,23 +145,4 @@ fn find_matching_bracket(input: &str, open: char, close: char) -> Option<usize> 
         }
     }
     None
-}
-
-/// Parse comma-separated values, stripping quotes.
-/// `'a','b'` → vec!["a", "b"]
-fn parse_comma_separated_values(input: &str) -> Vec<String> {
-    input
-        .split(',')
-        .map(|s| {
-            let s = s.trim();
-            // Strip surrounding quotes
-            if (s.starts_with('\'') && s.ends_with('\''))
-                || (s.starts_with('"') && s.ends_with('"'))
-            {
-                s[1..s.len() - 1].to_string()
-            } else {
-                s.to_string()
-            }
-        })
-        .collect()
 }

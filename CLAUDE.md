@@ -29,8 +29,8 @@ before starting one of these tasks:
 - Run a single prove test: `cargo build && prove -e 'target/debug/mutsu' t/<file>.t`
 - Roast (official spec tests): `make roast`
 - Run a single roast test: `cargo build && MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (or `MUTSU_BIN=target/debug/mutsu prove -e 'scripts/run-roast-test.sh' roast/<path>.t`). **`MUTSU_FUDGE=1` is required for roast tests** — fudge directives (`#?rakudo skip/todo`, `#?DOES`, `#?v6`) are only preprocessed when it is set. Without it, fudge-dependent tests fail or produce wrong counts. `make roast` sets it automatically via `scripts/run-roast-test.sh`. Never set `MUTSU_FUDGE` when running ordinary (non-roast) scripts — it would let a stray `#?rakudo skip` comment drop the next statement.
-- Pre-commit hooks (lefthook): `cargo clippy --all-targets -- -D warnings` and `cargo fmt` run automatically on commit.
-- Lint every shipped configuration: `make lint` (default host build, `jit` off, and the wasm32 lib). A warning only exists in the configuration you compile — CI lints the other two in the `lint-configs` job. Needs `rustup target add wasm32-unknown-unknown`.
+- Pre-commit hooks (lefthook): `cargo fmt` and `cargo clippy --all-targets -- -D warnings` run automatically on commit. That is the *default* configuration only — see `make lint` below and the Conventions section; a green hook does not mean a green CI.
+- Lint every shipped configuration: `make lint` — the four things CI's `lint-configs` job gates on: default clippy, clippy with `jit` off (`--no-default-features --features native`), clippy for the wasm32 lib, and rustdoc (`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items`). A warning only exists in the configuration you compile. Needs `rustup target add wasm32-unknown-unknown`. Warm-incremental it costs about 5 minutes on a 12-core box (roughly 113s / 83s / 71s / 49s); see "Conventions" for when you owe it.
 - Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
 - Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). Precedence, highest first: `use lib` (most recent first) → `-I` (in order) → `MUTSULIB` → installed modules (the `mzef` site repo) → bundled batteries. `-I` therefore shadows an installed module of the same name regardless of its version (pinned by `t/lib-path-precedence.t`).
   - Example: `cargo run -- -I lib script.raku`
@@ -531,7 +531,12 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 
 ## Conventions
 
-- **Always run `cargo fmt` and `cargo clippy --all-targets -- -D warnings` before committing** (`--all-targets`, or a warning in a `#[cfg(test)]` module reaches CI unseen). These checks run as pre-commit hooks, but you must ensure your code passes them before creating a commit. Never commit unformatted code.
+- **Always run `cargo fmt` and `make lint` before committing.** Never commit unformatted code.
+  - The lefthook pre-commit hook runs `cargo fmt` and the **default** `cargo clippy --all-targets -- -D warnings` only (`--all-targets`, or a warning in a `#[cfg(test)]` module reaches CI unseen). **Passing the hook is NOT enough to keep CI green** — treating it as sufficient has cost a follow-up fix-up commit roughly monthly (`21c3488`, `1f24b69`, `6c760a6`, `9ca48a0`, `307f579`).
+  - `make lint` adds the three configurations the hook cannot cover, and each fails CI on a warning the default clippy is structurally blind to:
+    - **rustdoc.** clippy never resolves intra-doc links, so *any* ``[`Foo`]`` in a doc comment that does not resolve **from its module** fails `lint-configs` with nothing local warning you. Note that rustdoc resolves a link against the enclosing *module*, not the `impl` block, so inside `impl Compiler` write ``[`Compiler::method`]``, never ``[`method`]``.
+    - **clippy with `jit` off** and **clippy for wasm32.** Do NOT assume these matter only when you touch `#[cfg(feature)]` code: a type whose shape differs per feature (e.g. `ValueView::Mixin` handing out `&Gc<_>` in one configuration) makes perfectly ordinary code lint differently, so any file can fail a configuration you did not compile.
+  - The ~5 minutes is still cheaper than a red `lint-configs`, the wake it triggers, and a second commit. The one case you may skip it is a **documentation-only** change, where CI skips those jobs too (`scripts/ci-docs-only.sh` — see the PR workflow section).
 - Keep each Rust source file under 500 lines. When a file exceeds 500 lines, split it into smaller modules immediately — do not defer.
 - Write feature tests using prove (`t/*.t`).
 - Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.

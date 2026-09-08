@@ -1,8 +1,11 @@
 # ADR-0073: Regex atom candidates are produced on demand, driven by the continuation
 
-- Status: Proposed (Slices 1 and 3 implemented 2026-09-07; Slice 2's ratcheted
-  half implemented 2026-09-07; Slice 2's non-ratcheted half — a `regex` caller
-  that really can backtrack into the subrule — open, tracked in
+- Status: Accepted (Slices 1 and 3 implemented 2026-09-07; Slice 2 implemented
+  in two halves, the ratcheted one 2026-09-07 and the streamed one 2026-09-08.
+  What the streamed path still declines — a call with arguments, a proto, several
+  resolved candidates, `<::(EXPR)>`, a custom-HOW grammar, `:m`, a program
+  declaring any dynamic rule parameter, and a rule that really is part of a call
+  cycle — stays on the eager arm and is tracked in
   `todo/deep/ordered-alternation-eager-candidate-enumeration.md`)
 - Date: 2026-09-07
 - Supersedes: nothing
@@ -266,7 +269,7 @@ it can be adopted incrementally.
 | A14, A15 (`:g` / `subst`) | not addressed by either — the scan is the mechanism | not addressed |
 | A16 (conjunction) | fixed | needs a `Conjunction` arm; not in Slice 1 |
 | E3 | fixed only if the subrule boundary is also replayed | fixed by Slice 2's ratcheted half |
-| E1, E2, E6 | fixed only if the subrule boundary is also replayed | needs Slice 2's non-ratcheted half |
+| E1, E2, E6 | fixed only if the subrule boundary is also replayed | fixed by Slice 2's streamed half |
 | F1, F2 | fixed | fixed by Slice 3 |
 | F6 | not a count bug at all — a pre-existing wrong *match* | unchanged, filed separately |
 | C1, D1-D3 (controls) | at risk (suppression can mute a needed block) | unchanged by construction |
@@ -305,14 +308,45 @@ it can be adopted incrementally.
   cycle" needs a rule-call-graph analysis and is residue. The seed loop keeps a
   runtime fallback (redo the iteration with the full set) for the case a `{ … }`
   block re-enters the rule by hand.
-- **Slice 2 (non-ratcheted half) — OPEN.** A `regex` caller really can backtrack
-  into the subrule, so truncation is wrong there and the arm has to *stream*
-  through a `MatchSink::Cont` — which means threading the continuation through
-  the seed loop, the proto rank-then-match dispatch (ADR-0046) and the three
-  `Vec`-returning escape hatches (`try_regex_subrule_as_method`,
-  `try_custom_how_subrule_dispatch`, `<::(EXPR)>`). The separable case is "no
-  arguments, no proto, one resolved candidate, this key not LR-active", and it
-  is the one E1/E2/E6 need.
+- **Slice 2 (streamed half) — IMPLEMENTED 2026-09-08.**
+  `drive_named_subrule_candidates` (`regex_match_lazy_subrule.rs`) walks the
+  subrule's body through a `MatchSink::Cont`, wrapping each end into the atom's
+  capture delta as it is produced, so end *k+1* is computed only once the real
+  continuation has rejected end *k*. It takes the separable case named above —
+  no arguments, no proto, exactly one resolved candidate, no custom-HOW
+  dispatch, no `:m`, no dynamic (`$*`) rule parameters anywhere in the program,
+  and this key not LR-active — and everything else falls back to the eager arm
+  unchanged. Fixes E1, E2 and E6.
+
+  What made the case decidable is `src/runtime/regex/regex_call_graph.rs`, which
+  replaces Slice 2's syntactic guard with the question the seed loop actually
+  asks: *can this rule reach a call to its own name?* Edges come from the same
+  resolution the matcher uses, `<.ws>` is an edge to `ws`, a name that resolves
+  to no rule is a builtin assertion (no edge) unless the grammar has a method of
+  that name, and anything unresolvable answers "may re-enter". So `true` means
+  proven safe and `false` only means not proven. With re-entry ruled out the
+  growing-seed loop is a formality — one iteration, seed unconsulted, first
+  result final — and the walk can be streamed. A ratchet on the calling token
+  simply stops the stream after the first end, which is what the ratcheted half
+  needed `first_only` for, so **non-leaf rules under a ratcheted caller are now
+  streamed too** and the leaf-only over-approximation is lifted for them.
+
+  The analysis is memoized per `TOKEN_DEFS_GEN` in three layers (streamable
+  verdict, direct edges, and the raw-text staticness that decides whether a
+  node's edges are generation-stable at all), because re-deciding it per call
+  cost more than the laziness saved — measured at +22% instructions on
+  `bench-yaml-parse` before the memoization and +1.6% after. A rule body whose
+  text splices a value in is answered "not knowable" *and cached as such*: a
+  `Regex`-valued scalar is interpolated as pattern SOURCE
+  (`interpolate_bound_regex_scalars`), so such a body really can gain a call
+  edge between two attempts. A sigil that appears only inside a `{ … }` code
+  block does not, because that pass treats code blocks as opaque — which is what
+  keeps the overwhelmingly common `token part { \w+ { $n++ } }` shape eligible.
+
+  The activation is still registered while streaming, so a `{ … }` block that
+  re-enters the key by hand reads the empty seed and fails instead of recursing
+  forever; if the seed turns out to have been consulted and nothing has
+  committed yet, the call is handed back to the eager growing-seed path.
 
 Two rows are deliberately **out of this ADR's scope** and have their own ticket
 files, because their mechanism is not candidate production: the `:g` / `subst`

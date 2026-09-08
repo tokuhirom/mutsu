@@ -373,7 +373,7 @@ impl Interpreter {
             return Some(Ok(def));
         }
         if matches!(target.view(), ValueView::Array(..)) {
-            return Some(Ok(Value::package(Symbol::intern("Any"))));
+            return Some(Ok(Value::package(crate::symbol::wk::any())));
         }
         if matches!(target.view(), ValueView::Set(_, _)) {
             return Some(Ok(Value::FALSE));

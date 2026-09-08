@@ -212,7 +212,7 @@ impl Interpreter {
                 }
                 self.env_mut().insert(
                     "!".to_string(),
-                    failure_exception.unwrap_or_else(|| Value::package(Symbol::intern("Any"))),
+                    failure_exception.unwrap_or_else(|| Value::package(crate::symbol::wk::any())),
                 );
                 *ip = end;
                 Ok(())

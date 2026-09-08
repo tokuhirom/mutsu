@@ -162,7 +162,7 @@ impl Interpreter {
                 // fast path, so the hole type is always Any here).
                 let removed = removed
                     .or(container_default)
-                    .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+                    .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                 if let Some(slot) = local_slot
                     && let Some(env_val) = self.env().get(var_name).cloned()
                 {
@@ -315,7 +315,7 @@ impl Interpreter {
                 container.with_array_mut(|items, _kind| {
                     let arr = crate::value::gc_data_mut(items);
                     while arr.len() < min_len {
-                        arr.push(Value::package(crate::symbol::Symbol::intern("Any")));
+                        arr.push(Value::package(crate::symbol::wk::any()));
                     }
                 });
                 if let Some(padded_val) = self.env().get(&var_name).cloned() {
@@ -936,7 +936,7 @@ impl Interpreter {
         // Deleting from a container that was never vivified: every addressed
         // slot is absent, so each deletes to the Any hole (matching raku's
         // `my %j; (%j<x>:delete).raku` → `Any`), not Nil.
-        let missing = Value::package(crate::symbol::Symbol::intern("Any"));
+        let missing = Value::package(crate::symbol::wk::any());
         match idx.view() {
             ValueView::Array(keys, ..) => Value::array(vec![missing; keys.len()]),
             _ => missing,

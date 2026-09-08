@@ -195,7 +195,7 @@ pub(crate) fn flatten_splice_replacement_args(args: &[Value]) -> Vec<Value> {
     out.into_iter()
         .map(|v| {
             if v.is_nil() {
-                Value::package(crate::symbol::Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             } else {
                 v.itemize_for_element_store()
             }
@@ -1133,6 +1133,23 @@ pub(crate) struct NativeCtorPlan {
     /// `run_construction_phase_steps`), so the per-construction whole-cell
     /// `to_map()` value clone is skipped.
     pub(crate) probe_skeleton: Arc<crate::value::AttrMap>,
+    /// Attribute name -> index into `class_attrs` / `attr_syms` / `attr_seeds`.
+    ///
+    /// `dispatch_bless` used to answer "does this named argument name a
+    /// declared attribute?" with a linear `class_attrs.iter().position(...)`
+    /// string scan PER ARGUMENT — on the `Zef::Distribution` shape that is 7
+    /// args x 21 attributes = ~147 `memcmp`s per construction (`bench-ctor`
+    /// profile: `__memcmp_avx2_movbe` at 1.7%). The map answers it with one
+    /// hash, and the answer is pure class shape.
+    pub(crate) attr_index: Arc<rustc_hash::FxHashMap<Box<str>, u32>>,
+    /// The value a no-initializer attribute seeds with, one per `class_attrs`
+    /// entry. Re-deriving it per construction meant a `type_constraints` hash
+    /// lookup plus — for the overwhelmingly common untyped/class-typed `$`
+    /// attribute — a `nominal_type_object_name_for_constraint` walk and a
+    /// `Symbol::intern` of the resulting type name, on EVERY attribute of
+    /// EVERY construction (16 interns per `bench-ctor` construction, each a
+    /// thread-local + string-hash round trip). It is pure class shape.
+    pub(crate) attr_seeds: Arc<Vec<AttrSeed>>,
     /// Which user-defined whole-object build hook this class's MRO declares —
     /// `Some("BUILDALL")`, `Some("POPULATE")`, or `None` (the overwhelmingly
     /// common case). `run_user_buildall_hook` probed this per construction with
@@ -1140,6 +1157,24 @@ pub(crate) struct NativeCtorPlan {
     /// interning both names; the answer is pure class shape, so it belongs in
     /// the plan next to `has_build`/`has_tweak`/`has_custom_bless`.
     pub(crate) user_buildall: Option<&'static str>,
+}
+
+/// The no-initializer seed of one `$`-sigil attribute, precomputed per class
+/// (see `NativeCtorPlan::attr_seeds`). `@`/`%` attributes seed an empty
+/// container (or an `is Type` one) instead and carry [`AttrSeed::Container`].
+#[derive(Clone, Copy)]
+pub(crate) enum AttrSeed {
+    /// A native integer attribute (`int`, `uint8`, `byte`, `atomicint`, ...).
+    NativeInt,
+    /// A native float attribute (`num`, `num32`, `num64`).
+    NativeNum,
+    /// A native string attribute (`str`).
+    NativeStr,
+    /// A non-native `$` attribute: its nominal type object (`Any` when
+    /// untyped, `Int` for `has Int $.x`, the subset's base for a subset, ...).
+    TypeObject(crate::symbol::Symbol),
+    /// An `@`/`%` attribute — seeded by the container logic, not from here.
+    Container,
 }
 
 /// One pre-derived step of a construction phase (BUILD or TWEAK) — see

@@ -214,6 +214,21 @@ pub(crate) fn is_dynamic_var_name(name: &str) -> bool {
 /// reads it, so `Relaxed` ordering suffices.
 static CLOSURE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for `__mutsu_sigilless_readonly::*` keys
+/// alone.
+///
+/// [`CLOSURE_META_KEY_SEEN`] lumps four unrelated key families together, so a
+/// program that creates a `__mutsu_state_key::` (a `state` variable) or a
+/// `__mutsu_predictive_seq_iter::` arms the readonly probe too -- and that
+/// probe runs on EVERY whole-variable assignment (`OpCode::CheckReadOnly`),
+/// building a `format!("__mutsu_sigilless_readonly::{name}")` and hashing it
+/// into the env for a key the program never created. Sigilless/`:=` readonly
+/// markers are much rarer than `state` variables, so they deserve their own
+/// latch. Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every creation
+/// site is a String-keyed [`Env::insert`], the flag is monotonic, and an
+/// over-set only makes the (correct) probe run.
+static SIGILLESS_READONLY_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// Monotonic, process-global flag for `__mutsu_bound::*` keys (the `:=`-bound
 /// container markers consulted by `CheckReadOnly` on every whole-variable
 /// assignment). Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every
@@ -267,6 +282,15 @@ static PLACEHOLDER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// program order than any return that could observe the binding, and an over-set
 /// only makes the (correct) probe run.
 static RETURN_REBOUND_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if a `__mutsu_sigilless_readonly::*` key may exist in some env. See
+/// [`SIGILLESS_READONLY_KEY_SEEN`]. Strictly narrower than
+/// [`closure_meta_keys_possible`], so it is the right gate for a probe that
+/// only looks for that one key family.
+#[inline]
+pub(crate) fn sigilless_readonly_keys_possible() -> bool {
+    SIGILLESS_READONLY_KEY_SEEN.load(Ordering::Relaxed)
+}
 
 /// True if any closure-writeback metadata key may exist in some env. See
 /// [`CLOSURE_META_KEY_SEEN`].
@@ -331,6 +355,9 @@ pub(crate) fn note_env_key(key: &str) {
             || key.starts_with("__mutsu_predictive_seq_iter::")
         {
             CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
+            if key.starts_with("__mutsu_sigilless_readonly::") {
+                SIGILLESS_READONLY_KEY_SEEN.store(true, Ordering::Relaxed);
+            }
         } else if key.starts_with("__mutsu_bound::") {
             BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_array_slice::") {

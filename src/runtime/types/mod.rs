@@ -425,7 +425,7 @@ impl Interpreter {
         if self.is_readonly(name) {
             return true;
         }
-        crate::env::closure_meta_keys_possible()
+        crate::env::sigilless_readonly_keys_possible()
             && matches!(
                 self.env()
                     .get(&crate::runtime::utils::sigilless_readonly_key(name))
@@ -685,7 +685,7 @@ impl Interpreter {
             ValueView::Package(name) => Value::package(name),
             ValueView::ParametricRole { .. } => value.clone(),
             ValueView::Instance { class_name, .. } => Value::package(class_name),
-            ValueView::Nil => Value::package(Symbol::intern("Any")),
+            ValueView::Nil => Value::package(crate::symbol::wk::any()),
             _ => Value::package(Symbol::intern(super::value_type_name(value))),
         }
     }

@@ -1125,7 +1125,7 @@ impl Compiler {
                     } else {
                         let any_idx = self
                             .code
-                            .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
+                            .add_constant(Value::package(crate::symbol::wk::any()));
                         self.code.emit(OpCode::LoadConst(any_idx));
                         self.emit_assign_local_or_name(&vname);
                     }
@@ -1159,7 +1159,7 @@ impl Compiler {
                 } else {
                     let any_idx = self
                         .code
-                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::wk::any()));
                     self.code.emit(OpCode::LoadConst(any_idx));
                     self.emit_assign_local_or_name(&vname);
                 }

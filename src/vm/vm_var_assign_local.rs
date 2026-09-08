@@ -138,7 +138,7 @@ impl Interpreter {
                 let v = rhs_vals
                     .get(i)
                     .cloned()
-                    .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
+                    .unwrap_or_else(|| Value::package(crate::symbol::wk::any()));
                 if let ValueView::ContainerRef(cell) = cell_val.view() {
                     Value::store_through_cell(&cell, &v);
                 } else if matches!(cell_val.view(), ValueView::HashEntryRef { .. }) {

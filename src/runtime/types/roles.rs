@@ -829,7 +829,7 @@ impl Interpreter {
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash_with_data(Value::hash_arc(HashMap::new())),
-                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
+                        _ => Value::package(crate::symbol::wk::any()),
                     }
                 };
                 mixins.insert(format!("__mutsu_attr__{}", attr_name), value);

@@ -20,7 +20,7 @@ pub(crate) fn hash_pair_keys(key: &Value) -> Vec<Value> {
 /// divergence unrelated to this ADR).
 fn decay_nil_hash_value(v: Value) -> Value {
     if v.is_nil() {
-        Value::package(crate::symbol::Symbol::intern("Any"))
+        Value::package(crate::symbol::wk::any())
     } else {
         v
     }
@@ -161,7 +161,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     let val = if i + 1 < flat.len() {
                         flat[i + 1].clone()
                     } else {
-                        Value::package(crate::symbol::Symbol::intern("Any"))
+                        Value::package(crate::symbol::wk::any())
                     };
                     map.insert(str_key, val.itemize_for_element_store());
                     i += 2;
@@ -200,7 +200,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     let val = if i + 1 < items.len() {
                         items[i + 1].clone()
                     } else {
-                        Value::package(crate::symbol::Symbol::intern("Any"))
+                        Value::package(crate::symbol::wk::any())
                     };
                     map.insert(str_key, val.itemize_for_element_store());
                     i += 2;
@@ -331,7 +331,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut map = HashMap::new();
             map.insert(
                 value.to_string_value(),
-                Value::package(crate::symbol::Symbol::intern("Any")),
+                Value::package(crate::symbol::wk::any()),
             );
             Value::hash(map)
         }
@@ -504,9 +504,7 @@ fn coerce_to_array_inner(value: Value) -> Value {
                 Value::array_with_kind(items, ArrayKind::Array)
             }
         }
-        ValueView::Nil => {
-            Value::real_array(vec![Value::package(crate::symbol::Symbol::intern("Any"))])
-        }
+        ValueView::Nil => Value::real_array(vec![Value::package(crate::symbol::wk::any())]),
         ValueView::Range(a, b) => {
             if b == i64::MAX {
                 // Infinite range — mark as lazy, capped to

@@ -1514,7 +1514,7 @@ impl Interpreter {
             // A single failed match yields the `Any` type object (matching `$/`
             // after a failed `s///`), where `.match` alone would yield `Nil`.
             let ret = if !global && match_result.is_nil() {
-                Value::package(crate::symbol::Symbol::intern("Any"))
+                Value::package(crate::symbol::wk::any())
             } else {
                 match_result
             };
@@ -2315,7 +2315,7 @@ impl Interpreter {
                     };
                     let mut updated = items.to_vec();
                     if i >= updated.len() {
-                        updated.resize(i + 1, Value::package(Symbol::intern("Any")));
+                        updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
                     }
                     updated[i] = Value::container_ref(cell);
                     let new_array = Value::array_with_kind(

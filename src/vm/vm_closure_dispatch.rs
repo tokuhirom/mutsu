@@ -795,7 +795,7 @@ impl Interpreter {
         {
             self.env_mut().insert_sym(
                 crate::symbol::Symbol::intern("_"),
-                Value::package(crate::symbol::Symbol::intern("Any")),
+                Value::package(crate::symbol::wk::any()),
             );
             // ...and that fresh `$_` is WRITABLE, whatever the caller's topic
             // was. `readonly_vars` is keyed by bare name, so a construct that

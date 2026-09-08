@@ -241,6 +241,15 @@ impl Registry {
     /// currently non-empty). Internal -- every mutator below calls this
     /// after touching `user_candidates`, never the raw field.
     fn reindex_user_method_name(&mut self, owner: Symbol, name: Symbol, live: bool) {
+        // Arm the process-global "some user DESTROY exists" latch. Instance
+        // death skips the whole queue-and-MRO-walk dance while it reads false
+        // (`crate::value::any_destroy_method_declared`), so every path that can
+        // register a class-side `DESTROY` -- a class body, `augment`,
+        // `.^add_method` -- has to pass through here. They all do: this is the
+        // single reverse-index hook every `user_candidates` mutator calls.
+        if live && name.with_str(|n| n == "DESTROY") {
+            crate::value::note_destroy_method_declared();
+        }
         if live {
             let names = self.owner_method_names.entry(owner).or_default();
             if !names.contains(&name) {

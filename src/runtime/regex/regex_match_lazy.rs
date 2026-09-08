@@ -28,7 +28,7 @@ use std::cell::Cell;
 
 /// What the walk does with one atom candidate: merge its delta, descend, and
 /// report whether the whole walk should stop.
-pub(super) type AtomCandidateCont<'f> =
+pub(in crate::runtime::regex) type AtomCandidateCont<'f> =
     dyn FnMut(&mut Interpreter, &mut CapStore, usize, RegexCaptures) -> bool + 'f;
 
 impl Interpreter {
@@ -112,6 +112,13 @@ impl Interpreter {
                         ratchet,
                         on,
                     );
+                }
+                RegexAtom::Named(name) => {
+                    if let Some(stop) = self
+                        .drive_named_subrule_candidates(name, chars, pos, store, pkg, ratchet, on)
+                    {
+                        return stop;
+                    }
                 }
                 _ => {}
             }

@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 started — see §8)
+- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 in progress — see §8, §10)
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
@@ -445,3 +445,97 @@ the cell *is* the sharing, so a worker's `@b.push(30)` is visible in the
 declaring frame with no writeback step. See
 `news/2026-09/thread-escaping-container-cell-exclusion-retired.md`; pinned by
 `t/thread-escaping-container-capture-is-lexical.t`.
+
+## 10. Step 3, second slice (2026-09-08): the accessor-returned container, and why it was never a lock
+
+`todo/deep/gc-contents-mut-cross-thread-aliased-writes.md` left one route open
+and flagged it as needing "a decision, not a patch": a container handed back by
+a **user-written** accessor.
+
+```raku
+class Holder { has @.items; method bag() { @!items } }
+```
+
+`$h.bag[$i] = 1` from 20 threads landed **418 / 543 / 304 of 1000** writes
+(rakudo: 1000) — silent loss, no crash. The earlier attempt keyed that funnel's
+guard on the shared invocant and still measured 24/24 wrong, and concluded that
+the exclusion would have to cover the accessor dispatch. Both halves of that
+conclusion turned out to be right, but only after a **deterministic bug** was
+removed from underneath them.
+
+### 10.1 The accessor assignment was rebinding the attribute, not storing through it
+
+`method items { @!items }` hands back the attribute's own `Array`; in raku it
+*is* that object, so `$obj.items = LIST` and `$obj.items[$i] = v` store **into**
+that container. mutsu instead rebuilt the whole attribute map around a fresh
+node (`assign_method_lvalue_with_values`'s `rw_attr_target` branch →
+`Value::write_back_sharing`). That is observable with one thread:
+
+```raku
+my @alias := $h.bag;  $h.bag = (1,2,3);
+say @alias;    # raku: [1 2 3]    mutsu: []
+```
+
+The generated accessor for the same attribute never had the bug, which is
+exactly why `has @.seen` measured 0/240 in §8 while `method seen { @!seen }` lost
+half its writes.
+
+The concurrency consequence is the interesting one, and it is why no amount of
+locking had moved the number: **the container's address moved on every write**,
+so a guard keyed on it locked a different stripe each time (measured: four
+distinct `Gc<ArrayData>` addresses in six writes from two threads). On top of
+that, `write_back_sharing` commits a *copy of the whole attribute map* into the
+shared cell, so a slow thread could clobber concurrent writes to unrelated
+attributes as well.
+
+`ArrayData::adopt_state_from` / `HashData::adopt_state_from` do the store in
+place, preserving the node (and hence `.WHICH`) and dropping the map commit.
+Pin: `t/attribute-accessor-container-identity.t`.
+
+### 10.2 The guard is keyed on the invocant's attribute cell, and taken before the accessor runs
+
+§8 put the attribute funnel's guard on the container the accessor handed back,
+and deliberately left the accessor dispatch outside the region. With §10.1's
+node churn removed the container is stable again — but it is still the wrong
+key, because the *read* that races is the accessor's own read of the live
+container's elements, and that read happens before any guard exists.
+
+The `Gc<InstanceAttrs>` of the invocant is the right key: measured, it is
+identical on every write from every thread reaching the same object, and no
+store moves it. `builtin_index_assign_method_lvalue` now acquires the guard on
+it **before** the accessor dispatch, so the whole read-modify-write — accessor
+call, element modify, store-back — is one critical section. A non-instance
+invocant keeps the previous container/cell key.
+
+This is the decision the ticket asked for. Its cost is that user code (the
+accessor body) now runs inside the region. The at-most-one-lock rule makes that
+safe against the obvious re-entrancy — an accessor that itself stores into a
+container takes no second lock, so it cannot self-deadlock — and what remains
+uncovered is an accessor that *blocks on another thread* while this one holds
+the stripe. No such accessor exists in the suite, and the alternative is leaving
+a live container's element read racing with a `Vec` reallocation, which is a
+use-after-free.
+
+### 10.3 Acceptance (debug build, `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`, 24-way)
+
+| Route | Before | After |
+|---|---|---|
+| `$h.bag[$i] = 1`, user accessor, array | 304-543 of 1000 writes landed | **0 / 96 failures** |
+| `$h.bag{$k} = 1`, user accessor, hash | — | **0 / 96** |
+| `$h.bag.push($v)`, user accessor | — | **0 / 96** |
+| `$obj.attr[$i] = v` written INLINE in the thread body (no routine in between) | lost updates on 4 of 5 runs | **0 / 96** |
+| §8's named-sub attribute store (regression check) | 0 / 240 | **0 / 96** |
+
+The inline row is a route §8 never probed: with no routine closing over the
+invocant the container never becomes celled, so neither the celled guard nor the
+name-keyed lane applied to it. It is covered by the same change.
+Pins: three new rows in `t/concurrent-attribute-element-store.t`.
+
+### 10.4 Still open
+
+Route 5 (`Channel.Supply` tap captures) is still blocked behind the
+Channel-supply delivery bug, and §3.1's `S17-procasync/stress.t` SIGSEGV is
+still unexplained. The remaining §2 lane-decline reasons (twigil'd names, a
+container never in a spawning frame's env) stay unprobed; the expectation
+recorded in §8 — that a new route arrives at one of the known funnels — held for
+this one.

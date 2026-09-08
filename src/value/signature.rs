@@ -528,7 +528,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> HashMap<
         Some(t) if t.starts_with("::") => {
             // Type capture like ::T — type is Any, capture name is T
             type_captures.push(Value::str(t[2..].to_string()));
-            Value::Package(Symbol::intern("Any"))
+            Value::Package(crate::symbol::wk::any())
         }
         // `Int @x` / `Int %h` constrain the *element* type; the parameter's
         // own type is the parameterized container role.
