@@ -1104,6 +1104,8 @@ mod declaration_plan_tests {
 }
 mod adverb_interp;
 mod const_fold;
+pub(crate) mod control_block;
+mod control_block_scope;
 mod control_for;
 mod control_if;
 mod decl_plan;

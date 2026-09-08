@@ -544,6 +544,15 @@ impl Interpreter {
                 // `7`; raku says `Any`.
                 self.stack.truncate(saved_depth);
                 self.stack.push(Value::NIL);
+                // A control signal a `when`/`default` in CONTROL matched is
+                // HANDLED, so the region completed normally -- exactly like the
+                // `Ok(())` arm above, which resets `$!` to the `Any` type object.
+                // Leaving `$!` at its pre-region value made
+                // `try { CONTROL { default { } }; next }` report whatever error
+                // the *previous* statement had left there; raku says `Any`
+                // (pin: t/implicit-catch-wrapper-does-not-trap.t).
+                self.env_mut()
+                    .insert("!".to_string(), Value::package(crate::symbol::wk::any()));
                 *ip = end;
                 Ok(())
             }
