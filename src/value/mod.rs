@@ -302,6 +302,7 @@ pub(crate) fn current_time_secs_f64() -> f64 {
 }
 
 pub(crate) use display::is_internal_anon_type_name;
+pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
