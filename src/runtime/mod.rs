@@ -673,6 +673,7 @@ mod sequence;
 pub(crate) mod shared_store;
 mod signal_watcher;
 pub(crate) mod slang_activation;
+mod source_code_text;
 pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_validate;

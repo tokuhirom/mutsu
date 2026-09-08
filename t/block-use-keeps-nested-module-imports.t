@@ -13,11 +13,6 @@
 # holds because the module-body delta is taken BEFORE `import_module`, so an
 # alias installed for the IMPORTING scope is never in the retained set.
 #
-# NOTE: do NOT name the provider the fixtures import in a comment here. mutsu
-# picks a provider module out of the source text even inside a comment, which
-# loads it at the top level and masks the very failure this file pins (GH
-# #7611). Delete this paragraph when that is fixed.
-#
 # The opposite edge -- that the nested module's import is also visible to the
 # USING scope, where rakudo hides it -- is pre-existing and tracked as GH #7612;
 # it reproduces with no block at all, so it is deliberately not asserted here.
