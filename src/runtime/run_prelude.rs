@@ -1,6 +1,6 @@
 use super::run::{
-    IO_SOCKET_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES,
-    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
+    IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE,
+    NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
 };
 use super::*;
 
@@ -185,6 +185,39 @@ impl Interpreter {
         static TRAIT_MOD_DOES_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_DOES_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(TRAIT_MOD_DOES_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the `Metamodel::Naming` / `Metamodel::Stashing` metaroles
+    /// ([`METAMODEL_ROLE_PRELUDE`]) to a program that composes either of them.
+    ///
+    /// Gated on the role names themselves rather than on a bare `Metamodel`:
+    /// `Metamodel::Primitives` is dispatched natively and needs nothing
+    /// injected, and `.^name`/`.^compose` mention no `Metamodel::` name at all,
+    /// so keying on the prefix would prepend two role declarations to most
+    /// programs that merely introspect. A program declaring its own role of
+    /// either name keeps it (the prelude would collide with it), exactly as
+    /// [`Self::inject_prelude_roles`] treats `role Rational`.
+    pub(super) fn inject_metamodel_role_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        let wants_naming =
+            source.contains("Metamodel::Naming") && !source.contains("role Metamodel::Naming");
+        let wants_stashing =
+            source.contains("Metamodel::Stashing") && !source.contains("role Metamodel::Stashing");
+        if !wants_naming && !wants_stashing {
+            return;
+        }
+        use std::sync::OnceLock;
+        static METAMODEL_ROLE_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = METAMODEL_ROLE_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(METAMODEL_ROLE_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

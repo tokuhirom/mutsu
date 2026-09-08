@@ -182,7 +182,11 @@ impl Interpreter {
             }
             ValueView::Proxy { .. } => "Proxy",
             ValueView::CustomType(c) => {
-                return Ok(Value::package(c.name));
+                let named = self.custom_type_how_name(target)?;
+                return Ok(Value::package(match named {
+                    Some(name) => Symbol::intern(&name),
+                    None => c.name,
+                }));
             }
             ValueView::CustomTypeInstance(d) => {
                 return Ok(Value::package(d.type_name));
@@ -414,7 +418,7 @@ impl Interpreter {
     }
 
     /// Dispatch .WHO method
-    pub(super) fn dispatch_who(&self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_who(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         if let ValueView::Package(name) = target.view() {
             return Ok(self.package_stash_value(&name.resolve()));
         }
@@ -423,11 +427,47 @@ impl Interpreter {
             return Ok(self.package_stash_value(&class_name.resolve()));
         }
         if let ValueView::CustomType(c) = target.view() {
-            return Ok(self.package_stash_value(&c.name.resolve()));
+            let name = match self.custom_type_how_name(target)? {
+                Some(name) => name,
+                None => c.name.resolve(),
+            };
+            return Ok(self.package_stash_value(&name));
         }
         // Builtin values (Int, Str, Array, ...) also answer .WHO with their
         // type's Stash, same as the type object (raku: 42.WHO.^name is Stash).
         Ok(self.package_stash_value(value_type_name(target)))
+    }
+
+    /// The name a `create_type` type object's own metaobject answers to, or
+    /// `None` when that metaobject has no `name` method to ask.
+    ///
+    /// This is Rakudo's `.^name` protocol taken literally: `.^name` is
+    /// `$type.HOW.name($type)`, and `Metamodel::Naming` -- which is where a
+    /// custom HOW gets `name`/`set_name` from -- keeps the name as state on the
+    /// *metaobject*, not on the type. So a rename made through
+    /// `$meta.set_name($type, $name)` is visible from every copy of the type
+    /// object (they share the HOW) and, faithfully, only from the metaobject
+    /// that was told: a second `WithStashHOW.new` names nothing, the same way
+    /// it answers the empty string in Rakudo.
+    ///
+    /// `None` (rather than a name) for a HOW that composes no naming role, so
+    /// the caller keeps whatever name the type was minted with. The type object
+    /// itself is passed as the argument, matching the role's
+    /// `method name($obj)` signature.
+    fn custom_type_how_name(&mut self, type_val: &Value) -> Result<Option<String>, RuntimeError> {
+        let ValueView::CustomType(c) = type_val.view() else {
+            return Ok(None);
+        };
+        let how = (*c.how).clone();
+        if !self.value_can_method(&how, "name") {
+            return Ok(None);
+        }
+        // Whatever the metaobject answers is the name, the empty string
+        // included: an un-named `create_type` type object reports `""` under
+        // `raku` too, not a placeholder. `None` here means only "this HOW has
+        // no name to give", which is a different thing.
+        let named = self.call_method_with_values(how, "name", vec![type_val.clone()])?;
+        Ok(Some(named.to_string_value()))
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
@@ -798,6 +838,22 @@ impl Interpreter {
             ValueView::Promise(p) => {
                 crate::value::user_facing_type_name(&p.class_name().resolve()).to_string()
             }
+            // A `Metamodel::Primitives.create_type` type object gets its name
+            // from its own metaobject, exactly as Rakudo's `.^name` does
+            // (`$type.HOW.name($type)`): the name is state on the HOW, not on
+            // the type. A HOW that does not compose `Metamodel::Naming` has no
+            // name to give, and the type reports its minted one.
+            ValueView::CustomType(c) => match self.custom_type_how_name(target)? {
+                Some(name) => name,
+                None => {
+                    let minted = c.name.resolve();
+                    if minted.is_empty() {
+                        "CustomType".to_string()
+                    } else {
+                        minted
+                    }
+                }
+            },
             ValueView::ParametricRole {
                 base_name,
                 type_args,

@@ -234,6 +234,24 @@ impl Interpreter {
                 // human-readable name for display. Persist the name so a later
                 // `.^name` returns it.
                 let new_name = args[1].to_string_value();
+                // `.^set_name` on a `Metamodel::Primitives.create_type` type
+                // object is `$type.HOW.set_name($type, $name)`, the write half
+                // of the same `Metamodel::Naming` protocol `.^name` reads --
+                // the name is state on the metaobject, so there is nothing to
+                // record on the type itself. A HOW that composes no naming
+                // role has nowhere to put the name; leave it anonymous rather
+                // than inventing a store the metaobject cannot see.
+                if let ValueView::CustomType(c) = args[0].view() {
+                    let how = (*c.how).clone();
+                    if self.value_can_method(&how, "set_name") {
+                        self.call_method_with_values(
+                            how,
+                            "set_name",
+                            vec![args[0].clone(), Value::str(new_name.clone())],
+                        )?;
+                    }
+                    return Ok(Value::str(new_name));
+                }
                 match args[0].view() {
                     ValueView::Mixin(inner, mixins) => {
                         // Resolve to the composition-keyed shared node
@@ -393,6 +411,11 @@ impl Interpreter {
                         None => crate::value::what_type_name(&args[0]),
                     };
                     return Ok(Value::str(name));
+                }
+                if matches!(args[0].view(), ValueView::CustomType(_)) {
+                    // Same `$type.HOW.name($type)` resolution the `.^name`
+                    // fast path performs -- one definition, not two.
+                    return self.dispatch_caret_name(&args[0]);
                 }
                 let name = match args[0].view() {
                     ValueView::Package(name) => self
