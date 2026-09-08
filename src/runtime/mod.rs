@@ -2047,6 +2047,13 @@ pub struct Interpreter {
     /// Used to propagate package declarations when a module is re-used.
     module_packages: HashMap<String, HashSet<String>>,
     closure_env_overrides: HashMap<u64, Env>,
+    /// One-entry memo of the last closure-capture env, so a closure literal
+    /// created over and over from an unchanged scope (`.map({...})` in a loop)
+    /// stops rebuilding the same map every time. See
+    /// [`crate::vm::vm_capture_cache`]. Boxed like `cur_repo`: it is touched
+    /// only by closure creation, and inlining ~180 bytes of it would push the
+    /// per-opcode hot fields apart for every program.
+    pub(crate) capture_cache: Box<crate::vm::vm_capture_cache::CaptureCache>,
     /// Sigilless parameter names (`\attr`, `my \x`) of the routine whose body is
     /// about to be compiled by the interpret path (`compile_block_value_opts`).
     /// The multi/user-sub fallback runs a body via a *fresh* `Compiler`, which

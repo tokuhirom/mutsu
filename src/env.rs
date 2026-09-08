@@ -13,7 +13,7 @@ use crate::value::Value;
 /// cost dominated method/variable-heavy benchmarks (perf: ~7% of self time in
 /// `SipHasher::write`/`hash_one`). Iteration order is unspecified either way, so
 /// no env-iteration consumer (`iter`/`keys`/`values`/pseudo-stash) is affected.
-type SymMap = rustc_hash::FxHashMap<Symbol, Value>;
+pub(crate) type SymMap = rustc_hash::FxHashMap<Symbol, Value>;
 
 /// Process-wide immutable "base" tier of the environment.
 ///
@@ -138,6 +138,25 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
         Some(first)
     };
     matches!(decider, Some(c) if c.is_ascii_lowercase())
+}
+
+/// True for an *attribute-twigil* env key (`!x`, `@!x`, `%.x`, `$.y`, …): a
+/// per-frame materialization of one of `self`'s attributes rather than a
+/// lexical.
+///
+/// The closure capture must never snapshot one: the closure has to read the
+/// attribute through its captured `self` at RUN time, because a creation-time
+/// copy goes stale the moment the instance mutates (a `start` block reading
+/// `@!before` inside `Cro::CompositeConnector.connect` saw an empty
+/// pre-mutation copy).
+#[inline]
+pub(crate) fn is_attr_twigil_env_key(name: &str) -> bool {
+    let bare = match name.as_bytes().first() {
+        Some(b'@' | b'%' | b'&' | b'$') => &name[1..],
+        _ => name,
+    };
+    let b = bare.as_bytes();
+    matches!(b.first(), Some(b'!') | Some(b'.')) && b.len() > 1 && b[1].is_ascii_alphabetic()
 }
 
 /// True when `name` is a sigil-less env key that holds a *magic variable* rather
@@ -1144,6 +1163,78 @@ impl Env {
     pub(crate) fn inner(&self) -> &SymMap {
         &self.inner
     }
+
+    /// Non-owning identity of this env's tier chain: the address of each tier's
+    /// overlay map, leaf first. `None` when the chain is not describable this
+    /// way -- it carries tombstones (a plain `FxHashSet` this cannot pin, so a
+    /// removal would be invisible to the comparison) or is deeper than
+    /// [`MAX_IDENTITY_TIERS`].
+    ///
+    /// Addresses alone are a *heuristic*: a dropped map's allocation can be
+    /// recycled at the same address. Pair them with [`Self::tier_maps`], which
+    /// holds each tier's `Arc` and so keeps the addresses from being recycled,
+    /// before treating a match as proof that the contents are unchanged. See
+    /// `Interpreter::capture_closure_env`.
+    pub(crate) fn tier_addrs(&self) -> Option<TierAddrs> {
+        let mut addrs = [0usize; MAX_IDENTITY_TIERS];
+        let mut len = 0usize;
+        let mut cur = self;
+        loop {
+            if cur.tombstones.is_some() || len == MAX_IDENTITY_TIERS {
+                return None;
+            }
+            addrs[len] = Arc::as_ptr(&cur.inner) as usize;
+            len += 1;
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
+        }
+        Some(TierAddrs { addrs, len })
+    }
+
+    /// Owning twin of [`Self::tier_addrs`]: an `Arc` handle on every tier's
+    /// overlay map, leaf first. Holding these pins the addresses (nothing can
+    /// be freed and re-allocated at one of them) AND forces copy-on-write on
+    /// the next by-name write to any tier, so an address match proves the
+    /// visible contents are byte-for-byte the ones that were there before.
+    pub(crate) fn tier_maps(&self) -> Vec<Arc<SymMap>> {
+        let mut maps = Vec::new();
+        let mut cur = self;
+        loop {
+            maps.push(Arc::clone(&cur.inner));
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
+        }
+        maps
+    }
+}
+
+/// Longest tier chain [`Env::tier_addrs`] describes. Deeper chains are simply
+/// reported as un-identifiable; [`MAX_OVERLAY_DEPTH`] bounds the chain anyway
+/// and ordinary nesting is a handful of tiers.
+const MAX_IDENTITY_TIERS: usize = 8;
+
+/// The address of each tier's overlay map in one env chain -- see
+/// [`Env::tier_addrs`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TierAddrs {
+    addrs: [usize; MAX_IDENTITY_TIERS],
+    len: usize,
+}
+
+impl TierAddrs {
+    /// True when `maps` (an owning [`Env::tier_maps`] snapshot) is exactly the
+    /// chain these addresses describe.
+    pub(crate) fn matches(&self, maps: &[Arc<SymMap>]) -> bool {
+        maps.len() == self.len
+            && maps
+                .iter()
+                .zip(&self.addrs[..self.len])
+                .all(|(map, addr)| Arc::as_ptr(map) as usize == *addr)
+    }
 }
 
 impl Default for Env {
@@ -1314,6 +1405,50 @@ mod tests {
         // Re-inserting clears the tombstone.
         leaf.insert("a".into(), Value::int(5));
         assert_eq!(leaf.get_sym(s("a")), Some(&Value::int(5)));
+    }
+
+    #[test]
+    fn tier_addrs_match_only_while_the_held_maps_are_untouched() {
+        // The closure-capture memo reuses a captured env whenever the tier
+        // ADDRESSES still match the `Arc`s it holds. That is only sound because
+        // holding those `Arc`s makes `cow_mut`'s `Arc::make_mut` clone before
+        // any by-name write, so a written tier necessarily moves — which is
+        // exactly what this pins.
+        let mut root = Env::new();
+        root.insert("a".into(), Value::int(1));
+        let mut leaf = Env::scoped_child(root);
+        leaf.insert("b".into(), Value::int(2));
+
+        let held = leaf.tier_maps();
+        assert_eq!(held.len(), 2, "leaf overlay plus the root tier");
+        let addrs = leaf.tier_addrs().expect("no tombstones, shallow chain");
+        assert!(
+            addrs.matches(&held),
+            "an untouched chain keeps its addresses"
+        );
+        // A read must not disturb them.
+        assert_eq!(leaf.get_sym(s("a")), Some(&Value::int(1)));
+        assert!(addrs.matches(&held));
+
+        // Writing to the leaf moves it, so the recorded addresses stop matching.
+        leaf.insert("c".into(), Value::int(3));
+        let after = leaf.tier_addrs().expect("still no tombstones");
+        assert!(
+            !after.matches(&held),
+            "a by-name write must break the address match"
+        );
+    }
+
+    #[test]
+    fn tier_addrs_refuses_a_tombstoned_chain() {
+        // Tombstones are a plain `FxHashSet` the memo cannot pin, so a chain
+        // carrying one is reported as un-identifiable rather than compared.
+        let mut root = Env::new();
+        root.insert("a".into(), Value::int(1));
+        let mut leaf = Env::scoped_child(root);
+        assert!(leaf.tier_addrs().is_some());
+        leaf.remove("a");
+        assert!(leaf.tier_addrs().is_none());
     }
 
     #[test]

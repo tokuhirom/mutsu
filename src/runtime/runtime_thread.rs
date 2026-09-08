@@ -650,6 +650,10 @@ impl Interpreter {
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_packages: self.module_packages.clone(),
             closure_env_overrides: self.closure_env_overrides.clone(),
+            // A fresh thread starts with an empty memo: the entry holds `Arc`s
+            // on the parent thread's env tiers, which this interpreter neither
+            // shares nor should pin.
+            capture_cache: Default::default(),
             pending_eval_sigilless: Vec::new(),
             pending_eval_placeholder_params: Vec::new(),
             pending_eval_rw_tail: false,

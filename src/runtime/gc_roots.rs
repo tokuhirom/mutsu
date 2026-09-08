@@ -113,6 +113,7 @@ impl Interpreter {
         for env in self.closure_env_overrides.values() {
             env.visit_values(visitor);
         }
+        self.capture_cache.visit_roots(visitor);
         for env in &self.caller_env_stack {
             env.visit_values(visitor);
         }

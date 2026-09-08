@@ -119,7 +119,7 @@ impl Interpreter {
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.lexical_closure_package()),
+                package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
                 params: params.clone(),
                 param_defs: param_defs.clone(),
@@ -178,7 +178,7 @@ impl Interpreter {
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.lexical_closure_package()),
+                package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
                 params: vec![],
                 param_defs: Vec::new(),
@@ -735,7 +735,7 @@ impl Interpreter {
                     .cloned();
                 let sub_val = if let Some(def) = installed {
                     Value::make_sub_for_routine(
-                        Symbol::intern(&self.lexical_closure_package()),
+                        self.lexical_closure_package_sym(),
                         Symbol::intern(&resolved_name),
                         def.params.clone(),
                         def.param_defs.clone(),
@@ -746,7 +746,7 @@ impl Interpreter {
                     )
                 } else {
                     Value::make_sub(
-                        Symbol::intern(&self.lexical_closure_package()),
+                        self.lexical_closure_package_sym(),
                         Symbol::intern(&resolved_name),
                         params.clone(),
                         param_defs.clone(),

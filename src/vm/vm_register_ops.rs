@@ -305,7 +305,7 @@ impl Interpreter {
             // Dynamics (`$*x`), the topic, attribute twigils and `__mutsu_*`
             // metadata resolve through their own stores against the LIVE frame
             // by design — never freeze one into a lexical snapshot.
-            if !sym.with_str(crate::env::is_plain_user_lexical) {
+            if !sym.is_plain_user_lexical() {
                 continue;
             }
             if let Some(slot) =
@@ -630,8 +630,11 @@ impl Interpreter {
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.lexical_closure_package()),
-                name: Symbol::intern(""),
+                package: self.lexical_closure_package_sym(),
+                // Pre-interned like its `MakeLambda` twin: re-interning the
+                // empty literal on every block creation hashed a string for a
+                // constant answer.
+                name: crate::symbol::well_known::anon(),
                 params,
                 param_defs: Vec::new(),
                 body: code.closure_body_arc(idx as usize),
@@ -738,7 +741,7 @@ impl Interpreter {
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: Symbol::intern(&self.lexical_closure_package()),
+                package: self.lexical_closure_package_sym(),
                 // Anonymous closures pool a SubDecl with an empty name; a
                 // named `anon sub NAME` decl carries its name through here.
                 name: *name,
@@ -960,7 +963,7 @@ impl Interpreter {
     /// `ContainerRef` cell that `box_captured_lexicals` installs in both the slot
     /// and `env`.
     pub(super) fn capture_closure_env(
-        &self,
+        &mut self,
         code: &CompiledCode,
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) -> Env {
@@ -1018,7 +1021,7 @@ impl Interpreter {
             flat.remove_sym(crate::symbol::well_known::callable_type());
             // Attribute-twigil keys are per-frame materializations of `self`'s
             // attributes — never snapshot them (see the filtered branch below).
-            flat.retain(|k, _| !k.with_str(Self::is_attr_twigil_env_key));
+            flat.retain(|k, _| !k.is_attr_twigil_env_key());
             self.capture_bare_callees(cc, &mut flat);
             self.materialize_frame_self_into_capture(code, &mut flat);
             return flat;
@@ -1045,23 +1048,54 @@ impl Interpreter {
         // ordinary inner block would be mis-detected as a WhateverCode (see the
         // by-name path above).
         let callable_type_sym = crate::symbol::well_known::callable_type();
+        // The filter below reads only the KEY, so its result is a pure function
+        // of the visible env contents and of `cc` — which is what lets a
+        // repeated creation of the same closure literal from an unchanged scope
+        // reuse the previous map instead of rebuilding it (the built-in
+        // dynamics alone put ~23 entries in every capture). See
+        // `crate::vm::vm_capture_cache` for why an address comparison settles
+        // "unchanged".
+        let tier_addrs = self.env().tier_addrs();
+        if let Some(cached) = self.capture_cache.get(tier_addrs, cc) {
+            let mut env = cached.clone();
+            self.finish_closure_capture(code, cc, &mut env);
+            return env;
+        }
         let mut env = self.env().filtered_flat(&|k, _v| {
             if k == callable_type_sym {
                 return false;
             }
+            // One memoized flags byte answers both string questions this filter
+            // asks per key (see `symbol::flags`), instead of resolving the
+            // symbol and re-scanning its bytes twice.
+            let flags = k.flags();
             // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
             // materializations of `self`'s attributes, not lexicals: the
             // closure must read them through its captured `self` at RUN time.
             // A creation-time snapshot goes stale the moment the instance
             // mutates — a `start` block reading `@!before` inside
             // Cro::CompositeConnector.connect saw an empty pre-mutation copy.
-            if k.with_str(Self::is_attr_twigil_env_key) {
+            if flags & crate::symbol::flags::ATTR_TWIGIL_ENV_KEY != 0 {
                 return false;
             }
             free.contains(&k)
                 || (!own_locals.contains(&k)
-                    && k.with_str(|s| !crate::env::is_plain_user_lexical(s)))
+                    && flags & crate::symbol::flags::PLAIN_USER_LEXICAL == 0)
         });
+        let tiers = self
+            .capture_cache
+            .wants_arm(tier_addrs, cc)
+            .then(|| self.env().tier_maps());
+        self.capture_cache.record(tier_addrs, cc, tiers, &env);
+        self.finish_closure_capture(code, cc, &mut env);
+        env
+    }
+
+    /// The per-creation half of [`Self::capture_closure_env`]: everything that
+    /// depends on the CREATING frame's live state rather than on the visible
+    /// env, so it must run afresh for every closure — including one whose
+    /// filtered env came back from the memo.
+    fn finish_closure_capture(&mut self, code: &CompiledCode, cc: &CompiledCode, env: &mut Env) {
         // Upvalue read: override this frame's own free-var slots with the live
         // local value. Authoritative even after the closure-driven env flush is
         // gone (a slot-only local is no longer mirrored into `env`).
@@ -1073,16 +1107,15 @@ impl Interpreter {
             }
         }
         // ADR-0024 §4: see the identical override in the reflective path above.
-        self.inject_mainline_lexical_captures(cc, &mut env);
+        self.inject_mainline_lexical_captures(cc, env);
         // A bare call records only its sigilless callee in bytecode, so it is
         // not normally part of `free_var_syms`. Preserve an existing lexical
         // code binding for each callee the closure (or a nested closure it may
         // create later) actually references. This is the escape gate for an
         // imported sub installed by `use` inside EVAL: PopImportScope may remove
         // the registry alias, while the escaping closure still owns `&name`.
-        self.capture_bare_callees(cc, &mut env);
-        self.materialize_frame_self_into_capture(code, &mut env);
-        env
+        self.capture_bare_callees(cc, env);
+        self.materialize_frame_self_into_capture(code, env);
     }
 
     /// ADR-0024 §4: while [`Self::mainline_lexical_frame_active`] holds (a
@@ -1149,18 +1182,6 @@ impl Interpreter {
         }
     }
 
-    /// Attribute-twigil env keys (`!x`, `@!x`, `%.x`, …): per-frame
-    /// materializations of `self`'s attributes that a closure capture must NOT
-    /// snapshot (see the capture filter).
-    fn is_attr_twigil_env_key(s: &str) -> bool {
-        let bare = match s.as_bytes().first() {
-            Some(b'@' | b'%' | b'&' | b'$') => &s[1..],
-            _ => s,
-        };
-        let b = bare.as_bytes();
-        matches!(b.first(), Some(b'!') | Some(b'.')) && b.len() > 1 && b[1].is_ascii_alphabetic()
-    }
-
     /// `self` is lexical: a closure created inside a method body must capture
     /// that method's invocant. On the fast method path (skip_env_setup) `self`
     /// lives ONLY in a local slot, so the env-based capture above misses it and
@@ -1169,12 +1190,19 @@ impl Interpreter {
     /// in `Sink.sinker` and tapped from another object's method read `$!sum`
     /// off that other object (Cro::Service.start's assembled pipeline).
     fn materialize_frame_self_into_capture(&self, code: &CompiledCode, env: &mut Env) {
-        if env.get("self").is_none()
+        // Symbol-keyed: this runs on every closure creation, where interning
+        // the literal (a thread-local hash of the string) and allocating a
+        // `String` for the insert were pure per-creation overhead.
+        let self_sym = crate::symbol::wk::self_();
+        if env.get_sym(self_sym).is_none()
             && let Some(slot) = code.locals.iter().position(|n| n == "self")
             && let Some(val) = self.locals.get(slot)
             && !val.is_nil()
         {
-            env.insert("self".to_string(), val.clone());
+            // `note_env_key` has nothing to latch for `self` (it only tracks
+            // `^`- and `__mutsu_`-prefixed keys), so the symbol-keyed insert is
+            // equivalent to the `String`-keyed one.
+            env.insert_sym(self_sym, val.clone());
         }
     }
 
