@@ -293,6 +293,25 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
+                    // A block-final declaration carrying a variable TRAIT is
+                    // the one shape this hand-inlined arm cannot serve. A
+                    // CONTAINER trait (`is SetHash`, `is BagHash`, `is Buf`)
+                    // replaces the declared container and `is default(...)`
+                    // embeds a default in it, so both have to be applied AFTER
+                    // the store and the container read back -- while this arm
+                    // yields the value from a `Dup` taken BEFORE it. It emitted
+                    // no `ApplyVarTrait` at all, so `my $z = do { my %u is
+                    // SetHash }` was a plain `Hash` (GH #7583). The
+                    // expression-position path already applies the traits and
+                    // reads the container back, so route the declaration
+                    // through it rather than growing a second copy of the rule.
+                    Stmt::VarDecl { custom_traits, .. }
+                        if custom_traits.iter().any(|(t, _)| !t.starts_with("__")) =>
+                    {
+                        self.compile_expr_do_stmt(stmt);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
+                    }
                     Stmt::VarDecl {
                         name,
                         expr,
