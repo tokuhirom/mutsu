@@ -11,7 +11,7 @@ use super::*;
 /// scoped overlay (every call made from inside another routine). Almost no
 /// call ever reads the object: the vendored `Test.rakumod`'s assertion loop
 /// paid ~16k instructions per assertion building and dropping two of them
-/// (`news/2026-09/vendored-test-module-is-the-default-provider.md`). The frame now records what the
+/// (`todo/deep/vendor-real-test-module-flip.md`). The frame now records what the
 /// object would be built FROM and materializes on first read, caching the
 /// result so repeated reads within the frame see one object.
 #[derive(Clone)]

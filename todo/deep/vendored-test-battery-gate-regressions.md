@@ -1,10 +1,17 @@
-# The vendored `Test` provider regresses four bundled-library suites
+# Four bundled-library regressions block making the vendored `Test` the default
 
-The `Bundled-library test suites` gate (`scripts/battery-testsuite.sh`, run inside
-CI's `test` job) is the last thing red on the vendored-`Test`-by-default switch
-(#7523). It reports **282/312 with 9 regressed whitelisted files**.
+These are the reason the vendored-`Test`-by-default flip was withdrawn on
+2026-09-08 (`todo/deep/vendor-real-test-module-flip.md`). They do **not** affect
+mutsu as shipped: the native provider is the default, and under it the
+`Bundled-library test suites` gate is green. They are what has to be fixed before
+the flip can be retried.
 
-These are *not* `Test` compatibility gaps — they are general interpreter bugs the
+Under the vendored module as default the gate
+(`scripts/battery-testsuite.sh`, run inside CI's `test` job) reports
+**282/312 with 9 regressed whitelisted files** — four real ones below, plus five
+`DBIish` rows that need live database servers.
+
+They are *not* `Test` compatibility gaps — they are general interpreter bugs the
 real module's code shapes reach and mutsu's native provider never did, which is
 the same pattern the rest of that campaign followed (`is rw` slice writeback, the
 deferred-grep capture merge, the EVAL/import loss). Each one below is a separate

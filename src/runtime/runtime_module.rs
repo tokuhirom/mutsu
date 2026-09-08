@@ -5,41 +5,36 @@ impl Interpreter {
     /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
     /// no-op that leaves mutsu's native TAP provider in charge.
     ///
-    /// **This is the default.** `use Test` loads the real module; the native
-    /// TAP provider in `runtime/test_functions.rs` only answers when
-    /// `MUTSU_REAL_TEST=0` selects it.
-    ///
-    /// The switch was flipped once the dual-provider sweeps
+    /// **Opt-in.** The native TAP provider in `runtime/test_functions.rs` stays
+    /// in charge by default; `MUTSU_REAL_TEST=1` is how the vendored module is
+    /// driven, and the dual-provider sweeps
     /// (`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`)
-    /// reported no file that passes under the native provider and fails under
-    /// the vendored one, and the assertion cost was far enough under the
-    /// per-file roast budget that the timeout class was closed — see
-    /// `news/2026-09/vendored-test-module-is-the-default-provider.md` for the
-    /// measurements. Rung 2 of `BATTERIES.md` is the point: the unmodified
-    /// upstream module runs verbatim, so mutsu is measured against Raku's own
-    /// `Test`, not a private dialect of it.
+    /// use it.
     ///
-    /// The escape hatch is deliberately kept for now so the sweeps can still
-    /// compare the two providers while the native one is retired
-    /// (`todo/deep/retire-the-native-test-provider.md`); it goes away with the
-    /// native provider itself.
+    /// Making it the default was attempted and **withdrawn** (2026-09-08). The
+    /// roast and `t/` suites both go green under the vendored module, but the
+    /// `Bundled-library test suites` gate does not: four upstream distributions
+    /// regress, on four unrelated interpreter gaps that only the real module's
+    /// code shapes reach. None is a `Test` compatibility problem, and none has a
+    /// fix small enough to ride along with the flip — the `NativeLibs` one was
+    /// tried and made things worse. They are recorded, root-caused as far as
+    /// they got, in `todo/deep/vendored-test-battery-gate-regressions.md`, which
+    /// is the entry point for resuming this.
+    ///
+    /// The interpreter fixes the exercise turned up were the campaign's real
+    /// product and are independent of which provider is default, so they landed
+    /// without it. Rung 2 of `BATTERIES.md` remains the goal: flip this once the
+    /// gate's four root causes are fixed, not before.
     pub(crate) fn real_test_module_enabled() -> bool {
-        // Captured once at startup so that a mid-run `%*ENV<MUTSU_REAL_TEST>`
-        // write in a parent process (as `t/vendored-real-test-module.t` does,
-        // to steer its `is_run` children) does NOT retroactively swap the
-        // provider already in charge of that process.
+        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '1'` set
+        // mid-run in a parent process (as `t/vendored-real-test-module.t` does,
+        // to steer its `is_run` children) does NOT retroactively silence the
+        // native TAP provider already in charge of that process.
         static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         *ENABLED.get_or_init(|| {
-            // Anything but an explicit off keeps the default. An *empty* value
-            // is an off too: `MUTSU_REAL_TEST= cmd` is how a shell spells
-            // "clear this", and the sweep scripts wrote it that way for the
-            // native half throughout the exercise.
-            !std::env::var("MUTSU_REAL_TEST").is_ok_and(|v| {
-                v.is_empty()
-                    || v == "0"
-                    || v.eq_ignore_ascii_case("false")
-                    || v.eq_ignore_ascii_case("no")
-            })
+            std::env::var("MUTSU_REAL_TEST")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
         })
     }
 

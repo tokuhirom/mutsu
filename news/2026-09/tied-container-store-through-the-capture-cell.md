@@ -45,7 +45,7 @@ passing, for two independent reasons:
   as the user's.
 
 The vendored upstream `Test` module has no such skip, so the switch to it
-(`news/2026-09/vendored-test-module-is-the-default-provider.md`) turned the
+(`todo/deep/vendor-real-test-module-flip.md`) turned the
 regression into a hard failure — `No such method 'last' for invocant of type
 'X::Hash::Store::OddNumber'`, planned 8 / ran 4 — within hours of `fdb5bd18`
 landing. That is the retirement of a native provider paying for itself: a

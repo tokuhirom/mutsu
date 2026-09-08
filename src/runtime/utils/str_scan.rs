@@ -8,7 +8,7 @@
 //! probe `name` for `::` and the running package for `::&`). Callgrind on the
 //! vendored `Test.rakumod`'s assertion loop put `is_contained_in` at ~14k
 //! instructions per assertion, ~6k of it from `package_scope_lexical` alone
-//! (`news/2026-09/vendored-test-module-is-the-default-provider.md`). A linear byte scan for a
+//! (`todo/deep/vendor-real-test-module-flip.md`). A linear byte scan for a
 //! two-to-six byte needle is a handful of instructions per haystack byte and
 //! needs no setup.
 

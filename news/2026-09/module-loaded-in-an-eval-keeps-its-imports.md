@@ -75,7 +75,7 @@ use Some::Module;
 
 hit this — which is the shape the bundled-library suites use. It was the
 remaining blocker on the vendored-`Test` default switch
-(`news/2026-09/vendored-test-module-is-the-default-provider.md`): the
+(`todo/deep/vendor-real-test-module-flip.md`): the
 `Bundled-library test suites` gate reported 10 regressed whitelisted files. The
 smallest, `NativeHelpers::Blob t/01-basic.t`, died at test 4 with
 

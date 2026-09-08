@@ -40,7 +40,7 @@ decision that rested on it is what does not survive.
 ### The runtime gap is not 4 minutes
 
 `t/` has grown from 2469 files to 3825, and the vendored upstream `Test` module
-(`news/2026-09/vendored-test-module-is-the-default-provider.md`) made the *per-process*
+(`todo/deep/vendor-real-test-module-flip.md`) made the *per-process*
 cost of `use Test` the suite's dominant term — and that cost is **5.7x worse in debug**
 (87 ms vs 15 ms per file, measured in isolation) because it is Raku code being compiled
 and run, not a Rust fast path. The whole suite, cold precomp cache, `-j4`, through

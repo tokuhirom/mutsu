@@ -14,7 +14,7 @@ impl Interpreter {
     /// runs five `nqp::` ops per assertion (`nqp::time` twice, `nqp::join` /
     /// `nqp::split` twice each, `nqp::iseq_i`), and each paid ~4k instructions
     /// of call-dispatch overhead for a ~1k op
-    /// (`news/2026-09/vendored-test-module-is-the-default-provider.md`).
+    /// (`todo/deep/vendor-real-test-module-flip.md`).
     ///
     /// The arguments are prepared exactly as the general path prepared them
     /// before it reached the op table, so the ops see the same values:

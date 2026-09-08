@@ -1,12 +1,15 @@
 # Retire the native `Test` TAP provider
 
-The vendored upstream `Test.rakumod` became the default provider on 2026-09-07
-(`news/2026-09/vendored-test-module-is-the-default-provider.md`). mutsu now
-ships **two** TAP implementations, and the native one is reachable only through
-`MUTSU_REAL_TEST=0`. That switch is a transition aid so the dual-provider sweeps
-can still compare the two — it is not a supported configuration, and keeping two
-production providers indefinitely is exactly what the vendoring campaign existed
-to end.
+**Blocked on the flip.** This ticket only becomes actionable once the vendored
+upstream `Test.rakumod` is what a bare `use Test` resolves to — see
+`todo/deep/vendor-real-test-module-flip.md`, which was attempted on 2026-09-07/08
+and withdrawn on four bundled-library regressions. Until then the native provider
+is still the default and cannot be deleted; do not start here.
+
+mutsu ships **two** TAP implementations today, with the vendored one reachable
+through `MUTSU_REAL_TEST=1`. Keeping two production providers indefinitely is
+exactly what the vendoring campaign existed to end, so the sequence is: fix the
+four gate root causes, flip the default, then do the deletion below.
 
 ## What comes out
 

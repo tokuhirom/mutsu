@@ -23,25 +23,26 @@ genuine upstream implementation instead of reimplementing it natively.
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
-### `Test` is the default provider
+### `Test` runs verbatim, behind `MUTSU_REAL_TEST=1`
 
-`use Test` loads this file. mutsu's native TAP provider
-(`src/runtime/test_functions.rs`) is now only reachable through
-**`MUTSU_REAL_TEST=0`**, which exists so the dual-provider sweeps
-(`scripts/test-module-sweep.sh`, `scripts/roast-test-module-sweep.sh`) can keep
-comparing the two while the native one is retired:
+This file is the unmodified upstream `Test.rakumod`, and mutsu runs it verbatim
+-- it was never renamed or shimmed. It is **not** yet what a bare `use Test`
+resolves to: mutsu's native TAP provider (`src/runtime/test_functions.rs`) is
+still the default, and this file is selected with **`MUTSU_REAL_TEST=1`**, which
+is also how the dual-provider sweeps (`scripts/test-module-sweep.sh`,
+`scripts/roast-test-module-sweep.sh`) compare the two.
 
 ```
-MUTSU_REAL_TEST=0 mutsu t/some-test.t      # the native provider
-mutsu t/some-test.t                        # this file
+mutsu t/some-test.t                        # the native provider (default)
+MUTSU_REAL_TEST=1 mutsu t/some-test.t      # this file
 ```
 
-Every `t/` file and every roast file stands on `Test`, so the switch was held
-until the sweeps reported no file that passes natively and fails here, and
-until the per-assertion cost was far enough under the roast per-file budget --
-see `news/2026-09/vendored-test-module-is-the-default-provider.md` for the
-measurements. The file under test is the unmodified upstream one that ships in
-the repository; it was never renamed or shimmed. Pinned by
+Every `t/` file and every roast file stands on `Test`, so the switch is held
+until nothing regresses under it. The roast and `t/` suites already pass; the
+`Bundled-library test suites` gate does not, on four unrelated interpreter gaps.
+The flip was attempted on 2026-09-07/08 and withdrawn -- see
+`todo/deep/vendor-real-test-module-flip.md` for the measurements and
+`todo/deep/vendored-test-battery-gate-regressions.md` for what is left. Pinned by
 `t/vendored-real-test-module.t`.
 
 ## Why this directory exists
