@@ -1585,8 +1585,8 @@ impl Interpreter {
         let tick = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
-            params: Vec::new(),
-            param_defs: Vec::new(),
+            params: crate::value::empty_params(),
+            param_defs: crate::value::empty_param_defs(),
             body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,
@@ -1701,8 +1701,8 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
-            params,
-            param_defs,
+            params: std::sync::Arc::new(params),
+            param_defs: std::sync::Arc::new(param_defs),
             body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,

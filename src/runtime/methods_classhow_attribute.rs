@@ -269,8 +269,8 @@ impl Interpreter {
                 let sub_data = crate::value::SubData {
                     package: Symbol::intern("GLOBAL"),
                     name: Symbol::intern("<attribute-build>"),
-                    params: Vec::new(),
-                    param_defs: Vec::new(),
+                    params: crate::value::empty_params(),
+                    param_defs: crate::value::empty_param_defs(),
                     body: std::sync::Arc::new(body),
                     is_rw: false,
                     is_raw: false,

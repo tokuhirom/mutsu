@@ -1390,13 +1390,13 @@ impl Interpreter {
         // call, so a cryptographic hash over the small integer key dominated the
         // profile (~5% of mzef-ctor self time in `SipHasher::hash_one<Symbol>`).
         let mut param_names: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
-        for p in &data.params {
+        for p in data.params.iter() {
             param_names.insert(Symbol::intern(p));
         }
         // Collect names bound by subsignature parameters (e.g. `|c(Str $x)`),
         // which are also strictly call-local and must not leak to the caller.
         let mut subsig_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for pd in &data.param_defs {
+        for pd in data.param_defs.iter() {
             if !pd.name.is_empty() {
                 param_names.insert(Symbol::intern(&pd.name));
             }

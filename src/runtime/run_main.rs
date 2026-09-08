@@ -202,8 +202,8 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: crate::symbol::Symbol::intern("GLOBAL"),
             name: crate::symbol::Symbol::intern(name),
-            params: Vec::new(),
-            param_defs: Vec::new(),
+            params: crate::value::empty_params(),
+            param_defs: crate::value::empty_param_defs(),
             body: std::sync::Arc::new(Vec::new()),
             is_rw: false,
             is_raw: false,

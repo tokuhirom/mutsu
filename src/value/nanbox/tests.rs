@@ -5,7 +5,6 @@
 //! round-trips (`cargo miri test value::nanbox`).
 
 use super::*;
-use crate::ast::ParamDef;
 use crate::env::Env;
 
 fn roundtrip(repr: ValueRepr) -> ValueRepr {
@@ -212,8 +211,8 @@ fn sample_sub() -> Gc<SubData> {
     Gc::new(SubData {
         package: Symbol::intern("Main"),
         name: Symbol::intern("nanbox-test-sub"),
-        params: vec![],
-        param_defs: Vec::<ParamDef>::new(),
+        params: crate::value::empty_params(),
+        param_defs: crate::value::empty_param_defs(),
         body: std::sync::Arc::new(vec![]),
         is_rw: false,
         is_raw: false,

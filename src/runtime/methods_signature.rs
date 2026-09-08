@@ -128,7 +128,9 @@ impl Interpreter {
         if data.param_defs.is_empty() {
             return None;
         }
-        let mut param_defs = data.param_defs.clone();
+        // Owned: this builds the *primed* signature of an `.assuming` wrapper
+        // by editing the copy, so it cannot share the `SubData`'s `Arc`.
+        let mut param_defs = data.param_defs.to_vec();
         // Build type capture mappings from assumed positional args
         let mut type_captures: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();

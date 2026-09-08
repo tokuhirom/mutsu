@@ -561,8 +561,11 @@ impl Interpreter {
         // channel (not just the return value).
         self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::Block(body) = stmt {
-            let params = crate::ast::collect_placeholders_shallow(body);
+        if let Stmt::Block(_) = stmt {
+            // Shared per pool slot (`closure_signature`): the block's implicit
+            // placeholder parameters are a pure function of its body, but the
+            // walk-and-sort that derives them used to run on every creation.
+            let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             // A bare block that performs a regex match is not a routine
             // boundary: its `$/` belongs to the lexical scope where it was
@@ -635,8 +638,8 @@ impl Interpreter {
                 // empty literal on every block creation hashed a string for a
                 // constant answer.
                 name: crate::symbol::well_known::anon(),
-                params,
-                param_defs: Vec::new(),
+                params: signature.params,
+                param_defs: signature.param_defs,
                 body: code.closure_body_arc(idx as usize),
                 is_rw: false,
                 is_raw: false,
@@ -688,11 +691,12 @@ impl Interpreter {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,
-            params,
             param_defs,
             return_type,
-            // The body itself comes from `closure_body_arc` (shared, built once
-            // per pool slot) rather than being deep-cloned out of the pool here.
+            // The body and the signature both come from the shared per-pool-slot
+            // caches (`closure_body_arc` / `closure_signature`) rather than being
+            // deep-cloned out of the pool here.
+            params: _,
             body: _,
             is_rw,
             is_raw,
@@ -700,6 +704,7 @@ impl Interpreter {
         } = stmt
         {
             self.check_param_custom_traits(param_defs)?;
+            let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
@@ -745,8 +750,9 @@ impl Interpreter {
                 // Anonymous closures pool a SubDecl with an empty name; a
                 // named `anon sub NAME` decl carries its name through here.
                 name: *name,
-                params: params.clone(),
-                param_defs: param_defs.clone(),
+                empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
+                params: signature.params,
+                param_defs: signature.param_defs,
                 body: code.closure_body_arc(idx as usize),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
@@ -754,7 +760,6 @@ impl Interpreter {
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
-                empty_sig: params.is_empty() && param_defs.is_empty(),
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. Named
                 // anonymous subs (`sub {...}`) have `is_pointy_block == false` and
                 // stay `Sub`. (`WhateverCode` already overrides via callable_type.)

@@ -12,7 +12,7 @@ impl Interpreter {
             ValueView::Sub(data) => {
                 let len = arr_len as i64;
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());

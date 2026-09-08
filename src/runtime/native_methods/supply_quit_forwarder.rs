@@ -137,8 +137,8 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
-            params: vec!["v".to_string()],
-            param_defs: vec![crate::ast::ParamDef {
+            params: std::sync::Arc::new(vec!["v".to_string()]),
+            param_defs: std::sync::Arc::new(vec![crate::ast::ParamDef {
                 name: "v".to_string(),
                 default: None,
                 multi_invocant: true,
@@ -159,7 +159,7 @@ impl Interpreter {
                 is_invocant: false,
                 shape_constraints: None,
                 block_param: false,
-            }],
+            }]),
             body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,

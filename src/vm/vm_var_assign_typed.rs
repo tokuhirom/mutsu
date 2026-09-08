@@ -536,7 +536,7 @@ impl Interpreter {
                     ValueView::Int(i) => i,
                     ValueView::Sub(data) => {
                         let mut sub_env = data.env.clone();
-                        for p in &data.params {
+                        for p in data.params.iter() {
                             sub_env.insert(p.to_string(), Value::int(len));
                         }
                         let saved_env = std::mem::take(vm.env_mut());

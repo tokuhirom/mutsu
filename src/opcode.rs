@@ -5002,6 +5002,12 @@ pub(crate) struct CompiledCode {
     /// A `SubData`'s body used to be deep-cloned out of the pool on every
     /// closure creation; the `Arc` is built once per slot instead.
     pub(crate) stmt_pool_bodies: std::sync::OnceLock<StmtPoolBodies>,
+    /// Lazily-built shared signature per `stmt_pool` slot (see
+    /// `closure_signature`). The twin of `stmt_pool_bodies` for the other two
+    /// pool-owned, immutable parts of a closure literal: a `SubData`'s
+    /// `params`/`param_defs` used to be cloned out of the pool on every
+    /// creation, which is O(signature) with a fat `ParamDef` element.
+    pub(crate) stmt_pool_signatures: std::sync::OnceLock<StmtPoolSignatures>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     #[cfg(feature = "jit")]
     pub(crate) jit: JitCodeState,
@@ -5067,6 +5073,20 @@ pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool)>]>;
 /// [`CompiledCode::closure_body_arc`]): one lazily-filled slot per pool entry,
 /// each holding the `Arc` every closure created from that entry shares.
 pub(crate) type StmtPoolBodies = Box<[std::sync::OnceLock<std::sync::Arc<Vec<Stmt>>>]>;
+
+/// The shared signature of one closure-declaring `stmt_pool` slot (see
+/// [`CompiledCode::closure_signature`]). Both halves are `Arc`s handed straight
+/// to the `SubData` being built, so a creation costs two refcount bumps instead
+/// of a deep clone of the whole signature.
+#[derive(Debug, Clone)]
+pub(crate) struct ClosureSignature {
+    pub(crate) params: std::sync::Arc<Vec<String>>,
+    pub(crate) param_defs: std::sync::Arc<Vec<crate::ast::ParamDef>>,
+}
+
+/// The per-`stmt_pool`-slot shared signature table of a chunk; see
+/// [`CompiledCode::closure_signature`].
+pub(crate) type StmtPoolSignatures = Box<[std::sync::OnceLock<ClosureSignature>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
 /// `entry` caches the compiled native entry so the per-call cost once compiled
@@ -5409,6 +5429,7 @@ impl CompiledCode {
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
+            stmt_pool_signatures: std::sync::OnceLock::new(),
             #[cfg(feature = "jit")]
             jit: JitCodeState::default(),
         }
@@ -5457,6 +5478,57 @@ impl CompiledCode {
             Some(slot) => slot.get_or_init(|| extract(idx)).clone(),
             // The pool grew after the side table was sized (a chunk still being
             // built): fall back to an uncached clone rather than mis-indexing.
+            None => extract(idx),
+        }
+    }
+
+    /// The shared signature of the closure declaration at `stmt_pool[idx]`,
+    /// built once per slot — the `closure_body_arc` treatment applied to the
+    /// other two pool-owned, immutable parts of a closure literal.
+    ///
+    /// A `SubData`'s `params`/`param_defs` are never mutated after
+    /// construction, so every closure created from a slot can share one `Arc`
+    /// pair instead of deep-cloning the signature. That clone was O(signature
+    /// size) on the once-per-`.map({...})`-CALL path, and `ParamDef` is fat: an
+    /// 8-parameter pointy block paid ~1100 instructions *per extra parameter*
+    /// on every creation.
+    ///
+    /// A `Stmt::Block` slot has no declared signature; its `params` are the
+    /// block's implicit placeholder variables (`$^a`, `@_`, …), which
+    /// `collect_placeholders_shallow` derives by walking — and then sorting —
+    /// the body. That is a pure function of the pool entry too, so it is cached
+    /// here rather than recomputed per creation. `MakeBlockClosure` deliberately
+    /// does NOT use this: a block closure takes no placeholder signature, and
+    /// asks for `value::empty_params()` instead.
+    pub(crate) fn closure_signature(&self, idx: usize) -> ClosureSignature {
+        let extract = |i: usize| -> ClosureSignature {
+            match self.stmt_pool.get(i) {
+                Some(Stmt::SubDecl {
+                    params, param_defs, ..
+                }) => ClosureSignature {
+                    params: std::sync::Arc::new(params.clone()),
+                    param_defs: std::sync::Arc::new(param_defs.clone()),
+                },
+                Some(Stmt::Block(body)) => ClosureSignature {
+                    params: std::sync::Arc::new(crate::ast::collect_placeholders_shallow(body)),
+                    param_defs: crate::value::empty_param_defs(),
+                },
+                _ => ClosureSignature {
+                    params: crate::value::empty_params(),
+                    param_defs: crate::value::empty_param_defs(),
+                },
+            }
+        };
+        let slots = self.stmt_pool_signatures.get_or_init(|| {
+            (0..self.stmt_pool.len())
+                .map(|_| std::sync::OnceLock::new())
+                .collect()
+        });
+        match slots.get(idx) {
+            Some(slot) => slot.get_or_init(|| extract(idx)).clone(),
+            // The pool grew after the side table was sized (a chunk still being
+            // built): fall back to an uncached build rather than mis-indexing.
+            // Same guard as `closure_body_arc`.
             None => extract(idx),
         }
     }

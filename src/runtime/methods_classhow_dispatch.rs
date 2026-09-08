@@ -1151,8 +1151,8 @@ impl Interpreter {
                 };
                 let def = MethodDef {
                     lexical_package: sub_data.package,
-                    params: sub_data.params.clone(),
-                    param_defs: sub_data.param_defs.clone(),
+                    params: sub_data.params.to_vec(),
+                    param_defs: sub_data.param_defs.to_vec(),
                     body: sub_data.body.clone(),
                     is_rw: sub_data.is_rw,
                     is_raw: sub_data.is_raw,

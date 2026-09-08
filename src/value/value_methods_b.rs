@@ -493,8 +493,8 @@ impl Value {
     fn new_code_object(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
@@ -502,8 +502,11 @@ impl Value {
         SubData {
             package,
             name,
-            params,
-            param_defs,
+            // Like `body`, both halves of the signature are shared behind an
+            // `Arc` (see `SubData::params`); `impl Into` keeps the existing
+            // `Vec`-passing call sites working.
+            params: params.into(),
+            param_defs: param_defs.into(),
             body: body.into(),
             is_rw,
             is_raw: false,
@@ -531,8 +534,8 @@ impl Value {
     pub(crate) fn make_sub(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
@@ -554,8 +557,8 @@ impl Value {
     pub(crate) fn make_sub_for_routine(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
@@ -584,8 +587,8 @@ impl Value {
     pub(crate) fn make_sub_for_routine_owning(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
@@ -614,8 +617,8 @@ impl Value {
     pub(crate) fn make_sub_with_id(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
@@ -638,8 +641,8 @@ impl Value {
     pub(crate) fn make_sub_owning(
         package: Symbol,
         name: Symbol,
-        params: Vec<String>,
-        param_defs: Vec<ParamDef>,
+        params: impl Into<std::sync::Arc<Vec<String>>>,
+        param_defs: impl Into<std::sync::Arc<Vec<ParamDef>>>,
         body: impl Into<std::sync::Arc<Vec<Stmt>>>,
         is_rw: bool,
         env: Env,
