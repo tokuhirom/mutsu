@@ -2396,7 +2396,25 @@ pub struct Interpreter {
     /// Persistent store for `our`-scoped variables.  Values are saved here
     /// by `SetGlobal` so they survive block-scope restoration (which only
     /// preserves env keys that existed before the block).
-    our_vars: HashMap<String, Value>,
+    /// `FxHashMap`, not the SipHash default: `our_package_var_key` probes this
+    /// store on EVERY `@`/`%` container read once a program declares any `our`
+    /// variable, and hashing the (already short) key cryptographically was a
+    /// measurable slice of that walk (#7571). Same reasoning as `env::SymMap`.
+    our_vars: rustc_hash::FxHashMap<String, Value>,
+    /// The UNQUALIFIED spelling (`@words`, `$x`) of every key ever stored in
+    /// [`Self::our_vars`] — the sigil plus the segment after the last `::`.
+    ///
+    /// `our_package_var_key` reconstructs a package-qualified candidate for a
+    /// bare name by walking up to four candidate packages' `::` chains, one
+    /// `format!` + store probe per step, on EVERY `@`/`%` container read once a
+    /// program declares any `our` variable at all. Every candidate it builds
+    /// ends in `<sigil><bare>`, so a name absent from this set cannot match any
+    /// stored key and the whole walk can be skipped — which is the common case
+    /// even in a module that does declare `our` variables (#7571).
+    ///
+    /// Append-only, exactly like `our_vars` itself (which is only ever inserted
+    /// into, never removed from), so a membership test can never be stale.
+    our_var_unqualified: rustc_hash::FxHashSet<String>,
     /// Package-block `my` lexicals, keyed by package name then env var name.
     /// A named sub defined in a `package Foo { my $x = ...; sub f { $x } }` block
     /// closes over `$x`, but mutsu's registry subs have no per-sub closure env and
@@ -2517,7 +2535,7 @@ pub struct Interpreter {
     /// is awkward for it; `RefCell` gives the same disjoint-allocation
     /// property while keeping ordinary `insert`/`remove`/`contains` methods
     /// available through `borrow`/`borrow_mut`.
-    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<std::collections::HashSet<String>>>,
+    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
     /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
     /// *in flight*: the `my` has run but its initializer has not stored a value
     /// yet, so neither the slot nor `env` holds the new binding — both still
@@ -2574,7 +2592,7 @@ pub struct Interpreter {
     /// Same `Box<RefCell<...>>` wrapping and same reason as
     /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
     /// stable, `Interpreter`-disjoint pointer into this field too.
-    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<std::collections::HashSet<String>>>,
+    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<rustc_hash::FxHashSet<String>>>,
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words

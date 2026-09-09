@@ -229,7 +229,7 @@ impl Interpreter {
     /// already qualified, sigil-stripped twigils, or positional captures —
     /// mirroring the `GetGlobal` bare-name read fallback so reads and writes
     /// resolve to the same canonical store.
-    pub(super) fn package_qualified_candidate(name: &str, cur: &str) -> Option<String> {
+    fn package_qualified_candidate_uncached(name: &str, cur: &str) -> Option<Symbol> {
         if crate::runtime::utils::has_double_colon(name)
             || cur.is_empty()
             || cur == "GLOBAL"
@@ -254,7 +254,51 @@ impl Interpreter {
         } else {
             format!("{cur}::{name}")
         };
-        Some(candidate)
+        Some(Symbol::intern(&candidate))
+    }
+
+    /// [`Self::package_qualified_candidate_uncached`] with a process-wide memo.
+    ///
+    /// The mapping is a *pure function of its two strings* — no interpreter or
+    /// registry state feeds it — so a hit can never answer for the wrong scope
+    /// and the memo needs no generation counter.
+    ///
+    /// It earns its keep on the container-read path: `our_package_var_key`
+    /// walks up to four candidate packages' `::` chains on EVERY `@`/`%` read
+    /// once a program declares any `our` variable, and each step built its key
+    /// with `format!`. That was 1.6% of the RIPEMD profile in `format!`
+    /// machinery alone, plus the matching malloc/free pair and a String-keyed
+    /// hash of the result (#7571). Returning an interned `Symbol` removes all
+    /// three: the key is a `&'static str` the callers can probe with.
+    pub(super) fn package_qualified_candidate(name: &str, cur: &str) -> Option<Symbol> {
+        thread_local! {
+            static MEMO: std::cell::RefCell<rustc_hash::FxHashMap<(Symbol, Symbol), Option<Symbol>>> =
+                const {
+                    std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
+                        rustc_hash::FxBuildHasher,
+                    ))
+                };
+        }
+        // The cheap structural rejections run BEFORE interning, so a name that
+        // can never be package-qualified (a twigil, a positional capture) does
+        // not grow the symbol table or the memo with an entry whose answer is
+        // always `None`.
+        if crate::runtime::utils::has_double_colon(name)
+            || cur.is_empty()
+            || cur == "GLOBAL"
+            || crate::runtime::utils::has_routine_scope_marker(cur)
+        {
+            return None;
+        }
+        let key = (Symbol::intern(name), Symbol::intern(cur));
+        if let Some(hit) = MEMO.with(|m| m.borrow().get(&key).copied()) {
+            return hit;
+        }
+        let computed = Self::package_qualified_candidate_uncached(name, cur);
+        MEMO.with(|m| {
+            m.borrow_mut().insert(key, computed);
+        });
+        computed
     }
 
     /// Resolve a bare enum-member name through the current package chain
@@ -311,7 +355,7 @@ impl Interpreter {
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur: &str = self.current_package_sym().as_str();
         if let Some(candidate) = Self::package_qualified_candidate(name, cur)
-            && let Some(v) = self.get_our_var(&candidate)
+            && let Some(v) = self.get_our_var(candidate.as_str())
         {
             return Some(v.clone());
         }
@@ -980,7 +1024,7 @@ impl Interpreter {
         // the `RwLock` and clones the `String` on every free-variable read.
         let cur: &str = self.current_package_sym().as_str();
         if let Some(candidate) = Self::package_qualified_candidate(name, cur)
-            && self.get_our_var(&candidate).is_some()
+            && self.get_our_var(candidate.as_str()).is_some()
         {
             // A plain `our $x` keeps its value in ONE shared cell that the
             // declaring slot, both env keys and this store all point at
@@ -988,16 +1032,16 @@ impl Interpreter {
             // value would sever this store from that cell, leaving the two
             // holding independent values; write THROUGH it instead.
             if let Some(ValueView::ContainerRef(cell)) =
-                self.get_our_var(&candidate).map(Value::view)
+                self.get_our_var(candidate.as_str()).map(Value::view)
             {
-                Self::cell_store_preserving_container_identity(&candidate, &cell, val);
+                Self::cell_store_preserving_container_identity(candidate.as_str(), &cell, val);
                 return true;
             }
-            self.set_our_var(candidate.clone(), val.clone());
+            self.set_our_var(candidate.as_str().to_string(), val.clone());
             // Keep an existing qualified env entry coherent for a same-frame
             // read by the qualified name (`$P::X`).
-            if self.env().contains_key(&candidate) {
-                self.set_env_with_main_alias(&candidate, val.clone());
+            if self.env().contains_key_sym(candidate) {
+                self.set_env_with_main_alias(candidate.as_str(), val.clone());
             }
             return true;
         }
@@ -1192,13 +1236,13 @@ impl Interpreter {
         if redeclared || !crate::runtime::shared_store::atomic_lane_entries_exist() {
             // fall through to the env read below
         } else if name.starts_with('@') {
-            let atomic_key = format!("__mutsu_atomic_arr::{name}");
-            if let Some(v) = self.get_shared_var(&atomic_key) {
+            let atomic_key = crate::runtime::shared_store::atomic_lane_key(name, false);
+            if let Some(v) = self.get_shared_var(atomic_key.as_str()) {
                 return Some(v);
             }
         } else if name.starts_with('%') {
-            let atomic_key = format!("__mutsu_atomic_hash::{name}");
-            if let Some(v) = self.get_shared_var(&atomic_key) {
+            let atomic_key = crate::runtime::shared_store::atomic_lane_key(name, true);
+            if let Some(v) = self.get_shared_var(atomic_key.as_str()) {
                 return Some(v);
             }
         }
@@ -1286,11 +1330,14 @@ impl Interpreter {
         // process-global latch: without a `^name` key anywhere, the `format!` +
         // interning probe can only miss.
         if crate::env::placeholder_var_possible() && !name.starts_with('^') {
-            let placeholder = format!("^{name}");
-            if let Some(val) = self.env().get(&placeholder) {
+            // Memoized per name symbol (see `placeholder_key_sym`): a program
+            // that declares one placeholder parameter anywhere would otherwise
+            // `format!` a fresh key on every variable read in the rest of it.
+            let placeholder = Self::placeholder_key_sym(Symbol::intern(name));
+            if let Some(val) = self.env().get_sym(placeholder) {
                 return Some(val.clone());
             }
-            if let Some(val) = self.get_shared_var(&placeholder) {
+            if let Some(val) = self.get_shared_var(placeholder.as_str()) {
                 return Some(val);
             }
         }
@@ -1422,10 +1469,17 @@ impl Interpreter {
         // `^name` key has ever been created (the common program), which otherwise
         // costs a `format!` + an interning env probe on every mirrored local store.
         if crate::env::placeholder_var_possible() && !name.starts_with('^') {
-            let placeholder = format!("^{name}");
-            if self.env().contains_key(&placeholder) {
-                loan_env!(self, set_shared_var(&placeholder, value.clone()));
-                self.env_mut().insert(placeholder, value);
+            let placeholder = match name_sym {
+                Some(sym) => Self::placeholder_key_sym(sym),
+                None => Self::placeholder_key_sym(Symbol::intern(name)),
+            };
+            // `insert_sym` skips `env::note_env_key`, which is sound here (and
+            // is what the `name_sym` branch above already does): the key is only
+            // written after `contains_key_sym` found it, so its creator already
+            // flipped `PLACEHOLDER_KEY_SEEN` — which this branch is gated on.
+            if self.env().contains_key_sym(placeholder) {
+                loan_env!(self, set_shared_var(placeholder.as_str(), value.clone()));
+                self.env_mut().insert_sym(placeholder, value);
                 return;
             }
         }

@@ -291,7 +291,31 @@ impl Interpreter {
     }
 
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
+        self.our_var_unqualified
+            .insert(Self::unqualified_our_name(&key));
         self.our_vars.insert(key, value);
+    }
+
+    /// The unqualified spelling of an `our_vars` key: its sigil (if any) plus
+    /// the segment after the last `::`. `"@Foo::Bar::words"` -> `"@words"`,
+    /// `"x"` -> `"x"`. See [`Interpreter::our_var_unqualified`].
+    fn unqualified_our_name(key: &str) -> String {
+        let (sigil, rest) = match key.as_bytes().first() {
+            Some(b'$' | b'@' | b'%' | b'&') => key.split_at(1),
+            _ => ("", key),
+        };
+        let bare = rest.rsplit("::").next().unwrap_or(rest);
+        let mut out = String::with_capacity(sigil.len() + bare.len());
+        out.push_str(sigil);
+        out.push_str(bare);
+        out
+    }
+
+    /// Whether any stored `our` variable could be reached under the
+    /// unqualified name `name`. A `false` answer means every
+    /// package-qualified candidate for `name` is guaranteed to miss.
+    pub(crate) fn our_var_unqualified_exists(&self, name: &str) -> bool {
+        self.our_var_unqualified.contains(name)
     }
 
     pub(crate) fn get_state_var(&self, key: (Symbol, Option<u64>)) -> Option<&Value> {

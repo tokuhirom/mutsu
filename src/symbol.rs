@@ -122,7 +122,16 @@ thread_local! {
     /// whole process because interned ids are append-only and never remapped.
     /// Removes the global-`RwLock` read contention on the intern hot path (see
     /// `Symbol::intern`).
-    static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> = RefCell::new(FxHashMap::default());
+    /// Built in a `const` block, like the two sibling caches below, so the
+    /// access carries no lazy-initialization branch.
+    /// `FxHashMap::with_hasher(FxBuildHasher)` is const-constructible and
+    /// allocates nothing until the first insert, exactly like
+    /// `FxHashMap::default()`. (Measured on the #7571 profile this made no
+    /// difference on its own — the per-intern cost is the string hash and
+    /// compare, not the TLS access. It is here for consistency with the
+    /// siblings, not as a claimed win.)
+    static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> =
+        const { RefCell::new(FxHashMap::with_hasher(rustc_hash::FxBuildHasher)) };
 
     /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
     /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
@@ -281,6 +290,14 @@ pub(crate) mod wk {
         /// The routine-frame name a nameless compiled routine is pushed under
         /// (so `&?ROUTINE` works inside an anonymous sub).
         anon_routine => "<anon>";
+        /// The self-reference `&?BLOCK` every closure call installs on entry.
+        block_var => "&?BLOCK";
+        /// The routine-frame name a pointy/bare block is pushed under, so
+        /// `&?ROUTINE` skips it and finds the enclosing sub.
+        pointy_block => "<pointy-block>";
+        /// The sigil-carrying spelling of the topic, written next to the
+        /// sigil-less `_` on the explicit-topic override path.
+        topic_sigiled => "$_";
         /// The empty package name, i.e. "no package set".
         empty_package => "";
         /// The default top-level package every unqualified declaration lands in.
