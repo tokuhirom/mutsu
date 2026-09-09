@@ -225,68 +225,44 @@ impl<'a> Drop for PragmaGuard<'a> {
 /// through a nested Rust-level `run()` invocation, so `vm_run_loop.rs`'s
 /// boundary never fires for them.
 ///
-/// Each field below is a raw pointer into that flag's OWN `Box<Cell<_>>`
-/// allocation on `Interpreter` (see the module doc's "v3" section), never a
-/// pointer to `Interpreter` itself.
+/// The whole family lives in ONE `Box`ed allocation on `Interpreter`
+/// (`mark_ctx`): nine bits of a `u16` plus the one non-`Copy` member
+/// (`array_share_source`) — see [`crate::runtime::mark_context`]. So this
+/// guard needs a single raw pointer into that allocation (the module doc's
+/// "v3" section applies unchanged; it is still never a pointer to
+/// `Interpreter` itself), and save/clear/restore are a word each rather than
+/// the ten-pointer, ~120-byte guard this used to be (#7738).
 pub(crate) struct MarkContextGuard {
-    bind_context: *const Cell<bool>,
-    scalar_bind_context: *const Cell<bool>,
-    param_raw_bind_context: *const Cell<bool>,
-    bound_decont_active: *const Cell<bool>,
-    rebind_context: *const Cell<bool>,
-    constant_context: *const Cell<bool>,
-    array_share_context: *const Cell<bool>,
-    array_share_source: *const Cell<Option<String>>,
-    explicit_initializer_context: *const Cell<bool>,
-    vardecl_context: *const Cell<bool>,
-    saved_bind_context: bool,
-    saved_scalar_bind_context: bool,
-    saved_param_raw_bind_context: bool,
-    saved_bound_decont_active: bool,
-    saved_rebind_context: bool,
-    saved_constant_context: bool,
-    saved_array_share_context: bool,
-    saved_array_share_source: Option<String>,
-    saved_explicit_initializer_context: bool,
-    saved_vardecl_context: bool,
+    /// Raw pointer into the mark-context state's OWN `Box` allocation (see
+    /// the module doc's "v3" section) -- never a pointer to `Interpreter`
+    /// itself.
+    state: *const crate::runtime::mark_context::MarkContextState,
+    saved_flags: u16,
+    saved_share_source: Option<String>,
 }
 
 impl MarkContextGuard {
     pub(crate) fn new(interp: &Interpreter) -> Self {
-        let guard = MarkContextGuard {
-            bind_context: &*interp.bind_context as *const Cell<bool>,
-            scalar_bind_context: &*interp.scalar_bind_context as *const Cell<bool>,
-            param_raw_bind_context: &*interp.param_raw_bind_context as *const Cell<bool>,
-            bound_decont_active: &*interp.bound_decont_active as *const Cell<bool>,
-            rebind_context: &*interp.rebind_context as *const Cell<bool>,
-            constant_context: &*interp.constant_context as *const Cell<bool>,
-            array_share_context: &*interp.array_share_context as *const Cell<bool>,
-            array_share_source: &*interp.array_share_source as *const Cell<Option<String>>,
-            explicit_initializer_context: &*interp.explicit_initializer_context
-                as *const Cell<bool>,
-            vardecl_context: &*interp.vardecl_context as *const Cell<bool>,
-            saved_bind_context: interp.bind_context.get(),
-            saved_scalar_bind_context: interp.scalar_bind_context.get(),
-            saved_param_raw_bind_context: interp.param_raw_bind_context.get(),
-            saved_bound_decont_active: interp.bound_decont_active.get(),
-            saved_rebind_context: interp.rebind_context.get(),
-            saved_constant_context: interp.constant_context.get(),
-            saved_array_share_context: interp.array_share_context.get(),
-            saved_array_share_source: interp.array_share_source.take(),
-            saved_explicit_initializer_context: interp.explicit_initializer_context.get(),
-            saved_vardecl_context: interp.vardecl_context.get(),
-        };
-        interp.bind_context.set(false);
-        interp.scalar_bind_context.set(false);
-        interp.param_raw_bind_context.set(false);
-        interp.bound_decont_active.set(false);
-        interp.rebind_context.set(false);
-        interp.constant_context.set(false);
-        interp.array_share_context.set(false);
-        // Already cleared by the `.take()` above.
-        interp.explicit_initializer_context.set(false);
-        interp.vardecl_context.set(false);
-        guard
+        let (saved_flags, saved_share_source) = interp.mark_ctx.take_all();
+        MarkContextGuard {
+            state: &*interp.mark_ctx as *const crate::runtime::mark_context::MarkContextState,
+            saved_flags,
+            saved_share_source,
+        }
+    }
+}
+
+impl Drop for MarkContextGuard {
+    fn drop(&mut self) {
+        // SAFETY: see the module doc's "v3" section -- `state` was taken from
+        // `mark_ctx`'s own `Box` allocation at construction, which outlives
+        // the guard and never moves (the `Box` is not reassigned while the
+        // guard is alive). This never forms a reference to `Interpreter`
+        // itself, so it is unaffected by any `&mut self` calls made elsewhere
+        // while the guard was alive.
+        unsafe {
+            (*self.state).restore_all(self.saved_flags, self.saved_share_source.take());
+        }
     }
 }
 
@@ -424,30 +400,6 @@ impl Drop for ReadonlyFrameGuard {
                 &*self.frames_cell,
                 self.mark,
             );
-        }
-    }
-}
-
-impl Drop for MarkContextGuard {
-    fn drop(&mut self) {
-        // SAFETY: see the module doc's "v3" section -- each pointer was taken
-        // from that field's own `Box` allocation at construction, which
-        // outlives the guard and never moves (none of these fields are
-        // reassigned while the guard is alive). None of these dereferences
-        // ever forms a reference to `Interpreter` itself, so they are
-        // unaffected by any `&mut self` calls made elsewhere while the guard
-        // was alive.
-        unsafe {
-            (*self.bind_context).set(self.saved_bind_context);
-            (*self.scalar_bind_context).set(self.saved_scalar_bind_context);
-            (*self.param_raw_bind_context).set(self.saved_param_raw_bind_context);
-            (*self.bound_decont_active).set(self.saved_bound_decont_active);
-            (*self.rebind_context).set(self.saved_rebind_context);
-            (*self.constant_context).set(self.saved_constant_context);
-            (*self.array_share_context).set(self.saved_array_share_context);
-            (*self.array_share_source).set(self.saved_array_share_source.take());
-            (*self.explicit_initializer_context).set(self.saved_explicit_initializer_context);
-            (*self.vardecl_context).set(self.saved_vardecl_context);
         }
     }
 }

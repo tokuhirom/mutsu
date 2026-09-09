@@ -349,15 +349,14 @@ impl Interpreter {
         let saved_transliterate = self.transliterate_in_smartmatch;
         let saved_substitution = self.substitution_in_smartmatch;
         let saved_method_dispatch_pure = self.method_dispatch_pure;
-        let saved_bind_context = self.bind_context.get();
-        let saved_scalar_bind_context = self.scalar_bind_context.get();
-        let saved_bound_decont_active = self.bound_decont_active.get();
-        let saved_rebind_context = self.rebind_context.get();
-        let saved_constant_context = self.constant_context.get();
-        let saved_array_share_context = self.array_share_context.get();
-        let saved_array_share_source = self.array_share_source.take();
-        let saved_explicit_initializer_context = self.explicit_initializer_context.get();
-        let saved_vardecl_context = self.vardecl_context.get();
+        // Save AND clear the whole mark-context one-shot flag family in one
+        // step (`crate::runtime::mark_context`): they are a single packed
+        // word plus the share-source name, so this boundary no longer spells
+        // out nine `get`s here and nine `set(false)`s below. Folding them
+        // also closed a gap — `param_raw_bind_context` was the one member
+        // this boundary never isolated, though `MarkContextGuard` (the same
+        // isolation for an ordinary call) always did.
+        let (saved_mark_flags, saved_mark_share_source) = self.mark_ctx.take_all();
         let saved_loop_cond_active = self.loop_cond_active;
         let saved_state_scope_id = self.state_scope_id.take();
         // A fallback-dispatched routine body hands its registration clone id
@@ -386,16 +385,7 @@ impl Interpreter {
         self.substitution_in_smartmatch = false;
         self.method_dispatch_pure = false;
         self.container_ref_reversed = false;
-        self.bind_context.set(false);
-        self.scalar_bind_context.set(false);
-        self.bound_decont_active.set(false);
-        self.rebind_context.set(false);
         self.accessor_ref_pending = false;
-        self.constant_context.set(false);
-        self.array_share_context.set(false);
-        self.array_share_source.set(None);
-        self.explicit_initializer_context.set(false);
-        self.vardecl_context.set(false);
         self.loop_cond_active = false;
         self.nested_run_depth += 1;
 
@@ -433,16 +423,8 @@ impl Interpreter {
         self.transliterate_in_smartmatch = saved_transliterate;
         self.substitution_in_smartmatch = saved_substitution;
         self.method_dispatch_pure = saved_method_dispatch_pure;
-        self.bind_context.set(saved_bind_context);
-        self.scalar_bind_context.set(saved_scalar_bind_context);
-        self.bound_decont_active.set(saved_bound_decont_active);
-        self.rebind_context.set(saved_rebind_context);
-        self.constant_context.set(saved_constant_context);
-        self.array_share_context.set(saved_array_share_context);
-        self.array_share_source.set(saved_array_share_source);
-        self.explicit_initializer_context
-            .set(saved_explicit_initializer_context);
-        self.vardecl_context.set(saved_vardecl_context);
+        self.mark_ctx
+            .restore_all(saved_mark_flags, saved_mark_share_source);
         self.loop_cond_active = saved_loop_cond_active;
         self.state_scope_id.set(saved_state_scope_id);
         self.gather_for_loop_resume = saved_gather_for_loop_resume;

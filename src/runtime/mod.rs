@@ -501,6 +501,7 @@ mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
 mod main_args;
+pub(crate) mod mark_context;
 mod match_target;
 mod metamodel;
 mod methods;
@@ -3242,31 +3243,29 @@ pub struct Interpreter {
     /// JIT entry wrapper takes it back out. Always `None` outside a JIT call.
     #[cfg(feature = "jit")]
     pub(crate) jit_error: Option<RuntimeError>,
-    /// The following ten fields (through `vardecl_context`) back
-    /// `vm_call_state_guard::MarkContextGuard`. They are `Box<Cell<_>>`-backed
-    /// (a HEAP allocation separate from `Interpreter`'s own, not a plain
-    /// `Cell`/`bool`/`Option<String>` embedded directly in this struct) so the
-    /// guard's `Drop` impl can restore them via a raw pointer taken straight
-    /// into that separate allocation. A plain `Cell<T>` field is NOT enough:
-    /// Miri's Stacked-Borrows retagging does not carve out an embedded Cell's
-    /// own byte range as exempt from a later `&mut Interpreter` call's Unique
+    /// Backs `vm_call_state_guard::MarkContextGuard`: the whole "mark
+    /// context" one-shot flag family, packed into one `u16` bitfield plus the
+    /// one non-`Copy` member (`array_share_source`) — see
+    /// [`crate::runtime::mark_context`] for the layout and for why the pack
+    /// happened (#7738). Read a flag through its accessor
+    /// ([`Interpreter::bind_context`] et al.), which hands out a
+    /// [`MarkFlag`](crate::runtime::mark_context::MarkFlag) with the same
+    /// `get`/`set` API the separate `Cell<bool>` fields had.
+    ///
+    /// It is `Box`-backed (a HEAP allocation separate from `Interpreter`'s
+    /// own, not embedded directly in this struct) so the guard's `Drop` impl
+    /// can restore it via a raw pointer taken straight into that separate
+    /// allocation. A plain `Cell<T>` field is NOT enough: Miri's
+    /// Stacked-Borrows retagging does not carve out an embedded Cell's own
+    /// byte range as exempt from a later `&mut Interpreter` call's Unique
     /// retag over the WHOLE struct, so a raw pointer into `Interpreter`
     /// itself -- even one that only ever touches a Cell field -- still goes
     /// stale. A `Box`'s heap allocation is a separate Stacked-Borrows
     /// allocation entirely, immune to retags of `Interpreter`'s own memory
     /// (the same reason `runtime::accessors_stack::CurrentPackageGuard`'s
-    /// `Arc<RwLock<String>>`/`Arc<AtomicU32>` backing works) — see that
-    /// module's doc comment for the full history.
-    pub(crate) bind_context: Box<Cell<bool>>,
-    pub(crate) scalar_bind_context: Box<Cell<bool>>,
-    /// Set by `MarkParamRawBindContext` just before the SetLocal/SetGlobal of
-    /// an assignment whose target is a sigilless binding (`-> \v` loop-param
-    /// bind statements, writes through a sigilless alias). Its ONLY effect is
-    /// to skip scalar-store itemization — a sigilless name is a non-container
-    /// alias, so the stored value must stay bare. No other bind semantics.
-    pub(crate) param_raw_bind_context: Box<Cell<bool>>,
-    pub(crate) bound_decont_active: Box<Cell<bool>>,
-    pub(crate) rebind_context: Box<Cell<bool>>,
+    /// `Arc<RwLock<String>>`/`Arc<AtomicU32>` backing works) — see
+    /// `crate::vm::vm_call_state_guard`'s module doc for the full history.
+    pub(crate) mark_ctx: Box<crate::runtime::mark_context::MarkContextState>,
     /// Set by `MarkAccessorRefContext` immediately before a CallMethod(Mut)
     /// whose result is wanted as a container (`:=` bind RHS / `.VAR` chain).
     /// Consumed and unconditionally cleared at CallMethod entry.
@@ -3282,18 +3281,6 @@ pub struct Interpreter {
     /// name so a store that re-enters user code (a tied container's `STORE`)
     /// cannot make one declaration consume another's verdict.
     pub(crate) sigilless_bind_source: Option<(Symbol, bool)>,
-    pub(crate) constant_context: Box<Cell<bool>>,
-    /// Slice 2a (`docs/scalar-array-sharing.md`): set by `MarkArrayShareContext`
-    /// just before a `SetLocal` for `$scalar = @arr` / `$scalar = %hash`. Tells
-    /// the assignment to promote the source container to a shared `ContainerRef`
-    /// cell (raku reference semantics) rather than snapshotting it.
-    pub(crate) array_share_context: Box<Cell<bool>>,
-    /// Slice 2a/2b: the source variable name whose container the upcoming
-    /// `SetLocal`/`AssignExpr` should share (set by `MarkArrayShareSource`).
-    /// `@z`/`%h` for a whole-container RHS (`$n = @z`), or a scalar name for a
-    /// chained share (`$r = $q`); the runtime only shares when that source holds
-    /// a container/`ContainerRef` (so a plain `$x = $y` stays a copy).
-    pub(crate) array_share_source: Box<Cell<Option<String>>>,
     /// Slice 2a: cheap gate — `true` once any `__mutsu_array_share::` marker has
     /// been set, so the `SetLocal` write-through fast path only pays the marker
     /// lookup when at least one `=`-array-shared scalar exists.
@@ -3303,8 +3290,6 @@ pub struct Interpreter {
     /// (vs a true `:=` bind). Consumed by `exec_index_assign_expr_named_op`,
     /// which marks the written element `__mutsu_elem_share::` after the store.
     pub(crate) element_share_pending: bool,
-    pub(crate) explicit_initializer_context: Box<Cell<bool>>,
-    pub(crate) vardecl_context: Box<Cell<bool>>,
     /// Set by `MarkShapedDeclContext` before a `SetLocal` whose `my @a[N]` /
     /// `my @a[N;M] = ...` declaration is itself shaped — so the assignment KEEPS
     /// the shape instead of dropping it as a value copy (`my @u = @shaped` does).
