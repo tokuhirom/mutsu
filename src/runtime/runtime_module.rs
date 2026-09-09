@@ -342,6 +342,23 @@ impl Interpreter {
                     entry.entry(short).or_insert(qualified);
                 }
             }
+            // #7797: same gap as the aliasing copy just above, for package-
+            // qualified-name visibility instead of bare short-name aliasing.
+            // A re-`use` of an already-loaded module skips
+            // `load_module_inner` entirely, so the importer-scoped grant that
+            // runs there on first load (`compunit_visible_packages`) never
+            // fires for a second importer — e.g. `Issue7733::User.rakumod`'s
+            // own `use Issue7733::Conf;` is a no-op once the top-level script
+            // already loaded `Conf` first, yet `Issue7733::Conf.new` inside a
+            // `User`-declared method must still resolve.
+            {
+                let top = module.split_once("::").map_or(module, |(top, _)| top);
+                let importer_unit = self.executing_unit_sym_for_module_load();
+                crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+                    .entry(importer_unit)
+                    .or_default()
+                    .insert(top.to_string());
+            }
             // A module with a `sub EXPORT` runs it on every import — its map
             // may depend on the `use` arguments (the Slangify pattern) — even
             // though the module body itself is not re-run.

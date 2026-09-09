@@ -136,6 +136,24 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::executing_unit_sym`], corrected for code running directly in a
+    /// module's own top-level mainline (`load_module_inner`'s `run_block`)
+    /// while an unrelated routine call is still on `routine_stack` — see
+    /// `module_loading_unit_stack`'s doc comment for why that accessor alone
+    /// gets this wrong. `routine_stack.len()` unchanged since the innermost
+    /// still-loading module's mainline started means nothing has been
+    /// CALLED since, so that module IS what's running; a change means a
+    /// routine call happened, and `executing_unit_sym`'s normal
+    /// frame-based answer (now reflecting that call) is correct instead.
+    pub(crate) fn executing_unit_sym_for_module_load(&self) -> Symbol {
+        if let Some(&(unit, depth_at_push)) = self.module_loading_unit_stack.last()
+            && self.routine_stack.len() == depth_at_push
+        {
+            return unit;
+        }
+        self.executing_unit_sym()
+    }
+
     /// Whether a package-qualified name (`Pkg::name`) written in source is
     /// visible from the code that is running right now (#7797).
     ///
@@ -171,8 +189,11 @@ impl Interpreter {
         let Some(&declaring_unit) = self.package_declaring_units.get(top) else {
             return true;
         };
-        self.package_visible_in_unit_chain(self.executing_unit_sym(), top, declaring_unit)
-            || self.package_visible_in_unit_chain(self.current_unit, top, declaring_unit)
+        self.package_visible_in_unit_chain(
+            self.executing_unit_sym_for_module_load(),
+            top,
+            declaring_unit,
+        ) || self.package_visible_in_unit_chain(self.current_unit, top, declaring_unit)
     }
 
     /// Whether `top` (a package `declaring_unit` owns) is visible from

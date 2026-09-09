@@ -700,16 +700,10 @@ impl Interpreter {
             .cloned()
             .unwrap_or_else(|| self.current_package());
         // #7797: which COMPUNIT (not package) is doing the importing, captured
-        // before anything below switches `?FILE`/`current_unit` to this load's
-        // own module. `executing_unit_sym` is the same accessor
-        // `prelude_visible_here` uses for the analogous prelude-splice gate --
-        // it reads the routine-frame `def_file` if one is on the stack, and
-        // otherwise the ambient `?FILE`, which at this exact point still names
-        // whichever compunit's `use`/`need`/`require` triggered this load (a
-        // nested `use` reached from inside another module's own mainline sees
-        // THAT module's `?FILE`, already switched by ITS load_module_inner
-        // call before its body started running).
-        let importer_unit = self.executing_unit_sym();
+        // before anything below switches `?FILE`/`current_unit` to this
+        // load's own module. See `Interpreter::executing_unit_sym_for_module_load`
+        // for why plain `executing_unit_sym` alone is not enough here.
+        let importer_unit = self.executing_unit_sym_for_module_load();
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
@@ -795,14 +789,19 @@ impl Interpreter {
             // instead of `Export_PackA::foo`).
             let saved_package = self.current_package();
             self.set_current_package("GLOBAL".to_string());
+            // #7797: this load's own compunit identity, pushed for the
+            // duration of its mainline regardless of whether it declares a
+            // `unit module`/`unit class` -- see `module_loading_unit_stack`.
+            let module_unit_for_loading_stack =
+                self.unit_of_source(Some(&source_path.to_string_lossy()));
+            self.module_loading_unit_stack
+                .push((module_unit_for_loading_stack, self.routine_stack_len()));
             // If the module file is a `unit module X` (or unit package/class),
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
-                let source = source_path.to_string_lossy();
-                let unit = self.unit_of_source(Some(&source));
                 crate::runtime::cow_table_mut(&mut self.unit_module_packages)
-                    .insert(unit, crate::symbol::Symbol::intern(name));
+                    .insert(module_unit_for_loading_stack, crate::symbol::Symbol::intern(name));
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
@@ -1023,6 +1022,7 @@ impl Interpreter {
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
             }
+            self.module_loading_unit_stack.pop();
             self.set_current_package(saved_package);
             if result.is_ok() {
                 // A `sub MAIN` defined in a used module is NOT the program's MAIN

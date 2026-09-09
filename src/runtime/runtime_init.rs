@@ -3064,6 +3064,7 @@ impl Interpreter {
             exported_vars: Default::default(),
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
+            module_loading_unit_stack: Vec::new(),
             module_owned_exports: Default::default(),
             suppress_exports: false,
             in_lvalue_assignment: false,

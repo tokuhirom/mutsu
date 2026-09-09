@@ -2547,6 +2547,33 @@ pub struct Interpreter {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     unit_module_loading_stack: Vec<String>,
+    /// #7797: stack of compunits whose OWN mainline is currently executing
+    /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
+    /// the same window as `unit_module_loading_stack` (but keyed by every
+    /// load, not only ones with a `unit module`/`unit class` name). Each
+    /// entry also carries `routine_stack.len()` at the moment it was pushed,
+    /// so `Interpreter::executing_unit_sym_for_module_load` can tell "still
+    /// directly in this module's mainline" (the length hasn't grown, so
+    /// nothing has been CALLED since) from "a routine call happened since"
+    /// (the length grew, so a fresh frame -- possibly from yet another
+    /// compunit -- is what's actually running now).
+    ///
+    /// `Interpreter::executing_unit_sym` cannot serve this purpose on its
+    /// own: it prioritizes `routine_stack`'s topmost frame, which is correct
+    /// for an ordinary call but wrong here — a module body runs via
+    /// `run_block`, which pushes no routine frame, so a `use` (or any other
+    /// qualified-name resolution) reached from a module's mainline while
+    /// some UNRELATED routine call is still on the stack (`DBIish
+    /// .install-driver` doing `require ::($module)`, whose loaded module in
+    /// turn does its own top-level `use NativeLibs;`, or even just reads
+    /// `NativeLibs::is-win` in a top-level `constant` initializer) would
+    /// otherwise misattribute to that routine's own compunit instead of to
+    /// the module whose mainline is actually running. `?FILE` alone has the
+    /// opposite problem: an ordinary (non-loading) routine call never
+    /// updates it, so consulting it OUTSIDE a load would misattribute to
+    /// whichever compunit happened to load last. This stack is unambiguous
+    /// exactly because `load_module_inner` is the only writer.
+    module_loading_unit_stack: Vec<(Symbol, usize)>,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
     /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
