@@ -161,13 +161,27 @@ impl Interpreter {
     /// units are not registered as modules themselves, but their parent unit
     /// is, so walk the same parent chain used by compilation-unit scoping.
     fn lexical_package_for_frame(&self, def_file: Option<Symbol>) -> Option<Symbol> {
-        let unit = def_file
-            .map(|file| {
-                let source = file.resolve();
-                self.unit_of_source(Some(&source))
-            })
+        // The only `return Some` below is a hit in `unit_module_packages`, so an
+        // empty table decides the answer on its own: no `unit module`/`unit
+        // class` has been declared anywhere, therefore no frame has a lexical
+        // package. Answering that here rather than by walking the chain is what
+        // keeps this off the hot path -- EVERY routine call runs this, and the
+        // walk below costs a `Symbol::resolve` (a heap copy of the declaring
+        // path), a re-intern of that copy, and a read of the process-global
+        // `EVAL_UNIT_PARENTS` lock. On `benchmarks/bench-fib.raku`, which
+        // declares no module and no `EVAL`, that dead work was 4.9% of the run
+        // (#7788).
+        if self.unit_module_packages.is_empty() {
+            return None;
+        }
+        // `def_file` is already interned; hand the `Symbol` straight to the
+        // unit lookup instead of resolving it back into a `String` and making
+        // `unit_of_source` re-intern that. Round-tripping a name through a
+        // string is the pattern ADR-0037 removed from this very call path once
+        // already.
+        let mut unit = def_file
+            .map(|file| self.unit_of_source_sym(Some(file)))
             .unwrap_or(self.current_unit);
-        let mut unit = unit;
         loop {
             if let Some(package) = self.unit_module_packages.get(&unit) {
                 return Some(*package);
