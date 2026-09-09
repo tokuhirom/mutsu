@@ -330,9 +330,9 @@ impl Interpreter {
         let saved_quanthash_bind_params = std::mem::take(&mut self.quanthash_bind_params);
         let saved_for_param_restore_stack = std::mem::take(&mut self.for_param_restore_stack);
         let saved_local_bind_pairs = std::mem::take(&mut self.local_bind_pairs);
-        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
-        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
-        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        let saved_block_declared_vars = self.block_declared_vars.push_frame();
+        let saved_loop_local_vars = self.loop_local_vars.push_frame();
+        let saved_loop_local_saved_env = self.loop_local_saved_env.push_frame();
         // ADR-0027: a nested run (EVAL, dies-ok/lives-ok block, ...) starts
         // with an empty loop-owned vouch, for the same isolation rationale as
         // `active_loop_param_names` below — its own closures must not
@@ -342,7 +342,7 @@ impl Interpreter {
         // active-loop-param stack, so a spawn inside the callee whose free
         // variable merely shares an OUTER loop's parameter name is not
         // mistaken for that loop's own per-iteration binding.
-        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
+        let saved_active_loop_param_names = self.active_loop_param_names.push_frame();
         let saved_outer_scope_locals = std::mem::take(&mut self.outer_scope_locals);
         let saved_pending_alias_bind_names = std::mem::take(&mut self.pending_alias_bind_names);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
@@ -419,11 +419,14 @@ impl Interpreter {
         self.quanthash_bind_params = saved_quanthash_bind_params;
         self.for_param_restore_stack = saved_for_param_restore_stack;
         self.local_bind_pairs = saved_local_bind_pairs;
-        self.block_declared_vars = saved_block_declared_vars;
-        self.loop_local_vars = saved_loop_local_vars;
-        self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.block_declared_vars
+            .pop_frame(saved_block_declared_vars);
+        self.loop_local_vars.pop_frame(saved_loop_local_vars);
+        self.loop_local_saved_env
+            .pop_frame(saved_loop_local_saved_env);
         self.frame_owned = saved_frame_owned;
-        self.active_loop_param_names = saved_active_loop_param_names;
+        self.active_loop_param_names
+            .pop_frame(saved_active_loop_param_names);
         self.outer_scope_locals = saved_outer_scope_locals;
         self.pending_alias_bind_names = saved_pending_alias_bind_names;
         self.in_smartmatch_rhs = saved_in_smartmatch_rhs;

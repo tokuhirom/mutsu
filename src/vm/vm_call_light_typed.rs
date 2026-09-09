@@ -76,16 +76,16 @@ impl Interpreter {
         // body-local `my $x` — e.g. a recursive call from inside the caller's
         // `while` loop — registers in the caller's active loop-local scope and is
         // clobbered at the caller's loop exit. Restored on every exit path.
-        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
-        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        let saved_loop_local_vars = self.loop_local_vars.push_frame();
+        let saved_loop_local_saved_env = self.loop_local_saved_env.push_frame();
         // ADR-0023: isolate the caller's active-loop-param stack the same way.
-        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
-        let saved_active_loop_rw_param_names = std::mem::take(&mut self.active_loop_rw_param_names);
+        let saved_active_loop_param_names = self.active_loop_param_names.push_frame();
+        let saved_active_loop_rw_param_names = self.active_loop_rw_param_names.push_frame();
         // Isolate the caller's block-scope `my`-declaration tracking (see the
         // matching comment in `call_compiled_function_positional_light`): a
         // callee's routine-level `my $x` must not register in the caller's active
         // `BlockScope` frame and be reverted at the caller's block exit.
-        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
+        let saved_block_declared_vars = self.block_declared_vars.push_frame();
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -377,11 +377,15 @@ impl Interpreter {
                 }
             }
             self.locals.pop_frame(saved_locals_base);
-            self.loop_local_vars = saved_loop_local_vars;
-            self.loop_local_saved_env = saved_loop_local_saved_env;
-            self.active_loop_param_names = saved_active_loop_param_names;
-            self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-            self.block_declared_vars = saved_block_declared_vars;
+            self.loop_local_vars.pop_frame(saved_loop_local_vars);
+            self.loop_local_saved_env
+                .pop_frame(saved_loop_local_saved_env);
+            self.active_loop_param_names
+                .pop_frame(saved_active_loop_param_names);
+            self.active_loop_rw_param_names
+                .pop_frame(saved_active_loop_rw_param_names);
+            self.block_declared_vars
+                .pop_frame(saved_block_declared_vars);
             self.current_unit = saved_unit;
             return Err(e);
         }
@@ -606,11 +610,15 @@ impl Interpreter {
                 self.stack.truncate(saved_stack_depth.min(self.stack.len()));
                 self.cur_source_line = saved_line;
                 self.locals.pop_frame(saved_locals_base);
-                self.loop_local_vars = saved_loop_local_vars;
-                self.loop_local_saved_env = saved_loop_local_saved_env;
-                self.active_loop_param_names = saved_active_loop_param_names;
-                self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-                self.block_declared_vars = saved_block_declared_vars;
+                self.loop_local_vars.pop_frame(saved_loop_local_vars);
+                self.loop_local_saved_env
+                    .pop_frame(saved_loop_local_saved_env);
+                self.active_loop_param_names
+                    .pop_frame(saved_active_loop_param_names);
+                self.active_loop_rw_param_names
+                    .pop_frame(saved_active_loop_rw_param_names);
+                self.block_declared_vars
+                    .pop_frame(saved_block_declared_vars);
                 self.finish_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
                 self.current_unit = saved_unit;
@@ -657,11 +665,15 @@ impl Interpreter {
         self.cur_source_line = saved_line;
         // Restore locals
         self.locals.pop_frame(saved_locals_base);
-        self.loop_local_vars = saved_loop_local_vars;
-        self.loop_local_saved_env = saved_loop_local_saved_env;
-        self.active_loop_param_names = saved_active_loop_param_names;
-        self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-        self.block_declared_vars = saved_block_declared_vars;
+        self.loop_local_vars.pop_frame(saved_loop_local_vars);
+        self.loop_local_saved_env
+            .pop_frame(saved_loop_local_saved_env);
+        self.active_loop_param_names
+            .pop_frame(saved_active_loop_param_names);
+        self.active_loop_rw_param_names
+            .pop_frame(saved_active_loop_rw_param_names);
+        self.block_declared_vars
+            .pop_frame(saved_block_declared_vars);
 
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 

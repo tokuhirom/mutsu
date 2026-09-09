@@ -375,24 +375,25 @@ pub(crate) struct VmCallFrame {
     /// mutations either mechanism would have to undo.
     pub readonly_mark: usize,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
-    /// The caller's loop-body-local declaration scopes. These VM fields track
+    /// The caller's loop-body-local declaration scopes (ADR-0078: a base into
+    /// the shared `ScopeStack`, not a moved-out vector). These VM fields track
     /// which `my` names a `for`/`while` body declared so they can be restored at
     /// loop exit (see `pop_loop_local_scope`). A compiled-function body runs via
     /// its own `exec_one` mini-loop (not `run()`, which saves them), so without
-    /// snapshotting them here a callee invoked from inside a loop body would
+    /// hiding them here a callee invoked from inside a loop body would
     /// register its own `my` declarations in the *caller's* active loop scope and
     /// have them clobbered at the caller's loop exit.
-    pub saved_loop_local_vars: Vec<crate::runtime::NameSet>,
-    pub saved_loop_local_saved_env: Vec<HashMap<String, Option<Value>>>,
+    pub saved_loop_local_vars: Option<crate::runtime::scope_stack::ScopeFrame>,
+    pub saved_loop_local_saved_env: Option<crate::runtime::scope_stack::ScopeFrame>,
     /// The caller's block-scope `my`-declaration tracking stack. A `BlockScope`
     /// pushes a frame here and, on exit, reverts every name it records to the
     /// pre-block value (block-local `my` must not leak out). A compiled-function
-    /// body runs via its own `exec_one` mini-loop, so without snapshotting this a
+    /// body runs via its own `exec_one` mini-loop, so without hiding this a
     /// callee's routine-level `my $x` (which runs before the callee enters any of
     /// its own blocks) would register in the *caller's* active `BlockScope` frame
     /// and get reverted at the caller's block exit — clobbering a same-named
     /// caller variable across a recursive call.
-    pub saved_block_declared_vars: Vec<crate::runtime::NameSet>,
+    pub saved_block_declared_vars: Option<crate::runtime::scope_stack::ScopeFrame>,
     /// The caller frame's `frame_authoritative` set — the free-var names this
     /// frame vouches for so a closure created inside it inherits authoritative
     /// (overwrite) capture semantics (runtime transitive vouching). Saved here so
@@ -408,13 +409,13 @@ pub(crate) struct VmCallFrame {
     /// The caller's active-for-loop-parameter-name stack (ADR-0023). A
     /// compiled-function body runs via its own `exec_one` mini-loop, not
     /// `run()`/`with_nested_registers` (which save these), so without
-    /// snapshotting here a callee's own free variable that merely shares an
+    /// hiding it here a callee's own free variable that merely shares an
     /// OUTER loop's parameter name would be mistaken for that loop's
     /// per-iteration binding by `block_captured_scalars`.
-    pub saved_active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    pub saved_active_loop_param_names: Option<crate::runtime::scope_stack::ScopeFrame>,
     /// The caller frame's `active_loop_rw_param_names` stack — saved and
     /// restored exactly like `saved_active_loop_param_names`.
-    pub saved_active_loop_rw_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    pub saved_active_loop_rw_param_names: Option<crate::runtime::scope_stack::ScopeFrame>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

@@ -118,7 +118,11 @@ impl Interpreter {
         for env in &self.caller_env_stack {
             env.visit_values(visitor);
         }
-        for map in &self.loop_local_saved_env {
+        // ADR-0078: `all_frames()`, not the `Deref` window — the window is the
+        // executing call's scope frames, and every suspended caller below it
+        // holds live values in its own loop-local saves. Reading through the
+        // window would free them while the program still needs them.
+        for map in self.loop_local_saved_env.all_frames() {
             // A `None` entry is a removal marker (the name did not exist before
             // the loop), so it roots nothing.
             for v in map.values().flatten() {

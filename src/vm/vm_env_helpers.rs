@@ -62,13 +62,13 @@ impl Interpreter {
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
-            saved_loop_local_vars: std::mem::take(&mut self.loop_local_vars),
-            saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
-            saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
+            saved_loop_local_vars: Some(self.loop_local_vars.push_frame()),
+            saved_loop_local_saved_env: Some(self.loop_local_saved_env.push_frame()),
+            saved_block_declared_vars: Some(self.block_declared_vars.push_frame()),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
-            saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
-            saved_active_loop_rw_param_names: std::mem::take(&mut self.active_loop_rw_param_names),
+            saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
+            saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
         };
         // A call-site "the topic argument is a bare literal" flag
         // (`OpCode::CallOnValue`'s `bare_args`) belongs to exactly one call.
@@ -95,13 +95,13 @@ impl Interpreter {
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
-            saved_loop_local_vars: std::mem::take(&mut self.loop_local_vars),
-            saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
-            saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
+            saved_loop_local_vars: Some(self.loop_local_vars.push_frame()),
+            saved_loop_local_saved_env: Some(self.loop_local_saved_env.push_frame()),
+            saved_block_declared_vars: Some(self.block_declared_vars.push_frame()),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
-            saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
-            saved_active_loop_rw_param_names: std::mem::take(&mut self.active_loop_rw_param_names),
+            saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
+            saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
         };
         self.call_frames.push(frame);
     }
@@ -122,14 +122,23 @@ impl Interpreter {
         }
         self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
-        self.loop_local_vars = std::mem::take(&mut frame.saved_loop_local_vars);
-        self.loop_local_saved_env = std::mem::take(&mut frame.saved_loop_local_saved_env);
-        self.block_declared_vars = std::mem::take(&mut frame.saved_block_declared_vars);
+        if let Some(caller) = frame.saved_loop_local_vars.take() {
+            self.loop_local_vars.pop_frame(caller);
+        }
+        if let Some(caller) = frame.saved_loop_local_saved_env.take() {
+            self.loop_local_saved_env.pop_frame(caller);
+        }
+        if let Some(caller) = frame.saved_block_declared_vars.take() {
+            self.block_declared_vars.pop_frame(caller);
+        }
         self.frame_authoritative = std::mem::take(&mut frame.saved_frame_authoritative);
         self.frame_owned = std::mem::take(&mut frame.saved_frame_owned);
-        self.active_loop_param_names = std::mem::take(&mut frame.saved_active_loop_param_names);
-        self.active_loop_rw_param_names =
-            std::mem::take(&mut frame.saved_active_loop_rw_param_names);
+        if let Some(caller) = frame.saved_active_loop_param_names.take() {
+            self.active_loop_param_names.pop_frame(caller);
+        }
+        if let Some(caller) = frame.saved_active_loop_rw_param_names.take() {
+            self.active_loop_rw_param_names.pop_frame(caller);
+        }
         self.exit_readonly_frame(frame.readonly_mark);
         frame
     }
