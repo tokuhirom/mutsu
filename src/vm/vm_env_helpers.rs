@@ -1675,7 +1675,9 @@ impl Interpreter {
                 // Gate OFF this is byte-identical: env tracks the slot, so a
                 // fired type-change here always had `prev != cur` anyway.
                 let env_changed = match pre_env.get(i) {
-                    Some(Some(prev)) => !prev.same_variant(&cur) || *prev != cur,
+                    Some(Some(prev)) => {
+                        !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur)
+                    }
                     // No prior env value snapshotted (a name the carrier
                     // introduced): treat as a genuine change.
                     _ => true,
@@ -1683,8 +1685,8 @@ impl Interpreter {
                 if env_changed && !self.locals[i].same_variant(&cur) {
                     self.locals[i] = cur;
                 } else if let Some(Some(prev)) = pre_env.get(i)
-                    && *prev == self.locals[i]
-                    && *prev != cur
+                    && crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &self.locals[i])
+                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur)
                 {
                     self.locals[i] = cur;
                 }
@@ -1694,10 +1696,10 @@ impl Interpreter {
             // the two values as equal: `Mixin(Int(0), …)` compares EQUAL to
             // `Int(0)` (Mixin PartialEq delegates to its inner value), so a
             // `$a does Role` that turns an `Int` slot into an allomorphic `Mixin`
-            // would otherwise be missed. Compare the enum discriminant first, then
-            // the value.
+            // would otherwise be missed. The identity-aware helper handles this
+            // case without descending into potentially cyclic heap values.
             let changed = match pre_env.get(i) {
-                Some(Some(prev)) => !prev.same_variant(&cur) || *prev != cur,
+                Some(Some(prev)) => !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur),
                 _ => true,
             };
             if changed {

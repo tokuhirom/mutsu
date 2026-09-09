@@ -2619,11 +2619,18 @@ impl Interpreter {
             // accumulating statement-modifier loop, env and slot agree on the
             // partial result, which would spuriously look coherent; that value is
             // the loop's own, not an enclosing binding.
-            let has_coherent_slot = code
-                .locals
-                .iter()
-                .enumerate()
-                .any(|(i, n)| n.as_str() == name && self.locals.get(i) == Some(&prev));
+            // Do not use Value's structural equality here. An instance can
+            // contain a reference cycle, and comparing such a value against
+            // the env snapshot would recurse through its attributes forever.
+            // The coherence test only needs an O(1), conservative proof that
+            // the slot still holds the same value; the shared identity helper
+            // handles heap values by identity and scalars by value.
+            let has_coherent_slot = code.locals.iter().enumerate().any(|(i, n)| {
+                n.as_str() == name
+                    && self.locals.get(i).is_some_and(|slot| {
+                        crate::vm::vm_method_dispatch::cheaply_unchanged(slot, &prev)
+                    })
+            });
             if has_coherent_slot
                 && let Some(saved) = self.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
