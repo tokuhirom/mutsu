@@ -852,11 +852,16 @@ pub(crate) fn native_method_1arg(
                 // If any item is an Instance, fall through to runtime
                 // so user-defined Str() methods can be called. A `ContainerRef`
                 // element (grep rw alias / `:=`-bound slot) is decontainerized
-                // first so a cell-wrapped Instance is also routed to runtime.
+                // first so a cell-wrapped Instance is also routed to runtime,
+                // and an ITEMIZED one (`my @h = $x` compiles an `ItemizeVar`)
+                // is descalarized for the same reason -- `.join` stringifies
+                // each element with `.Str`, whose dispatch deconts its invocant,
+                // so `my @h = $c` with an `is Array` subclass instance must not
+                // be answered here with the pure `SA()` fallback.
                 if items.iter().any(|v| {
                     v.with_deref(|inner| {
                         matches!(
-                            inner.view(),
+                            inner.descalarize().view(),
                             ValueView::Instance { .. } | ValueView::Mixin(..)
                         )
                     })
