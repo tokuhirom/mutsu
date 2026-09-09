@@ -946,6 +946,18 @@ impl Interpreter {
             for name in &leaked_packages {
                 self.env.remove(name);
             }
+            // A `unit` compunit's own file-scope `constant`s and enum values are
+            // package symbols of that compunit in rakudo, not names the importer
+            // sees bare (#7787). The module body ran in the CALLER's env, so drop
+            // the plain binding here; `module_scope_names` keeps the value, so the
+            // module's own routines still read it through `module_scope_lexicals`,
+            // and the `saved_plain_env` restore below puts back whatever the
+            // loading scope had under the same name.
+            if unit_name.is_some() {
+                for name in Self::collect_unit_package_scope_names(&stmts) {
+                    self.env.remove(&name);
+                }
+            }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             // Take the compunit's own file-scope lexicals out of `env` and into
             // `unit_lexicals`, restoring the loading scope's values under those
@@ -1191,6 +1203,93 @@ impl Interpreter {
             }
             if !names.iter().any(|n| n == name) {
                 names.push(name.clone());
+            }
+        }
+        names
+    }
+
+    /// The file-scope `constant` and `enum`-value names a `unit` compunit
+    /// declares. Like [`Interpreter::collect_unit_lexical_names`] these must not
+    /// stay visible under a plain `env` key once the load finishes — the module
+    /// body runs in the CALLER's env, so `constant FOO = 42` inside
+    /// `unit module M` otherwise leaves a bare `FOO` resolvable in whatever
+    /// scope triggered the load (#7787), and in a transitively-`use`d module it
+    /// leaks two levels out. rakudo makes them package symbols of `M` visible
+    /// only as `M::FOO`.
+    ///
+    /// Unlike the `my` variables above, these are NOT moved into `unit_lexicals`:
+    /// they stay in `module_scope_names` (and hence in the package-keyed
+    /// `module_scope_lexicals`), which is where the module's own routines already
+    /// read them from. Only the `env` binding goes.
+    ///
+    /// `our constant` / `our enum` are collected too. That is not an oversight:
+    /// measured against rakudo v2026.07, `our constant OUR-CONST` in a
+    /// `unit module` is exactly as invisible to the importer as the bare form
+    /// (both resolve only as `M::OUR-CONST`), so the `our`-versus-bare
+    /// discriminator #7787 expected to need does not arise here.
+    ///
+    /// `is export` declarations are excluded — those are meant to reach the
+    /// caller, and `import_module` already owns their lifetime.
+    ///
+    /// Only `unit` compunits qualify. A module file with no `unit` declarator
+    /// (`modules/Log-Async/lib/Log/Async.rakumod`, whose `enum Loglevels` sits at
+    /// file scope beside a braced `class Log::Async { ... }`) makes those names
+    /// visible to the importer under rakudo too, so removing them there would be
+    /// a divergence rather than a fix.
+    fn collect_unit_package_scope_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        let mut push = |name: &str| {
+            if name.contains("::") || name.contains("__ANON") {
+                return;
+            }
+            let bare = name.strip_prefix(['@', '%', '&', '$']).unwrap_or(name);
+            if !bare
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            {
+                return;
+            }
+            if !names.iter().any(|n| n == name) {
+                names.push(name.to_string());
+            }
+        };
+        for s in stmts {
+            match s {
+                crate::ast::Stmt::VarDecl {
+                    name,
+                    is_export,
+                    is_dynamic,
+                    custom_traits,
+                    ..
+                } => {
+                    // A `constant` parses to `VarDecl { is_our: true, .. }` with
+                    // a `__constant` trait; `is_our` alone cannot tell it from an
+                    // ordinary `our $x`, which is a package variable the loading
+                    // scope may legitimately share.
+                    if *is_export
+                        || *is_dynamic
+                        || !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    {
+                        continue;
+                    }
+                    push(name);
+                }
+                crate::ast::Stmt::EnumDecl {
+                    name,
+                    variants,
+                    is_export,
+                    ..
+                } => {
+                    if *is_export {
+                        continue;
+                    }
+                    push(&name.resolve());
+                    for (variant, _) in variants {
+                        push(variant);
+                    }
+                }
+                _ => {}
             }
         }
         names

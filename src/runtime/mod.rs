@@ -2420,6 +2420,14 @@ pub struct Interpreter {
     /// is the motivating case: `constant Offset` is read by the exported
     /// `OBJECT_BODY` sub of the same module, and resolved to the string
     /// `"Offset"` once the frame that loaded the module was gone.
+    ///
+    /// For a `unit` compunit's own `constant`s and enum values this is no longer
+    /// a fallback but the ONLY store: `load_module_inner` drops their `env`
+    /// binding at the end of the load, because the module body ran in the
+    /// caller's env and rakudo makes those names package symbols of the
+    /// compunit rather than names the importer sees bare (#7787). The value
+    /// stays here so the declaring module's own routines and methods still read
+    /// it; see `collect_unit_package_scope_names`.
     pub(crate) module_scope_lexicals: PackageLexicals,
     /// Names the module currently being loaded imported from another module,
     /// accumulated by `import_module` and folded into `module_scope_lexicals`
