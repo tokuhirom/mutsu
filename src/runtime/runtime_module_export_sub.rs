@@ -30,9 +30,24 @@ impl Interpreter {
     /// arguments and install the symbols from its returned `Map`(s) into the
     /// caller's scope. `EXPORT` itself is special (never an export), so it is
     /// removed from the registry afterwards to avoid leaking as a callable.
+    ///
+    /// `module_env` is a snapshot of `self.env` taken right after the module's
+    /// own body finished running, before the load's env restoration (dropping
+    /// the module's transitively-`use`d packages that don't belong to the
+    /// importer, restoring the loading scope's own plain bindings, etc.)
+    /// stripped it back down. `sub EXPORT` is part of the module's own
+    /// closure, so it must see everything the mainline could see while it
+    /// runs -- e.g. NativeLibs' `Map.new('NativeCall' => NativeCall, ...)`
+    /// needs `NativeCall` still bound to its package, not gone the way
+    /// `leaked_packages` (`run_modules.rs`) already dropped it by the time
+    /// this is called. Running EXPORT against the (already-restored) current
+    /// `self.env` instead degrades that bareword to the plain string
+    /// `"NativeCall"`, which then shadows the real package for every importer
+    /// (#7806).
     pub(super) fn apply_module_export(
         &mut self,
         export_args: Vec<Value>,
+        module_env: crate::env::Env,
     ) -> Result<(), RuntimeError> {
         // An `&EXPORT` this module imported from another module's EXPORT map
         // (the Slangify pattern) becomes this module's own EXPORT. Consume the
@@ -52,9 +67,10 @@ impl Interpreter {
             if let Some(export_sub) = inherited {
                 // Same env discipline as the compiled path below: the imported
                 // EXPORT's effects are its return value, not caller-env writes.
-                let saved_env = self.env.clone();
+                let caller_env = self.env.clone();
+                self.env = module_env;
                 let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
-                self.env = saved_env;
+                self.env = caller_env;
                 self.install_export_map(&result, importer.as_deref());
                 if let Some(m) = self.module_load_stack.last().cloned() {
                     self.module_export_defs
@@ -68,17 +84,19 @@ impl Interpreter {
         // sub the EXPORT returns can capture a use-argument (`sub EXPORT($x)
         // { Map.new: '&f' => sub { ...$x... } }`).
         //
-        // Snapshot env across the call and restore it afterwards: the call's
-        // scalar return-merge writes EXPORT's own params/locals (`$x`, a `my $y`)
-        // back into this (the caller's) env as their post-return values. A sub
-        // EXPORT returns that closes over such a lexical carries the correct
-        // captured value, but a later bareword call of it merges the caller env
-        // with `merge_all` (keep-existing) semantics — so the leaked stale entry
-        // would shadow the capture. Dropping EXPORT's env writes keeps the
-        // caller env clean; EXPORT's real effects are its return value and
-        // control flow (die/note/exit), not caller-env mutation.
+        // Snapshot the CALLER's env (not the module's) so it can be restored
+        // after the call: the call's scalar return-merge writes EXPORT's own
+        // params/locals (`$x`, a `my $y`) back into whatever `self.env` is at
+        // return time as their post-return values. A sub EXPORT returns that
+        // closes over such a lexical carries the correct captured value, but a
+        // later bareword call of it merges the caller env with `merge_all`
+        // (keep-existing) semantics — so the leaked stale entry would shadow
+        // the capture. Dropping EXPORT's env writes keeps the caller env
+        // clean; EXPORT's real effects are its return value and control flow
+        // (die/note/exit), not caller-env mutation.
         let empty_fns = crate::opcode::CompiledFns::default();
-        let saved_env = self.env.clone();
+        let caller_env = self.env.clone();
+        self.env = module_env.clone();
         // Anchor the call to the module's own compunit. `EXPORT` is the
         // module's code, so a prelude splice made into the module's unit (the
         // NativeCall `trait_mod:<is>` candidates `NativeLibs` introspects) has
@@ -89,16 +107,18 @@ impl Interpreter {
         let result = self.compile_and_call_function_def(&def, export_args, &empty_fns);
         self.current_unit = saved_unit;
         let result = result?;
-        self.env = saved_env.clone();
+        self.env = caller_env;
         // `EXPORT` must not itself become a callable in (or leak from) the
         // module; drop every registered `EXPORT` routine now that it has run.
         self.remove_export_routine();
         self.install_export_map(&result, importer.as_deref());
         if let Some(m) = self.module_load_stack.last().cloned() {
-            // `saved_env` is the module's own scope: `apply_module_export` runs
-            // right after the module body, before the load unwinds.
+            // `module_env` is the module's own scope: a re-`use` of an
+            // already-loaded module re-runs EXPORT there too (see
+            // `rerun_module_export`), since the new importer's own scope
+            // holds none of the module's lexicals.
             self.module_export_defs
-                .insert(m, ModuleExportDef::Sub(def, saved_env));
+                .insert(m, ModuleExportDef::Sub(def, module_env));
         }
         Ok(())
     }

@@ -857,6 +857,13 @@ impl Interpreter {
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
             let result = self.run_block(&stmts);
+            // Snapshot the env exactly as the module body left it, before any
+            // of the restoration below (the `leaked_packages` removal, the
+            // `saved_plain_env` restore, `unit_lexicals` extraction) strips
+            // module-local bindings back out. `apply_module_export` needs
+            // this: `sub EXPORT` is part of the module's own closure and must
+            // resolve everything the mainline could (see its doc comment).
+            let module_body_env = self.env.clone();
             self.pending_rw_writeback_sources
                 .truncate(saved_pending_rw_writeback_len);
             self.strict_mode = saved_strict_mode;
@@ -1040,7 +1047,7 @@ impl Interpreter {
             result?;
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope.
-            self.apply_module_export(export_args.unwrap_or_default())?;
+            self.apply_module_export(export_args.unwrap_or_default(), module_body_env)?;
         }
         // Every class/role this load just registered, regardless of whether the
         // module carries distribution metadata or picked up any scope names of
