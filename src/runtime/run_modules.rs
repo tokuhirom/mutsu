@@ -892,6 +892,60 @@ impl Interpreter {
                     self.env.remove_sym(key);
                 }
             }
+            // `OpCode::RegisterPackage` binds a `unit module X` under its own
+            // bare name, and the module body runs in the CALLER's env -- so a
+            // module reached only through THIS module's own `use` statements
+            // left its package name sitting in the importing scope. rakudo
+            // makes that binding lexical to the compunit that asked for it, so
+            // a file that never `use`d `Inner` reports an "Undeclared name" for
+            // it (#7555 item 1, divergence (b); the alias half of the same
+            // divergence is handled by the `imported` restore just above, and
+            // by the `owned_types` filter on `new_types` below):
+            //
+            //     # Outer.rakumod:  use Inner; unit module Outer; ...
+            //     use Outer;
+            //     Inner::InnerClass.new;   # rakudo: Could not find symbol
+            //
+            // A package this module declares itself stays, and so does anything
+            // nested under it. So does a *class* the load registered under an
+            // unrelated name: a module file with no `unit` declarator can do
+            // that (`RT128156/Top1.rakumod` declares plain `class Top1`, which
+            // roast's `S10-packages/precompilation.t` requires in the loading
+            // scope's `MY::`), which is why the registry diff is consulted
+            // rather than the name alone.
+            let registered_here: std::collections::HashSet<String> = self
+                .registry()
+                .classes
+                .keys()
+                .filter(|k| !before_class_names.contains(*k))
+                .chain(
+                    self.registry()
+                        .roles
+                        .keys()
+                        .filter(|k| !before_role_names.contains(*k)),
+                )
+                .cloned()
+                .collect();
+            let leaked_packages: Vec<String> = module_scope_names
+                .iter()
+                .filter(|(name, value)| {
+                    if name.starts_with(['@', '%', '&', '$']) {
+                        return false;
+                    }
+                    match value.view() {
+                        ValueView::Package(target) => {
+                            let target = target.resolve();
+                            !Self::package_is_owned_by(&target, module)
+                                && !registered_here.contains(&target)
+                        }
+                        _ => false,
+                    }
+                })
+                .map(|(name, _)| name.clone())
+                .collect();
+            for name in &leaked_packages {
+                self.env.remove(name);
+            }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             // Take the compunit's own file-scope lexicals out of `env` and into
             // `unit_lexicals`, restoring the loading scope's values under those
@@ -1176,6 +1230,16 @@ impl Interpreter {
             }
         }
         names
+    }
+
+    /// Whether the qualified package/type name `target` is `module` itself or
+    /// something nested under it, rather than something `module` reached
+    /// through one of its own `use` statements.
+    fn package_is_owned_by(target: &str, module: &str) -> bool {
+        target == module
+            || target
+                .strip_prefix(module)
+                .is_some_and(|rest| rest.starts_with("::"))
     }
 
     /// The subset of [`Self::collect_module_scope_names`] that are short-name type
