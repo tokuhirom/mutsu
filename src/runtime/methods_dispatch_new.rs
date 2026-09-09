@@ -572,6 +572,13 @@ impl Interpreter {
                 attributes.insert("__mutsu_hash_storage", storage);
             }
         }
+        let class_mro = self.class_mro(cn_resolved);
+        let positional_args: Vec<Value> = args
+            .iter()
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+            .cloned()
+            .collect();
+        super::seed_native_subclass_payloads(&mut attributes, &class_mro, &args, &positional_args);
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
         crate::alloc_scope_end!(_sc_container);

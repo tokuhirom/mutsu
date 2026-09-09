@@ -2031,16 +2031,12 @@ impl Interpreter {
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
-                let int_ctor_val = if matches!(
+                if matches!(
                     positional_ctor_args.first().map(Value::view),
                     Some(ValueView::Package(_))
                 ) {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
-                } else {
-                    positional_ctor_args
-                        .first()
-                        .map_or(0, crate::runtime::to_int)
-                };
+                }
                 if class_mro.iter().any(|n| *n == "Array" || *n == "List")
                     && !attrs.contains_key("__mutsu_array_storage")
                     && !positional_ctor_args.is_empty()
@@ -2050,30 +2046,12 @@ impl Interpreter {
                     let storage = self.positional_base_storage(class_key, elems);
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
-                if class_mro.iter().any(|name| name == "Int")
-                    && !attrs.contains_key("__mutsu_int_value")
-                {
-                    attrs.insert("__mutsu_int_value".to_string(), Value::int(int_ctor_val));
-                }
-                // A subclass of native `Str` (`class Foo is Str {}`) inherits the
-                // parent's single `$!value` attribute, which `Mu.new` fills from
-                // the `:value` named argument -- `Foo.new(:value("hi")).Str` is
-                // `"hi"` and `Foo.new.Str` is `""`. Stored in the reserved
-                // `__mutsu_str_value` slot, the string twin of the
-                // `__mutsu_int_value` payload above, so every stringification
-                // path can find it without a class-registry lookup.
-                if class_mro.iter().any(|name| name == "Str")
-                    && !attrs.contains_key("__mutsu_str_value")
-                {
-                    let payload = args
-                        .iter()
-                        .find_map(|a| match a.view() {
-                            ValueView::Pair(k, v) if k == "value" => Some(v.to_str_context()),
-                            _ => None,
-                        })
-                        .unwrap_or_default();
-                    attrs.insert("__mutsu_str_value".to_string(), Value::str(payload));
-                }
+                super::seed_native_subclass_payloads(
+                    &mut attrs,
+                    &class_mro,
+                    &args,
+                    &positional_ctor_args,
+                );
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
                 // Restore role parameter bindings so that default expressions

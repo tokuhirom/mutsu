@@ -156,4 +156,36 @@ ok "abc123def".comb(/\d/, :match).head ~~ Match,
     is $empty.chars, 0, 'and has zero chars';
 }
 
+# `bless` uses the same native scalar payload convention as the default
+# constructor. For Int, Raku's `bless` does not consume the named `value`
+# argument, so it keeps the zero payload; the assertions pin that distinction
+# as well as the representation paths.
+{
+    my class BlessStr is Str { }
+    my $new-str = BlessStr.new(value => "from-new");
+    my $bless-str = BlessStr.bless(value => "from-bless");
+    is $new-str.Str, "from-new", 'Str subclass .new keeps its payload';
+    is $bless-str.Str, "from-bless", 'Str subclass .bless keeps its payload';
+    is $new-str.gist, "from-new", 'Str subclass .new gist uses its payload';
+    is $bless-str.gist, "from-bless", 'Str subclass .bless gist uses its payload';
+    is $new-str.raku, '"from-new"', 'Str subclass .new raku uses its payload';
+    is $bless-str.raku, '"from-bless"', 'Str subclass .bless raku uses its payload';
+    is "$new-str", "from-new", 'Str subclass .new interpolation uses its payload';
+    is "$bless-str", "from-bless", 'Str subclass .bless interpolation uses its payload';
+
+    my class BlessInt is Int { }
+    my $new-int = BlessInt.new(42);
+    my $bless-int = BlessInt.bless(value => 42);
+    ok $new-int == 42, 'Int subclass .new keeps its numeric payload';
+    ok $bless-int == 0, 'Int subclass .bless keeps Raku\'s zero payload';
+    is $new-int.Str, "42", 'Int subclass .new Str uses its payload';
+    is $bless-int.Str, "0", 'Int subclass .bless Str uses its payload';
+    is $new-int.gist, "42", 'Int subclass .new gist uses its payload';
+    is $bless-int.gist, "0", 'Int subclass .bless gist uses its payload';
+    is $new-int.raku, "42", 'Int subclass .new raku uses its payload';
+    is $bless-int.raku, "0", 'Int subclass .bless raku uses its payload';
+    is "$new-int", "42", 'Int subclass .new interpolation uses its payload';
+    is "$bless-int", "0", 'Int subclass .bless interpolation uses its payload';
+}
+
 done-testing;

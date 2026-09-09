@@ -1046,6 +1046,17 @@ impl Value {
                     .map(Value::to_string_value)
                     .unwrap_or_default()
             }
+            // A subclass of native `Int` carries its numeric payload in the
+            // reserved slot seeded by both `new` and `bless`.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_int_value") =>
+            {
+                attributes
+                    .as_map()
+                    .get("__mutsu_int_value")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default()
+            }
             ValueView::Instance { class_name, .. } => format!("{}()", class_name),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {

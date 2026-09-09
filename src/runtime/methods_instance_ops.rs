@@ -183,6 +183,9 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_str_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
+        if let Some(payload) = attributes.as_map().get("__mutsu_int_value").cloned() {
+            return Some(self.call_method_with_values(payload, method, vec![]));
+        }
         if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
