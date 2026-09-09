@@ -1225,6 +1225,27 @@ value-context read does anyway, and only ever when there is a Proxy inside.
 
 Pinned by `t/proxy-renders-through-fetch.t`.
 
+## 10. Copy isolation after lvalue promotion (added 2026-09-09)
+
+The store-side itemization rule shares a boundary with the lvalue-container
+machinery in ADR-0059 and ADR-0067. An `is rw`/`return-rw` accessor can promote an
+aggregate element to a `ContainerRef` before a collection is copied. The cell
+is a location, not a scalar leaf: if `deepmap({ .clone })` classifies it as a
+leaf, `.clone` copies only the cell handle and the aggregate remains shared with
+the source.
+
+The invariant for collection copies is therefore: **dereference a promoted
+element before deciding whether it is a deepmap leaf, and recursively copy the
+aggregate behind the cell**. The corresponding writeback invariant is that a
+nested rw call follows the caller's alias chain to its root; method-local alias
+metadata must not be merged back over the caller's chain. Together these keep
+the copy boundary intact even after a prior read has promoted an element.
+
+`t/deepmap-containerref-copy.t` pins both invariants. The Crane `add` and
+`copy` suites' "Original container is unchanged" checks pass for the affected
+cases; their remaining failures are separate positional/error and ordering
+gaps recorded in `docs/batteries/toml.md`.
+
 ---
 
 *If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*

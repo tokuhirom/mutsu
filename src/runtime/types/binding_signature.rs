@@ -1902,7 +1902,16 @@ impl Interpreter {
                                 varref_from_value(&args[positional_idx]).map(|(name, _)| name)
                             });
                         if let Some(source_name) = source_name {
-                            rw_bindings.push((pd.name.clone(), source_name.clone()));
+                            // Write back to the root of a sigilless alias chain.
+                            // The argument may itself be a `\name` parameter in
+                            // the caller. Using the immediate source name here
+                            // would let a nested method's same-named parameter
+                            // replace that intermediate binding instead of
+                            // updating the caller's original container (e.g.
+                            // `inner(\container)` calling `Replace.replace(container)`).
+                            let writeback_source =
+                                self.resolve_sigilless_alias_source_name(&source_name);
+                            rw_bindings.push((pd.name.clone(), writeback_source));
                             // A plain scalar param aliasing a plain scalar caller
                             // variable binds through a shared `ContainerRef` cell
                             // (installed after type checks, below): the caller's
