@@ -436,12 +436,22 @@ impl Interpreter {
         return_new: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
+        // The variable's name as a `Symbol`, taken once from the chunk's
+        // constant-symbol table rather than re-interned by each of the probes
+        // below. `%h{$k}++` ran three separate `Symbol::intern`s of the same
+        // name per increment -- the element-container read, the object-hash
+        // key-type probe and the write-back's `get_mut` -- and a `Symbol::intern`
+        // is a thread-local string-keyed hash lookup, so on
+        // `benchmarks/word-count.raku` (whose inner loop is `%counts{$w}++`)
+        // those three were 4.1% of the whole run. `const_sym` interns once per
+        // constant slot for the life of the chunk.
+        let name_sym = code.const_sym(name_idx);
         // Element type constraint of the variable, used to fill array holes with
         // the proper type object (`(Int)`) instead of Nil when autovivifying.
-        let declared_constraint_incdec = loan_env!(self, var_type_constraint(&name));
+        let declared_constraint_incdec = loan_env!(self, var_type_constraint_sym(name_sym));
         let declared_type_incdec = self
             .env()
-            .get(&name)
+            .get_sym(name_sym)
             .cloned()
             .and_then(|v| self.container_type_metadata(&v))
             .and_then(|info| info.declared_type);
@@ -466,7 +476,7 @@ impl Interpreter {
         // the env read is used exactly as before.
         let container = self
             .gate_local_slot_value_at(code, slot, &name)
-            .or_else(|| self.get_env_with_main_alias(&name));
+            .or_else(|| self.get_env_with_main_alias_sym(&name, name_sym));
         // A `%h`/`@a` an escaping closure captured is held in a shared
         // `ContainerCell` (ADR-0055's container lane), so every classification
         // and read below has to look THROUGH the cell -- a celled `BagHash`
@@ -555,7 +565,7 @@ impl Interpreter {
         // destructured into an anonymous `%a is raw` parameter, say), and the
         // two would land in different buckets.
         let object_hash_key_type: Option<String> = if name.starts_with('%') {
-            loan_env!(self, var_hash_key_constraint(&name))
+            loan_env!(self, var_hash_key_constraint_sym(&name, name_sym))
         } else {
             None
         };
@@ -966,7 +976,7 @@ impl Interpreter {
         // does, so every arm below is unchanged.
         let cell = match gate_slot {
             Some(s) => self.locals.get(s),
-            None => self.env().get(&name),
+            None => self.env().get_sym(name_sym),
         }
         .and_then(|v| match v.descalarize().view() {
             ValueView::ContainerRef(cell) => Some(cell.clone()),
@@ -979,7 +989,7 @@ impl Interpreter {
             Some(guard) => Some(&mut **guard),
             None => match gate_slot {
                 Some(s) => self.locals.get_mut(s),
-                None => self.env_mut().get_mut(&name),
+                None => self.env_mut().get_mut_sym(name_sym),
             },
         } {
             if let Some(done) = container_value.with_hash_mut(|h| {
@@ -1196,7 +1206,7 @@ impl Interpreter {
             // mutation already landed in the slot (above), and `env` is the stale
             // half, so pulling env->slot here would clobber the live slot — skip it.
             if gate_slot.is_none()
-                && let Some(val) = self.env().get(&name).cloned()
+                && let Some(val) = self.env().get_sym(name_sym).cloned()
             {
                 self.update_local_if_exists(code, &name, &val);
             }
@@ -1207,7 +1217,7 @@ impl Interpreter {
             self.writeback_critical_var(&name);
         } else {
             // Autovivify typed containers for inc/dec on undefined variables
-            let constraint = loan_env!(self, var_type_constraint(&name));
+            let constraint = loan_env!(self, var_type_constraint_sym(name_sym));
             let effective_type = declared_type_incdec.as_deref().or(constraint.as_deref());
             if let Some(type_name) = effective_type
                 && matches!(type_name, "MixHash" | "BagHash" | "SetHash")

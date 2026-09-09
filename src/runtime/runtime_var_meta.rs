@@ -724,7 +724,23 @@ impl Interpreter {
     /// stays — an attribute's declared type lives in the class registry and is
     /// not a lexical at all.
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
-        let meta_key = Self::hash_key_meta_key_for_sym(Symbol::intern(name));
+        self.var_hash_key_constraint_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::var_hash_key_constraint`] for a caller that already holds the
+    /// name as a symbol, mirroring [`Self::var_type_constraint_sym`].
+    ///
+    /// The `&str` is still needed for the attribute fallback, which splits the
+    /// twigil off the spelling; only the meta-key derivation takes the symbol.
+    /// That is what the intern bought: `%h{$k}++` probes this once per
+    /// increment, and re-hashing the name to rediscover a symbol the opcode's
+    /// constant pool already holds was 1.35% of `benchmarks/word-count.raku`.
+    pub(crate) fn var_hash_key_constraint_sym(
+        &self,
+        name: &str,
+        name_sym: Symbol,
+    ) -> Option<String> {
+        let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
         if let Some(ValueView::Str(tc)) = self.env.get_sym(meta_key).map(Value::view) {
             return Some(tc.as_str().to_owned());
         }
