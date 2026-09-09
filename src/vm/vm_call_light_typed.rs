@@ -738,46 +738,64 @@ impl Interpreter {
     /// original inline code.)
     fn finish_light_env(&mut self, cf: &CompiledFunction, caller_env: Option<crate::env::Env>) {
         let bang_is_callee_private = cf.code.is_routine;
+        let is_callee_private = |k: Symbol| {
+            k == "_"
+                || k == "@_"
+                || k == "%_"
+                || k == "__mutsu_callable_id"
+                || k.with_str(|s| s.starts_with('?'))
+                || (bang_is_callee_private
+                    && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
+                || cf.is_callee_local_sym(k)
+        };
         match caller_env {
             Some(caller_env) => {
                 let scoped = std::mem::replace(self.env_mut(), caller_env);
+                // After a `flatten_scoped_env` in the body, `scoped` is the whole
+                // visible scope rather than the callee's own writes; drive the
+                // merge from the log the flatten left behind instead of walking
+                // every caller lexical (#7630; mirrors
+                // `finish_positional_light_env`).
+                if let Some(writes) = scoped.frame_writes() {
+                    for k in writes {
+                        if is_callee_private(*k) {
+                            continue;
+                        }
+                        if let Some(v) = scoped.overlay_get_sym(*k) {
+                            self.env_mut().insert_sym(*k, v.clone());
+                        }
+                    }
+                    return;
+                }
                 for (k, v) in scoped.overlay_iter() {
-                    if *k == "_"
-                        || *k == "@_"
-                        || *k == "%_"
-                        || *k == "__mutsu_callable_id"
-                        || k.with_str(|s| s.starts_with('?'))
-                        || (bang_is_callee_private
-                            && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
-                    {
+                    if is_callee_private(*k) {
                         continue;
                     }
-                    if !cf.is_callee_local_sym(*k) {
-                        self.env_mut().insert_sym(*k, v.clone());
-                    }
+                    self.env_mut().insert_sym(*k, v.clone());
                 }
             }
             None => {
                 // Reused frame: the caller's overlay was the shared empty
                 // singleton at entry. If the latch is still armed the body
-                // never wrote env — nothing to merge or restore. Otherwise
+                // never wrote env -- nothing to merge or restore. Otherwise
                 // every overlay entry is a write made by this call; replay the
-                // swap path's return merge in place — keep captured-outer
+                // swap path's return merge in place -- keep captured-outer
                 // writes (already sitting in the caller's env) and drop
                 // callee-locals and the per-frame private names.
+                //
+                // A full method dispatch in the body disarms the
+                // overlay-identity latch for good (`flatten_scoped_env` leaves no
+                // parent tier), which turned this into a `retain_overlay` over
+                // the whole flattened scope. `retain_frame_writes` replays the
+                // same merge over the flatten's own log (#7630).
+                if self
+                    .env_mut()
+                    .retain_frame_writes(|k| !is_callee_private(k))
+                {
+                    return;
+                }
                 if !self.env().overlay_is_shared_empty() {
-                    self.env_mut().retain_overlay(|k, _| {
-                        !(*k == "_"
-                            || *k == "@_"
-                            || *k == "%_"
-                            || *k == "__mutsu_callable_id"
-                            || k.with_str(|s| s.starts_with('?'))
-                            || (bang_is_callee_private
-                                && k.with_str(
-                                    crate::runtime::utils::is_routine_scoped_implicit_var,
-                                ))
-                            || cf.is_callee_local_sym(*k))
-                    });
+                    self.env_mut().retain_overlay(|k, _| !is_callee_private(*k));
                 }
             }
         }

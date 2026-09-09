@@ -804,6 +804,25 @@ impl Interpreter {
         caller_env: Option<crate::env::Env>,
     ) {
         let bang_is_callee_private = cf.code.is_routine;
+        // The callee's private topic / arg array / routine id, and the per-frame
+        // contextual vars (`?LINE`/`?FILE`/...), must not propagate to the caller
+        // (which retains its own). Skipping the `?`-prefixed ones also avoids
+        // spurious `env_dirty` churn from the per-statement `?LINE` write on
+        // every recursive call. A `my enum` the callee declared is one of its own
+        // lexicals too, but it gets no local slot, so `is_callee_local_sym` does
+        // not see it and the binding leaked into the caller -- clobbering a
+        // same-named outer symbol for the rest of the program.
+        let is_callee_private = |k: Symbol| {
+            k == "_"
+                || k == "@_"
+                || k == "%_"
+                || k == "__mutsu_callable_id"
+                || k.with_str(|s| s.starts_with('?'))
+                || (bang_is_callee_private
+                    && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
+                || cf.is_callee_local_sym(k)
+                || cf.code.my_declared_enum_sym.contains(&k)
+        };
         match caller_env {
             Some(caller_env) => {
                 // The callee-local test reads the compile-time `Symbol` set
@@ -812,55 +831,58 @@ impl Interpreter {
                 // (a body whose params/locals are all slot-resolved never writes
                 // env), and hashed every local name with SipHash to build it.
                 let scoped = std::mem::replace(self.env_mut(), caller_env);
+                // A full method dispatch in the body flattens the env
+                // (`flatten_scoped_env`), after which `scoped` is the whole
+                // visible scope rather than the callee's own writes -- so the
+                // `overlay_iter` loop below would walk every caller lexical, and
+                // re-insert most of them into the caller's own tier, for a callee
+                // that wrote two names. The flatten leaves the frame's writes
+                // behind as a log; drive the merge from that instead (#7630).
+                if let Some(writes) = scoped.frame_writes() {
+                    for k in writes {
+                        if is_callee_private(*k) {
+                            continue;
+                        }
+                        if let Some(v) = scoped.overlay_get_sym(*k) {
+                            self.env_mut().insert_sym(*k, v.clone());
+                        }
+                    }
+                    return;
+                }
                 for (k, v) in scoped.overlay_iter() {
-                    // The callee's private topic / arg array / routine id, and the
-                    // per-frame contextual vars (`?LINE`/`?FILE`/...), must not
-                    // propagate to the caller (which retains its own). Skipping the
-                    // `?`-prefixed ones also avoids spurious `env_dirty` churn from
-                    // the per-statement `?LINE` write on every recursive call.
-                    if *k == "_"
-                        || *k == "@_"
-                        || *k == "%_"
-                        || *k == "__mutsu_callable_id"
-                        || k.with_str(|s| s.starts_with('?'))
-                        || (bang_is_callee_private
-                            && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
-                    {
+                    if is_callee_private(*k) {
                         continue;
                     }
-                    // A `my enum` the callee declared is one of its own lexicals
-                    // too, but it gets no local slot, so `is_callee_local_sym`
-                    // does not see it and the binding leaked into the caller —
-                    // clobbering a same-named outer symbol for the rest of the
-                    // program.
-                    if !cf.is_callee_local_sym(*k) && !cf.code.my_declared_enum_sym.contains(k) {
-                        self.env_mut().insert_sym(*k, v.clone());
-                    }
+                    self.env_mut().insert_sym(*k, v.clone());
                 }
             }
             None => {
                 // Reused frame: the caller's overlay was the shared empty
                 // singleton at entry, so if the latch is still armed the body
-                // never wrote env — nothing to merge or restore. Otherwise
+                // never wrote env -- nothing to merge or restore. Otherwise
                 // every overlay entry is a write made by this call; replay the
-                // swap path's return merge in place — keep captured-outer
+                // swap path's return merge in place -- keep captured-outer
                 // writes (they are already sitting in the caller's env, which
                 // is where the merge would put them) and drop callee-locals
                 // and the per-frame private names.
+                //
+                // Once a full method dispatch has run `flatten_scoped_env` the
+                // overlay-identity latch is permanently disarmed (the env has no
+                // parent tier any more) and "the overlay" is the whole flattened
+                // scope, so the `retain_overlay` below scanned every visible name
+                // -- correct, since a caller lexical is not a callee-local, but
+                // O(scope) in `Symbol` resolves where O(callee writes) was
+                // intended. `retain_frame_writes` replays the same merge over the
+                // log the flatten left behind, and reports whether there was one
+                // (#7630).
+                if self
+                    .env_mut()
+                    .retain_frame_writes(|k| !is_callee_private(k))
+                {
+                    return;
+                }
                 if !self.env().overlay_is_shared_empty() {
-                    self.env_mut().retain_overlay(|k, _| {
-                        !(*k == "_"
-                            || *k == "@_"
-                            || *k == "%_"
-                            || *k == "__mutsu_callable_id"
-                            || k.with_str(|s| s.starts_with('?'))
-                            || (bang_is_callee_private
-                                && k.with_str(
-                                    crate::runtime::utils::is_routine_scoped_implicit_var,
-                                ))
-                            || cf.is_callee_local_sym(*k)
-                            || cf.code.my_declared_enum_sym.contains(k))
-                    });
+                    self.env_mut().retain_overlay(|k, _| !is_callee_private(*k));
                 }
             }
         }
