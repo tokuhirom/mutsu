@@ -465,28 +465,58 @@ impl Interpreter {
     /// scope, for a name the live `env` no longer accounts for. The LAST resort in
     /// bareword resolution — see `module_scope_lexicals`.
     pub(crate) fn module_scope_lexical(&self, name: &str) -> Option<&Value> {
-        if self.module_scope_lexicals.is_empty() || name.contains("::") || name.is_empty() {
+        // `$_` is the topic, not a module-scope lexical. A module body may
+        // transiently put the topic's backing hash under the plain `_` key
+        // while its declarations run, but consulting that entry here would
+        // make every imported routine's topic read see the stale module value.
+        if self.module_scope_lexicals.is_empty()
+            || name.contains("::")
+            || name.is_empty()
+            || matches!(name, "_" | "@_" | "%_")
+        {
             return None;
         }
         self.lookup_in_running_package(&self.module_scope_lexicals, name)
     }
 
+    /// The module-scope value for a name that came from a nested `use`, rather
+    /// than a name declared by the module itself. The distinction matters to
+    /// the env read fallback: a captured local in an anonymous block must beat
+    /// the module's own `our $name`, while an imported alias must beat the
+    /// caller's same-named env entry.
+    pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
+        if self.module_imported_lexical_names.is_empty() || name.is_empty() || name.contains("::") {
+            return None;
+        }
+        let imported = self.lookup_in_running_package(&self.module_imported_lexical_names, name)?;
+        (*imported)
+            .then(|| self.module_scope_lexical(name))
+            .flatten()
+    }
+
     /// Look `name` up in a per-package table, keyed by the package of the frame
     /// that is actually running. `current_package` is GLOBAL while a method body
     /// runs (module bodies execute under GLOBAL), so the owning package has to
-    /// come from the running frame: the method's class first, then the routine
-    /// frame's package, then whatever package is current — each walked up its
-    /// `::` chain like `resolve_type_name_for_owner`.
+    /// come from the running frame: the method's class first, then the nearest
+    /// enclosing named routine (anonymous blocks inherit that lexical owner),
+    /// then whatever package is current — each walked up its `::` chain like
+    /// `resolve_type_name_for_owner`.
     pub(crate) fn lookup_in_running_package<'a, V>(
         &'a self,
         table: &'a crate::runtime::PackageKeyed<V>,
         name: &str,
     ) -> Option<&'a V> {
         let current = self.current_package();
+        let frame = self
+            .routine_stack
+            .iter()
+            .rev()
+            .find(|frame| !frame.is_block)
+            .or_else(|| self.routine_stack.last());
         let candidates = [
             self.method_class_stack_top_str(),
-            self.routine_stack
-                .last()
+            frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
+            frame
                 .map(|frame| frame.package.as_str())
                 .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
             Some(current.as_str()),

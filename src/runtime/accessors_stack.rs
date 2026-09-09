@@ -82,9 +82,10 @@ impl Interpreter {
         def_file: Option<Symbol>,
     ) {
         let invocation_id = self.take_invocation_id();
+        let lexical_package = self.lexical_package_for_frame(def_file);
         self.routine_stack.push(super::RoutineFrame {
             package,
-            lexical_package: None,
+            lexical_package,
             name,
             line,
             file,
@@ -154,6 +155,25 @@ impl Interpreter {
             def_file,
             invocation_id,
         });
+    }
+
+    /// Find the unit-module package owning a routine or closure's body. EVAL
+    /// units are not registered as modules themselves, but their parent unit
+    /// is, so walk the same parent chain used by compilation-unit scoping.
+    fn lexical_package_for_frame(&self, def_file: Option<Symbol>) -> Option<Symbol> {
+        let unit = def_file
+            .map(|file| {
+                let source = file.resolve();
+                self.unit_of_source(Some(&source))
+            })
+            .unwrap_or(self.current_unit);
+        let mut unit = unit;
+        loop {
+            if let Some(package) = self.unit_module_packages.get(&unit) {
+                return Some(*package);
+            }
+            unit = crate::runtime::eval_unit_parent(unit)?;
+        }
     }
 
     pub(crate) fn pop_routine(&mut self) {

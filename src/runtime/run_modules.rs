@@ -769,6 +769,7 @@ impl Interpreter {
         Self::validate_exporthow_directives(&stmts)?;
         let mut module_scope_names: HashMap<String, Value> = HashMap::new();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
+        let mut imported_lexical_names: HashSet<String> = HashSet::new();
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
@@ -781,6 +782,12 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             let unit_name = Self::detect_unit_package_name(&stmts);
+            if let Some(name) = unit_name.as_deref() {
+                let source = source_path.to_string_lossy();
+                let unit = self.unit_of_source(Some(&source));
+                self.unit_module_packages
+                    .insert(unit, crate::symbol::Symbol::intern(name));
+            }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
                 true
@@ -824,7 +831,20 @@ impl Interpreter {
             // env so the new ones can be recorded against the module itself.
             let before_env_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.env.keys().copied().collect();
+            // A module body executes against the loading scope's env for
+            // historical reasons, but plain names already owned by that scope
+            // must be restored after the body. In particular, an `our $x` in a
+            // module can replace a same-named caller lexical's env entry before
+            // the module's exports are installed, so the import-time `previous`
+            // value alone is too late to recover it.
+            let saved_plain_env: HashMap<crate::symbol::Symbol, Value> = self
+                .env
+                .keys()
+                .filter(|key| !key.resolve().contains("::"))
+                .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
+                .collect();
             let saved_imports = std::mem::take(&mut self.module_imported_names);
+            let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
             // Pragmas set by a module are lexical to that module. The module
             // mainline runs in this interpreter, so restore the caller's mode
             // after it finishes instead of letting `use strict` leak outward.
@@ -835,13 +855,42 @@ impl Interpreter {
             // scope already declared.
             let hidden_toplevel = self.hide_toplevel_global_routines();
             let result = self.run_block(&stmts);
+            self.pending_rw_writeback_sources
+                .truncate(saved_pending_rw_writeback_len);
             self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // A re-import of a name an earlier module already installed adds
             // nothing to `env`, so the diff misses it even though it is part of
             // this module's scope (see `module_imported_names`).
-            module_scope_names.extend(imported);
+            module_scope_names.extend(
+                imported
+                    .iter()
+                    .map(|(name, value, _)| (name.clone(), value.clone())),
+            );
+            imported_lexical_names.extend(imported.iter().flat_map(|(name, _, _)| {
+                [
+                    name.clone(),
+                    name.strip_prefix(['$', '@', '%'])
+                        .unwrap_or(name)
+                        .to_string(),
+                ]
+            }));
+            // Module bodies execute in the caller's env for compatibility with
+            // existing declaration machinery. Imported variables/constants need
+            // their pre-load value restored, including a caller binding they
+            // shadowed. Other names created by the module body are retained here
+            // for the package-variable and declaration machinery below; only
+            // names explicitly recorded by `import_module` are aliases whose
+            // visibility must be undone at the end of this compunit.
+            for (name, _, _) in imported.iter().rev() {
+                let key = crate::symbol::Symbol::intern(name);
+                if let Some(value) = saved_plain_env.get(&key) {
+                    self.env.insert_sym(key, value.clone());
+                } else {
+                    self.env.remove_sym(key);
+                }
+            }
             module_type_aliases = self.module_type_aliases_of(&module_scope_names);
             // Take the compunit's own file-scope lexicals out of `env` and into
             // `unit_lexicals`, restoring the loading scope's values under those
@@ -874,6 +923,12 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+            // Restore every plain caller binding after the module's own lexical
+            // values have been extracted above. Qualified package globals and
+            // newly-created module names are intentionally left alone.
+            for (key, value) in &saved_plain_env {
+                self.env.insert_sym(*key, value.clone());
             }
             match saved_qfile {
                 Some(f) => {
@@ -948,8 +1003,15 @@ impl Interpreter {
         // package (see `todo/tickets/package-short-name-alias-is-global.md`,
         // "Attempt #1" for the regression this fixes).
         if !new_types.is_empty() {
-            let aliases: Vec<(String, String)> = new_types
-                .iter()
+            // `new_types` also includes classes registered by transitive
+            // dependencies loaded from this module. Those aliases belong to
+            // this module's own package (the nested load recorded that), not to
+            // the package that imported this module. Only the declarations
+            // owned by this compunit may be visible in the importer's scope.
+            let owned_types = new_types.iter().filter(|qualified| {
+                *qualified == module || qualified.starts_with(&format!("{module}::"))
+            });
+            let aliases: Vec<(String, String)> = owned_types
                 .filter_map(|qualified| {
                     qualified
                         .rsplit_once("::")
@@ -984,6 +1046,7 @@ impl Interpreter {
             }
             owners.push(module.to_string());
             for owner in owners {
+                let class_static_names = self.class_body_static_names.get(&owner);
                 if !module_type_aliases.is_empty() {
                     self.package_type_aliases
                         .entry(owner.clone())
@@ -994,11 +1057,22 @@ impl Interpreter {
                                 .map(|(k, v)| (k.clone(), v.clone())),
                         );
                 }
-                self.module_scope_lexicals.entry(owner).or_default().extend(
-                    module_scope_names
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone())),
-                );
+                self.module_scope_lexicals
+                    .entry(owner.clone())
+                    .or_default()
+                    .extend(
+                        module_scope_names
+                            .iter()
+                            .filter(|(name, _)| {
+                                !class_static_names
+                                    .is_some_and(|names| names.contains(name.as_str()))
+                            })
+                            .map(|(k, v)| (k.clone(), v.clone())),
+                    );
+                let imported_names = self.module_imported_lexical_names.entry(owner).or_default();
+                for name in &imported_lexical_names {
+                    imported_names.entry(name.clone()).or_insert(true);
+                }
             }
         }
         crate::parser::set_current_language_version(&saved_language_version);

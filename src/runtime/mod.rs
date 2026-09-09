@@ -2387,7 +2387,17 @@ pub struct Interpreter {
     /// nothing to `env`, so `DBDish::mysql::StatementHandle`'s `use
     /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
     /// its lexical scope. Saved/restored around each nested load.
-    pub(crate) module_imported_names: Vec<(String, Value)>,
+    pub(crate) module_imported_names: Vec<(String, Value, Option<Value>)>,
+    /// Imported bare names recorded for each module owner. This is narrower
+    /// than `module_scope_lexicals`: the latter also contains a module's own
+    /// `our`/class-body names, while the VM's env fallback must only redirect
+    /// aliases imported from a nested module.
+    pub(crate) module_imported_lexical_names: PackageKeyed<bool>,
+    /// Compilation units declared by `unit module`/`unit class` files, keyed by
+    /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
+    /// its routines need this metadata after the load has finished in order to
+    /// resolve the module's own imported aliases lexically.
+    pub(crate) unit_module_packages: HashMap<Symbol, Symbol>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
     /// Exported variable/constant symbols by package and export tag.

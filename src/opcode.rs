@@ -8603,6 +8603,24 @@ impl CompiledFns {
         self.map.insert(key, value);
     }
 
+    /// Nested named subs are compiled as part of their enclosing routine and
+    /// therefore do not have a source file at compiler construction time. Once
+    /// the enclosing routine's definition is known, stamp that file through
+    /// the nested table so its unit metadata follows the lexical declaration.
+    pub(crate) fn stamp_source_file(&mut self, source_file: Option<String>) {
+        for value in self.map.values_mut() {
+            let function = Arc::make_mut(value);
+            if function.source_file.is_none() {
+                function.source_file = source_file.clone();
+                function.source_file_sym_cache = std::sync::OnceLock::new();
+            }
+            if let Some(nested) = &mut function.compiled_fns {
+                Arc::make_mut(nested).stamp_source_file(source_file.clone());
+            }
+        }
+        self.id = Self::next_id();
+    }
+
     pub(crate) fn retain(
         &mut self,
         mut f: impl FnMut(&crate::symbol::Symbol, &CompiledFunction) -> bool,
@@ -9009,6 +9027,19 @@ pub(crate) struct CompiledFunction {
 }
 
 impl CompiledFunction {
+    /// Stamp a compiled routine and its nested named-subs with their enclosing
+    /// routine's source file. Nested bodies are compiled as part of the parent
+    /// and otherwise have no independent source metadata.
+    pub(crate) fn stamp_source_file(&mut self, source_file: Option<String>) {
+        if self.source_file.is_none() {
+            self.source_file = source_file.clone();
+            self.source_file_sym_cache = std::sync::OnceLock::new();
+        }
+        if let Some(nested) = &mut self.compiled_fns {
+            Arc::make_mut(nested).stamp_source_file(source_file);
+        }
+    }
+
     /// The declaring package as a `Symbol`, interned once per compiled
     /// function. Every call that pushes a `RoutineFrame` needs it, so
     /// interning it per call re-hashed the package string on the hottest

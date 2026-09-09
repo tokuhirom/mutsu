@@ -688,6 +688,7 @@ impl Interpreter {
         adapted.is_rw = def.is_rw;
         adapted.is_raw = def.is_raw;
         adapted.source_file.clone_from(&def.source_file);
+        adapted.stamp_source_file(def.source_file.clone());
         adapted.precompute_param_local_slots();
         adapted.precompute_named_call_plan();
         adapted.precompute_param_name_syms();
@@ -1030,7 +1031,7 @@ impl Interpreter {
             return_type: return_type.cloned(),
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
-            source_file: self.current_source_file(),
+            source_file: self.executing_source_file(),
             source_line: None,
             decl_order: crate::runtime::resolution::next_decl_order(),
             compiled: None,
