@@ -395,6 +395,112 @@ pub(crate) fn with_buf_elems_mut<R>(
     Some(out)
 }
 
+/// Where [`extend_buf_elems`] puts the new elements.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BufEnd {
+    /// `push`/`append`.
+    Back,
+    /// `unshift`/`prepend`.
+    Front,
+}
+
+/// Add `new_elems` to one end of a buffer's storage, encoding **only the new
+/// elements** and leaving the bytes already there untouched.
+///
+/// This is the byte-level counterpart of `buf_elems` + `set_buf_elems` for the
+/// one operation that dominates binary-protocol code: assembling a buffer an
+/// element at a time. Going through the element level made that quadratic — a
+/// `push` decoded every existing byte into a boxed `Value::Int`, appended one,
+/// and re-encoded the lot, so the cost of each push scaled with the buffer's
+/// current length (#7680). Here the existing bytes are never read: the new
+/// elements are encoded at the width the node already carries and appended in
+/// place, which is amortized O(k) for a `Back` push.
+///
+/// The `Front` case still shifts the existing bytes, as any prepend onto
+/// contiguous storage must, but it too avoids decoding them.
+///
+/// `class_name` is needed only for the buffer that has no storage node yet,
+/// where the element type has nowhere else to come from — see the module note
+/// on why reads need no class name and construction does.
+pub(crate) fn extend_buf_elems(
+    attrs: &InstanceAttrs,
+    class_name: Symbol,
+    new_elems: &[Value],
+    end: BufEnd,
+) {
+    // Read the element type off the node, then encode the new elements outside
+    // the guard: `elem_to_u64` can call back into the interpreter's numeric
+    // coercion for an allomorph or a `ContainerRef` element.
+    let existing = {
+        let map = attrs.as_map();
+        node_in(&map).map(|node| (node.width, node.kind))
+    };
+    let (width, kind) = existing.unwrap_or_else(|| elem_type(&class_name.resolve()));
+    let added = encode_elems(new_elems, width, kind);
+
+    if existing.is_none() {
+        attrs.insert(ELEMS_ATTR, storage_value(added, width, kind));
+        return;
+    }
+
+    {
+        let map = attrs.as_map();
+        if let Some(node) = node_in(&map)
+            && node.strong_count() == 1
+        {
+            // SAFETY: audited aliased in-place container write (see
+            // `value::aliased_mut`), the same one [`put_bytes`] performs. The
+            // node is unshared, no borrow into it is live across the write, and
+            // the read guard above covers only the attribute map — which is not
+            // what is being mutated.
+            let data = unsafe { crate::value::gc_contents_mut(&node) };
+            splice_in(&mut data.bytes, added, end);
+            return;
+        }
+        // A shared node (`.Buf`/`.Blob` re-tagged this storage under another
+        // name) must be forked, exactly as [`put_bytes`] forks it.
+        let mut bytes = node_in(&map)
+            .map(|node| node.bytes.clone())
+            .unwrap_or_default();
+        drop(map);
+        splice_in(&mut bytes, added, end);
+        attrs.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
+    }
+}
+
+/// The new elements' bytes onto one end of the bytes already there.
+fn splice_in(bytes: &mut Vec<u8>, added: Vec<u8>, end: BufEnd) {
+    match end {
+        BufEnd::Back => bytes.extend_from_slice(&added),
+        BufEnd::Front => {
+            bytes.splice(0..0, added);
+        }
+    }
+}
+
+/// [`extend_buf_elems`] against a fresh `AttrMap` — the rvalue paths, which have
+/// no instance to write back into and build a new buffer from the old one's
+/// bytes plus the encoded new elements.
+pub(crate) fn buf_attrs_extended(
+    attrs: &InstanceAttrs,
+    class_name: Symbol,
+    new_elems: &[Value],
+    end: BufEnd,
+) -> AttrMap {
+    let existing = {
+        let map = attrs.as_map();
+        node_in(&map).map(|node| (node.bytes.clone(), node.width, node.kind))
+    };
+    let (mut bytes, width, kind) = existing.unwrap_or_else(|| {
+        let (w, k) = elem_type(&class_name.resolve());
+        (Vec::new(), w, k)
+    });
+    splice_in(&mut bytes, encode_elems(new_elems, width, kind), end);
+    let mut map = AttrMap::new();
+    map.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
+    map
+}
+
 /// The element container itself, cloned, for the coercions that re-tag a buffer
 /// without looking inside it (`.Buf`, `.Blob`). Pair with [`set_buf_storage`].
 pub(crate) fn buf_storage(map: &AttrMap) -> Option<Value> {

@@ -2421,18 +2421,21 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
-                let mut bytes = buf_elems_or_empty(&attributes);
                 let new_items = Self::flatten_buf_args(args);
-                match method {
-                    "append" | "push" => bytes.extend(new_items),
-                    "prepend" | "unshift" => {
-                        let mut combined = new_items;
-                        combined.extend(bytes);
-                        bytes = combined;
-                    }
+                let end = match method {
+                    "append" | "push" => crate::value::value_buf::BufEnd::Back,
+                    "prepend" | "unshift" => crate::value::value_buf::BufEnd::Front,
                     _ => unreachable!(),
-                }
-                return Ok(make_buf(class_name, bytes));
+                };
+                // Only the new elements are encoded; the existing bytes are
+                // carried across without being decoded to boxed `Value`s (#7680).
+                let attrs = crate::value::value_buf::buf_attrs_extended(
+                    &attributes,
+                    class_name,
+                    &new_items,
+                    end,
+                );
+                return Ok(Value::make_instance(class_name, attrs));
             }
         }
         // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)
