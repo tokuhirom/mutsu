@@ -41,6 +41,28 @@ pub(crate) fn has_anon_marker(name: impl AsRef<str>) -> bool {
     has_ascii(name, b"__ANON")
 }
 
+/// `name` is parameterized: it contains a `[`.
+///
+/// The single-byte twin of [`has_double_colon`]. `str::contains(char)` builds a
+/// `CharSearcher` and drives the generic `Searcher` protocol; on the short type
+/// names the type-matching paths ask this about, that setup is the whole cost.
+/// It was 4.5% of a `Buf.push` loop (#7696), where `type_matches` and the
+/// parametric/coercion name parsers each ask it once per type check.
+#[inline]
+pub(crate) fn has_bracket(name: &str) -> bool {
+    name.as_bytes().contains(&b'[')
+}
+
+/// `name.split_once('[')`, without the `CharSearcher` setup.
+///
+/// `[` is ASCII, so its byte offset is always a char boundary and the split is
+/// byte-for-byte what `split_once` returns.
+#[inline]
+pub(crate) fn split_once_bracket(name: &str) -> Option<(&str, &str)> {
+    let at = name.as_bytes().iter().position(|&b| b == b'[')?;
+    Some((&name[..at], &name[at + 1..]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,6 +86,25 @@ mod tests {
             assert_eq!(has_double_colon(s), s.contains("::"), "{s:?}");
             assert_eq!(has_routine_scope_marker(s), s.contains("::&"), "{s:?}");
             assert_eq!(has_anon_marker(s), s.contains("__ANON"), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn bracket_scans_agree_with_str() {
+        for s in [
+            "",
+            "[",
+            "Buf",
+            "Buf[uint8]",
+            "Blob[uint8]",
+            "CArray[Pointer[void]]",
+            "R[Int]",
+            "]",
+            "Numeric",
+            "\u{3042}[Int]",
+        ] {
+            assert_eq!(has_bracket(s), s.contains('['), "{s:?}");
+            assert_eq!(split_once_bracket(s), s.split_once('['), "{s:?}");
         }
     }
 }

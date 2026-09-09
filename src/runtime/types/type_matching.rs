@@ -1340,18 +1340,18 @@ impl Interpreter {
             // a user-declared role, so the registry walk below — gated on
             // `resolved_constraint` — never reaches them.
             {
-                let mut stack: Vec<String> = mro.iter().map(|s| s.resolve()).collect();
+                let mut stack: Vec<Symbol> = mro.to_vec();
                 stack.extend(self.registry().composed_roles_seed(&mro));
                 let mut seen = HashSet::new();
                 while let Some(role_name) = stack.pop() {
-                    if !seen.insert(role_name.clone()) {
+                    if !seen.insert(role_name) {
                         continue;
                     }
-                    for rp in Registry::builtin_role_parents(&role_name) {
+                    for rp in Registry::builtin_role_parents(role_name.as_str()) {
                         if Self::type_matches(effective_constraint, rp) {
                             return true;
                         }
-                        stack.push((*rp).to_string());
+                        stack.push(Symbol::intern(rp));
                     }
                 }
             }
@@ -1370,28 +1370,29 @@ impl Interpreter {
                 if let Some(composed) = self
                     .registry()
                     .class_composed_roles
-                    .get(&package_name.resolve())
+                    .get(package_name.as_str())
                 {
                     role_stack.extend(composed.iter().map(|role| {
-                        role.split_once('[')
-                            .map(|(base, _)| base)
-                            .unwrap_or(role.as_str())
-                            .to_string()
+                        Symbol::intern(
+                            role.split_once('[')
+                                .map(|(base, _)| base)
+                                .unwrap_or(role.as_str()),
+                        )
                     }));
                 }
                 let mut seen_roles = HashSet::new();
                 while let Some(role_name) = role_stack.pop() {
-                    if !seen_roles.insert(role_name.clone()) {
+                    if !seen_roles.insert(role_name) {
                         continue;
                     }
-                    if Self::type_matches(effective_constraint, &role_name) {
+                    if Self::type_matches(effective_constraint, role_name.as_str()) {
                         return true;
                     }
-                    if let Some(rparents) = self.registry().role_parents.get(&role_name) {
+                    if let Some(rparents) = self.registry().role_parents.get(role_name.as_str()) {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
                             if self.resolve_role_key(rp_base).is_some() {
-                                role_stack.push(rp_base.to_string());
+                                role_stack.push(Symbol::intern(rp_base));
                             }
                         }
                     }
@@ -1399,8 +1400,8 @@ impl Interpreter {
                     // `resolve_role_key` cannot find them either, so push them
                     // unconditionally — `Real does Numeric` is as true for a
                     // user class as a declared composition would be.
-                    for rp in Registry::builtin_role_parents(&role_name) {
-                        role_stack.push((*rp).to_string());
+                    for rp in Registry::builtin_role_parents(role_name.as_str()) {
+                        role_stack.push(Symbol::intern(rp));
                     }
                 }
             }
@@ -1476,7 +1477,10 @@ impl Interpreter {
         }
         // Check Instance class name against constraint (including parent classes)
         if let ValueView::Instance { class_name, .. } = value.view() {
-            let cn = class_name.resolve();
+            // `as_str` hands out the interned `&'static str`; `resolve()` would
+            // allocate a fresh `String` on every one of the four uses below, on
+            // a path a `Buf.push` loop reaches twice per push (#7696).
+            let cn = class_name.as_str();
             // ADR-0047: a lexical `my class`/`my grammar` instance's own
             // `class_name` is the unconditionally-mangled storage identity
             // (`Foo\u{0}<decl-id>`), never the bare source-written name. A
@@ -1487,17 +1491,17 @@ impl Interpreter {
             // string. Trying the raw string FIRST keeps a caller that already
             // passes a mangled constraint (e.g. a recursive same-identity
             // check elsewhere in this file) working unchanged.
-            if Self::type_matches(constraint, &cn)
-                || Self::type_matches(constraint, &crate::value::user_facing_type_name(&cn))
+            if Self::type_matches(constraint, cn)
+                || Self::type_matches(constraint, &crate::value::user_facing_type_name(cn))
             {
                 return true;
             }
             // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
             if (constraint == "Buf" || constraint == "Blob")
-                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+                && crate::runtime::utils::is_buf_or_blob_class(cn)
             {
                 // Buf constraint accepts any Buf-like, Blob constraint accepts any Blob-like
-                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(&cn) {
+                if constraint == "Buf" && crate::runtime::utils::is_buf_like_class(cn) {
                     return true;
                 }
                 if constraint == "Blob" {
@@ -1506,10 +1510,10 @@ impl Interpreter {
             }
             // blob8/buf8 aliases: blob8 == Blob[uint8], etc.
             if crate::runtime::utils::is_buf_or_blob_class(constraint)
-                && crate::runtime::utils::is_buf_or_blob_class(&cn)
+                && crate::runtime::utils::is_buf_or_blob_class(cn)
             {
                 let nc = crate::runtime::utils::normalize_buf_type_name(constraint);
-                let nv = crate::runtime::utils::normalize_buf_type_name(&cn);
+                let nv = crate::runtime::utils::normalize_buf_type_name(cn);
                 if nc == nv {
                     return true;
                 }
@@ -1522,7 +1526,7 @@ impl Interpreter {
                 }
             }
             // Check parent classes of the instance
-            if let Some(class_def) = self.registry().classes.get(&class_name.resolve()) {
+            if let Some(class_def) = self.registry().classes.get(cn) {
                 for parent in class_def.parents.clone() {
                     if Self::type_matches(constraint, &parent) {
                         return true;
@@ -1530,7 +1534,7 @@ impl Interpreter {
                 }
             }
             // Check MRO (handles built-in type hierarchies like Match -> Capture -> Cool)
-            let mro = self.class_mro(&class_name.resolve());
+            let mro = self.class_mro(cn);
             if mro
                 .iter()
                 .any(|parent| Self::type_matches(constraint, parent.as_str()))
@@ -1546,19 +1550,21 @@ impl Interpreter {
             // are pushed unconditionally — mirroring the `.does` introspection
             // walk in `methods_classhow_dispatch`.
             {
-                let mro = self.class_mro(&class_name.resolve());
+                // `mro` above is the same `Arc` this walk needs; recomputing it
+                // re-entered the registry for a second String-keyed lookup on
+                // every call (#7696).
                 let mut role_stack = self.registry().composed_roles_seed(&mro);
                 let mut seen_roles = HashSet::new();
                 while let Some(role_name) = role_stack.pop() {
-                    if !seen_roles.insert(role_name.clone()) {
+                    if !seen_roles.insert(role_name) {
                         continue;
                     }
-                    if Self::type_matches(constraint, &role_name) {
+                    if Self::type_matches(constraint, role_name.as_str()) {
                         return true;
                     }
-                    for rp in self.registry().role_parents_of(&role_name) {
+                    for rp in self.registry().role_parents_of(role_name.as_str()) {
                         let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                        role_stack.push(rp_base.to_string());
+                        role_stack.push(Symbol::intern(rp_base));
                     }
                 }
             }

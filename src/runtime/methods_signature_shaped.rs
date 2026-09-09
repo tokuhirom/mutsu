@@ -183,10 +183,12 @@ impl Interpreter {
     /// parametric-role attribute (`role Box[::T] { has Box[T] $.child }`) was
     /// type-checked against the doubled name.
     pub(super) fn parse_parametric_type_name(name: &str) -> Option<(String, Vec<String>)> {
-        let base_end = name.find('[')?;
+        // `ends_with` is O(1) and rejects every unparameterized name, so it
+        // runs before the `[` scan rather than after it (#7696).
         if !name.ends_with(']') {
             return None;
         }
+        let base_end = name.as_bytes().iter().position(|&b| b == b'[')?;
         let mut depth = 0usize;
         for (offset, ch) in name[base_end..].char_indices() {
             match ch {
