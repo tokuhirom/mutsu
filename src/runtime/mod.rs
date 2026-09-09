@@ -371,6 +371,22 @@ struct CarrierCompileCtxKey {
     /// eval_context_dead_routine`). Must stay in the key or the cache could
     /// serve a unit compiled under the wrong classification.
     eval_context_routine: Option<EvalContextRoutineState>,
+    /// The four post-compile mutations `eval_block_value_inner` applies to the
+    /// chunk it just compiled: the supply-body mark, the emitter name, the
+    /// vouched capture set and the inherited owned-lexical set. They come from
+    /// the `SubData` being run, so they are the same on every call for one
+    /// `cache_id` -- but they are *not* the same across two different code
+    /// objects that happen to share one, so they belong in the key.
+    ///
+    /// They used to bypass the cache instead ("compile fresh, don't store"),
+    /// which meant a `whenever` callback -- whose `authoritative_captures` is
+    /// never empty -- was re-compiled from AST on every single emitted value.
+    /// On Cro's HTTP/2 parser that was one full `Compiler::compile` per DATA
+    /// frame, 38% of the frame's instructions (#7667).
+    supply_block_body: bool,
+    supply_emitter_sym: Option<Symbol>,
+    supply_authoritative_free_vars: Vec<Symbol>,
+    whenever_inherited_owned: Vec<Symbol>,
 }
 
 /// Per-`SubData.id` cache of `(context, compiled)` pairs for

@@ -7,6 +7,33 @@ type ProtectBlockCapturedBindings = std::sync::Arc<Vec<(usize, String)>>;
 type ProtectBlockWritebackBindings = std::sync::Arc<Vec<(usize, String)>>;
 type ProtectBlockCapturedNames = std::sync::Arc<Vec<String>>;
 
+/// The four per-`SubData` mutations `eval_block_value_inner` applies to the
+/// chunk it compiles for a carrier block, gathered so they can be both keyed on
+/// and applied in one place.
+///
+/// They are derived from the code object being run, not from the ambient frame,
+/// so for one `cache_id` they are the same on every call -- which is what makes
+/// caching a chunk carrying them sound. See [`CarrierCompileCtxKey`].
+pub(super) struct CarrierPostCompile {
+    is_supply_block_body: bool,
+    supply_emitter_sym: Option<crate::symbol::Symbol>,
+    authoritative_free_vars: Vec<crate::symbol::Symbol>,
+    inherited_owned_lexicals: Vec<crate::symbol::Symbol>,
+}
+
+impl CarrierPostCompile {
+    fn apply(&self, code: &mut crate::opcode::CompiledCode) {
+        code.is_supply_block_body = self.is_supply_block_body;
+        code.supply_emitter_sym = self.supply_emitter_sym;
+        code.inherited_owned_lexicals = self.inherited_owned_lexicals.clone();
+        for sym in &self.authoritative_free_vars {
+            if !code.authoritative_free_vars.contains(sym) {
+                code.authoritative_free_vars.push(*sym);
+            }
+        }
+    }
+}
+
 impl Interpreter {
     pub(crate) fn composed_result_to_args(value: Value, prefer_single: bool) -> Vec<Value> {
         if prefer_single {
@@ -293,7 +320,11 @@ impl Interpreter {
     /// since a genuine wrong-key situation just means the two computations
     /// disagree and this key stops matching future identical calls — but
     /// keep them matching so the cache actually helps.
-    fn carrier_compile_ctx_key(&self, is_eval_unit: bool) -> CarrierCompileCtxKey {
+    fn carrier_compile_ctx_key(
+        &self,
+        is_eval_unit: bool,
+        post: &CarrierPostCompile,
+    ) -> CarrierCompileCtxKey {
         let in_routine = if is_eval_unit {
             self.eval_unit_in_routine()
         } else {
@@ -322,6 +353,10 @@ impl Interpreter {
             } else {
                 None
             },
+            supply_block_body: post.is_supply_block_body,
+            supply_emitter_sym: post.supply_emitter_sym,
+            supply_authoritative_free_vars: post.authoritative_free_vars.clone(),
+            whenever_inherited_owned: post.inherited_owned_lexicals.clone(),
         }
     }
 
@@ -335,17 +370,26 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
         cache_id: u64,
+        post: &CarrierPostCompile,
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
         std::sync::Arc<crate::opcode::CompiledFns>,
     ) {
-        let key = self.carrier_compile_ctx_key(is_eval_unit);
+        let key = self.carrier_compile_ctx_key(is_eval_unit, post);
         if let Some(entries) = self.carrier_compile_cache.get(&cache_id)
             && let Some((_, code, fns)) = entries.iter().find(|(k, ..)| *k == key)
         {
+            crate::vm::vm_stats::record_carrier_compile(true);
             return (code.clone(), fns.clone());
         }
-        let (code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+        crate::vm::vm_stats::record_carrier_compile(false);
+        let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+        // The four per-`SubData` mutations, applied BEFORE the chunk is shared.
+        // They are part of the key above, so an entry served from the cache is
+        // byte-identical to what this fresh path produces for the same key --
+        // which is what lets them be cached at all rather than forcing a
+        // re-compile (see `CarrierCompileCtxKey`'s doc).
+        post.apply(&mut code);
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         let entries = self.carrier_compile_cache.entry(cache_id).or_default();
@@ -421,26 +465,21 @@ impl Interpreter {
         // exactly what the plain (uncached) path below mutates post-compile.
         // Bypass the cache (compile fresh, don't store) rather than caching a
         // wrong/stale mutation.
-        let needs_fresh_mutation = is_supply_block_body
-            || supply_emitter_sym.is_some()
-            || !supply_authoritative_free_vars.is_empty()
-            || !whenever_inherited_owned.is_empty();
+        let post = CarrierPostCompile {
+            is_supply_block_body,
+            supply_emitter_sym,
+            authoritative_free_vars: supply_authoritative_free_vars,
+            inherited_owned_lexicals: whenever_inherited_owned,
+        };
         // Re-armed only for the duration of the compile below (the cache key
         // and `compile_block_value_opts` read it), then cleared before the body
         // runs so nothing compiled during execution inherits it.
         self.pending_eval_rw_tail = rw_tail;
-        let (code, compiled_fns) = if !needs_fresh_mutation && let Some(id) = cache_id {
-            self.compile_block_value_cached(body, is_eval_unit, id)
+        let (code, compiled_fns) = if let Some(id) = cache_id {
+            self.compile_block_value_cached(body, is_eval_unit, id, &post)
         } else {
             let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
-            code.is_supply_block_body = is_supply_block_body;
-            code.supply_emitter_sym = supply_emitter_sym;
-            code.inherited_owned_lexicals = whenever_inherited_owned;
-            for sym in supply_authoritative_free_vars {
-                if !code.authoritative_free_vars.contains(&sym) {
-                    code.authoritative_free_vars.push(sym);
-                }
-            }
+            post.apply(&mut code);
             (std::sync::Arc::new(code), std::sync::Arc::new(fns))
         };
         self.pending_eval_rw_tail = false;

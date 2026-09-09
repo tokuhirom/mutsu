@@ -240,6 +240,24 @@ pub(crate) fn record_program_table_cow_clone() {
     }
 }
 
+/// Carrier-block compiles served from / missed by `carrier_compile_cache`
+/// (`eval_block_value_inner`). Reported as `carrier-compile: hits=.. misses=..`.
+/// A misses count that grows with the number of times a block RUNS -- rather
+/// than with the number of distinct blocks and ambient contexts -- means the
+/// cache is being bypassed and the body is re-compiled from AST per call.
+static CARRIER_COMPILE_HITS: AtomicU64 = AtomicU64::new(0);
+static CARRIER_COMPILE_MISSES: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn record_carrier_compile(hit: bool) {
+    if enabled() {
+        if hit {
+            CARRIER_COMPILE_HITS.fetch_add(1, Ordering::Relaxed);
+        } else {
+            CARRIER_COMPILE_MISSES.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 // Per-spawn lineage seeding (docs/per-task-clone-slimming.md slice 5 step A):
 // `SPAWN_SEED_KEYS` counts env entries walked by the `clone_for_thread`
 // seeding loop; `SPAWN_SEED_INSERTS` the subset that actually landed in the
@@ -1151,6 +1169,9 @@ pub(crate) fn dump() {
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
     let program_table_cow_clones = PROGRAM_TABLE_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] program-table-cow: clones={program_table_cow_clones}");
+    let carrier_hits = CARRIER_COMPILE_HITS.load(Ordering::Relaxed);
+    let carrier_misses = CARRIER_COMPILE_MISSES.load(Ordering::Relaxed);
+    eprintln!("[mutsu vm-stats] carrier-compile: hits={carrier_hits} misses={carrier_misses}");
     let mainline_lexical_boxes = MAINLINE_LEXICAL_BOXES.load(Ordering::Relaxed);
     let mainline_lexical_hits = MAINLINE_LEXICAL_HITS.load(Ordering::Relaxed);
     eprintln!(
