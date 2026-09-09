@@ -13,6 +13,15 @@ impl Interpreter {
     /// is safe for any Instance. `Match` keeps its dedicated `%(...)` handling
     /// in `coerce_to_hash`.
     pub(crate) fn coerce_object_to_hash(&mut self, value: Value) -> Value {
+        // A role mixed into a Hash is still an associative value. Coercing the
+        // wrapper itself would stringify its raku representation into one
+        // bogus key; assignment to a % variable must see the wrapped Hash's
+        // entries instead.
+        if let ValueView::Mixin(inner, _) = value.view()
+            && matches!(inner.view(), ValueView::Hash(_))
+        {
+            return crate::runtime::utils::coerce_to_hash(inner.as_ref().clone());
+        }
         if let ValueView::Instance { .. } = value.view()
             && !value.is_match_instance()
             && let Ok(listed) = self.call_method_with_values(value.clone(), "list", Vec::new())

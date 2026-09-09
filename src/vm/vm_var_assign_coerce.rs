@@ -402,6 +402,9 @@ impl Interpreter {
             | ValueView::Set(..)
             | ValueView::Bag(..)
             | ValueView::Mix(..) => Ok(value),
+            ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Hash(_)) => {
+                Ok(inner.as_ref().clone())
+            }
             // Instance objects: check if they do Associative
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();

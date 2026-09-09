@@ -39,7 +39,7 @@ impl Interpreter {
     /// `%h.DELETE-KEY($key)` on a hash value: remove the entry and return the
     /// value it held, or the hash's `is default(...)` value (else its element
     /// type object) when the key was absent.
-    pub(super) fn hash_delete_key_value(
+    pub(crate) fn hash_delete_key_value(
         &mut self,
         target: &Value,
         key_arg: &Value,

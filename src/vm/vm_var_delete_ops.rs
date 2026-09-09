@@ -515,6 +515,25 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // A plain role mixin around a Hash has no user-defined DELETE-KEY
+        // method, but its inner Hash is still the mutable associative value.
+        // Reach it directly before the generic container path, which only
+        // recognizes an exact Hash and would otherwise return the wrong value
+        // without removing the entry.
+        if let Some(target) = self.env().get(&var_name).cloned()
+            && let ValueView::Mixin(inner, _) = target.view()
+            && matches!(inner.view(), ValueView::Hash(_))
+        {
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let result = self.hash_delete_key_value(inner.as_ref(), &idx_arg)?;
+            self.stack.push(result);
+            return Ok(());
+        }
         // Fast path for simple hash delete
         if let Some(result) = self.try_fast_hash_delete(code, &var_name, slot, &idx) {
             self.stack.push(result?);

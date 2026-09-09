@@ -2,6 +2,25 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Return the value type supplied by a parameterized container role mixed
+    /// onto a value, if any. Unlike native Hash/Array metadata, this lives in
+    /// the Mixin marker map and must not be copied onto the shared inner
+    /// container just to answer `.of`.
+    pub(crate) fn mixin_container_role_value_type(&self, target: &Value) -> Option<Value> {
+        let ValueView::Mixin(_, mixins) = target.view() else {
+            return None;
+        };
+        for base in ["Associative", "Positional"] {
+            let key = format!("__mutsu_role_typeargs__{base}");
+            if let Some(ValueView::Array(items, ..)) = mixins.get(&key).map(Value::view)
+                && let Some(value_type) = items.iter().next()
+            {
+                return Some(value_type.clone());
+            }
+        }
+        None
+    }
+
     /// The user-visible `.Stringy`/`.Str` of a role-mixed (`but`/`does`) value,
     /// when the composition — or the wrapped value's own class — supplies one.
     /// `None` means "nothing user-defined here", so the caller must keep its
@@ -142,6 +161,13 @@ impl Interpreter {
                 Err(e) => return Some(Err(e)),
             };
             return Some(Ok(Value::mixin(inner_clone, new_mixins)));
+        }
+
+        if method == "of"
+            && args.is_empty()
+            && let Some(value_type) = self.mixin_container_role_value_type(target)
+        {
+            return Some(Ok(value_type));
         }
 
         if args.is_empty() {
