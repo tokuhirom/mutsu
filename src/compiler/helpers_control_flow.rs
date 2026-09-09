@@ -506,7 +506,7 @@ impl Compiler {
         });
         // `succeed_boundary: true` already absorbs the succeed at exactly this
         // level, so the body does not need its own `SucceedBarrier`.
-        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try_inner(stmts));
+        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try_inner(stmts, false));
         self.code.patch_block_local_body_end(idx);
     }
 
@@ -517,19 +517,80 @@ impl Compiler {
     /// here can use the env-only `SetVarTypeScoped` instead of also writing the
     /// enclosing scope's type metadata.
     pub(super) fn compile_scope_restored_loop_body(&mut self, stmts: &[Stmt]) {
-        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
+        let Some(needs_value) = Self::loop_body_let_frame(stmts) else {
+            self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
+            return;
+        };
+        let idx = self.code.emit(OpCode::LetBlock {
+            body_end: 0,
+            value_on_stack: needs_value,
+        });
+        if needs_value {
+            // A real `let` is rolled back unless the iteration succeeded, so the
+            // op needs the iteration's own value — which a sink-context loop
+            // body does not otherwise produce. Route it through the value STACK,
+            // not the topic the statement-position block uses
+            // (`emit_body_let_frame`): a loop body's topic is the loop variable,
+            // so writing it would clobber the binding the iteration runs under.
+            self.in_scope_restored_body(|c| c.compile_body_with_implicit_try_value(stmts));
+        } else {
+            // A `temp`-only body always restores, so the op needs no value and
+            // the body keeps its ordinary sink lowering. `value_on_stack: false`
+            // makes the op read the topic, whose success verdict only `let`
+            // entries consult and this body has none.
+            self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
+        }
+        self.code.patch_let_block_end(idx);
+        if needs_value {
+            // The op leaves the value it peeked in place; drop it so the body
+            // range stays stack-balanced across iterations.
+            self.code.emit(OpCode::Pop);
+        }
+    }
+
+    /// The `let`/`temp` save frame a loop body owes each of its iterations
+    /// (#7677).
+    ///
+    /// A loop body is a Raku block, so it owns the `let`/`temp` saves its body
+    /// records and resolves them at the end of **each iteration** — `temp`
+    /// always restores, `let` restores unless the iteration's own value was
+    /// defined. The loop opcodes run the body range directly, with no
+    /// `OpCode::BlockScope` around it, so the frame has to live *inside* that
+    /// range: `OpCode::LetBlock` at its head re-executes, and so re-marks, once
+    /// per iteration, which is exactly the per-iteration resolution Raku asks
+    /// for.
+    ///
+    /// `Some(true)` — a real `let` is present and the op needs the iteration's
+    /// own value. `Some(false)` — a `temp`-only body, which restores
+    /// unconditionally and needs no value. `None`, the overwhelmingly common
+    /// case, emits nothing at all, so a loop with no `let`/`temp` in its body
+    /// pays nothing for this.
+    fn loop_body_let_frame(stmts: &[Stmt]) -> Option<bool> {
+        Self::has_let_deep(stmts).then(|| Self::has_real_let_deep(stmts))
     }
 
     /// [`Self::compile_scope_restored_loop_body`] for a value-collecting loop
     /// body (the `for` expression form), which compiles through
     /// `compile_stmts_value` instead.
     pub(super) fn compile_scope_restored_body_value(&mut self, stmts: &[Stmt]) {
+        // The collecting form already leaves the iteration's value on the stack
+        // for the loop to gather, so the `let` frame (#7677) needs no lowering
+        // change here — only the bracket, reading that same value.
+        let let_frame = Self::loop_body_let_frame(stmts).map(|_| {
+            self.code.emit(OpCode::LetBlock {
+                body_end: 0,
+                value_on_stack: true,
+            })
+        });
         self.in_scope_restored_body(|c| {
             // Same block-start declaration visibility as the statement-position
             // loop body above (`compile_body_with_implicit_try_inner`).
             c.hoist_typed_var_decls(stmts);
             c.compile_stmts_value(stmts)
         });
+        if let Some(idx) = let_frame {
+            self.code.patch_let_block_end(idx);
+        }
     }
 
     /// Run `f` with `lexically_in_block` set, restoring the previous value
@@ -781,10 +842,25 @@ impl Compiler {
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
     pub(super) fn compile_body_with_implicit_try(&mut self, stmts: &[Stmt]) {
-        self.with_succeed_barrier(stmts, |c| c.compile_body_with_implicit_try_inner(stmts));
+        self.with_succeed_barrier(stmts, |c| {
+            c.compile_body_with_implicit_try_inner(stmts, false)
+        });
     }
 
-    fn compile_body_with_implicit_try_inner(&mut self, stmts: &[Stmt]) {
+    /// [`Self::compile_body_with_implicit_try`], but leaving the body's own
+    /// value on the value stack instead of discarding it.
+    ///
+    /// Used by the loop-body `let` frame (#7677): `OpCode::LetBlock` judges a
+    /// real `let` from the block's own value, and a loop body is compiled in
+    /// sink context, so the tail statement has to be compiled for value to
+    /// produce one. The caller balances the stack.
+    pub(super) fn compile_body_with_implicit_try_value(&mut self, stmts: &[Stmt]) {
+        self.with_succeed_barrier(stmts, |c| {
+            c.compile_body_with_implicit_try_inner(stmts, true)
+        });
+    }
+
+    fn compile_body_with_implicit_try_inner(&mut self, stmts: &[Stmt], tail_as_value: bool) {
         let saved = self.push_dynamic_scope_lexical();
         // A block's `my TYPE $x` is in effect for the WHOLE block, so register
         // the constraints at entry (see `hoist_typed_var_decls`). This is the
@@ -793,10 +869,19 @@ impl Compiler {
         // which hoists on its own, so hoist only in the plain arm.
         if Self::has_catch_or_control(stmts) {
             self.compile_implicit_try(stmts);
-            self.code.emit(OpCode::Pop);
+            // The implicit-try region leaves the body's value on the stack; a
+            // caller that asked for that value keeps it instead of popping.
+            if !tail_as_value {
+                self.code.emit(OpCode::Pop);
+            }
         } else {
             self.hoist_typed_var_decls(stmts);
-            for s in stmts {
+            let last = stmts.len().wrapping_sub(1);
+            for (i, s) in stmts.iter().enumerate() {
+                if tail_as_value && i == last {
+                    self.compile_last_stmt_as_value(s);
+                    continue;
+                }
                 self.compile_stmt(s);
                 // A statement `given` always nets one stack value (see
                 // `exec_given_op`). This body is statement position — its value
@@ -807,6 +892,10 @@ impl Compiler {
                 if Self::stmt_nets_a_stack_value(s) {
                     self.code.emit(OpCode::Pop);
                 }
+            }
+            if tail_as_value && stmts.is_empty() {
+                // An empty body still owes the frame a value to judge.
+                self.code.emit(OpCode::LoadTrue);
             }
         }
         self.pop_dynamic_scope_lexical(saved);
