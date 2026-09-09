@@ -194,11 +194,9 @@ impl Interpreter {
         // `when`) piled up one value per pass.
         let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
-        // Collected slots whose value is a CONTAINER, not a snapshot: the name
-        // (and the emitting site's baked local slot) of the variable each one
-        // denotes, re-read once the loop is over. See the fix-up at the end of
-        // this function.
-        let mut deferred_container_refs: Vec<(usize, String, Option<u32>)> = Vec::new();
+        // Collected slots whose value is a CONTAINER, not a snapshot. The
+        // emitting site's baked local slot is used to promote the source to a
+        // real ContainerRef while the iteration is still being collected.
         // A `for` block owns its topic (raku binds `$_` as the block's own
         // implicit parameter), so the enclosing `$_` is restored on every exit —
         // normal, `last`/`next`, and error.
@@ -993,8 +991,10 @@ impl Interpreter {
                             Self::collect_loop_value(coll, val);
                             if let Some((name, slot)) = deferred_ref
                                 && coll.len() == coll_start_len + 1
+                                && let Some(container) =
+                                    self.collect_container_ref(code, &name, slot)
                             {
-                                deferred_container_refs.push((coll_start_len, name, slot));
+                                coll[coll_start_len] = container;
                             }
                         }
                         // Drain anything else this iteration left behind.
@@ -1376,30 +1376,47 @@ impl Interpreter {
         self.quanthash_bind_params = saved_quanthash_bind.clone();
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
-            let mut coll = coll;
-            // Every collected container is read here, once, with the loop over —
-            // so after the last iteration's `temp` restore, and at the same value
-            // for all of them, which is what makes `do for 1..2 { temp $g = 9;
-            // $g }` `(1 1)` and `do for 1..2 { $g = $g + 1; $g }` `(3 3)`.
-            // Slot-first, env-fallback (§1.5, docs/lexical-scope-slot-campaign.md):
-            // a plain `my $g` lexical keeps its live value in its local slot and
-            // its env mirror is suppressed, so the env read alone saw `Any`.
-            for (idx, name, slot) in deferred_container_refs {
-                if idx >= coll.len() {
-                    continue;
-                }
-                let current = self
-                    .gate_local_slot_at(code, slot, &name)
-                    .and_then(|s| self.locals.get(s).cloned())
-                    .filter(|v| !v.is_nil())
-                    .or_else(|| self.get_env_with_main_alias(&name));
-                if let Some(v) = current {
-                    coll[idx] = v;
-                }
-            }
             self.stack.push(Value::array(coll));
         }
         Ok(completed_all)
+    }
+
+    /// Return the live container for a tagged collected value, promoting a
+    /// plain scalar binding to a shared cell when this is the first iteration.
+    ///
+    /// A value-collecting `for` preserves the block's lvalue container. The
+    /// old implementation remembered the name and read its value once after
+    /// the loop, which got the nine in-loop shapes right but lost the cell as
+    /// soon as the resulting List escaped the loop. Installing the cell while
+    /// collecting makes both occurrences in the List point at the same
+    /// storage, while `coerce_to_array` still decontainerizes those cells for
+    /// an ordinary `@` assignment.
+    fn collect_container_ref(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        slot: Option<u32>,
+    ) -> Option<Value> {
+        let local_slot = self.resolve_local_slot(code, slot, name);
+        let current = local_slot
+            .and_then(|idx| self.locals.get(idx).cloned())
+            .filter(|v| !v.is_nil())
+            .or_else(|| self.get_env_with_main_alias(name))?;
+
+        if let ValueView::ContainerRef(cell) = current.view() {
+            return Some(Value::container_ref(cell.clone()));
+        }
+
+        let container = Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+            current,
+        )));
+        if let Some(idx) = local_slot {
+            self.locals[idx] = container.clone();
+            self.flush_local_to_env(code, idx);
+        } else {
+            self.set_env_with_main_alias(name, container.clone());
+        }
+        Some(container)
     }
 
     /// Break a multi-parameter loop variable's binding away from any shared

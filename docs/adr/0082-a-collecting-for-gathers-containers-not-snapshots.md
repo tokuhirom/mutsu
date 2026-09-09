@@ -1,6 +1,6 @@
 # ADR-0082: A value-collecting `for` gathers containers, not snapshots
 
-- Status: Accepted (implemented)
+- Status: Superseded by ADR-0083
 - Date: 2026-09-09
 - Related: [ADR-0045](0045-for-loop-parameters-bind-the-element-container.md)
   (a `for` parameter binds the element container),
