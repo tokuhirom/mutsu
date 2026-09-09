@@ -116,6 +116,8 @@ pub enum RakuAstClass {
     TypeParameterized,
     // Phase 2 slice 29: coercion types (`Int()`).
     TypeCoercion,
+    // Type parameters such as `::T $value`.
+    TypeCapture,
     // Phase 2 slice 13: class and method declarations.
     Class,
     Method,
@@ -258,6 +260,7 @@ impl RakuAstClass {
             TraitOf => "RakuAST::Trait::Of",
             TypeParameterized => "RakuAST::Type::Parameterized",
             TypeCoercion => "RakuAST::Type::Coercion",
+            TypeCapture => "RakuAST::Type::Capture",
             Class => "RakuAST::Class",
             Method => "RakuAST::Method",
             Role => "RakuAST::Role",
@@ -562,6 +565,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitOf,
     RakuAstClass::TypeParameterized,
     RakuAstClass::TypeCoercion,
+    RakuAstClass::TypeCapture,
     RakuAstClass::Class,
     RakuAstClass::Method,
     RakuAstClass::Role,
@@ -762,15 +766,15 @@ pub fn construct(
         }))));
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
-        let target = named_arg(args, "target").ok_or_else(|| {
-            RuntimeError::new("RakuAST::Parameter.new requires a `target` argument")
-        })?;
-        require_rakuast_class(
-            &target,
-            RakuAstClass::ParameterTargetVar,
-            "RakuAST::Parameter.new",
-        )?;
-        let mut fields = Vec::with_capacity(6);
+        let target = named_arg(args, "target");
+        if let Some(target) = &target {
+            require_rakuast_class(
+                target,
+                RakuAstClass::ParameterTargetVar,
+                "RakuAST::Parameter.new",
+            )?;
+        }
+        let mut fields = Vec::with_capacity(7);
         if let Some(type_node) = named_arg(args, "type") {
             require_rakuast_type(&type_node, "RakuAST::Parameter.new")?;
             fields.push(RakuAstField {
@@ -798,10 +802,31 @@ pub fn construct(
                 value: RakuAstFieldValue::List(names),
             });
         }
-        fields.push(RakuAstField {
-            name: Some("target"),
-            value: RakuAstFieldValue::Node(target),
-        });
+        if let Some(type_captures) = named_arg(args, "type-captures") {
+            let type_captures = type_captures
+                .as_list_items()
+                .map(<[Value]>::to_vec)
+                .ok_or_else(|| {
+                    RuntimeError::new("RakuAST::Parameter.new expects `type-captures` to be a list")
+                })?;
+            for type_capture in &type_captures {
+                require_rakuast_class(
+                    type_capture,
+                    RakuAstClass::TypeCapture,
+                    "RakuAST::Parameter.new",
+                )?;
+            }
+            fields.push(RakuAstField {
+                name: Some("type-captures"),
+                value: RakuAstFieldValue::List(type_captures),
+            });
+        }
+        if let Some(target) = target {
+            fields.push(RakuAstField {
+                name: Some("target"),
+                value: RakuAstFieldValue::Node(target),
+            });
+        }
         if let Some(optional) = named_arg(args, "optional") {
             if !matches!(optional.view(), ValueView::Bool(_)) {
                 return Err(RuntimeError::new(
@@ -1038,6 +1063,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
+        ("RakuAST::Type::Capture", "new") => RakuAstClass::TypeCapture,
         ("RakuAST::Trait::Returns", "new") => RakuAstClass::TraitReturns,
         ("RakuAST::Trait::Of", "new") => RakuAstClass::TraitOf,
         _ => return None,
@@ -1115,7 +1141,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::Blockoid => Some("statement-list"),
         RakuAstClass::InitializerAssign => Some("expression"),
         RakuAstClass::MetaInfixAssign => Some("infix"),
-        RakuAstClass::TypeSimple | RakuAstClass::TypeSetting => Some("name"),
+        RakuAstClass::TypeSimple | RakuAstClass::TypeSetting | RakuAstClass::TypeCapture => {
+            Some("name")
+        }
         RakuAstClass::TraitReturns | RakuAstClass::TraitOf => Some("type"),
         _ => None,
     };
@@ -1224,6 +1252,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::InitializerAssign
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeSetting
+            | RakuAstClass::TypeCapture
     )
 }
 
@@ -1249,6 +1278,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Parameter => &[
             "type",
             "names",
+            "type-captures",
             "target",
             "optional",
             "default",
@@ -1259,7 +1289,7 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         ParameterTargetVar => &["name"],
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
         InitializerAssign => &["expression"],
-        TypeSimple | TypeSetting => &["name"],
+        TypeSimple | TypeSetting | TypeCapture => &["name"],
         _ => &[],
     }
 }
