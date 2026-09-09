@@ -1,9 +1,9 @@
 use Test;
 
-plan 18;
+plan 24;
 
 # A bare `%h` in a list flattens into its pairs on hash-assignment / hash-context,
-# but a hash sourced from a `$` scalar carries HashData.itemized and stays opaque.
+# but a hash sourced from a `$` scalar carries holder-local itemization and stays opaque.
 # (Container itemization mirrors ArrayKind: the value stays a Value::Hash, so it
 # never leaks a wrapper to value operations — `(elem)`, callable mappers, etc.)
 
@@ -73,6 +73,24 @@ my %h = a => 1, b => 2;
 # Reflection: a $-sourced hash reflects as a Scalar container, % as Hash.
 {
     my $hi = %h;
+    is $hi.raku, '${:a(1), :b(2)}', '$-sourced hash keeps holder itemization';
+    is %h.raku, '{:a(1), :b(2)}', '%-sourced hash remains plain after sharing';
     is $hi.VAR.^name, 'Scalar', '$-sourced hash reflects as Scalar container';
     is %h.VAR.^name, 'Hash', '%-sourced hash reflects as Hash';
+}
+
+# A shared scalar array has the same holder-local itemization as a shared hash.
+{
+    my @a = 1, 2;
+    my $itemized = @a;
+    is $itemized.raku, '$[1, 2]', '$-sourced array keeps holder itemization';
+    is @a.raku, '[1, 2]', '@-sourced array remains plain after sharing';
+}
+
+# A plain scalar parameter receives the itemized holder when its argument is an
+# array/hash variable; the caller's aggregate remains a plain holder.
+{
+    sub show($value) { $value.raku }
+    is show(%h), '${:a(1), :b(2)}', 'scalar parameter share is itemized';
+    is %h.raku, '{:a(1), :b(2)}', 'scalar parameter writeback keeps source plain';
 }

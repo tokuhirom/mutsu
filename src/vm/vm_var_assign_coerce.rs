@@ -815,6 +815,10 @@ impl Interpreter {
                 _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
             },
         };
+        // The source and target own different holder words over this one cell:
+        // the aggregate source remains plain, while the scalar target is an
+        // itemized holder. Keeping the flavour on the word is what preserves
+        // `%h.raku` while making `$hi.raku` render `${...}`.
         let container = Value::container_ref(cell.clone());
         // Compiler-generated temporaries are implementation details rather than
         // user-visible scalar bindings. Keep their historical bare cell shape so
@@ -823,7 +827,7 @@ impl Interpreter {
         let itemized_container = if Self::name_is_itemize_exempt(&name) {
             container.clone()
         } else {
-            Value::container_ref(cell).item()
+            Value::container_ref_itemized(cell.clone())
         };
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
@@ -872,8 +876,10 @@ impl Interpreter {
         // the same name (this `=` share is itemized, not a `:=` decont alias).
         self.update_bound_decont_marker(&name, false, &val);
         // Mark the scalar so a later whole reassignment replaces the slot.
-        self.env_mut()
-            .insert(format!("__mutsu_array_share::{}", name), Value::TRUE);
+        self.env_mut().insert(
+            format!("__mutsu_array_share::{}", name),
+            itemized_container.clone(),
+        );
         self.array_share_active = true;
         self.set_env_with_main_alias(&name, itemized_container);
         self.flush_local_to_env(code, idx);

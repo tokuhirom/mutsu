@@ -278,6 +278,6 @@ unconditional and delete it.
 | --- | --- |
 | 0 — comment justification | Complete (2026-09-09; comments now state the RHS `List` rule) |
 | 1 — `Kind::ContainerRefItemized` | Complete (2026-09-09; the holder flavour is encoded, decoded, probed, projected through the unchanged `ValueView::ContainerRef`, traced by GC, and covered by NanBox round-trip tests) |
-| 2 — `$`-share holder (rows 1, 3, 4) | Not started |
+| 2 — `$`-share holder (rows 1, 3, 4) | Complete (2026-09-09; scalar shares and scalar parameter binds now carry itemization on the target word, while source words remain plain; dereference and hash-initializer consumers preserve the distinction) |
 | 3 — audit remaining producers | Not started |
 | 4 — drop the `unwrap_contained_pair` hedge | Not started |

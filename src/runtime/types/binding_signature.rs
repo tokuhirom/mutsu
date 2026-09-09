@@ -1609,7 +1609,7 @@ impl Interpreter {
                                 })
                                 .filter(|s| s.starts_with('@') || s.starts_with('%'))
                         {
-                            bound_value = Value::container_ref(crate::gc::Gc::new(
+                            bound_value = Value::container_ref_itemized(crate::gc::Gc::new(
                                 crate::value::ContainerCell::new(bound_value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
@@ -2493,7 +2493,7 @@ impl Interpreter {
                             && let Some(source_name) = &source_name
                             && (source_name.starts_with('@') || source_name.starts_with('%'))
                         {
-                            value = Value::container_ref(crate::gc::Gc::new(
+                            value = Value::container_ref_itemized(crate::gc::Gc::new(
                                 crate::value::ContainerCell::new(value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
