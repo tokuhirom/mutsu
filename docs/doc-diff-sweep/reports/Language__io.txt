@@ -1,8 +1,128 @@
 # doc-diff-harness report
-# stats: match=3  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=19  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=6  match=3  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=0  silent-crash=0  silent-match=12  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/io.rakudoc:217
+[1] error-mismatch  raku-doc/doc/Language/io.rakudoc:19
+--- program ---
+my $fh = open "testfile", :r;
+my $contents = $fh.slurp;
+$fh.close;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7322/testfile: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-7322/testfile': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 2
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/io.rakudoc:29
+--- program ---
+my $contents = "testfile".IO.slurp;
+# or in procedural form:
+$contents = slurp "testfile"
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7322/testfile: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to slurp 'testfile': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Language/io.rakudoc:44
+--- program ---
+for 'huge-csv'.IO.lines -> $line {
+    # Do something with $line
+}
+
+# or if you'll be processing later
+my @lines = 'huge-csv'.IO.lines;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7322/huge-csv: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'huge-csv': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/io.rakudoc:121
+--- program ---
+my $filea = 'foo';
+my $fileb = 'foo.bak';
+my $filec = '/disk1/foo';
+# note 'diskN' is assumed to be a physical storage device
+
+copy $filea, $fileb;              # overwrites $fileb if it exists
+copy $filea, $fileb, :createonly; # fails if $fileb exists
+
+rename $filea, 'new-foo';              # overwrites 'new-foo' if it exists
+rename $filea, 'new-foo', :createonly; # fails if 'new-foo' exists
+
+# use move when a system-level rename may not work
+move $fileb, '/disk2/foo';              # overwrites '/disk2/foo' if it exists
+move $fileb, '/disk2/foo', :createonly; # fails if '/disk2/foo' exists
+
+unlink $filea;
+$fileb.IO.unlink;
+--- raku stderr (exit 1) ---
+Failed to copy '/home/user/mutsu/tmp/ddh/run-7322/foo' to '/home/user/mutsu/tmp/ddh/run-7322/foo.bak': Failed to copy file: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 6
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::IO::Copy with no message
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 6
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/io.rakudoc:183
+--- program ---
+say "testfile".IO.d;  # OUTPUT: «False␤»
+say "lib".IO.d;       # OUTPUT: «True␤»
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-7322/testfile' while trying to do '.d'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to find 'testfile' while trying to do '.d'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/io.rakudoc:190
+--- program ---
+say "testfile".IO.f;  # OUTPUT: «True␤»
+say "lib".IO.f;       # OUTPUT: «False␤»
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-7322/testfile' while trying to do '.f'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to find 'testfile' while trying to do '.f'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+
+==============================================================================
+[7] output-mismatch  raku-doc/doc/Language/io.rakudoc:217
 --- program ---
 say dir "/etc/";  # OUTPUT: «"/etc/ld.so.conf".IO "/etc/shadow".IO ....␤»
 --- raku stdout ---

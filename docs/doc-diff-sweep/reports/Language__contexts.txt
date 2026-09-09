@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=18  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=3  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=0  match=18  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/contexts.rakudoc:45
@@ -14,4 +14,21 @@ foo; # OUTPUT: «sink called␤»
 sink called
 --- mutsu stdout (exit 0) ---
 
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Language/contexts.rakudoc:147
+--- program ---
+my $non-empty = Buf.new(0x3, 0x33);
+my $empty = [];
+my $non-empty-also = Buf.new(0x2,0x22);
+say [~] $non-empty, $empty, $non-empty-also;
+# OUTPUT: «Cannot use a Buf as a string, but you called the Stringy method on it
+--- raku stderr (exit 1) ---
+Stringification of a Buf is not done with 'Str'. The 'decode' method
+should be used to convert a Buf to a Str.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2829.raku line 4
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+3"
 

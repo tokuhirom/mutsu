@@ -1,0 +1,42 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=2  match=1  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/perl-op.rakudoc:351
+--- program ---
+for 'huge-csv'.IO.lines -> $line {
+    # Do something with $line
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-12959/huge-csv: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12959.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'huge-csv': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12959.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/perl-op.rakudoc:363
+--- program ---
+my $x = "filename".IO.slurp;
+# ... or ...
+my $fh = open "filename", :r;
+my $x = $fh.slurp;
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Redeclaration of symbol '$x'.
+    at /home/user/mutsu/tmp/ddh/prog-12959.raku:4
+    ------> my $x<HERE> = $fh.slurp;
+Failed to open file /home/user/mutsu/tmp/ddh/run-12959/filename: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12959.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to slurp 'filename': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12959.raku line 1
+

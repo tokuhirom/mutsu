@@ -1,0 +1,22 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=9  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/nativetypes.rakudoc:196
+--- program ---
+use NativeCall;
+my Pointer[void] $native = nativecast(Pointer[void], Buf.new(0x22, 0x33));
+say $native.deref; # ERROR OUTPUT: «Internal error: unhandled target type␤»
+--- raku stderr (exit 1) ---
+Internal error: unhandled target type
+  in sub nativecast at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/CA475A025AD7A13E5FDBB0EC459EC417B241FE1B (NativeCall::Types) line 25
+  in method deref at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/CA475A025AD7A13E5FDBB0EC459EC417B241FE1B (NativeCall::Types) line 138
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9813.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot dereference an untyped Pointer (no `of` type to read)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9813.raku line 3
+

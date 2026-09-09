@@ -1,8 +1,28 @@
 # doc-diff-harness report
-# stats: match=92  matches-doc=0  mismatch=4  mutsu-crash=0  no-oracle=97  skipped-marker=0  skipped-nondet=4  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=1  match=92  matches-doc=0  mismatch=4  mutsu-accepts=0  mutsu-crash=0  no-oracle=92  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=4  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:422
+[1] error-mismatch  raku-doc/doc/Type/Cool.rakudoc:1133
+--- program ---
+for 'huge-csv'.IO.lines -> $line {
+    # Do something with $line
+}
+
+# or if you'll be processing later
+my @lines = 'huge-csv'.IO.lines;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-29589/huge-csv: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29589.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'huge-csv': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29589.raku line 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:422
 --- program ---
 say tanh(0.5);              # OUTPUT: «0.46211715726001␤»
 say tanh(atanh(0.5));       # OUTPUT: «0.5␤»
@@ -14,7 +34,7 @@ say tanh(atanh(0.5));       # OUTPUT: «0.5␤»
 0.49999999999999994
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:433
+[3] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:433
 --- program ---
 say atanh(0.5);             # OUTPUT: «0.549306144334055␤»
 --- raku stdout ---
@@ -23,7 +43,7 @@ say atanh(0.5);             # OUTPUT: «0.549306144334055␤»
 0.5493061443340548
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:535
+[4] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:535
 --- program ---
 say log10(1001);            # OUTPUT: «3.00043407747932␤»
 --- raku stdout ---
@@ -32,7 +52,7 @@ say log10(1001);            # OUTPUT: «3.00043407747932␤»
 3.000434077479319
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:737
+[5] output-mismatch  raku-doc/doc/Type/Cool.rakudoc:737
 --- program ---
 say ‘ã̷̠̬̊’.uniprops(‘Grapheme_Cluster_Break’); # OUTPUT: «(Other Extend Extend Extend Extend)␤»
 say ‘👨‍👩‍👧‍👦🏿’.uniprops(‘Grapheme_Cluster_Break’); # OUTPUT: «(E_Base_GAZ ZWJ E_Base_GAZ ZWJ E_Base_GAZ ZWJ E_Base_GAZ E_Modifier)␤»

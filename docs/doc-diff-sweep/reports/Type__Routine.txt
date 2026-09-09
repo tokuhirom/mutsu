@@ -1,8 +1,32 @@
 # doc-diff-harness report
-# stats: match=10  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=26  skipped-marker=6  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=2  error-mismatch=1  match=10  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=20  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=6  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Routine.rakudoc:58
+[1] error-mismatch  raku-doc/doc/Type/Routine.rakudoc:412
+--- program ---
+use Test;
+sub foo-test($value) is test-assertion {
+    is $value, 42, "is the value 42?";
+}
+foo-test(666);    # <-- error is reported on this line
+--- raku stderr (exit 1) ---
+# Failed test 'is the value 42?'
+# at /home/user/mutsu/tmp/ddh/prog-17007.raku line 5
+# expected: '42'
+#      got: '666'
+--- raku stdout ---
+not ok 1 - is the value 42?
+--- mutsu stdout (exit 1) ---
+not ok 1 - is the value 42?
+--- mutsu stderr ---
+# Failed test 'is the value 42?'
+# at /home/user/mutsu/tmp/ddh/prog-17007.raku line 5
+# expected: '42'
+#      got: '666'
+# You failed 1 test of 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Routine.rakudoc:58
 --- program ---
 multi foo ($, $) {};
 say &foo.multi;             # OUTPUT: «False␤»

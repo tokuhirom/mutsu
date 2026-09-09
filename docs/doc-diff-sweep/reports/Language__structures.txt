@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=17  matches-doc=0  mismatch=3  mutsu-crash=1  no-oracle=8  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=3
+# stats: error-match=2  error-mismatch=4  match=17  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=1  no-oracle=1  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=4
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Language/structures.rakudoc:233
@@ -17,7 +17,7 @@ say $Logger::get( "2018-05-28" );
 
 --- mutsu stderr ---
 No such method 'CALL-ME' for invocant of type 'Nil'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19112.raku line 6
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 6
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Language/structures.rakudoc:258
@@ -38,16 +38,92 @@ Hash+{Associative[Int,Int]}
 {3 => 4, thing => 3}
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/structures.rakudoc:108
+[3] error-mismatch  raku-doc/doc/Language/structures.rakudoc:405
 --- program ---
-say <a b c d>.Hash.kv # OUTPUT: «(c d a b)␤»
+my $fh = "/tmp/bar".IO.open;
+my $lines = $fh.lines;
+close $fh;
+say $lines[0];
+--- raku stderr (exit 1) ---
+Failed to open file /tmp/bar: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 2
 --- raku stdout ---
-(c d a b)
---- mutsu stdout (exit 0) ---
-(a b c d)
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Expected IO::Handle
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 3
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/structures.rakudoc:458
+[4] error-mismatch  raku-doc/doc/Language/structures.rakudoc:424
+--- program ---
+my $fh = "/tmp/bar".IO.open;
+my @lines = $fh.lines;
+close $fh;
+say @lines[0]; # no problem!
+--- raku stderr (exit 1) ---
+Failed to open file /tmp/bar: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Expected IO::Handle
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 3
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/structures.rakudoc:433
+--- program ---
+my $fh = "/tmp/bar".IO.open;
+my $lines = $fh.lines;
+say "Read $lines.elems() lines"; # reifying before closing handle
+close $fh;
+say $lines[0]; # no problem!
+--- raku stderr (exit 1) ---
+Failed to open file /tmp/bar: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+Read 1 lines
+--- mutsu stderr ---
+Expected IO::Handle
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 4
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/structures.rakudoc:442
+--- program ---
+my $fh = "/tmp/bar".IO.open;
+my $lines = eager $fh.lines; # Uses eager for reification.
+close $fh;
+say $lines[0];
+--- raku stderr (exit 1) ---
+Failed to open file /tmp/bar: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Expected IO::Handle
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17034.raku line 3
+
+==============================================================================
+[7] output-mismatch  raku-doc/doc/Language/structures.rakudoc:458
 --- program ---
 my $any-object = "random object";
 my $metadata = $any-object.HOW;

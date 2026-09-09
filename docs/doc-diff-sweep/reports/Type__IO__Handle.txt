@@ -1,8 +1,284 @@
 # doc-diff-harness report
-# stats: match=10  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=57  skipped-marker=5  skipped-nondet=2  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=11  match=10  matches-doc=0  mismatch=1  mutsu-accepts=2  mutsu-crash=0  no-oracle=42  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=5  skipped-nondet=2  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:959
+[1] mutsu-accepts  raku-doc/doc/Type/IO/Handle.rakudoc:139
+--- program ---
+my $fh = 'path/to/file'.IO.open;
+say "The file has {+$fh.comb: '♥', :close} ♥s in it";
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+The file has 0 ♥s in it
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:169
+--- program ---
+$*IN.get.say;              # Read one line from the standard input
+
+my $fh = open 'filename';
+$fh.get.say;               # Read one line from a file
+$fh.close;
+
+say get;                   # Read one line from $*ARGFILES
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/filename: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 3
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 4
+--- raku stdout ---
+Nil
+--- mutsu stdout (exit 1) ---
+Nil
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/filename': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 4
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:231
+--- program ---
+say IO::Handle.new; # IO::Handle<(Any)>(closed)
+say "foo".IO.open;  # IO::Handle<"foo".IO>(opened)
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/foo: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+IO::Handle<(IO)>(closed)
+--- mutsu stdout (exit 1) ---
+IO::Handle<>(closed)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/foo': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:376
+--- program ---
+say "The file contains ",
+  '50GB-file'.IO.open.lines.grep(*.contains: 'Raku').elems,
+  " lines that mention Raku";
+# OUTPUT: «The file contains 72 lines that mention Raku␤»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/50GB-file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/50GB-file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+==============================================================================
+[5] mutsu-accepts  raku-doc/doc/Type/IO/Handle.rakudoc:478
+--- program ---
+my $fh = 'path/to/file'.IO.open;
+$fh.split: '♥', :close; # Returns file content split on ♥
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:511
+--- program ---
+my $fh = 'path/to/file'.IO.open: :w;
+$fh.print: 'some text';
+$fh.close;
+--- raku stderr (exit 1) ---
+Earlier failures:
+ (HANDLED) Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Final error:
+ Cannot resolve caller print(Failure:U: Str:D); none of these signatures matches:
+    (Mu $:: *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:528
+--- program ---
+my $fh = 'path/to/file'.IO.open: :w, :nl-out("\r\n");
+$fh.print: "some text";
+$fh.print-nl; # prints \r\n
+$fh.close;
+--- raku stderr (exit 1) ---
+Earlier failures:
+ (HANDLED) Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Final error:
+ Cannot resolve caller print(Failure:U: Str:D); none of these signatures matches:
+    (Mu $:: *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[8] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:547
+--- program ---
+my $fh = open 'path/to/file', :w;
+$fh.printf: "The value is %d\n", 32;
+$fh.close;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[9] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:592
+--- program ---
+my $fh = 'path/to/file'.IO.open: :w;
+$fh.put: 'some text';
+$fh.close;
+--- raku stderr (exit 1) ---
+Earlier failures:
+ (HANDLED) Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Final error:
+ Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:
+    (Mu $:: *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:609
+--- program ---
+my $fh = open 'path/to/file', :w;
+$fh.say(Complex.new(3, 4));        # OUTPUT: «3+4i␤»
+$fh.close;
+--- raku stderr (exit 1) ---
+Earlier failures:
+ (HANDLED) Failed to open file /home/user/mutsu/tmp/ddh/run-644/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Final error:
+ Cannot resolve caller print(Failure:U: BOOTStr); none of these signatures matches:
+    (Mu $:: *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[11] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:761
+--- program ---
+say "foo".IO.open.Str; # OUTPUT: «foo␤»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/foo: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/foo': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+==============================================================================
+[12] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:775
+--- program ---
+given "foo/bar".IO.open(:w) {
+    .spurt: "I ♥ Raku!";
+    .close;
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-644/foo/bar: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-644/foo/bar': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+==============================================================================
+[13] error-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:785
+--- program ---
+do {
+    my $fh = open "path-to-file";
+    LEAVE close $fh;
+    # ... do stuff with the file
+}
+
+sub do-stuff-with-the-file (IO $path-to-file) {
+  my $fh = $path-to-file.open;
+
+  # stick a `try` on it, since this will get run even when the sub is
+  # called with wrong arguments, in which case the `$fh` will be an `Any`
+  LEAVE try close $fh;
+
+  # ... do stuff with the file
+}
+--- raku stderr (exit 1) ---
+Earlier failures:
+ (HANDLED) Failed to open file /home/user/mutsu/tmp/ddh/run-644/path-to-file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 2
+
+Final error:
+ Cannot resolve caller close(Failure:U); none of these signatures matches:
+    (IO::Handle:D $fh)
+    (Channel:D $channel)
+  in block  at /home/user/mutsu/tmp/ddh/prog-644.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Expected IO::Handle
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-644.raku line 1
+
+==============================================================================
+[14] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:959
 --- program ---
 class IO::Store is IO::Handle {
     has @.lines = [];

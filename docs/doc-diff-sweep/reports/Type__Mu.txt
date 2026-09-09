@@ -1,0 +1,16 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=30  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=2
+
+==============================================================================
+[1] mutsu-accepts  raku-doc/doc/Type/Mu.rakudoc:211
+--- program ---
+say Num.clone( :yes )
+# OUTPUT: «(exit code 1) Cannot set attribute values when cloning a type object␤  in block <unit>␤␤»
+--- raku stderr (exit 1) ---
+Cannot set attribute values when cloning a type object
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12829.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(Num)
+

@@ -1,8 +1,23 @@
 # doc-diff-harness report
-# stats: match=31  matches-doc=0  mismatch=4  mutsu-crash=0  no-oracle=79  skipped-marker=5  skipped-nondet=9  skipped-oracle-nondet=0
+# stats: error-match=3  error-mismatch=11  match=31  matches-doc=0  mismatch=4  mutsu-accepts=5  mutsu-crash=0  no-oracle=46  silent-crash=1  silent-match=13  silent-noise=0  skipped-marker=5  skipped-nondet=8  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:148
+[1] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:131
+--- program ---
+EVALFILE "foo.raku";
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-24557/foo.raku: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read foo.raku: No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:148
 --- program ---
 my $name = "Alice";
 
@@ -26,7 +41,59 @@ Hello, Alice
 Goodbye, Alice
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:473
+[3] mutsu-accepts  raku-doc/doc/Type/independent-routines.rakudoc:231
+--- program ---
+chdir         '/tmp'; # change $*CWD to '/tmp' and check its .d is True
+chdir :r, :w, '/tmp'; # … check its .r and .w are True
+chdir '/not-there';   # returns Failure
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/not-there': does not exist
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[4] mutsu-accepts  raku-doc/doc/Type/independent-routines.rakudoc:238
+--- program ---
+# WRONG! DO NOT DO THIS!
+my $*CWD = chdir '/tmp/';
+--- raku stderr (exit 1) ---
+No such method 'chdir' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[5] mutsu-accepts  raku-doc/doc/Type/independent-routines.rakudoc:246
+--- program ---
+PROCESS::<&chdir> = sub (IO() $path --> IO::Path:D) { }
+--- raku stderr (exit 1) ---
+Cannot assign to an immutable value
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[6] mutsu-accepts  raku-doc/doc/Type/independent-routines.rakudoc:263
+--- program ---
+&*chdir('/tmp');  # change $*CWD and process's current directory to '/tmp'
+&*chdir('/not-there'); # returns Failure
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/not-there': chdir failed: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[7] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:473
 --- program ---
 my $fh = open :w, '/tmp/some-file.txt';
 $fh.say: 'I ♥ writing Raku code';
@@ -45,7 +112,243 @@ I ♥ Raku
 I ♥  Rak
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:312
+[8] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:501
+--- program ---
+# read entire file as (Unicode) Str
+my $text_contents   = slurp "path/to/file";
+
+# read entire file as Latin1 Str
+my $text_contents   = slurp "path/to/file", enc => "latin1";
+
+# read entire file as Buf
+my $binary_contents = slurp "path/to/file", :bin;
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Redeclaration of symbol '$text_contents'.
+    at /home/user/mutsu/tmp/ddh/prog-24557.raku:5
+    ------> my $text_contents<HERE>   = slurp "path/to/file", enc => "latin
+Failed to open file /home/user/mutsu/tmp/ddh/run-24557/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to slurp 'path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+
+==============================================================================
+[9] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:538
+--- program ---
+# write directly to a file
+spurt 'path/to/file', 'default text, directly written';
+
+# write directly with a non-Unicode encoding
+spurt 'path/to/latin1_file', 'latin1 text: äöüß', :enc<latin1>;
+
+spurt 'file-that-already-exists', 'some text';           # overwrite file's contents:
+spurt 'file-that-already-exists', ' new text', :append;  # append to file's contents:
+say slurp 'file-that-already-exists';                    # OUTPUT: «some text new text␤»
+
+# fail when writing to a pre-existing file
+spurt 'file-that-already-exists', 'new text', :createonly;
+# OUTPUT: «Failed to open file /home/camelia/file-that-already-exists: file already exists …»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-24557/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to spurt 'path/to/file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:561
+--- program ---
+# create an empty file / truncate a file
+spurt 'path/to/file';
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-24557/path/to/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+spurt requires a content argument
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+
+==============================================================================
+[11] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:598
+--- program ---
+my $file = ‘--my arbitrary filename’;
+run ‘touch’, ‘--’, $file;  # RIGHT
+run <touch -->, $file;     # RIGHT
+
+run «touch -- "$file"»;    # RIGHT but WRONG if you forget quotes
+run «touch -- $file»;      # WRONG; touches ‘--my’, ‘arbitrary’ and ‘filename’
+run ‘touch’, $file;        # WRONG; error from `touch`
+run «touch "$file"»;       # WRONG; error from `touch`
+--- raku stderr (exit 1) ---
+touch: unrecognized option '--my arbitrary filename'
+Try 'touch --help' for more information.
+The spawned command 'touch' exited unsuccessfully (exit code: 1, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 7
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+touch: unrecognized option '--my arbitrary filename'
+Try 'touch --help' for more information.
+The spawned command 'touch --my arbitrary filename' exited unsuccessfully (exit code: 1, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 7
+
+==============================================================================
+[12] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:726
+--- program ---
+my $prod = "Ab-%x-42";
+my $cost = "30";
+sprintf("Product $prod; cost: \$%d", $cost).put;
+# OUTPUT: «Your printf-style directives specify 2 arguments, but 1 argument was supplied␤»
+          «  in block <unit> at <unknown file> line 1␤»
+--- raku stderr (exit 1) ---
+WARNINGS for /home/user/mutsu/tmp/ddh/prog-24557.raku:
+Useless use of constant value   in block <unit> at <unknown file> line 1␤ in sink context (lines 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5)
+Your printf-style directives specify 2 arguments, but 1 argument was
+supplied to format 'Product Ab-%x-42; cost: $%d'. Are you using an
+interpolated '$'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Your printf-style directives specify 2 arguments, but 1 argument was
+supplied to format 'Product Ab-%x-42; cost: $%d'.  Are you using an interpolated '$'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+
+==============================================================================
+[13] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:970
+--- program ---
+sprintf '<%.6d>', 1;         # OUTPUT: «<000001>␤»
+NYI sprintf '<%+.6d>', 1;    # OUTPUT: «<+000001>␤»
+NYI sprintf '<%-10.6d>', 1;  # OUTPUT: «<000001    >␤»
+sprintf '<%10.6d>', 1;       # OUTPUT: «<    000001>␤»
+NYI sprintf '<%010.6d>', 1;  # OUTPUT: «<    000001>␤»
+NYI sprintf '<%+10.6d>', 1;  # OUTPUT: «<   +000001>␤»
+sprintf '<%.6x>', 1;         # OUTPUT: «<000001>␤»
+sprintf '<%#.6x>', 1;        # OUTPUT: «<0x000001>␤»
+sprintf '<%-10.6x>', 1;      # OUTPUT: «<000001    >␤»
+sprintf '<%10.6x>', 1;       # OUTPUT: «<    000001>␤»
+sprintf '<%010.6x>', 1;      # OUTPUT: «<    000001>␤»
+sprintf '<%#10.6x>', 1;      # OUTPUT: «<  0x000001>␤»
+--- raku stderr (exit 1) ---
+<+000001> not yet implemented. Sorry.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Unknown function: NYI
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 2
+
+==============================================================================
+[14] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:994
+--- program ---
+sprintf '<%.6x>', 1;           # OUTPUT: «<000001>␤»
+sprintf '<%.*x>', 6, 1;        # OUTPUT: «<000001>␤»
+NYI sprintf '<%.*2$x>', 1, 6;  # OUTPUT: «<000001>␤»
+NYI sprintf '<%6.*2$x>', 1, 4; # OUTPUT: «<  0001>␤»
+--- raku stderr (exit 1) ---
+Directive %.*2$x> is not valid in sprintf format '<%.*2$x>'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Directive .*2 is not valid in sprintf format '<%.*2$x>'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+
+==============================================================================
+[15] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1062
+--- program ---
+sprintf "%2\$d %d\n",      12, 34;         # OUTPUT: «34 12␤␤»
+sprintf "%2\$d %d %d\n",   12, 34;         # OUTPUT: «34 12 34␤␤»
+sprintf "%3\$d %d %d\n",   12, 34, 56;     # OUTPUT: «56 12 34␤␤»
+NYI sprintf "%2\$*3\$d %d\n",  12, 34,  3; # OUTPUT: « 34 12␤␤»
+NYI sprintf "%*1\$.*f\n",       4,  5, 10; # OUTPUT: «5.0000␤␤»
+--- raku stderr (exit 1) ---
+Directive 2$*3$d %d is not valid in sprintf format '%2$*3$d %d '
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 4
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Directive *3 is not valid in sprintf format '%2$*3$d %d
+'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 4
+
+==============================================================================
+[16] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1071
+--- program ---
+NYI sprintf "%ld a big number", 4294967295;
+NYI sprintf "%%lld a bigger number", 4294967296;
+sprintf('%c', 97);                  # OUTPUT: «a␤»
+sprintf("%.2f", 1.969);             # OUTPUT: «1.97␤»
+sprintf("%+.3f", 3.141592);         # OUTPUT: «+3.142␤»
+sprintf('%2$d %1$d', 12, 34);       # OUTPUT: «34 12␤»
+sprintf("%x", 255);                 # OUTPUT: «ff␤»
+--- raku stderr (exit 1) ---
+Directive ld a big number is not valid in sprintf format '%ld a big
+number'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Directive l is not valid in sprintf format '%ld a big number'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+
+==============================================================================
+[17] error-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1376
+--- program ---
+my @a of Int = [1];
+say shift @a; # OUTPUT: «1␤»
+say shift @a; # ERROR: «Cannot shift from an empty Array[Int]␤»
+--- raku stderr (exit 1) ---
+Cannot shift from an empty Array[Int]
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+--- raku stdout ---
+1
+--- mutsu stdout (exit 1) ---
+1
+--- mutsu stderr ---
+Cannot shift from an empty Array
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 3
+
+==============================================================================
+[18] mutsu-error-on-silent-success  raku-doc/doc/Type/independent-routines.rakudoc:289
+--- program ---
+chmod 0o755, <myfile1  myfile2>; # make two files executable by the owner
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to chmod 'myfile1 myfile2': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 1
+
+==============================================================================
+[19] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:312
 --- program ---
 say indir("/tmp", {
     gather { take ".".IO }
@@ -60,7 +363,7 @@ say indir("/tmp", {
     gather { temp $*CWD = $cwd; take ".".IO }
 })».CWD; # OUTPUT: «(/tmp)␤»
 --- raku stdout ---
-(/home/user/mutsu/tmp/ddh/run-22818)
+(/home/user/mutsu/tmp/ddh/run-24557)
 (/tmp)
 (/tmp)
 --- mutsu stdout (exit 0) ---
@@ -69,7 +372,27 @@ say indir("/tmp", {
 ()
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1429
+[20] mutsu-accepts  raku-doc/doc/Type/independent-routines.rakudoc:339
+--- program ---
+say $*CWD;                   # OUTPUT: «"/home/camelia".IO␤»
+indir '/tmp', { say $*CWD }; # OUTPUT: «"/tmp".IO␤»
+say $*CWD;                   # OUTPUT: «"/home/camelia".IO␤»
+
+indir '/not-there', {;};     # returns Failure; path does not exist
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/not-there': does not exist
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24557.raku line 5
+--- raku stdout ---
+"/home/user/mutsu/tmp/ddh/run-24557".IO
+"/tmp".IO
+"/home/user/mutsu/tmp/ddh/run-24557".IO
+--- mutsu stdout (exit 0) ---
+"/home/user/mutsu/tmp/ddh/run-24557".IO
+"/tmp".IO
+"/home/user/mutsu/tmp/ddh/run-24557".IO
+
+==============================================================================
+[21] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1429
 --- program ---
 my %h = i => 0;
 append %h, i => (1, 42);

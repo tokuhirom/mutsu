@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=41  matches-doc=0  mismatch=5  mutsu-crash=0  no-oracle=42  skipped-marker=7  skipped-nondet=3  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=7  match=41  matches-doc=0  mismatch=5  mutsu-accepts=1  mutsu-crash=0  no-oracle=3  silent-crash=0  silent-match=31  silent-noise=0  skipped-marker=7  skipped-nondet=3  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:262
@@ -18,7 +18,85 @@ X::TypeCheck::Binding::Parameter ==> Calling f(Str) will never work with declare
   X::TypeCheck::Binding::Parameter: where constraint failed for parameter '@a'
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:35
+[2] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:362
+--- program ---
+ sub can-turn-into(Str $, Any:U $) {...}
+say can-turn-into("a string", 123);
+# OUTPUT: «Parameter '$type' of routine 'can-turn-into' must be a type object
+# of type 'Any', not an object instance of type 'Int'...»
+--- raku stderr (exit 1) ---
+Parameter '<anon>' of routine 'can-turn-into' must be a type object of
+type 'Any', not an object instance of type 'Int'. Did you forget a
+'multi'?
+  in sub can-turn-into at /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Calling can-turn-into(Str, Int) will never work with declared signature (Str $, Any:U $)
+  Invocant of method 'can-turn-into' must be a type object of type
+'Any', not an object instance of type 'Int'.  Did you forget a '.new'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Language/signatures.rakudoc:445
+--- program ---
+use v6.c;
+my Int:D $x .= new: 42;
+# OUTPUT: You cannot create an instance of this type (Int:D)
+# in block <unit> at -e line 1
+--- raku stderr (exit 1) ---
+You cannot create an instance of this type (Int:D)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:515
+--- program ---
+sub apply {...}
+say apply -> Int:D \x --> Int:D { 2 * x }, 3;  # OUTPUT: «6␤»
+say apply -> Int:D \x --> Int:D { x ** 3 }, 3; # OUTPUT: «27␤»
+--- raku stderr (exit 1) ---
+Too many positionals passed; expected 0 arguments but got 2
+  in sub apply at /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too many positionals passed; expected 0 arguments but got more
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:660
+--- program ---
+class Foo { }
+
+sub bar(Foo(Int) $x) { say $x }
+
+bar(3);
+# OUTPUT: «Impossible coercion from 'Int' into 'Foo': no acceptable coercion method found␤»
+--- raku stderr (exit 1) ---
+Impossible coercion from 'Int' into 'Foo': no acceptable coercion method found
+  in sub bar at /home/user/mutsu/tmp/ddh/prog-16281.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 5
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Calling bar(Int) will never work with declared signature (Foo(Int) $x)
+  Impossible coercion from 'Int' into 'Foo': no acceptable coercion method found
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 5
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:35
 --- program ---
 sub f(&c:(Int)) { }
 sub will-work(Int) { }
@@ -37,7 +115,7 @@ X::TypeCheck::Binding::Parameter: Calling f(Sub) will never work with declared s
   X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&c'; expected Callable with matching signature, got Sub
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:274
+[7] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:274
 --- program ---
 sub f(Int :$i){};
 f :i<forty-two>;
@@ -51,7 +129,7 @@ X::TypeCheck::Argument ==> Calling f() will never work with declared signature (
   Type check failed in binding to parameter '$i'; expected Int but got Str ("forty-two")
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:299
+[8] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:299
 --- program ---
 sub limit-lines(Str $s, Int $limit) {
     my @lines = $s.lines;
@@ -84,7 +162,7 @@ X::Multi::NoMatch: Cannot resolve caller lines(Str:U: ); none of these signature
 a
 
 ==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:329
+[9] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:329
 --- program ---
 sub limit-lines(Str:D $s, Int $limit) { };
 say limit-lines Str, 3;
@@ -98,4 +176,99 @@ type 'Str', not a type object of type 'Str'. Did you forget a '.new'?
 X::Parameter::InvalidConcreteness--Calling limit-lines(Package, Int) will never work with declared signature (Str:D $s, Int $limit)
   Invocant of method 'limit-lines' must be an object instance of type
 'Str', not a type object of type 'Str'.  Did you forget a '.new'?
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:703
+--- program ---
+sub accum( ::T \a, T(Cool) \b ) { a += b };
+
+my $t = 3;        # Int
+accum( $t, 5/3 ); # OUTPUT: «4␤»
+
+my $t = 3.0;      # Rat
+accum( $t, 5/3 ); # OUTPUT: «4.666667␤»
+
+my $t = 3.0;      # Rat, and the second parameter an Array
+accum ( $t, ["x","y"] ); # OUTPUT: «5.0»
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Redeclaration of symbol '$t'.
+    at /home/user/mutsu/tmp/ddh/prog-16281.raku:6
+    ------> my $t<HERE> = 3.0;      # Rat
+    Redeclaration of symbol '$t'.
+    at /home/user/mutsu/tmp/ddh/prog-16281.raku:9
+    ------> my $t<HERE> = 3.0;      # Rat, and the second param
+Too few positionals passed to 'accum'; expected 2 arguments but got 1
+  in sub accum at /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 10
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too few positionals passed; expected 2 arguments but got 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 10
+
+==============================================================================
+[11] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:1183
+--- program ---
+sub d(|cap(Int, Str, *%)) { put "called with {cap.raku}" };
+d(41);
+# OUTPUT: «Too few positionals passed to 'd'; expected 2 arguments but got 1 in sub-signature or parameter cap␤ ...»
+--- raku stderr (exit 1) ---
+Too few positionals passed to 'd'; expected 2 arguments but got 1 in sub-signature or parameter cap
+  in sub d at /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Calling d(Int) will never work with declared signature (\cap)
+  Too few positional arguments in sub-signature binding
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+
+==============================================================================
+[12] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:1202
+--- program ---
+multi foo (;; Numeric $a) { say "numeric" };
+multi foo (;; Int     $a) { say "int" };
+foo(42);
+# OUTPUT: «Ambiguous call to 'foo(Int)'; these signatures all match:
+#           (;; Numeric $a) from <unknown file> line 1
+#           (;; Int $a) from <unknown file> line 1␤...»
+# (Without the ;; the output would have been «int».)
+--- raku stderr (exit 1) ---
+Ambiguous call to 'foo(Int)'; these signatures all match:
+  (;; Numeric $a) from /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  (;; Int $a) from /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Ambiguous call to foo(Int); these signatures all match: (;; Numeric $a), (;; Int $a)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 3
+
+==============================================================================
+[13] error-mismatch  raku-doc/doc/Language/signatures.rakudoc:1223
+--- program ---
+multi baz(Int $i) { say "just $i" };
+multi baz(Int $i;; Str :$s) { say "both $i and ｢$s｣" };
+baz(42);
+# OUTPUT: «Ambiguous call to 'baz(Int)'; these signatures all match:
+#           (Int $i) from <tmp> line 1␤  (Int $i;; Str :$s) from <tmp> line 1␤ ...»
+--- raku stderr (exit 1) ---
+Ambiguous call to 'baz(Int)'; these signatures all match:
+  (Int $i) from /home/user/mutsu/tmp/ddh/prog-16281.raku line 1
+  (Int $i;; Str :$s) from /home/user/mutsu/tmp/ddh/prog-16281.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Ambiguous call to baz(Int); these signatures all match: (Int $i), (Int $i;; Str :$s)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16281.raku line 3
 

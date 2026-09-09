@@ -1,8 +1,41 @@
 # doc-diff-harness report
-# stats: match=9  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=25  skipped-marker=8  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=5  error-mismatch=1  match=9  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=11  silent-crash=0  silent-match=8  silent-noise=0  skipped-marker=8  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/classtut.rakudoc:805
+[1] error-mismatch  raku-doc/doc/Language/classtut.rakudoc:744
+--- program ---
+class Programmer {}; class Cook {}
+class GeekCook is Programmer is Cook {
+    method new( *%params ) {
+        push( %params<cookbooks>, "Cooking for Geeks" );
+        return self.bless(|%params);
+    }
+}
+
+my $geek = GeekCook.new(
+    books           => 'Learning Raku',
+    utensils        => ('stainless steel pot', 'knife', 'calibrated oven'),
+    favorite_editor => 'MacVim',
+    known_languages => <Raku>
+);
+
+$geek.cook('pizza');
+$geek.code_to_solve('P =? NP');
+--- raku stderr (exit 1) ---
+No such method 'cook' for invocant of type 'GeekCook'. Did you mean
+'Bool'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2376.raku line 16
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'cook' for invocant of type 'GeekCook'
+Did you mean 'Bool'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2376.raku line 16
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/classtut.rakudoc:805
 --- program ---
 class Programmer {}; class Employee {}; class GeekCook {}
 my Programmer $o .= new;

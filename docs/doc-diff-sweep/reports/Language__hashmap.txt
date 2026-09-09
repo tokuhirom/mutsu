@@ -1,0 +1,37 @@
+# doc-diff-harness report
+# stats: error-match=2  error-mismatch=2  match=19  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=12  silent-noise=0  skipped-marker=3  skipped-nondet=6  skipped-oracle-nondet=1
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/hashmap.rakudoc:205
+--- program ---
+my %h =  e => f => 'g';
+%h<e><q> = 'k';
+# OUTPUT: «Pair␤Cannot modify an immutable Str (Nil)␤  in block <unit>»
+--- raku stderr (exit 1) ---
+Cannot modify an immutable Nil value
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6928.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Type Pair does not support associative indexing.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6928.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/hashmap.rakudoc:174
+--- program ---
+my %h = <a b c>; # OUTPUT: «hash initializer expected...␤»
+--- raku stderr (exit 1) ---
+Odd number of elements found where hash initializer expected:
+Found 3 (implicit) elements:
+Last element seen: "c"
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6928.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Odd number of elements found where hash initializer expected: found 3 element(s); last element seen: c
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6928.raku line 1
+

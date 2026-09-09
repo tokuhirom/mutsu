@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=15  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=13  silent-crash=1  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Metamodel/Primitives.rakudoc:18
@@ -17,4 +17,29 @@ X::Method::NotFound: No such method 'why' for invocant of type 'why oh why?'. Di
 'WHO'?
 --- mutsu stdout (exit 0) ---
 X::Method::NotFound: No such method 'install_method_cache' for Metamodel::Primitives
+
+==============================================================================
+[2] mutsu-error-on-silent-success  raku-doc/doc/Type/Metamodel/Primitives.rakudoc:31
+--- program ---
+package Cache {
+    our sub parameterize(+args) is raw {
+        Metamodel::Primitives.parameterize_type: $?PACKAGE, args
+    }
+
+    sub noop(Mu, Mu \args) is raw {
+        args
+    }
+
+    BEGIN Metamodel::Primitives.set_parameterizer: $?PACKAGE, &noop;
+}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+An exception occurred while evaluating a CHECK
+Exception details:
+  X::Method::NotFound: No such method 'set_parameterizer' for Metamodel::Primitives
 

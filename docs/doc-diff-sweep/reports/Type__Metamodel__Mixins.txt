@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=1  matches-doc=0  mismatch=0  mutsu-crash=2  no-oracle=9  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=1  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=2  no-oracle=8  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:18
@@ -43,7 +43,7 @@ True
 True
 --- mutsu stderr ---
 No matching candidate found for the parametric role
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11256.raku line 25
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11420.raku line 25
 
 ==============================================================================
 [2] mutsu-error  raku-doc/doc/Type/Metamodel/Mixins.rakudoc:63
@@ -92,6 +92,6 @@ True
 True
 --- mutsu stderr ---
 P6opaque: no such attribute '$!vandalism' on type Billboard::Vandalized in a Billboard when trying to get a value
-  in sub Str at /home/user/mutsu/tmp/ddh/prog-11256.raku line 32
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11256.raku line 32
+  in sub Str at /home/user/mutsu/tmp/ddh/prog-11420.raku line 32
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11420.raku line 32
 

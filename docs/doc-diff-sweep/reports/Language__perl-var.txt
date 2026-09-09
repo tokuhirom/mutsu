@@ -1,8 +1,27 @@
 # doc-diff-harness report
-# stats: match=1  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=4  skipped-marker=3  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=1  match=1  matches-doc=0  mismatch=2  mutsu-accepts=1  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=3  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:198
+[1] mutsu-accepts  raku-doc/doc/Language/perl-var.rakudoc:110
+--- program ---
+sort { $^a cmp $^z }, 1, 5, 6, 4, 2, 3;
+# OUTPUT: «(1 2 3 4 5 6)␤»
+sort { $^g cmp $^a }, 1, 5, 6, 4, 2, 3;
+# OUTPUT: «(6 5 4 3 2 1)␤»
+for 1..9 { say $^c, $^a, $^b; last }
+# OUTPUT: «312␤»
+--- raku stderr (exit 1) ---
+Ambiguous call to 'sort(Block, Int, Int, Int, Int, Int, Int)'; these signatures all match:
+  (&by, +values, *%_) from SETTING::src/core.c/Any-iterable-methods.rakumod line 1701
+  (+values, *%_) from SETTING::src/core.c/Any-iterable-methods.rakumod line 1703
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+312
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:198
 --- program ---
 for $*KERNEL, $*DISTRO, $*VM -> $what {
     say $what.^name;
@@ -33,7 +52,29 @@ VM
 release 0.1.0 named mutsu by github.com/tokuhirom
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:154
+[3] error-mismatch  raku-doc/doc/Language/perl-var.rakudoc:397
+--- program ---
+for "foo".IO.lines.kv -> $n, $line {
+    say "{$n + 1}: $line"
+}
+# OUTPUT:
+# 1: a
+# 2: b
+# 3: c
+# 4: d
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-13258/foo: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'foo': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13258.raku line 1
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:154
 --- program ---
 # Print out a list of compunit repositories
 .say for $*REPO.repo-chain;

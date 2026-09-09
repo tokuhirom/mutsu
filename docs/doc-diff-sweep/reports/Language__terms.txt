@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=5  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=6  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=10  skipped-nondet=3  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/terms.rakudoc:343
+--- program ---
+constant %foo := :{:42foo};
+constant \foo = 42;
+constant = 'anon';
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Runtime error: X::Syntax::Missing: Missing initializer on constant declaration
+

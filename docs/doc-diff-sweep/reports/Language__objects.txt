@@ -1,8 +1,54 @@
 # doc-diff-harness report
-# stats: match=37  matches-doc=0  mismatch=5  mutsu-crash=0  no-oracle=29  skipped-marker=4  skipped-nondet=3  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=1  match=37  matches-doc=0  mismatch=5  mutsu-accepts=1  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=23  silent-noise=0  skipped-marker=4  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/objects.rakudoc:505
+[1] mutsu-accepts  raku-doc/doc/Language/objects.rakudoc:48
+--- program ---
+my $formatted-text;
+my @words = "Abe", "Lincoln";
+@words.push("said", $formatted-text.comb(/\w+/));
+say @words;
+# OUTPUT: «[Abe Lincoln said (Fourscore and seven years ago)]␤»
+--- raku stderr (exit 1) ---
+No such method 'comb' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+[Abe Lincoln said (Any)]
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/objects.rakudoc:302
+--- program ---
+class Journey {}
+# Create a new instance of the class.
+my $vacation = Journey.new(
+    origin      => 'Sweden',
+    status      => 'Requested'
+);
+
+# Use a setter accessor on a read/write attribute, then a getter to read it,
+# then assign Nil to reset the default.
+$vacation.destination = 'San Francisco';
+say $vacation.destination;    # OUTPUT: «San Francisco␤»
+$vacation.destination = Nil;
+say $vacation.destination;    # OUTPUT: «Orlando␤»
+
+# Try to change a built private attribute later.
+try { $vacation.status = 'Booked'; }  #ERROR
+--- raku stderr (exit 1) ---
+No such method 'destination' for invocant of type 'Journey'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 10
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No matching candidates for method: destination
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10546.raku line 10
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/objects.rakudoc:505
 --- program ---
 class Pizza {
     has $!radius = 42;
@@ -40,7 +86,7 @@ Invocant of method 'get-radius' must be an object instance of type
 'Pizza', not a type object of type 'Pizza'.  Did you forget a '.new'?
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/objects.rakudoc:561
+[4] output-mismatch  raku-doc/doc/Language/objects.rakudoc:561
 --- program ---
 class C {
     method g()            { 42     }
@@ -63,7 +109,7 @@ Invocant of method 'f' must be a type object of type
 'C', not an object instance of type 'C'.  Did you forget a '.new'?
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1067
+[5] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1067
 --- program ---
 class Str-with-ID is Str {
     my $counter = 0;
@@ -87,7 +133,7 @@ say "$enriched-str, {$enriched-str.^name}, {$enriched-str.ID}";
 Str-with-ID(), Str-with-ID, 1
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1397
+[6] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1397
 --- program ---
 role BinaryTree[::Type] {
     has BinaryTree[Type] $.left;
@@ -146,7 +192,7 @@ $t.visit-postorder(&say);   # OUTPUT: «4␤6␤5␤»
 5
 
 ==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1457
+[7] output-mismatch  raku-doc/doc/Language/objects.rakudoc:1457
 --- program ---
 role R { method Str() {'hidden!'} };
 my $i = 2 but R;

@@ -1,0 +1,56 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=2  match=4  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=3  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Grammar.rakudoc:64
+--- program ---
+grammar RepeatChar {}
+say RepeatChar.parse('bbbbbb', :rule('start'), :args(\('b')), :pos(4)).Str;
+# OUTPUT: «bb␤»
+--- raku stderr (exit 1) ---
+No such method 'start' for invocant of type 'RepeatChar'. Did you mean
+any of these: 'STR', 'Str', 'sort', 'sqrt'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 2
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/Grammar.rakudoc:112
+--- program ---
+grammar Identifiers {
+    token TOP        { [<identifier><.ws>]+ }
+    token identifier { <initial> <rest>* }
+    token initial    { <+myletter +[_]> }
+    token rest       { <+myletter +mynumber +[_]> }
+    token myletter   { <[A..Za..z]> }
+    token mynumber   { <[0..9]> }
+}
+
+say Identifiers.parsefile('users.txt', :enc('UTF-8'))
+    .Str.trim.subst(/\n/, ',', :g);
+
+# users.txt :
+# TimToady
+# lizmat
+# jnthn
+# moritz
+# zoffixznet
+# MasterDuke17
+
+# OUTPUT: «TimToady,lizmat,jnthn,moritz,zoffixznet,MasterDuke17␤»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-32365/users.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 10
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32365.raku line 10
+

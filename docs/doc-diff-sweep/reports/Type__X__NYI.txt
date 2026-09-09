@@ -1,0 +1,31 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/X/NYI.rakudoc:32
+--- program ---
+class Nothing {
+    method ventured( $sub, **@args) {
+        X::NYI.new( feature => &?ROUTINE.name,
+                    did-you-mean => "gained",
+                    workaround => "Implement it yourself" ).throw;
+    }
+}
+
+my $nothing = Nothing.new;
+$nothing.ventured("Nothing", "Gained");
+--- raku stderr (exit 1) ---
+ventured not yet implemented. Sorry.
+Did you mean: gained?
+Workaround: Implement it yourself
+  in method ventured at /home/user/mutsu/tmp/ddh/prog-22542.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22542.raku line 10
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+ventured not yet implemented. Sorry.
+  in sub ventured at /home/user/mutsu/tmp/ddh/prog-22542.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22542.raku line 10
+

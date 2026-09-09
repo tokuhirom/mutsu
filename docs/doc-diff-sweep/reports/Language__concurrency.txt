@@ -1,8 +1,30 @@
 # doc-diff-harness report
-# stats: match=15  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=14  skipped-marker=0  skipped-nondet=18  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=1  match=15  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=10  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=18  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:85
+[1] error-mismatch  raku-doc/doc/Language/concurrency.rakudoc:439
+--- program ---
+my $supply; class X::MyApp::Error is Exception {}
+$supply.tap: { ... },
+    done => { say 'Job is done.' },
+    quit => {
+        when X::MyApp::Error { say "App Error: ", $_.message }
+    };
+--- raku stderr (exit 1) ---
+No such method 'tap' for invocant of type 'Any'. Did you mean any of
+these: 'Map', 'map'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'tap' for invocant of type 'Any'
+Did you mean 'map'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:85
 --- program ---
 my $promise1 = Promise.new();
 my $promise2 = $promise1.then(-> $v { say "Handled but : "; say $v.result});
@@ -12,30 +34,30 @@ say $promise2.cause;        # OUTPUT: «Handled but : ␤First Result␤»
 --- raku stdout ---
 Handled but : 
 Tried to get the result of a broken Promise
-  in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
+  in block  at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
 
 Original exception:
     First Result
-      in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
+      in block  at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
 --- mutsu stdout (exit 0) ---
 Handled but : 
 Tried to get the result of a broken Promise
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
 
 Original exception:
     First Result
-      in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
+      in block <unit> at /home/user/mutsu/tmp/ddh/prog-2419.raku line 2
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:124
+[3] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:124
 --- program ---
 my $promise = Promise.start({ die "Broken Promise" });
 try $promise.result;
 say $promise.cause;
 --- raku stdout ---
 Broken Promise
-  in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 1
+  in block  at /home/user/mutsu/tmp/ddh/prog-2419.raku line 1
 --- mutsu stdout (exit 0) ---
 Broken Promise
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2419.raku line 1
 

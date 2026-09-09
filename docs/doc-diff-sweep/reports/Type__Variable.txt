@@ -1,0 +1,42 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=3  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=3  silent-crash=1  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-accepts  raku-doc/doc/Type/Variable.rakudoc:76
+--- program ---
+sub introspect() {
+    say $*x;
+}
+{
+    my $*x = 42;
+    introspect();  # OUTPUT: «42␤»
+}
+{
+    my $x = 41;    # not dynamic
+    introspect();  # dies with an exception of X::Dynamic::NotFound
+}
+--- raku stderr (exit 1) ---
+Dynamic variable $*x not found
+  in sub introspect at /home/user/mutsu/tmp/ddh/prog-20093.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20093.raku line 10
+--- raku stdout ---
+42
+--- mutsu stdout (exit 0) ---
+42
+Nil
+
+==============================================================================
+[2] mutsu-error-on-silent-success  raku-doc/doc/Type/Variable.rakudoc:104
+--- program ---
+constant \T = Int;
+my $i of T = 42;
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Package 'T' is insufficiently type-like to qualify a variable.  Did you mean 'class'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20093.raku line 2
+

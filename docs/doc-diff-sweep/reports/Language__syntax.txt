@@ -1,8 +1,28 @@
 # doc-diff-harness report
-# stats: match=41  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=37  skipped-marker=21  skipped-nondet=3  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=41  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=12  silent-crash=1  silent-match=23  silent-noise=0  skipped-marker=21  skipped-nondet=3  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/syntax.rakudoc:763
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/syntax.rakudoc:307
+--- program ---
+infix:<+>                 # the official name of the operator in $a + $b
+infix:<*>                 # the official name of the operator in $a * $b
+infix:«<=»                # the official name of the operator in $a <= $b
+--- raku stderr (exit 0) ---
+WARNINGS for /home/user/mutsu/tmp/ddh/prog-19010.raku:
+Useless use of "infix:<+>                 # the official name of the operator in $a + $b\ninfix:<*>                 # the official name of the operator in $a * $b\ninfix:«<=»                # the official name of the operator in $a <= $b" in expression "infix:<+>                 # the official name of the operator in $a + $b\ninfix:<*>                 # the official name of the operator in $a * $b\ninfix:«<=»                # the official name of the operator in $a <= $b" in sink context (line 1)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-19010.raku
+Confused. expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...
+at /home/user/mutsu/tmp/ddh/prog-19010.raku:1
+------>infix:<+>                 # the official name of the operator in $a + $b
+       ^
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/syntax.rakudoc:763
 --- program ---
 say %( a => 3, b => 23, :foo, :dog<cat>, "french", "fries" );
 # OUTPUT: «a => 3, b => 23, dog => cat, foo => True, french => fries␤»
@@ -15,4 +35,37 @@ a foo
 --- mutsu stdout (exit 0) ---
 {a => 3, b => 23, dog => cat, foo => True, french => fries}
 foo a
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Language/syntax.rakudoc:791
+--- program ---
+my %hash;                    # Hash
+my %hash is Hash;            # explicit Hash
+my %map is Map;              # Map
+my %stash is Stash;          # Stash
+
+my %quant-hash is QuantHash; # QuantHash
+
+my %setty is Setty;          # Setty
+my %set is Set;              # Set
+my %set-hash is SetHash;     # SetHash
+
+my %baggy is Baggy;          # Baggy
+my %bag is Bag;              # Bag
+my %bag-hash is BagHash;     # BagHash
+
+my %mixy is Mixy;            # Mixy
+my %mix is Mix;              # Mix
+my %mix-hash is MixHash;     # MixHash
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Redeclaration of symbol '%hash'.
+    at /home/user/mutsu/tmp/ddh/prog-19010.raku:2
+    ------> my %hash is Hash<HERE>;            # explicit Hash
+P6opaque: no such attribute '$!elems' on type QuantHash in a QuantHash when trying to bind a value
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19010.raku line 6
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
 

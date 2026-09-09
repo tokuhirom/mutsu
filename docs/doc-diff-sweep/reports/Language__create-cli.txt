@@ -1,0 +1,183 @@
+# doc-diff-harness report
+# stats: error-match=1  error-mismatch=3  match=4  matches-doc=0  mismatch=0  mutsu-accepts=4  mutsu-crash=0  no-oracle=3  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=21  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:122
+--- program ---
+# inside "frobnicate.raku"
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',
+  Int  :$length = 24,
+  Bool :$verbose
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+24
+file.dat
+Verbosity off
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:172
+--- program ---
+# inside "frobnicate.raku"
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',  #= an existing file to frobnicate
+  Int  :$length = 24,                     #= length needed for frobnication
+  Bool :$verbose,                         #= required verbosity
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+  
+    [<file>]          an existing file to frobnicate [default: 'file.dat']
+    --length[=Int]    length needed for frobnication [default: 24]
+    --verbose         required verbosity
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+24
+file.dat
+Verbosity off
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:273
+--- program ---
+sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',  #= an existing file to frobnicate
+  Int  :l(:$length) = 24,                 #= length needed for frobnication
+  Bool :v(:$verbose),                     #= required verbosity
+) {
+    say $length if $length.defined;
+    say $file   if $file.defined;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku [-l|--length[=Int]] [-v|--verbose] [<file>]
+  
+    [<file>]             an existing file to frobnicate [default: 'file.dat']
+    -l|--length[=Int]    length needed for frobnication [default: 24]
+    -v|--verbose         required verbosity
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+24
+file.dat
+Verbosity off
+
+==============================================================================
+[4] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:481
+--- program ---
+unit sub MAIN(
+  Str   $file where *.IO.f = 'file.dat',
+  Int  :$length = 24,
+  Bool :$verbose,
+);  # <- note semicolon here
+
+say $length if $length.defined;
+say $file   if $file.defined;
+say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+# rest of script is part of MAIN
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+24
+file.dat
+Verbosity off
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:611
+--- program ---
+class Hero {
+    has @!inventory;
+    has Str $.name;
+    submethod BUILD( :$name, :@inventory ) {
+        $!name = $name;
+        @!inventory = @inventory
+    }
+}
+
+sub new-main($name, *@stuff ) {
+    Hero.new(:name($name), :inventory(@stuff) ).raku.say
+}
+
+RUN-MAIN( &new-main, Nil );
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku <name> [<stuff> ...]
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:201
+--- program ---
+subset name of Any where Str|True;
+subset port of Str;
+multi MAIN(
+    $file,
+    name :$profile,    #= Write profile information to a file
+    port :$debug-port, #= Listen for debugger connections on the specified port
+    Bool :v($verbose), #= Display verbose output
+
+) {}
+multi MAIN("--process-files", *@images) {}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku [--profile[=name]] [--debug-port=<port>] [-v] <file>
+  /home/user/mutsu/tmp/ddh/prog-3376.raku --process-files [<images> ...]
+  
+    --profile[=name]       Write profile information to a file
+    --debug-port=<port>    Listen for debugger connections on the specified port
+    -v                     Display verbose output
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku <file> [--profile[=name]] [--debug-port[=port]] [--v]
+  /home/user/mutsu/tmp/ddh/prog-3376.raku --process-files [<images>...]
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:355
+--- program ---
+my %*SUB-MAIN-OPTS =
+  :named-anywhere,             # allow named variables at any location
+  :bundling,                   # allow bundling of named arguments
+  :coerce-allomorphs-to(Int),  # coerce allomorphic arguments to given type
+  :allow-no,                   # allow --no-foo as alternative to --/foo
+  :numeric-suffix-as-value,    # allow -j2 as alternative to --j=2
+;
+sub MAIN ($a, $b, :$c, :$d) {
+    say "Accepted!"
+}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku <a> <b> [-c[=Any]] [-d[=Any]]
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-3376.raku <a> <b> [--c=<value>] [--d=<value>]
+

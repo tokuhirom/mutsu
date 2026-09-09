@@ -1,0 +1,32 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=5  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=14  silent-crash=1  silent-match=2  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Metamodel/EnumHOW.rakudoc:39
+--- program ---
+BEGIN {
+    my constant Error = Metamodel::EnumHOW.new_type: :name<Error>, :base_type(Int);
+    Error.^add_role: Enumeration;
+    Error.^add_role: NumericEnumeration;
+    Error.^compose;
+    for <Warning Failure Exception Sorrow Panic>.kv -> Int $v, Str $k {
+        # Note: Enumeration.pred and .succ will not work when adding enum
+        # values as pairs. They should be instances of the enum itself, but
+        # this isn't possible to do without nqp.
+        Error.^add_enum_value: $k => $v;
+        OUR::{$k} := Error.^enum_from_value: $v;
+    }
+    Error.^compose_values;
+    OUR::<Error> := Error;
+}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+An exception occurred while evaluating a CHECK
+Exception details:
+  No such method 'add_role' for invocant of type 'Perl6::Metamodel::EnumHOW'
+

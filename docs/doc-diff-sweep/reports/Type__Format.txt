@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=4  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=5  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=4  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=1  no-oracle=4  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Format.rakudoc:58
@@ -13,5 +13,5 @@ say $d.directives;              # OUTPUT: «(d x s)␤»
 
 --- mutsu stderr ---
 No such method 'directives' for invocant of type 'Format'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32624.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32170.raku line 3
 

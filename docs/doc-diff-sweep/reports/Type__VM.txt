@@ -1,0 +1,17 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/VM.rakudoc:7
+--- program ---
+class VM does Systemic { }
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::InvalidType: Invalid typename 'Systemic'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19940.raku line 1
+

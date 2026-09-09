@@ -1,8 +1,50 @@
 # doc-diff-harness report
-# stats: match=29  matches-doc=0  mismatch=3  mutsu-crash=0  no-oracle=13  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=3  match=29  matches-doc=0  mismatch=3  mutsu-accepts=2  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:595
+[1] error-mismatch  raku-doc/doc/Language/numerics.rakudoc:334
+--- program ---
+say 0/0;
+# OUTPUT:
+# Attempt to divide by zero using div
+#  in block <unit> at -e line 1
+--- raku stderr (exit 1) ---
+Attempt to divide by zero when coercing Rational to Str
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Attempt to divide 0 by zero
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/numerics.rakudoc:579
+--- program ---
+my int $x = 2¹⁰⁰;
+# OUTPUT:
+# Cannot unbox 101 bit wide bigint into native integer
+#  in block <unit> at -e line 1
+
+sub f(int $x) { $x }; say f 2⁶⁴
+# OUTPUT:
+# Cannot unbox 65 bit wide bigint into native integer
+#   in sub f at -e line 1
+#   in block <unit> at -e line 1
+--- raku stderr (exit 1) ---
+Cannot unbox 101 bit wide bigint into native integer. Did you mix int and Int or literals?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot unbox 101 bit wide bigint into native integer
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 1
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:595
 --- program ---
 my int $x = 2⁶³-1;
 say $x;             # OUTPUT: «9223372036854775807␤»
@@ -23,7 +65,7 @@ say $x -= 100;      # OUTPUT: «156␤»
 156
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:609
+[4] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:609
 --- program ---
 say Buf.new(1000, 2000, 3000).List; # OUTPUT: «(232 208 184)␤»
 say my uint8 @a = 1000, 2000, 3000; # OUTPUT: «232 208 184␤»
@@ -35,7 +77,64 @@ say my uint8 @a = 1000, 2000, 3000; # OUTPUT: «232 208 184␤»
 [1000 2000 3000]
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:751
+[5] mutsu-accepts  raku-doc/doc/Language/numerics.rakudoc:678
+--- program ---
+multi foo(int   $x) { say "int" }
+multi foo(int32 $x) { say "int32" }
+foo my int $x = 42;
+# OUTPUT:
+# Ambiguous call to 'foo(Int)'; these signatures all match:
+# :(int $x)
+# :(int32 $x)
+--- raku stderr (exit 1) ---
+Ambiguous call to 'foo(Int)'; these signatures all match:
+  (int $x) from /home/user/mutsu/tmp/ddh/prog-10187.raku line 1
+  (int32 $x) from /home/user/mutsu/tmp/ddh/prog-10187.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+int
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/numerics.rakudoc:694
+--- program ---
+-> int {}( 42 );            # OK; auto-unboxing
+-> int {}( 2¹⁰⁰ );          # Too large; exception
+-> Int {}( 2¹⁰⁰ );          # OK; non-native parameter
+-> Int {}( my int $ = 42 ); # OK; auto-boxing
+--- raku stderr (exit 1) ---
+Cannot unbox 101 bit wide bigint into native integer. Did you mix int and Int or literals?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot unbox 101 bit wide bigint into native integer
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 2
+
+==============================================================================
+[7] mutsu-accepts  raku-doc/doc/Language/numerics.rakudoc:716
+--- program ---
+multi f(int $x) { $x }
+my $x = 2;
+say f $x;
+# OUTPUT:
+# Cannot resolve caller f(Int); none of these signatures match:
+#     (int $x)
+#   in block <unit> at -e line 1
+--- raku stderr (exit 1) ---
+Cannot resolve caller f(Int:D); none of these signatures matches:
+    (int $x)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10187.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+2
+
+==============================================================================
+[8] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:751
 --- program ---
 # !!WRONG!! Might be non-atomic on some systems
 my int $x;

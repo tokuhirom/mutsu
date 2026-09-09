@@ -1,0 +1,15 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=0  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=2  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-accepts  raku-doc/doc/Type/X/IO/Chdir.rakudoc:14
+--- program ---
+chdir '/home/other'
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/home/other': does not exist
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22197.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+

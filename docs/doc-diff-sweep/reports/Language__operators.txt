@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: error-match=2  error-mismatch=1  match=167  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=172  silent-crash=0  silent-match=27  silent-noise=0  skipped-marker=4  skipped-nondet=5  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/operators.rakudoc:1014
+--- program ---
+1.i # No such method 'i' for invocant of type 'Int'
+--- raku stderr (exit 1) ---
+No such method 'i' for invocant of type 'Int'. Did you mean 'IO'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10584.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'i' for invocant of type 'Int'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10584.raku line 1
+

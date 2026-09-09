@@ -1,8 +1,22 @@
 # doc-diff-harness report
-# stats: match=67  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=75  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=67  matches-doc=0  mismatch=1  mutsu-accepts=2  mutsu-crash=0  no-oracle=63  silent-crash=0  silent-match=10  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Str.rakudoc:647
+[1] mutsu-accepts  raku-doc/doc/Type/Str.rakudoc:1119
+--- program ---
+'b0'.pred;           # OUTPUT: «a9»
+'a0'.pred;           # OUTPUT: Failure
+'img002.png'.pred;   # OUTPUT: «img001.png»
+--- raku stderr (exit 1) ---
+Decrement out of range
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18668.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Str.rakudoc:647
 --- program ---
 say "abc".comb.raku;                 # OUTPUT: «("a", "b", "c").Seq␤»
 say "abc".comb(:match).raku;         # OUTPUT: «(｢a｣ ｢b｣ ｢c｣)␤»
@@ -33,4 +47,41 @@ say comb(/.<(.)>/, "<>[]()").raku;   # OUTPUT: «(">", "]", ")").Seq␤»
 ("a", "b").Seq
 ("a;b",).Seq
 ("<>", "[]", "()").Seq
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Type/Str.rakudoc:677
+--- program ---
+say "abcde".comb(3 => -2);             # OUTPUT: «(abc bcd cde)␤»
+say "abcde".comb(3 => -2, :partial);   # OUTPUT: «(abc bcd cde de e)␤»
+say "abcdefg".comb(3 => -2, 2);        # OUTPUT: «(abc bcd)␤»
+say comb(3 => -2, "abcde");            # OUTPUT: «(abc bcd cde)␤»
+say comb(5 => -2, "abcde", :partial);  # OUTPUT: «(abc bcd cde de e)␤»
+say comb(5 => -2, "abcdefg", 2);       # OUTPUT: «(abc bcd)␤»
+--- raku stderr (exit 1) ---
+Cannot resolve caller comb(Str:D: Pair:D); none of these signatures matches:
+    (Cool:D $:: *%_ --> Seq:D)
+    (Cool:D $:: Cool:D $size, $limit = *, *%_ --> Seq:D)
+    (Cool:D $:: Int:D $size, $limit = *, *%_ --> Seq:D)
+    (Cool:D $:: Cool:D $pat, *%_ --> Seq:D)
+    (Cool:D $:: Str:D $pat, *%_ --> Seq:D)
+    (Cool:D $:: Cool:D $pat, $limit, *%_ --> Seq:D)
+    (Cool:D $:: Str:D $pat, $limit, *%_ --> Seq:D)
+    (Cool:D $:: Regex:D $pattern, :$match, *%_ --> Seq:D)
+    (Cool:D $:: Regex:D $pattern, $limit, :$match, *%_ --> Seq:D)
+    (Str:D $:: *%_ --> Seq:D)
+    (Str:D $:: Int:D $size, $limit = *, *%_ --> Seq:D)
+    (Str:D $:: Str:D $pat, *%_ --> Seq:D)
+    (Str:D $:: Str:D $pat, $limit, *%_ --> Seq:D)
+    (Str:D $:: Regex:D $regex, $limit = *, :$match!, *%_ --> Seq:D)
+    (Str:D $:: Regex:D $regex, *%_ --> Seq:D)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18668.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+()
+()
+()
+()
+()
+()
 

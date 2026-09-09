@@ -1,0 +1,23 @@
+# doc-diff-harness report
+# stats: error-match=4  error-mismatch=1  match=12  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/exceptions.rakudoc:464
+--- program ---
+class X::WithoutLineNumber is X::AdHoc {
+    multi method gist(X::WithoutLineNumber:D:) {
+        $.payload
+    }
+}
+die X::WithoutLineNumber.new(payload => "message")
+
+# prints "message\n" to $*ERR and exits, no backtrace
+--- raku stderr (exit 1) ---
+message
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::WithoutLineNumber()
+

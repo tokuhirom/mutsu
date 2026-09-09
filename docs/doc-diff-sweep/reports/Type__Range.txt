@@ -1,0 +1,38 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=2  match=32  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=3  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Range.rakudoc:110
+--- program ---
+say ('א'..'ת').in-range('p', "Letter 'p'");
+# OUTPUT: «(exit code 1) Letter 'p' out of range. Is: "p", should be in "א".."ת"␤
+--- raku stderr (exit 1) ---
+Letter 'p' out of range. Is: "p", should be in "א".."ת"
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'in-range' for invocant of type 'Range'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/Range.rakudoc:359
+--- program ---
+say (1^..5).reverse;                            # OUTPUT: «(5 4 3 2)␤»
+say ('a'..'d').reverse;                         # OUTPUT: «(d c b a)␤»
+say (1..∞).reverse;                             # OUTPUT: «(Inf Inf Inf ...)␤»
+--- raku stderr (exit 1) ---
+Cannot .reverse a lazy list
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 3
+--- raku stdout ---
+(5 4 3 2)
+(d c b a)
+--- mutsu stdout (exit 1) ---
+(5 4 3 2)
+(d c b a)
+--- mutsu stderr ---
+No such method 'reverse' for invocant of type 'Range'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16209.raku line 3
+

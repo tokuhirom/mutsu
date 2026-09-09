@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=14  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=22  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=0  match=14  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=20  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/IO/Spec/Unix.rakudoc:201
@@ -18,20 +18,20 @@ say IO::Spec::Unix.rel2abs: '/foo/', 'bar'; # OUTPUT: «/foo␤»
 say IO::Spec::Unix.rel2abs: 'foo/../../', 'bar';
 # OUTPUT: «/home/camelia/bar/foo/../..␤»
 --- raku stdout ---
-"/home/user/mutsu/tmp/ddh/run-2924".IO
-/home/user/mutsu/tmp/ddh/run-2924/foo
-/home/user/mutsu/tmp/ddh/run-2924
-/home/user/mutsu/tmp/ddh/run-2924/foo/../..
+"/home/user/mutsu/tmp/ddh/run-2669".IO
+/home/user/mutsu/tmp/ddh/run-2669/foo
+/home/user/mutsu/tmp/ddh/run-2669
+/home/user/mutsu/tmp/ddh/run-2669/foo/../..
 /foo
-/home/user/mutsu/tmp/ddh/run-2924/bar/foo
+/home/user/mutsu/tmp/ddh/run-2669/bar/foo
 /bar
 /foo
-/home/user/mutsu/tmp/ddh/run-2924/bar/foo/../..
+/home/user/mutsu/tmp/ddh/run-2669/bar/foo/../..
 --- mutsu stdout (exit 0) ---
-"/home/user/mutsu/tmp/ddh/run-2924".IO
-/home/user/mutsu/tmp/ddh/run-2924/foo
-/home/user/mutsu/tmp/ddh/run-2924
-/home/user/mutsu/tmp/ddh/run-2924/foo/../..
+"/home/user/mutsu/tmp/ddh/run-2669".IO
+/home/user/mutsu/tmp/ddh/run-2669/foo
+/home/user/mutsu/tmp/ddh/run-2669
+/home/user/mutsu/tmp/ddh/run-2669/foo/../..
 /foo/
 bar/foo
 /bar

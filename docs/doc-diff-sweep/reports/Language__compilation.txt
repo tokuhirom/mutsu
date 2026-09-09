@@ -1,0 +1,34 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=0  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=4  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/compilation.rakudoc:159
+--- program ---
+class CompUnit::Store {};
+role CompUnit::Repository {
+    has CompUnit::Repository $.next-repo is rw;
+
+    method need(CompUnit::DependencySpecification $spec,
+                CompUnit::PrecompilationRepository $precomp,
+                CompUnit::Store :@precomp-stores
+                --> CompUnit:D
+                )
+        { ... }
+    method loaded(
+                --> Iterable
+                )
+        { ... }
+
+    method id( --> Str )
+        { ... }
+}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Invalid typename 'CompUnit::DependencySpecification' in parameter declaration.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2394.raku line 2
+

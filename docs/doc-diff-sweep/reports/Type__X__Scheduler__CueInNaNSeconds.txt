@@ -1,0 +1,20 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=0  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/X/Scheduler/CueInNaNSeconds.rakudoc:13
+--- program ---
+my Cancellation $c = $*SCHEDULER.cue({
+    say 'This will never output :(';
+}, at => NaN);
+--- raku stderr (exit 1) ---
+Cannot pass NaN as a number of seconds to Scheduler.cue
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23554.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot pass NaN as a number of seconds
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23554.raku line 1
+

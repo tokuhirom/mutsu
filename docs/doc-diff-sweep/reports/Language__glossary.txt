@@ -1,0 +1,22 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=10  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=6  silent-crash=0  silent-match=12  silent-noise=0  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/glossary.rakudoc:172
+--- program ---
+sub f {};
+if f(1|2|3) == 4 {    # fires because f(2) == 4 is true
+    say 'success';
+}
+--- raku stderr (exit 1) ---
+Too many positionals passed; expected 0 arguments but got 1
+  in sub f at /home/user/mutsu/tmp/ddh/prog-5135.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5135.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too many positionals passed; expected 0 arguments but got more
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5135.raku line 2
+

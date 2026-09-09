@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=4  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=11  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=4  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Whatever.rakudoc:78
@@ -16,4 +16,22 @@ X::Multi::NoMatch: Cannot resolve caller Numeric(Whatever:D: ); none of these si
 --- mutsu stdout (exit 0) ---
 X::AdHoc: Cannot resolve caller Numeric(Whatever:D: ); none of these signatures matches:
     (Mu:U \v: *%_)
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Type/Whatever.rakudoc:90
+--- program ---
+sub potential-upper-limit {}; sub known-lower-limit {};
+my $max    = potential-upper-limit() // *;
+my $series = known-lower-limit() ... $max;
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Useless use of ... in sink context
+    at /home/user/mutsu/tmp/ddh/prog-20415.raku:3
+    ------> my $series = known-lower-limit() ...<HERE> $max;
+No such method 'succ' for invocant of type 'Any'. Did you mean 'sum'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20415.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
 

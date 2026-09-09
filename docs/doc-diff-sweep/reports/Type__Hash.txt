@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=27  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=15  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=2
+# stats: error-match=1  error-mismatch=0  match=27  matches-doc=1  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=8  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=2
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:342
@@ -16,6 +16,7 @@ Unknown call: push
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Hash.rakudoc:528
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my %h1 = a => 1;
 my %h2 = a => 1, b => 2;
@@ -26,11 +27,11 @@ say %h2<>:v; # OUTPUT: «(1 2)␤»
 --- raku stdout ---
 (a)
 (1)
-(a b)
-(1 2)
+(b a)
+(2 1)
 --- mutsu stdout (exit 0) ---
 (a)
 (1)
-(b a)
-(2 1)
+(a b)
+(1 2)
 

@@ -1,0 +1,23 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=20  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=16  silent-crash=1  silent-match=2  silent-noise=0  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Array.rakudoc:287
+--- program ---
+method shape() { (*,) }
+--- raku stderr (exit 0) ---
+Potential difficulties:
+    Useless declaration of a has-scoped method in mainline (did you mean 'my method shape'?)
+    at /home/user/mutsu/tmp/ddh/prog-24503.raku:1
+    ------> method<HERE> shape() { (*,) }
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-24503.raku
+Confused. expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ...
+at /home/user/mutsu/tmp/ddh/prog-24503.raku:1
+------>method shape() { (*,) }
+                      ^
+

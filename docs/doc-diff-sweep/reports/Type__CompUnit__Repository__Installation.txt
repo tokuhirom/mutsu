@@ -1,8 +1,41 @@
 # doc-diff-harness report
-# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=13  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=1  match=0  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=10  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:71
+[1] mutsu-accepts  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:46
+--- program ---
+my $inst-repo = CompUnit::RepositoryRegistry.repository-for-name("site");
+my $dist = $inst-repo.candidates("Acme::Unused").head;
+$inst-repo.uninstall($dist);
+--- raku stderr (exit 1) ---
+Type check failed in binding to parameter '$distribution'; expected Distribution but got Any (Any)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:58
+--- program ---
+my $inst-repo-path = CompUnit::RepositoryRegistry.repository-for-name("perl").prefix;
+my $inst-repo = CompUnit::Repository::Installation.new(prefix => $inst-repo-path);
+my $dist = $inst-repo.candidates("Test").head;
+say "Test version: " ~ $dist.meta<ver>; # OUTPUT: «6.d␤»
+--- raku stderr (exit 1) ---
+Parameter '$prefix' of routine 'new' must be an object instance of type
+'Any', not a type object of type 'Any'. Did you forget a '.new'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'meta' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29279.raku line 4
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:71
 --- program ---
 # assuming Zef is installed to the default location...
 my $repo = CompUnit::RepositoryRegistry.repository-for-name("site");

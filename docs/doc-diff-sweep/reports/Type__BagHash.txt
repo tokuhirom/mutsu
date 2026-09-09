@@ -1,47 +1,19 @@
 # doc-diff-harness report
-# stats: match=6  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=4  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=3
+# stats: error-match=0  error-mismatch=0  match=7  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=3
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/BagHash.rakudoc:112
+[1] output-mismatch  raku-doc/doc/Type/BagHash.rakudoc:58
 --- program ---
 my $n = BagHash.new: "a", "b", "c", "c";
 say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
-$n.add('c');
-say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
-$n.remove(('b', 'a'),);
-say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
-$n.remove('c');
-say $n.raku;             # OUTPUT: «("c"=>2).BagHash␤»
+say $n.keys.raku;        # OUTPUT: «("b", "a", "c").Seq␤»
+say $n.values.raku;      # OUTPUT: «(1, 1, 2).Seq␤»
 --- raku stdout ---
-("b"=>1,"c"=>2,"a"=>1).BagHash
-("b"=>1,"c"=>3,"a"=>1).BagHash
-("c"=>3).BagHash
-("c"=>2).BagHash
+("b"=>1,"a"=>1,"c"=>2).BagHash
+("b", "a", "c").Seq
+(1, 1, 2).Seq
 --- mutsu stdout (exit 0) ---
 ("a"=>1,"b"=>1,"c"=>2).BagHash
-("a"=>1,"b"=>1,"c"=>3).BagHash
-("c"=>3).BagHash
-("c"=>2).BagHash
-
-==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/BagHash.rakudoc:129
---- program ---
-my $n = BagHash.new: "a", "b", "c", "c";
-say $n.raku;             # OUTPUT: «("b"=>1,"a"=>1,"c"=>2).BagHash␤»
-$n<c>++;
-say $n.raku;             # OUTPUT: «("b"=>1,"c"=>3,"a"=>1).BagHash␤»
-$n<b> -= 1;
-say $n.raku;             # OUTPUT: «("a"=>1,"c"=>3).BagHash␤»
-$n{'a'} = 0;
-say $n.raku;             # OUTPUT: «("c"=>3).BagHash␤»
---- raku stdout ---
-("c"=>2,"b"=>1,"a"=>1).BagHash
-("c"=>3,"b"=>1,"a"=>1).BagHash
-("c"=>3,"a"=>1).BagHash
-("c"=>3).BagHash
---- mutsu stdout (exit 0) ---
-("a"=>1,"b"=>1,"c"=>2).BagHash
-("a"=>1,"b"=>1,"c"=>3).BagHash
-("a"=>1,"c"=>3).BagHash
-("c"=>3).BagHash
+("c", "b", "a").Seq
+(2, 1, 1).Seq
 

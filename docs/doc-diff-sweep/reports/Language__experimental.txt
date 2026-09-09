@@ -1,8 +1,26 @@
 # doc-diff-harness report
-# stats: match=2  matches-doc=0  mismatch=0  mutsu-crash=4  no-oracle=6  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=2  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=4  no-oracle=0  silent-crash=1  silent-match=5  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:78
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/experimental.rakudoc:66
+--- program ---
+use experimental :macros;
+macro does-nothing() {
+    quasi {}
+};
+does-nothing; # OUTPUT: «»
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Two terms in a row
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3941.raku line 2
+
+==============================================================================
+[2] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:78
 --- program ---
 use experimental :macros;
 macro is-mighty( $who ) {
@@ -15,10 +33,10 @@ say is-mighty "Freija"; # OUTPUT: « "Freija" is mighty!␤»
 
 --- mutsu stderr ---
 Two terms in a row
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9710.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3941.raku line 2
 
 ==============================================================================
-[2] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:93
+[3] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:93
 --- program ---
 use experimental :macros;
 macro is-mighty( $who ) {
@@ -31,14 +49,14 @@ Freija is mighty!
 
 --- mutsu stderr ---
 Useless use of $who in sink context
-    at /home/user/mutsu/tmp/ddh/prog-9710.raku:3
+    at /home/user/mutsu/tmp/ddh/prog-3941.raku:3
 Useless use of "~" in expression "~ is mighty!" in sink context
-    at /home/user/mutsu/tmp/ddh/prog-9710.raku:3
+    at /home/user/mutsu/tmp/ddh/prog-3941.raku:3
 Two terms in a row
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9710.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3941.raku line 2
 
 ==============================================================================
-[3] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:104
+[4] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:104
 --- program ---
 use experimental :macros;
 my $called;
@@ -55,12 +73,12 @@ Called 2 times
 
 --- mutsu stderr ---
 Useless use of constant string "Called" in sink context
-    at /home/user/mutsu/tmp/ddh/prog-9710.raku:5
+    at /home/user/mutsu/tmp/ddh/prog-3941.raku:5
 Unknown function: called
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9710.raku line 7
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3941.raku line 7
 
 ==============================================================================
-[4] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:144
+[5] mutsu-error  raku-doc/doc/Language/experimental.rakudoc:144
 --- program ---
 use experimental :cached;
 
@@ -128,5 +146,5 @@ Aliquot parts of 66992 are (1 2 4 8 16 53 79 106 158 212 316 424 632 848 1264 41
 
 --- mutsu stderr ---
 Attempt to divide 2620 by zero using infix:<%%>
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9710.raku line 15
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3941.raku line 15
 

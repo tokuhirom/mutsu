@@ -22,7 +22,7 @@
 #   OUTDIR/reports/<sanitized-path>.txt   one harness report per file
 #   OUTDIR/progress.txt                   "<file> :: # stats: ..." per file
 #   OUTDIR/summary.txt                    corpus totals + files ranked by
-#                                         (mismatch + crash), high-signal first
+#                                         (mismatch + crash + err), high-signal first
 #
 # Re-verify each finding directly before treating it as a real bug — the oracle
 # gate keeps the report honest, but the harness can only compare what a doc block
@@ -33,6 +33,13 @@
 # a finding. There is no longer a `raku-drift-from-doc` bucket: whether raku still
 # matches the doc's own `# OUTPUT:` is provenance, not priority, and is reported as an
 # annotation on the finding instead.
+#
+# `err` counts the ERROR/SILENT parity findings the harness gained on 2026-09-09:
+# blocks where raku fails at run time, or succeeds with no output, which the harness
+# used to discard as "no oracle" (half the corpus). Ranked together with mism+crash,
+# because a program mutsu runs happily and raku refuses is a semantic divergence, not
+# a lesser kind of one. `mism` and `crash` keep their old meaning so their counts stay
+# comparable across sweeps.
 set -u
 
 JOBS=8
@@ -74,25 +81,29 @@ export REPORTS MUTSU
 xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {} < "$FILELIST" \
   > "$OUTDIR/progress.txt" 2>&1
 
-# Aggregate: corpus totals + files ranked by (mismatch + crash), high-signal first.
+# Aggregate: corpus totals + files ranked by (mismatch + crash + err), high-signal first.
 # Portable token parse (no gawk 3-arg match); the stats line is a run of key=value
 # tokens, so split and read each key.
 awk '
   / :: / {
     idx = index($0, " :: "); file = substr($0, 1, idx - 1)
-    m = 0; mm = 0; cr = 0; nd = 0
+    m = 0; mm = 0; cr = 0; nd = 0; er = 0; em = 0
     nn = split(substr($0, idx), T, " ")
     for (k = 1; k <= nn; k++) {
       if      (T[k] ~ /^match=/)        { s = T[k]; sub(/^match=/, "", s);        m  = s + 0 }
       else if (T[k] ~ /^mismatch=/)     { s = T[k]; sub(/^mismatch=/, "", s);     mm = s + 0 }
       else if (T[k] ~ /^mutsu-crash=/)  { s = T[k]; sub(/^mutsu-crash=/, "", s);  cr = s + 0 }
       else if (T[k] ~ /^skipped-oracle-nondet=/) { s = T[k]; sub(/^skipped-oracle-nondet=/, "", s); nd = s + 0 }
+      else if (T[k] ~ /^mutsu-accepts=/)  { s = T[k]; sub(/^mutsu-accepts=/, "", s);  er += s + 0; em += s + 0 }
+      else if (T[k] ~ /^error-mismatch=/) { s = T[k]; sub(/^error-mismatch=/, "", s); er += s + 0 }
+      else if (T[k] ~ /^silent-crash=/)   { s = T[k]; sub(/^silent-crash=/, "", s);   er += s + 0 }
+      else if (T[k] ~ /^silent-noise=/)   { s = T[k]; sub(/^silent-noise=/, "", s);   er += s + 0 }
     }
-    tm += m; tmm += mm; tcr += cr; tnd += nd
-    sig = mm + cr
-    if (sig > 0) printf "%4d  mism=%-3d crash=%-3d nondet=%-3d  %s\n", sig, mm, cr, nd, file
+    tm += m; tmm += mm; tcr += cr; tnd += nd; ter += er; tem += em
+    sig = mm + cr + er
+    if (sig > 0) printf "%4d  mism=%-3d crash=%-3d err=%-3d nondet=%-3d  %s\n", sig, mm, cr, er, nd, file
   }
-  END { printf "\n==== corpus totals ====\nmatch=%d  mismatch=%d  crash=%d  oracle-nondet=%d\n", tm, tmm, tcr, tnd }
+  END { printf "\n==== corpus totals ====\nmatch=%d  mismatch=%d  crash=%d  error-parity=%d  (of which mutsu-accepts=%d)  oracle-nondet=%d\n", tm, tmm, tcr, ter, tem, tnd }
 ' "$OUTDIR/progress.txt" | sort -rn > "$OUTDIR/summary.txt"
 
 echo "SWEEP-DONE" >> "$OUTDIR/progress.txt"

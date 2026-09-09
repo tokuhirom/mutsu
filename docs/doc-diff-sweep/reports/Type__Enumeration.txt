@@ -1,8 +1,26 @@
 # doc-diff-harness report
-# stats: match=5  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=18  skipped-marker=1  skipped-nondet=5  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=0  match=5  matches-doc=0  mismatch=2  mutsu-accepts=1  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=1  skipped-nondet=5  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:205
+[1] mutsu-accepts  raku-doc/doc/Type/Enumeration.rakudoc:191
+--- program ---
+enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
+say cool.Numeric;       # OUTPUT: «42␤»
+say almost-pi.Numeric;  # OUTPUT: «3.14␤»
+say sqrt-n-one.Numeric; # OUTPUT: «0+1i␤»
+--- raku stderr (exit 1) ---
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '<HERE>i' (indicated by <HERE>)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-31504.raku line 4
+--- raku stdout ---
+42
+3.14
+--- mutsu stdout (exit 0) ---
+42
+3.14
+0+1i
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:205
 --- program ---
 enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
 say cool.Int;           # OUTPUT: «42␤»
@@ -19,7 +37,7 @@ Cannot convert string to number: base-10 number must begin with valid digits or 
 0
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:220
+[3] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:220
 --- program ---
 enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
 say cool.Real;           # OUTPUT: «42␤»

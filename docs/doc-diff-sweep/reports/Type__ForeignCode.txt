@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=7  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=6  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/ForeignCode.rakudoc:18

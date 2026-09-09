@@ -1,0 +1,19 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=2  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=8  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/CompUnit/Repository/FileSystem.rakudoc:94
+--- program ---
+my $repo = CompUnit::RepositoryFileSystem.new(:prefix($*CWD));
+say $repo.extensions; # OUTPUT: «[rakumod pm6 pm]␤»
+--- raku stderr (exit 1) ---
+Could not find symbol '&RepositoryFileSystem' in 'CompUnit'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29083.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on CompUnit::RepositoryFileSystem
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29083.raku line 1
+

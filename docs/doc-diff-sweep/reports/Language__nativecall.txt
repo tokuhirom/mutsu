@@ -1,0 +1,218 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=7  match=4  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=8  silent-crash=1  silent-match=18  silent-noise=0  skipped-marker=25  skipped-nondet=2  skipped-oracle-nondet=1
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/nativecall.rakudoc:327
+--- program ---
+use NativeCall; sub get_n_ints($, $) {}
+my $number_of_ints = 10;
+my $ints = CArray[int32].allocate($number_of_ints); # instantiates an array with 10 elements
+my $n = get_n_ints($ints, $number_of_ints);
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[int32]'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:995
+--- program ---
+use NativeCall;
+
+sub MessageBoxA(int32, Str, Str, int32)
+    returns int32
+    is native('user32')
+    { * }
+
+MessageBoxA(0, "We have NativeCall", "ohai", 64);
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libuser32.so': libuser32.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 8
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libuser32.so': libuser32.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 8
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:1011
+--- program ---
+use NativeCall;
+
+# Using the wide character variant (notice the trailing "W" in the name)
+sub MessageBoxW(int32, Str is encoded('utf16'), Str is encoded('utf16'), int32
+    --> int32) is native('user32') { * }
+
+MessageBoxW(0, "We have NativeCall", "ohai", 64);
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libuser32.so': libuser32.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 7
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libuser32.so': libuser32.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 7
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:1024
+--- program ---
+use NativeCall;
+
+sub make-guid($val) {
+    my $buf = Buf[uint8].new;
+    for ^16 Z $val.subst('-', :g).comb(2) -> ($i, $byte-text) {
+        my $byte = $byte-text.parse-base(16).Int;
+        $buf.write-uint8: $i, $byte;
+    }
+    $buf
+}
+my $local-appdata-guid = make-guid('F1B32785-6FBA-4FCF-9D55-7B8E7F157091');
+
+sub SHGetKnownFolderPath(
+  Buf[uint8]      $rfid,
+  uint32          $dwFlags,
+  Pointer         $hToken,
+  Pointer[uint16] $ppszPath is rw
+  --> int32) is native('Shell32') { * }
+
+my Pointer[uint16] $path-pointer .= new;
+SHGetKnownFolderPath($local-appdata-guid, 0, 0, $path-pointer);
+
+my $buf = Buf[uint8].new;
+my $pos = 0;
+while $path-pointer.deref() != 0 {
+    $buf.write-uint16($pos, $path-pointer.deref());
+    $pos += 2;
+    $path-pointer++;
+}
+$buf.write-uint16($pos, 0);
+my $path = $buf.decode('utf16');
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libShell32.so': libShell32.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 21
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Pointer cannot be parameterized
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:14
+--- program ---
+use NativeCall;
+sub some_argless_function() is native('something') { * }
+some_argless_function();
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libsomething.so': libsomething.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libsomething.so': libsomething.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:124
+--- program ---
+use NativeCall;
+# void set_foo(const char *)
+# Records a char pointer for later usage
+sub set_foo(CArray[uint8]) is native('foo') { * }
+# void use_foo(void)
+# Uses the pointer stored by set_foo()
+sub use_foo() is native('foo') { * }
+
+my $string = "FOO";
+# Manually marshal the $string into $array. Take care that $array
+# is not destroyed (e.g. by going out of scope) while the library
+# still holds on to it, after set_foo().
+#
+# $string.encode takes care of UTF-8 encoding. If $array is used
+# as a string by the native function, don't forget to append the
+# NUL byte that terminates a C string: ------------v
+my $array = CArray[uint8].new($string.encode.list, 0);
+
+set_foo($array);
+# ...
+use_foo();
+# It's fine if $array goes out of scope starting from here.
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 19
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 19
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:186
+--- program ---
+use NativeCall;
+# C prototype is void my_version(int *major, int *minor)
+sub my_version(int32 is rw, int32 is rw) is native('foo') { * }
+my_version(my int32 $major, my int32 $minor); # Pass a pointer to
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 4
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 4
+
+==============================================================================
+[8] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:195
+--- program ---
+use NativeCall;
+# C prototype is void create_object(void **object)
+sub create_object(Pointer is rw) is native('foo') { * }
+my Pointer $p = Pointer.new();
+create_object($p); # pointer is set by create_object
+--- raku stderr (exit 1) ---
+Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object file: No such file or directory
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
+  in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
+  in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 5
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 5
+

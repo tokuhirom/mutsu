@@ -1,0 +1,34 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=3  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=0  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=5  skipped-nondet=2  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/packages.rakudoc:64
+--- program ---
+package Foo:ver<0>:auth<bar> {};
+say Foo.^auth;
+# OUTPUT: «(exit code 1) No such method 'auth' for invocant of type
+# 'Perl6::Metamodel::PackageHOW' ...
+--- raku stderr (exit 1) ---
+No such method 'auth' for invocant of type
+'Perl6::Metamodel::PackageHOW'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): auth
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 2
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Language/packages.rakudoc:80
+--- program ---
+Foo::Bar::<$quux>
+--- raku stderr (exit 1) ---
+Could not find symbol '&Bar' in 'GLOBAL::Foo'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11626.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+

@@ -1,0 +1,39 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=1  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=6  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/ComplexStr.rakudoc:15
+--- program ---
+my $complex-str = <42+0i>;
+say $complex-str.^name;             # OUTPUT: «ComplexStr␤»
+
+my Complex $complex = $complex-str; # OK!
+my Str     $str     = $complex-str; # OK!
+
+# ∈ operator cares about object identity
+say 42+0i ∈ <42+0i  55  1>;         # OUTPUT: «False␤»
+--- raku stderr (exit 1) ---
+Type check failed in assignment to $str; expected Str but got Complex (<42+0i>)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29416.raku line 5
+--- raku stdout ---
+Complex
+--- mutsu stdout (exit 1) ---
+Complex
+--- mutsu stderr ---
+Type check failed in assignment to $str; expected Str but got Complex
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29416.raku line 5
+
+==============================================================================
+[2] mutsu-error-on-silent-success  raku-doc/doc/Type/ComplexStr.rakudoc:7
+--- program ---
+class ComplexStr is Allomorph is Complex {}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+'ComplexStr' cannot inherit from 'Allomorph' because it is unknown.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29416.raku line 1
+

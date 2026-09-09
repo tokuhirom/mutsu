@@ -1,0 +1,71 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=3  match=5  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=44  silent-crash=0  silent-match=13  silent-noise=0  skipped-marker=7  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/grammar_tutorial.rakudoc:54
+--- program ---
+grammar G{};my $string;
+my $matchObject = G.parse($string);
+--- raku stderr (exit 1) ---
+Use of uninitialized value of type Any in string context.
+Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 2
+No such method 'TOP' for invocant of type 'G'. Did you mean 'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 2
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/grammar_tutorial.rakudoc:181
+--- program ---
+grammar REST {};
+my $match = REST.parse('/product/update/7/notify');
+say $match;
+
+# OUTPUT: «｢/product/update/7/notify｣␤
+#          subject => ｢product｣
+#          command => ｢update｣
+#          data => ｢7/notify｣»
+--- raku stderr (exit 1) ---
+No such method 'TOP' for invocant of type 'REST'. Did you mean 'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 2
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Language/grammar_tutorial.rakudoc:413
+--- program ---
+grammar REST{};
+my @uris = ['/product/update/7/notify',
+            '/product/create',
+            '/item/delete/4'];
+
+for @uris -> $uri {
+    my $m = REST.parse($uri);
+    say "Sub: $m<subject> Cmd: $m<command> Dat: $m<data>";
+}
+
+# OUTPUT: «Sub: product Cmd: update Dat: 7/notify␤
+#          Sub: product Cmd: create Dat: ␤
+#          Sub: item Cmd: delete Dat: 4␤»
+--- raku stderr (exit 1) ---
+No such method 'TOP' for invocant of type 'REST'. Did you mean 'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 7
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-5759.raku line 7
+
