@@ -82,10 +82,19 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn exec_call_pairs_values(
+    /// The `OpCode::ExecCallPairs` carrier arm.
+    ///
+    /// The opcode handler sanitizes the argument list at its entry (so its
+    /// compiled/native probes see the real arguments, not one carrying the
+    /// parser-injected `__mutsu_test_callsite_line` pair) and can hand over the
+    /// routine it already resolved there. See
+    /// [`Interpreter::exec_call_sanitized`] for what `pre_resolved` may carry.
+    pub(crate) fn exec_call_pairs_values_sanitized(
         &mut self,
         name: &str,
         args: Vec<Value>,
+        callsite_line: Option<i64>,
+        pre_resolved: Option<std::sync::Arc<crate::ast::FunctionDef>>,
     ) -> Result<Value, RuntimeError> {
         // For EVAL, route through call_function to handle named args like :check.
         if name == "EVAL" {
@@ -95,12 +104,12 @@ impl Interpreter {
                     if e.message
                         .contains("Unknown function (call_function fallback disabled):") =>
                 {
-                    self.exec_call(name, args)
+                    self.exec_call_sanitized(name, args, callsite_line, pre_resolved)
                 }
                 Err(e) => Err(e),
             };
         }
-        self.exec_call(name, args)
+        self.exec_call_sanitized(name, args, callsite_line, pre_resolved)
     }
 
     pub(crate) fn test_ok(

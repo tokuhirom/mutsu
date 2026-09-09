@@ -217,8 +217,24 @@ impl Interpreter {
         } else {
             self.auto_fetch_proxy_args(args)?
         };
-        // Try compiled function dispatch first
-        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
+        // Strip the parser-injected `__mutsu_test_callsite_line` pair BEFORE the
+        // resolution probes below — the same preamble `ExecCall` has always had.
+        // Every test assertion (`ok 1, "x"`, `is $got, $exp, "..."`) carries that
+        // pair, which is exactly why this opcode exists; leaving it in made both
+        // probes ask about a call shape that does not exist, so a callee that IS
+        // in the caller's compiled table could not be recognised. Stripping used
+        // to happen one level down instead (inside `exec_call` for the carrier
+        // arm, inside `call_compiled_function_named` for the compiled one), so
+        // the line each of them recovered from the pair is published here now.
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
+        loan_env!(self, set_pending_callsite_line(callsite_line));
+        // Try compiled function dispatch first. `resolved_memo` catches the
+        // routine the probe resolved on the way, so the carrier arm below does
+        // not resolve the same call a second time (see `exec_call_sanitized`).
+        let mut resolved_memo: Option<Arc<crate::ast::FunctionDef>> = None;
+        if let Some(cf) =
+            self.find_compiled_function_memo(compiled_fns, &name, &args, &mut resolved_memo)
+        {
             crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "compiled");
             let pkg = self.current_package().to_string();
             let v = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
@@ -243,7 +259,16 @@ impl Interpreter {
             }
             return Ok(());
         }
-        crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "carrier");
+        crate::vm::vm_stats::record_dispatch_entry_outcome(
+            "execcallpairs",
+            if resolved_memo.is_some() {
+                // The probe above resolved the winner type-keyed and the carrier
+                // reuses it: one resolution per call instead of two.
+                "carrier-preresolved"
+            } else {
+                "carrier"
+            },
+        );
         // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
         // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
         // builtins are not name-trackable and dropping the net corrupts cell
@@ -263,7 +288,10 @@ impl Interpreter {
         // reconstructs an implicit return from the topic, which is unreliable
         // for a value that must propagate (JSON::Marshal's tail
         // `to-json($ret, :$sorted-keys, :$pretty)`).
-        let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
+        let exec_result = loan_env!(
+            self,
+            exec_call_pairs_values_sanitized(&name, args, callsite_line, resolved_memo)
+        );
         let written = self.end_carrier(carrier_saved);
         let v = exec_result?;
         self.writeback_carrier_writes(code, &written);
