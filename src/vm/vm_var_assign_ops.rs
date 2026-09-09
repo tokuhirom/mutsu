@@ -388,17 +388,18 @@ impl Interpreter {
         idx: Value,
         target: Option<&Value>,
     ) -> Value {
-        let len = match target.map(Value::view) {
-            Some(ValueView::Array(items, ..)) => items.len() as i64,
+        let target_array_len = match target.map(Value::view) {
+            Some(ValueView::Array(items, ..)) => Some(items.len()),
             // A `:=`-bound array is held in a `ContainerRef` cell; descend it so
             // a from-end index (`@a[*-1]`) resolves the real length instead of 0
             // (which would yield a negative effective index and X::OutOfRange).
             Some(ValueView::ContainerRef(cell)) => match cell.lock().unwrap().view() {
-                ValueView::Array(items, ..) => items.len() as i64,
-                _ => 0,
+                ValueView::Array(items, ..) => Some(items.len()),
+                _ => None,
             },
-            _ => 0,
+            _ => None,
         };
+        let len = target_array_len.map(|len| len as i64).unwrap_or(0);
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1
         if matches!(idx.view(), ValueView::Whatever) {
             let indices: Vec<Value> = (0..len).map(Value::int).collect();
@@ -406,6 +407,19 @@ impl Interpreter {
                 crate::gc::Gc::new(crate::value::ArrayData::new(indices)),
                 crate::value::ArrayKind::List,
             );
+        }
+        // An unbounded-end Range subscript means "from this index to the end"
+        // when the target is an array. Resolve it against the target's current
+        // length before the assignment path's finite-range gate; otherwise the
+        // i64::MAX sentinel is mistaken for a real bound and the slice expands
+        // to 100,000 elements. Keep an unbounded range untouched for targets
+        // without a positional length (notably hash slices), so this resolution
+        // never turns an infinite range into an eager enumeration there.
+        if let Some(array_len) = target_array_len
+            && let Some(indices) =
+                crate::runtime::utils::expand_unbounded_range_dim(&idx, array_len)
+        {
+            return Value::array(indices);
         }
         if let ValueView::Sub(data) = idx.view() {
             let mut sub_env = data.env.clone();
