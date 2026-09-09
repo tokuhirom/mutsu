@@ -47,6 +47,20 @@
 //!   mutation itself, not around a region that can call back into user Raku
 //!   code, so a holder never blocks on another thread while holding it.
 //!
+//! Measured (2026-09-09, ADR-0068 §14, [#7613]): "affordable" holds in both
+//! directions. A program that never spawns a mutator thread is within noise
+//! over 6.4M reads that would each have locked; a program that spawns one and
+//! then reads a bound container single-threaded pays +5-7% on a loop that does
+//! nothing else; and a genuinely concurrent one runs 12-13% FASTER with these
+//! locks than without, because serializing readers on a stripe is cheaper than
+//! letting several cores contend on the cell's own `Mutex<Value>` and on the
+//! inner node's refcount atomics. `STRIPES` is not a lever either: four
+//! independent cells measure -0.6% / +3.2%, and where the cost concentrates
+//! (one hot cell) more stripes cannot help, since excluding on that cell is
+//! what correctness requires.
+//!
+//! [#7613]: https://github.com/tokuhirom/mutsu/issues/7613
+//!
 //! The at-most-one rule leaves a known hole — a read of a *different* cell,
 //! reached from inside a guarded store, is unprotected. ADR-0068 §6 question 1
 //! anticipated exactly this and set the stress harness rather than the argument
