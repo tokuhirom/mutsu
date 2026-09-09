@@ -325,19 +325,36 @@ impl Interpreter {
             // of building a `HashSet<&str>` on every call (see
             // `call_compiled_function_positional_light`).
             let scoped = std::mem::replace(self.env_mut(), caller_env);
-            for (k, v) in scoped.overlay_iter() {
-                // The callee's private topic / arg array / routine-id / `$!` must
-                // not leak to the caller (the caller env already holds its own).
-                if *k == "_"
-                    || *k == "@_"
-                    || *k == "%_"
-                    || *k == "__mutsu_callable_id"
+            // The callee's private topic / arg array / routine-id / `$!` must not
+            // leak to the caller (the caller env already holds its own).
+            let is_callee_private = |k: Symbol| {
+                k == "_"
+                    || k == "@_"
+                    || k == "%_"
+                    || k == "__mutsu_callable_id"
                     || (bang_is_callee_private
                         && k.with_str(crate::runtime::utils::is_routine_scoped_implicit_var))
-                {
-                    continue;
+                    || cf.is_callee_local_sym(k)
+            };
+            // A full method dispatch in the body runs `flatten_scoped_env`, after
+            // which `scoped` is the whole visible scope rather than the callee's
+            // own writes -- so the loop below would walk every caller lexical for
+            // a callee that wrote two names. Drive the merge from the log the
+            // flatten left behind instead (#7630).
+            if let Some(writes) = scoped.frame_writes() {
+                for k in writes {
+                    if is_callee_private(*k) {
+                        continue;
+                    }
+                    if let Some(v) = scoped.overlay_get_sym(*k) {
+                        self.env_mut().insert_sym(*k, v.clone());
+                    }
                 }
-                if !cf.is_callee_local_sym(*k) {
+            } else {
+                for (k, v) in scoped.overlay_iter() {
+                    if is_callee_private(*k) {
+                        continue;
+                    }
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             }

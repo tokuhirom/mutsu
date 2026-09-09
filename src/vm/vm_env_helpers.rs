@@ -8,7 +8,12 @@ impl Interpreter {
     #[inline]
     pub(super) fn flatten_scoped_env(&mut self) {
         if self.env().is_scoped() {
-            let flat = self.env().flattened();
+            // `flattened_for_frame`, not `flattened`: collapsing the tier
+            // otherwise erases the one thing the light-call return merge reads --
+            // which names this frame wrote by itself -- and leaves the unwind
+            // scanning the whole flattened scope for the rest of the frame's
+            // life (#7630). Carrying the log forward is O(overlay) to record.
+            let flat = self.env().flattened_for_frame();
             *self.env_mut() = flat;
         }
     }

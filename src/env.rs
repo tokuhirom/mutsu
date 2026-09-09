@@ -471,6 +471,16 @@ pub struct Env {
     depth: u16,
     /// This env's visible `?FILE`, pre-interned — see [`Env::source_file_sym`].
     file_sym: Option<Symbol>,
+    /// The by-name writes this env's **frame tier** has taken since the frame
+    /// opened, recorded only for an env whose tier was collapsed into the flat
+    /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
+    /// env's overlay *is* that record, so there is nothing to keep beside it.
+    /// See [`Self::flattened_for_frame`].
+    ///
+    /// `Arc` rather than a plain `Vec` so cloning an env (once per light call,
+    /// on the swap path) stays a refcount bump; the log is copy-on-write like
+    /// `inner`.
+    frame_writes: Option<Arc<Vec<Symbol>>>,
 }
 
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
@@ -521,6 +531,7 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym: None,
+            frame_writes: None,
         }
     }
 
@@ -573,6 +584,7 @@ impl Env {
                     parent: Some(Arc::new(flat)),
                     tombstones: None,
                     file_sym,
+                    frame_writes: None,
                 };
             }
             return Self {
@@ -581,6 +593,7 @@ impl Env {
                 parent: Some(arc),
                 tombstones: None,
                 file_sym,
+                frame_writes: None,
             };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
@@ -594,6 +607,7 @@ impl Env {
             parent: Some(Arc::new(parent)),
             tombstones: None,
             file_sym,
+            frame_writes: None,
         }
     }
 
@@ -657,6 +671,104 @@ impl Env {
             && Arc::ptr_eq(&self.inner, empty_overlay_ref())
     }
 
+    /// The by-name writes this env's frame tier has taken since the frame that
+    /// owns it opened, or `None` when they are not recorded (see
+    /// [`Self::flattened_for_frame`]). May hold a key more than once, and may
+    /// name a key that is no longer present.
+    #[inline(always)]
+    pub(crate) fn frame_writes(&self) -> Option<&[Symbol]> {
+        self.frame_writes.as_ref().map(|w| w.as_slice())
+    }
+
+    /// [`Self::flattened`] for the guard a full method dispatch runs before it
+    /// can capture or iterate the env (`Interpreter::flatten_scoped_env`): the
+    /// result is the same flat env, but it carries the collapsed tier's own
+    /// by-name writes forward as a log.
+    ///
+    /// Why the log exists. The light-call frame-reuse unwind (ADR-0004 J4d) is
+    /// O(callee writes) because a scoped env's overlay *is* the list of writes
+    /// the frame made: everything in it is a callee write and everything else
+    /// is out of reach in the parent tier. Flattening destroys exactly that
+    /// distinction -- afterwards "the overlay" and "the whole visible scope" are
+    /// the same map -- so the unwind fell back to scanning every visible name,
+    /// resolving each `Symbol` to a string and asking `is_callee_local_sym`
+    /// about it. Correct (a caller lexical is not a callee-local, so it
+    /// survives) but O(scope) where O(callee writes) was intended, and one
+    /// method dispatch put a frame in that state for the rest of its life
+    /// (#7630).
+    ///
+    /// Recording the tier's key set here is O(overlay) -- the same size the
+    /// merge itself would have been -- and [`Self::insert_sym`] /
+    /// [`Self::remove_sym`] / [`Self::get_mut_sym`] extend it, so a write made
+    /// *after* the flatten is logged too and the record stays complete. A bulk
+    /// edit that cannot be logged key-by-key (`retain`, `values_mut`,
+    /// `retain_overlay`) drops the log instead, which costs only the full scan
+    /// this replaces.
+    pub(crate) fn flattened_for_frame(&self) -> Self {
+        // Only a scoped env has a frame tier to record: on a flat one `inner` is
+        // already the whole scope, and logging that would claim every caller
+        // lexical as this frame's write.
+        debug_assert!(
+            self.is_scoped(),
+            "flattened_for_frame is the scoped-env collapse; a flat env has no tier to record"
+        );
+        let mut flat = self.flattened();
+        let mut writes: Vec<Symbol> = self.inner.keys().copied().collect();
+        if let Some(tomb) = &self.tombstones {
+            // A `remove` in this tier is a write the frame made too: the unwind
+            // has to consider the name even though the flatten already applied
+            // the tombstone and the key is gone from the merged map.
+            writes.extend(tomb.iter().copied());
+        }
+        flat.frame_writes = Some(Arc::new(writes));
+        flat
+    }
+
+    /// Log a by-name write against [`Self::frame_writes`], for an env that is
+    /// recording them. A no-op (one predictable branch) for every other env,
+    /// which is nearly all of them.
+    #[inline(always)]
+    fn note_frame_write(&mut self, key: Symbol) {
+        if let Some(log) = &mut self.frame_writes {
+            Arc::make_mut(log).push(key);
+        }
+    }
+
+    /// Drop the frame's own by-name writes from a *flattened* env, consulting
+    /// [`Self::frame_writes`] instead of scanning the whole map: the
+    /// [`Self::retain_overlay`] return merge, replayed at O(frame writes) after
+    /// a [`Self::flattened_for_frame`]. `keep` sees each logged key; a key it
+    /// rejects is removed, the rest stay and remain logged for the enclosing
+    /// frame. Does nothing when this env carries no log.
+    ///
+    /// Unlike `retain_overlay` this touches only the names the frame wrote, so
+    /// a caller lexical that merely *looks* like a per-frame private name (a
+    /// `?`-prefixed contextual var of the caller's own, swept up by the flatten)
+    /// is no longer dropped along with the callee's.
+    pub(crate) fn retain_frame_writes(&mut self, mut keep: impl FnMut(Symbol) -> bool) -> bool {
+        // Taken, not borrowed: the `remove_sym` below would otherwise log the
+        // very keys it is removing, and taking it also leaves the `Arc`
+        // uniquely owned so the filter below runs in place with no allocation.
+        let Some(mut writes) = self.frame_writes.take() else {
+            return false;
+        };
+        let log = Arc::make_mut(&mut writes);
+        let mut i = 0;
+        while i < log.len() {
+            let k = log[i];
+            if keep(k) {
+                i += 1;
+            } else {
+                // Order does not matter: the log is a set of names to consider,
+                // read once per unwind.
+                log.swap_remove(i);
+                self.remove_sym(k);
+            }
+        }
+        self.frame_writes = Some(writes);
+        true
+    }
+
     /// Filter this env's overlay in place, keeping only entries `keep` accepts,
     /// and drop any tombstones. When the overlay ends up empty it is reset to
     /// the shared empty singleton so the [`Self::overlay_is_shared_empty`] latch
@@ -671,6 +783,10 @@ impl Env {
         if map.is_empty() {
             self.inner = empty_overlay();
         }
+        // A wholesale filter cannot be logged key-by-key, so the frame-write
+        // record (if any) is dropped rather than left stale -- see
+        // `flattened_for_frame`.
+        self.frame_writes = None;
         self.refresh_file_sym();
     }
 
@@ -693,7 +809,13 @@ impl Env {
             // same "empty tier is not a tier" rule `scoped_child` applies when
             // it chains over an empty parent instead of stacking on it.
             Some(parent) if self.inner.is_empty() && self.tombstones.is_none() => {
-                parent.flattened()
+                let mut flat = parent.flattened();
+                // The collapsed tier is this frame's and the parent's is the
+                // caller's, so a frame-write log the parent happens to carry
+                // describes the wrong frame: drop it. `flattened_for_frame`
+                // installs this env's own (see #7630).
+                flat.frame_writes = None;
+                flat
             }
             Some(_) => {
                 // Collapse the whole chain in ONE pass: clone the flat root
@@ -729,6 +851,10 @@ impl Env {
                     depth: 0,
                     // Flattening preserves every visible value, `?FILE` included.
                     file_sym: self.file_sym,
+                    // The merged map is no longer any one frame's tier;
+                    // `flattened_for_frame` is what records the collapsed tier's
+                    // writes when a light frame needs them (#7630).
+                    frame_writes: None,
                 }
             }
         }
@@ -791,6 +917,7 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            frame_writes: None,
         }
     }
 
@@ -938,6 +1065,7 @@ impl Env {
             RETURN_REBOUND_SEEN.store(true, Ordering::Relaxed);
         }
         self.untombstone(key);
+        self.note_frame_write(key);
         self.cow_mut().insert(key, value)
     }
 
@@ -997,6 +1125,7 @@ impl Env {
         if self.parent.is_none() && !self.inner.contains_key(&key) {
             return None;
         }
+        self.note_frame_write(key);
         let from_overlay = self.cow_mut().remove(&key);
         // Scoped env: if the key still exists in the parent/base tier, record a
         // tombstone so it stops shadowing through. The visible value before
@@ -1048,6 +1177,9 @@ impl Env {
                 self.cow_mut().insert(key, v);
             }
         }
+        // Handing out `&mut` is a write to this key whatever the caller does
+        // with it, so it is logged like an `insert` (see `frame_writes`).
+        self.note_frame_write(key);
         self.cow_mut().get_mut(&key)
     }
 
@@ -1056,6 +1188,9 @@ impl Env {
         F: FnMut(&Symbol, &mut Value) -> bool,
     {
         self.cow_mut().retain(f);
+        // Not loggable key-by-key: drop the frame-write record rather than
+        // leave it stale (see `flattened_for_frame`).
+        self.frame_writes = None;
         self.refresh_file_sym();
     }
 
@@ -1072,6 +1207,9 @@ impl Env {
     }
 
     pub fn values_mut(&mut self) -> std::collections::hash_map::ValuesMut<'_, Symbol, Value> {
+        // Every value in the map is about to be writable and none of the writes
+        // names a key: drop the frame-write record (see `flattened_for_frame`).
+        self.frame_writes = None;
         self.cow_mut().values_mut()
     }
 
@@ -1317,6 +1455,7 @@ impl From<HashMap<String, Value>> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            frame_writes: None,
         }
     }
 }
@@ -1331,6 +1470,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            frame_writes: None,
         }
     }
 }
@@ -1619,5 +1759,82 @@ mod tests {
         }
         // The original root lexical is still reachable through the flattened tiers.
         assert_eq!(env.get_sym(s("root")), Some(&Value::int(42)));
+    }
+
+    #[test]
+    fn flattened_for_frame_carries_the_tier_writes_as_a_log() {
+        // The collapse is what the light-call unwind loses its footing on: after
+        // it, "the overlay" and "the whole visible scope" are one map. The log is
+        // what keeps the frame's own writes distinguishable (#7630).
+        let mut caller = Env::new();
+        caller.insert("caller-lex".into(), Value::int(1));
+        let leaf = scoped_with(caller, &[("mine", 2)]);
+        assert!(
+            leaf.frame_writes().is_none(),
+            "a scoped tier IS its own log"
+        );
+
+        let flat = leaf.flattened_for_frame();
+        assert!(!flat.is_scoped(), "the guard needs a flat env");
+        assert_eq!(flat.get_sym(s("caller-lex")), Some(&Value::int(1)));
+        assert_eq!(flat.frame_writes(), Some(&[s("mine")][..]));
+    }
+
+    #[test]
+    fn a_write_after_the_flatten_is_logged_too() {
+        let mut caller = Env::new();
+        caller.insert("caller-lex".into(), Value::int(1));
+        let mut flat = scoped_with(caller, &[("before", 2)]).flattened_for_frame();
+        flat.insert("after".into(), Value::int(3));
+        flat.remove("gone");
+
+        let logged: Vec<String> = flat
+            .frame_writes()
+            .expect("still recording")
+            .iter()
+            .map(|k| k.resolve())
+            .collect();
+        assert!(logged.contains(&"before".to_string()));
+        assert!(logged.contains(&"after".to_string()));
+        // `remove` of an absent key on a flat env is a no-op, so it is not a write.
+        assert!(!logged.contains(&"gone".to_string()));
+        // The caller lexical the flatten swept in is NOT this frame's write.
+        assert!(!logged.contains(&"caller-lex".to_string()));
+    }
+
+    #[test]
+    fn retain_frame_writes_drops_only_the_frames_own_names() {
+        let mut caller = Env::new();
+        caller.insert("caller-lex".into(), Value::int(1));
+        caller.insert("?FILE".into(), Value::str("outer.raku".to_string()));
+        let mut flat = scoped_with(caller, &[("mine", 2), ("escapes", 3)]).flattened_for_frame();
+
+        let ran = flat.retain_frame_writes(|k| k != "mine");
+        assert!(ran, "a flattened frame env reports its log");
+        // The frame's own local is gone; its captured-outer write stays, and so
+        // does everything the flatten merely swept in from the caller.
+        assert!(flat.get_sym(s("mine")).is_none());
+        assert_eq!(flat.get_sym(s("escapes")), Some(&Value::int(3)));
+        assert_eq!(flat.get_sym(s("caller-lex")), Some(&Value::int(1)));
+        assert_eq!(flat.source_file_sym(), Some(s("outer.raku")));
+        // The kept name is still logged for the enclosing frame.
+        assert_eq!(flat.frame_writes(), Some(&[s("escapes")][..]));
+        // An env that never carried a log says so, and is left alone.
+        let mut plain = scoped_with(Env::new(), &[("x", 1)]);
+        assert!(!plain.retain_frame_writes(|_| false));
+        assert_eq!(plain.get_sym(s("x")), Some(&Value::int(1)));
+    }
+
+    #[test]
+    fn a_bulk_overlay_edit_drops_the_log_rather_than_leaving_it_stale() {
+        let mut caller = Env::new();
+        caller.insert("caller-lex".into(), Value::int(1));
+        let mut flat = scoped_with(caller, &[("mine", 2)]).flattened_for_frame();
+        assert!(flat.frame_writes().is_some());
+        flat.retain(|_, _| true);
+        assert!(
+            flat.frame_writes().is_none(),
+            "a retain cannot be logged key-by-key, so the log must go"
+        );
     }
 }
