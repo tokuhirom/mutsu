@@ -799,6 +799,7 @@ impl Compiler {
                     return;
                 }
             }
+            let native_unsigned = self.native_int_binary_mode(left, right, &opcode);
             self.compile_expr(left);
             // `but`/`does` with a role-applied RHS (`X but R(v)`, `99 does R(v)`)
             // must let the role call return a role-application Pair instead of
@@ -827,6 +828,14 @@ impl Compiler {
                 // written directly in an argument list (or a colonpair,
                 // which parses to the same shape) — keep the named marker.
                 self.code.emit(OpCode::MakeNamedArg);
+            } else if let Some(unsigned) = native_unsigned {
+                let op = match opcode {
+                    OpCode::Add => crate::opcode::CompoundBaseOp::Add,
+                    OpCode::Sub => crate::opcode::CompoundBaseOp::Sub,
+                    OpCode::Mul => crate::opcode::CompoundBaseOp::Mul,
+                    _ => unreachable!("native integer mode only applies to +, -, and *"),
+                };
+                self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
                 self.code.emit(opcode);
             }
@@ -974,5 +983,52 @@ impl Compiler {
         } else {
             None
         }
+    }
+
+    /// Return the machine signedness for an expression whose value is known to
+    /// participate in native integer arithmetic. Narrow native declarations
+    /// still use the machine-width arithmetic register; their declared width
+    /// is applied on storage. A plain integer literal is a signed native
+    /// operand, which is the form Rakudo accepts for a signed native variable
+    /// (`my int $x = *; $x + 1`). Do not infer this through arbitrary computed
+    /// expressions: `2 ** 62` is an ordinary boxed `Int` operand to Rakudo's
+    /// native candidate selection.
+    pub(super) fn native_int_operand_signedness(&self, expr: &Expr) -> Option<bool> {
+        match expr.peel_parens() {
+            Expr::Unary {
+                op: TokenKind::MetaAssignIdentity(_),
+                expr,
+            } => self.native_int_operand_signedness(expr),
+            Expr::Var(name) => self
+                .expr_native_int_type(expr.peel_parens())
+                .map(|type_name| crate::runtime::native_types::is_signed_native(&type_name))
+                .or_else(|| {
+                    self.local_types.get(name).and_then(|constraint| {
+                        let base = constraint
+                            .strip_suffix(":D")
+                            .or_else(|| constraint.strip_suffix(":U"))
+                            .unwrap_or(constraint);
+                        crate::runtime::native_types::is_native_int_type(base)
+                            .then(|| crate::runtime::native_types::is_signed_native(base))
+                    })
+                }),
+            Expr::Literal(value) | Expr::LiteralSrc(value, _) => {
+                matches!(value.view(), ValueView::Int(_)).then_some(true)
+            }
+            _ => None,
+        }
+    }
+
+    /// Select the native machine operation for the small set of arithmetic
+    /// operators whose native candidates wrap (`+`, `-`, `*`). A signed and
+    /// unsigned operand must not be mixed; the generic path handles that case
+    /// as boxed numeric arithmetic.
+    fn native_int_binary_mode(&self, left: &Expr, right: &Expr, opcode: &OpCode) -> Option<bool> {
+        if !matches!(opcode, OpCode::Add | OpCode::Sub | OpCode::Mul) {
+            return None;
+        }
+        let left_signed = self.native_int_operand_signedness(left)?;
+        let right_signed = self.native_int_operand_signedness(right)?;
+        (left_signed == right_signed).then_some(!left_signed)
     }
 }
