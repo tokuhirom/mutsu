@@ -1147,6 +1147,43 @@ impl Registry {
     /// user coercion method (e.g. `method Str {...}`) via `run_instance_method`
     /// versus routing a native builtin method (e.g. `IO::Path.Str`) through the
     /// native dispatcher. Pure registry MRO walk.
+    /// Read-only twin of [`Registry::class_has_method`]: answers from
+    /// [`Registry::class_mro_readonly`] and returns `None` exactly when that
+    /// declines (a registered class whose MRO is not cached yet), so the caller
+    /// falls back to the `&mut` side. Asking this question through
+    /// `registry_mut()` used to pay a full-registry COW clone on every call
+    /// made while a thread clone shares the `Arc` — see the note on
+    /// [`Registry::class_mro_readonly`].
+    pub(crate) fn class_has_method_readonly(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<bool> {
+        let mro = self.class_mro_readonly(class_name)?;
+        Some(mro.iter().any(|cn| {
+            self.user_method_overloads(cn.as_str(), method_name)
+                .is_some()
+                || self
+                    .classes
+                    .get(cn.as_str())
+                    .is_some_and(|class| class.native_methods.contains(method_name))
+        }))
+    }
+
+    /// Read-only twin of [`Registry::class_has_user_method`]. Same contract as
+    /// [`Registry::class_has_method_readonly`].
+    pub(crate) fn class_has_user_method_readonly(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<bool> {
+        let mro = self.class_mro_readonly(class_name)?;
+        Some(mro.iter().any(|cn| {
+            self.user_method_overloads(cn.as_str(), method_name)
+                .is_some()
+        }))
+    }
+
     pub(crate) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {

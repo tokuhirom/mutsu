@@ -15,11 +15,31 @@ pub(crate) enum UserMethodOrAccessor {
 
 impl Interpreter {
     pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        // Read guard first: this is a pure question, and `registry_mut()`'s
+        // first mutable deref deep-clones the WHOLE registry whenever a thread
+        // clone shares the `Arc` (`RegistryWriteGuard::deref_mut`). A `supply`
+        // block registering one `whenever` is enough to make that share
+        // permanent, so asking through the write side cost one full registry
+        // copy per dispatch that reached here — 8.7% of the per-frame work in
+        // Cro's HTTP/2 request parser (#7667).
+        if let Some(answer) = self
+            .registry()
+            .class_has_method_readonly(class_name, method_name)
+        {
+            return answer;
+        }
         self.registry_mut()
             .class_has_method(class_name, method_name)
     }
 
     pub(super) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        // See `class_has_method` above for why the read guard comes first.
+        if let Some(answer) = self
+            .registry()
+            .class_has_user_method_readonly(class_name, method_name)
+        {
+            return answer;
+        }
         self.registry_mut()
             .class_has_user_method(class_name, method_name)
     }
