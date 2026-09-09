@@ -107,3 +107,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0079](0079-container-itemization-is-a-holder-property-tagged-on-the-containerref-word.md) | Container itemization is a property of the *holder*, tagged on the `ContainerRef` word (not on the shared cell) | Proposed |
 | [0080](0080-hash-element-containerization-is-per-value.md) | Hash element containerization is a per-value property, not a hash-wide slurpy flag | Proposed |
 | [0081](0081-compunit-scoped-module-import-aliases.md) | A unit module's imported aliases are scoped to its compilation unit | Proposed |
+| [0082](0082-a-collecting-for-gathers-containers-not-snapshots.md) | A value-collecting `for` gathers containers, not snapshots | Accepted (implemented) |

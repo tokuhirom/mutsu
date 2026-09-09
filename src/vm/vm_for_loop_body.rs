@@ -194,7 +194,11 @@ impl Interpreter {
         // `when`) piled up one value per pass.
         let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
-        let mut deferred_container_refs: Vec<(usize, String)> = Vec::new();
+        // Collected slots whose value is a CONTAINER, not a snapshot: the name
+        // (and the emitting site's baked local slot) of the variable each one
+        // denotes, re-read once the loop is over. See the fix-up at the end of
+        // this function.
+        let mut deferred_container_refs: Vec<(usize, String, Option<u32>)> = Vec::new();
         // A `for` block owns its topic (raku binds `$_` as the block's own
         // implicit parameter), so the enclosing `$_` is restored on every exit —
         // normal, `last`/`next`, and error.
@@ -984,13 +988,13 @@ impl Interpreter {
                             && self.stack.len() > stack_base
                         {
                             let val = self.stack.pop().unwrap();
-                            let deferred_ref = self.take_container_ref_for(code).map(|(n, _)| n);
+                            let deferred_ref = self.take_container_ref_for(code);
                             let coll_start_len = coll.len();
                             Self::collect_loop_value(coll, val);
-                            if let Some(name) = deferred_ref
+                            if let Some((name, slot)) = deferred_ref
                                 && coll.len() == coll_start_len + 1
                             {
-                                deferred_container_refs.push((coll_start_len, name));
+                                deferred_container_refs.push((coll_start_len, name, slot));
                             }
                         }
                         // Drain anything else this iteration left behind.
@@ -1373,10 +1377,23 @@ impl Interpreter {
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             let mut coll = coll;
-            for (idx, name) in deferred_container_refs {
-                if idx < coll.len()
-                    && let Some(v) = self.get_env_with_main_alias(&name)
-                {
+            // Every collected container is read here, once, with the loop over —
+            // so after the last iteration's `temp` restore, and at the same value
+            // for all of them, which is what makes `do for 1..2 { temp $g = 9;
+            // $g }` `(1 1)` and `do for 1..2 { $g = $g + 1; $g }` `(3 3)`.
+            // Slot-first, env-fallback (§1.5, docs/lexical-scope-slot-campaign.md):
+            // a plain `my $g` lexical keeps its live value in its local slot and
+            // its env mirror is suppressed, so the env read alone saw `Any`.
+            for (idx, name, slot) in deferred_container_refs {
+                if idx >= coll.len() {
+                    continue;
+                }
+                let current = self
+                    .gate_local_slot_at(code, slot, &name)
+                    .and_then(|s| self.locals.get(s).cloned())
+                    .filter(|v| !v.is_nil())
+                    .or_else(|| self.get_env_with_main_alias(&name));
+                if let Some(v) = current {
                     coll[idx] = v;
                 }
             }

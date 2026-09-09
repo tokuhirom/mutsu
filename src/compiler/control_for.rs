@@ -39,6 +39,68 @@ pub(super) struct ForParts<'a> {
 }
 
 impl Compiler {
+    /// The variable whose *container* a value-collecting `for` body hands back,
+    /// when the body's tail statement is a bare read of one.
+    ///
+    /// A Raku block's value is not decontainerized, so a collecting `for` whose
+    /// body ends in `$g` gathers the `Scalar` container `$g` denotes and every
+    /// collected slot reads it at the point the list is consumed — after the
+    /// loop, so after each iteration's `temp` restore. `do for 1..2 { temp $g =
+    /// 9; $g }` is therefore `(1 1)` and not `(9 9)`, and `do for 1..2 { $g =
+    /// $g + 1; $g }` is `(3 3)` and not `(2 3)`. Decontainerizing the tail
+    /// (`$g + 0`) opts back out, because that expression is a value.
+    ///
+    /// Returning the name here makes the loop tag it with `TagContainerRef`,
+    /// which is the same signal `compile_expr_assign` already emits for a tail
+    /// *assignment* (`do for 1..3 { $s += $_ }` → `(6 6 6)`); the VM re-reads
+    /// every tagged slot once the loop is over.
+    ///
+    /// Only a container that outlives the iteration qualifies:
+    ///
+    /// - the loop's own parameters and the topic are rebound per iteration, so
+    ///   `do for 1..3 -> $i { $i }` must stay `(1 2 3)`;
+    /// - so is a `my` declared anywhere in the body, hence
+    ///   `do for 1..3 { my $x = $_ * 2; $x }` is `(2 4 6)`. A `state`
+    ///   declaration is the exception — its storage is one cell for the whole
+    ///   loop, and raku collects it as one (`(6 6 6)`, not `(1 3 6)`);
+    /// - a twigil'd or punctuation name (`$*d`, `$!a`, `$^a`, `$/`) is left
+    ///   alone: those do not resolve through the plain env lookup the VM's
+    ///   re-read uses, and nothing here has measured them.
+    fn collected_tail_container_name(
+        body: &[Stmt],
+        param: &Option<String>,
+        params: &[String],
+    ) -> Option<String> {
+        let Some(Stmt::Expr(Expr::Var(name))) = body.last() else {
+            return None;
+        };
+        if name == "_"
+            || !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+            || param.as_deref() == Some(name.as_str())
+            || params
+                .iter()
+                .any(|p| p.strip_prefix('\\').unwrap_or(p) == name)
+        {
+            return None;
+        }
+        let mut body_declared = std::collections::HashSet::new();
+        crate::ast::collect_all_my_decl_names(body, &mut body_declared);
+        let declared_as_state = body.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::VarDecl {
+                    name: declared,
+                    is_state: true,
+                    ..
+                } if declared == name
+            )
+        });
+        if body_declared.contains(name.as_str()) && !declared_as_state {
+            return None;
+        }
+        Some(name.clone())
+    }
+
     /// Compile a `for` construct in either position.
     ///
     /// Statement callers must have run the statement-level source desugars
@@ -423,6 +485,24 @@ impl Compiler {
             // statement form, so a `my TYPE $x` here is env-restored on exit and
             // can use the env-only scoped constraint opcode.
             self.compile_scope_restored_body_value(&loop_body);
+            // Emitted AFTER that call, so outside the body's own `let`/`temp`
+            // save frame (#7677): `exec_let_block_op` jumps the ip past
+            // everything inside the frame's range, and this tag has to run.
+            // Being outside it is also what the container semantics want — the
+            // tag records a name whose value is read once the whole loop is
+            // over, by which point every iteration's `temp` has been restored.
+            //
+            // A bare variable read in tail position hands back that variable's
+            // CONTAINER, exactly as a tail assignment does (see the
+            // `TagContainerRef` emitted by `compile_expr_assign`). Tag it so the
+            // `ForLoop` opcode collects the container rather than a snapshot of
+            // what it held mid-iteration.
+            if let Some(name) = Self::collected_tail_container_name(&loop_body, param, params) {
+                let source_slot = self.local_map.get(name.as_str()).copied();
+                let name_idx = self.code.add_constant(Value::str(name));
+                self.code
+                    .emit(OpCode::TagContainerRef(name_idx, source_slot));
+            }
         } else {
             self.compile_scope_restored_loop_body(&loop_body);
         }
