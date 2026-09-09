@@ -99,7 +99,7 @@ impl Interpreter {
                     if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
+                            if self.is_role_type_name(rp_base) {
                                 // It's a sub-role, recurse
                                 role_stack.push(rp_base.to_string());
                             } else if self.registry().classes.contains_key(rp_base)
@@ -149,7 +149,7 @@ impl Interpreter {
                     if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
+                            if self.is_role_type_name(rp_base) {
                                 role_stack.push(rp_base.to_string());
                             }
                         }

@@ -187,12 +187,12 @@ impl Interpreter {
         // resolution the class-body DoesDecl path already does.
         // JSON::Unmarshal composes all its CustomUnmarshaller roles
         // this way.
-        let role_name_str = if !self.registry().roles.contains_key(&role_name_str)
+        let role_name_str = if !self.is_role_type_name(&role_name_str)
             && !self.registry().classes.contains_key(&role_name_str)
             && !role_name_str.contains('[')
         {
             let resolved = self.resolve_declared_type_name(&role_name_str);
-            if self.registry().roles.contains_key(&resolved) {
+            if self.is_role_type_name(&resolved) {
                 resolved
             } else {
                 role_name_str
@@ -213,11 +213,7 @@ impl Interpreter {
             .map(|(b, _)| b)
             .unwrap_or(role_name_str.as_str());
         if cx.type_params.iter().any(|tp| tp == base_role_name)
-            || (!self.registry().roles.contains_key(base_role_name)
-                && matches!(
-                    base_role_name,
-                    "Real" | "Numeric" | "Cool" | "Any" | "Mu" | "Positional" | "Associative"
-                ))
+            || crate::runtime::types::is_builtin_role_name(base_role_name)
         {
             self.registry_mut()
                 .role_parents

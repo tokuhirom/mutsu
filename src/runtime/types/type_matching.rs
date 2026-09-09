@@ -4,7 +4,7 @@ impl Interpreter {
     pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
         let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
         if let Some((base, args)) = Self::parse_parametric_type_name(trimmed)
-            && self.is_role(&base)
+            && self.is_role_type_name(&base)
         {
             return Value::parametric_role(
                 Symbol::intern(&base),
@@ -350,7 +350,7 @@ impl Interpreter {
     /// If `name` is in `self.registry().roles`, returns it as-is. Otherwise, if `name`
     /// contains `::`, tries the short name (after the last `::`).
     pub(in crate::runtime) fn resolve_role_key(&self, name: &str) -> Option<String> {
-        if self.registry().roles.contains_key(name) {
+        if self.is_role_type_name(name) {
             return Some(name.to_string());
         }
         // Same topic exclusion as the class-side lookups: see
@@ -359,12 +359,12 @@ impl Interpreter {
             && let Some(ValueView::Package(pkg)) = self.env.get(name).map(Value::view)
         {
             let resolved = pkg.resolve();
-            if self.registry().roles.contains_key(&resolved) {
+            if self.is_role_type_name(&resolved) {
                 return Some(resolved);
             }
         }
         if let Some(short) = name.rsplit("::").next()
-            && self.registry().roles.contains_key(short)
+            && self.is_role_type_name(short)
         {
             return Some(short.to_string());
         }
@@ -1158,7 +1158,7 @@ impl Interpreter {
         }
         if let Some((constraint_base, constraint_args)) =
             Self::parse_parametric_type_name(constraint)
-            && self.is_role(&constraint_base)
+            && self.is_role_type_name(&constraint_base)
             && let ValueView::Mixin(_, mixins) = value.view()
         {
             let key = format!(
@@ -1188,7 +1188,7 @@ impl Interpreter {
         // `__mutsu_role_typeargs__` markers the mixin branch above reads.
         if let Some((constraint_base, constraint_args)) =
             Self::parse_parametric_type_name(constraint)
-            && self.is_role(&constraint_base)
+            && self.is_role_type_name(&constraint_base)
             && let Some(class_name) = Self::instance_class_name_of(value)
         {
             let expected: Vec<Value> = constraint_args
@@ -1417,7 +1417,7 @@ impl Interpreter {
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(&pkg_resolved);
-            if self.registry().roles.contains_key(pkg_base) {
+            if self.is_role_type_name(pkg_base) {
                 // For role groups, use candidate-specific parents:
                 // - Curried roles (e.g. R[Int]): use parametric candidate's parents
                 // - Bare role name: use non-parametric candidate's parents
@@ -1440,9 +1440,8 @@ impl Interpreter {
                                     .map(|c| c.parents.clone())
                             }
                         });
-                let initial_parents = candidate_parents
-                    .or_else(|| self.registry().role_parents.get(pkg_base).cloned())
-                    .unwrap_or_default();
+                let initial_parents =
+                    candidate_parents.unwrap_or_else(|| self.registry().role_parents_of(pkg_base));
                 let mut stack: Vec<String> = initial_parents;
                 let mut seen = HashSet::new();
                 while let Some(parent) = stack.pop() {

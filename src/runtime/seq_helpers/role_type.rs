@@ -7,25 +7,29 @@ impl Interpreter {
         if lhs_role == rhs_role {
             return true;
         }
-        let mut stack = vec![lhs_role.to_string()];
+        let mut stack = vec![
+            lhs_role
+                .split_once('[')
+                .map(|(base, _)| base)
+                .unwrap_or(lhs_role)
+                .to_string(),
+        ];
         let mut seen = HashSet::new();
         while let Some(role) = stack.pop() {
             if !seen.insert(role.clone()) {
                 continue;
             }
-            if let Some(parents) = self.registry().role_parents.get(&role) {
-                for parent in parents {
-                    // A parent may be recorded in parametric form ("P2[Int]");
-                    // compare and continue the walk on its base name.
-                    let parent_base = parent
-                        .split_once('[')
-                        .map(|(base, _)| base)
-                        .unwrap_or(parent.as_str());
-                    if parent_base == rhs_role {
-                        return true;
-                    }
-                    stack.push(parent_base.to_string());
+            for parent in self.registry().role_parents_of(&role) {
+                // A parent may be recorded in parametric form ("P2[Int]");
+                // compare and continue the walk on its base name.
+                let parent_base = parent
+                    .split_once('[')
+                    .map(|(base, _)| base)
+                    .unwrap_or(parent.as_str());
+                if parent_base == rhs_role {
+                    return true;
                 }
+                stack.push(parent_base.to_string());
             }
         }
         false

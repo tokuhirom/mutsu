@@ -32,7 +32,9 @@ impl Compiler {
             // Well-known builtin types should not be package-qualified.
             // "Grammar" inside a module should stay "Grammar", not become
             // "MyModule::Grammar".
-            if matches!(
+            if crate::runtime::types::is_builtin_role_name(
+                p.split_once('[').map(|(base, _)| base).unwrap_or(p),
+            ) || matches!(
                 p.as_str(),
                 "Any"
                     | "Cool"

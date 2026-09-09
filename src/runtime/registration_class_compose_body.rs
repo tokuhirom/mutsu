@@ -438,6 +438,7 @@ impl Interpreter {
                         }
                     }
                 } else if self.registry().classes.contains_key(parent_base)
+                    && !self.is_role_type_name(parent_base)
                     && !cx.class_def.parents.iter().any(|p| p == &resolved_parent)
                 {
                     cx.class_def.parents.push(resolved_parent.clone());
@@ -473,7 +474,7 @@ impl Interpreter {
                     if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
                         for rp in rparents {
                             let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
+                            if self.is_role_type_name(rp_base) {
                                 // It's a role - add as composed role and recurse
                                 if !punned_composed_roles.contains(&rp) {
                                     punned_composed_roles.push(rp.clone());

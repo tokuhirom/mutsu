@@ -85,7 +85,7 @@ impl Interpreter {
     /// only, never composed roles.
     fn parent_is_role(&self, name: &str) -> bool {
         let base = name.split_once('[').map(|(b, _)| b).unwrap_or(name);
-        self.is_role(base)
+        self.is_role_type_name(base)
     }
 
     /// The direct parents used to build a `:tree`, filling in the implicit
@@ -211,7 +211,14 @@ impl Interpreter {
         // the name itself must use role semantics
         // (`X::Syntax.^roles` -> `(X::Comp)`, not `()`).
         // For instances (punned roles), include the role itself in the list.
-        let is_role = self.registry().roles.contains_key(class_name);
+        // `Blob` and `Buf` are represented by native ClassDefs as well as
+        // native roles. Keep their class-side composed-role metadata as the
+        // source for `.^roles`; treating those dual names as bare roles would
+        // incorrectly turn `Buf.^roles(:!transitive)` from `Blob[T]` into the
+        // full role-parent closure.
+        let is_role = self.is_role(class_name)
+            || (crate::runtime::types::is_builtin_role_name(class_name)
+                && !self.registry().classes.contains_key(class_name));
         if is_role {
             let mut result = Vec::new();
             // For instances of punned roles, include the role itself first
@@ -219,23 +226,20 @@ impl Interpreter {
                 result.push(class_name.to_string());
             }
             if non_transitive {
-                if !is_instance && let Some(parents) = self.registry().role_parents.get(class_name)
-                {
-                    result.extend(parents.clone());
+                if !is_instance {
+                    result.extend(self.registry().role_parents_of(class_name));
                 }
                 return result;
             }
-            if let Some(parents) = self.registry().role_parents.get(class_name) {
-                let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
-                for p in parents {
-                    if seen.insert(p.clone()) {
-                        result.push(p.clone());
-                    }
+            let parents = self.registry().role_parents_of(class_name);
+            let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
+            for p in &parents {
+                if seen.insert(p.clone()) {
+                    result.push(p.clone());
                 }
-                let parents_clone = parents.clone();
-                for p in &parents_clone {
-                    self.collect_transitive_roles(p, &mut result, &mut seen);
-                }
+            }
+            for p in &parents {
+                self.collect_transitive_roles(p, &mut result, &mut seen);
             }
             return result;
         }
@@ -337,11 +341,9 @@ impl Interpreter {
         let mut transitive = std::collections::HashSet::new();
         for r in &all {
             let base = r.split_once('[').map(|(b, _)| b).unwrap_or(r.as_str());
-            if let Some(parents) = self.registry().role_parents.get(base).cloned() {
-                for p in parents {
-                    transitive.insert(p.clone());
-                    self.collect_transitive_set(&p, &mut transitive);
-                }
+            for p in self.registry().role_parents_of(base) {
+                transitive.insert(p.clone());
+                self.collect_transitive_set(&p, &mut transitive);
             }
         }
         all.into_iter()
@@ -359,11 +361,9 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        if let Some(parents) = self.registry().role_parents.get(base) {
-            for p in parents {
-                if result.insert(p.clone()) {
-                    self.collect_transitive_set(p, result);
-                }
+        for p in self.registry().role_parents_of(base) {
+            if result.insert(p.clone()) {
+                self.collect_transitive_set(&p, result);
             }
         }
     }
@@ -378,12 +378,10 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        if let Some(parents) = self.registry().role_parents.get(base) {
-            for p in parents {
-                if seen.insert(p.clone()) {
-                    result.push(p.clone());
-                    self.collect_transitive_roles(p, result, seen);
-                }
+        for p in self.registry().role_parents_of(base) {
+            if seen.insert(p.clone()) {
+                result.push(p.clone());
+                self.collect_transitive_roles(&p, result, seen);
             }
         }
     }
