@@ -261,6 +261,24 @@ impl Interpreter {
         self.mark_readonly_sym(Symbol::intern(name));
     }
 
+    /// Mark the scalar parameters synthesized for a placeholder block as
+    /// readonly aliases. Placeholder parameters are stored with their twigil
+    /// (`^name`/`:name`) in `SubData::params`, and assignment targets preserve
+    /// that name. Also mark the de-twigilled spelling because reads and some
+    /// lowered writes resolve through that alias. Aggregate placeholders have
+    /// their own container semantics and are deliberately left out here.
+    pub(crate) fn mark_placeholder_params_readonly(&mut self, params: &[String]) {
+        for param in params {
+            let Some(name) = param.strip_prefix('^').or_else(|| param.strip_prefix(':')) else {
+                continue;
+            };
+            if !name.is_empty() {
+                self.mark_readonly(param);
+                self.mark_readonly(name);
+            }
+        }
+    }
+
     /// Mark a variable as readonly, recording *why*.
     pub(crate) fn mark_readonly_with(&mut self, name: &str, kind: ReadonlyKind) {
         self.mark_readonly_sym_with(Symbol::intern(name), kind);

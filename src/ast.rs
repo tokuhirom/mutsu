@@ -2900,7 +2900,10 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
         | Stmt::Goto(e) => {
             collect_ph_expr_shallow(e, out);
         }
-        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
+        Stmt::VarDecl { name, expr, .. } | Stmt::Assign { name, expr, .. } => {
+            // A placeholder can occur only as an assignment target. It still
+            // declares a parameter of the surrounding placeholder block.
+            push_if_placeholder(name, out);
             collect_ph_expr_shallow(expr, out)
         }
         Stmt::Call { args, .. } => {
