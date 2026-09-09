@@ -225,10 +225,13 @@ impl Interpreter {
     /// Why `name` is readonly, or `None` when it is writable.
     #[inline]
     pub(crate) fn readonly_kind(&self, name: &str) -> Option<ReadonlyKind> {
-        self.readonly_vars
-            .borrow()
-            .get(&Symbol::intern(name))
-            .copied()
+        self.readonly_kind_sym(Symbol::intern(name))
+    }
+
+    /// [`Self::readonly_kind`] for an already-interned name.
+    #[inline]
+    pub(crate) fn readonly_kind_sym(&self, sym: Symbol) -> Option<ReadonlyKind> {
+        self.readonly_vars.borrow().get(&sym).copied()
     }
 
     /// True when the `$`-sigil (or sigilless) name `name` is bound **directly
@@ -402,7 +405,21 @@ impl Interpreter {
     ///   (sigilless `constant PI`, `is List` array): `X::Assignment::RO`,
     ///   "Cannot modify an immutable TYPE (VALUE)".
     pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
-        match self.readonly_kind(name) {
+        self.check_readonly_for_modify_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::check_readonly_for_modify`] for a caller that already holds the
+    /// name's `Symbol` (a `SetLocal` slot, a `SetGlobal` constant, a bound
+    /// parameter). The `&str` is still needed for the cold error message; the
+    /// hot path is the `readonly_vars` probe, which the `&str` entry point
+    /// re-hashed the name for on every store (#7736).
+    pub(crate) fn check_readonly_for_modify_sym(
+        &self,
+        name: &str,
+        name_sym: Symbol,
+    ) -> Result<(), RuntimeError> {
+        debug_assert_eq!(name_sym, Symbol::intern(name));
+        match self.readonly_kind_sym(name_sym) {
             None => Ok(()),
             Some(ReadonlyKind::Alias) => Err(RuntimeError::readonly_variable()),
             Some(ReadonlyKind::Immutable) => Err(RuntimeError::immutable_value()),
@@ -621,6 +638,19 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn bind_param_value(&mut self, name: &str, value: Value) {
+        self.bind_param_value_sym(name, Symbol::intern(name), value);
+    }
+
+    /// [`Self::bind_param_value`] for a caller that already holds the
+    /// parameter name's `Symbol`. The signature binder resolves each parameter
+    /// name several times per call (bind, type constraint, readonly mark); this
+    /// lets it hash the name once instead of once per helper (#7736).
+    pub(in crate::runtime) fn bind_param_value_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        value: Value,
+    ) {
         // An `@`-sigiled parameter is a positional binding: whatever Positional it
         // is given becomes *the array's elements*. An attributive one
         // (`submethod BUILD(:@!elems)`) writes straight through to the attribute,
@@ -641,7 +671,10 @@ impl Interpreter {
         // and would freeze a spawned block's view of it at the first spawn's
         // value (`reduce -> $h, @words { $h + await start { [+] @words } }`).
         self.note_param_bound_aggregate(name, &value);
-        self.env.insert(name.to_string(), value.clone());
+        debug_assert_eq!(name_sym, Symbol::intern(name));
+        // `insert_sym_noting`, not `insert_sym`: a placeholder parameter is
+        // stored under its `^`-twigil name, which arms `PLACEHOLDER_KEY_SEEN`.
+        self.env.insert_sym_noting(name_sym, value.clone());
         // Extract attribute name from twigil params: $!x -> "x", @!types -> "types", %!h -> "h"
         let attr_name = if let Some(a) = name.strip_prefix('!') {
             Some(a)

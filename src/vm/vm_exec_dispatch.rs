@@ -1129,9 +1129,9 @@ impl Interpreter {
                 // called from `new (Str $str!)`.)
                 if !raw_mode && !is_bind_ctx && !is_bound_container {
                     if self.vardecl_context.get() {
-                        self.unmark_readonly(&name);
+                        self.unmark_readonly_sym(name_sym);
                     } else {
-                        self.check_readonly_for_modify(&name)?;
+                        self.check_readonly_for_modify_sym(&name, name_sym)?;
                     }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant
@@ -1264,7 +1264,7 @@ impl Interpreter {
                     // `lives-ok` correctly caught and reported as a test
                     // failure, even though nothing in the block actually
                     // "died").
-                    let current_view = self.env().get(&name).map(Value::view);
+                    let current_view = self.env().get_sym(name_sym).map(Value::view);
                     let first_letter_uppercase = name.starts_with(|c: char| c.is_uppercase());
                     let unbound_type_slot = match current_view {
                         Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
@@ -1512,13 +1512,15 @@ impl Interpreter {
                 {
                     return Err(err);
                 }
-                let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
+                // Both keys are memoized per name symbol, so a store neither
+                // allocates the `format!` string nor re-hashes it (#7736).
+                let readonly_key = Interpreter::sigilless_readonly_key_for_sym(name_sym);
+                let alias_key = Interpreter::sigilless_alias_key_for_sym(name_sym);
                 if matches!(
-                    self.env().get(&readonly_key).map(Value::view),
+                    self.env().get_sym(readonly_key).map(Value::view),
                     Some(ValueView::Bool(true))
                 ) && !matches!(
-                    self.env().get(&alias_key).map(Value::view),
+                    self.env().get_sym(alias_key).map(Value::view),
                     Some(ValueView::Str(_))
                 ) {
                     return Err(RuntimeError::assignment_ro(None));
@@ -1546,7 +1548,7 @@ impl Interpreter {
                         bind_source_slot,
                     );
                     self.env_mut()
-                        .insert(alias_key.clone(), Value::str(resolved_source.clone()));
+                        .insert_sym_noting(alias_key, Value::str(resolved_source.clone()));
                     self.mark_sigilless_alias_seen();
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
@@ -1554,7 +1556,7 @@ impl Interpreter {
                     let source_kind = self.readonly_kind(source_name);
                     let source_readonly = source_kind.is_some();
                     self.env_mut()
-                        .insert(readonly_key.clone(), Value::truth(source_readonly));
+                        .insert_sym_noting(readonly_key, Value::truth(source_readonly));
                     if let Some(kind) = source_kind {
                         self.mark_readonly_with(&name, kind);
                     }
@@ -1985,7 +1987,7 @@ impl Interpreter {
                 if !(unit_lexical_write || our_scalar_write || raw_mode && name.starts_with('@')) {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
-                let mut alias_name = self.env().get(&alias_key).and_then(|v| {
+                let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
                     if let ValueView::Str(name) = v.view() {
                         Some(name.to_string())
                     } else {

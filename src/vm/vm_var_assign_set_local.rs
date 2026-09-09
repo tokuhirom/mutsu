@@ -752,7 +752,14 @@ impl Interpreter {
             // the bare name (this runs on every declaration).
             if !self.no_readonly_vars() {
                 let bare = name.trim_start_matches(['$', '@', '%', '&']);
-                self.unmark_readonly(bare);
+                // A scalar local is already stored sigil-less, so the strip is a
+                // no-op and the slot's pre-interned symbol IS the bare name's
+                // (equal strings intern to equal symbols) — the common case, and
+                // the one that runs per declaration (#7736).
+                match code.locals_sym.get(idx).copied() {
+                    Some(sym) if bare.len() == name.len() => self.unmark_readonly_sym(sym),
+                    _ => self.unmark_readonly(bare),
+                }
             }
             // A self-recursive closure declaration (`my $f = -> $n { $f($n-1) }`)
             // boxed this very local into a cell while evaluating its own
@@ -2023,11 +2030,14 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
             )
-            && let Some(container) = self.env().get(name).and_then(|v| match v.view() {
-                ValueView::ContainerRef(arc) => Some(Value::container_ref(arc.clone())),
-                ValueView::Proxy { .. } => Some(v.clone()),
-                _ => None,
-            })
+            && let Some(container) =
+                self.env()
+                    .get_for(name, name_sym)
+                    .and_then(|v| match v.view() {
+                        ValueView::ContainerRef(arc) => Some(Value::container_ref(arc.clone())),
+                        ValueView::Proxy { .. } => Some(v.clone()),
+                        _ => None,
+                    })
         {
             self.locals[idx] = container;
         }
@@ -2526,8 +2536,9 @@ impl Interpreter {
             }
         }
         // A fresh declaration without an explicit type must not inherit stale
-        // constraints from an earlier lexical with the same name.
-        self.vm_set_var_type_constraint(name, None);
+        // constraints from an earlier lexical with the same name. The slot's
+        // pre-interned symbol spares the clear a re-hash of the name (#7736).
+        self.vm_set_var_type_constraint_for(name, Some(name_sym), None);
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             loan_env!(self, reset_atomic_var_key_decl(name));
         }

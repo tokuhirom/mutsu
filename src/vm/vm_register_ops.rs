@@ -18,11 +18,16 @@ impl Interpreter {
     }
 
     /// Get the current source file from the interpreter env.
+    ///
+    /// `?FILE` is a fixed key with a pre-interned symbol (`wk::file`); the
+    /// by-name probe re-hashed it on every caller-frame push (#7736).
     pub(crate) fn current_source_file(&self) -> Option<String> {
-        self.env().get("?FILE").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(s.to_string()),
-            _ => None,
-        })
+        self.env()
+            .get_sym(crate::symbol::wk::file())
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            })
     }
 
     /// `Symbol` variant of [`Self::current_source_file`] — the file a
@@ -52,10 +57,12 @@ impl Interpreter {
     /// [`Self::current_source_file_sym`] the slow, authoritative way: a full
     /// env-chain walk plus an intern. Only the debug assertion uses it.
     fn source_file_sym_by_walk(&self) -> Option<Symbol> {
-        self.env().get("?FILE").and_then(|v| match v.view() {
-            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
-            _ => None,
-        })
+        self.env()
+            .get_sym(crate::symbol::wk::file())
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+                _ => None,
+            })
     }
 
     /// Attach the defining scope to an interpolating regex literal

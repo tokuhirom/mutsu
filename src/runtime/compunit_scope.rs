@@ -57,7 +57,10 @@ impl Interpreter {
         self.unit_of_source_sym(file.map(Symbol::intern))
     }
 
-    fn unit_of_source_sym(&self, file: Option<Symbol>) -> Symbol {
+    /// The compunit a routine declared in `file` belongs to, for a caller that
+    /// already holds the path as a `Symbol` (a `CompiledFunction`'s cached
+    /// `source_file_sym`, a routine frame's `def_file`).
+    pub(crate) fn unit_of_source_sym(&self, file: Option<Symbol>) -> Symbol {
         match (file, self.program_path.as_deref()) {
             (None, _) => crate::runtime::main_unit(),
             (Some(f), Some(prog)) if f.resolve() == prog => crate::runtime::main_unit(),
