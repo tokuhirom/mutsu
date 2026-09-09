@@ -105,6 +105,30 @@ impl Interpreter {
                 .any(|s| s.resolve() == resolved_owner)
     }
 
+    /// The strict sibling of [`Interpreter::lexical_self_allows_private`], for a
+    /// **qualified** private call (`$o!Owner::meth`).
+    ///
+    /// The loose form accepts an env `self` that merely *inherits* from the
+    /// owner, which is right for the unqualified spelling but wrong here:
+    /// writing the owner's name out is exactly how a subclass tries to reach a
+    /// parent's private method, and Raku refuses that unless the parent
+    /// `trusts` it (`roast/integration/advent2011-day11.t`'s `Untrusty is Order`
+    /// pins the `X::Method::Private::Permission`). Requiring the captured
+    /// `self` to be an instance of the owner *itself* still identifies code
+    /// written inside the owner — which is all the callback case needs — without
+    /// handing a subclass an inheritance-shaped grant the trust check already
+    /// denied.
+    fn lexical_self_is_private_owner(&mut self, resolved_owner: &str) -> bool {
+        let Some(ValueView::Instance {
+            class_name: self_cls,
+            ..
+        }) = self.env.get("self").map(Value::view)
+        else {
+            return false;
+        };
+        self_cls.resolve() == resolved_owner
+    }
+
     /// Mu's default `.gist`/`.raku`/`.perl` rendering for a plain user
     /// instance (`ClassName.new(...)`, with special cases for `is Array`
     /// subclasses, `ObjAt`/`ValueObjAt`, `X::AdHoc`, schedulers,
@@ -392,49 +416,57 @@ impl Interpreter {
                 // Split at the LAST `::` — the owner class may itself be a nested
                 // name (`$c!Jar::Cookie::secret` is owner `Jar::Cookie`, method
                 // `secret`, NOT owner `Jar`, method `Cookie::secret`).
-                let (pm_name, owner_only, resolved) =
-                    if let Some((owner_class, pm_name)) = private_rest.rsplit_once("::") {
-                        // `owner_class` is the short name as written in
-                        // source; canonicalize it relative to the caller's
-                        // package chain before using it both for the trust
-                        // check and for the actual MRO lookup below — an
-                        // uncanonicalized short name never matches a fully
-                        // qualified MRO entry (`"A" != "M::A"`).
-                        let invocant_class = class_name.resolve();
-                        let (canonical_owner, caller_allowed) = self
-                            .resolve_and_check_private_owner_on(
-                                caller_class.as_deref(),
-                                owner_class,
-                                Some(&invocant_class),
-                            );
-                        if !caller_allowed {
-                            return Err(make_private_permission_error(
-                                pm_name,
-                                &canonical_owner,
-                                caller_class.as_deref().unwrap_or("GLOBAL"),
-                            ));
-                        }
-                        (
+                let (pm_name, owner_only, resolved) = if let Some((owner_class, pm_name)) =
+                    private_rest.rsplit_once("::")
+                {
+                    // `owner_class` is the short name as written in
+                    // source; canonicalize it relative to the caller's
+                    // package chain before using it both for the trust
+                    // check and for the actual MRO lookup below — an
+                    // uncanonicalized short name never matches a fully
+                    // qualified MRO entry (`"A" != "M::A"`).
+                    let invocant_class = class_name.resolve();
+                    let (canonical_owner, caller_allowed) = self
+                        .resolve_and_check_private_owner_on(
+                            caller_class.as_deref(),
+                            owner_class,
+                            Some(&invocant_class),
+                        );
+                    // A qualified private call is resolved LEXICALLY, like
+                    // the unqualified one below: `method_class_stack` names
+                    // whoever *invoked* the running code, which is the wrong
+                    // class when the call sits in a closure that some other
+                    // object calls back into (`$holder.run: { $self!R::p }`).
+                    // Fall back to the captured `self` the same way, instead
+                    // of denying the call outright.
+                    if !caller_allowed && !self.lexical_self_is_private_owner(&canonical_owner) {
+                        return Err(make_private_permission_error(
                             pm_name,
-                            Some(canonical_owner.clone()),
-                            self.resolve_private_method_with_owner(
-                                &class_name.resolve(),
-                                &canonical_owner,
-                                pm_name,
-                                &args,
-                            ),
-                        )
-                    } else {
-                        (
+                            &canonical_owner,
+                            caller_class.as_deref().unwrap_or("GLOBAL"),
+                        ));
+                    }
+                    (
+                        pm_name,
+                        Some(canonical_owner.clone()),
+                        self.resolve_private_method_with_owner(
+                            &class_name.resolve(),
+                            &canonical_owner,
+                            pm_name,
+                            &args,
+                        ),
+                    )
+                } else {
+                    (
+                        private_rest,
+                        None,
+                        self.resolve_private_method_any_owner(
+                            &class_name.resolve(),
                             private_rest,
-                            None,
-                            self.resolve_private_method_any_owner(
-                                &class_name.resolve(),
-                                private_rest,
-                                &args,
-                            ),
-                        )
-                    };
+                            &args,
+                        ),
+                    )
+                };
                 // Nothing matched by signature. That is not the same as "no such
                 // private method": the class may declare exactly this method with
                 // parameters these arguments fail to bind, and raku reports the
@@ -1838,7 +1870,8 @@ impl Interpreter {
                             owner_class,
                             Some(&invocant_class),
                         );
-                    if !caller_allowed {
+                    // Same lexical fallback as the instance path above.
+                    if !caller_allowed && !self.lexical_self_is_private_owner(&canonical_owner) {
                         return Err(make_private_permission_error(
                             pm_name,
                             &canonical_owner,
