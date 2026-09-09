@@ -607,9 +607,9 @@ fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<Strin
     }
 }
 
-/// The positional scalar parameter names of a routine's `signature`, each with
-/// its `$` sigil stripped. A parameter carrying anything beyond a plain scalar
-/// `target` (a name, a slurpy/named marker, a default) is the coverage boundary.
+/// The positional parameter names of a routine's `signature`, each with its
+/// `$` sigil stripped. Nested `sub-signature` nodes are lowered recursively
+/// into `ParamDef.sub_signature`.
 #[allow(clippy::type_complexity)]
 fn signature_positional_params(
     node: &RakuAstNode,
@@ -617,108 +617,137 @@ fn signature_positional_params(
     let Ok(sig) = named_child(node, "signature") else {
         return Ok((Vec::new(), Vec::new()));
     };
-    let params = match sig.fields.iter().find(|f| f.name == Some("parameters")) {
+    let defs = lower_signature_parameters(sig, node)?;
+    let names = defs.iter().map(|def| def.name.clone()).collect();
+    Ok((names, defs))
+}
+
+fn lower_signature_parameters(
+    signature: &RakuAstNode,
+    owner: &RakuAstNode,
+) -> Result<Vec<ParamDef>, RuntimeError> {
+    if signature.class != RakuAstClass::Signature {
+        return Err(unsupported(owner));
+    }
+    let params = match signature
+        .fields
+        .iter()
+        .find(|f| f.name == Some("parameters"))
+    {
         Some(f) => match &f.value {
             RakuAstFieldValue::List(items) => items,
-            _ => return Err(unsupported(node)),
+            _ => return Err(unsupported(owner)),
         },
-        None => return Ok((Vec::new(), Vec::new())),
+        None => return Ok(Vec::new()),
     };
-    let mut names = Vec::with_capacity(params.len());
     let mut defs = Vec::with_capacity(params.len());
     for v in params {
         let ValueView::RakuAst(p) = v.view() else {
-            return Err(unsupported(node));
+            return Err(unsupported(owner));
         };
-        let target = named_child(p, "target")?;
-        if target.class != RakuAstClass::ParameterTargetVar {
-            return Err(unsupported(node));
-        }
-        let raw = leaf_str(target, "name")?;
-        let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
-        let mut def = positional_param(&name);
-        // A named parameter `:$x` carries a `names` list; it binds by name and is
-        // optional by default.
-        if p.fields.iter().any(|f| f.name == Some("names")) {
-            def.named = true;
-            def.required = false;
-        }
-        // `optional => True` makes a positional parameter optional. For named
-        // parameters, an explicit False marks it required.
-        if let Some(optional) = p.fields.iter().find(|f| f.name == Some("optional")) {
-            let RakuAstFieldValue::Node(value) = &optional.value else {
-                return Err(unsupported(node));
-            };
-            let ValueView::Bool(is_optional) = value.view() else {
-                return Err(unsupported(node));
-            };
-            def.required = !is_optional;
-            def.optional_marker = is_optional;
-        }
-        // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker node.
-        if let Some(s) = p.fields.iter().find(|f| f.name == Some("slurpy")) {
-            if let RakuAstFieldValue::Node(val) = &s.value
-                && let ValueView::RakuAst(marker) = val.view()
-            {
-                match marker.class {
-                    RakuAstClass::ParameterSlurpyFlattened => def.slurpy = true,
-                    RakuAstClass::ParameterSlurpyUnflattened => def.double_slurpy = true,
-                    _ => return Err(unsupported(node)),
-                }
-                def.required = false;
-            } else {
-                return Err(unsupported(node));
-            }
-        }
-        // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
-        // handled; the implicit `Type::Setting(Any)` on an untyped param is
-        // ignored, and richer type forms (definite/coercion/parameterised) defer.
-        if let Some(t) = p.fields.iter().find(|f| f.name == Some("type")) {
-            if let RakuAstFieldValue::Node(val) = &t.value
-                && let ValueView::RakuAst(type_node) = val.view()
-            {
-                match type_node.class {
-                    RakuAstClass::TypeSimple => {
-                        let name_node = named_child_or_positional(type_node)?;
-                        if let ValueView::Str(s) = positional_leaf(name_node)?.view() {
-                            def.type_constraint = Some(s.to_string());
-                        } else {
-                            return Err(unsupported(node));
-                        }
-                    }
-                    RakuAstClass::TypeSetting => {} // implicit `Any`
-                    _ => return Err(unsupported(node)),
-                }
-            } else {
-                return Err(unsupported(node));
-            }
-        }
-        // `$y = EXPR` -> an optional positional with a default value.
-        if let Some(d) = p.fields.iter().find(|f| f.name == Some("default")) {
-            let default_node = match &d.value {
-                RakuAstFieldValue::Node(val) => match val.view() {
-                    ValueView::RakuAst(child) => child,
-                    _ => return Err(unsupported(node)),
-                },
-                _ => return Err(unsupported(node)),
-            };
-            def.default = Some(lower_expr(default_node)?);
-            def.required = false;
-        }
-        if let Some(w) = p.fields.iter().find(|f| f.name == Some("where")) {
-            let where_node = match &w.value {
-                RakuAstFieldValue::Node(val) => match val.view() {
-                    ValueView::RakuAst(child) => child,
-                    _ => return Err(unsupported(node)),
-                },
-                _ => return Err(unsupported(node)),
-            };
-            def.where_constraint = Some(Box::new(lower_expr(where_node)?));
-        }
-        names.push(name);
-        defs.push(def);
+        defs.push(lower_parameter(p, owner)?);
     }
-    Ok((names, defs))
+    Ok(defs)
+}
+
+fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<ParamDef, RuntimeError> {
+    if parameter.class != RakuAstClass::Parameter {
+        return Err(unsupported(owner));
+    }
+    let target = named_child(parameter, "target")?;
+    if target.class != RakuAstClass::ParameterTargetVar {
+        return Err(unsupported(owner));
+    }
+    let raw = leaf_str(target, "name")?;
+    let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
+    let mut def = positional_param(&name);
+    // A named parameter `:$x` carries a `names` list; it binds by name and is
+    // optional by default.
+    if parameter.fields.iter().any(|f| f.name == Some("names")) {
+        def.named = true;
+        def.required = false;
+    }
+    // `optional => True` makes a positional parameter optional. For named
+    // parameters, an explicit False marks it required.
+    if let Some(optional) = parameter.fields.iter().find(|f| f.name == Some("optional")) {
+        let RakuAstFieldValue::Node(value) = &optional.value else {
+            return Err(unsupported(owner));
+        };
+        let ValueView::Bool(is_optional) = value.view() else {
+            return Err(unsupported(owner));
+        };
+        def.required = !is_optional;
+        def.optional_marker = is_optional;
+    }
+    // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker node.
+    if let Some(s) = parameter.fields.iter().find(|f| f.name == Some("slurpy")) {
+        if let RakuAstFieldValue::Node(val) = &s.value
+            && let ValueView::RakuAst(marker) = val.view()
+        {
+            match marker.class {
+                RakuAstClass::ParameterSlurpyFlattened => def.slurpy = true,
+                RakuAstClass::ParameterSlurpyUnflattened => def.double_slurpy = true,
+                _ => return Err(unsupported(owner)),
+            }
+            def.required = false;
+        } else {
+            return Err(unsupported(owner));
+        }
+    }
+    // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
+    // handled; the implicit `Type::Setting(Any)` on an untyped param is
+    // ignored, and richer type forms (definite/coercion/parameterised) defer.
+    if let Some(t) = parameter.fields.iter().find(|f| f.name == Some("type")) {
+        if let RakuAstFieldValue::Node(val) = &t.value
+            && let ValueView::RakuAst(type_node) = val.view()
+        {
+            match type_node.class {
+                RakuAstClass::TypeSimple => {
+                    let name_node = named_child_or_positional(type_node)?;
+                    if let ValueView::Str(s) = positional_leaf(name_node)?.view() {
+                        def.type_constraint = Some(s.to_string());
+                    } else {
+                        return Err(unsupported(owner));
+                    }
+                }
+                RakuAstClass::TypeSetting => {} // implicit `Any`
+                _ => return Err(unsupported(owner)),
+            }
+        } else {
+            return Err(unsupported(owner));
+        }
+    }
+    // `$y = EXPR` -> an optional positional with a default value.
+    if let Some(d) = parameter.fields.iter().find(|f| f.name == Some("default")) {
+        let default_node = match &d.value {
+            RakuAstFieldValue::Node(val) => match val.view() {
+                ValueView::RakuAst(child) => child,
+                _ => return Err(unsupported(owner)),
+            },
+            _ => return Err(unsupported(owner)),
+        };
+        def.default = Some(lower_expr(default_node)?);
+        def.required = false;
+    }
+    if let Some(w) = parameter.fields.iter().find(|f| f.name == Some("where")) {
+        let where_node = match &w.value {
+            RakuAstFieldValue::Node(val) => match val.view() {
+                ValueView::RakuAst(child) => child,
+                _ => return Err(unsupported(owner)),
+            },
+            _ => return Err(unsupported(owner)),
+        };
+        def.where_constraint = Some(Box::new(lower_expr(where_node)?));
+    }
+    if let Some(sub_signature) = parameter
+        .fields
+        .iter()
+        .find(|f| f.name == Some("sub-signature"))
+    {
+        let sub_signature = child_node(&sub_signature.value)?;
+        def.sub_signature = Some(lower_signature_parameters(sub_signature, owner)?);
+    }
+    Ok(def)
 }
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
