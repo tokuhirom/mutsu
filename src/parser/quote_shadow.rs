@@ -62,12 +62,17 @@ fn leading_ident_len(input: &str) -> usize {
 }
 
 /// Whether `rest` opens with an explicit quote adverb (`:g`, `:i`, `:!ratchet`,
-/// `:2nd`, ...), optionally after horizontal whitespace (`s :g/…/…/`).
+/// `:2nd`, ...).
 ///
 /// `::` is a package qualification, never an adverb.
 fn starts_with_quote_adverb(rest: &str) -> bool {
-    let trimmed = rest.trim_start_matches([' ', '\t']);
-    let Some(after_colon) = trimmed.strip_prefix(':') else {
+    // A space after a quote-language name makes it a normal call/listop
+    // boundary.  In particular, `sub s(*%h) { ... }; s :a1:b2` must call the
+    // declared routine; treating `:a1` as a quote adverb would commit the
+    // parser to a substitution and reject it as an unsupported regex adverb.
+    // The quote parser itself still accepts whitespace before an adverb when
+    // the name is not shadowed (`s :g/.../.../`).
+    let Some(after_colon) = rest.strip_prefix(':') else {
         return false;
     };
     after_colon
@@ -110,7 +115,7 @@ mod tests {
     #[test]
     fn adverb_detection() {
         assert!(starts_with_quote_adverb(":g/a/b/"));
-        assert!(starts_with_quote_adverb(" :g/a/b/"));
+        assert!(!starts_with_quote_adverb(" :g/a/b/"));
         assert!(starts_with_quote_adverb(":!ratchet/a/"));
         assert!(starts_with_quote_adverb(":2nd/a/"));
         assert!(!starts_with_quote_adverb("::Foo"));
