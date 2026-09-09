@@ -105,3 +105,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0077](0077-locals-are-a-window-into-a-contiguous-stack.md) | A call's locals are a window into one contiguous stack, not a pooled `Vec` | Accepted (Slices 0 and 2 implemented; Slice 1 withdrawn into 2; leading-parameter *fill* done, its arg-move half and Slice 3 open) |
 | [0078](0078-per-call-scope-stacks-are-windows-not-moved-vectors.md) | A call's five scope stacks are windows into shared vectors, not `mem::take`n `Vec`s | Accepted (implemented) |
 | [0079](0079-container-itemization-is-a-holder-property-tagged-on-the-containerref-word.md) | Container itemization is a property of the *holder*, tagged on the `ContainerRef` word (not on the shared cell) | Proposed |
+| [0080](0080-hash-element-containerization-is-per-value.md) | Hash element containerization is a per-value property, not a hash-wide slurpy flag | Proposed |
