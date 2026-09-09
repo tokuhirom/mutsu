@@ -2373,6 +2373,20 @@ struct PromiseState {
     /// (and mutsu's own internal resolution paths, which bypass the
     /// user-facing methods) may resolve a vowed promise afterwards.
     vow_taken: bool,
+    /// Whether this promise was a `start` expression whose value was sunk.
+    /// Raku reports a failure from that shape when the promise is destroyed,
+    /// but not from an explicitly retained `Promise`.
+    report_unhandled: bool,
+    /// Whether user code observed this promise's result or status. An
+    /// observed Broken promise belongs to its observer and must not also emit
+    /// the sink-context diagnostic at destruction time.
+    observed: bool,
+    /// Guards the diagnostic against both the GC finalizer and Rust `Drop`
+    /// seeing the same promise death.
+    unhandled_reported: bool,
+    /// The mutsu thread that ran the scheduled code, used in the diagnostic
+    /// printed for an unobserved Broken promise.
+    thread_id: i64,
 }
 
 #[derive(Debug, Clone)]

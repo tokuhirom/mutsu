@@ -60,6 +60,9 @@ static ALLOC: alloc_stats::CountingAllocator = alloc_stats::CountingAllocator;
 /// worker's. Embedders that drive `Interpreter` from a long-lived thread and
 /// enable `MUTSU_GC` should call this on that thread too.
 pub fn gc_register_main_thread() {
+    // Initialize the process-local mutsu thread identity before any worker can
+    // ask for its fallback OS-thread-derived id.
+    let _ = runtime::current_mutsu_thread_id();
     gc::enter_mutator_worker();
     gc::mark_thread_registered(true);
 }

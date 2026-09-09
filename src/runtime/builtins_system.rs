@@ -229,6 +229,7 @@ impl Interpreter {
             // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
             // block on it directly instead of wrapping it in a sub-VM.
             let mut thread_interp = thread_interp;
+            promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
             // Worker bodies run via `call_value` without the main thread's
             // `run_top` panic boundary, so guard them here: a Rust panic in
             // user code becomes a catchable broken-Promise error (X::AdHoc)

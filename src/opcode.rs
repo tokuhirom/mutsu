@@ -1342,6 +1342,9 @@ pub(crate) enum OpCode {
     // -- Stack manipulation --
     Dup,
     Pop,
+    /// Mark a sunk `start` promise for Raku's deferred unhandled-exception
+    /// diagnostic, then let the following `SinkPop` discard its value.
+    MarkPromiseSink,
     /// Pop with sink context — throws unhandled Failures.
     /// The first bool (`user_sink`) is `true` when the sunk value is a
     /// syntactically fresh rvalue (e.g. a method call / `Foo.new`) that may

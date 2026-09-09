@@ -3236,6 +3236,12 @@ impl Interpreter {
                 self.pop_warn_suppression();
                 *ip += 1;
             }
+            OpCode::MarkPromiseSink => {
+                if let Some(ValueView::Promise(shared)) = self.stack.last().map(Value::view) {
+                    shared.mark_unhandled();
+                }
+                *ip += 1;
+            }
             OpCode::SinkPopAssign => {
                 self.sync_source_line(code, *ip);
                 if let Some(val) = self.stack.pop() {

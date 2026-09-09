@@ -927,6 +927,10 @@ impl Compiler {
         )
     }
 
+    fn is_start_call(expr: &Expr) -> bool {
+        matches!(expr, Expr::Call { name, .. } if name.resolve() == "start")
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         // See `Compiler::compile_expr` — the declaration side of a BEGIN-time
         // interpolated extended identifier (`my $a:foo«$c» = 1`).
@@ -949,6 +953,9 @@ impl Compiler {
                 }
                 self.compile_condition_expr(expr);
                 self.sunk_list_assign_result = false;
+                if Self::is_start_call(expr) {
+                    self.code.emit(OpCode::MarkPromiseSink);
+                }
                 // Assignment statements are wanted, not sunk (rakudo): storing
                 // an unhandled Failure via `%h{$k} = ...;` / `@a[$i] = ...;`
                 // (also with an `if`/`with` statement modifier) must not throw

@@ -130,6 +130,7 @@ impl Interpreter {
         args: Vec<Value>,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
+        shared.mark_observed();
         match method {
             "result" => {
                 // Wait for the promise to resolve (blocks if Planned)
