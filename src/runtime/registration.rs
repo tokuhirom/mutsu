@@ -1028,9 +1028,17 @@ impl Interpreter {
     }
 
     pub(crate) fn has_declared_function(&self, name: &str) -> bool {
-        self.bare_name_packages()
-            .iter()
-            .any(|pkg| self.registry().has_declared_function(pkg, name))
+        // The prelude-visibility gate (see `prelude_visible_here`) has to agree
+        // with `resolve_function`, or a hidden helper is reported as declared
+        // and then fails to resolve. It is skipped entirely — no key built, no
+        // allocation — for the overwhelmingly common case of a program that
+        // spliced no prelude at all.
+        let gate = !self.prelude_registered_functions.is_empty();
+        self.bare_name_packages().iter().any(|pkg| {
+            self.registry().has_declared_function(pkg, name)
+                && (!gate
+                    || self.prelude_visible_here(Symbol::intern(&format!("{}::{}", pkg, name))))
+        })
     }
 
     pub(crate) fn is_implicit_zero_arg_builtin(name: &str) -> bool {

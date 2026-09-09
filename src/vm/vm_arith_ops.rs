@@ -75,17 +75,7 @@ impl Interpreter {
     /// Only reached once a user-declared infix of this name exists, so the env
     /// lookup stays off ordinary arithmetic.
     fn declaring_unit_is_in_scope(&self, files: &HashSet<Symbol>) -> bool {
-        let mut unit = Some(self.current_unit);
-        // An EVAL nested in an EVAL nested in ... is bounded in practice; the
-        // cap only stops a cycle from hanging the VM.
-        for _ in 0..64 {
-            let Some(sym) = unit else { return false };
-            if files.contains(&sym) {
-                return true;
-            }
-            unit = crate::runtime::eval_unit_parent(sym);
-        }
-        false
+        self.unit_chain_contains(self.current_unit, files)
     }
 
     /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).

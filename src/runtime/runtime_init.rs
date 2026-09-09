@@ -3000,6 +3000,7 @@ impl Interpreter {
             loaded_modules: HashSet::new(),
             module_registered_functions: HashSet::new(),
             prelude_registered_functions: HashSet::new(),
+            prelude_declaring_units: HashMap::new(),
             module_package_globals: HashMap::new(),
             need_hidden_classes: HashSet::new(),
             cur_repo: Box::new(CurRepoState::default()),
