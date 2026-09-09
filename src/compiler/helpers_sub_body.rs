@@ -571,6 +571,7 @@ impl Compiler {
             is_raw,
             is_cached,
             param_local_slots: None,
+            params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
             named_call_plan: None,

@@ -8814,6 +8814,14 @@ pub(crate) struct CompiledFunction {
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
+    /// True when the positional parameters *are* the frame: their slots are
+    /// `0, 1, ... n-1` and there are no other locals. The light call path then
+    /// builds the frame by pushing each bound parameter in order instead of
+    /// `Nil`-filling `n` slots and overwriting the first `n` — one write per
+    /// slot rather than two, and for a callee like `fib` no fill call at all
+    /// (ADR-0077). A per-callee property, so it is settled here rather than
+    /// re-derived per call.
+    pub(crate) params_fill_frame: bool,
     /// True if the function body contains inner sub declarations or closures.
     /// When true, parameters must be written to env (not just locals) so that
     /// nested functions can capture them via closure.
@@ -8952,6 +8960,7 @@ impl CompiledFunction {
                     .map(|&s| s as usize)
                     .collect(),
             );
+            self.params_fill_frame = self.compute_params_fill_frame();
             return;
         }
         let mut slots = Vec::new();
@@ -8974,6 +8983,18 @@ impl CompiledFunction {
         if !slots.is_empty() {
             self.param_local_slots = Some(slots);
         }
+        self.params_fill_frame = self.compute_params_fill_frame();
+    }
+
+    /// Whether the positional parameters occupy slots `0..n` and are the only
+    /// locals — see [`Self::params_fill_frame`].
+    fn compute_params_fill_frame(&self) -> bool {
+        let Some(slots) = self.param_local_slots.as_ref() else {
+            return false;
+        };
+        !slots.is_empty()
+            && slots.len() == self.code.locals.len()
+            && slots.iter().enumerate().all(|(i, &s)| s == i)
     }
 
     /// Pre-compute the light named-call bind plan (see [`NamedCallPlan`]).
@@ -9287,6 +9308,7 @@ mod compiled_fns_identity {
             is_cached: false,
             is_raw: false,
             param_local_slots: None,
+            params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
             named_call_plan: None,

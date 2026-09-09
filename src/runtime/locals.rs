@@ -169,6 +169,29 @@ impl Locals {
         self.slots.extend_from_slice(slots);
     }
 
+    /// Write a parameter's bound value while the frame is still being built.
+    ///
+    /// `by_push` is the callee's `params_fill_frame`: the parameters *are* the
+    /// frame, so it was opened empty and each parameter is the next slot. That
+    /// writes every slot exactly once, where `Nil`-filling the frame and then
+    /// overwriting the parameter prefix writes the prefix twice — and for a
+    /// callee whose locals are all parameters it removes the fill call outright.
+    /// With `by_push` false the frame is already sized and the slot is written
+    /// in place.
+    #[inline]
+    pub(crate) fn put_param_slot(&mut self, by_push: bool, slot: usize, v: Value) {
+        if by_push {
+            debug_assert_eq!(
+                self.slots.len() - self.base,
+                slot,
+                "params_fill_frame promises the parameters fill the frame in slot order"
+            );
+            self.slots.push(v);
+        } else {
+            self.slots[self.base + slot] = v;
+        }
+    }
+
     /// Resize the executing frame to `num_locals` slots, *keeping* the values
     /// of the slots that survive — `Vec::resize` semantics, unlike
     /// [`Self::refill_slots`]. The top-level `run` entry needs this: it sizes
