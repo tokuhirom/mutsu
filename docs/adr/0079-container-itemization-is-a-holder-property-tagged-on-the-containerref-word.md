@@ -276,7 +276,7 @@ unconditional and delete it.
 
 | Slice | State |
 | --- | --- |
-| 0 — comment justification | Not started |
+| 0 — comment justification | Complete (2026-09-09; comments now state the RHS `List` rule) |
 | 1 — `Kind::ContainerRefItemized` | Not started |
 | 2 — `$`-share holder (rows 1, 3, 4) | Not started |
 | 3 — audit remaining producers | Not started |

@@ -234,14 +234,14 @@ impl Interpreter {
             return None;
         }
         // The list-destructuring staging temp is NOT a user Array -- it IS the
-        // RHS list, and every target reads a VALUE out of it (see the note in
-        // `parser/stmt/decl/destructure.rs`; ADR-0040 slice 2 already suppresses
-        // element itemization for it for the same reason). Handing out its slots
-        // would make a `%`/`@` slurpy target -- `my ($g, %rest) = f(...)`,
-        // compiled as `@__destructure_tmp__[1..*]` -- receive containers where it
-        // needs the values behind them, and a `ContainerRef` holding a `Hash` is
-        // indistinguishable from the `$`-scalar itemization mutsu spells the same
-        // way, so the hash initializer cannot decontainerize it safely.
+        // RHS List, and a List's elements are values rather than containers (see
+        // the note in `parser/stmt/decl/destructure.rs`; ADR-0040 slice 2 already
+        // suppresses element itemization for it for the same reason). Handing
+        // out its slots would make a `%`/`@` slurpy target --
+        // `my ($g, %rest) = f(...)`, compiled as `@__destructure_tmp__[1..*]` --
+        // receive element containers where it needs the values behind them.
+        // This is the List-vs-Array rule, not a workaround for an ambiguity
+        // between two ContainerRef shapes; see ADR-0079 §1.1.
         if data
             .descriptor_name
             .as_deref()

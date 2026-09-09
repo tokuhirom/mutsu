@@ -75,9 +75,10 @@ pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
 
 /// The mirror of [`itemize_real_array_elements`], for the one container that
 /// must NOT carry the property: the list-destructuring desugar's synthetic
-/// staging temp, which is the RHS list rather than a user `Array` (see
-/// `Interpreter::itemize_elements_for_var_assign`). Same
-/// scan-then-rebuild-only-if-needed shape.
+/// staging temp, which models the RHS `List` rather than a user `Array`. A
+/// `List`'s elements are values, not containers, so this temp must not carry
+/// Array element itemization (see `Interpreter::itemize_elements_for_var_assign`
+/// and ADR-0079 §1.1). Same scan-then-rebuild-only-if-needed shape.
 pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
     let needs = match value.view() {
         ValueView::Array(items, ArrayKind::Array | ArrayKind::Shaped | ArrayKind::ItemArray) => {
