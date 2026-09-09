@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Accepted** (2026-09-06; §4 steps 1-2 implemented, step 3 in progress — see §8, §10)
+- Status: **Accepted** (2026-09-06; §4 steps 1-3 implemented — see §13.4; the read-side guard's cost measured in §14)
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
@@ -261,9 +261,13 @@ mutual-exclusion edge. This ADR does not argue that case and must not be read as
    delivery one. With the idiom corrected the route reaches the cell-keyed guard (capture shape)
    or the name-keyed lane (named-sub shape) and the unsynchronized store not at all: 0 / 240 at
    24-way.
-4. **Does the (C) flag belong in `gc_contents_mut` itself** (one relaxed load at the primitive,
+4. ~~**Does the (C) flag belong in `gc_contents_mut` itself** (one relaxed load at the primitive,
    for every site at once) or at each synchronized store? Measuring the primitive-level load
-   against the bench CI is the deciding datum, and it was not taken this session.
+   against the bench CI is the deciding datum, and it was not taken this session.~~
+   **ANSWERED (2026-09-09, §14).** It stays at the guard. The gate as placed is free — a program
+   that never spawns a mutator thread measures −0.5% (noise) over 6.4M reads that would each
+   have locked — so moving the load down to the primitive's 149 sites would buy nothing it does
+   not already have.
 
 ## 7. Implementation (2026-09-06): what was measured, and which premises above were wrong
 
@@ -745,5 +749,49 @@ shape.
 What remains is not exposure but a **measurement**, and it is a perf question
 rather than a correctness one: §7's read-side guard sits in `Value::with_deref`
 / `into_deref`, which are hot, and a threaded program now takes a mutex on every
-celled-container read. Nothing has measured it. Tracked separately as
-[#7613](https://github.com/tokuhirom/mutsu/issues/7613).
+celled-container read. Tracked separately as
+[#7613](https://github.com/tokuhirom/mutsu/issues/7613) and **taken in §14** —
+no threaded regression; on a shared cell the guard is a net win.
+
+## 14. The read-side guard, measured (2026-09-09): no threaded regression
+
+§13.4's remaining item — the perf cost of the read-side guard on a threaded
+program — is now measured ([#7613](https://github.com/tokuhirom/mutsu/issues/7613)).
+Full write-up in `news/2026-09/adr-0068-read-side-container-guard-measured.md`;
+the operative results:
+
+- **§4 step 1's gate is free, measured and not merely by placement.** A program
+  that never spawns a VM mutator thread is within noise (−0.5%) over 6.4M reads
+  that would each have locked. This is the datum §6 question 4 asked for, taken
+  at the guard rather than at `gc_contents_mut`.
+- **The cost is +5–7%, and it lands on a shape the ticket did not predict** —
+  not the threaded program but the one that spawns a worker early and then does
+  heavy *single-threaded* work through a bound container, paying the
+  uncontended lock for the rest of its life because the gate is sticky. That is
+  the ceiling, on a loop that does nothing but celled reads.
+- **On genuinely concurrent programs the guard is a net win**: −12% with four
+  workers on one shared cell, −13% oversubscribed 12-on-4 (−9% with JIT off).
+  Serializing readers on a stripe is cheaper than four cores contending on the
+  cell's own `Mutex<Value>` and on the inner node's refcount atomics. The guard
+  removes a contention storm it was not designed to remove.
+- **Striping granularity is not a lever.** Four independent cells measure
+  −0.6% / +3.2%, so 64 stripes leave no false sharing worth chasing; and where
+  the cost concentrates (one hot cell) more stripes cannot help, since the
+  exclusion on that cell is what correctness requires.
+
+No change was made. Two process notes for anyone measuring in this area again:
+
+- **§1.1's "a minimal probe is not a substitute" applies to benchmarks too.**
+  The obvious workloads — four `start` blocks over a captured `my @shared`, a
+  captured scalar, a captured scalar holding an array, an attribute-rooted
+  `$b.items[...]` — take *zero* guards, because a plain `@`/`%` lexical named by
+  a `start` block is served by the name-keyed lanes and never becomes a
+  `ContainerRef`. Benchmarking those yields a null result that means nothing.
+  A `:=`-bound container is what reaches the read-side guard.
+- **§13.1's corrected oracle is also the benchmark-validation tool.** Breaking
+  on `container_lock::stripe_for` counts the mutexes a workload actually takes
+  (it sits past both gates in `acquire`), so "does this benchmark exercise the
+  thing" is one debug run and no rebuild.
+
+`benchmarks/bench-threads.raku` was added so the bench CI carries a concurrency
+series in `bench-history.tsv` from here on; there was none before.
