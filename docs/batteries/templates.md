@@ -54,39 +54,44 @@ plain checkout of the dist with `-I lib`.
 | `Template::Mojo` | 0.2.2 | 2023-07-31 | MIT | **0** | 3 | **5/5** | **5/5** ⬆ |
 | `Template::Nest::Fast` | 0.3.0 | 2024-11-18 | ISC | **0** | 0 | **10/10** | **10/10** |
 | `SP6` | 0.2.1 | 2021-09-04 | Apache-2.0 | **0** | 0 | 10/11 | **10/11** |
-| `Template::Classic` | 0.0.3 | 2020-04-11 | BSD-3-Clause | **0** | 1 | **1/1** | 0/1 |
-| `Template::HAML` | 0.9.6 | 2026-08-02 | Artistic-2.0 | **0** | 2 | 84/85 | 3/85⁴ ⁵ |
+| `Template::Classic` | 0.0.3 | 2020-04-11 | BSD-3-Clause | **0** | 1 | **1/1** | **1/1** ⬆ |
+| `Template::HAML` | 0.9.6 | 2026-08-02 | Artistic-2.0 | **0** | 2 | 84/85 | 31/85 ⁴ ⬆ |
 | `Template::Protone` | 0.1.4 | 2021-01-20 | Artistic-2.0 | **0** | 0 | *ships no tests* | *ships no tests* |
 | `ERK` | 1.1.4 | 2025-11-14 | Artistic-2.0 | **0** | 1 | *ships no tests* | *ships no tests* |
 
-**Both** columns were re-measured in full on **2026-09-09** (debug build, every
-tarball re-fetched from the REA archive). Do not quote a row without re-running
-the survey — on this run three of the pinned versions had moved under the table
-(`Template::Jinja2` 0.2.0 → 0.3.0, `Template::HAML` 0.9.5 → 0.9.6,
-`Template6`'s REA copy 0.15.0 → 0.16.0), and two rows moved for reasons that had
-nothing to do with the version:
+**Both** columns were re-measured in full on **2026-09-09**, twice: once in the
+morning, and again the same evening on `main` @ `a75c551` after the three fixes
+that morning's run produced had landed (debug build, every tarball re-fetched
+from the REA archive both times). Do not quote a row without re-running the
+survey — the morning run alone found three pinned versions had moved under the
+table (`Template::Jinja2` 0.2.0 → 0.3.0, `Template::HAML` 0.9.5 → 0.9.6,
+`Template6`'s REA copy 0.15.0 → 0.16.0). The evening run moved two more rows:
 
-- `Template::Jinja2` **3/23 → 8/24** on the two general fixes in
-  `news/2026-09/whatever-index-at-a-non-final-subscript-level.md` and
-  `news/2026-09/qualified-private-call-decided-by-the-dynamic-caller.md`.
-- `Template::HAML` measures **3/85**, against the 39/83 this table recorded for
-  0.9.5. That figure does not reproduce: 0.9.5 re-fetched and re-run today gives
-  **3/83**, and the blocking error is present on a clean `main` build, so it is
-  not a regression from anything in flight. Almost every file dies before the
-  module loads, on `Unknown function: default-emit-mode` — an attribute/parameter
-  default that *calls* a file-scoped sub cannot see it when `.new` runs inside
-  another module. Filed as
-  [#7733](https://github.com/tokuhirom/mutsu/issues/7733); it is the non-closure
-  sibling of the already-fixed default-closure package bug, and fixing it should
-  move this row a long way in one step.
-- `Template::Classic`, recorded as 1/1 on 2026-09-08, is **0/1** again. That is
-  not a regression from those fixes (neither touches the regex engine): the
-  #7614 fix was real, and behind it sits one more bug — an aliased subrule
-  (`$<part> = <text>`) inside an alternation loses the subrule's `.made`, so the
-  dist's `Actions.TOP` builds an empty `lazy gather { }`. Filed as
-  [#7730](https://github.com/tokuhirom/mutsu/issues/7730) with the full matrix.
-  Three times running this row's "the diagnosis is now settled" note has been
-  premature; treat it as one bug from 1/1, not zero.
+- `Template::HAML` **3/85 → 31/85**, on
+  [#7733](https://github.com/tokuhirom/mutsu/issues/7733) (an attribute/parameter
+  default that *calls* a file-scoped sub could not see it when `.new` ran inside
+  another module's `BUILD`), fixed in #7741. The dist now **loads** — that one
+  root cause was worth 28 files. Note that this table's older 39/83 figure for
+  0.9.5 was never reproducible and should not be read as a regression from it:
+  0.9.5 re-fetched measured 3/83 the same morning, on a clean `main`.
+- `Template::Classic` **0/1 → 1/1**, on
+  [#7730](https://github.com/tokuhirom/mutsu/issues/7730) (an aliased subrule
+  inside an alternation lost the subrule's `.made`), fixed in #7735. The row is
+  now at parity with raku and closed.
+- `Template::Jinja2` stays at **8/24**, but the *shape* of the failures changed:
+  [#7729](https://github.com/tokuhirom/mutsu/issues/7729) (a resolved `Sub` value
+  invoking the wrong closure) was fixed in #7782, and the four files that used to
+  **abort** with a stack overflow — `12-advanced-tags`, `13-ported-remaining`,
+  `15-reference-remaining`, `18-reference-final` — now run to completion and
+  report ordinary test failures. Every one of the 16 remaining files exits 1 with
+  a TAP failure; none aborts. (The dist's `22-real-world` fails under raku too,
+  which is why the baseline is 23/24 and not 24/24.)
+
+The morning run's three bullets — Jinja2 3/23 → 8/24 on the two general fixes in
+`news/2026-09/whatever-index-at-a-non-final-subscript-level.md` and
+`news/2026-09/qualified-private-call-decided-by-the-dynamic-caller.md`, and the
+HAML/Classic regressions-that-were-not — are kept in
+[#7553](https://github.com/tokuhirom/mutsu/issues/7553)'s comment history.
 
 ⬆ `Template6` went **0/12 → 10/12 → 11/12 → 12/12** on 2026-09-06 — the dist is
 complete. Its long-standing
@@ -136,7 +141,7 @@ computed over the 2506 distinct dist names in the local REA + fez indices
 installed for the raku baseline; they are a harness gap, not a raku failure.
 ³ REA now serves 0.16.0 itself (it carried only 0.15.0 when this row was first
 measured, and fez was used instead).
-⁵ `Template::HAML` is also **slower under mutsu than under raku** — a separate
+⁴ `Template::HAML` is also **slower under mutsu than under raku** — a separate
 finding from the failures. In a *release* build the gap is ~2–3× and looks like a
 fixed module-load cost (`use Template::HAML` alone: mutsu 0.79s vs raku 0.35s),
 not a per-test blow-up. (A debug build shows ~20×, which is debug overhead, not
@@ -148,18 +153,18 @@ re-file one if it is picked up.
 
 ### First observed failure under mutsu
 
-As of the 2026-09-09 re-measurement. None of these are module rot — raku runs
-them all.
+As of the 2026-09-09 evening re-measurement (`main` @ `a75c551`). None of these
+are module rot — raku runs them all.
 
 | Candidate | Symptom |
 | --- | --- |
 | `Template::Mustache` | none; 13/13 |
 | `Template6` | none; 12/12. The last file (`05-includes`) was fixed 2026-09-06: the no-capture regex matcher matched frugal quantifiers greedily, so `.comb(/ \" .*? \" | \S+ /)` collapsed a whole `[% INCLUDE ... %]` statement into one token (`news/2026-09/frugal-quantifier-in-the-no-capture-matcher.md`) |
-| `Template::Jinja2` | 8/24; ordinary per-feature failures, plus four files that **abort** with a stack overflow instead of failing ([#7729](https://github.com/tokuhirom/mutsu/issues/7729)) |
+| `Template::Jinja2` | 8/24; ordinary per-feature failures only. The four files that used to **abort** with a stack overflow ([#7729](https://github.com/tokuhirom/mutsu/issues/7729), fixed in #7782) now run to completion and report TAP failures like the rest |
 | `Template::Mojo` | none; 5/5 as of 2026-09-09. Its last failure (`00-basic` test 17) was a placeholder sub not rejecting extra positionals — [#7619](https://github.com/tokuhirom/mutsu/issues/7619), closed by #7628 |
 | `Template::Nest::Fast` | none; 10/10 as of 2026-09-07. The recorded `with EXPR -> @m` symptom was real but only worth 2/10; the rest came from three unrelated general bugs (`news/2026-09/template-nest-fast-zero-to-ten-of-ten.md`) |
-| `Template::Classic` | the grammar parses now (#7614 fixed Unicode-quoted literals being read as pattern), but `$<part> = <text>` inside an alternation loses the subrule's `.made`, so `Actions.TOP` builds an empty `lazy gather { }` — [#7730](https://github.com/tokuhirom/mutsu/issues/7730) |
-| `Template::HAML` | 3/85; almost every file dies before the module loads, on `Unknown function: default-emit-mode` — an attribute/parameter default that *calls* a file-scoped sub cannot see it when `.new` runs in another module ([#7733](https://github.com/tokuhirom/mutsu/issues/7733)) |
+| `Template::Classic` | none; 1/1 as of 2026-09-09. Two stacked bugs: Unicode-quoted regex literals read as pattern (#7614), and behind it an aliased subrule inside an alternation losing its `.made` ([#7730](https://github.com/tokuhirom/mutsu/issues/7730), fixed in #7735) |
+| `Template::HAML` | 31/85; the module loads now that [#7733](https://github.com/tokuhirom/mutsu/issues/7733) is fixed (#7741), and the remaining 54 files are ordinary per-feature failures: mostly a grammar action's result missing (`No such method 'made' for invocant of type 'Any'`) and codegen/round-trip divergences, plus two files (`0590-page-class`, `0690-streaming-render`) that still abort with a stack overflow |
 | `SP6` | at parity with raku (both 10/11, same file) |
 
 The old "`Use of Nil in string context`" entries are gone: that line was a
@@ -187,15 +192,17 @@ survey):
   **not** the last Jinja2 load blocker — an imported-`is export`ed-type parse
   bug was stacked behind it, fixed 2026-09-06 (pin
   `t/when-imported-exported-type.t`).
-- Open, from the 2026-09-09 re-measurement:
+- From the 2026-09-09 morning re-measurement, all three **fixed** the same day
+  and confirmed by the evening re-run:
   [#7733](https://github.com/tokuhirom/mutsu/issues/7733) (an attribute/parameter
   default that calls a file-scoped sub cannot see it when `.new` runs in another
-  module — the `Template::HAML` blocker),
+  module — the `Template::HAML` load blocker, #7741, worth 28 files),
   [#7730](https://github.com/tokuhirom/mutsu/issues/7730) (an aliased subrule
-  inside an alternation loses its `.made` — the `Template::Classic` blocker), and
+  inside an alternation loses its `.made` — the `Template::Classic` blocker,
+  #7735, worth the whole dist), and
   [#7729](https://github.com/tokuhirom/mutsu/issues/7729) (a resolved `Sub` value
-  invoking the wrong closure, aborting four `Template::Jinja2` files with a stack
-  overflow).
+  invoking the wrong closure, #7782 — the four `Template::Jinja2` files it
+  aborted now fail as ordinary TAP failures instead of taking the process down).
 - The five `todo/tickets/...` paths this section used to list were retired with
   the `todo/` directory on 2026-09-08. Only one of them is resolvable:
   `template-mojo-residual-failures.md` became
@@ -211,7 +218,8 @@ The ecosystem was enumerated from the **local REA + fez indices** rather than by
 guesswork: 2506 dists, filtered on name/description/tags for templating, then
 each candidate's tarball fetched straight from the REA archive at its pinned
 version and its own suite run under both `raku` and `target/debug/mutsu`
-(`tmp/tmpl-survey.sh`). Reverse-dependency counts come from the same indices.
+(a scratch script in `tmp/`). Reverse-dependency counts come from the same
+indices.
 
 ## Ruled out before measuring
 
@@ -247,12 +255,12 @@ version and its own suite run under both `raku` and `target/debug/mutsu`
   `Template::Classic` embed Raku code. For "a small web blog", logic-free plus
   the host program's own code is the safer default, and it is what most of the
   ecosystem picked.
-- **`Template::Jinja2` deserves a second look once it loads** — it is the newest
-  of the field (2026-04-29) and 22/23 under raku. Both blockers named in the
-  2026-08-19 reduction are fixed and `01-lexer` passes, but a third one (a
-  `when TYPENAME {` parse bug) still kills the remaining 22 files at load, so it
-  is still the cheapest of the field to unblock by file count. Its ecosystem
-  standing is weak (2 dependents, both by the same author).
+- **`Template::Jinja2` is the largest remaining compatibility surface** — it is
+  the newest of the field (0.3.0, 2026-08-21) and 23/24 under raku, but only
+  8/24 under mutsu. All three of its load blockers are fixed and the dist runs;
+  what is left is 16 files of ordinary per-feature work with no single lever
+  identified. Its ecosystem standing is weak (2 dependents, both by the same
+  author), so it is a compatibility target rather than a battery candidate.
 - **`Template::Protone` and `ERK` were never in contention**: they ship no tests
   at all, so there is nothing to gate at release time — a structural problem for
   a battery whose whole verification story is `scripts/battery-testsuite.sh`.
