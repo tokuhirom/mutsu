@@ -192,22 +192,70 @@ impl Compiler {
             // (checked by every value-position caller) has already rejected the
             // phaser shapes the statement emitters below exist for, so
             // `compile_block_inline` covers everything that reaches here.
-            IfPosition::Value => self.compile_block_inline(branch),
-            IfPosition::Statement => {
-                if Self::has_block_enter_leave_phasers(branch) {
-                    // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real
-                    // block scope: its LEAVE must fire when the branch exits
-                    // (OO::Monitors unlocks its monitor lock this way).
-                    self.compile_phaser_block_scope(branch, PhaserBlockResult::Discard);
-                } else if Self::body_mutates_topic(branch) {
-                    self.synthetic_block_body = true;
-                    self.compile_stmt(&Stmt::Block(branch.to_vec()));
-                } else if Self::branch_declares_block_local(branch) {
-                    self.compile_block_local_branch(branch);
-                } else {
-                    self.compile_body_with_implicit_try(branch);
-                }
+            IfPosition::Value => {
+                self.compile_if_value_branch(branch, |c| c.compile_block_inline(branch))
             }
+            IfPosition::Statement => self.compile_if_statement_branch(branch),
+        }
+    }
+
+    /// Compile a statement-position branch, including the branch's own
+    /// `let`/`temp` save frame. This is shared with constant-condition folding,
+    /// which bypasses the ordinary `compile_if_construct` path.
+    pub(super) fn compile_if_statement_branch(&mut self, branch: &[Stmt]) {
+        if Self::has_block_enter_leave_phasers(branch) {
+            // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
+            // scope: its LEAVE must fire when the branch exits (OO::Monitors
+            // unlocks its monitor lock this way).
+            let needs_value = Self::has_real_let_deep(branch);
+            let let_frame = Self::has_let_deep(branch).then(|| {
+                self.code.emit(OpCode::LetBlock {
+                    body_end: 0,
+                    value_on_stack: needs_value,
+                })
+            });
+            self.compile_phaser_block_scope(
+                branch,
+                if needs_value {
+                    PhaserBlockResult::Push
+                } else {
+                    PhaserBlockResult::Discard
+                },
+            );
+            if let Some(idx) = let_frame {
+                self.code.patch_let_block_end(idx);
+            }
+            if needs_value {
+                self.code.emit(OpCode::Pop);
+            }
+        } else if Self::body_mutates_topic(branch) {
+            self.synthetic_block_body = true;
+            self.compile_stmt(&Stmt::Block(branch.to_vec()));
+        } else if Self::branch_declares_block_local(branch) {
+            if Self::has_let_deep(branch) {
+                self.compile_block_local_branch_with_let(branch);
+            } else {
+                self.compile_block_local_branch(branch);
+            }
+        } else if Self::has_let_deep(branch) {
+            let needs_value = Self::has_real_let_deep(branch);
+            let idx = self.code.emit(OpCode::LetBlock {
+                body_end: 0,
+                value_on_stack: needs_value,
+            });
+            if needs_value {
+                self.compile_body_with_implicit_try_value(branch);
+            } else {
+                self.compile_body_with_implicit_try(branch);
+            }
+            self.code.patch_let_block_end(idx);
+            if needs_value {
+                // The frame peeks the body value to decide a real `let`, so
+                // discard it after the branch has resolved its saves.
+                self.code.emit(OpCode::Pop);
+            }
+        } else {
+            self.compile_body_with_implicit_try(branch);
         }
     }
 }
