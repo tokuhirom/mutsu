@@ -786,10 +786,22 @@ impl Interpreter {
             // rather than the routine registry. Collected BEFORE `import_module`
             // so the bare aliases it installs — lexical to the importing scope —
             // are excluded, exactly as for the routines above.
+            //
+            // Also keep the module's OWN bare package-name binding (e.g. a
+            // `unit module Foo;` binds bare "Foo" in env): a `::`-only filter
+            // dropped it, so a module first loaded from inside a nested scope
+            // that discards its env overlay on return (a sub call wrapping an
+            // `EVAL`, e.g. `Test`'s `use-ok`) came back with `loaded_modules`
+            // still claiming it loaded but its own name unresolvable ever
+            // after, since a later re-`use` is a no-op that only reinstates
+            // what THIS set records (#7806).
             let package_globals: Vec<(Symbol, Value)> = self
                 .env
                 .keys()
-                .filter(|k| !env_snapshot.contains(k) && k.resolve().contains("::"))
+                .filter(|k| {
+                    !env_snapshot.contains(k)
+                        && (k.resolve().contains("::") || k.resolve() == module)
+                })
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();
             if !package_globals.is_empty() {
