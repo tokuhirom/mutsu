@@ -255,7 +255,19 @@ impl Interpreter {
 
     #[inline]
     pub(crate) fn vm_set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
-        self.loan_env_for(|i| i.set_var_type_constraint(name, constraint))
+        self.vm_set_var_type_constraint_for(name, None, constraint)
+    }
+
+    /// [`Self::vm_set_var_type_constraint`] for a caller that already holds the
+    /// name's `Symbol` (a `SetLocal` slot's `locals_sym` entry).
+    #[inline]
+    pub(crate) fn vm_set_var_type_constraint_for(
+        &mut self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        constraint: Option<String>,
+    ) {
+        self.loan_env_for(|i| i.set_var_type_constraint_for(name, name_sym, constraint))
     }
 
     /// Declaration-position variant (`my Int @a`): registers the constraint

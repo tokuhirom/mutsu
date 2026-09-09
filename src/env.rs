@@ -956,6 +956,21 @@ impl Env {
         self.get_sym(Symbol::intern(key))
     }
 
+    /// [`Self::get`] for a caller that *may* already hold the key's `Symbol` —
+    /// a compiled slot whose `locals_sym` entry exists, or a hand-built chunk
+    /// where it does not. Saves the re-hash on the common (pre-interned) side
+    /// without forcing every such call site to spell the `match` out (#7736).
+    #[inline]
+    pub(crate) fn get_for(&self, key: &str, key_sym: Option<Symbol>) -> Option<&Value> {
+        match key_sym {
+            Some(sym) => {
+                debug_assert_eq!(sym, Symbol::intern(key));
+                self.get_sym(sym)
+            }
+            None => self.get(key),
+        }
+    }
+
     #[inline]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
         if let Some(v) = self.inner.get(&key) {
@@ -1051,6 +1066,22 @@ impl Env {
         note_env_key(&key);
         let sym = Symbol::intern(&key);
         self.insert_sym(sym, value)
+    }
+
+    /// [`Self::insert_sym`] for a caller whose key symbol was pre-interned but
+    /// whose key may belong to one of the families [`note_env_key`] latches
+    /// (a `__mutsu_*` metadata key, a `^`-twigil placeholder).
+    ///
+    /// The plain symbol entry point deliberately skips that latch — its callers
+    /// pass ordinary lexical names, none of which arm a flag — so a site that
+    /// replaces a by-name [`Self::insert`] must come here instead to keep the
+    /// flags monotonic. Resolving the symbol is a cached array read, so this is
+    /// still far cheaper than rebuilding the `String` key and re-interning it
+    /// (#7736).
+    #[inline]
+    pub(crate) fn insert_sym_noting(&mut self, key: Symbol, value: Value) -> Option<Value> {
+        note_env_key(key.as_str());
+        self.insert_sym(key, value)
     }
 
     #[inline]

@@ -539,13 +539,17 @@ impl Interpreter {
         // Always set @_ for legacy Perl-style argument access.
         // Skip the insert when args are empty and @_ is already empty,
         // to avoid triggering Arc::make_mut deep clone on the CoW env.
+        // `@_` is one of the fixed env keys EVERY compiled call writes, so its
+        // symbol is pre-interned (`wk::positional_slurpy`) rather than re-hashed
+        // per call (#7736).
+        let args_key = crate::symbol::wk::positional_slurpy();
         let skip_at_underscore = plain_args.is_empty()
-            && self.env.get("@_").is_some_and(
+            && self.env.get_sym(args_key).is_some_and(
                 |v| matches!(v.view(), ValueView::Array(elems, _) if elems.is_empty()),
             );
         if !skip_at_underscore {
             self.env
-                .insert("@_".to_string(), Value::array(plain_args.clone()));
+                .insert_sym(args_key, Value::array(plain_args.clone()));
         }
         // Single-argument rule: when exactly one positional arg is a Seq/List
         // and the function expects multiple positional params, flatten the Seq/List
@@ -636,11 +640,13 @@ impl Interpreter {
         // name instead of "element".
         let mut container_param_sources: Vec<(String, String)> = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
+        // Both are fixed per-call method-entry keys with pre-interned symbols
+        // (#7736): a by-name probe re-hashed them on every bind.
         if let Some(invocant_value) = self
             .env
-            .get("self")
+            .get_sym(crate::symbol::wk::self_())
             .cloned()
-            .or_else(|| self.env.get("?CLASS").cloned())
+            .or_else(|| self.env.get_sym(crate::symbol::wk::class_decl()).cloned())
         {
             for pd in param_defs {
                 if !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")) {
@@ -912,6 +918,12 @@ impl Interpreter {
             .collect();
         let mut positional_idx = 0usize;
         for pd in param_defs {
+            // One intern per parameter for the whole per-parameter path below
+            // (value bind, type constraint, readonly mark), instead of one per
+            // helper. Lazy, so an arm that never names the parameter still
+            // interns nothing (#7736).
+            let pd_name_cell = std::cell::OnceCell::new();
+            let pd_name_sym = || *pd_name_cell.get_or_init(|| Symbol::intern(&pd.name));
             if pd.onearg {
                 // +@ (single-argument rule slurpy): if exactly one remaining positional
                 // arg is Iterable (Array, List, etc.), use its elements directly.
@@ -966,7 +978,7 @@ impl Interpreter {
                             self.env
                                 .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
                             self.env.remove(&sigilless_alias_key(&pd.name));
-                            self.bind_param_value(&pd.name, lazy_value.clone());
+                            self.bind_param_value_sym(&pd.name, pd_name_sym(), lazy_value.clone());
                         } else {
                             let key = if pd.name.starts_with('@') {
                                 pd.name.clone()
@@ -1081,7 +1093,7 @@ impl Interpreter {
                         self.env
                             .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
                         self.env.remove(&sigilless_alias_key(&pd.name));
-                        self.bind_param_value(&pd.name, slurpy_value.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), slurpy_value.clone());
                     }
                 } else if !pd.name.is_empty() {
                     let key = if pd.name.starts_with('@') {
@@ -1127,8 +1139,12 @@ impl Interpreter {
                     }
                     let capture_value = Value::capture(positional, named);
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, capture_value.clone());
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), capture_value.clone());
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         bind_sub_signature_from_value(self, sub_params, &capture_value)?;
@@ -1187,8 +1203,16 @@ impl Interpreter {
                         }
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, Value::hash_bare_values(hash_items));
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            Value::hash_bare_values(hash_items),
+                        );
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                 } else if pd.double_slurpy {
                     // **@ (non-flattening slurpy): keep each argument as-is, skip Pairs
@@ -1229,8 +1253,12 @@ impl Interpreter {
                         break;
                     }
                     if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, value.clone());
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                 } else {
                     let mut items = Vec::new();
@@ -1700,8 +1728,12 @@ impl Interpreter {
                             // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
                             // cells pass through untouched.
                             let bound_value = Self::itemize_plain_scalar_param(pd, bound_value);
-                            self.bind_param_value(&pd.name, bound_value);
-                            self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                            self.bind_param_value_sym(&pd.name, pd_name_sym(), bound_value);
+                            self.bind_param_type_constraint_sym(
+                                &pd.name,
+                                pd_name_sym(),
+                                pd.type_constraint.clone(),
+                            );
                         }
                         found = true;
                         break;
@@ -1769,12 +1801,20 @@ impl Interpreter {
                     {
                         self.bind_type_capture(captured_name, &value);
                         if !pd.name.is_empty() && !is_rename {
-                            self.bind_param_value(&pd.name, value.clone());
-                            self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                            self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
+                            self.bind_param_type_constraint_sym(
+                                &pd.name,
+                                pd_name_sym(),
+                                pd.type_constraint.clone(),
+                            );
                         }
                     } else if !pd.name.is_empty() && !is_rename {
-                        self.bind_param_value(&pd.name, value.clone());
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                     // For renamed named params like :foo($y) = $x, also bind the
                     // sub-signature variable ($y) to the default value.
@@ -1807,8 +1847,12 @@ impl Interpreter {
                     // A rename param binds only its leaf variable (below); skip
                     // binding the param's own name when a sub-signature exists.
                     if pd.sub_signature.is_none() {
-                        self.bind_param_value(&pd.name, value.clone());
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                     // A `:color(:$colour)` alias chain declares its inner
                     // variable(s); bind them to the same unsupplied default so
@@ -2075,10 +2119,22 @@ impl Interpreter {
                                     None => info.value_type,
                                 });
                         }
-                        self.var_type_constraint(source_name).or_else(|| {
-                            self.var_type_constraint(
-                                source_name.trim_start_matches(['$', '@', '%', '&']),
-                            )
+                        // No typed lexical has ever been declared: neither
+                        // spelling can have an entry, so skip the interning
+                        // entirely (the same gate `var_type_constraint` applies).
+                        if !Self::env_type_constraint_seen() {
+                            return None;
+                        }
+                        // The sigil-stripped retry is skipped when the source
+                        // name carries no sigil: the two spellings are then the
+                        // same string, so the second probe re-hashed the name to
+                        // reach the same (already-missed) key (#7736).
+                        let source_sym = Symbol::intern(source_name);
+                        self.var_type_constraint_sym(source_sym).or_else(|| {
+                            let bare = source_name.trim_start_matches(['$', '@', '%', '&']);
+                            (bare.len() != source_name.len())
+                                .then(|| self.var_type_constraint(bare))
+                                .flatten()
                         })
                     });
                     let bound_type_constraint = source_type_constraint
@@ -2388,7 +2444,7 @@ impl Interpreter {
                             self.env.get(&pd.name).cloned()
                         };
                         if !pd.name.is_empty() {
-                            self.bind_param_value(&pd.name, value.clone());
+                            self.bind_param_value_sym(&pd.name, pd_name_sym(), value.clone());
                         }
                         let saved_topic = self.env.get("_").cloned();
                         self.env.insert("_".to_string(), value.clone());
@@ -2464,9 +2520,10 @@ impl Interpreter {
                                     map.insert(k.clone(), v.clone());
                                 }
                             }
-                            self.bind_param_value(&pd.name, Value::hash(map));
-                            self.bind_param_type_constraint(
+                            self.bind_param_value_sym(&pd.name, pd_name_sym(), Value::hash(map));
+                            self.bind_param_type_constraint_sym(
                                 &pd.name,
+                                pd_name_sym(),
                                 bound_type_constraint.clone(),
                             );
                             if let Some(sub_params) = &pd.sub_signature {
@@ -2564,8 +2621,12 @@ impl Interpreter {
                         // params pass through untouched (a ContainerRef has no
                         // Array view, so the itemize helper is a no-op on it).
                         let value = Self::itemize_plain_scalar_param(pd, value);
-                        self.bind_param_value(&pd.name, value);
-                        self.bind_param_type_constraint(&pd.name, bound_type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value);
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            bound_type_constraint.clone(),
+                        );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self
@@ -2586,8 +2647,12 @@ impl Interpreter {
                     {
                         self.bind_type_capture(captured_name, &value);
                     } else if !pd.name.is_empty() {
-                        self.bind_param_value(&pd.name, value);
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                        self.bind_param_value_sym(&pd.name, pd_name_sym(), value);
+                        self.bind_param_type_constraint_sym(
+                            &pd.name,
+                            pd_name_sym(),
+                            pd.type_constraint.clone(),
+                        );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
                         let target = self.env.get(&pd.name).cloned().unwrap_or(Value::NIL);
@@ -2623,8 +2688,16 @@ impl Interpreter {
                     )));
                 } else if !pd.name.is_empty() {
                     // Optional parameters use typed empties/type objects when omitted.
-                    self.bind_param_value(&pd.name, Self::missing_optional_param_value(pd));
-                    self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                    self.bind_param_value_sym(
+                        &pd.name,
+                        pd_name_sym(),
+                        Self::missing_optional_param_value(pd),
+                    );
+                    self.bind_param_type_constraint_sym(
+                        &pd.name,
+                        pd_name_sym(),
+                        pd.type_constraint.clone(),
+                    );
                 }
             }
         }
@@ -2732,8 +2805,10 @@ impl Interpreter {
             // attribute binds, already skipped above.)
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
             if !is_container_param {
+                // One intern for both arms below (#7736).
+                let pd_name_sym = Symbol::intern(&pd.name);
                 if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
-                    self.mark_readonly(&pd.name);
+                    self.mark_readonly_sym(pd_name_sym);
                 } else {
                     // Writable `is copy`/`is rw`/`is raw` scalar param: the
                     // readonly set is keyed by bare name and shared across frames,
@@ -2741,7 +2816,7 @@ impl Interpreter {
                     // would otherwise leak in and make this writable param appear
                     // readonly. Drop the mark; the surrounding call path restores
                     // the caller's readonly state via `restore_readonly_vars`.
-                    self.unmark_readonly(&pd.name);
+                    self.unmark_readonly_sym(pd_name_sym);
                 }
             }
         }

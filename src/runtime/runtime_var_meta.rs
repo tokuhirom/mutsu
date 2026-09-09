@@ -58,8 +58,8 @@ impl Interpreter {
         std::mem::take(&mut self.env)
     }
 
-    /// The env key for `name`'s type-constraint metadata, `__mutsu_type::<name>`,
-    /// as a pre-interned `Symbol`.
+    /// The env key for a name's type-constraint metadata,
+    /// `__mutsu_type::<name>`, as a pre-interned `Symbol`.
     ///
     /// Every typed-lexical probe (`var_type_constraint`, the bind/set writers)
     /// used to `format!` the key and intern the fresh `String`; once any
@@ -67,13 +67,11 @@ impl Interpreter {
     /// `SetGlobal` and parameter bind in it. The `name -> key` mapping never
     /// changes (symbols are append-only), so it is memoized per thread, keyed
     /// by the name's own symbol.
-    pub(crate) fn type_meta_key_sym(name: &str) -> Symbol {
-        Self::type_meta_key_for_sym(Symbol::intern(name))
-    }
-
-    /// [`Self::type_meta_key_sym`] for a caller that already holds the name
-    /// as a symbol (a compiled `SetLocal` slot, a `SetGlobal` constant): no
-    /// string is hashed at all, only the `Symbol -> Symbol` memo.
+    ///
+    /// Takes the name as a `Symbol`: every caller either holds one already (a
+    /// compiled `SetLocal` slot, a `SetGlobal` constant, a bound parameter) or
+    /// needs it for something else in the same operation, so no string is
+    /// hashed here at all — only the `Symbol -> Symbol` memo.
     pub(crate) fn type_meta_key_for_sym(name_sym: Symbol) -> Symbol {
         thread_local! {
             static META_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
@@ -114,7 +112,8 @@ impl Interpreter {
 
     /// The env key a routine's registration clone id is stored under,
     /// `__mutsu_callable_id::<package>::<name>`, memoized per
-    /// `(package, name)` symbol pair exactly like [`Self::type_meta_key_sym`].
+    /// `(package, name)` symbol pair exactly like
+    /// [`Self::type_meta_key_for_sym`].
     ///
     /// Every named compiled call probes this key on entry
     /// (`call_compiled_function_named_inner`), and building it cost a `format!`
@@ -202,7 +201,7 @@ impl Interpreter {
 
     /// The env key for `name`'s placeholder-parameter twin, `^<name>`, as a
     /// pre-interned `Symbol`, memoized per name symbol exactly like
-    /// [`Self::type_meta_key_sym`] (the mapping never changes).
+    /// [`Self::type_meta_key_for_sym`] (the mapping never changes).
     pub(crate) fn placeholder_key_sym(name_sym: Symbol) -> Symbol {
         thread_local! {
             static PLACEHOLDER_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
@@ -249,7 +248,21 @@ impl Interpreter {
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
-        self.set_var_type_constraint_impl(name, constraint, true);
+        self.set_var_type_constraint_impl(name, None, constraint, true);
+    }
+
+    /// [`Self::set_var_type_constraint`] for a caller that already holds the
+    /// name's `Symbol` — the compiled declaration path, which clears the
+    /// inherited constraint on EVERY `my` and re-hashed the name to do it
+    /// (#7736). `None` falls back to interning, for hand-built chunks with no
+    /// pre-interned slot symbol.
+    pub(crate) fn set_var_type_constraint_for(
+        &mut self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        constraint: Option<String>,
+    ) {
+        self.set_var_type_constraint_impl(name, name_sym, constraint, true);
     }
 
     /// [`Self::set_var_type_constraint`] for DECLARATION position (`my Int
@@ -263,7 +276,7 @@ impl Interpreter {
     /// variable's own value is tagged by the assignment/default paths, which
     /// consult the name-keyed constraint registered here.
     pub(crate) fn set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<String>) {
-        self.set_var_type_constraint_impl(name, constraint, false);
+        self.set_var_type_constraint_impl(name, None, constraint, false);
     }
 
     /// [`Self::set_var_type_constraint_decl`] for a scalar `my`/`state`
@@ -311,11 +324,13 @@ impl Interpreter {
     fn set_var_type_constraint_impl(
         &mut self,
         name: &str,
+        name_sym: Option<Symbol>,
         constraint: Option<String>,
         tag_env_value: bool,
     ) {
+        debug_assert!(name_sym.is_none_or(|sym| sym == Symbol::intern(name)));
         if let Some(constraint) = constraint {
-            let name_sym = Symbol::intern(name);
+            let name_sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
             let meta_key = Self::type_meta_key_for_sym(name_sym);
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
@@ -351,7 +366,7 @@ impl Interpreter {
             if !Self::env_type_constraint_seen() {
                 return;
             }
-            let name_sym = Symbol::intern(name);
+            let name_sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
             self.env.remove_sym(Self::type_meta_key_for_sym(name_sym));
             self.env
                 .remove_sym(Self::hash_key_meta_key_for_sym(name_sym));
@@ -410,12 +425,26 @@ impl Interpreter {
     /// the full `set_var_type_constraint`, which also tags the bound value so
     /// element checks can read the constraint off the container.
     pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        self.bind_param_type_constraint_sym(name, Symbol::intern(name), constraint);
+    }
+
+    /// [`Self::bind_param_type_constraint`] for a caller that already holds the
+    /// parameter name's `Symbol` — see [`Interpreter::bind_param_value_sym`]
+    /// for why the binder threads one symbol through the whole per-parameter
+    /// path (#7736).
+    pub(crate) fn bind_param_type_constraint_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        constraint: Option<String>,
+    ) {
+        debug_assert_eq!(name_sym, Symbol::intern(name));
         if name.starts_with('@') || name.starts_with('%') {
             let constraint = self.keep_object_hash_key_type(name, constraint);
             self.set_var_type_constraint(name, constraint);
             return;
         }
-        let meta_key = Self::type_meta_key_sym(name);
+        let meta_key = Self::type_meta_key_for_sym(name_sym);
         match constraint {
             Some(c) => {
                 let info = Self::parse_container_constraint(name, &c);

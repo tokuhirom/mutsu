@@ -467,10 +467,18 @@ impl Interpreter {
     }
 
     pub(crate) fn set_current_package(&mut self, pkg: String) {
-        self.current_package_sym.store(
-            Symbol::intern(&pkg).id(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let sym = Symbol::intern(&pkg);
+        self.set_current_package_with_sym(pkg, sym);
+    }
+
+    /// [`Self::set_current_package`] for a caller that already holds the
+    /// package's `Symbol` (a `CompiledFunction`'s cached `package_sym`). The
+    /// by-name entry point re-hashed the package name on every named call
+    /// (#7736).
+    pub(crate) fn set_current_package_with_sym(&mut self, pkg: String, sym: Symbol) {
+        debug_assert_eq!(sym, Symbol::intern(&pkg));
+        self.current_package_sym
+            .store(sym.id(), std::sync::atomic::Ordering::Relaxed);
         *self.current_package.write().unwrap() = pkg;
     }
 
@@ -497,9 +505,20 @@ impl Interpreter {
     /// An RAII guard self-heals regardless of what a future unwind boundary
     /// looks like.
     pub(crate) fn enter_package_guarded(&mut self, pkg: String) -> CurrentPackageGuard {
+        let sym = Symbol::intern(&pkg);
+        self.enter_package_guarded_with_sym(pkg, sym)
+    }
+
+    /// [`Self::enter_package_guarded`] for a caller that already holds the
+    /// package's `Symbol` — see [`Self::set_current_package_with_sym`].
+    pub(crate) fn enter_package_guarded_with_sym(
+        &mut self,
+        pkg: String,
+        sym: Symbol,
+    ) -> CurrentPackageGuard {
         let saved_str = self.current_package();
         let saved_sym_id = self.current_package_sym().id();
-        self.set_current_package(pkg);
+        self.set_current_package_with_sym(pkg, sym);
         CurrentPackageGuard {
             pkg_lock: std::sync::Arc::clone(&self.current_package),
             pkg_sym: std::sync::Arc::clone(&self.current_package_sym),

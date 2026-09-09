@@ -14,7 +14,10 @@ impl Interpreter {
     /// `None` (an AOT-compiled body) means the main script.
     #[inline]
     pub(super) fn enter_compilation_unit(&mut self, cf: &CompiledFunction) -> Symbol {
-        let unit = self.unit_of_source(cf.source_file.as_deref());
+        // `CompiledFunction::source_file_sym` interns the declaring path ONCE
+        // per routine. Going through the `&str` form re-hashed the whole path
+        // (often 60+ bytes) on every named call (#7736).
+        let unit = self.unit_of_source_sym(cf.source_file_sym());
         std::mem::replace(&mut self.current_unit, unit)
     }
 
