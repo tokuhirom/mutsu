@@ -30,22 +30,32 @@ impl Interpreter {
     ) -> Option<&'a Arc<CompiledFunction>> {
         let arity = args.len();
         let name_sym = Symbol::intern(name);
-        // Build a type signature for cache key to handle multi dispatch correctly
+        // ONE type signature, shared by the resolution-cache key and by the
+        // compiled-key probes further down. Both used to build the identical
+        // `Vec<String>` independently, so every call allocated a `String` per
+        // argument twice over, plus a third `Vec` for the key's `clone` -- and
+        // on a MULTI name, where `use_cache` is false, every one of the key's
+        // allocations was for a lookup that never happens. `find_compiled_function_inner`
+        // is 40% of a multi call's retired instructions (#7573).
         let type_sig: Vec<String> = args
             .iter()
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
-        let cache_key = (
-            name_sym,
-            self.current_package_sym(),
-            arity,
-            type_sig.clone(),
-        );
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
         let use_cache = !self.has_multi_candidates_cached(name);
-        if use_cache && self.fn_resolve_cache_gen == self.fn_resolve_gen {
-            if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
+        let cache_key = use_cache.then(|| {
+            (
+                name_sym,
+                self.current_package_sym(),
+                arity,
+                type_sig.clone(),
+            )
+        });
+        if let Some(cache_key) = &cache_key
+            && self.fn_resolve_cache_gen == self.fn_resolve_gen
+        {
+            if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(cache_key)
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
@@ -88,10 +98,6 @@ impl Interpreter {
                 .map(|_| sym)
         };
         let pkg = self.current_package();
-        let type_sig: Vec<String> = args
-            .iter()
-            .map(|v| runtime::value_type_name(v).to_string())
-            .collect();
         // Try all key patterns and remember which one matched for caching
         let mut found_key: Option<Symbol>;
         if name.contains("::") {
@@ -199,7 +205,7 @@ impl Interpreter {
             let cached_pkg = resolved_def
                 .map(|def| def.package.resolve())
                 .unwrap_or_else(|| self.current_package().to_string());
-            if use_cache {
+            if let Some(cache_key) = cache_key {
                 self.fn_resolve_cache
                     .insert(cache_key, (key, expected_fingerprint, cached_pkg));
             }

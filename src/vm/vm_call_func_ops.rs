@@ -100,7 +100,7 @@ impl Interpreter {
     /// common program, so this is one `is_empty` test beyond what those
     /// checks already do.
     #[inline]
-    fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
+    pub(super) fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
         !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains_key(name)
     }
 

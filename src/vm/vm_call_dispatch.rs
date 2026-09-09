@@ -415,7 +415,42 @@ impl Interpreter {
         // C6e-3c), and a plan-compiled/OTF-compiled `cf` always carries the
         // table it was compiled alongside.
         let fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
-        let result = self.call_compiled_function_named(&cf, args, fns, &pkg, &name);
+        // The winning candidate is already in hand, so a plain all-positional
+        // signature can take the same positional-light entry an ordinary sub of
+        // that shape takes (`dispatch_func_call_inner`), instead of the general
+        // frame-pushing `call_compiled_function_named`. Every guard that path
+        // applies is applied here too; the one it additionally carries — "never
+        // for a multi" — guards its NAME-KEYED `pos_light_call_cache`, which
+        // this site does not populate, so a later call with different argument
+        // types still re-resolves through `resolve_function_multi_cached` above
+        // and reaches its own candidate. `nextsame`/`callsame`/`samewith` from
+        // the body keep working: the multi-dispatch and samewith frames are
+        // pushed around this call, not inside the callee entry.
+        //
+        // Measured (release, callgrind, `multi sub m(Mu $c, $d = '')` against
+        // the identically-shaped plain `sub`): the named entry is 18.6k retired
+        // instructions of a multi call's 47.3k, against 5.75k for the plain
+        // sub. #7573.
+        //
+        // Restricted to a callee in the CALLER'S OWN compilation unit, which is
+        // the invariant the light path is written under (`vm_call_light.rs`:
+        // "a call into another compilation unit does not take this path"). A
+        // module's file-scope `my` is lexical to its compunit, and only the
+        // general entry's `is_unit_lexical_of` check keeps a module sub's write
+        // to one off the loading script's same-named lexical
+        // (`t/module-file-scope-lexical.t`).
+        let light_eligible = self.unit_of_source(cf.source_file.as_deref()) == self.current_unit
+            && Self::is_positional_light_call_eligible(&cf, &name)
+            && !Self::call_shares_container_into_scalar_param(&cf, &args)
+            && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
+            && self.wrap_sub_id_for_name(&name).is_none()
+            && !self.light_call_blocked_by_mainline_capture(&name);
+        let result = if light_eligible {
+            let name_sym = Symbol::intern(&name);
+            self.call_compiled_function_positional_light(&cf, &args, fns, &name, name_sym)
+        } else {
+            self.call_compiled_function_named(&cf, args, fns, &pkg, &name)
+        };
 
         self.pop_samewith_context();
         if pushed_dispatch {
