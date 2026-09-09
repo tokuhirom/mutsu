@@ -197,14 +197,44 @@ fn array_kind_and_container_flags_travel_in_the_tag() {
 #[test]
 fn container_ref_cell_identity_survives() {
     let cell = Gc::new(crate::value::ContainerCell::new(Value::int(7)));
-    match roundtrip(ValueRepr::ContainerRef(cell.clone())) {
-        ValueRepr::ContainerRef(back) => {
+    for itemized in [false, true] {
+        match roundtrip(ValueRepr::ContainerRef(cell.clone(), itemized)) {
+            ValueRepr::ContainerRef(back, back_itemized) => {
+                assert_eq!(back_itemized, itemized);
+                assert!(Gc::ptr_eq(&back, &cell), ":= binding identity preserved");
+                *back.lock().unwrap() = Value::int(9);
+            }
+            other => panic!("decoded as {other:?}"),
+        }
+    }
+    assert_eq!(cell.lock().unwrap().as_int(), Some(9));
+}
+
+#[test]
+fn container_ref_itemization_is_holder_local() {
+    let cell = Gc::new(crate::value::ContainerCell::new(Value::int(7)));
+    let plain = Value::container_ref(cell.clone());
+    let itemized = Value::container_ref_itemized(cell);
+
+    assert!(plain.is_container_ref());
+    assert!(itemized.is_container_ref());
+    assert!(!plain.container_ref_is_itemized());
+    assert!(itemized.container_ref_is_itemized());
+    assert!(plain.same_variant(&itemized));
+    assert!(matches!(plain.view(), ValueView::ContainerRef(_)));
+    assert!(matches!(itemized.view(), ValueView::ContainerRef(_)));
+}
+
+#[test]
+fn container_ref_itemized_roundtrips_as_the_same_value_repr_variant() {
+    let cell = Gc::new(crate::value::ContainerCell::new(Value::int(3)));
+    match roundtrip(ValueRepr::ContainerRef(cell.clone(), true)) {
+        ValueRepr::ContainerRef(back, itemized) => {
+            assert!(itemized);
             assert!(Gc::ptr_eq(&back, &cell), ":= binding identity preserved");
-            *back.lock().unwrap() = Value::int(9);
         }
         other => panic!("decoded as {other:?}"),
     }
-    assert_eq!(cell.lock().unwrap().as_int(), Some(9));
 }
 
 fn sample_sub() -> Gc<SubData> {
@@ -528,7 +558,10 @@ fn every_variant_roundtrips_losslessly() {
             id: 2,
         })),
         ValueRepr::Scalar(Box::new(Value::int(11))),
-        ValueRepr::ContainerRef(Gc::new(crate::value::ContainerCell::new(Value::int(3)))),
+        ValueRepr::ContainerRef(
+            Gc::new(crate::value::ContainerCell::new(Value::int(3))),
+            false,
+        ),
         ValueRepr::LazyThunk(Arc::new(LazyThunkData {
             thunk: Value::NIL,
             cache: Mutex::new(Some(Value::int(5))),

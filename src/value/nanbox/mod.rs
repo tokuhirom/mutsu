@@ -148,6 +148,7 @@ pub(in crate::value) enum Kind {
     WeakSub,
     LazyList,
     ContainerRef,
+    ContainerRefItemized,
     ContainerView,
     Promise,
     Channel,
@@ -438,7 +439,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Sub => gc_op::<SubData>(bits, op),
             Kind::WeakSub => weak_op::<SubData>(bits, op),
             Kind::LazyList => gc_op::<LazyList>(bits, op),
-            Kind::ContainerRef | Kind::ContainerView => {
+            Kind::ContainerRef | Kind::ContainerRefItemized | Kind::ContainerView => {
                 gc_op::<crate::value::ContainerCell>(bits, op)
             }
             Kind::Promise => gc_op::<(Mutex<PromiseState>, Condvar)>(bits, op),

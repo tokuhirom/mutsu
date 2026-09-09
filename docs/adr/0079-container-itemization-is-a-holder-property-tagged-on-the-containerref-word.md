@@ -277,7 +277,7 @@ unconditional and delete it.
 | Slice | State |
 | --- | --- |
 | 0 — comment justification | Complete (2026-09-09; comments now state the RHS `List` rule) |
-| 1 — `Kind::ContainerRefItemized` | Not started |
+| 1 — `Kind::ContainerRefItemized` | Complete (2026-09-09; the holder flavour is encoded, decoded, probed, projected through the unchanged `ValueView::ContainerRef`, traced by GC, and covered by NanBox round-trip tests) |
 | 2 — `$`-share holder (rows 1, 3, 4) | Not started |
 | 3 — audit remaining producers | Not started |
 | 4 — drop the `unwrap_contained_pair` hedge | Not started |
