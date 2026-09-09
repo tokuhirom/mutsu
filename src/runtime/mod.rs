@@ -389,18 +389,113 @@ struct CarrierCompileCtxKey {
     whenever_inherited_owned: Vec<Symbol>,
 }
 
-/// Per-`SubData.id` cache of `(context, compiled)` pairs for
+/// Split-and-shared `whenever` body, memoized per parse site.
+///
+/// `split_whenever_body_phasers` partitions a `whenever` body into its main
+/// statements and its `LAST`/`QUIT` phaser bodies. That is a pure function of
+/// the body AST, but it ran on every *registration*, deep-cloning every
+/// statement into fresh `Vec`s -- so a `whenever` registered in a loop paid an
+/// O(body) AST copy each time AND handed the callback `Sub` a brand-new
+/// `Arc<Vec<Stmt>>`, which meant the carrier compile cache (keyed by parse
+/// site, see [`CarrierCacheKey`]) could never hit for it. Memoizing it hands
+/// every registration the same `Arc`s. Keyed by the pool-owned body `Arc`,
+/// held rather than addressed for the same soundness reason as
+/// [`MapGrepCacheKey`].
+type WheneverBodySplit = (
+    Arc<Vec<crate::ast::Stmt>>,
+    Vec<Arc<Vec<crate::ast::Stmt>>>,
+    Vec<Arc<Vec<crate::ast::Stmt>>>,
+);
+
+/// Key for `whenever_body_splits`: pointer identity of the pool-owned body
+/// `Arc`, held so the allocation cannot be freed and reused underneath a
+/// cached split.
+#[derive(Clone)]
+pub(crate) struct WheneverBodyKey(Arc<Vec<crate::ast::Stmt>>);
+
+impl PartialEq for WheneverBodyKey {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for WheneverBodyKey {}
+
+impl std::hash::Hash for WheneverBodyKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Arc::as_ptr(&self.0) as *const u8 as usize).hash(state);
+    }
+}
+
+/// What a carrier-block compile is cached *under*.
+///
+/// The compiled chunk is a pure function of the body AST plus the ambient
+/// context in [`CarrierCompileCtxKey`], so the right identity is the **parse
+/// site**, not the code object that happens to be running it.
+///
+/// [`Site`](Self::Site) is that identity: `CompiledCode::closure_body_arc`
+/// builds one `Arc<Vec<Stmt>>` per `stmt_pool` slot and hands every later
+/// instantiation of the same closure literal an `Arc` bump of it, so pointer
+/// identity of that `Arc` *is* "same literal". The `Arc` is held, not just its
+/// address, so the allocation cannot be freed and a later one reused at the
+/// same address under a stale entry — the same soundness argument
+/// [`MapGrepCacheKey`] makes.
+///
+/// This used to be a bare `SubData.id`, which is `next_instance_id()` — a
+/// fresh number for every `Sub` *value*. A block instantiated more than once
+/// from one literal therefore never hit: `body-blob`'s
+/// `Promise(supply { whenever … })` builds a new supply block per call, so it
+/// re-compiled three chunks on every call and left three permanently
+/// unreachable cache entries behind (#7667).
+///
+/// [`Id`](Self::Id) keeps that behaviour for the call sites that legitimately
+/// have their own stable identity to key on — the regex code-block and `s///`
+/// replacement paths, whose ids name a parsed node rather than a value.
+#[derive(Clone)]
+pub(crate) enum CarrierCacheKey {
+    Site(Arc<Vec<crate::ast::Stmt>>),
+    Id(u64),
+}
+
+impl PartialEq for CarrierCacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Site(a), Self::Site(b)) => Arc::ptr_eq(a, b),
+            (Self::Id(a), Self::Id(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for CarrierCacheKey {}
+
+impl std::hash::Hash for CarrierCacheKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Site(a) => {
+                0u8.hash(state);
+                (Arc::as_ptr(a) as *const u8 as usize).hash(state);
+            }
+            Self::Id(a) => {
+                1u8.hash(state);
+                a.hash(state);
+            }
+        }
+    }
+}
+
+/// Per-parse-site cache of `(context, compiled)` pairs for
 /// `eval_block_value_inner`'s carrier-block compile (see
 /// `todo/deep/eval-block-value-recompiles-every-call.md`). A `Vec` rather
 /// than a nested `HashMap` because `CarrierCompileCtxKey` cannot implement
 /// `Hash`/`Eq` (it embeds a `Value`, compared by Raku's semantic `PartialEq`,
-/// not a total order) — and because the realistic size is 1 entry per id
+/// not a total order) — and because the realistic size is 1 entry per site
 /// (the same block invoked from the same call site every time), so a linear
 /// scan against `CarrierCompileCtxKey::eq` costs nothing. Capped at
-/// `CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID` entries per id to bound memory
+/// `CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID` entries per key to bound memory
 /// for the rare block invoked from many distinct contexts.
 type CarrierCompileCache =
-    HashMap<u64, Vec<(CarrierCompileCtxKey, Arc<CompiledCode>, Arc<CompiledFns>)>>;
+    HashMap<CarrierCacheKey, Vec<(CarrierCompileCtxKey, Arc<CompiledCode>, Arc<CompiledFns>)>>;
 
 const CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID: usize = 4;
 
@@ -2380,6 +2475,10 @@ pub struct Interpreter {
     /// `eval_block_value_cached`/`eval_test_block_value`'s `cache_id`
     /// parameter — starts empty per thread (pure recomputable optimization).
     carrier_compile_cache: CarrierCompileCache,
+    /// See [`WheneverBodySplit`]: the phaser split of a `whenever` body, reused
+    /// across every registration from one parse site. Pure recomputable
+    /// optimization; starts empty per thread.
+    whenever_body_splits: HashMap<WheneverBodyKey, WheneverBodySplit>,
     /// Parsed `s///` / `S///` replacement plans, keyed by the replacement's
     /// source text (see `vm::vm_subst_repl`). The replacement is a `qq` quote,
     /// so it is parsed with the real interpolation grammar; caching keeps a

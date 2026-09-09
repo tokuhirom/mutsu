@@ -242,7 +242,33 @@ impl Interpreter {
         body: &[Stmt],
         cache_id: u64,
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, false, Some(cache_id), None)
+        self.eval_block_value_inner(
+            body,
+            false,
+            false,
+            Some(CarrierCacheKey::Id(cache_id)),
+            None,
+        )
+    }
+
+    /// [`Interpreter::eval_block_value_cached`], keyed by the body's **parse
+    /// site** rather than by a per-value id.
+    ///
+    /// This is the right key for a closure literal's body: every instantiation
+    /// of one literal shares the pool-owned `Arc` (`closure_body_arc`), so the
+    /// compiled chunk is reused across instantiations instead of being rebuilt
+    /// for each one. See [`CarrierCacheKey`].
+    pub(crate) fn eval_block_value_cached_for_site(
+        &mut self,
+        body: &std::sync::Arc<Vec<Stmt>>,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(
+            body,
+            false,
+            false,
+            Some(CarrierCacheKey::Site(std::sync::Arc::clone(body))),
+            None,
+        )
     }
 
     /// [`Interpreter::eval_block_value_cached`], additionally reporting the
@@ -266,7 +292,7 @@ impl Interpreter {
             body,
             false,
             false,
-            Some(cache_id),
+            Some(CarrierCacheKey::Id(cache_id)),
             Some(free_var_writes_out),
         )
     }
@@ -369,7 +395,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
         is_eval_unit: bool,
-        cache_id: u64,
+        cache_id: CarrierCacheKey,
         post: &CarrierPostCompile,
     ) -> (
         std::sync::Arc<crate::opcode::CompiledCode>,
@@ -405,7 +431,7 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
         record_free_var_writes: bool,
-        cache_id: Option<u64>,
+        cache_id: Option<CarrierCacheKey>,
         free_var_writes_out: Option<&mut Vec<String>>,
     ) -> Result<Value, RuntimeError> {
         // Taken first, unconditionally: it belongs to THIS body's compile only

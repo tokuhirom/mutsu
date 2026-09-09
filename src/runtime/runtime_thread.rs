@@ -688,6 +688,7 @@ impl Interpreter {
             lock_async_recursion: Vec::new(),
             lock_async_deferred: Vec::new(),
             carrier_compile_cache: HashMap::new(),
+            whenever_body_splits: Default::default(),
             subst_repl_plans: HashMap::new(),
             map_grep_compile_cache: HashMap::new(),
             gather_compile_cache: HashMap::new(),
