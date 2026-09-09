@@ -10,7 +10,7 @@ use Test;
 # return unconditionally, so the bound name held a plain value and `$doubled = 4`
 # died with "Cannot assign to an immutable value" (#7748).
 
-plan 25;
+plan 28;
 
 # --- the Type/Proxy.rakudoc:17 synopsis -------------------------------------
 
@@ -122,6 +122,31 @@ nok (try bad()).defined, 'a throwing FETCH is caught by the try around the call'
 
 my $ok := try double();
 is $ok.VAR.^name, 'Proxy', 'an untroubled try still hands the container back';
+
+# --- a subscript decontainerizes a Proxy receiver ---------------------------
+
+# XML::Element's shape: an `is rw` AT-POS returning a Proxy over the node list.
+# Now that such a return reaches the caller as a container, a CHAINED subscript
+# arrives holding the Proxy itself, and the second subscript has to FETCH it
+# rather than index the container as a one-element list.
+
+class Node {
+    has @.kids;
+    method AT-POS($i) is rw {
+        my $self = self;
+        Proxy.new(
+            FETCH => method ()   { $self.kids[$i]      },
+            STORE => method ($v) { $self.kids[$i] = $v },
+        )
+    }
+}
+
+my $leaf = Node.new(kids => <a b c>);
+my $tree = Node.new(kids => [$leaf]);
+is $tree[0][1], 'b', 'a chained subscript FETCHes the intermediate Proxy';
+is $tree[0].kids.join(','), 'a,b,c', 'a method call on it FETCHes too';
+$tree[0][1] = 'B';
+is $leaf.kids.join(','), 'a,B,c', 'and writing through the chain STOREs';
 
 # --- a Proxy captured by a closure/sub still STOREs through --------------
 

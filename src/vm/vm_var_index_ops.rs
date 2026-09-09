@@ -518,6 +518,17 @@ impl Interpreter {
             index = Value::scalar(index.clone());
         }
         let mut target = self.stack.pop().unwrap();
+        // A subscript decontainerizes its invocant, so a `Proxy` receiver is
+        // FETCHed and the subscript addresses what it FETCHes to. This is
+        // reachable since #7748: an `is rw` `AT-POS`/`AT-KEY` now hands its
+        // `Proxy` back as a container, so a chained subscript (`$xml[1][0]`,
+        // XML::Element's shape) arrives here holding the `Proxy` itself —
+        // without the FETCH the second subscript indexed the container as if
+        // it were a one-element list. Tag-probed, so an ordinary subscript
+        // pays one relaxed check.
+        if target.is_proxy_value() {
+            target = loan_env!(self, auto_fetch_proxy(&target))?;
+        }
         // A scalar-held Range is a Range receiver for its own positional
         // indexing; only an itemized Range *index* above remains a single index.
         if target.descalarize().is_range() {

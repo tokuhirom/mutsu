@@ -48,7 +48,7 @@ from an `Expr::AnonSubParams`, which records `is_rw` but has no field for
 `is_raw` — so `sub () is raw { ... }` is indistinguishable there from a plain
 one and keeps the pre-existing no-FETCH answer.
 
-## Two bugs the fix uncovered
+## Three bugs the fix uncovered
 
 **`try` did not evaluate its value.** With the container now reaching the
 caller, `(try dying-fetch-proxy()).defined` would FETCH *outside* the `try` and
@@ -76,14 +76,35 @@ otherwise rebind the name rather than write through it. This was live on `main`
 independently of the return rule; it stayed hidden because a bound name almost
 never held a real `Proxy` before.
 
+**A subscript did not decontainerize a `Proxy` receiver.** This is XML's shape
+— `XML::Element::AT-POS` is `is rw` and returns a `Proxy` over the node list —
+and it is what the bundled-library gate caught:
+
+```raku
+$xml[1][0].string      # No such method 'string' for invocant of type 'XML::Element'
+```
+
+With the container now reaching the caller, the *second* subscript arrives
+holding the `Proxy` itself and indexed it as though it were a one-element list.
+`Index` FETCHes a `Proxy` receiver now, which is the decont raku performs on a
+subscript's invocant.
+
+Fusing the two levels on the *write* side (`$obj[i][j] = v` where `AT-POS` is
+`is rw`) had never worked, on `main` either: the chained-subscript store read
+the inner collection through the accessor and then had no way to descend past
+it. It does now — when the inner instance has no `ASSIGN-POS`/`ASSIGN-KEY`, its
+own rw accessor is asked for the location and the value is stored through
+that.
+
 ## Pin
 
-`t/proxy-rw-routine-return-bind.t` (25 tests, verified identical under rakudo):
+`t/proxy-rw-routine-return-bind.t` (28 tests, verified identical under rakudo):
 read, write and read-after-write through the binding; `FETCH`/`STORE` counted
 exactly once per access, including in interpolation and as a sub argument; a
 `Proxy` returned from a method behaving as one returned from a sub; a plain
 `sub` still decontainerizing its return; `return-rw` without either trait; the
-`try` probe; and the three captured-`Proxy` store shapes.
+`try` probe; a chained subscript reading and writing through an `is rw`
+`AT-POS`; and the three captured-`Proxy` store shapes.
 
 `t/thread-shared-scalar-visibility.t`'s "STORE through a captured Proxy is
 visible" loses its `todo`: a `start` block's write is one of the captured-name
