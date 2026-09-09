@@ -69,7 +69,8 @@ impl Interpreter {
     pub(crate) fn enter_source_file(&mut self, file: Option<&str>) -> Option<Option<Value>> {
         let file = file?;
         let saved = self.env.get("?FILE").cloned();
-        self.env.insert("?FILE".to_string(), Value::str(file.to_string()));
+        self.env
+            .insert("?FILE".to_string(), Value::str(file.to_string()));
         Some(saved)
     }
 

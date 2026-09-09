@@ -99,8 +99,9 @@ routines of the compunit it was written in.** `.tap` is such a taker, and so is
 every `supply`/`whenever` body.
 
 The cause was not the invocation path, as first diagnosed, but the code objects
-themselves: two whole classes of closure did not record the file they were
-written in, so nothing downstream could tell which compunit they belonged to.
+themselves. A code object's declaring compunit *is* its `source_file`, and three
+whole classes of them recorded the wrong one, or none -- so nothing downstream
+could tell which compunit they belonged to.
 
 - **`MakeLambda` / `MakeBlockClosure`** (`vm/vm_register_sub_ops.rs`) stamped
   `current_source_file()` -- the dynamically-scoped `?FILE`, which tracks the
@@ -112,30 +113,48 @@ written in, so nothing downstream could tell which compunit they belonged to.
   `run_whenever_with_value` (`Value::make_sub_owning`), which records no source
   file at all. They are now stamped with the file the body was written in, via
   the new `Interpreter::sub_with_source_file`.
+- **A role's deferred body** is re-run at *every composition*, from the
+  composing scope, so a nested `my class` in it registered its methods as
+  declared in the composing file (`RoleDef::decl_file` now captures the role's
+  own file at declaration, and both composition runners re-establish `?FILE`
+  around the body). This is what `Cro::HTTP::Middleware::Conditional` -- whose
+  `wrap-request-logging` call sits in a `my class` inside the role -- tripped
+  over.
 
-The third piece is the frame: `call_sub_value`'s block-carrier path -- how every
+The fourth piece is the frame: `call_sub_value`'s block-carrier path -- how every
 block handed to a native callback taker is actually invoked -- pushed a
 `RoutineFrame` with `def_file: None`, so even a correctly-stamped closure went
 unnoticed. It now records `data.source_file`, exactly as the compiled closure
 dispatch (`vm_closure_dispatch.rs`) already did.
 
-All three are corrections in their own right: `executing_unit_sym` is what
-`?FILE`-based backtrace attribution, `callframe`, `%?RESOURCES` lookup and
-NativeCall prelude visibility all read.
+Seclusion itself keys by the routine's own declaring file rather than by the
+module whose load surfaced it, for the same reason: composing a role declared
+elsewhere re-runs that role's body, and a lexical `sub` in it registers during
+*this* load while staying lexical to the role's file. zef's `sub DEBUG` inside
+`role Zef::Pluggable` is exactly that shape -- it is called from the role's own
+methods, which look for it in `Zef.rakumod`, not in whichever module composed
+`Pluggable`.
+
+All of these are corrections in their own right: `executing_unit_sym` and the
+`def_file` it walks are also what backtrace attribution, `callframe`,
+`%?RESOURCES` lookup and NativeCall prelude visibility read.
 
 Separately, `call_compiled_function_positional_light_at`'s return-type-check
 failure path used to return without restoring `current_unit` at all -- a
 pre-existing leak that also mis-scoped user-declared operators. That one was
 salvaged and landed on its own ahead of this change.
 
-Pinned by `t/module-private-sub-does-not-leak.t` (12 assertions, all verified
-against Rakudo, which passes the file unchanged) with its fixture in `t/lib/PrivateSubMod.rakumod`: the module's
-exported sub, a method of a class it declares, and a block inside a module
-routine all still reach the private helper; a `.tap` callback and a
-`supply`/`whenever` body written in the module reach it too, dispatched later
-from the main script; the loading scope's own same-named routine is not
-displaced in either direction; and a private helper the loading scope never
-declared is simply not there.
+Pinned by `t/module-private-sub-does-not-leak.t` (14 assertions, all verified
+against Rakudo, which passes the file unchanged) with its fixture in
+`t/lib/PrivateSubMod.rakumod`: the module's exported sub, a method of a class it
+declares, and a block inside a module routine all still reach the private
+helper; a `.tap` callback and a `supply`/`whenever` body written in the module
+reach it too, dispatched later from the main script; a role the module declares
+reaches its own compunit-local sub, and a method of a class nested in that
+role's body reaches the private helper, after being composed in the loading
+scope; the loading scope's own same-named routine is not displaced in either
+direction; and a private helper the loading scope never declared is simply not
+there.
 
 One divergence found along the way is filed separately rather than fixed here:
 `Pkg::name(...)` falls back to a bare `GLOBAL::name` even when `Pkg` does not

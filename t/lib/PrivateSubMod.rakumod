@@ -41,3 +41,18 @@ sub tripling-supply(Supply $in) is export {
         whenever $in -> $v { emit secret-helper($v) }
     }
 }
+
+# A role's body is re-run at every composition, from the composing scope. A
+# nested `my class` in it, and a lexical `sub` beside it, still belong to THIS
+# compunit -- zef's `sub DEBUG` inside `role Zef::Pluggable`, called from that
+# role's own methods, is the shape this pins.
+role PrivateSubRole is export {
+    my sub role-local($n) { $n * 5 }
+
+    my class Helper {
+        method scaled($n) { secret-helper($n) }
+    }
+
+    method role-helper($n) { role-local($n) }
+    method nested-helper($n) { Helper.new.scaled($n) }
+}

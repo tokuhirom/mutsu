@@ -69,7 +69,6 @@ impl Interpreter {
     /// and *before* [`Self::restore_toplevel_global_routines`] puts the loading
     /// scope's own entries back.
     pub(crate) fn seclude_private_toplevel_routines(&mut self, source_path: &str) {
-        let unit = self.unit_of_source(Some(source_path));
         let candidates: Vec<(Symbol, String)> = self
             .registry()
             .functions
@@ -110,11 +109,22 @@ impl Interpreter {
         if secluded.is_empty() {
             return;
         }
-        let table = self.unit_private_routines.entry(unit).or_default();
+        let mut names: Vec<Symbol> = Vec::with_capacity(secluded.len());
         for (name_sym, def) in secluded {
-            table.insert(name_sym, def);
+            // Key by the routine's OWN declaring file, not by the module whose
+            // load surfaced it. They differ whenever the loaded module's body
+            // ran code that belongs to another compunit: composing a role
+            // declared elsewhere re-runs that role's body, and a lexical `sub`
+            // in it (zef's `sub DEBUG` inside `role Zef::Pluggable`) registers
+            // during THIS load while remaining lexical to the role's file --
+            // which is exactly where the role's methods look for it.
+            let unit = self.unit_of_source(Some(def.source_file.as_deref().unwrap_or(source_path)));
+            self.unit_private_routines
+                .entry(unit)
+                .or_default()
+                .insert(name_sym, def);
+            names.push(name_sym);
         }
-        let names: Vec<Symbol> = self.unit_private_routines[&unit].keys().copied().collect();
         for name_sym in names {
             self.unit_private_names.insert(name_sym);
             // The bare `&name` env binding is the other way the routine stayed

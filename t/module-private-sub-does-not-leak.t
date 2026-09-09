@@ -13,7 +13,7 @@ use PrivateSubMod;
 # Every expectation below was verified against Rakudo.
 # See runtime/unit_private_routines.rs.
 
-plan 12;
+plan 14;
 
 # The loading scope declares its own routine of the same name as the module's
 # private helper. The two are independent lexicals.
@@ -72,5 +72,14 @@ $sup-src.emit(3);
 $sup-src.emit(4);
 is @emitted.join(','), '9,12',
     'a supply/whenever body declared in the module reaches the private helper';
+
+# The role is composed HERE, in the loading scope, which re-runs its body. Both
+# the role's own lexical sub and a method of a class nested in its body must
+# still resolve against the module's compunit, not this one.
+my class Composed does PrivateSubRole { }
+is Composed.new.role-helper(3), 15,
+    "a composed role method reaches the role's own compunit-local sub";
+is Composed.new.nested-helper(4), 12,
+    'a method of a class nested in a composed role body reaches the private helper';
 
 done-testing;
