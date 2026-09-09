@@ -115,6 +115,35 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
+        self.exec_call_sanitized(name, args, callsite_line, None)
+    }
+
+    /// [`Self::exec_call`] for a caller that has already run
+    /// `sanitize_call_args_owned` and therefore holds both the marker-free
+    /// argument list and the callsite line it yielded.
+    ///
+    /// `OpCode::ExecCallPairs` is that caller: it sanitizes at the opcode entry
+    /// so its own `find_compiled_function` / `try_native_function` probes see
+    /// the *real* argument list rather than one carrying the parser-injected
+    /// `__mutsu_test_callsite_line` pair — the same preamble `OpCode::ExecCall`
+    /// has always had. Re-sanitizing here would be harmless but would reset
+    /// `test_pending_callsite_line` to `None`, losing the assertion's source
+    /// line, so the line is threaded in instead.
+    ///
+    /// `pre_resolved` short-circuits the `resolve_function_with_alias` below
+    /// with a winner the caller already resolved for these same arguments. Only
+    /// a *type-keyed* resolution may be handed over (`find_compiled_function_memo`
+    /// fills its memo only in that case): such an answer is a pure function of
+    /// `(package, name, argument type keys)` and so is exactly what resolving a
+    /// second time here would produce. See
+    /// [`Interpreter::resolve_function_multi_cached_keyed`] (#7573).
+    pub(crate) fn exec_call_sanitized(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        callsite_line: Option<i64>,
+        pre_resolved: Option<Arc<FunctionDef>>,
+    ) -> Result<Value, RuntimeError> {
         self.test_pending_callsite_line = callsite_line;
         // Delegate test functions to the unified test_functions.rs — unless a
         // user routine of that name is declared and can take these arguments.
@@ -181,7 +210,18 @@ impl Interpreter {
                     self.env.insert("_".to_string(), result.clone());
                     return Ok(result);
                 }
-                let def_opt = self.resolve_function_with_alias(name, &args);
+                let def_opt = match pre_resolved {
+                    // `resolve_function_with_alias` opens by clearing the
+                    // pending dispatch error; a handed-over winner must do the
+                    // same, or a stale ambiguity error from an earlier call
+                    // would be re-raised by the `take_pending_dispatch_error`
+                    // arm below.
+                    Some(def) => {
+                        self.clear_pending_dispatch_error();
+                        Some(def)
+                    }
+                    None => self.resolve_function_with_alias(name, &args),
+                };
                 if let Some(def) = def_opt {
                     // The real JSON::Fast/JSON::Tiny `to-json`/`from-json` defs
                     // resolve here, but their nqp-based bodies cannot run under
