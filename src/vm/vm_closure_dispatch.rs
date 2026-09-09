@@ -1777,10 +1777,17 @@ impl Interpreter {
         // off every closure return in a program that merely declares an `END`
         // (#7565).
         if self.has_end_phasers() && !data.env.is_empty() && self.end_phasers_watch_any(&data.env) {
-            // Flatten: END phasers run at program exit with this captured env;
-            // it must hold the full lexical view, not a transient scoped overlay.
-            let current = self.clone_env();
+            // The refresh reads the live env ONE KEY AT A TIME
+            // (`current_env.get_sym`), and a scoped env's `get_sym` already
+            // walks its parent chain — so it needs the full lexical *view*, not
+            // a flat *map*. Loaning the live env out and back is O(1) where the
+            // `clone_env()` flatten that used to stand here was a whole-scope
+            // map clone (plus its drop) on every closure return: 5.6k
+            // instructions per iteration of a loop in a file that had done
+            // nothing but `use Test` (#7565).
+            let current = self.take_env();
             self.update_end_phaser_envs_for_keys(&data.env, &current);
+            self.set_env(current);
         }
 
         let return_spec = data

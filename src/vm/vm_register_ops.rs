@@ -975,7 +975,16 @@ impl Interpreter {
         let Some(cc) = cc else {
             return self.clone_env();
         };
-        if crate::opcode::reflective_name_access_possible() {
+        // The whole-env-by-name capture is needed only when a lexical in this
+        // closure's reach can be named dynamically. The process-global latch
+        // says the *program* contains such a spelling somewhere; `cc`'s own
+        // flag says THIS closure (or one nested in it) does. Requiring both
+        // keeps the filtered upvalue capture for the ordinary closures of a
+        // program that merely loaded a module containing an `EVAL` — the
+        // monotonic, process-global deoptimization #7565 measured, where a bare
+        // `use Test` made every closure creation clone the importer's whole env
+        // and every closure call merge it back key by key.
+        if crate::opcode::reflective_name_access_possible() && cc.needs_reflective_capture {
             let mut flat = self.clone_env();
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
@@ -1070,9 +1079,9 @@ impl Interpreter {
             if k == callable_type_sym {
                 return false;
             }
-            // One memoized flags byte answers both string questions this filter
+            // One memoized flags word answers the string questions this filter
             // asks per key (see `symbol::flags`), instead of resolving the
-            // symbol and re-scanning its bytes twice.
+            // symbol and re-scanning its bytes.
             let flags = k.flags();
             // Attribute-twigil keys (`!x`, `@!x`, `%.x`, …) are per-frame
             // materializations of `self`'s attributes, not lexicals: the
@@ -1081,6 +1090,17 @@ impl Interpreter {
             // mutates — a `start` block reading `@!before` inside
             // Cro::CompositeConnector.connect saw an empty pre-mutation copy.
             if flags & crate::symbol::flags::ATTR_TWIGIL_ENV_KEY != 0 {
+                return false;
+            }
+            // `__mutsu_callable_id::<pkg>::<name>` is a routine-registration
+            // marker, one per named routine visible in the creating scope —
+            // after a bare `use Test` that is 55 of the 90 entries this filter
+            // used to keep, none of which any closure body can name. Every
+            // consumer reads it from the LIVE env at call time, where it is
+            // still visible through the frame chain; the single case that is
+            // not (an escaping closure whose `use`-inside-`EVAL` scope has been
+            // popped) is pinned by name in `capture_bare_callees`.
+            if flags & crate::symbol::flags::CALLABLE_ID_META != 0 {
                 return false;
             }
             free.contains(&k)
@@ -1159,10 +1179,25 @@ impl Interpreter {
             if self.has_proto(&resolved_name) || self.has_multi_candidates(&resolved_name) {
                 continue;
             }
+            let code_name = name.with_str(|name| format!("&{name}"));
+            let code_sym = Symbol::intern(&code_name);
             let Some(def) = self
                 .resolve_function(&resolved_name)
                 .map(|def| (*def).clone())
             else {
+                // No registry entry left to classify: the import alias this
+                // gate exists for has already been popped (`PopImportScope`),
+                // which is exactly the state a closure created by an OUTER
+                // EVAL-returned closure runs in. A live lexical `&name` — the
+                // one this very gate pinned into the outer closure — is then
+                // the only surviving binding, so carry it into the inner
+                // capture, which filters plain `&user-name` keys out (they are
+                // not free variables). `t/eval-closure-imported-sub.t`.
+                if !env.contains_key_sym(code_sym)
+                    && let Some(value) = self.env().get_sym(code_sym)
+                {
+                    env.insert_sym(code_sym, value.clone());
+                }
                 continue;
             };
             // Same-package routines continue to use normal compiled/registry
@@ -1175,14 +1210,22 @@ impl Interpreter {
             {
                 continue;
             }
-            let code_name = name.with_str(|name| format!("&{name}"));
-            let code_sym = Symbol::intern(&code_name);
+            let id_key = Self::callable_id_key_for_syms(def.package, def.name);
             if !env.contains_key_sym(code_sym)
                 && let Some(value) = self.env().get_sym(code_sym)
             {
                 env.insert_sym(code_sym, value.clone());
             } else if !env.contains_key_sym(code_sym) {
                 env.insert_sym(code_sym, self.sub_value_from_function_def(def));
+            }
+            // The alias's registration marker travels with it: the ordinary
+            // capture filter drops every `__mutsu_callable_id::` key (they are
+            // read from the live env, which still has them), but this closure's
+            // EVAL scope is about to be popped, taking the marker with it.
+            if !env.contains_key_sym(id_key)
+                && let Some(value) = self.env().get_sym(id_key)
+            {
+                env.insert_sym(id_key, value.clone());
             }
         }
     }
