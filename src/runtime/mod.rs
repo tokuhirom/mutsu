@@ -602,6 +602,7 @@ pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
 pub(crate) mod nativecall_manage;
+mod numeric_bridge_probe;
 pub(crate) mod once_store;
 mod ops_bits;
 mod ops_compare;
@@ -1986,6 +1987,10 @@ pub struct Interpreter {
     /// checked". `AtomicU64` (not `Cell`) so `Interpreter` stays `Send`/`Sync` —
     /// `registry_mut()` takes `&self`.
     registry_write_gen: std::sync::atomic::AtomicU64,
+    /// Per-class memo of the native-dispatch numeric-bridge probe, keyed by the
+    /// `registry_write_gen` above. See [`numeric_bridge_probe`] for why that
+    /// generation is a sound invalidation key (#7712).
+    numeric_bridge_probe: numeric_bridge_probe::NumericBridgeProbeCache,
     /// Active `{*}` proto dispatch frames: (proto_name, args, method_ctx).
     /// `method_ctx` is `Some` when the active proto is a `proto method` body, so
     /// `{*}` redispatches to a multi *method* candidate on the invocant rather
