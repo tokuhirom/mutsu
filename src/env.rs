@@ -481,6 +481,28 @@ pub struct Env {
     /// on the swap path) stays a refcount bump; the log is copy-on-write like
     /// `inner`.
     frame_writes: Option<Arc<Vec<Symbol>>>,
+    /// Index of the overlay keys that are *code env entries* (`&foo` and their
+    /// `__mutsu_callable_id::` markers — see [`Symbol::is_code_env_entry`]),
+    /// so a block scope can save/restore them in O(routine bindings) instead of
+    /// O(whole env). See [`Self::code_env_keys`].
+    ///
+    /// `None` means "not indexed": the answer is recomputed by one overlay scan
+    /// on the next ask. Every env starts that way and stays that way unless
+    /// something actually asks — which keeps the maintenance hook in
+    /// [`Self::insert_sym`] down to one `is_some()` branch on the envs (nearly
+    /// all of them) that never run a block-scope save.
+    ///
+    /// A *superset* index, never a subset: it may name a key that has since
+    /// been removed (removals do not prune it), so every consumer re-reads the
+    /// overlay through the key. It must never MISS a present key, which is why
+    /// the two bulk paths that can add keys without passing `insert_sym`
+    /// ([`Self::inner_mut`]) and every whole-map rebuild (`flattened`,
+    /// `filtered_flat`, `From<HashMap>`) reset it to `None` rather than carry a
+    /// stale one forward.
+    ///
+    /// `Arc` for the same reason as `frame_writes`: an env clone stays a
+    /// refcount bump.
+    code_entries: Option<Arc<Vec<Symbol>>>,
 }
 
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
@@ -532,6 +554,7 @@ impl Env {
             depth: 0,
             file_sym: None,
             frame_writes: None,
+            code_entries: None,
         }
     }
 
@@ -585,6 +608,7 @@ impl Env {
                     tombstones: None,
                     file_sym,
                     frame_writes: None,
+                    code_entries: None,
                 };
             }
             return Self {
@@ -594,6 +618,7 @@ impl Env {
                 tombstones: None,
                 file_sym,
                 frame_writes: None,
+                code_entries: None,
             };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
@@ -608,6 +633,7 @@ impl Env {
             tombstones: None,
             file_sym,
             frame_writes: None,
+            code_entries: None,
         }
     }
 
@@ -734,6 +760,81 @@ impl Env {
         }
     }
 
+    /// Keep [`Self::code_entries`] a superset of the overlay's code-var keys
+    /// across an `insert`. A no-op — one branch on a field the insert already
+    /// touched — for every env that has never been asked for the index, which
+    /// is nearly all of them: only [`Self::code_env_keys`] turns the index on,
+    /// and only a block-scope save/restore calls that. `Symbol::is_code_env_entry`
+    /// (a thread-local memo lookup) is therefore never paid on the general
+    /// insert path.
+    #[inline(always)]
+    fn note_code_entry(&mut self, key: Symbol) {
+        if let Some(idx) = &mut self.code_entries
+            && key.is_code_env_entry()
+            && !idx.contains(&key)
+        {
+            Arc::make_mut(idx).push(key);
+        }
+    }
+
+    /// The overlay keys that are code env entries — `&foo` routine bindings and
+    /// their `__mutsu_callable_id::` markers (see [`Symbol::is_code_env_entry`]).
+    ///
+    /// These are exactly the keys a block scope has to snapshot on entry and
+    /// restore on exit, so that a block-local `sub`/`my &foo` does not leak into
+    /// the caller. Doing that by scanning the whole overlay twice per block was
+    /// the measured cost of running a carrier block (#7575): two full env walks
+    /// per `<?{ … }>` assertion evaluation, per grammar `token` body, per
+    /// `where` clause. The index makes both walks O(routine bindings in scope) —
+    /// zero for the overwhelmingly common scope that declares no routines.
+    ///
+    /// The returned list is a *superset*: a key it names may have been removed
+    /// since, so read each one back through [`Self::overlay_get_sym`] rather than
+    /// assuming it is present. It never misses a key that IS present.
+    ///
+    /// Takes `&mut self` because the first ask materializes (and memoizes) the
+    /// index with one overlay scan.
+    pub(crate) fn code_env_keys(&mut self) -> Arc<Vec<Symbol>> {
+        let inner = &self.inner;
+        self.code_entries
+            .get_or_insert_with(|| {
+                Arc::new(
+                    inner
+                        .keys()
+                        .copied()
+                        .filter(|k| k.is_code_env_entry())
+                        .collect(),
+                )
+            })
+            .clone()
+    }
+
+    /// Drop this env's frame-write log, for a caller that has just made a bulk
+    /// edit it cannot describe key-by-key (see [`Self::frame_writes`]). A no-op
+    /// for the envs — nearly all of them — that carry no log.
+    #[inline]
+    pub(crate) fn forget_frame_writes(&mut self) {
+        self.frame_writes = None;
+    }
+
+    /// Drop `key` from this tier's overlay **without** tombstoning it, so a
+    /// parent-tier binding of the same name shadows back through.
+    ///
+    /// This is `retain`'s per-key removal semantics ("filter my own overlay"),
+    /// not `remove_sym`'s ("this name is deleted in this scope"). A block-scope
+    /// restore wants the former: it undoes writes the block made to THIS tier
+    /// and must leave an enclosing tier's routine binding visible.
+    pub(crate) fn remove_overlay_sym(&mut self, key: Symbol) -> Option<Value> {
+        if !self.inner.contains_key(&key) {
+            return None;
+        }
+        if key == file_key() {
+            self.file_sym = None;
+        }
+        self.note_frame_write(key);
+        self.cow_mut().remove(&key)
+    }
+
     /// Drop the frame's own by-name writes from a *flattened* env, consulting
     /// [`Self::frame_writes`] instead of scanning the whole map: the
     /// [`Self::retain_overlay`] return merge, replayed at O(frame writes) after
@@ -855,6 +956,7 @@ impl Env {
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
                     frame_writes: None,
+                    code_entries: None,
                 }
             }
         }
@@ -918,6 +1020,7 @@ impl Env {
             depth: 0,
             file_sym,
             frame_writes: None,
+            code_entries: None,
         }
     }
 
@@ -1097,6 +1200,7 @@ impl Env {
         }
         self.untombstone(key);
         self.note_frame_write(key);
+        self.note_code_entry(key);
         self.cow_mut().insert(key, value)
     }
 
@@ -1205,6 +1309,9 @@ impl Env {
                 .cloned();
             if let Some(v) = promote {
                 self.untombstone(key);
+                // A promotion ADDS a key to this overlay, so it has to reach the
+                // code-entry index exactly as an `insert` does.
+                self.note_code_entry(key);
                 self.cow_mut().insert(key, v);
             }
         }
@@ -1383,8 +1490,13 @@ impl Env {
     }
 
     /// Direct access to the inner HashMap (for bulk mutation).
+    ///
+    /// The one write path that can add a key without passing through
+    /// [`Self::insert_sym`], so it drops the code-entry index rather than let a
+    /// bulk insert make it miss a key — see [`Self::code_entries`].
     #[allow(dead_code)]
     pub(crate) fn inner_mut(&mut self) -> &mut SymMap {
+        self.code_entries = None;
         self.cow_mut()
     }
 
@@ -1487,6 +1599,7 @@ impl From<HashMap<String, Value>> for Env {
             depth: 0,
             file_sym,
             frame_writes: None,
+            code_entries: None,
         }
     }
 }
@@ -1502,6 +1615,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             depth: 0,
             file_sym,
             frame_writes: None,
+            code_entries: None,
         }
     }
 }
@@ -1581,6 +1695,110 @@ mod tests {
         }
         // Empty string is not a plain user lexical.
         assert!(!is_plain_user_lexical(""));
+    }
+
+    /// Every key the code-entry index must name, and the ones it must not,
+    /// derived by brute force from the overlay. The index is allowed to be a
+    /// *superset* (removals do not prune it), never a subset.
+    fn code_entries_are_a_superset(env: &mut Env) {
+        let index = env.code_env_keys();
+        let actual: Vec<Symbol> = env
+            .inner
+            .keys()
+            .copied()
+            .filter(|k| k.is_code_env_entry())
+            .collect();
+        for k in &actual {
+            assert!(
+                index.contains(k),
+                "index missed a present code entry: {}",
+                k.as_str()
+            );
+        }
+        for k in index.iter() {
+            assert!(
+                k.is_code_env_entry(),
+                "index named a non-code key: {}",
+                k.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn code_env_key_classification() {
+        for k in [
+            "&helper",
+            "&?BLOCK",
+            "&?ROUTINE",
+            "__mutsu_callable_id::M::f",
+        ] {
+            assert!(s(k).is_code_env_entry(), "{k} is a code env entry");
+        }
+        for k in ["x", "@arr", "%h", "self", "_", "?FILE", "__mutsu_type::x"] {
+            assert!(!s(k).is_code_env_entry(), "{k} is not a code env entry");
+        }
+    }
+
+    #[test]
+    fn code_entry_index_tracks_inserts_and_survives_removals() {
+        let mut env = Env::new();
+        env.insert("x".into(), Value::int(1));
+        env.insert("&f".into(), Value::int(2));
+        // First ask materializes the index from the overlay.
+        code_entries_are_a_superset(&mut env);
+        assert_eq!(env.code_env_keys().len(), 1);
+        // A later insert extends the live index rather than invalidating it.
+        env.insert("__mutsu_callable_id::MAIN::f".into(), Value::int(3));
+        env.insert("&g".into(), Value::int(4));
+        code_entries_are_a_superset(&mut env);
+        assert_eq!(env.code_env_keys().len(), 3);
+        // Re-inserting a known key does not duplicate it.
+        env.insert("&g".into(), Value::int(5));
+        assert_eq!(env.code_env_keys().len(), 3);
+        // A removal may leave a stale entry behind (superset), but every key the
+        // index names must still be readable back through the overlay or absent.
+        env.remove("&g");
+        code_entries_are_a_superset(&mut env);
+        assert!(env.overlay_get_sym(s("&g")).is_none());
+    }
+
+    #[test]
+    fn code_entry_index_rebuilt_after_a_whole_map_replacement() {
+        let mut src: HashMap<Symbol, Value> = HashMap::new();
+        src.insert(s("&f"), Value::int(1));
+        src.insert(s("y"), Value::int(2));
+        // `From<HashMap>` cannot maintain an index, so it must start unindexed
+        // and rebuild on the first ask rather than report an empty one.
+        let mut env: Env = src.into();
+        assert_eq!(env.code_env_keys().len(), 1);
+        code_entries_are_a_superset(&mut env);
+
+        // A flatten merges parent tiers into the overlay, which adds code keys
+        // this env's index never saw; it must be rebuilt, not carried over.
+        let mut root = Env::new();
+        root.insert("&outer".into(), Value::int(1));
+        let mut leaf = scoped_with(root, &[("z", 3)]);
+        assert_eq!(
+            leaf.code_env_keys().len(),
+            0,
+            "overlay-only, parent excluded"
+        );
+        let mut flat = leaf.flattened();
+        assert_eq!(flat.code_env_keys().len(), 1);
+        code_entries_are_a_superset(&mut flat);
+    }
+
+    #[test]
+    fn remove_overlay_sym_does_not_tombstone_the_parent_tier() {
+        let mut root = Env::new();
+        root.insert("&f".into(), Value::int(1));
+        let mut leaf = scoped_with(root, &[]);
+        leaf.insert("&f".into(), Value::int(2));
+        assert_eq!(leaf.get_sym(s("&f")), Some(&Value::int(2)));
+        // Undoing this tier's write must let the parent's binding shadow back
+        // through -- unlike `remove_sym`, which would tombstone the name.
+        leaf.remove_overlay_sym(s("&f"));
+        assert_eq!(leaf.get_sym(s("&f")), Some(&Value::int(1)));
     }
 
     fn scoped_with(parent: Env, writes: &[(&str, i64)]) -> Env {
