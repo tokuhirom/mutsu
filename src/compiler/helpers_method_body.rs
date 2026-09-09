@@ -210,6 +210,7 @@ impl Compiler {
             is_raw: false,
             is_cached: false,
             param_local_slots: None,
+            params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
             named_call_plan: None,

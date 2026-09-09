@@ -1,6 +1,6 @@
 # ADR-0077: A call's locals are a window into one contiguous stack, not a pooled `Vec`
 
-- Status: **Accepted** (Slices 0 and 2 implemented; Slice 1 withdrawn into Slice 2; Slice 3 and the leading-parameter form open — see the two "What Slice N actually built" sections)
+- Status: **Accepted** (Slices 0 and 2 implemented; Slice 1 withdrawn into Slice 2; the leading-parameter form's *fill* half implemented via `params_fill_frame`, its argument-move half and Slice 3 still open — see the "What Slice N actually built" sections)
 - Date: 2026-09-08
 - Related: [#7562](https://github.com/tokuhirom/mutsu/issues/7562) (the perf
   finding this ADR unblocks), [#7579](https://github.com/tokuhirom/mutsu/issues/7579)
@@ -108,6 +108,38 @@ registration time as a `bool` on `CompiledFunction`, not re-derived per call.
 
 Whether the locals stack should be `self.stack` itself or a sibling `Vec` is
 left to Slice 2's measurement (see "Open questions").
+
+**Most of this landed without the fusion, and the fusion turned out not to be
+the interesting part.** `CompiledFunction::params_fill_frame` is true when the
+parameter slots are `0..n` *and* nothing else is a local — `fib`, `tak`, every
+leaf accessor. The light call path then opens the frame **empty** and the bind
+loop pushes each bound parameter in order, so each slot is written once instead
+of twice (`Nil`-fill then overwrite) and the out-of-line `Vec::resize` that did
+the fill disappears from the profile entirely. Measured, same tree, control
+included:
+
+| program | JIT on | | JIT off | |
+| --- | ---: | ---: | ---: | ---: |
+| `fib(22)` | 152 097 034 → 147 907 328 | **−2.75%** | 259 518 024 → 255 332 694 | **−1.61%** |
+| `tak(14,7,0)` | 1 627 600 958 → 1 573 773 245 | **−3.31%** | 2 635 348 286 → 2 581 526 152 | **−2.04%** |
+| a `while` loop (control) | 860 435 718 → 860 432 596 | −0.0004% | 1 364 731 677 → 1 364 731 057 | −0.00005% |
+
+The trap worth recording: the bind loop `continue`s when a parameter is omitted
+and its precomputed fill is absent. Under the sized frame that slot keeps the
+`Nil` it was filled with; under the push it would be *skipped*, landing every
+later parameter one slot low. The push path pushes that `Nil` explicitly, and
+`Locals::put_param_slot` carries a `debug_assert_eq!` on the frame length so the
+`gc-stress` / `jit-stress` jobs check the alignment suite-wide.
+
+What `locals_base = args_base` would add on top is only the argument *move* —
+the bind loop's `mem::replace` out of the operand stack — since the fill is
+already gone. That is the part needing operand-stack fusion, and it is now a
+smaller prize than it looked.
+
+Only `vm_call_light` takes this path so far. `vm_call_light_typed` and
+`vm_call_fast` bind through differently shaped loops (alias seeding, a separate
+plan), so they keep the sized frame until someone measures whether a shared
+abstraction is worth its cost.
 
 ## Why this is worth an ADR rather than a slice
 

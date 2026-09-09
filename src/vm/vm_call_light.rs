@@ -183,8 +183,18 @@ impl Interpreter {
         // (an empty `push_frame` plus a `refill_slots`) cost a second
         // out-of-line `Vec::resize` per call. Nothing between here and the
         // parameter bind reads `self.locals`.
+        //
+        // Unless the parameters *are* the frame (`params_fill_frame`), in which
+        // case open it empty and let the bind loop push them in order: filling
+        // `n` slots with `Nil` only to overwrite all `n` is one write per slot
+        // too many, and the fill is an out-of-line `Vec::resize` call that this
+        // skips entirely. The seed loop below has nothing to do in that case by
+        // construction — every local is a parameter, and it skips those.
         let num_locals = cf.code.locals.len();
-        let saved_locals_base = self.locals.push_frame(num_locals);
+        let params_fill_frame = cf.params_fill_frame;
+        let saved_locals_base =
+            self.locals
+                .push_frame(if params_fill_frame { 0 } else { num_locals });
         // Isolate the caller's loop-body-local declaration scope (mirrors
         // `call_compiled_function` in vm_call_fast.rs). This fast path bypasses
         // `push_call_frame`/`run()`, so without clearing these a callee's
@@ -248,7 +258,10 @@ impl Interpreter {
         // arity check already returned on a shortfall), so seeding them is a
         // wasted overlay-chain walk per call — for an all-params body like
         // `fib` the whole seed disappears.
-        if cf.code.locals_sym.len() == num_locals {
+        if params_fill_frame {
+            // Every local is a parameter, so both arms below would skip every
+            // slot. Not entering them also means the frame may still be empty.
+        } else if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
                 if param_slots.contains(&i) {
                     continue;
@@ -388,7 +401,16 @@ impl Interpreter {
                 // own constraint once, at precompute time.
                 match cf.param_const_fills.get(param_idx).and_then(|v| v.clone()) {
                     Some(v) => v,
-                    None => continue,
+                    None => {
+                        // The sized-frame path leaves this slot at the `Nil` the
+                        // frame was filled with. The push path has to push that
+                        // `Nil` explicitly, or every later parameter lands one
+                        // slot low.
+                        if params_fill_frame {
+                            self.locals.put_param_slot(true, *slot, Value::NIL);
+                        }
+                        continue;
+                    }
                 }
             };
             let param_name = &cf.param_defs[param_idx].name;
@@ -402,7 +424,8 @@ impl Interpreter {
                 // key-shape bookkeeping `Env::insert` would have done is
                 // still performed, on a borrow.
                 crate::env::note_env_key(param_name);
-                self.locals[*slot] = val.clone();
+                self.locals
+                    .put_param_slot(params_fill_frame, *slot, val.clone());
                 match cf.param_name_syms.get(param_idx) {
                     Some(sym) => self.env_mut().insert_sym(*sym, val),
                     None => self.env_mut().insert(param_name.clone(), val),
@@ -410,7 +433,7 @@ impl Interpreter {
             } else {
                 // No env mirror: move the bound value straight into the
                 // slot instead of cloning it and dropping the original.
-                self.locals[*slot] = val;
+                self.locals.put_param_slot(params_fill_frame, *slot, val);
             }
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) => self.mark_readonly_sym(*sym),
