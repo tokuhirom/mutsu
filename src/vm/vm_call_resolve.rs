@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::MultiCompiledKey;
 
 impl Interpreter {
     pub(super) fn find_compiled_function<'a>(
@@ -7,11 +8,31 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<&'a Arc<CompiledFunction>> {
+        self.find_compiled_function_memo(compiled_fns, name, args, &mut None)
+    }
+
+    /// [`Self::find_compiled_function`], handing back the multi resolution it
+    /// performed on the way.
+    ///
+    /// `dispatch_func_call_inner` needs the same winner immediately afterwards
+    /// when this returns `None` for a `multi` name, and used to resolve it a
+    /// second time — rebuilding `multi_arg_type_keys` (a `Symbol` per argument
+    /// property) for an answer already in hand. `memo` is filled only when the
+    /// resolution came from the type-keyed path, which by construction cannot
+    /// depend on anything about the call that changed in between; see
+    /// [`Interpreter::resolve_function_multi_cached_keyed`] (#7573).
+    pub(super) fn find_compiled_function_memo<'a>(
+        &mut self,
+        compiled_fns: &'a CompiledFns,
+        name: &str,
+        args: &[Value],
+        memo: &mut Option<Arc<crate::ast::FunctionDef>>,
+    ) -> Option<&'a Arc<CompiledFunction>> {
         // Pseudo-package names need interpreter's special resolution
         if self.is_interpreter_handled_function(name) {
             return None;
         }
-        self.find_compiled_function_inner(compiled_fns, name, args)
+        self.find_compiled_function_inner(compiled_fns, name, args, memo)
     }
 
     /// Get the cached package for a function, if available.
@@ -27,24 +48,26 @@ impl Interpreter {
         compiled_fns: &'a CompiledFns,
         name: &str,
         args: &[Value],
+        memo: &mut Option<Arc<crate::ast::FunctionDef>>,
     ) -> Option<&'a Arc<CompiledFunction>> {
         let arity = args.len();
         let name_sym = Symbol::intern(name);
-        // ONE type signature, shared by the resolution-cache key and by the
-        // compiled-key probes further down. Both used to build the identical
-        // `Vec<String>` independently, so every call allocated a `String` per
-        // argument twice over, plus a third `Vec` for the key's `clone` -- and
-        // on a MULTI name, where `use_cache` is false, every one of the key's
-        // allocations was for a lookup that never happens. `find_compiled_function_inner`
-        // is 40% of a multi call's retired instructions (#7573).
-        let type_sig: Vec<String> = args
-            .iter()
-            .map(|v| runtime::value_type_name(v).to_string())
-            .collect();
+        // ONE type signature, shared by both resolution-cache keys and by the
+        // compiled-key probes further down. The probes used to build their own
+        // copy, so every call allocated a `String` per argument twice over; the
+        // names are `&'static str` to begin with, so neither copy needs to own
+        // one at all. `find_compiled_function_inner` was 40% of a multi call's
+        // retired instructions (#7573).
+        let type_sig: Vec<&'static str> = args.iter().map(runtime::value_type_name).collect();
         // Check the resolution cache first to avoid expensive resolve_function_with_types.
         // Skip cache for multi functions since subset type dispatch depends on values.
-        let use_cache = !self.has_multi_candidates_cached(name);
-        let cache_key = use_cache.then(|| {
+        let is_multi = self.has_multi_candidates_cached(name);
+        if self.fn_resolve_cache_gen != self.fn_resolve_gen {
+            self.fn_resolve_cache.clear();
+            self.multi_compiled_key_cache.clear();
+            self.fn_resolve_cache_gen = self.fn_resolve_gen;
+        }
+        let cache_key = (!is_multi).then(|| {
             (
                 name_sym,
                 self.current_package_sym(),
@@ -53,25 +76,23 @@ impl Interpreter {
             )
         });
         if let Some(cache_key) = &cache_key
-            && self.fn_resolve_cache_gen == self.fn_resolve_gen
+            && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(cache_key)
+            && let Some(cf) = compiled_fns.get(cached_key)
+            && cf.fingerprint == *cached_fp
         {
-            if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(cache_key)
-                && let Some(cf) = compiled_fns.get(cached_key)
-                && cf.fingerprint == *cached_fp
-            {
-                return Some(cf);
-            }
-        } else if self.fn_resolve_cache_gen != self.fn_resolve_gen {
-            self.fn_resolve_cache.clear();
-            self.fn_resolve_cache_gen = self.fn_resolve_gen;
+            return Some(cf);
         }
         // Same sound multi-resolution cache the interpreter's dispatch uses:
-        // `use_cache` above deliberately withholds the *compiled-key* cache from
+        // `cache_key` above deliberately withholds the *compiled-key* cache from
         // a multi name (its winner depends on argument types), but the
         // resolution itself is still cacheable whenever the candidates are
         // type+arity deterministic, and for a `multi` this call was otherwise a
         // full candidate walk on every single dispatch.
-        let resolved_def = loan_env!(self, resolve_function_multi_cached(name, args));
+        let (resolved_def, type_keyed) =
+            loan_env!(self, resolve_function_multi_cached_keyed(name, args));
+        if type_keyed {
+            memo.clone_from(&resolved_def);
+        }
         let expected_fingerprint = resolved_def.as_ref().map(|def| def.body_fingerprint());
         // If runtime resolution fails, avoid reusing stale compiled cache entries.
         // This can happen across repeated EVAL calls that redefine the same routine name.
@@ -85,6 +106,46 @@ impl Interpreter {
                     .count()
             })
             .unwrap_or(arity);
+        // Positional arity (the probe chain builds keys from it as well as from
+        // the raw arity, and it is part of the multi memo key below).
+        let pos_arity = args.iter().filter(|a| !a.is_string_pair_value()).count();
+        // The multi memo (#7573). A `multi` is excluded from `fn_resolve_cache`
+        // above, so without this every call re-ran the whole `format!` probe
+        // chain below — ~15 heap-allocated key strings and as many
+        // `Symbol::lookup`s — even though for the common shape (the winning
+        // candidate lives outside the caller's `compiled_fns`) they all fail and
+        // the answer is a constant `None`. Keyed by the resolved winner's
+        // fingerprint plus everything else the chain reads, so a hit reproduces
+        // the probe result exactly; a positive hit is still re-validated against
+        // the table and falls through to a fresh probe if it has gone stale.
+        let multi_memo_key = (is_multi && !name.contains("::")).then(|| MultiCompiledKey {
+            name: name_sym,
+            pkg: self.current_package_sym(),
+            lexical_pkg: self
+                .routine_stack()
+                .last()
+                .and_then(|frame| frame.lexical_package),
+            arity,
+            pos_arity,
+            fingerprint: expected_fingerprint,
+            type_sig: type_sig.clone(),
+        });
+        if let Some(memo_key) = &multi_memo_key
+            && let Some(hit) = self.multi_compiled_key_cache.get(memo_key).copied()
+        {
+            match hit {
+                None => return None,
+                Some(key) => {
+                    if let Some(cf) = compiled_fns
+                        .get(&key)
+                        .filter(|cf| cf.fingerprint == expected_fingerprint)
+                    {
+                        return Some(cf);
+                    }
+                    // Stale entry: re-probe below rather than answering `None`.
+                }
+            }
+        }
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
         // Probe a candidate key string. The map is keyed by `Symbol`; every real
         // key was interned at compile time, so `Symbol::lookup` (no interning)
@@ -126,7 +187,6 @@ impl Interpreter {
                 }
             }
         } else {
-            let pos_arity = || args.iter().filter(|a| !a.is_string_pair_value()).count();
             // Innermost package first, then each enclosing package, then GLOBAL:
             // a method of `NL::Searcher` calling a bare name must reach `NL`'s
             // compiled routine (see `bare_name_packages`). The GLOBAL fallback
@@ -149,11 +209,10 @@ impl Interpreter {
                 // and then discards it (the `else { found_key = None }` below).
                 // Behaviour-preserving — the def-arity fallback re-resolves.
                 let simple_or_pos = probe(&format!("{}::{}", pkg, name)).or_else(|| {
-                    let pos = pos_arity();
-                    if pos != arity {
+                    if pos_arity != arity {
                         probe(&format!(
                             "{}::{}/{}#{:x}",
-                            pkg, name, pos, expected_fingerprint
+                            pkg, name, pos_arity, expected_fingerprint
                         ))
                     } else {
                         None
@@ -167,11 +226,10 @@ impl Interpreter {
                     .or_else(|| probe(&format!("GLOBAL::{}", name)))
                     .or_else(|| {
                         // Try with positional-only arity (excluding Pair named args)
-                        let pos = pos_arity();
-                        if pos != arity {
+                        if pos_arity != arity {
                             probe(&format!(
                                 "GLOBAL::{}/{}#{:x}",
-                                name, pos, expected_fingerprint
+                                name, pos_arity, expected_fingerprint
                             ))
                         } else {
                             None
@@ -199,6 +257,9 @@ impl Interpreter {
                     None
                 }
             });
+        }
+        if let Some(memo_key) = multi_memo_key {
+            self.multi_compiled_key_cache.insert(memo_key, found_key);
         }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups

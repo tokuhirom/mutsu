@@ -3216,6 +3216,7 @@ impl Interpreter {
             fn_resolve_cache: Default::default(),
             fn_resolve_gen: 0,
             fn_resolve_cache_gen: 0,
+            multi_compiled_key_cache: Default::default(),
             multi_candidates_cache: Default::default(),
             multi_candidates_cache_gen: 0,
             has_proto_cache: Default::default(),

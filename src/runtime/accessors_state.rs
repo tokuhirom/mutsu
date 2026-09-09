@@ -862,8 +862,29 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Arc<FunctionDef>> {
+        self.resolve_function_multi_cached_keyed(name, args).0
+    }
+
+    /// [`Self::resolve_function_multi_cached`], plus whether the answer came
+    /// from the sound *type-keyed* path — i.e. is a pure function of
+    /// `(package, name, argument type keys)` and so depends on nothing else
+    /// about the call, `pending_call_arg_sources` included.
+    ///
+    /// Only a `true` here licenses reusing one resolution for two consumers:
+    /// the un-keyed fallback runs the full `resolve_function_with_types`
+    /// candidate walk, which *does* read `pending_call_arg_sources` (an `is rw`
+    /// parameter accepts only a writable lvalue), so two resolutions of the
+    /// same call under different pending sources may legitimately differ. A
+    /// candidate set containing an `is rw` parameter is exactly what
+    /// `func_multi_dispatch_type_cacheable` refuses, so the two conditions line
+    /// up (#7573).
+    pub(crate) fn resolve_function_multi_cached_keyed(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> (Option<Arc<FunctionDef>>, bool) {
         let Some(arg_keys) = self.multi_arg_type_keys(args) else {
-            return self.resolve_function_with_types(name, args);
+            return (self.resolve_function_with_types(name, args), false);
         };
         // The atomic mirror, not `current_package()`: the owned form is a
         // `RwLock` read plus a `String` heap allocation on a path that runs on
@@ -871,11 +892,11 @@ impl Interpreter {
         let pkg_sym = self.current_package_sym();
         let name_sym = Symbol::intern(name);
         if !self.func_multi_dispatch_type_cacheable(pkg_sym, name_sym, name) {
-            return self.resolve_function_with_types(name, args);
+            return (self.resolve_function_with_types(name, args), false);
         }
         let key = (pkg_sym, name_sym, arg_keys);
         if let Some(hit) = self.func_multi_resolve_cache.get(&key) {
-            return hit.clone();
+            return (hit.clone(), true);
         }
         let resolved = self.resolve_function_with_types(name, args);
         // Ambiguity is signaled by `None` + a pending dispatch error; that must be
@@ -884,7 +905,7 @@ impl Interpreter {
         if !ambiguous {
             self.func_multi_resolve_cache.insert(key, resolved.clone());
         }
-        resolved
+        (resolved, !ambiguous)
     }
 
     /// True when `class_name`'s MRO (or direct parents) includes a builtin

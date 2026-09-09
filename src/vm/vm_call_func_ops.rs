@@ -983,7 +983,7 @@ impl Interpreter {
                 name_sym,
                 self.current_package_sym(),
                 0usize,
-                Vec::<String>::new(),
+                Vec::<&'static str>::new(),
             );
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
@@ -1501,8 +1501,11 @@ impl Interpreter {
             loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
             self.set_pending_call_arg_sources(arg_sources.clone());
+            // The multi winner this resolves on the way, so the multi branch
+            // below does not resolve the identical call a second time (#7573).
+            let mut multi_def_memo: Option<Arc<crate::ast::FunctionDef>> = None;
             let compiled = if !self.has_proto_cached(name) {
-                self.find_compiled_function(compiled_fns, name, &args)
+                self.find_compiled_function_memo(compiled_fns, name, &args, &mut multi_def_memo)
             } else {
                 None
             };
@@ -1702,7 +1705,13 @@ impl Interpreter {
                         // per-call registry walk + candidate match/rank/dedup;
                         // value-dependent / un-keyable / ambiguous calls resolve
                         // fresh (byte-identical to `resolve_function_with_types`).
-                        && let Some(def) = loan_env!(self, resolve_function_multi_cached(name, &args))
+                        && let Some(def) = match multi_def_memo.take() {
+                            // Already resolved by `find_compiled_function_memo`
+                            // above, and only ever memoised when that answer is
+                            // a pure function of the argument type keys.
+                            memoised @ Some(_) => memoised,
+                            None => loan_env!(self, resolve_function_multi_cached(name, &args)),
+                        }
                         // A genuine multi candidate: the name is multi-cached, so
                         // `compile_and_call_function_def` never name-caches this
                         // candidate — a default param is safe here (unlike the
