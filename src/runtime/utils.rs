@@ -251,6 +251,7 @@ pub(crate) fn value_is_itemized_container(v: &Value) -> bool {
 /// `BagData.counts` is a `BigInt` map, so nothing downstream needs to
 /// saturate.
 pub(crate) fn bag_weight(v: &Value) -> BigInt {
+    let v = v.deref_container().deitemize_element();
     match v.view() {
         ValueView::Bool(b) => BigInt::from(i64::from(b)),
         _ => v.to_bigint(),

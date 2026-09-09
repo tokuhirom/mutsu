@@ -3,6 +3,18 @@ use crate::vm::vm_arith_ops::seed_meta_assign_identity;
 use std::collections::HashMap;
 
 impl Interpreter {
+    /// Read a Hash element as a value for an increment/decrement operation.
+    /// Boolean values in ordinary Hash storage carry a Scalar marker for
+    /// `.raku`, but the RMW operation must dispatch on the contained Bool.
+    fn hash_element_value_for_incdec(value: Value) -> Value {
+        let value = value.deref_container();
+        if matches!(value.view(), ValueView::Scalar(_)) {
+            value.deitemize_element()
+        } else {
+            value
+        }
+    }
+
     /// Apply a fused compound-assignment base operator to `left OP right` by
     /// reusing the exact `exec_*_op` the plain `Binary` path runs (so operator
     /// semantics, coercions, and user-`infix` overloads are identical). The
@@ -649,7 +661,11 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::hash(std::collections::HashMap::new()));
             let old = match storage.view() {
-                ValueView::Hash(map) => map.get(&key).cloned().unwrap_or(Value::NIL),
+                ValueView::Hash(map) => map
+                    .get(&key)
+                    .cloned()
+                    .map(Self::hash_element_value_for_incdec)
+                    .unwrap_or(Value::NIL),
                 _ => Value::NIL,
             };
             let effective = Self::normalize_incdec_source(if old.is_nil() {
@@ -725,7 +741,11 @@ impl Interpreter {
         {
             let inner = arc.lock().unwrap().clone();
             let current = match inner.view() {
-                ValueView::Hash(h) => h.get(&key).cloned().unwrap_or(Value::NIL),
+                ValueView::Hash(h) => h
+                    .get(&key)
+                    .cloned()
+                    .map(Self::hash_element_value_for_incdec)
+                    .unwrap_or(Value::NIL),
                 ValueView::Array(arr, ..) => key
                     .parse::<usize>()
                     .ok()
@@ -793,7 +813,11 @@ impl Interpreter {
         }
         let current = if let Some(container_value) = container.as_ref() {
             match container_value.view() {
-                ValueView::Hash(h) => h.get(&key).cloned().unwrap_or(Value::NIL),
+                ValueView::Hash(h) => h
+                    .get(&key)
+                    .cloned()
+                    .map(Self::hash_element_value_for_incdec)
+                    .unwrap_or(Value::NIL),
                 ValueView::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
                         arr.get(i).cloned().unwrap_or(Value::NIL)

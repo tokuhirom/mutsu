@@ -38,7 +38,9 @@ fn hash_stored_value(v: Value) -> Value {
     // containers, storing the pair value as-is aliased the two hashes together,
     // so a later in-place mutation of one silently rewrote the other
     // (roast/S03-metaops/infix.t's `%a = %reset.pairs` reset lines).
-    decay_nil_hash_value(v).itemize_for_element_store()
+    decay_nil_hash_value(v)
+        .deitemize_element()
+        .itemize_for_element_store()
 }
 
 /// ADR-0040 slice 2 (the Array half): itemize every element of a

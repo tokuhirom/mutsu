@@ -349,7 +349,9 @@ impl Interpreter {
                     None
                 };
                 // Reject if there's container type metadata
-                if hash_arc.has_type_meta() {
+                if hash_arc.has_type_meta()
+                    || loan_env!(self, var_type_constraint(var_name)).is_some()
+                {
                     return None;
                 }
                 // Peek at the key to check if the existing element is a bound

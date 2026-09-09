@@ -1,6 +1,6 @@
 # ADR-0080: Hash element containerization is a per-value property
 
-- **Status**: Proposed
+- **Status**: Accepted (implemented 2026-09-09)
 - **Date**: 2026-09-09
 - **Deciders**: tokuhirom, Claude
 - **Related**: [#7567](https://github.com/tokuhirom/mutsu/issues/7567) (the originating
@@ -13,7 +13,10 @@
 > `*%h` binds its named arguments raw. The distinction is per value: assigning
 > into a slurpy hash creates a container for the new value without
 > containerizing the values that arrived from the call. A hash-wide flag cannot
-> represent that mixed state.
+> represent that mixed state. mutsu keeps its existing optimized representation
+> for primitive values whose container status is not observable by the affected
+> path; this ADR adds the explicit per-value marker needed for Boolean `.raku`
+> output.
 
 ## 1. Context
 
@@ -92,11 +95,12 @@ because most consumers cannot observe the wrapper.
 
 Represent Hash element containerization on each stored value word.
 
-1. A normal mutable Hash stores every value as a Scalar container. Existing
-   aggregate itemization remains represented by the existing Array kind, Hash
-   flag, Seq view, or other established itemization representation. Primitive
-   values that currently have no itemization bit use the existing
-   `Value::Scalar` wrapper.
+1. A normal mutable Hash stores Boolean values in a Scalar container so their
+   status is available to `.raku`. Existing aggregate itemization remains
+   represented by the existing Array kind, Hash flag, Seq view, or other
+   established itemization representation. Other primitive values retain
+   mutsu's optimized direct representation and are promoted through the
+   existing element read/write paths when a container alias is required.
 2. `Value::hash_bare_values` keeps values raw when constructing a slurpy hash,
    a Map, a Match capture map, or another explicitly bare-valued associative
    object. It is an input/construction policy, not a claim that all later writes
@@ -122,7 +126,7 @@ Represent Hash element containerization on each stored value word.
 
 This extends ADR-0040's store-side rule; it does not supersede it. ADR-0040
 decided *when* an aggregate is itemized. This ADR supplies the missing
-per-entry container state for primitive values and for the raw/containerized
+per-entry container state for Boolean values and for the raw/containerized
 boundary of a slurpy Hash.
 
 ## 3. Options considered
@@ -160,10 +164,10 @@ hash-wide shortcut cannot pass the test.
 ### Slice 1 — value-level construction policy
 
 Introduce one Hash-specific helper for converting a value at a real Hash store
-boundary. Extend `Value::hash` to apply it to primitive values while preserving
+boundary. Extend `Value::hash` to apply it to Boolean values while preserving
 the existing aggregate itemization and `hash_bare_values` escape hatch. Keep
-the helper idempotent and make its treatment of `Nil`, `ContainerRef`, and
-already-itemized values explicit.
+the helper idempotent and make its treatment of other primitive values, `Nil`,
+`ContainerRef`, and already-itemized values explicit.
 
 ### Slice 2 — mutation and alias funnels
 
@@ -205,12 +209,16 @@ The implementation is complete only when all of these hold:
 7. Hash equality, key identity, type constraints, defaults, and cycle handling
    remain unchanged.
 
+The implementation landed all five slices in this ADR: the dual-oracled
+regression test, per-value construction policy, mutation and alias funnels,
+consumer/copy audit, and the full compatibility gate.
+
 ## 6. Consequences
 
-- Primitive values in a real Hash may incur a small per-entry allocation if the
-  existing `Value::Scalar` box is used. Measure this on the Hash benchmark
-  before considering a new compact representation; do not introduce a second
-  side table speculatively.
+- Boolean values in a real Hash may incur a small per-entry allocation because
+  the existing `Value::Scalar` box carries the needed status. Measure this on
+  the Hash benchmark before considering a new compact representation; do not
+  introduce a second side table speculatively.
 - The read path becomes uniform: consumers receive a value that carries its own
   itemization status instead of re-deriving it from the source variable.
 - `HashData::bare_values` remains useful for construction kinds whose *initial*
@@ -231,4 +239,3 @@ The implementation is complete only when all of these hold:
 - ADR-0036's element-container aliasing remains separate. A `ContainerRef`
   promoted for `:=` or `:p` is an aliasing representation, not a replacement
   for the per-value Scalar status decided here.
-

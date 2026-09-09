@@ -336,11 +336,9 @@ impl Value {
         // A hash that has declared its values are not element containers keeps
         // them bare through every later rebuild (copy-on-write, metadata
         // re-tagging, `set_hash_original_keys`), which all route back here.
-        if !data.bare_values && data.map.values().any(Value::needs_element_itemization) {
+        if !data.bare_values {
             for v in data.map.values_mut() {
-                if v.needs_element_itemization() {
-                    *v = v.clone().itemize_for_element_store();
-                }
+                *v = std::mem::replace(v, Value::NIL).itemize_for_hash_element();
             }
         }
         Value::from_repr(ValueRepr::Hash(Gc::new(data), false))
@@ -458,6 +456,32 @@ impl Value {
         }
     }
 
+    /// Itemize a value at a real Hash element store.
+    ///
+    /// Hash elements need a per-entry marker for the Boolean rendering case:
+    /// a raw Boolean captured by `*%h` uses Pair shorthand, while a Boolean
+    /// assigned into a real Hash element uses the long form.  Other primitive
+    /// values already have value-transparent behavior at the existing Hash
+    /// read/write chokepoints, so keep them unboxed here.  Aggregate values
+    /// retain the existing store-side itemization policy.  Explicit cells and
+    /// already-itemized values are unchanged so this operation is idempotent
+    /// and never nests a Scalar around an alias.
+    pub fn itemize_for_hash_element(self) -> Value {
+        match self.view() {
+            ValueView::Scalar(_) | ValueView::ContainerRef(_) => self,
+            ValueView::Array(..)
+            | ValueView::Hash(_)
+            | ValueView::Seq(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => self.itemize_for_element_store(),
+            ValueView::Bool(_) => Value::scalar(self),
+            _ => self,
+        }
+    }
+
     /// ADR-0040 slice 2: would [`Value::itemize_for_element_store`] actually
     /// change this value? The construction-site hooks (list-assign into
     /// `@a`/`%h`, real-container literal construction) scan a whole element
@@ -491,6 +515,7 @@ impl Value {
             }
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
             ValueView::Scalar(inner) => (*inner).clone(),
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone().deitemize_element(),
             _ => self,
         }
     }
@@ -661,19 +686,20 @@ impl Value {
     /// Hash element write chokepoint (Phase 2 Stage 0). The hash analogue of
     /// [`Self::assign_element_slot`]: if the existing entry at `key` is a
     /// `ContainerRef` cell, write *through* it (preserving any `:=` binding);
-    /// otherwise insert or replace the entry as a bare value.
+    /// otherwise insert or replace the entry as a Hash element container.
     ///
-    /// This is behavior-invariant until hash elements are promoted to cells
-    /// (Phase 2 Stage 1), because no hash currently stores `ContainerRef`
-    /// entries, so every call collapses to a plain insert/replace. Routing all
-    /// hash-element writes through this single chokepoint is the prerequisite
-    /// for that promotion: a naive promotion without it broke array-through-hash
-    /// traversal (nested.t 30->7), see `docs/container-identity.md`.
+    /// Raw values from a `*%h` binding use `hash_bare_values` at construction,
+    /// but a later write is a real Hash element store and must create the
+    /// per-value container. Routing all writes through this chokepoint also
+    /// keeps promoted aliases from being replaced by nested containers.
     pub fn hash_insert_through(map: &mut HashMap<String, Value>, key: String, val: Value) {
         match map.get_mut(&key) {
-            Some(slot) => Value::assign_element_slot(slot, val),
+            Some(slot) if slot.is_container_ref() => Value::assign_element_slot(slot, val),
+            Some(slot) => {
+                *slot = val.itemize_for_hash_element();
+            }
             None => {
-                map.insert(key, val);
+                map.insert(key, val.itemize_for_hash_element());
             }
         }
     }

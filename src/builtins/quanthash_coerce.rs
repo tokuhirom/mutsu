@@ -180,7 +180,7 @@ fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
     // read as DATA, so read through the container first -- otherwise every
     // arm below misses and the truthy `_` fallback silently makes the weight
     // `1`. Pinned by `t/pairs-element-container.t`.
-    let v = &v.deref_container();
+    let v = &v.deref_container().deitemize_element();
     match v.view() {
         ValueView::Int(i) => Ok(BigInt::from(i)),
         // Weights can exceed i64::MAX (e.g. `{a => 10**20}.Bag`); a BigInt weight
@@ -500,7 +500,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
 /// Delegates to [`mix_pair_weight`] for the Inf/NaN/Complex/bad-Str validation
 /// errors, then returns the exact `Value` rather than that validated f64.
 pub(crate) fn mix_pair_weight_value(v: &Value) -> Result<Value, RuntimeError> {
-    let v = &v.deref_container();
+    let v = &v.deref_container().deitemize_element();
     let f = mix_pair_weight(v)?;
     match v.view() {
         ValueView::Int(_)

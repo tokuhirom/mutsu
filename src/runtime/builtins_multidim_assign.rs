@@ -449,9 +449,13 @@ impl Interpreter {
                             .original_keys
                             .get_or_insert_with(std::collections::HashMap::new)
                             .insert(which.clone(), index.clone());
-                        new_hash.map.insert(which, effective_value.clone());
+                        Value::hash_insert_through(
+                            &mut new_hash.map,
+                            which,
+                            effective_value.clone(),
+                        );
                     } else {
-                        new_hash.insert(key, effective_value.clone());
+                        Value::hash_insert_through(&mut new_hash.map, key, effective_value.clone());
                     }
                     Value::hash(new_hash)
                 }

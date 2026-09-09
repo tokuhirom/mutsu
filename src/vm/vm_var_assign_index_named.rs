@@ -2590,8 +2590,7 @@ impl Interpreter {
                                 // Slice 2b: replace the `=`-shared cell rather than
                                 // write through it, so the source stays unaffected.
                                 // ADR-0040 slice 1: itemize the stored value.
-                                hd.map
-                                    .insert(key.clone(), Self::itemize_value(val.clone()));
+                                hd.map.insert(key.clone(), Self::itemize_value(val.clone()));
                             } else {
                                 // ADR-0040 slice 1: itemize the stored value.
                                 Value::hash_insert_through(

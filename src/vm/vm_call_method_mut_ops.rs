@@ -1822,9 +1822,9 @@ impl Interpreter {
                             data.original_keys
                                 .get_or_insert_with(std::collections::HashMap::new)
                                 .insert(which.clone(), args[0].clone());
-                            data.map.insert(which, value.clone());
+                            Value::hash_insert_through(&mut data.map, which, value.clone());
                         } else {
-                            data.map.insert(key, value.clone());
+                            Value::hash_insert_through(&mut data.map, key, value.clone());
                         }
                         let new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
                         let meta = old_meta.unwrap_or(crate::runtime::ContainerTypeInfo {
