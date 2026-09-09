@@ -484,6 +484,14 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .map(crate::value::Value::to_string_value)
                 .unwrap_or_default()
         }
+        // An `is Int` subclass gists as its integer payload, just like Int.
+        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_int_value") => {
+            attributes
+                .as_map()
+                .get("__mutsu_int_value")
+                .map(crate::value::Value::to_string_value)
+                .unwrap_or_default()
+        }
         // An `is Array` subclass instance gists as its backing array elements
         // (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic `Class.new`.
         ValueView::Instance { attributes, .. }

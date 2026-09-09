@@ -78,6 +78,35 @@ pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeErro
     err
 }
 
+/// Seed the representation payload carried by a subclass of a native scalar.
+///
+/// `Mu.new` and `Mu.bless` both construct an ordinary instance, but the native
+/// `Int`/`Str` implementations need their scalar value in a reserved attribute
+/// so value-level coercion and rendering can see it without consulting the
+/// class registry. Keep the convention in one place so the two constructor
+/// paths cannot drift again.
+pub(crate) fn seed_native_subclass_payloads(
+    attrs: &mut AttrMap,
+    class_mro: &[Symbol],
+    args: &[Value],
+    positional_args: &[Value],
+) {
+    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key("__mutsu_int_value") {
+        let payload = positional_args.first().map_or(0, crate::runtime::to_int);
+        attrs.insert("__mutsu_int_value", Value::int(payload));
+    }
+    if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
+        let payload = args
+            .iter()
+            .find_map(|arg| match arg.view() {
+                ValueView::Pair(key, value) if key == "value" => Some(value.to_str_context()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        attrs.insert("__mutsu_str_value", Value::str(payload));
+    }
+}
+
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements
 /// are flattened into the result. With multiple arguments, each is appended as-is.
