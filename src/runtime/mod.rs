@@ -1598,6 +1598,29 @@ pub(crate) mod end_order {
     }
 }
 
+/// Key of [`Interpreter::multi_compiled_key_cache`]: everything
+/// `find_compiled_function_inner`'s probe chain reads for a bare `multi` name.
+///
+/// `pkg` and `lexical_pkg` are the two inputs `bare_name_packages()` derives its
+/// search list from, so a hit can never answer for the wrong package scope
+/// (the same pair `has_proto`'s memo keys on). `arity`/`pos_arity` are both
+/// present because the probe chain builds keys from each, and two calls sharing
+/// a type signature can still differ in how many of their arguments are
+/// string-keyed `Pair`s. `fingerprint` is the resolved winner's body
+/// fingerprint, which every probe filters on. Names containing `::` are never
+/// cached here — their probe chain additionally consults `env` for prefix
+/// visibility, which this key does not capture.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct MultiCompiledKey {
+    pub(crate) name: Symbol,
+    pub(crate) pkg: Symbol,
+    pub(crate) lexical_pkg: Option<Symbol>,
+    pub(crate) arity: usize,
+    pub(crate) pos_arity: usize,
+    pub(crate) fingerprint: u64,
+    pub(crate) type_sig: Vec<&'static str>,
+}
+
 /// What a `(name, callsite package)` pair in `pos_light_call_cache` resolves to.
 ///
 /// Both variants denote a body that `is_positional_light_call_eligible` has
@@ -3329,10 +3352,26 @@ pub struct Interpreter {
     /// package-sensitive: `PkgA::which` and `PkgB::which` are different
     /// routines reached by the same bare name, and a package-blind key let
     /// whichever package called first answer for both.
+    /// The type names are `&'static str` (that is what `value_type_name`
+    /// returns), so building a probe key costs one `Vec` and no `String` — this
+    /// key is rebuilt on every call that reaches `find_compiled_function`.
     pub(crate) fn_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, Symbol, usize, Vec<String>), (Symbol, u64, String)>,
+        rustc_hash::FxHashMap<(Symbol, Symbol, usize, Vec<&'static str>), (Symbol, u64, String)>,
     pub(crate) fn_resolve_gen: u64,
     pub(crate) fn_resolve_cache_gen: u64,
+    /// Memo for the compiled-key probe chain of a `multi` name
+    /// (`find_compiled_function_inner`). `fn_resolve_cache` above deliberately
+    /// withholds itself from a multi, because its key cannot tell two calls
+    /// apart that share a type signature but pick different candidates — so
+    /// every multi call re-ran ~15 `format!`ed key probes against
+    /// `compiled_fns`, which for the common shape (the winning candidate is not
+    /// in the caller's table) all fail. Keying on the *resolved winner's*
+    /// fingerprint sidesteps that: the resolution itself is the sound part, and
+    /// the probe outcome is a pure function of this key. Unlike
+    /// `fn_resolve_cache` this memo also stores the NEGATIVE answer, which is
+    /// the whole point (#7573). Invalidated wholesale with `fn_resolve_cache`
+    /// on a `fn_resolve_gen` change.
+    pub(crate) multi_compiled_key_cache: rustc_hash::FxHashMap<MultiCompiledKey, Option<Symbol>>,
     pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) multi_candidates_cache_gen: u64,
     /// Memo for [`Self::has_proto`], keyed by the full bare-name lookup
