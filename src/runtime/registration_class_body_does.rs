@@ -30,11 +30,8 @@ impl Interpreter {
             .split_once('[')
             .map(|(base, _)| base)
             .unwrap_or(role_name_str.as_str());
-        if !self.registry().roles.contains_key(&role_name_str)
-            && matches!(
-                role_name_str.as_str(),
-                "Real" | "Numeric" | "Cool" | "Any" | "Mu" | "Positional" | "Associative"
-            )
+        if !self.registry().roles.contains_key(base_role_name)
+            && crate::runtime::types::is_builtin_role_name(base_role_name)
         {
             if !cx.class_def.parents.iter().any(|p| p == &role_name_str) {
                 cx.class_def.parents.insert(0, role_name_str.clone());

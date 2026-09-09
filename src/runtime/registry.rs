@@ -1343,20 +1343,29 @@ impl Registry {
     pub(crate) fn builtin_role_parents(role_name: &str) -> &'static [&'static str] {
         match role_name {
             "Real" => &["Numeric"],
+            "QuantHash" => &["Associative"],
             "Setty" | "Baggy" => &["QuantHash", "Associative"],
             "Mixy" => &["Baggy"],
+            "Sequence" => &["PositionalBindFailover"],
+            "Blob" => &["Positional[T]", "Stringy"],
+            "Buf" => &["Blob[T]", "Positional[T]", "Stringy"],
             _ => &[],
         }
     }
 
     /// Every role the named role composes, declared or built-in.
     pub(crate) fn role_parents_of(&self, role_name: &str) -> Vec<String> {
+        let base_role_name = role_name
+            .split_once('[')
+            .map(|(base, _)| base)
+            .unwrap_or(role_name);
         let mut parents: Vec<String> = self
             .role_parents
             .get(role_name)
+            .or_else(|| self.role_parents.get(base_role_name))
             .cloned()
             .unwrap_or_default();
-        for builtin in Self::builtin_role_parents(role_name) {
+        for builtin in Self::builtin_role_parents(base_role_name) {
             if !parents.iter().any(|p| p == builtin) {
                 parents.push((*builtin).to_string());
             }

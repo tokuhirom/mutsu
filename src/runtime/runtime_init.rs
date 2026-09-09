@@ -2528,6 +2528,9 @@ impl Interpreter {
                 roles.iter().map(|r| (*r).to_string()).collect(),
             );
         }
+        for class_name in ["Compiler", "Distro", "Kernel", "Raku", "VM"] {
+            ccr.insert(class_name.to_string(), vec!["Systemic".to_string()]);
+        }
         // Built-in role definitions (PR-A slice 4: roles now live in the
         // shared Registry instead of an Interpreter field).
         registry.roles = {
