@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run every t/*.t twice -- once with mutsu's native TAP provider
+# Run every test under t/ twice -- once with mutsu's native TAP provider
 # (MUTSU_REAL_TEST=) and once with the vendored upstream Test.rakumod
 # (MUTSU_REAL_TEST=1) -- and report which files regress under the real module.
 #
@@ -52,7 +52,10 @@ run_one() {
 export -f run_one
 export ROOT WORK MUTSU
 
-ls t/*.t | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {}
+# `find`, not `ls t/*.t`: t/ is a nested tree (docs/t-directory-layout.md).
+# The copies below stay flat because test basenames are globally unique, which
+# scripts/check-t-layout.sh enforces for exactly this kind of consumer.
+find t -name '*.t' -type f | sort | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {}
 
 # A file passes only if it (a) exited 0 and (b) printed no failure marker.
 # Exit status matters on its own: a mid-file abort under the real Test

@@ -1,6 +1,6 @@
 ---
 name: test-util-workout
-description: Pick one Test::Util function from roast's Test-Helpers package, write a t/ test for it, and fix the interpreter until it passes, ending in a merged PR. Use when asked for a "Test::Util workout" or to work through the Test::Util helper functions.
+description: Pick one Test::Util function from roast's Test-Helpers package, write a t/tooling/ test for it, and fix the interpreter until it passes, ending in a merged PR. Use when asked for a "Test::Util workout" or to work through the Test::Util helper functions.
 metadata:
   short-description: Land one Test::Util helper end-to-end
 ---
@@ -16,13 +16,14 @@ learn the expected behaviour.
 ## Workflow
 
 1. Read `roast/packages/Test-Helpers/lib/Test/Util.rakumod` for the list of exported functions.
-2. Check `t/` for the existing coverage (`test-util-*.t`, `is-run.t`, ...) to see which
-   functions already have tests.
+2. Check `t/tooling/` for the existing coverage (`test-util-*.t`, `is-run.t`, ...) to see
+   which functions already have tests. The `Test` module and roast's `Test::Util` helpers
+   live in the `tooling/` category (`docs/t-directory-layout.md`).
 3. Pick **one** unimplemented or undertested function. Once chosen, do **not** switch to a
    different one mid-task.
-4. Write `t/<function-name>.t` exercising it with several cases: basic usage, edge cases, and
-   combined checks.
-5. Run it: `timeout 30 target/debug/mutsu t/<function-name>.t`.
+4. Write `t/tooling/<function-name>.t` exercising it with several cases: basic usage, edge
+   cases, and combined checks.
+5. Run it: `timeout 30 target/debug/mutsu t/tooling/<function-name>.t`.
 6. Fix the interpreter until it passes. When the spec is unclear, check with `raku -e '<code>'`
    (the `install-raku` skill gets `raku` if the container has none) and consult `raku-doc/`.
 7. Run `make test` and `make roast` to check for regressions, then read the results out of

@@ -7,7 +7,7 @@ metadata:
 
 # RakuAST implementation
 
-Use this skill for work involving `src/rakuast/`, `t/rakuast*.t`,
+Use this skill for work involving `src/rakuast/`, `t/rakuast/`,
 the RakuAST campaign-overview issue, or RakuAST-specific ADR/design work.
 It covers the RakuAST-specific investigation and implementation details; use
 the repository's normal ticket and PR workflow for branching, validation, and
@@ -53,7 +53,7 @@ converter.
 
 ## Test the contract
 
-Add a focused `t/rakuast-<slice>.t` test with three kinds of assertions:
+Add a focused `t/rakuast/rakuast-<slice>.t` test with three kinds of assertions:
 
 - read direction: measured node classes, accessors, and relevant field
   omission/presence;
