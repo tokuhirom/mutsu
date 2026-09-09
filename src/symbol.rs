@@ -208,6 +208,17 @@ pub(crate) mod flags {
     /// that does — an escaping closure whose `use`-inside-`EVAL` scope has
     /// already been popped — is served precisely by `capture_bare_callees`.
     pub(crate) const CALLABLE_ID_META: u16 = 1 << 8;
+    /// A *code env entry*: a `&`-sigil routine binding (`&foo`, `&?BLOCK`) or
+    /// the `__mutsu_callable_id::` marker installed beside it. Together these
+    /// are exactly the env keys a block scope has to save and restore, so that
+    /// a block-local `sub`/`my &foo` does not leak into the caller
+    /// ([`crate::env::Env::code_env_keys`]).
+    ///
+    /// A superset of [`CALLABLE_ID_META`], deliberately: the block-scope
+    /// predicate asks the two questions together, and fusing them into one bit
+    /// makes it a single memoized lookup instead of two `as_str()` round trips
+    /// plus two `starts_with` scans per key.
+    pub(crate) const CODE_ENV_ENTRY: u16 = 1 << 9;
     /// Set once the flag word has been computed (so a symbol with no flags is
     /// not recomputed on every lookup).
     pub(crate) const COMPUTED: u16 = 1 << 15;
@@ -240,6 +251,9 @@ fn compute_flags(s: &str) -> u16 {
     }
     if s.starts_with(CALLABLE_ID_META_PREFIX) {
         f |= flags::CALLABLE_ID_META;
+    }
+    if s.starts_with('&') || s.starts_with(CALLABLE_ID_META_PREFIX) {
+        f |= flags::CODE_ENV_ENTRY;
     }
     if crate::env::is_plain_user_lexical(s) {
         f |= flags::PLAIN_USER_LEXICAL;
@@ -506,6 +520,14 @@ impl Symbol {
     #[inline]
     pub(crate) fn is_dynamic_var_env_key(self) -> bool {
         self.flags() & flags::DYNAMIC_VAR_ENV_KEY != 0
+    }
+
+    /// Memoized "is this a `&`-routine binding or its `__mutsu_callable_id::`
+    /// marker" — the block-scope save/restore predicate. See
+    /// [`flags::CODE_ENV_ENTRY`].
+    #[inline]
+    pub(crate) fn is_code_env_entry(self) -> bool {
+        self.flags() & flags::CODE_ENV_ENTRY != 0
     }
 
     /// Resolve the symbol back to its string representation.

@@ -403,11 +403,16 @@ impl Interpreter {
         // `&`-code vars and their `__mutsu_callable_id::` markers are lexical to
         // this block too; snapshot them so a block-local `sub`/`my &foo` binding
         // does not leak its env entries into the caller.
-        let saved_code_env: std::collections::HashMap<Symbol, Value> = self
-            .env
+        //
+        // Driven off `Env::code_env_keys`, the env's own index of those keys,
+        // rather than a full overlay walk: a carrier block runs *per regex
+        // cursor position* / per grammar `token` body, and the two O(env) scans
+        // this pair used to cost were ~17% of a `<?{ … }>`-driven match (#7575).
+        // The index is a superset, so read each key back through `overlay_get`.
+        let code_keys = self.env.code_env_keys();
+        let saved_code_env: std::collections::HashMap<Symbol, Value> = code_keys
             .iter()
-            .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
-            .map(|(k, v)| (*k, v.clone()))
+            .filter_map(|k| self.env.overlay_get_sym(*k).map(|v| (*k, v.clone())))
             .collect();
         // The compiled chunk can be reused across calls to the SAME `SubData`
         // (cache_id) only when nothing below would mutate it per-call — a
@@ -568,10 +573,37 @@ impl Interpreter {
             self.operator_assoc = saved_operator_assoc;
             self.user_declared_infix_ops = saved_user_declared_infix_ops;
         }
-        self.env
-            .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));
-        for (k, v) in saved_code_env {
-            self.env.insert_sym(k, v);
+        // Undo the block's own code-var writes: drop every code entry the
+        // overlay now holds that was not in the entry snapshot, then reinstate
+        // the snapshot (a block may have *rebound* an existing name, not just
+        // added one). `remove_overlay_sym`, not `remove_sym`: this filters THIS
+        // tier the way the `retain` it replaces did, so an enclosing tier's
+        // routine binding shadows back through instead of being tombstoned.
+        //
+        // A scope holding no routine bindings at all — the common carrier block,
+        // and every block in the `<?{ … }>` benchmark of #7575 — skips the pair
+        // entirely: there is nothing to drop and nothing to put back, so it also
+        // leaves the frame-write log alone instead of invalidating it.
+        let code_keys_after = self.env.code_env_keys();
+        if !saved_code_env.is_empty()
+            || code_keys_after
+                .iter()
+                .any(|k| self.env.overlay_get_sym(*k).is_some())
+        {
+            for k in code_keys_after.iter() {
+                if !saved_code_env.contains_key(k) {
+                    self.env.remove_overlay_sym(*k);
+                }
+            }
+            for (k, v) in saved_code_env {
+                self.env.insert_sym(k, v);
+            }
+            // The `retain` this replaces dropped the frame-write log wholesale
+            // (it could not log key-by-key). Keep doing so once this scope has
+            // actually rewritten code entries: the reinstated bindings are the
+            // CALLER's, not writes this frame made, and logging them as such
+            // would make the enclosing frame's unwind drop them.
+            self.env.forget_frame_writes();
         }
         // Blocks are scope boundaries for temp/let saves.
         self.restore_let_saves(let_mark);
