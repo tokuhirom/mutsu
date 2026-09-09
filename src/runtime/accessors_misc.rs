@@ -83,7 +83,7 @@ impl Interpreter {
             return;
         }
         let registry = self.registry();
-        for key in &self.module_registered_functions {
+        for key in self.module_registered_functions.iter() {
             if functions.contains_key(key) {
                 continue;
             }

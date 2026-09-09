@@ -763,8 +763,7 @@ impl Interpreter {
         };
         if let Some(bucket) = own_bucket {
             crate::vm::vm_stats::record_mainline_lexical_hit();
-            return self
-                .unit_lexicals
+            return crate::runtime::cow_table_mut(&mut self.unit_lexicals)
                 .get_mut(&bucket)
                 .and_then(|m| m.get_mut(name));
         }
@@ -780,7 +779,11 @@ impl Interpreter {
                 return None;
             }
             let bare = bare.to_string();
-            return Self::lookup_in_package_chain_mut(&mut self.unit_lexicals, cur, &bare);
+            return Self::lookup_in_package_chain_mut(
+                crate::runtime::cow_table_mut(&mut self.unit_lexicals),
+                cur,
+                &bare,
+            );
         }
         // Same candidate order as `unit_lexical_slot`: the frame's lexical
         // package, the method-class-stack top, the frame's own package, then
@@ -811,7 +814,7 @@ impl Interpreter {
             }
             if Self::lookup_in_package_chain(&self.unit_lexicals, &candidate, name).is_some() {
                 return Self::lookup_in_package_chain_mut(
-                    &mut self.unit_lexicals,
+                    crate::runtime::cow_table_mut(&mut self.unit_lexicals),
                     &candidate,
                     name,
                 );
@@ -1059,7 +1062,21 @@ impl Interpreter {
             }
             return true;
         }
-        if let Some(m) = self.package_lexicals.get_mut(cur)
+        // Probe read-only before reaching for the write side. `package_lexicals`
+        // is one of the `Arc`-shared program tables (see the note on
+        // `Interpreter`), so a mutable borrow taken while a thread clone still
+        // shares it copies the whole table -- and this function is called on
+        // every package-scope write-back, the vast majority of which miss.
+        // Cro's HTTP/2 parser hit exactly that: one table copy per HEADERS
+        // frame, for a lookup that found nothing.
+        if !self
+            .package_lexicals
+            .get(cur)
+            .is_some_and(|m| m.contains_key(name))
+        {
+            return false;
+        }
+        if let Some(m) = crate::runtime::cow_table_mut(&mut self.package_lexicals).get_mut(cur)
             && let Some(slot) = m.get_mut(name)
         {
             // A boxed lexical's cell is shared with every reader; mutate it in

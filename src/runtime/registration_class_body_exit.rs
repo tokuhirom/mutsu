@@ -130,14 +130,15 @@ impl Interpreter {
             })
             .collect();
         if !body_lexicals.is_empty() {
-            let marks = self
-                .class_body_static_names
+            let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
                 .entry(name.to_string())
                 .or_default();
             for (bare, _) in &body_lexicals {
                 marks.insert(bare.clone());
             }
-            let store = self.package_lexicals.entry(name.to_string()).or_default();
+            let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
+                .entry(name.to_string())
+                .or_default();
             // Only the names this body genuinely `my`-declared are unbound below.
             // `body_lexicals` deliberately over-approximates — for a `unit class`
             // it also picks up everything the body's own `use` statements imported

@@ -1679,6 +1679,50 @@ pub(crate) enum PosLightTarget {
     Otf { cf: Arc<CompiledFunction> },
 }
 
+/// Copy-on-write write access to one of [`Interpreter`]'s `Arc<...>`
+/// program-table fields.
+///
+/// A thin wrapper over [`std::sync::Arc::make_mut`] that counts the copies it
+/// causes, mirroring what `RegistryWriteGuard::deref_mut` does for the
+/// declaration registry. The copy happens only while a thread clone still
+/// shares the table, so the counter (`program-table-cow: clones=` under
+/// `MUTSU_VM_STATS`) answers "is a spawn-heavy loop re-copying a table every
+/// iteration?" -- see the note on [`Interpreter`] for why these tables are
+/// shared at all.
+#[inline]
+pub(crate) fn cow_table_mut<T: Clone>(table: &mut std::sync::Arc<T>) -> &mut T {
+    if std::sync::Arc::strong_count(table) > 1 {
+        crate::vm::vm_stats::record_program_table_cow_clone();
+    }
+    std::sync::Arc::make_mut(table)
+}
+
+/// The interpreter.
+///
+/// **On the `Arc<...>` collection fields.** A large group of this struct's
+/// symbol tables -- loaded modules, exported names, per-package lexicals, class
+/// and distribution bookkeeping -- are held as `std::sync::Arc<HashMap<...>>`
+/// rather than owning the map directly. That is a copy-on-write share, not an
+/// ownership subtlety: reads go through `Deref` and are unchanged, while every
+/// write goes through `std::sync::Arc::make_mut`, which clones the map only
+/// when someone else still holds it.
+///
+/// The someone else is `clone_for_thread_excluding`. Every thread clone -- a
+/// `start` block, a `.then`, a `Promise` chained onto a supply, and above all a
+/// `whenever` registration -- used to deep-copy each of those tables, so the cost
+/// of spawning grew with the size of the *program* rather than the work. Sharing
+/// them makes a spawn a handful of refcount bumps, and a table that neither side
+/// writes afterwards is never copied at all.
+///
+/// The semantics are identical either way: a thread clone that writes one of
+/// these tables still gets its own copy of it (that is what `make_mut` does), so
+/// its declarations do not leak back to the parent. Only the *timing* of the
+/// copy moved -- from every spawn, to the first write after a spawn.
+///
+/// When adding a field here, put it in this group if it is a program-global
+/// table that is written during declaration/module loading and read everywhere
+/// else. Do NOT if it is per-call or per-frame state that a hot path mutates:
+/// `make_mut` under an active share would then copy the table on every write.
 pub struct Interpreter {
     env: Env,
     /// Program output sink — stdout/stderr buffers, the immediate-flush flag,
@@ -1717,7 +1761,7 @@ pub struct Interpreter {
     /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
     /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
     /// when generating the usage message (but still participates in dispatch).
-    main_hidden_from_usage: std::collections::HashSet<u64>,
+    main_hidden_from_usage: std::sync::Arc<std::collections::HashSet<u64>>,
     /// Set once the program explicitly calls `RUN-MAIN`. When set, the implicit
     /// end-of-program `MAIN` dispatch is suppressed: a program that drives MAIN
     /// itself via `RUN-MAIN` (as the `S06-other/main-refactored` spec does) must
@@ -1731,13 +1775,13 @@ pub struct Interpreter {
     /// NativeCall (`is native`) sub descriptors, keyed by sub name. Populated at
     /// declaration; a call to a name present here is routed through C FFI
     /// instead of running the (`{ * }`) Raku body.
-    pub(crate) native_call_specs: HashMap<String, nativecall::NativeCallSpec>,
-    operator_assoc: HashMap<String, String>,
+    pub(crate) native_call_specs: std::sync::Arc<HashMap<String, nativecall::NativeCallSpec>>,
+    operator_assoc: std::sync::Arc<HashMap<String, String>>,
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
     /// preseed the parser when EVAL is called so that imported operators
     /// remain visible, but non-exported operators from loaded modules do not.
-    pub(crate) imported_operator_names: HashSet<String>,
+    pub(crate) imported_operator_names: std::sync::Arc<HashSet<String>>,
     /// Short-form infix operator sub names (`infix:<+>`, ...) that have ever
     /// been user-declared, regardless of package/associativity. Consulted as a
     /// cheap guard by the VM's native-arithmetic fast paths (`exec_add_op` and
@@ -1756,7 +1800,7 @@ pub struct Interpreter {
     /// arithmetic is the motivating case), and must still apply inside a
     /// main-script block even when a module routine is what invokes that block.
     /// See `Interpreter::user_infix_override`.
-    pub(crate) user_declared_infix_ops: HashMap<String, HashSet<Symbol>>,
+    pub(crate) user_declared_infix_ops: std::sync::Arc<HashMap<String, HashSet<Symbol>>>,
     /// Package-less top-level routines a loaded compunit declared but did NOT
     /// export, keyed by that compunit's unit symbol and then by routine name.
     ///
@@ -1768,24 +1812,25 @@ pub struct Interpreter {
     /// `Interpreter::unit_private_routine` hands it back only to code compiled
     /// in the same unit (or in an `EVAL` nested inside it). See
     /// `runtime/unit_private_routines.rs`.
-    pub(crate) unit_private_routines: HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>,
+    pub(crate) unit_private_routines:
+        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>>,
     /// Every name that appears in any `unit_private_routines` table. A cheap
     /// negative test on the resolution hot path, and the signal that a name's
     /// resolution is unit-dependent and therefore must bypass the name-keyed
     /// resolution caches (which are not keyed by unit).
-    pub(crate) unit_private_names: HashSet<Symbol>,
+    pub(crate) unit_private_names: std::sync::Arc<HashSet<Symbol>>,
     /// The compilation unit that declared each user class. Attribute defaults
     /// run later, while constructing an instance from an arbitrary caller, so
     /// they need the same unit anchor as the class body to resolve compunit-
     /// private routines. Method parameter defaults use this metadata before the
     /// method's routine frame exists as well.
-    pub(crate) class_declaring_units: HashMap<String, Symbol>,
+    pub(crate) class_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them
     /// and belong to no module's export map, so they are ambient rather than
     /// compunit-private and are never secluded.
-    pub(crate) prelude_sub_names: HashSet<Symbol>,
+    pub(crate) prelude_sub_names: std::sync::Arc<HashSet<Symbol>>,
     /// The compilation unit whose code is executing right now. Saved and
     /// restored around every compiled-routine call, and around every `EVAL`, so
     /// it names the unit the running code was COMPILED in rather than anything
@@ -1810,7 +1855,7 @@ pub struct Interpreter {
     /// reachable, and a routine that declares no inner routines never pays
     /// for the snapshot at all (`declares_inner_routines` gates it).
     pub(crate) closures_created: u64,
-    lib_paths: Vec<String>,
+    lib_paths: std::sync::Arc<Vec<String>>,
     /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
     /// alongside the binary). Searched *after* every `lib_paths` entry so the
     /// bundle is the lowest-priority source — an explicit `-I`/`MUTSULIB` path,
@@ -1818,7 +1863,7 @@ pub struct Interpreter {
     /// shadow it. This is the batteries "floor + independent-update" mechanism
     /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
     /// `MUTSU_BUNDLE_DIR`).
-    bundled_lib_paths: Vec<String>,
+    bundled_lib_paths: std::sync::Arc<Vec<String>>,
     /// Open IO handles (files/sockets/listeners) shared between the VM and the
     /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
@@ -1993,7 +2038,7 @@ pub struct Interpreter {
     /// DOC INIT uses AST-built declarants before runtime registration, so a
     /// name key would collide for multis and same-named parameters.
     why_object_cache: HashMap<u64, Value>,
-    type_metadata: HashMap<String, HashMap<String, Value>>,
+    type_metadata: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
     /// `Box<Cell<bool>>`-backed (not a plain `bool`, and not a bare `Cell`):
     /// read/written through the `when_matched()`/`set_when_matched()`
     /// accessors below AND directly by `vm_call_state_guard::WhenMatchedGuard`,
@@ -2099,7 +2144,7 @@ pub struct Interpreter {
     /// phaser captures its declaring scope's env. See that field.
     end_phaser_capture_seq: u64,
     chroot_root: Option<PathBuf>,
-    loaded_modules: HashSet<String>,
+    loaded_modules: std::sync::Arc<HashSet<String>>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
     /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
     /// stay lexical to the importing scope.
@@ -2109,7 +2154,7 @@ pub struct Interpreter {
     /// `EVAL`) would otherwise leave the module marked as loaded while its own
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
-    module_registered_functions: HashSet<Symbol>,
+    module_registered_functions: std::sync::Arc<HashSet<Symbol>>,
     /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
     /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
     ///
@@ -2125,7 +2170,7 @@ pub struct Interpreter {
     /// loaded inside a routine call — `lives-ok { EVAL 'use M' }` — permanently
     /// unable to resolve the helper its own body calls, since `loaded_modules`
     /// still claimed it was loaded and the later real `use` short-circuited.
-    prelude_registered_functions: HashSet<Symbol>,
+    prelude_registered_functions: std::sync::Arc<HashSet<Symbol>>,
     /// For each prelude key in `prelude_registered_functions`, the compilation
     /// units the declaration was actually spliced into (`?FILE` at registration
     /// time; `main_unit()` for the main script).
@@ -2142,7 +2187,7 @@ pub struct Interpreter {
     /// A splice happens per compunit and is idempotent (the first registration
     /// wins, later ones return `Unchanged`), so this set is what records the
     /// later ones. `prelude_visible_here` reads it.
-    prelude_declaring_units: HashMap<Symbol, HashSet<Symbol>>,
+    prelude_declaring_units: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
     /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
     /// loaded module declared with `our`, keyed by module name.
     ///
@@ -2153,8 +2198,8 @@ pub struct Interpreter {
     /// `use` of that module is a no-op and could not bring them back. The
     /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
     /// is missing from here instead.
-    module_package_globals: HashMap<String, Vec<(Symbol, Value)>>,
-    need_hidden_classes: HashSet<String>,
+    module_package_globals: std::sync::Arc<HashMap<String, Vec<(Symbol, Value)>>>,
+    need_hidden_classes: std::sync::Arc<HashSet<String>>,
     /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
     /// pulled in by `.need` but not yet merged into GLOBAL).
     ///
@@ -2166,14 +2211,14 @@ pub struct Interpreter {
     /// Populated when a `use X::Y` loads modules whose dependency chain neither
     /// declares a class matching the module name nor includes a `package X {}`
     /// declaration, hiding transitive dependencies from the namespace stash.
-    package_stash_hidden: HashSet<String>,
+    package_stash_hidden: std::sync::Arc<HashSet<String>>,
     /// Package names declared via `package X {}` during the current module
     /// loading chain. Saved/restored around each top-level `use_module_with_tags`
     /// call so it only contains packages from the current loading chain.
-    pub(crate) chain_declared_packages: HashSet<String>,
+    pub(crate) chain_declared_packages: std::sync::Arc<HashSet<String>>,
     /// Maps module names to the set of packages declared during their loading.
     /// Used to propagate package declarations when a module is re-used.
-    module_packages: HashMap<String, HashSet<String>>,
+    module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
     closure_env_overrides: HashMap<u64, Env>,
     /// One-entry memo of the last closure-capture env, so a closure literal
     /// created over and over from an unchanged scope (`.map({...})` in a loop)
@@ -2394,7 +2439,7 @@ pub struct Interpreter {
     pub(crate) current_distribution_frame_floor: usize,
     /// Maps package names to their distribution context.
     /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
-    pub(crate) package_distributions: HashMap<String, Value>,
+    pub(crate) package_distributions: std::sync::Arc<HashMap<String, Value>>,
     /// Short type names a module imported for its OWN lexical scope, keyed by the
     /// module name and by every class/role that module declares:
     /// `{"Drv2" | "Drv2::Native" => {"THING2" => "Drv2::Native::THING2"}}`.
@@ -2408,7 +2453,7 @@ pub struct Interpreter {
     /// own imported type names. Recording the aliases against the module makes
     /// the resolution lexical to the module instead of dynamic to the frame.
     /// Consulted by `package_type_alias` from `has_type` / `GetBareWord`.
-    pub(crate) package_type_aliases: PackageKeyed<String>,
+    pub(crate) package_type_aliases: std::sync::Arc<PackageKeyed<String>>,
     /// The module's other file-scope bare names — `constant`s and sigilless
     /// declarations its own routines close over — keyed the same way as
     /// `package_type_aliases`, and lost for the same reason. Consulted by
@@ -2428,7 +2473,7 @@ pub struct Interpreter {
     /// compunit rather than names the importer sees bare (#7787). The value
     /// stays here so the declaring module's own routines and methods still read
     /// it; see `collect_unit_package_scope_names`.
-    pub(crate) module_scope_lexicals: PackageLexicals,
+    pub(crate) module_scope_lexicals: std::sync::Arc<PackageLexicals>,
     /// Names the module currently being loaded imported from another module,
     /// accumulated by `import_module` and folded into `module_scope_lexicals`
     /// when the load finishes. The env diff `load_module` takes cannot see these:
@@ -2441,26 +2486,26 @@ pub struct Interpreter {
     /// than `module_scope_lexicals`: the latter also contains a module's own
     /// `our`/class-body names, while the VM's env fallback must only redirect
     /// aliases imported from a nested module.
-    pub(crate) module_imported_lexical_names: PackageKeyed<bool>,
+    pub(crate) module_imported_lexical_names: std::sync::Arc<PackageKeyed<bool>>,
     /// Compilation units declared by `unit module`/`unit class` files, keyed by
     /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
-    pub(crate) unit_module_packages: HashMap<Symbol, Symbol>,
+    pub(crate) unit_module_packages: std::sync::Arc<HashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
-    exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
+    exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Exported variable/constant symbols by package and export tag.
-    exported_vars: HashMap<String, HashMap<String, HashSet<String>>>,
+    exported_vars: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
     /// mixed a role into it) keyed by package and routine name. Captured at
     /// `is export` registration time so `import` can restore the `&name` env
     /// binding with the role mixed in, rather than just the plain FunctionDef.
-    exported_sub_values: HashMap<String, HashMap<String, Value>>,
+    exported_sub_values: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
     /// Mirrored export tables for modules declared with `unit module X`
     /// when the actual runtime package registration used "GLOBAL".
     /// Populated during `load_module` so that `import_module` can perform
     /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
-    unit_module_exported_subs: HashMap<String, HashMap<String, HashSet<String>>>,
+    unit_module_exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Stack of unit-module names currently being loaded; used by
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
@@ -2472,7 +2517,7 @@ pub struct Interpreter {
     /// that declared it. The `use MOD` tag-filter consults this so it only
     /// hides MOD's *own* exports and never a symbol MOD imported from a
     /// transitively-`use`d module (which MOD's methods must still resolve).
-    module_owned_exports: HashMap<String, HashMap<String, HashSet<String>>>,
+    module_owned_exports: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
@@ -2551,7 +2596,7 @@ pub struct Interpreter {
     /// `package_lexicals[current_package]`. This fires ONLY inside that package's
     /// subs (where `current_package == Foo`), so it does not leak the lexical to
     /// bare references after the block (which run under `GLOBAL`).
-    pub(crate) package_lexicals: PackageLexicals,
+    pub(crate) package_lexicals: std::sync::Arc<PackageLexicals>,
     /// Names in `package_lexicals` that are class-body `my` statics
     /// (`class C { my $x = ...; method m { $x } }`), keyed by class. These are
     /// stored in `package_lexicals` so a method's BARE `$x` read/write and the
@@ -2560,7 +2605,8 @@ pub struct Interpreter {
     /// reachable through a QUALIFIED `$C::x`, which is a distinct package variable
     /// (see t/package-lookup.t). `package_scope_lexical`'s qualified branch skips
     /// any (class, name) recorded here.
-    pub(crate) class_body_static_names: HashMap<String, std::collections::HashSet<String>>,
+    pub(crate) class_body_static_names:
+        std::sync::Arc<HashMap<String, std::collections::HashSet<String>>>,
     /// File-scope `my` lexicals of a loaded `unit` compunit, keyed by the unit
     /// package name then env var name, each holding a shared `ContainerRef` cell.
     ///
@@ -2579,7 +2625,7 @@ pub struct Interpreter {
     /// Distinct from `module_scope_lexicals`, which is a *last-resort* read-only
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
-    pub(crate) unit_lexicals: PackageLexicals,
+    pub(crate) unit_lexicals: std::sync::Arc<PackageLexicals>,
     /// Named subs that captured at least one enclosing-scope `my` free
     /// variable into `unit_lexicals` at registration time (ADR-0024), mapped to
     /// the `unit_lexicals` bucket key holding their cells.
@@ -2595,7 +2641,7 @@ pub struct Interpreter {
     /// `GLOBAL` — see `Interpreter::active_unit_lexical_bucket`. Empty for a
     /// program with no such capture: zero cost beyond the map-presence check
     /// already paid by `unit_lexical_slot`.
-    pub(crate) mainline_lexical_subs: std::collections::HashMap<String, String>,
+    pub(crate) mainline_lexical_subs: std::sync::Arc<std::collections::HashMap<String, String>>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
@@ -2618,13 +2664,13 @@ pub struct Interpreter {
     /// so an unrelated leaked `env` value from a sibling block cannot shadow it, and
     /// a read before the block correctly yields the undefined value (the cell is not
     /// recorded yet). Empty for ordinary programs: zero cost.
-    pub(crate) escaping_our_lexical_names: std::collections::HashSet<String>,
+    pub(crate) escaping_our_lexical_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Names of the `our`-scoped subs declared in bare blocks (the subs whose
     /// free-variable reads/writes may resolve through `escaped_our_lexical_cells`).
     /// The cell resolution fires ONLY while the innermost named routine frame is
     /// one of these subs — a plain `my sub` that merely shares a captured
     /// variable's name must keep resolving through its own live env capture.
-    pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
+    pub(crate) escaped_our_sub_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Bare (sigil-less) names of the plain `our` SCALARS whose canonical home
     /// is a shared `ContainerRef` cell published under a package-qualified key
     /// (`OpCode::DeclareOurScalar` — see `vm_our_package_vars`). Recorded only
@@ -2635,7 +2681,7 @@ pub struct Interpreter {
     /// write consults `our_package_scalar_*` only when the name is in this set,
     /// so the ordinary program — which never declares a package `our` scalar —
     /// pays a single empty-set check on the variable hot path.
-    pub(crate) our_scalar_cell_names: std::collections::HashSet<String>,
+    pub(crate) our_scalar_cell_names: std::sync::Arc<std::collections::HashSet<String>>,
     /// Keyed by `(base key symbol, closure scope id)` instead of a formatted
     /// `String` — see `scoped_state_key`/`state_key_display`. The `Option<u64>`
     /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
@@ -2765,7 +2811,7 @@ pub struct Interpreter {
     /// them — the capture analysis cannot see such a write (PLAN.md §6).
     /// Populated at `RegisterClass` / `RegisterRole`, which always run before
     /// the type can be instantiated.
-    pub(crate) type_body_written_lexicals: std::collections::HashSet<String>,
+    pub(crate) type_body_written_lexicals: std::sync::Arc<std::collections::HashSet<String>>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot
     /// closure-call persistence store (loaded/saved on every closure call for
@@ -2945,7 +2991,7 @@ pub struct Interpreter {
     critical_section_depth: usize,
     /// Registry of encodings (both built-in and user-registered).
     /// Each entry maps a canonical name to an EncodingEntry.
-    encoding_registry: Vec<EncodingEntry>,
+    encoding_registry: std::sync::Arc<Vec<EncodingEntry>>,
     /// When set, pseudo-method names (DEFINITE, WHAT, etc.) bypass native fast path.
     /// Used for quoted method calls like `."DEFINITE"()`.
     pub(crate) skip_pseudo_method_native: Option<String>,
@@ -3018,7 +3064,7 @@ pub struct Interpreter {
     /// type) has already run by the time the user hook is called.
     pending_declare_new_type: Option<Value>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
-    wrap_chains: HashMap<u64, Vec<(u64, Value)>>,
+    wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,
     /// Maps sub_id to function name for named call wrap chain lookup.
     wrap_sub_names: HashMap<u64, String>,
     /// Maps function name to the Sub value that was wrapped. Used to get the right sub_id
@@ -3026,7 +3072,7 @@ pub struct Interpreter {
     wrap_name_to_sub: HashMap<String, Value>,
     /// Maps function name to the callable_id at the time wrap was first called.
     /// Used to detect sub redefinition (e.g. `sub foo` in a new block).
-    wrap_callable_ids: HashMap<String, Option<i64>>,
+    wrap_callable_ids: std::sync::Arc<HashMap<String, Option<i64>>>,
     /// Counter for generating unique wrap handle IDs.
     wrap_handle_counter: u64,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
@@ -3060,9 +3106,9 @@ pub struct Interpreter {
     /// `(invocant, method_name)`; the first that returns True has its calculator
     /// called with `(invocant, method_name)` to produce the method body, which is
     /// then invoked with the invocant.
-    method_fallbacks: HashMap<String, Vec<(Value, Value)>>,
+    method_fallbacks: std::sync::Arc<HashMap<String, Vec<(Value, Value)>>>,
     /// Names suppressed by `anon class`. These bare words should error as undeclared.
-    suppressed_names: HashSet<String>,
+    suppressed_names: std::sync::Arc<HashSet<String>>,
     /// Short names of types declared *inside a class body* (`class Outer { grammar
     /// Inner {...} }` records `Inner`). Unlike `suppressed_names` this set is never
     /// cleared: it records the fact that the short name belongs to some owner
@@ -3070,18 +3116,18 @@ pub struct Interpreter {
     /// module registers an unrelated type of the same short name. It gates the
     /// owner-package-chain probe in `resolve_suppressed_type`, so a method body
     /// keeps seeing its own class's nested type (see `resolve_suppressed_type`).
-    class_scoped_short_names: HashSet<String>,
+    class_scoped_short_names: std::sync::Arc<HashSet<String>>,
     /// Bare enum variant names poisoned by redeclaration from different enums.
     /// Maps bare name -> latest enum package name.
-    poisoned_enum_aliases: HashMap<String, String>,
+    poisoned_enum_aliases: std::sync::Arc<HashMap<String, String>>,
     /// Per-scope stack of bare enum names introduced, for cleanup on scope exit.
     enum_scope_names: Vec<Vec<String>>,
     /// Fully-qualified names of `my`-scoped classes/subs inside packages.
     /// These should NOT appear in the parent package's stash.
-    my_scoped_package_items: HashSet<String>,
+    my_scoped_package_items: std::sync::Arc<HashSet<String>>,
     /// Names published by an explicit `our` declaration; wins over
     /// `my_scoped_package_items` (see `mark_our_scoped_package_item`).
-    our_scoped_package_items: HashSet<String>,
+    our_scoped_package_items: std::sync::Arc<HashSet<String>>,
     /// Stack of lexically-scoped class names per block scope depth.
     /// When a block scope exits, classes registered in that scope get suppressed.
     lexical_class_scopes: Vec<Vec<String>>,
@@ -3539,7 +3585,7 @@ pub struct Interpreter {
     /// stub forward-declared); membership here identifies that re-arrival as
     /// an idempotent no-op, while a textually NEW stub after a definition (a
     /// different site, different fingerprint) still raises X::Redeclaration.
-    pub(crate) registered_stub_decl_sites: rustc_hash::FxHashSet<(Symbol, u64)>,
+    pub(crate) registered_stub_decl_sites: std::sync::Arc<rustc_hash::FxHashSet<(Symbol, u64)>>,
     /// Derive-once cache: a declaration is parsed into a `FunctionDef` exactly
     /// once, then shared. Keyed by the routine's fully-qualified name
     /// (`package::name`), the value is `(declaration fingerprint, Arc<FunctionDef>)`.
@@ -3663,7 +3709,7 @@ pub struct Interpreter {
     /// Signature, exception types, ...) are NOT here — their attributes live only
     /// in the stored map and are not collected — so the accessor fallback still
     /// reads them.
-    pub(crate) user_declared_classes: std::collections::HashSet<String>,
+    pub(crate) user_declared_classes: std::sync::Arc<std::collections::HashSet<String>>,
     pub(crate) block_declared_vars: ScopeStack<NameSet>,
     /// Local-frame slot indices of `given`/`with` pointy-topic parameters
     /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
@@ -3981,7 +4027,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
-    std::collections::HashMap<String, HashSet<Symbol>>, // user_declared_infix_ops snapshot
+    std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the

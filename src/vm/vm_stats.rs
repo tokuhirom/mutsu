@@ -222,6 +222,19 @@ pub(crate) fn record_registry_cow_clone() {
     }
 }
 
+/// Program-global symbol tables (the `Arc<...>` group on `Interpreter`, see its
+/// doc comment) deep-copied by a write taken while a thread clone still shared
+/// them. Reported as `program-table-cow: clones=`. It should stay a small
+/// constant: a spawn-heavy loop that keeps re-copying a table has put per-frame
+/// state into that group, or is registering declarations inside the loop.
+static PROGRAM_TABLE_COW_CLONES: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn record_program_table_cow_clone() {
+    if enabled() {
+        PROGRAM_TABLE_COW_CLONES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 // Per-spawn lineage seeding (docs/per-task-clone-slimming.md slice 5 step A):
 // `SPAWN_SEED_KEYS` counts env entries walked by the `clone_for_thread`
 // seeding loop; `SPAWN_SEED_INSERTS` the subset that actually landed in the
@@ -1129,6 +1142,8 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let program_table_cow_clones = PROGRAM_TABLE_COW_CLONES.load(Ordering::Relaxed);
+    eprintln!("[mutsu vm-stats] program-table-cow: clones={program_table_cow_clones}");
     let mainline_lexical_boxes = MAINLINE_LEXICAL_BOXES.load(Ordering::Relaxed);
     let mainline_lexical_hits = MAINLINE_LEXICAL_HITS.load(Ordering::Relaxed);
     eprintln!(

@@ -119,14 +119,14 @@ impl Interpreter {
             // during THIS load while remaining lexical to the role's file --
             // which is exactly where the role's methods look for it.
             let unit = self.unit_of_source(Some(def.source_file.as_deref().unwrap_or(source_path)));
-            self.unit_private_routines
+            crate::runtime::cow_table_mut(&mut self.unit_private_routines)
                 .entry(unit)
                 .or_default()
                 .insert(name_sym, def);
             names.push(name_sym);
         }
         for name_sym in names {
-            self.unit_private_names.insert(name_sym);
+            crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(name_sym);
             // The bare `&name` env binding is the other way the routine stayed
             // reachable from the loading scope (`say &helper`); it is written by
             // the same registration and has to travel with the registry entry.

@@ -43,7 +43,7 @@ impl Interpreter {
     }
 
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
-        self.exported_sub_values
+        crate::runtime::cow_table_mut(&mut self.exported_sub_values)
             .entry(package)
             .or_default()
             .insert(name, val);
@@ -98,8 +98,7 @@ impl Interpreter {
         // `import_module` can validate tags for `unit module X` files whose
         // runtime package registration used "GLOBAL".
         if let Some(unit_mod) = self.unit_module_loading_stack.last().cloned() {
-            let mirror = self
-                .unit_module_exported_subs
+            let mirror = crate::runtime::cow_table_mut(&mut self.unit_module_exported_subs)
                 .entry(unit_mod)
                 .or_default()
                 .entry(name.clone())
@@ -113,8 +112,7 @@ impl Interpreter {
         // to hide only MOD's own exports, never a symbol MOD imported from a
         // transitively-`use`d module.
         if let Some(owner) = self.module_load_stack.last().cloned() {
-            let owned = self
-                .module_owned_exports
+            let owned = crate::runtime::cow_table_mut(&mut self.module_owned_exports)
                 .entry(owner)
                 .or_default()
                 .entry(name.clone())
@@ -123,8 +121,7 @@ impl Interpreter {
                 owned.insert(tag.clone());
             }
         }
-        let entry = self
-            .exported_subs
+        let entry = crate::runtime::cow_table_mut(&mut self.exported_subs)
             .entry(package)
             .or_default()
             .entry(name)
@@ -143,8 +140,7 @@ impl Interpreter {
         if tags.is_empty() {
             tags.push("DEFAULT".to_string());
         }
-        let entry = self
-            .exported_vars
+        let entry = crate::runtime::cow_table_mut(&mut self.exported_vars)
             .entry(package)
             .or_default()
             .entry(name)
@@ -375,13 +371,14 @@ impl Interpreter {
                 name.split_once(":<").map(|(c, _)| c),
                 Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
             ) {
-                self.imported_operator_names.insert(name.clone());
+                crate::runtime::cow_table_mut(&mut self.imported_operator_names)
+                    .insert(name.clone());
             }
             if name.starts_with("infix:<") {
                 // An EXPORTED operator becomes lexically visible in whatever
                 // unit imported it, so it carries no declaring-file
                 // restriction (empty set == visible everywhere).
-                self.user_declared_infix_ops
+                crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
                     .entry(name.clone())
                     .or_default();
                 crate::vm::vm_jit::note_user_infix_decl();
@@ -570,9 +567,11 @@ impl Interpreter {
             let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
             for class_name in &class_names {
                 if !class_snapshot.contains(class_name) {
-                    self.need_hidden_classes.insert(class_name.clone());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(class_name.clone());
                     if let Some((_, short)) = class_name.rsplit_once("::") {
-                        self.need_hidden_classes.insert(short.to_string());
+                        crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                            .insert(short.to_string());
                     }
                 }
             }
@@ -600,14 +599,17 @@ impl Interpreter {
                     continue;
                 }
                 if is_nested_need || key_short != short_name {
-                    self.need_hidden_classes.insert(key_s.clone());
-                    self.need_hidden_classes.insert(key_short.to_string());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(key_s.clone());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(key_short.to_string());
                 }
             }
             if is_nested_need {
-                self.need_hidden_classes.insert(short_name.clone());
+                crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                    .insert(short_name.clone());
             }
-            self.loaded_modules.insert(module.to_string());
+            crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.to_string());
         }
         result
     }

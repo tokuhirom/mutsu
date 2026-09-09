@@ -56,8 +56,8 @@ impl Interpreter {
             .rename_method_owner(old_owner, new_owner);
         self.registry_mut().sync_accessor_entries(old_owner);
         self.registry_mut().sync_accessor_entries(new_owner);
-        if self.user_declared_classes.remove(old_name) {
-            self.user_declared_classes.insert(new_name.clone());
+        if crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(old_name) {
+            crate::runtime::cow_table_mut(&mut self.user_declared_classes).insert(new_name.clone());
         }
         // Register the new type object so `R::G::A[Int]` resolves; the caller
         // aliases the bare `G::A` reference to the same value.
@@ -237,15 +237,13 @@ impl Interpreter {
                 })
                 .collect();
             if !new_lexicals.is_empty() {
-                let marks = self
-                    .class_body_static_names
+                let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
                     .entry(cx.name.to_string())
                     .or_default();
                 for (bare, _) in &new_lexicals {
                     marks.insert(bare.clone());
                 }
-                let store = self
-                    .package_lexicals
+                let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
                     .entry(cx.name.to_string())
                     .or_default();
                 for (bare, v) in new_lexicals {

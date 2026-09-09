@@ -82,7 +82,7 @@ impl Interpreter {
         // `Parameter+{Query}` would answer `.named` with X::Method::NotFound,
         // because a built-in base contributes no *declared* attribute list.
         if !self.user_declared_classes.contains(base_class) {
-            self.user_declared_classes.remove(&name);
+            crate::runtime::cow_table_mut(&mut self.user_declared_classes).remove(&name);
         }
         Ok(name)
     }

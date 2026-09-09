@@ -178,7 +178,8 @@ impl Interpreter {
         // `vm_our_package_vars`. A file-scope `our $x` collapses `qualified`
         // to the bare name, has no package to reconstruct, and is skipped.
         if qualified != local_name {
-            self.our_scalar_cell_names.insert(local_name.clone());
+            crate::runtime::cow_table_mut(&mut self.our_scalar_cell_names)
+                .insert(local_name.clone());
         }
         // Persist under the qualified key too, matching what every other
         // `our`/package-qualified store already does (stash introspection,

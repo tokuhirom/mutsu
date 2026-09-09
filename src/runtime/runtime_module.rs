@@ -302,7 +302,7 @@ impl Interpreter {
             // into the current chain so that chain_has_package_decl checks
             // correctly detect namespace contributions from transitive deps.
             if let Some(pkgs) = self.module_packages.get(module).cloned() {
-                self.chain_declared_packages.extend(pkgs);
+                crate::runtime::cow_table_mut(&mut self.chain_declared_packages).extend(pkgs);
             }
             // When a module that declares a class/role matching its own name
             // is directly `use`d at the top level, un-hide it and its related
@@ -314,7 +314,7 @@ impl Interpreter {
                     registry.classes.contains_key(module) || registry.roles.contains_key(module)
                 };
                 if is_contributor {
-                    self.package_stash_hidden.remove(module);
+                    crate::runtime::cow_table_mut(&mut self.package_stash_hidden).remove(module);
                 }
             }
             // A re-`use` of an already-loaded module skips `load_module_inner`
@@ -335,8 +335,7 @@ impl Interpreter {
                     .last()
                     .cloned()
                     .unwrap_or_else(|| self.current_package());
-                let entry = self
-                    .package_type_aliases
+                let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                     .entry(importer_package)
                     .or_default();
                 for (short, qualified) in module_aliases {
@@ -368,7 +367,7 @@ impl Interpreter {
         let saved_chain_pkgs = if is_top_level_use {
             std::mem::take(&mut self.chain_declared_packages)
         } else {
-            HashSet::new()
+            Default::default()
         };
         self.module_load_stack.push(module.to_string());
         let class_snapshot: HashSet<String> = self.registry().classes.keys().cloned().collect();
@@ -475,8 +474,10 @@ impl Interpreter {
                     .map(|(_, short)| short)
                     .unwrap_or(class_name.as_str());
                 if class_short != module_short {
-                    self.need_hidden_classes.insert(class_name.clone());
-                    self.need_hidden_classes.insert(class_short.to_string());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(class_name.clone());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(class_short.to_string());
                 }
             }
             for key in self.env.keys() {
@@ -503,8 +504,10 @@ impl Interpreter {
                     continue;
                 }
                 if key_short != module_short {
-                    self.need_hidden_classes.insert(key_s.clone());
-                    self.need_hidden_classes.insert(key_short.to_string());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(key_s.clone());
+                    crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
+                        .insert(key_short.to_string());
                 }
             }
             // Determine if new classes/roles from this module should be
@@ -534,7 +537,8 @@ impl Interpreter {
                             && class_name.starts_with(namespace)
                             && class_name.get(namespace.len()..namespace.len() + 2) == Some("::")
                         {
-                            self.package_stash_hidden.insert(class_name.clone());
+                            crate::runtime::cow_table_mut(&mut self.package_stash_hidden)
+                                .insert(class_name.clone());
                         }
                     }
                     let role_names: Vec<String> = self.registry().roles.keys().cloned().collect();
@@ -543,7 +547,8 @@ impl Interpreter {
                             && role_name.starts_with(namespace)
                             && role_name.get(namespace.len()..namespace.len() + 2) == Some("::")
                         {
-                            self.package_stash_hidden.insert(role_name.clone());
+                            crate::runtime::cow_table_mut(&mut self.package_stash_hidden)
+                                .insert(role_name.clone());
                         }
                     }
                 }
@@ -551,8 +556,9 @@ impl Interpreter {
             // Record which packages were declared during this module's chain
             // so they can be propagated when the module is re-used.
             if !self.chain_declared_packages.is_empty() {
-                self.module_packages
-                    .insert(module.to_string(), self.chain_declared_packages.clone());
+                let chain = (*self.chain_declared_packages).clone();
+                crate::runtime::cow_table_mut(&mut self.module_packages)
+                    .insert(module.to_string(), chain);
             }
             // Restore the chain-scoped package declarations (top-level only)
             if is_top_level_use {
@@ -744,7 +750,7 @@ impl Interpreter {
                 self.fn_resolve_gen += 1;
             }
 
-            self.loaded_modules.insert(module.to_string());
+            crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.to_string());
             // Record the routines this module load registered, so a later
             // registry restore cannot drop them while `loaded_modules` still
             // claims the module is loaded.
@@ -774,7 +780,8 @@ impl Interpreter {
                 .filter(|k| k.resolve().contains("::"))
                 .copied()
                 .collect();
-            self.module_registered_functions.extend(module_funcs);
+            crate::runtime::cow_table_mut(&mut self.module_registered_functions)
+                .extend(module_funcs);
             // Same for the module's `our` package variables, which live in `env`
             // rather than the routine registry. Collected BEFORE `import_module`
             // so the bare aliases it installs — lexical to the importing scope —
@@ -786,7 +793,7 @@ impl Interpreter {
                 .filter_map(|k| self.env.get_sym(*k).map(|v| (*k, v.clone())))
                 .collect();
             if !package_globals.is_empty() {
-                self.module_package_globals
+                crate::runtime::cow_table_mut(&mut self.module_package_globals)
                     .entry(module.to_string())
                     .or_default()
                     .extend(package_globals);

@@ -4890,7 +4890,8 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                self.chain_declared_packages.insert(name.clone());
+                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                    .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 *ip += 1;
             }
@@ -4909,7 +4910,8 @@ impl Interpreter {
                 self.shadow_suppressed_type_with_package(&name);
                 let pkg_val = Value::package(Symbol::intern(&name));
                 self.env_mut().insert(name.clone(), pkg_val.clone());
-                self.chain_declared_packages.insert(name.clone());
+                crate::runtime::cow_table_mut(&mut self.chain_declared_packages)
+                    .insert(name.clone());
                 self.update_local_if_exists(code, &name, &pkg_val);
                 // Mark as my-scoped so the package is hidden from global
                 // lookups and package stash resolution outside its scope.
