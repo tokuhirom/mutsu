@@ -395,6 +395,26 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // A hyphen immediately after `now` is part of a possible identifier. If
+    // the following character cannot continue that identifier, do not let the
+    // additive parser reinterpret the text as `now - ...`: Raku diagnoses the
+    // ambiguous spelling as an undeclared `now` routine, and doing so here also
+    // keeps the main expression and string-interpolation parsers consistent.
+    if input.starts_with("now-")
+        && !input[4..]
+            .chars()
+            .next()
+            .is_some_and(crate::parser::helpers::is_raku_identifier_start)
+    {
+        return Err(PError::fatal_at(
+            format!(
+                "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
+                current_line_number(input)
+            ),
+            input,
+        ));
+    }
+
     // now — returns current time as Instant (term)
     if input.starts_with("now")
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
