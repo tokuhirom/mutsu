@@ -72,6 +72,22 @@ macro_rules! alloc_scope_named {
     };
 }
 
+/// Like [`alloc_scope!`](crate::alloc_scope), but takes the label as an
+/// expression evaluating to a `&'static str` instead of a literal.
+///
+/// This exists for regions whose identity is only known at run time — above
+/// all the bytecode dispatch loop, where the interesting question is "which
+/// *opcode family* allocates", and the label has to come from
+/// `alloc_stats::opcode_label` (an `alloc-stats`-only helper). The
+/// expression is not evaluated at all unless the `alloc-stats` feature is on.
+#[macro_export]
+macro_rules! alloc_scope_dyn {
+    ($label:expr) => {
+        #[cfg(feature = "alloc-stats")]
+        let _mutsu_alloc_scope = $crate::alloc_stats::Scope::new($label);
+    };
+}
+
 /// Close a scope opened by [`alloc_scope_named!`].
 #[macro_export]
 macro_rules! alloc_scope_end {
@@ -81,6 +97,8 @@ macro_rules! alloc_scope_end {
     };
 }
 
+#[cfg(feature = "alloc-stats")]
+pub(crate) use imp::opcode_label;
 #[cfg(feature = "alloc-stats")]
 pub use imp::{CountingAllocator, Scope, dump};
 
@@ -223,6 +241,48 @@ mod imp {
             }
             SUSPENDED.with(|s| s.set(was));
         }
+    }
+
+    /// The bare variant name of an opcode, as a `&'static str` suitable for a
+    /// [`Scope`] label.
+    ///
+    /// The dispatch loop needs a label per opcode *family* to attribute the
+    /// `mfast:body` region, but `OpCode` has no name method and a `Scope`
+    /// label must be `'static`. Derive it once per variant from the `Debug`
+    /// output (`ForLoop(..)` / `WhileLoop { .. }` -> `ForLoop`, exactly as
+    /// `vm_stats::record_opcode` does) and leak it; there are ~340 variants,
+    /// so the leak is bounded and this only ever runs in a measurement build.
+    pub(crate) fn opcode_label(op: &crate::opcode::OpCode) -> &'static str {
+        fn cache()
+        -> &'static Mutex<HashMap<std::mem::Discriminant<crate::opcode::OpCode>, &'static str>>
+        {
+            static CACHE: OnceLock<
+                Mutex<HashMap<std::mem::Discriminant<crate::opcode::OpCode>, &'static str>>,
+            > = OnceLock::new();
+            CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+        }
+        // The bookkeeping below allocates (the `format!`, the map growth); none
+        // of it is the program's own allocation behavior, so it must not be
+        // counted -- same reasoning as `Scope::drop`'s fold.
+        let was = SUSPENDED.with(|s| s.replace(true));
+        let d = std::mem::discriminant(op);
+        let label = match cache().lock() {
+            Ok(mut map) => match map.get(&d) {
+                Some(name) => *name,
+                None => {
+                    let dbg = format!("{op:?}");
+                    let name: String = dbg
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                        .collect();
+                    *map.entry(d)
+                        .or_insert(Box::leak(format!("op:{name}").into_boxed_str()))
+                }
+            },
+            Err(_) => "op:<poisoned>",
+        };
+        SUSPENDED.with(|s| s.set(was));
+        label
     }
 
     /// Print the per-scope allocation report to stderr.

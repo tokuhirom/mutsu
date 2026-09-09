@@ -1796,6 +1796,7 @@ impl Interpreter {
         // a body that never spells `%_` -- `submethod TWEAK(:$!spec) { }`,
         // the overwhelming majority of methods -- built a hash of the leftover
         // named args on every call and immediately threw it away.
+        crate::alloc_scope_named!(_sc_loc_slurpy, "mfast:loc:slurpy-hash");
         let implicit_named_slurpy: Option<Value> = if cc.may_observe_named_slurpy
             && method_def
                 .param_defs
@@ -1819,6 +1820,8 @@ impl Interpreter {
                 .insert_sym(crate::symbol::wk::named_slurpy(), slurpy.clone());
         }
 
+        crate::alloc_scope_end!(_sc_loc_slurpy);
+        crate::alloc_scope_named!(_sc_loc_cap, "mfast:loc:captured-env");
         // A method can carry its defining lexical environment either from an
         // `.^add_method` closure literal or from a class declared in a routine.
         // The fast path populates free-variable locals from this overlay.
@@ -1845,6 +1848,8 @@ impl Interpreter {
         // path binds params directly, so mark `$` scalar params read-only here.
         self.mark_fast_method_params_readonly(method_def);
 
+        crate::alloc_scope_end!(_sc_loc_cap);
+        crate::alloc_scope_named!(_sc_loc_init, "mfast:loc:init");
         // Populate locals directly. Attribute reads take one read guard over
         // the live cell for the whole loop (dropped before the body runs) —
         // no whole-map snapshot is materialized.
@@ -1904,6 +1909,8 @@ impl Interpreter {
             }
         }
 
+        crate::alloc_scope_end!(_sc_loc_init);
+        crate::alloc_scope_named!(_sc_loc_state, "mfast:loc:state-and-defaults");
         // See the sibling path: a method body's `state` is keyed by the method,
         // not by the caller's closure scope. Restored after the sync.
         let saved_state_scope = self.state_scope_id.take();
@@ -1947,6 +1954,7 @@ impl Interpreter {
             }
         }
 
+        crate::alloc_scope_end!(_sc_loc_state);
         crate::alloc_scope_end!(_sc_loc);
         crate::alloc_scope_named!(_sc_body, "mfast:body");
         self.push_method_routine_with_location(

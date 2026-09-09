@@ -158,6 +158,7 @@ impl Interpreter {
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
         'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
+            crate::alloc_scope_named!(_sc_for_bind, "op:ForLoop:iter-bind");
             let item = Value::int(i);
             self.topic_source_var = None;
 
@@ -182,14 +183,18 @@ impl Interpreter {
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
             }
+            crate::alloc_scope_end!(_sc_for_bind);
             'body_redo: loop {
                 let run_start = nested_entry.take().unwrap_or(body_start);
+                crate::alloc_scope_named!(_sc_for_body, "op:ForLoop:iter-body");
                 let body_res = self.run_range(code, run_start, loop_end, compiled_fns);
+                crate::alloc_scope_end!(_sc_for_body);
                 // State mutations persist on every exit path (`next`/`redo`/
                 // `last`/exception), not just normal completion.
                 if !code.state_locals.is_empty() {
                     self.sync_state_locals_in_range(code, body_start, loop_end);
                 }
+                crate::alloc_scope_named!(_sc_for_post, "op:ForLoop:iter-post");
                 match body_res {
                     Ok(()) => {
                         self.write_back_to_source_var(

@@ -110,10 +110,26 @@ impl Interpreter {
             // the original key objects (plain hashes get `Pair(str_key, v)`).
             // I4: `|%h` is always named, so promote every entry here rather
             // than leaving it to `append_slip_item` to guess.
-            ValueView::Hash(map) => map
-                .iter()
-                .map(|(k, v)| Self::namify_pair_item(map.typed_pair(k, v.clone())))
-                .collect(),
+            ValueView::Hash(map) => {
+                // A plain (non-object) hash's keys are `Str`, so the general
+                // route below -- `typed_pair` mints a `ValuePair(Str, v)` and
+                // `namify_pair_item` immediately throws it away and rebuilds it
+                // as `Pair(String, v)` -- pays for a discarded `Arc<String>`,
+                // a discarded `ValuePair`, and a second stringification of the
+                // key, per entry. `|%h` on a 6-key hash is the single largest
+                // allocation site in `benchmarks/bench-ctor.raku` (#7561), so
+                // build the named Pair once when the key is known to be a Str.
+                let typed = map.has_typed_keys();
+                map.iter()
+                    .map(|(k, v)| {
+                        if typed {
+                            Self::namify_pair_item(map.typed_pair(k, v.clone()))
+                        } else {
+                            Value::pair(k.clone(), v.deref_container())
+                        }
+                    })
+                    .collect()
+            }
             ValueView::LazyList(ll) => {
                 let items = if ll.scan_spec.is_some() {
                     ll.force_scan_to(200_000)
