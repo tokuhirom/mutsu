@@ -137,7 +137,7 @@ impl Interpreter {
                 // Phase 2 element container: a `:=`-bound element holds a shared
                 // `ContainerRef` cell. Reading the element decontainerizes it (the
                 // single read chokepoint), so value contexts never see the cell.
-                ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                ValueView::ContainerRef(_) => value.deref_container(),
                 // A bound slice can hold a deferred array-entry token for an
                 // out-of-range element. Resolve it here just like a scalar bind:
                 // the read must report the array hole without growing the array.

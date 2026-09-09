@@ -588,6 +588,16 @@ impl Interpreter {
                     *arc.lock().unwrap() = updated;
                     continue;
                 }
+                // A scalar parameter's itemized holder is a distinct word over
+                // the shared cell. If the caller's aggregate source was still a
+                // plain value, write the cell's raw value back rather than
+                // leaking the parameter holder's itemization onto that source.
+                if updated.container_ref_is_itemized()
+                    && let ValueView::ContainerRef(incoming) = updated.view()
+                {
+                    target_env.insert(source_name.clone(), incoming.lock().unwrap().clone());
+                    continue;
+                }
                 target_env.insert(source_name.clone(), updated);
             }
         }

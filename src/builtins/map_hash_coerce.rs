@@ -51,10 +51,16 @@ fn make_odd_number_error(items: &[Value]) -> RuntimeError {
 pub(crate) fn unwrap_contained_pair(v: &Value) -> Value {
     let held = match v.view() {
         ValueView::Scalar(inner) => inner.clone(),
-        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        ValueView::ContainerRef(_) => v.deref_container(),
         _ => return v.clone(),
     };
     if matches!(held.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
+        held
+    } else if v.is_container_ref() && v.container_ref_is_itemized() {
+        // An itemized ContainerRef is a scalar holder, so its value stays
+        // opaque to hash initialization. Returning the itemized value rather
+        // than the wrapper keeps downstream value consumers consistent; the
+        // odd-element check still rejects it.
         held
     } else {
         v.clone()
