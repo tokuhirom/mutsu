@@ -858,11 +858,15 @@ pub(crate) fn native_method_1arg(
                 // each element with `.Str`, whose dispatch deconts its invocant,
                 // so `my @h = $c` with an `is Array` subclass instance must not
                 // be answered here with the pure `SA()` fallback.
+                // A Junction likewise falls through — it must thread the
+                // whole `join` over its eigenstates, not stringify in place.
                 if items.iter().any(|v| {
                     v.with_deref(|inner| {
                         matches!(
                             inner.descalarize().view(),
-                            ValueView::Instance { .. } | ValueView::Mixin(..)
+                            ValueView::Instance { .. }
+                                | ValueView::Mixin(..)
+                                | ValueView::Junction { .. }
                         )
                     })
                 }) {

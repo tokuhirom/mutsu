@@ -124,6 +124,31 @@ impl Interpreter {
                 None => rendered.push(v),
             }
         }
+        // A Junction anywhere in the flattened list threads the whole `join`
+        // over its eigenstates (`("a"|"b","c","d").join` => `any(acd, bcd)`)
+        // instead of stringifying it in place. Flatten `rendered` the same
+        // way `join_flat` itself would (its own flattening is opaque to a
+        // caller, so redo it here to inspect the leaves) — only when a
+        // Junction is actually present does this replace the plain
+        // `join_flat` call below; the common case pays one extra flatten.
+        let mut flat_items = Vec::new();
+        for v in &rendered {
+            if crate::runtime::utils::is_shaped_array(v) {
+                flat_items.extend(crate::runtime::utils::shaped_array_leaves(v));
+            } else {
+                crate::builtins::flat_val(v, &mut flat_items, true);
+            }
+        }
+        if let Some(threaded) = crate::builtins::thread_junctions_in_items(&flat_items, &|c| {
+            Value::str(
+                c.iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join(&sep),
+            )
+        }) {
+            return Ok(threaded);
+        }
         Ok(Value::str(
             crate::builtins::join_flat(&sep, &rendered).unwrap_or_default(),
         ))

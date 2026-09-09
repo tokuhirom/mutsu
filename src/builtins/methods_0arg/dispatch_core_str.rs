@@ -325,8 +325,15 @@ pub(super) fn dispatch(
                 // so user-defined Str() methods can be called. A `ContainerRef`
                 // element (grep rw alias / `:=`-bound slot) is decontainerized
                 // first so a cell-wrapped Instance is also routed to runtime.
+                // A Junction likewise falls through — it must thread the
+                // whole `join` over its eigenstates, not stringify in place.
                 if items.iter().any(|v| {
-                    v.with_deref(|inner| matches!(inner.view(), ValueView::Instance { .. }))
+                    v.with_deref(|inner| {
+                        matches!(
+                            inner.view(),
+                            ValueView::Instance { .. } | ValueView::Junction { .. }
+                        )
+                    })
                 }) {
                     return Some(None);
                 }
