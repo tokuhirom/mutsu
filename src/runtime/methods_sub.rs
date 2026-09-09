@@ -298,14 +298,19 @@ impl Interpreter {
         }
         if method == "dispatcher" && args.is_empty() {
             let qualified = format!("{}::{}", package, name);
-            if self.resolve_proto_function(&qualified).is_some() {
-                return Some(Ok(Value::routine_parts(
-                    Symbol::intern(package),
-                    Symbol::intern(name),
-                    false,
-                )));
-            }
-            if self.resolve_proto_function_with_alias(name).is_some() {
+            // A `proto` declaration makes the dispatcher explicit, but a set of
+            // `multi`s written without one still has a dispatcher (Raku
+            // generates it), and `.dispatcher` on a candidate returns it in
+            // either case. Without the third arm this returned the *candidate*,
+            // whose `.candidates` is then just itself -- so re-exporting
+            // `.dispatcher` under the routine's name (the `NativeLibs`
+            // custom-`EXPORT` idiom, which hands its importers
+            // `'&trait_mod:<is>' => $candidate.dispatcher`) silently narrowed
+            // the multi to the one candidate that was introspected.
+            if self.resolve_proto_function(&qualified).is_some()
+                || self.resolve_proto_function_with_alias(name).is_some()
+                || self.has_multi_candidates(name)
+            {
                 return Some(Ok(Value::routine_parts(
                     Symbol::intern(package),
                     Symbol::intern(name),
@@ -313,6 +318,18 @@ impl Interpreter {
                 )));
             }
             return Some(Ok(target.clone()));
+        }
+        // A `Routine` handle names a whole multi, so it *is* the dispatcher --
+        // which is what `.dispatcher` above hands back. Rakudo answers `True`
+        // for `.is_dispatcher` and a falsy `.multi` on it; without these the
+        // `Sub`-shaped arms in `methods_instance_ops.rs` never see the value
+        // and the call dies with "No such method".
+        if matches!(method, "is_dispatcher" | "multi") && args.is_empty() {
+            let qualified = format!("{}::{}", package, name);
+            let is_multi = self.resolve_proto_function(&qualified).is_some()
+                || self.resolve_proto_function_with_alias(name).is_some()
+                || self.has_multi_candidates(name);
+            return Some(Ok(Value::truth(is_multi && method == "is_dispatcher")));
         }
         if method == "can" {
             let method_name = args

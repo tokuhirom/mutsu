@@ -242,6 +242,41 @@ multi sub trait_mod:<does>(Mu $doee, Mu $role) is export {
 }
 "#;
 
+/// `trait_mod:<is>`'s NativeCall candidates. Rakudo's `NativeCall.rakumod`
+/// declares these as ordinary multis and exports them, which is what makes
+/// `&trait_mod:<is>.candidates` introspectable after `use NativeCall` — the
+/// `NativeLibs` distribution's custom `sub EXPORT` picks its `:$native!`
+/// candidate out of that list and re-exports `.dispatcher` so its own
+/// importers get `is native` too:
+///
+/// ```raku
+/// sub EXPORT(|) {
+///     my $exp = &trait_mod:<is>.candidates.first: { .signature ~~ :(Routine, :$native!) };
+///     Map.new('NativeCall' => NativeCall, '&trait_mod:<is>' => $exp.dispatcher)
+/// }
+/// ```
+///
+/// Without them `.candidates` holds only the bare exported-name shell, `.first`
+/// returns `Nil`, and the module dies on `Any.dispatcher`.
+///
+/// The bodies are empty on purpose, and that is not a stub standing in for an
+/// unimplemented feature: mutsu applies all four traits *natively* when the
+/// routine is declared (`register_native_call_sub`), and
+/// `registration_sub.rs`'s custom-`trait_mod:<is>` loop explicitly excludes
+/// `native`/`symbol`/`nativeconv`/`encoded` for that reason, so these
+/// candidates are never the thing that applies the trait — they exist to make
+/// the export surface introspectable, exactly as Rakudo's do.
+// TODO: calling one of these explicitly (`trait_mod:<is>($r, :native<foo>)`)
+// should apply the trait like Rakudo's does; that needs the C-FFI descriptor
+// to be installable on an already-registered Routine, which `register_native_
+// call_sub` can only do from the declaration site today.
+pub(super) const TRAIT_MOD_IS_NATIVECALL_PRELUDE: &str = r#"
+multi sub trait_mod:<is>(Routine $r, :$native!) is export { }
+multi sub trait_mod:<is>(Routine $r, :$symbol!) is export { }
+multi sub trait_mod:<is>(Routine $r, :$nativeconv!) is export { }
+multi sub trait_mod:<is>(Routine $r, :$encoded!) is export { }
+"#;
+
 /// `Metamodel::Naming` and `Metamodel::Stashing` -- the two metaroles a custom
 /// HOW composes to become a *named* metaobject.
 ///
@@ -530,6 +565,7 @@ impl Interpreter {
         Self::inject_nativecall_subs_prelude(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_is_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single

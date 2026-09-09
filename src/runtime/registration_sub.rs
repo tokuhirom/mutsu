@@ -749,31 +749,42 @@ impl Interpreter {
             .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
         {
             let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
-            // Remember that this `GLOBAL::` key is a prelude splice, not an
-            // import alias. `reinstate_module_functions` needs the distinction
-            // to put it back after a scope rollback — see
-            // `prelude_registered_functions`.
-            self.prelude_registered_functions.insert(global_key);
-            // ...and record WHICH compunit this copy was spliced into, before
-            // the idempotence check below can swallow it. The registration is
-            // process-global so that a method body under any package can reach
-            // the helper, but rakudo scopes these names to the compunits that
-            // `use NativeCall`, so resolution consults this set — see
-            // `prelude_declaring_units` / `prelude_visible_here`.
-            let unit = self.declaring_unit_sym();
-            self.prelude_declaring_units
-                .entry(global_key)
-                .or_default()
-                .insert(unit);
+            // Only a *single* sub registers under the bare `GLOBAL::name`; a
+            // `multi` lands on arity-suffixed keys instead, and claiming the
+            // bare name for it would gate somebody else's real `GLOBAL::name`
+            // (NativeCall's own exported `trait_mod:<is>` entry) behind this
+            // splice's compunit and hide it everywhere else. The multi keys are
+            // recorded after registration instead — see the prelude-multi block
+            // further down.
+            if !multi {
+                // Remember that this `GLOBAL::` key is a prelude splice, not an
+                // import alias. `reinstate_module_functions` needs the distinction
+                // to put it back after a scope rollback — see
+                // `prelude_registered_functions`.
+                self.prelude_registered_functions.insert(global_key);
+                // ...and record WHICH compunit this copy was spliced into, before
+                // the idempotence check below can swallow it. The registration is
+                // process-global so that a method body under any package can reach
+                // the helper, but rakudo scopes these names to the compunits that
+                // `use NativeCall`, so resolution consults this set — see
+                // `prelude_declaring_units` / `prelude_visible_here`.
+                let unit = self.declaring_unit_sym();
+                self.prelude_declaring_units
+                    .entry(global_key)
+                    .or_default()
+                    .insert(unit);
+            }
             // Remember the bare name as ambient, so the post-load seclusion of
             // a compunit's *private* top-level routines
             // (`seclude_private_toplevel_routines`) leaves it in `GLOBAL` where
-            // every compunit's bodies can reach it.
+            // every compunit's bodies can reach it. This is about the NAME, so
+            // a `multi` prelude needs it too — its candidates live under
+            // `GLOBAL::name/N`, but the name they answer to is the same one.
             self.prelude_sub_names.insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.
-            if self.registry().functions.contains_key(&global_key) {
+            if !multi && self.registry().functions.contains_key(&global_key) {
                 return Ok(SubRegisterOutcome::Unchanged);
             }
             if self.current_package() != "GLOBAL" {
@@ -1390,6 +1401,38 @@ impl Interpreter {
             self.registry_mut().functions.insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches.
             self.fn_resolve_gen += 1;
+        }
+        // A prelude splice declared as a `multi` registers under arity-suffixed
+        // keys (`GLOBAL::name/2`, and the chained `…__mN` slots
+        // `insert_multi_overload` uses), never under the bare `GLOBAL::name`
+        // the single-sub branch above records. Record the real keys here, so
+        // `reinstate_module_functions` puts them back when a block scope
+        // unwinds rather than dropping them as importer-scoped `GLOBAL::`
+        // aliases. Dropping them is what left a module's `sub EXPORT` -- which
+        // Raku re-runs on every later import, long after the module's own load
+        // -- unable to see the candidates its compunit had spliced in
+        // (`NativeLibs` introspecting `&trait_mod:<is>.candidates`).
+        if multi
+            && custom_traits
+                .iter()
+                .any(|(t, _)| t == crate::runtime::PRELUDE_SUB_TRAIT)
+        {
+            let prefix = format!("GLOBAL::{}/", name);
+            let unit = self.declaring_unit_sym();
+            let keys: Vec<Symbol> = self
+                .registry()
+                .functions
+                .keys()
+                .filter(|k| k.resolve().starts_with(&prefix))
+                .copied()
+                .collect();
+            for key in keys {
+                self.prelude_registered_functions.insert(key);
+                self.prelude_declaring_units
+                    .entry(key)
+                    .or_default()
+                    .insert(unit);
+            }
         }
         // If this is an our-scoped sub, also store it in the persistent our_scoped_functions
         // so it survives block scope restoration.

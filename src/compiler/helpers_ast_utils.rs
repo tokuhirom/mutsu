@@ -438,21 +438,23 @@ impl Compiler {
             .any(|s| matches!(s, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. }))
     }
 
-    /// Constant-pool index for the qualified name of a top-level
-    /// `unit module`/`unit package` declaration in `stmts`, if there is one.
-    /// Used to emit the runtime package switch ahead of the sub-hoist pass; see
-    /// the call site in `compile()`.
-    pub(super) fn unit_package_name_const(&mut self, stmts: &[Stmt]) -> Option<u32> {
-        let name = stmts.iter().find_map(|s| match s {
+    /// Position of a top-level `unit module`/`unit package` declaration in
+    /// `stmts`, plus the constant-pool index of its qualified name. Used to
+    /// emit the runtime package switch ahead of the sub-hoist pass, and to
+    /// tell the statements that precede the declaration (which are *not* in
+    /// the package) from the ones that follow it; see the call site in
+    /// `compile_unit()`.
+    pub(super) fn unit_package_split(&mut self, stmts: &[Stmt]) -> Option<(usize, u32)> {
+        let (pos, name) = stmts.iter().enumerate().find_map(|(i, s)| match s {
             Stmt::Package {
                 name,
                 is_unit: true,
                 ..
-            } => Some(name.resolve()),
+            } => Some((i, name.resolve())),
             _ => None,
         })?;
         let qualified = self.qualify_package_name(&name);
-        Some(self.code.add_constant(Value::str(qualified)))
+        Some((pos, self.code.add_constant(Value::str(qualified))))
     }
 
     /// Hoist sub declarations: emit RegisterDecl(Sub) for all SubDecl statements

@@ -49,6 +49,14 @@ impl Interpreter {
         self.unit_of_source_sym(self.current_source_file_sym())
     }
 
+    /// The compunit a routine declared in `file` belongs to, for a path held
+    /// as a `String` (`FunctionDef::source_file`). Used to run a module's
+    /// `sub EXPORT` anchored to the module's own unit rather than to whoever
+    /// happens to be importing it.
+    pub(crate) fn unit_of_declaring_file(&self, file: Option<&str>) -> Symbol {
+        self.unit_of_source_sym(file.map(Symbol::intern))
+    }
+
     fn unit_of_source_sym(&self, file: Option<Symbol>) -> Symbol {
         match (file, self.program_path.as_deref()) {
             (None, _) => crate::runtime::main_unit(),

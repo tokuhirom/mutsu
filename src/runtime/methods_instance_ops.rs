@@ -2225,6 +2225,40 @@ impl Interpreter {
                     Self::sub_multi_method_dispatcher_name(&data).is_some(),
                 ))
             }
+            // `.dispatcher` on a multi candidate is the proto that dispatches
+            // it -- Raku generates one even when the source declares no
+            // `proto`. Answered here rather than left to fall through to
+            // ADR-0070 method composition, which handed back a
+            // `<composed-method:dispatcher>` Sub that answers `.candidates`
+            // with just itself. That is how the `NativeLibs` distribution's
+            // custom `sub EXPORT` lost the multi it was re-exporting: it hands
+            // its importers `'&trait_mod:<is>' => $candidate.dispatcher`, and
+            // the stub narrowed a whole multi to one candidate.
+            //
+            // A routine that is part of no multi has no dispatcher; Rakudo
+            // answers an NQPMu there, which is falsy, so `Nil` is the
+            // observable match (`&plain.dispatcher` is `?? !!`-tested by
+            // callers, not named).
+            //
+            // TODO: asking a dispatcher for its own `.dispatcher` should be
+            // `Nil` too. mutsu cannot yet tell `&mm` from `&mm.candidates[0]`
+            // -- neither carries the `__mutsu_is_multi_candidate` fact the
+            // `.multi` arm below reads -- so it answers a handle to itself.
+            "dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
+                let ValueView::Sub(data) = target.view() else {
+                    unreachable!()
+                };
+                let name = data.name.resolve();
+                let qualified = format!("{}::{}", data.package.resolve(), name);
+                if self.resolve_proto_function(&qualified).is_some()
+                    || self.resolve_proto_function_with_alias(&name).is_some()
+                    || self.has_multi_candidates(&name)
+                {
+                    Ok(Value::routine_parts(data.package, data.name, false))
+                } else {
+                    Ok(Value::NIL)
+                }
+            }
             "multi" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
                 let ValueView::Sub(data) = target.view() else {
                     unreachable!()

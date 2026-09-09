@@ -12,8 +12,14 @@ use crate::value::ValueView;
 /// (Raku runs `sub EXPORT` on every import, not once per process).
 #[derive(Clone)]
 pub(crate) enum ModuleExportDef {
-    /// The module's own `sub EXPORT`.
-    Sub(Arc<FunctionDef>),
+    /// The module's own `sub EXPORT`, together with the module-scope env it
+    /// was first called in. Raku's `EXPORT` is a closure over its own
+    /// compunit, so a re-`use` of an already-loaded module has to run it there
+    /// too: the new importer's scope holds none of the module's lexicals, and
+    /// `NativeLibs`' `Map.new('NativeCall' => NativeCall, ...)` quietly
+    /// degraded to the *bareword string* `"NativeCall"` when re-run against it
+    /// -- which then shadowed the real package for the importer.
+    Sub(Arc<FunctionDef>, crate::env::Env),
     /// An `&EXPORT` the module imported from another module's EXPORT map
     /// (the Slangify pattern).
     Value(Value),
@@ -73,14 +79,26 @@ impl Interpreter {
         // control flow (die/note/exit), not caller-env mutation.
         let empty_fns = crate::opcode::CompiledFns::default();
         let saved_env = self.env.clone();
-        let result = self.compile_and_call_function_def(&def, export_args, &empty_fns)?;
-        self.env = saved_env;
+        // Anchor the call to the module's own compunit. `EXPORT` is the
+        // module's code, so a prelude splice made into the module's unit (the
+        // NativeCall `trait_mod:<is>` candidates `NativeLibs` introspects) has
+        // to be visible while it runs -- `prelude_visible_here` otherwise hides
+        // it as soon as the importer's frames are what the unit walk reaches.
+        let saved_unit = self.current_unit;
+        self.current_unit = self.unit_of_declaring_file(def.source_file.as_deref());
+        let result = self.compile_and_call_function_def(&def, export_args, &empty_fns);
+        self.current_unit = saved_unit;
+        let result = result?;
+        self.env = saved_env.clone();
         // `EXPORT` must not itself become a callable in (or leak from) the
         // module; drop every registered `EXPORT` routine now that it has run.
         self.remove_export_routine();
         self.install_export_map(&result, importer.as_deref());
         if let Some(m) = self.module_load_stack.last().cloned() {
-            self.module_export_defs.insert(m, ModuleExportDef::Sub(def));
+            // `saved_env` is the module's own scope: `apply_module_export` runs
+            // right after the module body, before the load unwinds.
+            self.module_export_defs
+                .insert(m, ModuleExportDef::Sub(def, saved_env));
         }
         Ok(())
     }
@@ -95,9 +113,15 @@ impl Interpreter {
         let export_args = self.pending_use_export_args.take().unwrap_or_default();
         let saved_env = self.env.clone();
         let result = match def {
-            ModuleExportDef::Sub(d) => {
+            ModuleExportDef::Sub(d, module_env) => {
                 let empty_fns = crate::opcode::CompiledFns::default();
-                self.compile_and_call_function_def(&d, export_args, &empty_fns)?
+                self.env = module_env;
+                // Same compunit anchoring as the first-load path above.
+                let saved_unit = self.current_unit;
+                self.current_unit = self.unit_of_declaring_file(d.source_file.as_deref());
+                let r = self.compile_and_call_function_def(&d, export_args, &empty_fns);
+                self.current_unit = saved_unit;
+                r?
             }
             ModuleExportDef::Value(v) => self.call_sub_value(v, export_args, false)?,
         };
