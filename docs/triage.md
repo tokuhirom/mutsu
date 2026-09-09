@@ -13,6 +13,13 @@ Read it accordingly:
 - The **tier this file assigns is now a label on the issue** (`tier:S`,
   `tier:B`, `tier:N`, `tier:icebox`), applied from the rows below. An issue
   with no tier label has not been triaged since the migration.
+- **`tier:icebox` no longer stands alone.** Since 2026-09-09 every iceboxed
+  issue also carries an `icebox:*` label saying why it is out of the queue —
+  `icebox:decision`, `icebox:blocked`, `icebox:opportunistic` or
+  `icebox:record`; see [issue-workflow.md](issue-workflow.md). A regen must
+  reconcile that label too, and it is the one place this file's own prose was
+  actively misleading: the four states differ in *who* unblocks them, not in
+  how much they matter.
 - Nothing here has been re-verified against the current `main`.
 
 This is a **snapshot, not a ledger**. Resolving an issue does *not* require
@@ -143,8 +150,12 @@ first probe tried was a near-miss of the one that fails.
   message*, or mutsu accepting code raku rejects.
 - **Perf.** Batched into their own profiling-heavy session; the
   implementation agent for a perf item **runs solo**.
-- **Icebox.** Blocked on a design decision or an explicit user call, or a
-  pure decision/measurement/cleanup record with no failing repro.
+- **Icebox.** Out of the queue. Four distinct states, kept apart by the
+  `icebox:*` axis rather than lumped together: blocked on a design decision or
+  an explicit user call (`icebox:decision`); waiting on another issue or ADR
+  slice landing (`icebox:blocked`); real but measured as not worth a session of
+  its own, to be ridden along on nearby work (`icebox:opportunistic`); or a
+  pure decision/measurement record with no next step (`icebox:record`).
 
 **Effort** (S/M/L/XL) is shown but does not change tier.
 

@@ -67,7 +67,40 @@ Leave it off when you file; a missing tier just means "not yet triaged".
 | `tier:S` | Soundness. Silent data loss, hangs, wrong answers with no diagnostic. |
 | `tier:B` | Broad correctness — a whole language construct, or a dist-blocking battery gap. |
 | `tier:N` | Narrow correctness, diagnostics, permissiveness. |
-| `tier:icebox` | Blocked on a decision, or a pure record with no actionable next step. |
+| `tier:icebox` | Not in the queue. **Why** it is not is a separate label — see the icebox-reason axis below, which every `tier:icebox` issue also carries. |
+
+### Icebox reason — why an iceboxed issue is not queued
+
+`tier:icebox` says an issue is out of the queue; it does not say *why*, and the
+reasons are not interchangeable. One is unblocked by somebody making a decision,
+another by an unrelated PR merging, another by nothing at all. Carrying them
+under one label made the whole icebox read as "ignore this", which is wrong for
+three of the four.
+
+**Every `tier:icebox` issue also carries exactly one `icebox:*` label**, chosen
+by a single question: *what would make this actionable?*
+
+| Label | Meaning | What makes it actionable |
+| --- | --- | --- |
+| `icebox:decision` | A design or product call has to be made before any code. The shape of the fix is genuinely open — typically the body says it "wants an ADR paragraph", or names a measurement whose result decides the design. | Somebody deciding: an ADR, an amendment to one, or a user call on a question CLAUDE.md reserves for them. |
+| `icebox:blocked` | The design is settled; it waits on *other* work landing — another issue, or a slice of an ADR that already exists. **The body must name the blocker** as an issue number or an ADR slice. A blocker named only as a `todo/...md` path is stale: add a comment giving the issue number. | That work merging. The issue then becomes ordinary queue work. |
+| `icebox:opportunistic` | Real, understood, and measured as not worth a session of its own — a corpus scan found no consumers, or what remains is a non-gating cleanup. Not blocked on anything and not waiting for a decision. | Somebody being in that code for another reason. Land it as a rider on the next change that touches the same plumbing. |
+| `icebox:record` | No actionable next step at all. The issue exists so a settled decision or an expensive measurement is not re-derived, and it states its own reopen conditions. | Only those reopen conditions coming true — and then a re-measurement, never the recorded numbers. |
+
+The distinction that matters most is **`decision` vs `blocked`**: a `decision`
+issue is waiting on *this project's judgement* and can be unblocked in a single
+conversation, while a `blocked` one is waiting on *code* and cannot be hurried
+by talking about it. Reading an icebox listing without that split makes both
+look equally dead.
+
+Relabel freely as the state changes — the reason is a property of *now*, not of
+the filing. An `icebox:decision` issue becomes `icebox:blocked` the moment its
+ADR is written but not yet implemented, and an `icebox:blocked` issue whose
+blocker lands leaves the icebox entirely: drop both labels and let the next
+triage regen tier it.
+
+A `tier:icebox` issue with no `icebox:*` label has not been classified since
+2026-09-09. Treat that as unknown, not as `icebox:record`.
 
 ### `working` — someone is on it right now
 
