@@ -208,6 +208,10 @@ impl Interpreter {
         } else {
             self.decrement_value_smart(&old)?
         };
+        let new = match source.as_deref() {
+            Some(name) => self.wrap_native_int_arithmetic_result(name, new),
+            None => new,
+        };
         if let Some(name) = source {
             self.check_incdec_type_constraint(&name, &new)?;
             match code {

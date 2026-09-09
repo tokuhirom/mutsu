@@ -881,6 +881,13 @@ pub(crate) enum OpCode {
     Add,
     Sub,
     Mul,
+    /// Add, subtract, or multiply operands that the compiler knows are native
+    /// integers. `unsigned` selects the machine `u64` operation; the native
+    /// declaration's narrower width is enforced when the value is stored.
+    NativeIntArithmetic {
+        op: CompoundBaseOp,
+        unsigned: bool,
+    },
     Div,
     Mod,
     Pow,

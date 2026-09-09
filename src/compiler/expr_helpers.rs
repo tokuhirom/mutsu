@@ -114,7 +114,12 @@ impl Compiler {
     /// literal `$x = $x + y` are deliberately NOT fused: own locals are ~never
     /// shared cells, and fusing them regressed a hot 3M-iter loop.
     pub(super) fn try_compile_fused_compound_assign(&mut self, name: &str, expr: &Expr) -> bool {
-        if self.local_map.contains_key(name) || !Self::is_plain_compound_target(name) {
+        if self.local_map.contains_key(name)
+            || self
+                .native_int_operand_signedness(&Expr::Var(name.to_string()))
+                .is_some()
+            || !Self::is_plain_compound_target(name)
+        {
             return false;
         }
         let Expr::Binary { left, op, right } = expr else {

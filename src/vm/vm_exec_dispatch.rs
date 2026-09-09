@@ -2207,6 +2207,10 @@ impl Interpreter {
                 self.exec_mul_op()?;
                 *ip += 1;
             }
+            OpCode::NativeIntArithmetic { op, unsigned } => {
+                self.exec_native_int_arithmetic_op(*op, *unsigned)?;
+                *ip += 1;
+            }
             OpCode::Div => {
                 self.exec_div_op()?;
                 *ip += 1;
