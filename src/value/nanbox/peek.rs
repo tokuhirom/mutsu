@@ -312,7 +312,20 @@ impl NanBox {
     /// every `GetLocal`; same motivation as [`Self::is_junction`]).
     #[inline]
     pub(in crate::value) fn is_container_ref(&self) -> bool {
-        matches!(classify(self.0.get()), Classified::Kind(Kind::ContainerRef))
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::ContainerRef | Kind::ContainerRefItemized)
+        )
+    }
+
+    /// Whether this word is an itemized `ContainerRef` holder. This is a pure
+    /// tag probe; the shared cell payload is identical to the plain flavour.
+    #[inline]
+    pub(in crate::value) fn is_container_ref_itemized(&self) -> bool {
+        matches!(
+            classify(self.0.get()),
+            Classified::Kind(Kind::ContainerRefItemized)
+        )
     }
 
     /// Whether this word is a `HashEntryRef` — a pure tag probe (checked on
@@ -408,6 +421,7 @@ impl NanBox {
                     | Kind::HyperSeq
                     | Kind::RaceSeq
                     | Kind::ContainerRef
+                    | Kind::ContainerRefItemized
                     | Kind::ContainerView
                     | Kind::HashEntryRef
                     | Kind::Scalar
@@ -461,6 +475,9 @@ impl NanBox {
                 | Kind::ArrayShaped
                 | Kind::ArrayLazy => VARIANT_ARRAY,
                 Kind::HashPlain | Kind::HashItemized => VARIANT_HASH,
+                Kind::ContainerRef | Kind::ContainerRefItemized => {
+                    VARIANT_KIND_BASE + Kind::ContainerRef as u8
+                }
                 Kind::SetImm | Kind::SetMut => VARIANT_SET,
                 Kind::BagImm | Kind::BagMut => VARIANT_BAG,
                 Kind::MixImm | Kind::MixMut => VARIANT_MIX,
@@ -651,7 +668,9 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 ValueView::WeakSub(RefGuard::from_reconstructed(take_weak::<SubData>(bits)))
             }
             Kind::LazyList => ValueView::LazyList(gc_guard(bits)),
-            Kind::ContainerRef => ValueView::ContainerRef(gc_guard(bits)),
+            Kind::ContainerRef | Kind::ContainerRefItemized => {
+                ValueView::ContainerRef(gc_guard(bits))
+            }
             Kind::ContainerView => ValueView::ContainerView(gc_guard(bits)),
             Kind::Promise => ValueView::Promise(RefGuard::from_reconstructed(SharedPromise {
                 inner: take_gc(bits),

@@ -685,6 +685,11 @@ impl Value {
         self.0.is_container_ref()
     }
 
+    /// Whether this `ContainerRef` holder carries the itemized flavour.
+    pub fn container_ref_is_itemized(&self) -> bool {
+        self.0.is_container_ref_itemized()
+    }
+
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
     /// Returns a `HashEntryRef` pointing to the entry in the parent hash.
     /// Uses interior mutation of the `Arc<HashMap>` so that **all** clones of

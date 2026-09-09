@@ -188,9 +188,14 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::Sub => ValueRepr::Sub(unsafe { take_gc::<SubData>(bits) }),
         Kind::WeakSub => ValueRepr::WeakSub(unsafe { take_weak::<SubData>(bits) }),
         Kind::LazyList => ValueRepr::LazyList(unsafe { take_gc::<LazyList>(bits) }),
-        Kind::ContainerRef => {
-            ValueRepr::ContainerRef(unsafe { take_gc::<crate::value::ContainerCell>(bits) })
-        }
+        Kind::ContainerRef => ValueRepr::ContainerRef(
+            unsafe { take_gc::<crate::value::ContainerCell>(bits) },
+            false,
+        ),
+        Kind::ContainerRefItemized => ValueRepr::ContainerRef(
+            unsafe { take_gc::<crate::value::ContainerCell>(bits) },
+            true,
+        ),
         Kind::ContainerView => {
             ValueRepr::ContainerView(unsafe { take_gc::<crate::value::ContainerCell>(bits) })
         }

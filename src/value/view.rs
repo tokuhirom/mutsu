@@ -304,6 +304,13 @@ impl Value {
         Value::ContainerRef(cell)
     }
 
+    /// Construct an itemized `ContainerRef` holder from an existing cell.
+    #[inline]
+    #[allow(dead_code)]
+    pub(crate) fn container_ref_itemized(cell: Gc<crate::value::ContainerCell>) -> Self {
+        Value::ContainerRefItemized(cell)
+    }
+
     /// Construct an explicit `.VAR` view of an existing container cell.
     #[inline]
     pub(crate) fn container_view(cell: Gc<crate::value::ContainerCell>) -> Self {

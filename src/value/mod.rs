@@ -1558,8 +1558,9 @@ pub(in crate::value) enum ValueRepr {
     /// Prevents one level of flattening in list/array context.
     Scalar(Box<Value>),
     /// A shared mutable Scalar container for `:=` binding.
-    /// Two variables bound together share the same `ContainerRef`.
-    ContainerRef(Gc<crate::value::ContainerCell>),
+    /// Two variables bound together share the same `ContainerRef`. The bool is
+    /// a per-holder itemization flag; it does not change the shared cell.
+    ContainerRef(Gc<crate::value::ContainerCell>, bool),
     /// An explicit view of a `ContainerRef` returned by `.VAR`.
     ///
     /// It carries the same cell identity as `ContainerRef`, but stays distinct
@@ -1837,7 +1838,11 @@ impl Value {
     }
     #[inline]
     pub(in crate::value) fn ContainerRef(cell: Gc<crate::value::ContainerCell>) -> Value {
-        Value::from_repr(ValueRepr::ContainerRef(cell))
+        Value::from_repr(ValueRepr::ContainerRef(cell, false))
+    }
+    #[inline]
+    pub(in crate::value) fn ContainerRefItemized(cell: Gc<crate::value::ContainerCell>) -> Value {
+        Value::from_repr(ValueRepr::ContainerRef(cell, true))
     }
     #[inline]
     pub(in crate::value) fn ContainerView(cell: Gc<crate::value::ContainerCell>) -> Value {
