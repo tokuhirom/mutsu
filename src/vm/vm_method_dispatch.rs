@@ -1002,6 +1002,15 @@ impl Interpreter {
                     || cc.env_only_decls.iter().any(|n| n == s)
                     || attr_twigil_local(attributes, s)
                     || (has_attr_aliases && attr_alias_local(attributes, s))
+                    // Sigilless alias/readonly markers for a method parameter
+                    // are frame-local bookkeeping. A raw parameter may reuse a
+                    // caller's name, so merging `__mutsu_sigilless_alias::p`
+                    // back would overwrite the caller's alias chain with the
+                    // callee's immediate argument name.
+                    || s.strip_prefix("__mutsu_sigilless_alias::")
+                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                    || s.strip_prefix("__mutsu_sigilless_readonly::")
+                        .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
             };
             let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                 method_def.captured_env.as_ref().is_some_and(|c| {
@@ -2181,6 +2190,10 @@ impl Interpreter {
                         || attrs_cell
                             .as_ref()
                             .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
+                        || s.strip_prefix("__mutsu_sigilless_alias::")
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
+                        || s.strip_prefix("__mutsu_sigilless_readonly::")
+                            .is_some_and(|name| method_def.param_defs.iter().any(|pd| pd.name == name))
                 };
                 let is_unwritten_capture = |sym: Symbol, v: &Value| -> bool {
                     method_def.captured_env.as_ref().is_some_and(|c| {

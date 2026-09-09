@@ -22,11 +22,17 @@ use crate::value::ValueView;
 /// decided separately, by `deepmap_iterate_inner`'s `itemize_result`.
 fn deepmap_element_is_leaf(v: &Value) -> bool {
     let v = v.descalarize();
-    !v.is_range()
-        && !matches!(
-            v.view(),
-            ValueView::Package(_) | ValueView::Array(..) | ValueView::Seq(_) | ValueView::Hash(_)
-        )
+    v.with_deref(|v| {
+        let v = v.descalarize();
+        !v.is_range()
+            && !matches!(
+                v.view(),
+                ValueView::Package(_)
+                    | ValueView::Array(..)
+                    | ValueView::Seq(_)
+                    | ValueView::Hash(_)
+            )
+    })
 }
 
 fn range_as_list(value: &Value) -> Option<Value> {
@@ -411,6 +417,15 @@ impl Interpreter {
         // `Hash` element needs no unwrapping: its itemization is a kind/flag,
         // so it still matches `ValueView::Array`/`ValueView::Hash`.)
         let target = target.descalarize();
+        // An `is rw`/`return-rw` accessor can promote an aggregate element to a
+        // `ContainerRef`. That cell is still an aggregate for deepmap's
+        // leaf-vs-descend decision. Treating it as a leaf passes the cell to
+        // `.clone`, which only clones the cell's handle and lets a later write
+        // into the mapped copy reach the original aggregate as well.
+        if matches!(target.view(), ValueView::ContainerRef(_)) && !deepmap_element_is_leaf(target) {
+            let inner = target.deref_container();
+            return self.deepmap_iterate_inner(block, &inner, itemize_result);
+        }
         if let Some(list) = range_as_list(target) {
             return self.deepmap_iterate_inner(block, &list, itemize_result);
         }
