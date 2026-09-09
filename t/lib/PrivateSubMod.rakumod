@@ -25,3 +25,19 @@ class PrivateSubBox is export {
 }
 
 sub via-block() is export { (1, 2).map({ secret-helper($_) }).join(",") }
+
+# A block handed to a NATIVE callback taker (`.tap`, and hence every
+# `supply`/`whenever` body) is still lexically inside this compunit, so it
+# reaches the private helper too. These are the shapes that made
+# `Cro::HTTP::Middleware`'s private `wrap-response-logging` unreachable.
+sub tapped-values(Supply $in) is export {
+    my @got;
+    $in.tap(-> $v { @got.push(secret-helper($v)) });
+    @got
+}
+
+sub tripling-supply(Supply $in) is export {
+    supply {
+        whenever $in -> $v { emit secret-helper($v) }
+    }
+}

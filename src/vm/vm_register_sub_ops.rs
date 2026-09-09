@@ -146,7 +146,18 @@ impl Interpreter {
                 is_decl_expr_thunk: false,
                 deprecated_message: None,
                 source_line: cc_source_line,
-                source_file: self.current_source_file(),
+                // Not `current_source_file()`: that reads the dynamically-scoped
+                // `?FILE` env var, which only tracks the unit currently being
+                // *loaded*, so a closure literal built each time an
+                // already-loaded module's routine RUNS was stamped with the
+                // caller's file. `executing_source_file()` reads the file baked
+                // onto the innermost enclosing routine frame instead, and stays
+                // correct regardless of who is calling — exactly as the
+                // `MakeAnonSub`/`MakeAnonSubParams` arms already do
+                // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
+                // inside a module is the shape that made this visible: the
+                // block could not reach its own compunit's private routines.
+                source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
@@ -205,7 +216,18 @@ impl Interpreter {
                 is_decl_expr_thunk: false,
                 deprecated_message: None,
                 source_line: cc_source_line,
-                source_file: self.current_source_file(),
+                // Not `current_source_file()`: that reads the dynamically-scoped
+                // `?FILE` env var, which only tracks the unit currently being
+                // *loaded*, so a closure literal built each time an
+                // already-loaded module's routine RUNS was stamped with the
+                // caller's file. `executing_source_file()` reads the file baked
+                // onto the innermost enclosing routine frame instead, and stays
+                // correct regardless of who is calling — exactly as the
+                // `MakeAnonSub`/`MakeAnonSubParams` arms already do
+                // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
+                // inside a module is the shape that made this visible: the
+                // block could not reach its own compunit's private routines.
+                source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);

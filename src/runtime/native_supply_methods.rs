@@ -288,6 +288,31 @@ impl Interpreter {
         }
     }
 
+    /// A copy of `sub` whose `source_file` records the file its body was
+    /// WRITTEN in, when it does not already carry one.
+    ///
+    /// A code object built at runtime from an AST body (`Value::make_sub*`)
+    /// records no source file, so compunit-scoped resolution
+    /// (`Interpreter::executing_unit_sym`, and through it
+    /// `unit_private_routine` and `prelude_visible_here`) could not tell which
+    /// compunit it belongs to and fell back to whoever dispatched it. For a
+    /// `whenever` callback that is the emitting scope, which is arbitrary and
+    /// usually the main script — so a `supply`/`whenever` body written in a
+    /// module could not reach the module's own private routines. The bodies in
+    /// question are lexically inside the code that is running when they are
+    /// built, so `executing_source_file()` at that moment is the answer.
+    pub(crate) fn sub_with_source_file(sub: Value, file: Option<&str>) -> Value {
+        let Some(file) = file else { return sub };
+        match sub.as_sub() {
+            Some(data) if data.source_file.is_none() => {
+                let mut new_data = data.clone();
+                new_data.source_file = Some(file.to_string());
+                Value::from_sub_data(new_data)
+            }
+            _ => sub,
+        }
+    }
+
     /// Bundle several done callbacks into one value for the single `done =>`
     /// slot of a chained inner tap. `invoke_done_callback` fires each in order.
     pub(super) fn make_supply_done_chain(callbacks: Vec<Value>) -> Value {

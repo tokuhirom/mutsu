@@ -1238,7 +1238,13 @@ impl Interpreter {
             .composed_role_bodies
             .insert(format!("pun:{role_name}"))
         {
-            self.run_role_body_for_composition(role_name, role_name, &role_def.deferred_body)?;
+            let decl_file = role_def.decl_file.clone();
+            self.run_role_body_for_composition(
+                role_name,
+                role_name,
+                &role_def.deferred_body,
+                decl_file.as_deref(),
+            )?;
             self.run_composed_role_ancestor_bodies(role_name, role_name)?;
         }
         Ok(())
@@ -1252,13 +1258,13 @@ impl Interpreter {
         regex_owner: &str,
     ) -> Result<(), RuntimeError> {
         for ancestor in self.role_ancestor_names(role_name) {
-            let ops = self
+            let (ops, decl_file) = self
                 .registry()
                 .roles
                 .get(&ancestor)
-                .map(|r| r.deferred_body.clone())
+                .map(|r| (r.deferred_body.clone(), r.decl_file.clone()))
                 .unwrap_or_default();
-            self.run_role_body_for_composition(&ancestor, regex_owner, &ops)?;
+            self.run_role_body_for_composition(&ancestor, regex_owner, &ops, decl_file.as_deref())?;
         }
         Ok(())
     }
@@ -1315,11 +1321,17 @@ impl Interpreter {
         type_owner: &str,
         regex_owner: &str,
         ops: &[crate::opcode::DeferredBodyOp],
+        decl_file: Option<&str>,
     ) -> Result<(), RuntimeError> {
         if ops.is_empty() {
             return Ok(());
         }
         let saved_pkg = self.current_package().to_string();
+        // The body belongs to the ROLE's compunit, not to whoever is composing
+        // it, so re-establish `?FILE` for the duration -- otherwise a nested
+        // `my class` in the body registers its methods as declared in the
+        // composing file. See `RoleDef::decl_file`.
+        let saved_file = self.enter_source_file(decl_file);
         // Each body statement publishes its value through `$_`; composition can
         // happen inside a `with`/`given` block, so the topic is restored.
         let saved_topic = self.env.get("_").cloned();
@@ -1359,13 +1371,16 @@ impl Interpreter {
             if let Err(err) = r {
                 if err.control.is_none() {
                     restore_topic(self, saved_topic);
+                    self.leave_source_file(saved_file);
                     self.set_current_package(saved_pkg);
                     return Err(RuntimeError::role_instantiation(type_owner, err));
                 }
+                self.leave_source_file(saved_file);
                 return Err(err);
             }
         }
         restore_topic(self, saved_topic);
+        self.leave_source_file(saved_file);
         Ok(())
     }
 }

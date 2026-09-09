@@ -68,6 +68,17 @@ pub(crate) struct RoleDef {
     /// this used to mirror (`deferred_body_stmts`) was dropped in D8-4 once
     /// D8-2 made every execution site read this field instead.
     pub(crate) deferred_body: Vec<crate::opcode::DeferredBodyOp>,
+    /// The file this role's body was WRITTEN in (`None` = the main script).
+    ///
+    /// `deferred_body` is re-run at every composition, from the composing
+    /// scope, so the ambient `?FILE` there names the composer's file, not the
+    /// role's. Anything the body registers -- above all a nested `my class`,
+    /// whose methods record `current_source_file()` -- would then claim to
+    /// have been declared in the composing compunit. That misattributes
+    /// backtraces and, since GH #7558, breaks compunit-scoped resolution: a
+    /// nested class's method could not reach its own module's private
+    /// routines. Both composition runners restore this around the body.
+    pub(crate) decl_file: Option<String>,
     /// Unknown lowercase trait names deferred for custom `trait_mod:<is>` dispatch.
     pub(crate) deferred_custom_traits: Vec<String>,
 }

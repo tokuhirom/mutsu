@@ -13,7 +13,7 @@ use PrivateSubMod;
 # Every expectation below was verified against Rakudo.
 # See runtime/unit_private_routines.rs.
 
-plan 10;
+plan 12;
 
 # The loading scope declares its own routine of the same name as the module's
 # private helper. The two are independent lexicals.
@@ -55,5 +55,22 @@ is secret-helper(1), 101,
 # not take the export with it.
 is visible-helper(5), 15,
     'the exported routine still works after a require of the same unit';
+
+# A block the module hands to a native callback taker runs long after the load,
+# dispatched from the emitting scope (here, the main script). It is still
+# lexically inside the module, so it must reach the module's private helper.
+my $tap-src = Supplier.new;
+my @tapped := tapped-values($tap-src.Supply);
+$tap-src.emit(2);
+is @tapped.join(','), '6',
+    'a .tap callback declared in the module reaches the private helper';
+
+my $sup-src = Supplier.new;
+my @emitted;
+tripling-supply($sup-src.Supply).tap(-> $v { @emitted.push($v) });
+$sup-src.emit(3);
+$sup-src.emit(4);
+is @emitted.join(','), '9,12',
+    'a supply/whenever body declared in the module reaches the private helper';
 
 done-testing;

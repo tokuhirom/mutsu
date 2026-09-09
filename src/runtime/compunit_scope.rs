@@ -57,6 +57,35 @@ impl Interpreter {
         }
     }
 
+    /// Install `file` as the ambient `?FILE`, handing back what to restore.
+    ///
+    /// `?FILE` is the dynamically-scoped "unit being compiled/loaded" marker
+    /// that [`Self::current_source_file`] reads, and every declaration
+    /// registered under it records it as its own `source_file`. A role's
+    /// deferred body is re-run at each composition, from the composing scope,
+    /// so it has to be re-established there (see [`crate::runtime::RoleDef`]'s
+    /// `decl_file`). Returns `None` -- meaning "nothing to restore" -- when
+    /// `file` is `None`, so a caller with no recorded file is a no-op.
+    pub(crate) fn enter_source_file(&mut self, file: Option<&str>) -> Option<Option<Value>> {
+        let file = file?;
+        let saved = self.env.get("?FILE").cloned();
+        self.env.insert("?FILE".to_string(), Value::str(file.to_string()));
+        Some(saved)
+    }
+
+    /// Undo an [`Self::enter_source_file`].
+    pub(crate) fn leave_source_file(&mut self, saved: Option<Option<Value>>) {
+        match saved {
+            None => {}
+            Some(Some(prev)) => {
+                self.env.insert("?FILE".to_string(), prev);
+            }
+            Some(None) => {
+                self.env.remove("?FILE");
+            }
+        }
+    }
+
     /// Whether a routine registered under `key` is visible to the code that is
     /// running right now.
     ///

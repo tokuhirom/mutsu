@@ -14,8 +14,7 @@ Raku scopes such a routine lexically to its own compilation unit. mutsu
 registered it as a shared `GLOBAL::helper` stash entry -- the same key the
 loading scope's own package-less declaration would use -- and nothing
 distinguished "exported, should reach the importer" from "merely declared,
-private to this compunit". Filed as
-`todo/deep/module-toplevel-private-sub-leak-cleanup.md`; this closes it.
+private to this compunit". Filed as #7558; this closes it.
 
 ## Why every earlier attempt failed: the fix is a MOVE, not a delete
 
@@ -84,19 +83,60 @@ have an exact pre-existing discriminator rather than needing a new one.
 - **`current_unit` was not entered for method bodies.** `enter_compilation_unit`
   is called by the compiled-*sub* call paths only, so a method of a class the
   module declares ran with the caller's unit. `unit_private_routine` falls back
-  to the innermost routine frame's `def_file` (what a backtrace renders) for
-  those. Separately, `call_compiled_function_positional_light_at`'s
-  return-type-check failure path returned without restoring `current_unit` at
-  all -- a pre-existing leak that also mis-scoped user-declared operators; it
-  restores now.
+  to [`Interpreter::executing_unit_sym`] -- the file baked onto the innermost
+  enclosing routine frame, and the same anchor `prelude_visible_here` already
+  uses for the identical question about NativeCall's prelude splices.
 
-Pinned by `t/module-private-sub-does-not-leak.t` (9 assertions, all verified
-against Rakudo) with its fixture in `t/lib/PrivateSubMod.rakumod`: the module's
+## The blocker that parked the first attempt: a code object with no file
+
+The first attempt at this (PR #7436) was closed because it regressed twelve
+whitelisted battery files -- ten `Cro::HTTP`, `IO::Socket::Async::SSL
+bad-incoming`, and `zef distribution-depends-parsing` -- all with `Unknown
+function: wrap-response-logging`, a package-less private sub of
+`Cro::HTTP::Middleware` that the module's own `supply whenever ...` body calls.
+Reduced: **a block handed to a native callback taker could not reach the private
+routines of the compunit it was written in.** `.tap` is such a taker, and so is
+every `supply`/`whenever` body.
+
+The cause was not the invocation path, as first diagnosed, but the code objects
+themselves: two whole classes of closure did not record the file they were
+written in, so nothing downstream could tell which compunit they belonged to.
+
+- **`MakeLambda` / `MakeBlockClosure`** (`vm/vm_register_sub_ops.rs`) stamped
+  `current_source_file()` -- the dynamically-scoped `?FILE`, which tracks the
+  unit being *loaded* and has long since reverted to the caller's file by the
+  time an already-loaded module's routine runs and rebuilds its closure literal.
+  They now use `executing_source_file()`, exactly as the sibling `MakeAnonSub` /
+  `MakeAnonSubParams` arms already did.
+- **`whenever` callbacks** are built at runtime from AST by
+  `run_whenever_with_value` (`Value::make_sub_owning`), which records no source
+  file at all. They are now stamped with the file the body was written in, via
+  the new `Interpreter::sub_with_source_file`.
+
+The third piece is the frame: `call_sub_value`'s block-carrier path -- how every
+block handed to a native callback taker is actually invoked -- pushed a
+`RoutineFrame` with `def_file: None`, so even a correctly-stamped closure went
+unnoticed. It now records `data.source_file`, exactly as the compiled closure
+dispatch (`vm_closure_dispatch.rs`) already did.
+
+All three are corrections in their own right: `executing_unit_sym` is what
+`?FILE`-based backtrace attribution, `callframe`, `%?RESOURCES` lookup and
+NativeCall prelude visibility all read.
+
+Separately, `call_compiled_function_positional_light_at`'s return-type-check
+failure path used to return without restoring `current_unit` at all -- a
+pre-existing leak that also mis-scoped user-declared operators. That one was
+salvaged and landed on its own ahead of this change.
+
+Pinned by `t/module-private-sub-does-not-leak.t` (12 assertions, all verified
+against Rakudo, which passes the file unchanged) with its fixture in `t/lib/PrivateSubMod.rakumod`: the module's
 exported sub, a method of a class it declares, and a block inside a module
-routine all still reach the private helper; the loading scope's own same-named
-routine is not displaced in either direction; and a private helper the loading
-scope never declared is simply not there.
+routine all still reach the private helper; a `.tap` callback and a
+`supply`/`whenever` body written in the module reach it too, dispatched later
+from the main script; the loading scope's own same-named routine is not
+displaced in either direction; and a private helper the loading scope never
+declared is simply not there.
 
 One divergence found along the way is filed separately rather than fixed here:
 `Pkg::name(...)` falls back to a bare `GLOBAL::name` even when `Pkg` does not
-exist (`todo/tickets/qualified-call-falls-back-to-bare-global-routine.md`).
+exist (#7709).

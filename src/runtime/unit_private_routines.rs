@@ -5,7 +5,7 @@
 //! entry the way an `our sub` / package-scoped routine is. mutsu registers it
 //! that way regardless, so before this module a module's own private helper
 //! stayed permanently callable, bare, from whatever scope `use`d or `require`d
-//! it (`todo/deep/module-toplevel-private-sub-leak-cleanup.md`).
+//! it (GH #7558).
 //!
 //! The fix is a *move*, not a delete. Deleting the entry outright is what every
 //! earlier attempt did, and it cannot work: mutsu resolves a bare routine name
@@ -167,13 +167,23 @@ impl Interpreter {
             return Some(def);
         }
         // `current_unit` is entered by the compiled-*sub* call paths
-        // (`enter_compilation_unit`); a method body reaches its own compiled
-        // code through the method-dispatch paths, which do not. The innermost
-        // routine frame records the file its body lives in (`def_file`, what a
-        // backtrace renders), so it answers the same question for those.
-        let def_file = self.routine_stack.last().and_then(|f| f.def_file)?;
-        let unit = self.unit_of_source(Some(&def_file.resolve()));
-        self.unit_private_routine_from(unit, name_sym)
+        // (`enter_compilation_unit`) only. Two other shapes reach a module's own
+        // code without going through one, and both are answered by the frame's
+        // recorded `def_file` instead:
+        //
+        // - a **method body**, which arrives through the method-dispatch paths;
+        // - a **block handed to a native callback taker** — `.tap`, and hence
+        //   every `supply`/`whenever` body — which the supply machinery invokes
+        //   through the generic code-object entry (`call_sub_value`).
+        //
+        // [`Self::executing_unit_sym`] is the same anchor `prelude_visible_here`
+        // uses for the identical question about prelude splices: it walks out
+        // through inlined bare blocks (which record no `def_file` of their own)
+        // to the innermost frame that does. A block frame DOES record one — it
+        // is stamped from the closure's `SubData::source_file` at
+        // `push_block_routine_with_location` — so a tap callback declared in a
+        // module names that module's unit however it was invoked.
+        self.unit_private_routine_from(self.executing_unit_sym(), name_sym)
     }
 
     /// A private routine named `name_sym` declared by `unit`, or by a unit
