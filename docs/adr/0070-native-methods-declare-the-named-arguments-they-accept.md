@@ -1,6 +1,6 @@
 # ADR-0070: A builtin method declares the named arguments it accepts, and the arity cascade drops the rest
 
-- Status: **Proposed** (slice 1 implemented 2026-09-07)
+- Status: **Proposed** (slices 1–3 implemented 2026-09-09)
 - Date: 2026-09-07
 - Related: [ADR-0021](0021-argument-namedness-is-a-call-site-property.md)
   (argument named-ness is a call-site property),
@@ -252,5 +252,33 @@ ran.
   (`(+*%_)` vs `(+*%options)`), which makes the *declared*-slurpy readers
   visible, but a `--` row still has to be confirmed behaviourally.
 
-- **Slice 3 (open).** `subst` / `trans`, `new`, and the plain-call divergences
-  the sweep surfaces. Recorded in the narrowed `todo/deep/` file.
+- **Slice 3 (implemented 2026-09-09).** The manually established accepted-name
+  sets for `subst` and `trans` are now declared in `accepted_nameds.rs`, with
+  focused pins in `t/native-method-accepted-nameds.t`. The survey's
+  `subst -- (+*%options)` and `trans -- (+*%_)` output is only a lower bound:
+  `subst` reads the match controls and replacement transforms listed in the
+  table, while `trans` reads `:s`/`:squash`, `:d`/`:delete`, and
+  `:c`/`:complement`. The table preserves the additional match-control names
+  (`:i`, `:m`, `:ov`, `:ex`) even where mutsu does not yet consume them, so
+  future support is not stripped at the dispatch boundary. No `:qqzz9` probe
+  changed before this slice; this is hardening. See
+  `news/2026-09/native-method-accepted-nameds-slice-3.md`.
+
+## Slice 3 (2026-09-09): slurpy named readers
+
+The signature survey cannot distinguish a method that merely carries the
+implicit `*%_` from one that reads adverbs out of a slurpy. Its measurements
+were:
+
+```
+subst          -- (+*%options)
+trans          -- (+*%_)
+```
+
+The manual set for `subst` covers the `Str.subst` documentation's global,
+match-count, position, continuation, case/mark/space transforms, and the
+match-style short and long controls. The set for `trans` is the three options
+and their aliases that `dispatch_trans` reads. The focused test keeps real
+adverbs working and verifies that an unknown named remains invisible. The
+constructor `new` and the unrelated plain-call divergences listed in the
+campaign issue remain open for later slices.

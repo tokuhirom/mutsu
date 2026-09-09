@@ -138,6 +138,21 @@ is 4.log(:base(2)), 4.log, 'log(:base) still falls back to the 0-ary log';
 is "abc".uc(:foo), "ABC", 'uc(:foo) still swallows the named';
 is (1,2,3).map({ $_ * 2 }).join("-", :foo), "2-4-6", 'a Seq body is consumed exactly once';
 
+# --- slurpy readers: subst / trans -----------------------------------------
+#
+# The signature survey can only report a lower bound for these methods. Their
+# accepted sets are recorded manually in accepted_nameds.rs from the Raku docs
+# and the adverbs read by the native implementations.
+
+is "aaa".subst(/a/, "x", :g), "xxx", 'subst keeps :g';
+is "aaa".subst(/a/, "x", :nth(2)), "axa", 'subst keeps :nth';
+is "a".subst(/a/, "X", :samecase), "x", 'subst keeps :samecase';
+is "aabb".trans("a" => "x", :squash), "xbb", 'trans keeps :squash';
+is "abc".trans("a" => "x", :delete), "xbc", 'trans keeps :delete';
+is "abc".trans("a" => "x", :complement), "axx", 'trans keeps :complement';
+is "abc".trans("a" => "x", :c), "axx", 'trans keeps :c';
+is "abc".trans("a" => "x", :qqzz9), "xbc", 'trans ignores an undeclared named';
+
 # ===========================================================================
 # Slice 2: the residue of the same survey.
 # ===========================================================================

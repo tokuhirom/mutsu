@@ -75,6 +75,51 @@ pub(crate) fn native_method_accepted_nameds(method: &str) -> Option<&'static [&'
         "map" => &[
             "batch", "deep", "degree", "duck", "flat", "item", "label", "node",
         ],
+        // Slice 3: these two methods read selected adverbs from a slurpy, so
+        // the signature survey reports only a lower bound. The set for
+        // `subst` is established from Str's documentation, its match-style
+        // controls, and the aliases handled by dispatch_subst. Keep the
+        // match controls that Rakudo forwards through the slurpy (`i`/`m`/`s`
+        // and `ov`/`ex`) even where mutsu does not yet use them, so a future
+        // implementation can see the call-site adverb. `trans` has the six
+        // short/long spellings read by dispatch_trans.
+        "subst" => &[
+            "1st",
+            "2nd",
+            "3rd",
+            "4th",
+            "c",
+            "continue",
+            "ex",
+            "exhaustive",
+            "first",
+            "fourth",
+            "g",
+            "global",
+            "i",
+            "ii",
+            "m",
+            "mm",
+            "nd",
+            "nth",
+            "ov",
+            "overlap",
+            "p",
+            "pos",
+            "rd",
+            "s",
+            "samecase",
+            "samemark",
+            "samespace",
+            "second",
+            "sigspace",
+            "ss",
+            "st",
+            "th",
+            "third",
+            "x",
+        ],
+        "trans" => &["c", "complement", "d", "delete", "s", "squash"],
         _ => return None,
     })
 }
@@ -148,5 +193,24 @@ mod tests {
     fn nothing_to_strip_allocates_nothing() {
         let args = vec![Value::int(1), Value::int(2)];
         assert!(strip_undeclared_nameds("chop", &args).is_none());
+    }
+
+    #[test]
+    fn slurpy_reader_rows_keep_their_established_adverbs() {
+        let subst_args = vec![
+            Value::pair("global".to_string(), Value::TRUE),
+            Value::pair("samecase".to_string(), Value::TRUE),
+            Value::pair("qqzz9".to_string(), Value::TRUE),
+        ];
+        let kept = strip_undeclared_nameds("subst", &subst_args).expect("qqzz9 must go");
+        assert_eq!(kept.len(), 2);
+
+        let trans_args = vec![
+            Value::pair("squash".to_string(), Value::TRUE),
+            Value::pair("complement".to_string(), Value::TRUE),
+            Value::pair("qqzz9".to_string(), Value::TRUE),
+        ];
+        let kept = strip_undeclared_nameds("trans", &trans_args).expect("qqzz9 must go");
+        assert_eq!(kept.len(), 2);
     }
 }
