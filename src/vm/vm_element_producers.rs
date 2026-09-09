@@ -272,7 +272,7 @@ impl Interpreter {
         let ValueView::Hash(data) = target.view() else {
             return None;
         };
-        if data.declared_type.as_deref() == Some("Map") {
+        if data.declared_type.as_deref() == Some("Map") || data.bare_values {
             return None;
         }
         let cell = target.hash_slot_ref(key, true)?;
@@ -405,7 +405,12 @@ impl Interpreter {
             ValueView::Hash(data) => {
                 // An immutable `Map`'s elements are not assignable, so promoting
                 // one would offer an alias that must not exist.
-                if data.declared_type.as_deref() == Some("Map") {
+                // A bare-valued Hash (slurpy named arguments, Match captures,
+                // and Maps before their declared-type tag is consulted) has no
+                // mutable element containers to expose either. Its producer
+                // must leave raw values raw; otherwise merely asking for
+                // `.pairs` changes `:a` into `:a(Bool::True)`.
+                if data.declared_type.as_deref() == Some("Map") || data.bare_values {
                     return None;
                 }
                 data.keys().cloned().collect()

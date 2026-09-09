@@ -997,7 +997,7 @@ impl Interpreter {
         } else {
             args[0].to_string_value()
         };
-        data.map.insert(key, value.clone());
+        crate::value::Value::hash_insert_through(&mut data.map, key, value.clone());
         let replacement = Value::hash(data);
         self.overwrite_hash_bindings_by_identity(&map, replacement);
         Some(Ok(value))

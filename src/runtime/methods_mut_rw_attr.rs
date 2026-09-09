@@ -314,7 +314,7 @@ impl Interpreter {
                     ));
                 }
             };
-            data.map.insert(key, value.clone());
+            crate::value::Value::hash_insert_through(&mut data.map, key, value.clone());
             Value::hash_with_data(crate::gc::Gc::new(data))
         };
         updated.insert(attr_name.to_string(), new_container);

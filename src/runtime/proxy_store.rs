@@ -132,7 +132,7 @@ impl Interpreter {
                 value.with_hash_mut(|data| {
                     let data = crate::gc::Gc::make_mut(data);
                     for (k, v) in fetched {
-                        data.map.insert(k, v);
+                        Value::hash_insert_through(&mut data.map, k, v);
                     }
                 });
             }

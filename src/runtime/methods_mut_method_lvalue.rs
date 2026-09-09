@@ -284,9 +284,13 @@ impl Interpreter {
                             data.original_keys
                                 .get_or_insert_with(std::collections::HashMap::new)
                                 .insert(which.clone(), key_val.clone());
-                            data.map.insert(which, value);
+                            crate::value::Value::hash_insert_through(&mut data.map, which, value);
                         } else {
-                            data.map.insert(key_val.to_string_value(), value);
+                            crate::value::Value::hash_insert_through(
+                                &mut data.map,
+                                key_val.to_string_value(),
+                                value,
+                            );
                         }
                     };
                 // An attribute-backed hash (`%!h.AT-KEY($k) = $v` inside a method)

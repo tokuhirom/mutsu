@@ -358,6 +358,22 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
     true
 }
 
+/// Render a Hash/Map value in a colon-pair position.
+///
+/// A raw Boolean is the shorthand Pair form (`:a`/`:!a`), while a Boolean
+/// inside a Scalar element container must keep its explicit constructor form.
+/// The distinction is attached to the stored value, so this works for both
+/// ordinary Hashes and bare-valued Maps/slurpy hashes.
+pub(crate) fn raku_hash_value_repr(key: &str, value: &Value, repr: &str) -> String {
+    match value.view() {
+        ValueView::Bool(true) => format!(":{}", key),
+        ValueView::Bool(false) => format!(":!{}", key),
+        ValueView::Scalar(inner) if inner.is_nil() => format!(":{}(Any)", key),
+        ValueView::Nil => format!(":{}(Nil)", key),
+        _ => format!(":{}({})", key, repr),
+    }
+}
+
 /// Whether a single element warrants a trailing comma when it is the sole
 /// element of a real (`@`-sigil) array's `.raku`: `[1..5,]`, `[(1, 2),]`,
 /// `[{:x(1)},]`, `[HyperSeq,]`. Raku's rule (List.raku) is `istype(elem,
@@ -934,17 +950,12 @@ pub fn raku_value(v: &Value) -> String {
                     .iter()
                     .map(|k| {
                         let v = &map[*k];
-                        let repr = if v.is_nil() {
-                            "Any".to_string()
-                        } else {
-                            raku_value(v)
-                        };
                         let typed = map.typed_key(k);
                         match typed.view() {
                             ValueView::Str(s) if is_adverbial_pair_key(&s) => {
-                                format!(":{}({})", *s, repr)
+                                raku_hash_value_repr(&s, v, &raku_value(v))
                             }
-                            _ => format!("{} => {}", raku_value(&typed), repr),
+                            _ => format!("{} => {}", raku_value(&typed), raku_value(v)),
                         }
                     })
                     .collect();
@@ -976,24 +987,11 @@ pub fn raku_value(v: &Value) -> String {
                     };
                     let is_ident = key_str.as_deref().is_some_and(is_adverbial_pair_key);
                     if is_ident {
-                        // Raku's `.raku` renders every value in the colon-pair
-                        // form `:key(value.raku)` — including Bool, which shows
-                        // as `:a(Bool::True)`, not the adverbial `:a` / `:!a`.
                         let k = key_str.as_deref().unwrap();
-                        let repr = if v.is_nil() {
-                            "Any".to_string()
-                        } else {
-                            raku_value(v)
-                        };
-                        format!(":{}({})", k, repr)
+                        raku_hash_value_repr(k, v, &raku_value(v))
                     } else {
                         // Non-identifier keys: use "key" => value format
-                        let repr = if v.is_nil() {
-                            "Any".to_string()
-                        } else {
-                            raku_value(v)
-                        };
-                        format!("{} => {}", object_hash_key_repr(&typed), repr)
+                        format!("{} => {}", object_hash_key_repr(&typed), raku_value(v))
                     }
                 })
                 .collect();

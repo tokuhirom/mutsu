@@ -110,6 +110,11 @@ impl Interpreter {
         value.with_hash_mut(|arc| {
             let data = crate::gc::Gc::make_mut(arc);
             for (key, resolved_value) in resolved {
+                let resolved_value = if data.bare_values {
+                    resolved_value
+                } else {
+                    resolved_value.itemize_for_hash_element()
+                };
                 data.map.insert(key, resolved_value);
             }
         });

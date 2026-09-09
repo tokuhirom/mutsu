@@ -2431,14 +2431,26 @@ mod hash_chokepoint_tests {
         let mut map = HashMap::new();
         map.insert("a".to_string(), Value::Int(1));
         Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
-        assert_eq!(map.get("a").and_then(Value::as_int), Some(2));
+        assert_eq!(
+            map.get("a")
+                .cloned()
+                .map(Value::deitemize_element)
+                .and_then(|value| value.as_int()),
+            Some(2)
+        );
     }
 
     #[test]
     fn insert_through_creates_missing_entry() {
         let mut map = HashMap::new();
         Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
-        assert_eq!(map.get("b").and_then(Value::as_int), Some(7));
+        assert_eq!(
+            map.get("b")
+                .cloned()
+                .map(Value::deitemize_element)
+                .and_then(|value| value.as_int()),
+            Some(7)
+        );
     }
 
     #[test]

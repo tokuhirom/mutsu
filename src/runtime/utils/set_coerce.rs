@@ -316,7 +316,7 @@ pub(crate) fn to_mix_map(
                 // element read chokepoint. Without the deref every weight fell
                 // to the truthy `_` arm below and became 1.0
                 // (roast/S03-metaops/infix.t's `%a = %reset.pairs` reset lines).
-                let v = v.deref_container();
+                let v = v.deref_container().deitemize_element();
                 let w = match v.view() {
                     ValueView::Int(i) => i as f64,
                     ValueView::Num(n) => n,
@@ -407,7 +407,7 @@ pub(crate) fn to_bag_map(
                 // its own `Scalar` container after an ADR-0036 slice 3 producer
                 // promoted it in place, and this bulk iteration bypasses the
                 // element read chokepoint.
-                let v = v.deref_container();
+                let v = v.deref_container().deitemize_element();
                 let count = match v.view() {
                     ValueView::Bool(b) => BigInt::from(i64::from(b)),
                     ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_) => v.to_bigint(),

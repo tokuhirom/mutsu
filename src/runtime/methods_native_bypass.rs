@@ -740,13 +740,6 @@ impl Interpreter {
                     // in its place. Without this, calling `%h.values` alone
                     // turned a later `%h.raku` from `1 => "a"` into `1 => a`.
                     let v = &map[*k].deref_container();
-                    let repr = if v.is_nil() {
-                        "Any".to_string()
-                    } else {
-                        self.call_method_with_values(v.clone(), "raku", vec![])
-                            .map(|r| r.to_string_value())
-                            .unwrap_or_else(|_| format!("{:?}", v))
-                    };
                     let typed = map.typed_key(k);
                     match typed.view() {
                         ValueView::Str(s)
@@ -754,9 +747,21 @@ impl Interpreter {
                                 &s,
                             ) =>
                         {
-                            format!(":{}({})", *s, repr)
+                            let repr = self
+                                .call_method_with_values(v.clone(), "raku", vec![])
+                                .map(|r| r.to_string_value())
+                                .unwrap_or_else(|_| format!("{:?}", v));
+                            crate::builtins::methods_0arg::raku_repr::raku_hash_value_repr(
+                                &s, v, &repr,
+                            )
                         }
-                        _ => format!("{} => {}", self.object_hash_key_raku(&typed), repr),
+                        _ => {
+                            let repr = self
+                                .call_method_with_values(v.clone(), "raku", vec![])
+                                .map(|r| r.to_string_value())
+                                .unwrap_or_else(|_| format!("{:?}", v));
+                            format!("{} => {}", self.object_hash_key_raku(&typed), repr)
+                        }
                     }
                 })
                 .collect();
@@ -771,13 +776,6 @@ impl Interpreter {
                 // See the `Map` arm above: the promoted element cell is not
                 // part of what `.raku` renders.
                 let v = &map[*k].deref_container();
-                let value_repr = if v.is_nil() {
-                    "Any".to_string()
-                } else {
-                    self.call_method_with_values(v.clone(), "raku", vec![])
-                        .map(|r| r.to_string_value())
-                        .unwrap_or_else(|_| format!("{:?}", v))
-                };
                 // Object hashes store `.WHICH` string keys; serialize the original
                 // typed key (`1`, not `Int|1`; `a`, not `Str|a`). Raku renders each
                 // pair per its *key*, independent of the hash's key-type: a Str key
@@ -789,9 +787,23 @@ impl Interpreter {
                     ValueView::Str(s)
                         if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(&s) =>
                     {
-                        format!(":{}({})", *s, value_repr)
+                        let value_repr = self
+                            .call_method_with_values(v.clone(), "raku", vec![])
+                            .map(|r| r.to_string_value())
+                            .unwrap_or_else(|_| format!("{:?}", v));
+                        crate::builtins::methods_0arg::raku_repr::raku_hash_value_repr(
+                            &s,
+                            v,
+                            &value_repr,
+                        )
                     }
-                    _ => format!("{} => {}", self.object_hash_key_raku(&typed), value_repr),
+                    _ => {
+                        let value_repr = self
+                            .call_method_with_values(v.clone(), "raku", vec![])
+                            .map(|r| r.to_string_value())
+                            .unwrap_or_else(|_| format!("{:?}", v));
+                        format!("{} => {}", self.object_hash_key_raku(&typed), value_repr)
+                    }
                 }
             })
             .collect();

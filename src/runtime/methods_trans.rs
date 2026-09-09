@@ -52,7 +52,7 @@ fn normalize_trans_operand(v: &Value) -> Value {
     // Regex/Array/Range shape match — which a `ContainerRef` would answer `no`
     // to, silently turning a closure replacement into a stringified one
     // (roast/S05-transliteration/with-closure.t).
-    let v = v.deref_container();
+    let v = v.deref_container().deitemize_element();
     match v.view() {
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             Value::array(items.to_vec())
