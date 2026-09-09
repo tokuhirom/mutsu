@@ -203,7 +203,12 @@ impl Interpreter {
     /// names*) instead of a flat `HashSet<Symbol>`, plus the unconditional
     /// self-visibility check `unit_chain_contains` has no equivalent for: a
     /// compunit always sees a package it declares itself.
-    fn package_visible_in_unit_chain(&self, start: Symbol, top: &str, declaring_unit: Symbol) -> bool {
+    fn package_visible_in_unit_chain(
+        &self,
+        start: Symbol,
+        top: &str,
+        declaring_unit: Symbol,
+    ) -> bool {
         let mut unit = Some(start);
         for _ in 0..64 {
             let Some(sym) = unit else { return false };

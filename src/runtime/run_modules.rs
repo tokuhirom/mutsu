@@ -800,8 +800,10 @@ impl Interpreter {
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
             if let Some(name) = unit_name.as_deref() {
-                crate::runtime::cow_table_mut(&mut self.unit_module_packages)
-                    .insert(module_unit_for_loading_stack, crate::symbol::Symbol::intern(name));
+                crate::runtime::cow_table_mut(&mut self.unit_module_packages).insert(
+                    module_unit_for_loading_stack,
+                    crate::symbol::Symbol::intern(name),
+                );
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
                 self.unit_module_loading_stack.push(name);
