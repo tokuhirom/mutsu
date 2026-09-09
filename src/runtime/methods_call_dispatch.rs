@@ -3396,6 +3396,27 @@ impl Interpreter {
             return result;
         }
 
+        // Mu.clone has a separate type-object candidate that accepts no
+        // attribute overrides. The named-argument retry below deliberately
+        // strips undeclared nameds for native methods, so checking this after
+        // that retry would turn `Num.clone(:yes)` into the no-argument clone
+        // and incorrectly return the type object. Preserve a user-defined
+        // `clone` on a class, but reject named overrides for the inherited native
+        // type-object candidate as Rakudo does.
+        if method == "clone"
+            && args.iter().any(Value::is_string_pair_value)
+            && matches!(
+                target.view(),
+                ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. }
+            )
+            && !matches!(target.view(), ValueView::Package(name) if self
+                .class_has_user_method(&name.resolve(), method))
+        {
+            return Err(RuntimeError::new(
+                "Cannot set attribute values when cloning a type object",
+            ));
+        }
+
         // Native fast path bypass and dispatch
         let skip_pseudo = self
             .skip_pseudo_method_native
