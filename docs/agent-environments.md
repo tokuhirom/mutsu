@@ -133,6 +133,25 @@ Two things this list is not:
 - **It does not apply to the local box**, which runs as an ordinary user with a working network.
   There, `make roast` is expected to be green.
 
+## Environment-only `scripts/battery-testsuite.sh` failures
+
+The battery gate is not part of CI (it runs at release time, and on demand when a change can affect
+a bundled library's own code paths). In a remote container it cannot come back green either, for one
+reason: **`libmysqlclient` is not installed**, so DBIish's MySQL files cannot run. The tell is a
+`NativeCall: symbol 'mysql_init' not found in 'this process': dlsym failed` raised from
+`DBDish/mysql.rakumod`, and a `FAIL(ok=0/N,notok=0)` — zero assertions ran, none failed.
+
+| Files | Shape | Why |
+|---|---|---|
+| `DBIish/24-mysql-types.rakutest`, `24-mysql-types-json`, `25-mysql-common`, `26-mysql-blob`, `27-mysql-datetime`, `28-mysql-connection-lock` | `FAIL(ok=0/N,notok=0)`, or a `timeout 120` part-way through | no `libmysqlclient` in the container |
+
+`ldconfig -p | grep -c mysql` returning `0` confirms it. The same two caveats as the roast list
+above apply: confirm the failing set is a subset of these *by name*, and a `notok` greater than zero
+in any of them is a real failure, not this.
+
+Run the gate **alone** — two of them in a shared `tmp/battery-testsuite` workdir produce a false
+REGRESSION — and remember it needs network access to fetch each upstream suite at its pinned commit.
+
 ## Disk
 
 Local: `target/` and `.claude/worktrees/` are the two hogs; clean them per

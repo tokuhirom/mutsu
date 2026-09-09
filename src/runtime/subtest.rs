@@ -423,9 +423,19 @@ impl Interpreter {
         // below so dispatch can re-establish it as the innermost active emitter
         // (see `WHENEVER_EMITTER_ENV_KEY`).
         let own_emitter = self.active_supply_emitters.last().cloned();
-        let stamp = |cb: Value| match own_emitter {
-            Some(ref e) => Self::sub_with_env_key(&cb, Self::WHENEVER_EMITTER_ENV_KEY, e.clone()),
-            None => cb,
+        // The compunit these bodies are WRITTEN in. They are built here from
+        // AST, so they carry no source file of their own, and they are
+        // dispatched later from whatever scope emits -- see
+        // `Interpreter::sub_with_source_file`.
+        let decl_file = self.executing_source_file();
+        let stamp = |cb: Value| {
+            let cb = Self::sub_with_source_file(cb, decl_file.as_deref());
+            match own_emitter {
+                Some(ref e) => {
+                    Self::sub_with_env_key(&cb, Self::WHENEVER_EMITTER_ENV_KEY, e.clone())
+                }
+                None => cb,
+            }
         };
         // Thread the pointy param's declared type constraint into a ParamDef
         // so the ordinary call-time binding check enforces it, exactly like a

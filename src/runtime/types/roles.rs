@@ -676,11 +676,16 @@ impl Interpreter {
                     .composed_role_bodies
                     .insert(format!("mixin:{base_type}:{role_name}"))
                 {
-                    let ops = role
+                    let (ops, decl_file) = role
                         .as_ref()
-                        .map(|r| r.deferred_body.clone())
+                        .map(|r| (r.deferred_body.clone(), r.decl_file.clone()))
                         .unwrap_or_default();
-                    self.run_role_body_for_composition(role_name, role_name, &ops)?;
+                    self.run_role_body_for_composition(
+                        role_name,
+                        role_name,
+                        &ops,
+                        decl_file.as_deref(),
+                    )?;
                     self.run_composed_role_ancestor_bodies(role_name, role_name)?;
                 }
             }

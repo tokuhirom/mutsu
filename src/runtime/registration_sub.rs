@@ -765,6 +765,11 @@ impl Interpreter {
                 .entry(global_key)
                 .or_default()
                 .insert(unit);
+            // Remember the bare name as ambient, so the post-load seclusion of
+            // a compunit's *private* top-level routines
+            // (`seclude_private_toplevel_routines`) leaves it in `GLOBAL` where
+            // every compunit's bodies can reach it.
+            self.prelude_sub_names.insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.

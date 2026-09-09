@@ -117,6 +117,11 @@ impl Interpreter {
         // the role package — a lexical `sub`/`my $x` keeps the outer
         // package so a bare reference from a role method still resolves.
         let saved_body_pkg = self.current_package().to_string();
+        // The body belongs to the ROLE's compunit, not to whoever is composing
+        // it, so re-establish `?FILE` for the duration -- otherwise a nested
+        // `my class` in the body registers its methods as declared in the
+        // composing file. See `RoleDef::decl_file`.
+        let saved_file = self.enter_source_file(role.decl_file.as_deref());
         // The body's lexical effects are kept on purpose (a composed
         // method may close over `my $sol = nativesizeof(T)`), but the
         // *topic* is not one of them: each statement publishes its
@@ -172,8 +177,10 @@ impl Interpreter {
                         }
                     }
                     self.set_current_package(saved_body_pkg.clone());
+                    self.leave_source_file(saved_file);
                     return Err(RuntimeError::role_instantiation(base_role_name, err));
                 }
+                self.leave_source_file(saved_file);
                 return Err(err);
             }
         }
@@ -185,6 +192,7 @@ impl Interpreter {
                 self.env.remove("_");
             }
         }
+        self.leave_source_file(saved_file);
         // Persist the role body's lexicals as class-body statics of
         // the composing class. Leaving them only in the live env
         // works for the frame that ran the composition, but a later

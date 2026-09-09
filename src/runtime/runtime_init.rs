@@ -2546,6 +2546,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    decl_file: None,
                     deferred_custom_traits: Vec::new(),
                 },
             );
@@ -2563,6 +2564,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    decl_file: None,
                     deferred_custom_traits: Vec::new(),
                 },
             );
@@ -2580,6 +2582,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    decl_file: None,
                     deferred_custom_traits: Vec::new(),
                 },
             );
@@ -2597,6 +2600,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    decl_file: None,
                     deferred_custom_traits: Vec::new(),
                 },
             );
@@ -2614,6 +2618,7 @@ impl Interpreter {
                     attribute_conflicts: Vec::new(),
                     own_attribute_names: std::collections::HashSet::new(),
                     deferred_body: Vec::new(),
+                    decl_file: None,
                     deferred_custom_traits: Vec::new(),
                 },
             );
@@ -2683,6 +2688,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        decl_file: None,
                         deferred_custom_traits: Vec::new(),
                     },
                 );
@@ -2737,6 +2743,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        decl_file: None,
                         deferred_custom_traits: Vec::new(),
                     },
                 );
@@ -2793,6 +2800,7 @@ impl Interpreter {
                         attribute_conflicts: Vec::new(),
                         own_attribute_names: std::collections::HashSet::new(),
                         deferred_body: Vec::new(),
+                        decl_file: None,
                         deferred_custom_traits: Vec::new(),
                     },
                 );
@@ -2931,6 +2939,9 @@ impl Interpreter {
             operator_assoc: HashMap::new(),
             imported_operator_names: HashSet::new(),
             user_declared_infix_ops: HashMap::new(),
+            unit_private_routines: HashMap::new(),
+            unit_private_names: HashSet::new(),
+            prelude_sub_names: HashSet::new(),
             current_unit: crate::runtime::main_unit(),
             closures_created: 0,
             lib_paths: Vec::new(),

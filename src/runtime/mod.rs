@@ -700,6 +700,7 @@ pub(crate) mod types;
 // interpreter-free entry point directly.
 pub(crate) mod undeclared_routines;
 mod unicode;
+mod unit_private_routines;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
@@ -1725,6 +1726,29 @@ pub struct Interpreter {
     /// main-script block even when a module routine is what invokes that block.
     /// See `Interpreter::user_infix_override`.
     pub(crate) user_declared_infix_ops: HashMap<String, HashSet<Symbol>>,
+    /// Package-less top-level routines a loaded compunit declared but did NOT
+    /// export, keyed by that compunit's unit symbol and then by routine name.
+    ///
+    /// Raku scopes `sub name {...}` at a compunit's top level lexically to that
+    /// compunit; mutsu registers it as a shared `GLOBAL::name` stash entry, so
+    /// it used to stay callable, bare, from whatever scope `use`d/`require`d
+    /// the module. `seclude_private_toplevel_routines` moves such a routine out
+    /// of the shared registry and in here once the load finishes, and
+    /// `Interpreter::unit_private_routine` hands it back only to code compiled
+    /// in the same unit (or in an `EVAL` nested inside it). See
+    /// `runtime/unit_private_routines.rs`.
+    pub(crate) unit_private_routines: HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>,
+    /// Every name that appears in any `unit_private_routines` table. A cheap
+    /// negative test on the resolution hot path, and the signal that a name's
+    /// resolution is unit-dependent and therefore must bypass the name-keyed
+    /// resolution caches (which are not keyed by unit).
+    pub(crate) unit_private_names: HashSet<Symbol>,
+    /// Routines installed by a prelude spliced into a host compunit
+    /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
+    /// They deliberately live under `GLOBAL` for every compunit that uses them
+    /// and belong to no module's export map, so they are ambient rather than
+    /// compunit-private and are never secluded.
+    pub(crate) prelude_sub_names: HashSet<Symbol>,
     /// The compilation unit whose code is executing right now. Saved and
     /// restored around every compiled-routine call, and around every `EVAL`, so
     /// it names the unit the running code was COMPILED in rather than anything

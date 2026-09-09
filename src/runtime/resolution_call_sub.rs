@@ -795,7 +795,18 @@ impl Interpreter {
                 is_method: false,
                 is_submethod: false,
                 is_block: true,
-                def_file: None,
+                // The file this block's body was DECLARED in, exactly as the
+                // compiled closure dispatch records it
+                // (`vm_closure_dispatch.rs`'s `push_block_routine_with_location`).
+                // This carrier path is how every block handed to a NATIVE
+                // callback taker is invoked — `.tap`, and hence every
+                // `supply`/`whenever` body — and it used to record nothing, so
+                // compunit-scoped resolution (`executing_unit_sym`, and through
+                // it `unit_private_routine` and `prelude_visible_here`) saw the
+                // EMITTER's unit rather than the block's own: a module's
+                // `$in.tap(-> $v { helper($v) })` could not reach the module's
+                // own private `helper`.
+                def_file: data.source_file.as_deref().map(Symbol::intern),
                 invocation_id,
             });
             self.block_stack

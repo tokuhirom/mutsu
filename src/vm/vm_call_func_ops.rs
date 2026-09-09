@@ -553,11 +553,17 @@ impl Interpreter {
         // sub. The name-keyed light-call caches cannot represent that, so bypass
         // them and let the slow path's `lexical_override` resolve correctly.
         // Guarded by `is_empty()` so the common (no `&`-param) case is free.
+        //
+        // A name some loaded compunit kept private to itself
+        // (`runtime/unit_private_routines.rs`) is bypassed for the same reason:
+        // its resolution depends on the compilation unit currently executing,
+        // which a `(name, package)`-keyed cache cannot represent.
         let skip_name_caches = if self.amp_param_shadowed_names.is_empty() {
-            false
+            self.is_unit_scoped_routine_sym(code.const_sym(name_idx))
         } else {
             self.amp_param_shadowed_names
                 .contains(&code.const_sym(name_idx))
+                || self.is_unit_scoped_routine_sym(code.const_sym(name_idx))
         };
         // ADR-0054 Slice 4: whether this call site wrote a `|EXPR` argument,
         // decided once from the compile-time descriptor rather than by
