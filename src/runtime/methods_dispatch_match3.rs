@@ -717,7 +717,13 @@ impl Interpreter {
         } else {
             Self::value_to_list(&target)
         };
-        let mut parts = Vec::with_capacity(items.len());
+        // Resolve every non-Junction element to its final Str value up front
+        // (Instance/Mixin through user `.Str`, same as before); a Junction
+        // element is left as-is so `thread_junctions_in_items` below can
+        // thread the whole `join` over its eigenstates
+        // (`("a"|"b","c","d").join` => `any(acd, bcd)`) instead of
+        // stringifying it in place.
+        let mut resolved = Vec::with_capacity(items.len());
         for v in &items {
             // Decontainerize a `ContainerRef` element (grep rw alias / `:=`-bound
             // slot) so a cell-wrapped Instance still gets its user-defined `.Str`.
@@ -733,12 +739,26 @@ impl Interpreter {
                     Ok(s) => s,
                     Err(e) => return Some(Err(e)),
                 };
-                parts.push(s.to_string_value());
+                resolved.push(Value::str(s.to_string_value()));
             } else {
-                parts.push(v.to_string_value());
+                resolved.push(v);
             }
         }
-        let joined = parts.join(&sep);
+        if let Some(threaded) = crate::builtins::thread_junctions_in_items(&resolved, &|c| {
+            Value::str(
+                c.iter()
+                    .map(|v| v.to_str_context())
+                    .collect::<Vec<_>>()
+                    .join(&sep),
+            )
+        }) {
+            return Some(Ok(threaded));
+        }
+        let joined = resolved
+            .iter()
+            .map(|v| v.to_str_context())
+            .collect::<Vec<_>>()
+            .join(&sep);
         Some(Ok(Value::str(joined)))
     }
 

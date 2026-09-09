@@ -375,7 +375,36 @@ impl Interpreter {
             .unwrap_or(right)
             .descalarize()
             .clone();
-        // Both junctions: thread left first, swap kinds if right is tighter
+        // Both junctions of the SAME kind thread into ONE flat junction over
+        // their cross product (`(1|3) ~ (2|4)` => `any(13,14,33,34)` shaped
+        // combinations), not a junction of junctions — the same flattening
+        // `eval_binary_with_junctions` applies for arithmetic/comparison
+        // operators. A mismatched kind falls through to the existing
+        // thread-left-then-swap path below, which Rakudo keeps genuinely
+        // nested (`(1|2) ~ (3&4)` is `all(any(...), any(...))`, not flat)
+        // because the two kinds' short-circuit semantics cannot collapse.
+        if let (
+            ValueView::Junction {
+                kind: lk,
+                values: lv,
+            },
+            ValueView::Junction {
+                kind: rk,
+                values: rv,
+            },
+        ) = (left.view(), right.view())
+            && lk == rk
+        {
+            let mut results = Vec::with_capacity(lv.len() * rv.len());
+            for l in lv.iter() {
+                for r in rv.iter() {
+                    results.push(self.eval_concat_with_junctions(l.clone(), r.clone()));
+                }
+            }
+            return Value::junction(lk, results);
+        }
+        // Both junctions of mismatched kinds: thread left first, swap kinds
+        // if right is tighter.
         if let (ValueView::Junction { kind: lk, .. }, ValueView::Junction { kind: rk, .. }) =
             (left.view(), right.view())
         {
