@@ -318,6 +318,9 @@ impl Interpreter {
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
                         }
+                        for (k, v) in inner_caps.capture_alias_map.drain() {
+                            new_caps.capture_alias_map.insert(k, v);
+                        }
                         new_caps.positional.append(&mut inner_caps.positional);
                         super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
