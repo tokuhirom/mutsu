@@ -137,9 +137,9 @@ impl Interpreter {
         }
     }
 
-    /// Pull a deferred `.map` whose receiver was an `@`-sigil container
-    /// (`SeqSource::MapGrep::rw_source`): run the rw map loop, then publish
-    /// any element the callback wrote back into that container.
+    /// Pull a deferred `.map` whose receiver was a real Array
+    /// (`SeqSource::MapGrep::MapRw`): run the rw map loop, then publish any
+    /// element the callback wrote back into that container.
     fn pull_rw_map(
         &mut self,
         func: Option<Value>,
