@@ -2321,6 +2321,18 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // stay "changed" (conservative).
         (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
+        // A `Sub` is a Gc-backed heap value like `Str`/`Array`/`Hash` above, so
+        // the same pointer-identity proof applies: the same routine object under
+        // both names means the callee did not change the caller's variable.
+        // Without this arm every Sub-valued env entry a callee merely INHERITED
+        // from the flattened overlay was reported as changed, so
+        // `merge_method_env` listed it in `changed_caller_locals` and the Slice F
+        // write-through replaced the caller's live local slot with the env copy.
+        // In a routine re-entered through a Sub held in a data structure, env
+        // still carried the OUTER invocation's routine, so the inner frame's
+        // freshly resolved callable was overwritten by its caller's and calling
+        // it re-entered the wrong closure until the stack overflowed (#7729).
+        (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         _ => false,
     }
 }
@@ -2531,6 +2543,18 @@ mod cheaply_unchanged_tests {
     use super::cheaply_unchanged;
     use crate::value::Value;
 
+    fn make_sub() -> Value {
+        Value::make_sub(
+            crate::symbol::Symbol::intern("MAIN"),
+            crate::symbol::well_known::anon(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            false,
+            crate::env::Env::new(),
+        )
+    }
+
     #[test]
     fn container_ref_same_cell_is_unchanged() {
         // The single-store identity primitive: `my @a := @b` installs one shared
@@ -2544,6 +2568,21 @@ mod cheaply_unchanged_tests {
         let a = Value::container_ref(cell.clone());
         let b = Value::container_ref(cell);
         assert!(cheaply_unchanged(&a, &b));
+    }
+
+    #[test]
+    fn same_sub_object_is_unchanged() {
+        // #7729: two env entries holding the SAME routine object must compare
+        // unchanged, or `merge_method_env` reports the callee's inherited copy
+        // as a caller-visible write and the write-through rewinds the caller's
+        // local slot to it.
+        let sub = make_sub();
+        assert!(cheaply_unchanged(&sub, &sub.clone()));
+    }
+
+    #[test]
+    fn distinct_subs_are_changed() {
+        assert!(!cheaply_unchanged(&make_sub(), &make_sub()));
     }
 
     #[test]
