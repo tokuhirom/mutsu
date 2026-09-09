@@ -420,7 +420,7 @@ impl Interpreter {
         } else {
             None
         };
-        let sub = if let Some(mut gs) = group_subcap.take() {
+        let mut sub = if let Some(mut gs) = group_subcap.take() {
             // Keep the group's nested captures, but pin the span to the
             // aliased group's extent.
             let gsm = std::sync::Arc::make_mut(&mut gs);
@@ -436,6 +436,32 @@ impl Interpreter {
                 ..Default::default()
             })
         };
+        // A sigil-prefixed alias (`$<alias> = <rule>`) shares the subrule's
+        // capture node with the original rule-name entry, just like the
+        // angle-bracket form (`<alias=rule>`). Tag that shared node with the
+        // original rule name so the grammar action walk can dispatch through
+        // the alias even when the alias entry is visited first. This must be
+        // per node: one alias name can select different rules in different
+        // alternatives (`$<part> = <text> || $<part> = <code>`).
+        if let RegexAtom::Named(atom_name) = &token.atom {
+            let spec = Self::parse_named_regex_lookup_spec(atom_name);
+            if !spec.silent
+                && !spec.lookup_name.is_empty()
+                && name != &spec.lookup_name
+                && let Some(original) = store
+                    .caps_mut()
+                    .named
+                    .get_mut(&Symbol::intern(&spec.lookup_name))
+                    .and_then(|slot| slot.nodes.last_mut())
+                && original.from == from
+                && original.to == to
+                && std::sync::Arc::ptr_eq(original, &sub)
+            {
+                let node = std::sync::Arc::make_mut(original);
+                node.action_name = Some(spec.lookup_name);
+                sub = std::sync::Arc::clone(original);
+            }
+        }
         store.push_named_node(name, sub);
         // `@<name>=` array-sigil alias forces list context: mark the name as
         // quantified so the Match builder always presents it as a List, even

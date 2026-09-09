@@ -89,6 +89,11 @@ impl CapStore {
         &self.caps
     }
 
+    #[inline]
+    pub(super) fn caps_mut(&mut self) -> &mut RegexCaptures {
+        &mut self.caps
+    }
+
     /// Clone the accumulated captures — used once per complete match to
     /// materialize an engine result. Nested sub-captures are `Arc`-shared, so
     /// this copies only this pattern level's own state.
