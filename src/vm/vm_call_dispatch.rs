@@ -285,6 +285,8 @@ impl Interpreter {
             );
             (cc, compiler.take_compiled_functions())
         };
+        let mut own_compiled_fns = own_compiled_fns;
+        own_compiled_fns.stamp_source_file(def.source_file.clone());
         let deprecated_info = def.deprecated_message.as_ref().map(|msg| {
             let kind = if def.is_method { "Method" } else { "Sub" };
             (

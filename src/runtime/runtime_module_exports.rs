@@ -528,8 +528,9 @@ impl Interpreter {
                 // Part of the LOADING module's own lexical scope, whether or not
                 // it is new to `env` (see `module_imported_names`).
                 if !self.module_load_stack.is_empty() && !target.contains("::") {
+                    let previous = self.env.get(&target).cloned();
                     self.module_imported_names
-                        .push((target.clone(), value.clone()));
+                        .push((target.clone(), value.clone(), previous));
                 }
                 self.record_import_env_key(&target);
                 self.env.insert(target, value);

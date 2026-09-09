@@ -1213,6 +1213,20 @@ impl Interpreter {
         if let Some(v) = self.our_package_scalar(name) {
             return Some(v);
         }
+        // A unit module's imported file-scope names are lexical to the module,
+        // not dynamically inherited from the scope that happened to load it.
+        // The compiler emits a global read for such a name, so prefer the
+        // module table here when the running routine carries the unit owner;
+        // ordinary local lexicals use a local-slot opcode and are unaffected.
+        if self
+            .routine_stack()
+            .iter()
+            .rev()
+            .any(|frame| frame.lexical_package.is_some())
+            && let Some(v) = self.module_imported_lexical(name)
+        {
+            return Some(v.clone());
+        }
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
         // Try the kebab-case equivalent first if the name contains underscores.

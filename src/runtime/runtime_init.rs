@@ -3052,6 +3052,8 @@ impl Interpreter {
             package_type_aliases: PackageKeyed::default(),
             module_scope_lexicals: PackageLexicals::default(),
             module_imported_names: Vec::new(),
+            module_imported_lexical_names: PackageKeyed::default(),
+            unit_module_packages: HashMap::new(),
             exported_subs: HashMap::new(),
             exported_sub_values: HashMap::new(),
             exported_vars: HashMap::new(),

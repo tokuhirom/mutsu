@@ -1,6 +1,10 @@
 use super::*;
 
 impl Interpreter {
+    pub(crate) fn module_load_in_progress(&self) -> bool {
+        !self.module_load_stack.is_empty()
+    }
+
     /// Whether `use Test` should load the vendored upstream `Test.rakumod`
     /// (`modules/Rakudo-Core/lib/Test.rakumod`) instead of being recognized as a
     /// no-op that leaves mutsu's native TAP provider in charge.
