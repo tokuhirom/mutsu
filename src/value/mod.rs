@@ -715,6 +715,26 @@ fn write_attrs(cell: &RwLock<AttrMap>) -> std::sync::RwLockWriteGuard<'_, AttrMa
     cell.write().unwrap_or_else(|e| e.into_inner())
 }
 
+thread_local! {
+    /// One shared empty [`SubData::params`] / [`SubData::param_defs`] per
+    /// thread. `Arc::new(Vec::new())` does not allocate the `Vec`, but it does
+    /// allocate the `Arc`'s control block — once per closure creation on the
+    /// signature-less paths (`MakeBlockClosure`, `MakeAnonSub`), which is
+    /// exactly what sharing the field was meant to avoid.
+    static EMPTY_PARAMS: Arc<Vec<String>> = Arc::new(Vec::new());
+    static EMPTY_PARAM_DEFS: Arc<Vec<ParamDef>> = Arc::new(Vec::new());
+}
+
+/// The shared empty parameter-name list; see [`EMPTY_PARAMS`].
+pub(crate) fn empty_params() -> Arc<Vec<String>> {
+    EMPTY_PARAMS.with(Arc::clone)
+}
+
+/// The shared empty parameter-description list; see [`EMPTY_PARAMS`].
+pub(crate) fn empty_param_defs() -> Arc<Vec<ParamDef>> {
+    EMPTY_PARAM_DEFS.with(Arc::clone)
+}
+
 pub(crate) fn next_instance_id() -> u64 {
     INSTANCE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
@@ -822,8 +842,21 @@ pub enum JunctionKind {
 pub struct SubData {
     pub package: Symbol,
     pub name: Symbol,
-    pub params: Vec<String>,
-    pub(crate) param_defs: Vec<ParamDef>,
+    /// The signature's parameter *names*, shared. Like [`Self::body`] below,
+    /// this is pool-owned and immutable: a closure literal's `params` are a
+    /// pure function of the `SubDecl`/`Block` it was created from, so cloning
+    /// the `Vec<String>` per creation bought nothing but a `String` allocation
+    /// per parameter. `CompiledCode::closure_signature` builds the `Arc` once
+    /// per `stmt_pool` slot and every later creation is an `Arc` bump.
+    pub params: Arc<Vec<String>>,
+    /// The signature's parameter descriptions, shared for the same reason as
+    /// [`Self::params`] — and with far more to gain: `ParamDef` is fat (a
+    /// `String` name, an `Option<Expr>` default, a nested `Vec<ParamDef>`
+    /// sub-signature, a `Vec<String>` of traits), so the per-creation clone
+    /// was O(signature size) with a large constant. Measured on a
+    /// `-> $a, $b, … { … }` literal built in a loop, each extra parameter cost
+    /// ~1100 instructions on *every* creation before this was shared.
+    pub(crate) param_defs: Arc<Vec<ParamDef>>,
     /// The block's AST, shared. Closure creation happens once per `.map({...})`
     /// CALL, so a `Vec<Stmt>` here meant deep-cloning the whole body every time
     /// -- 5.9us per creation for a 29-statement block, and O(body) for any

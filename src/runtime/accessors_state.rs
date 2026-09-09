@@ -6,7 +6,9 @@ use crate::symbol::Symbol;
 impl Interpreter {
     pub(crate) fn callable_signature(&self, callable: &Value) -> (Vec<String>, Vec<ParamDef>) {
         match callable.view() {
-            ValueView::Sub(data) => (data.params.clone(), data.param_defs.clone()),
+            // `SubData` shares these behind an `Arc` (see `SubData::params`);
+            // this accessor hands back an owned, caller-mutable pair.
+            ValueView::Sub(data) => (data.params.to_vec(), data.param_defs.to_vec()),
             ValueView::Routine { name, .. } => {
                 if let Some(def) = self.resolve_function(&name.resolve()) {
                     return (def.params.clone(), def.param_defs.clone());

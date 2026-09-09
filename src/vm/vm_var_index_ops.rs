@@ -453,7 +453,7 @@ impl Interpreter {
             return None;
         };
         let mut sub_env = data.env.clone();
-        for p in &data.params {
+        for p in data.params.iter() {
             sub_env.insert(p.to_string(), Value::int(len));
         }
         let saved_env = std::mem::take(self.env_mut());
@@ -1228,7 +1228,7 @@ impl Interpreter {
             (ValueView::Seq(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -1324,7 +1324,7 @@ impl Interpreter {
             (ValueView::Hash(items), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -1957,7 +1957,7 @@ impl Interpreter {
                 let range = &target;
                 let len = crate::runtime::Interpreter::range_elems_f64(range) as i64;
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -2136,7 +2136,7 @@ impl Interpreter {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
                 // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -2202,7 +2202,7 @@ impl Interpreter {
                     0
                 };
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -2255,7 +2255,7 @@ impl Interpreter {
                         ValueView::Whatever => len,
                         ValueView::Sub(data) => {
                             let mut sub_env = data.env.clone();
-                            for p in &data.params {
+                            for p in data.params.iter() {
                                 sub_env.insert(p.to_string(), Value::int(len));
                             }
                             let saved_env = std::mem::take(self.env_mut());
@@ -2299,7 +2299,7 @@ impl Interpreter {
                 let chars: Vec<char> = u.text.chars().collect();
                 let len = chars.len() as i64;
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(len));
                 }
                 let saved_env = std::mem::take(self.env_mut());
@@ -2556,7 +2556,7 @@ impl Interpreter {
                 ) =>
             {
                 let mut sub_env = data.env.clone();
-                for p in &data.params {
+                for p in data.params.iter() {
                     sub_env.insert(p.to_string(), Value::int(1)); // elems = 1
                 }
                 let saved_env = std::mem::take(self.env_mut());

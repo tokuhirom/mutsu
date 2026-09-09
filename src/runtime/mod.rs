@@ -4244,8 +4244,8 @@ mod tests {
         let block = crate::gc::Gc::new(SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern("__protect_test__"),
-            params: vec![],
-            param_defs: vec![],
+            params: crate::value::empty_params(),
+            param_defs: crate::value::empty_param_defs(),
             body: std::sync::Arc::new(vec![Stmt::Expr(Expr::Literal(Value::int(0)))]),
             is_rw: false,
             is_raw: false,

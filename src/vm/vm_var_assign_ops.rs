@@ -410,7 +410,7 @@ impl Interpreter {
         if let ValueView::Sub(data) = idx.view() {
             let mut sub_env = data.env.clone();
             // Pass length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
-            for p in &data.params {
+            for p in data.params.iter() {
                 sub_env.insert(p.to_string(), Value::int(len));
             }
             let saved_env = std::mem::take(self.env_mut());
@@ -433,7 +433,7 @@ impl Interpreter {
                 for item in items.iter() {
                     if let ValueView::Sub(data) = item.view() {
                         let mut sub_env = data.env.clone();
-                        for p in &data.params {
+                        for p in data.params.iter() {
                             sub_env.insert(p.to_string(), Value::int(len));
                         }
                         let saved_env = std::mem::take(self.env_mut());

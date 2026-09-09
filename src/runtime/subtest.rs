@@ -459,7 +459,7 @@ impl Interpreter {
         let callback = stamp(Value::make_sub_owning(
             Symbol::intern(&self.current_package()),
             Symbol::intern(""),
-            param.iter().cloned().collect(),
+            param.iter().cloned().collect::<Vec<String>>(),
             main_param_defs,
             main_body,
             false,

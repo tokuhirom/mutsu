@@ -87,8 +87,8 @@ impl Interpreter {
             let mut sub_data = crate::value::SubData {
                 package: Symbol::intern(package),
                 name: Symbol::intern(name),
-                params: Vec::new(),
-                param_defs: Vec::new(),
+                params: crate::value::empty_params(),
+                param_defs: crate::value::empty_param_defs(),
                 body: std::sync::Arc::new(vec![]),
                 is_rw: false,
                 is_raw: false,

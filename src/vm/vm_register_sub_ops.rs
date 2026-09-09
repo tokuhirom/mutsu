@@ -70,10 +70,11 @@ impl Interpreter {
         self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
-            params,
             param_defs,
             return_type,
-            // See `closure_body_arc`: the body is shared, not cloned out here.
+            // See `closure_body_arc` / `closure_signature`: the body AND the
+            // signature are shared, not cloned out here.
+            params: _,
             body: _,
             is_rw,
             is_raw,
@@ -81,6 +82,7 @@ impl Interpreter {
         } = stmt
         {
             self.check_param_custom_traits(param_defs)?;
+            let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
@@ -121,8 +123,9 @@ impl Interpreter {
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
-                params: params.clone(),
-                param_defs: param_defs.clone(),
+                empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
+                params: signature.params,
+                param_defs: signature.param_defs,
                 body: code.closure_body_arc(idx as usize),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
@@ -130,7 +133,6 @@ impl Interpreter {
                 assumed_positional: Vec::new(),
                 assumed_named: std::collections::HashMap::new(),
                 id: crate::value::next_instance_id(),
-                empty_sig: params.is_empty() && param_defs.is_empty(),
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` — mark it
                 // so `.WHAT`/`.^name`/smartmatch report `Block`. Named anonymous subs
                 // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
@@ -180,8 +182,10 @@ impl Interpreter {
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
-                params: vec![],
-                param_defs: Vec::new(),
+                // A block closure takes no signature at all; the shared empty
+                // avoids an `Arc` control-block allocation per creation.
+                params: crate::value::empty_params(),
+                param_defs: crate::value::empty_param_defs(),
                 body: code.closure_body_arc(idx as usize),
                 is_rw: false,
                 is_raw: false,

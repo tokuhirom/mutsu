@@ -118,8 +118,8 @@ impl Interpreter {
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),
             name: Symbol::intern(""),
-            params,
-            param_defs,
+            params: std::sync::Arc::new(params),
+            param_defs: std::sync::Arc::new(param_defs),
             body: std::sync::Arc::new(body),
             is_rw: false,
             is_raw: false,

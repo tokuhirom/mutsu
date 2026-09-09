@@ -540,7 +540,7 @@ impl Interpreter {
                     touched_keys.push(k.resolve());
                 }
             }
-            for p in &data.params {
+            for p in data.params.iter() {
                 if !touched_keys.contains(p) {
                     touched_keys.push(p.clone());
                 }
@@ -954,7 +954,7 @@ impl Interpreter {
                 touched_keys.push(k.resolve());
             }
         }
-        for p in &data.params {
+        for p in data.params.iter() {
             if !touched_keys.contains(p) {
                 touched_keys.push(p.clone());
             }

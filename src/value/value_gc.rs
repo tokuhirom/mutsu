@@ -755,8 +755,8 @@ mod tests {
         SubData {
             package: crate::symbol::Symbol::intern("GLOBAL"),
             name: crate::symbol::Symbol::intern("__gc_test__"),
-            params: vec![],
-            param_defs: vec![],
+            params: crate::value::empty_params(),
+            param_defs: crate::value::empty_param_defs(),
             body: std::sync::Arc::new(vec![]),
             is_rw: false,
             is_raw: false,

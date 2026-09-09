@@ -2483,7 +2483,7 @@ impl Interpreter {
                         _ => Value::NIL,
                     };
                     let params = match callable.view() {
-                        ValueView::Sub(data) if !data.params.is_empty() => data.params.clone(),
+                        ValueView::Sub(data) if !data.params.is_empty() => data.params.to_vec(),
                         _ => vec!["_".to_string()],
                     };
 

@@ -1107,7 +1107,7 @@ impl Interpreter {
                 // such as `|c(Str $x)` would clobber a caller variable that
                 // happens to share the parameter's name).
                 let mut subsig_names = std::collections::HashSet::new();
-                for pd in &data.param_defs {
+                for pd in data.param_defs.iter() {
                     Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
                 }
                 for (k, v) in self.env.iter() {
