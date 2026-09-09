@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=2  mismatch=0  mutsu-crash=1  no-oracle=98  raku-drift=0  skipped-marker=15  skipped-nondet=2
+# stats: match=2  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=98  skipped-marker=15  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Language/haskell-to-p6.rakudoc:475
@@ -37,5 +37,5 @@ True
 (1 (2 (3 (4 5))))
 --- mutsu stderr ---
 Unknown function: infix:<&right-two-elem-list>
-  in block <unit> at tmp/ddh/prog-1341868.raku line 16
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11992.raku line 16
 

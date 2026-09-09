@@ -1,23 +1,8 @@
 # doc-diff-harness report
-# stats: match=18  mismatch=1  mutsu-crash=0  no-oracle=24  raku-drift=1  skipped-marker=0  skipped-nondet=3
+# stats: match=17  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=24  skipped-marker=0  skipped-nondet=3  skipped-oracle-nondet=2
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:293
---- program ---
-my $breakfast = bag <eggs spam spam spam>;
-say $breakfast.kv;                                # OUTPUT: «(spam 3 eggs 1)␤»
-
-my $n = ("a" => 5, "b" => 2, "a" => 1).BagHash;
-say $n.kv;                                        # OUTPUT: «(a 6 b 2)␤»
---- raku stdout ---
-(spam 3 eggs 1)
-(a 6 b 2)
---- mutsu stdout (exit 0) ---
-(eggs 1 spam 3)
-(b 2 a 6)
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Baggy.rakudoc:355
+[1] output-mismatch  raku-doc/doc/Type/Baggy.rakudoc:355
 --- program ---
 my $breakfast = bag <eggs bacon bacon>;
 my $h = $breakfast.hash;

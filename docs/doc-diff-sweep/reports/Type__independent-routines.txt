@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=31  mismatch=2  mutsu-crash=0  no-oracle=79  raku-drift=2  skipped-marker=5  skipped-nondet=9
+# stats: match=31  matches-doc=0  mismatch=4  mutsu-crash=0  no-oracle=79  skipped-marker=5  skipped-nondet=9  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:148
@@ -45,7 +45,7 @@ I ♥ Raku
 I ♥  Rak
 
 ==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/independent-routines.rakudoc:312
+[3] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:312
 --- program ---
 say indir("/tmp", {
     gather { take ".".IO }
@@ -60,7 +60,7 @@ say indir("/tmp", {
     gather { temp $*CWD = $cwd; take ".".IO }
 })».CWD; # OUTPUT: «(/tmp)␤»
 --- raku stdout ---
-(/home/tokuhirom/work/mutsu-roast)
+(/home/user/mutsu/tmp/ddh/run-22818)
 (/tmp)
 (/tmp)
 --- mutsu stdout (exit 0) ---
@@ -69,7 +69,7 @@ say indir("/tmp", {
 ()
 
 ==============================================================================
-[4] raku-drift-from-doc  raku-doc/doc/Type/independent-routines.rakudoc:1429
+[4] output-mismatch  raku-doc/doc/Type/independent-routines.rakudoc:1429
 --- program ---
 my %h = i => 0;
 append %h, i => (1, 42);

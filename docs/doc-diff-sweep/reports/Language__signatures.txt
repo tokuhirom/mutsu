@@ -1,0 +1,101 @@
+# doc-diff-harness report
+# stats: match=41  matches-doc=0  mismatch=5  mutsu-crash=0  no-oracle=42  skipped-marker=7  skipped-nondet=3  skipped-oracle-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:262
+--- program ---
+sub f(*@a where {$_.all ~~ Int}) { say @a };
+f(42);
+f(<a>);
+CATCH { default { say .^name, ' ==> ', .Str }  }
+# OUTPUT: «[42]␤Constraint type check failed in binding to parameter '@a' ...»
+--- raku stdout ---
+[42]
+X::TypeCheck::Binding::Parameter ==> Constraint type check failed in binding to parameter '@a'; expected anonymous constraint to be met but got Array (["a"])
+--- mutsu stdout (exit 0) ---
+[42]
+X::TypeCheck::Binding::Parameter ==> Calling f(Str) will never work with declared signature (@a)
+  X::TypeCheck::Binding::Parameter: where constraint failed for parameter '@a'
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:35
+--- program ---
+sub f(&c:(Int)) { }
+sub will-work(Int) { }
+sub won't-work(Str) { }
+f(&will-work);
+
+f(&won't-work);
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::TypeCheck::Binding::Parameter: Constraint type check failed in binding to parameter '&c'␤»
+
+f(-> Int { 'this works too' } );
+--- raku stdout ---
+X::TypeCheck::Binding::Parameter: Signature constraint check failed in binding to parameter '&c'; expected :(Int $) but got :(Str $)
+--- mutsu stdout (exit 0) ---
+X::TypeCheck::Binding::Parameter: Calling f(Sub) will never work with declared signature (&c)
+  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&c'; expected Callable with matching signature, got Sub
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:274
+--- program ---
+sub f(Int :$i){};
+f :i<forty-two>;
+CATCH { default { say .^name, ' ==> ', .Str }  }
+# OUTPUT: «X::TypeCheck::Binding::Parameter ==> Type check failed in
+# binding to parameter '$i'; expected Int but got Str ("forty-two")␤»
+--- raku stdout ---
+X::TypeCheck::Binding::Parameter ==> Type check failed in binding to parameter '$i'; expected Int but got Str ("forty-two")
+--- mutsu stdout (exit 0) ---
+X::TypeCheck::Argument ==> Calling f() will never work with declared signature (Int $i)
+  Type check failed in binding to parameter '$i'; expected Int but got Str ("forty-two")
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:299
+--- program ---
+sub limit-lines(Str $s, Int $limit) {
+    my @lines = $s.lines;
+    @lines[0 .. min @lines.elems, $limit].join("\n")
+}
+say (limit-lines "a \n b \n c \n d \n", 3).raku; # "a \n b \n c \n d "
+say limit-lines Str, 3;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Multi::NoMatch: Cannot resolve caller lines(Str: );
+# none of these signatures match:
+#     (Str:D $: :$count!, *%_)
+#     (Str:D $: $limit, *%_)
+#     (Str:D $: *%_)»
+say limit-lines "a \n b", Int; # Always returns the max number of lines
+--- raku stdout ---
+"a \n b \n c \n d "
+X::Multi::NoMatch: Cannot resolve caller lines(Str:U: ); none of these signatures matches:
+    (Cool:D $:: *%_)
+    (Cool:D $:: :$count!, *%_)
+    (Cool:D $:: $limit, *%_)
+    (Str:D $:: :$count!, *%_ --> Int:D)
+    (Str:D $:: $limit, *%_ --> Seq:D)
+    (Str:D $:: $limit, Bool :$chomp!, *%_ --> Seq:D)
+    (Str:D $:: *%_ --> Seq:D)
+    (Str:D $:: Bool :$chomp!, *%_ --> Seq:D)
+--- mutsu stdout (exit 0) ---
+"a \n b \n c \n d "
+(Str)
+
+a
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Language/signatures.rakudoc:329
+--- program ---
+sub limit-lines(Str:D $s, Int $limit) { };
+say limit-lines Str, 3;
+CATCH { default { put .^name ~ '--' ~ .Str } };
+# OUTPUT: «Parameter '$s' of routine 'limit-lines' must be an object instance of type 'Str',
+#          not a type object of type 'Str'.  Did you forget a '.new'?»
+--- raku stdout ---
+X::Parameter::InvalidConcreteness--Parameter '$s' of routine 'limit-lines' must be an object instance of
+type 'Str', not a type object of type 'Str'. Did you forget a '.new'?
+--- mutsu stdout (exit 0) ---
+X::Parameter::InvalidConcreteness--Calling limit-lines(Package, Int) will never work with declared signature (Str:D $s, Int $limit)
+  Invocant of method 'limit-lines' must be an object instance of type
+'Str', not a type object of type 'Str'.  Did you forget a '.new'?
+

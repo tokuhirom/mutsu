@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=6  mismatch=1  mutsu-crash=0  no-oracle=10  raku-drift=0  skipped-marker=0  skipped-nondet=3
+# stats: match=6  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=10  skipped-marker=0  skipped-nondet=3  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Failure.rakudoc:187
@@ -32,12 +32,12 @@ $result = copy-directory-tree('foo');
 say $result.exception; # OUTPUT: «This directory is forbidden: 'foo'␤»
 --- raku stdout ---
 cat.jpg is not a directory
-This directory is forbidden: 'foo'
+foo is not a directory
 --- mutsu stdout (exit 0) ---
 cat.jpg is not a directory
-  in sub copy-directory-tree at tmp/ddh/prog-1358309.raku line 10
-  in block <unit> at tmp/ddh/prog-1358309.raku line 21
-This directory is forbidden: 'foo'
-  in sub copy-directory-tree at tmp/ddh/prog-1358309.raku line 12
-  in block <unit> at tmp/ddh/prog-1358309.raku line 25
+  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-32153.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32153.raku line 21
+foo is not a directory
+  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-32153.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32153.raku line 25
 

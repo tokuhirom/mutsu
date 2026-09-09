@@ -1,0 +1,30 @@
+# doc-diff-harness report
+# stats: match=22  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=9  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/containers.rakudoc:397
+--- program ---
+sub lucky(::T $type) {
+    my T $c-value; # closure variable
+    return-rw Proxy.new(
+        FETCH => method () { $c-value },
+        STORE => method (T $new-value) {
+            X::OutOfRange.new(what => 'number', got => '13', range => '-∞..12, 14..∞').throw
+                if $new-value == 13;
+            $c-value = $new-value;
+        }
+    );
+}
+
+my Int $a := lucky(Int);
+say $a = 12;    # OUTPUT: «12␤»
+say $a = 'FOO'; # X::TypeCheck::Binding
+say $a = 13;    # X::OutOfRange
+CATCH { default { say .^name, ': ', .Str } };
+--- raku stdout ---
+12
+X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '$new-value'; expected Int but got Str ("FOO")
+--- mutsu stdout (exit 0) ---
+12
+X::TypeCheck::Assignment: Type check failed in assignment to $a; expected Int but got Str ("FOO")
+

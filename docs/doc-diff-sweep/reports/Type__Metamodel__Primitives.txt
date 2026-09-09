@@ -1,0 +1,20 @@
+# doc-diff-harness report
+# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=15  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Metamodel/Primitives.rakudoc:18
+--- program ---
+my Mu $type := Metamodel::Primitives.create_type(Int.HOW, 'P6opaque');
+$type.^set_name('why oh why?');
+my %methods =  why => sub ($) { say 42 };
+Metamodel::Primitives.install_method_cache($type, %methods, :authoritative);
+$type.why;      # 42
+$type.list;
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Method::NotFound: Method 'list' not found for invocant of class 'why oh why?'␤»
+--- raku stdout ---
+X::Method::NotFound: No such method 'why' for invocant of type 'why oh why?'. Did you mean
+'WHO'?
+--- mutsu stdout (exit 0) ---
+X::Method::NotFound: No such method 'install_method_cache' for Metamodel::Primitives
+

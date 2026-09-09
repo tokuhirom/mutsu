@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=0  raku-drift=0  skipped-marker=0  skipped-nondet=0
+# stats: match=0  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Language/optut.rakudoc:12
@@ -44,18 +44,7 @@ say 5!;            # OUTPUT: «120␤»
 sub postfix:<♥>( $a ) { say „I love $a!“ }
 42♥;               # OUTPUT: «I love 42!␤»
 
-sub postcircumfix:<⸨ ⸩>( Positional $a, Whatever ) {
-    say $a[0], '…', $a[*-1]
-}
-
-[1,2,3,4]⸨*⸩;      # OUTPUT: «1…4␤»
-
-constant term:<♥> = "♥"; # We don't want to quote "love", do we?
-sub circumfix:<α ω>( $a ) {
-    say „$a is the beginning and the end.“
-};
-
-α♥ω;               # OUTPUT: «♥ is the beginning and the end.␤»
+... [truncated by doc-diff-harness: 12 more line(s) of 52]
 --- raku stdout ---
 Sub
 Hello, world!
@@ -82,5 +71,5 @@ A
 --- mutsu stderr ---
 Parameter '$a' expects a writable container (variable) as an argument,
 but got 'A' (Str) as a value without a container.
-  in block <unit> at tmp/ddh/prog-1344583.raku line 29
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14875.raku line 29
 

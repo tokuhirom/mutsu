@@ -1,0 +1,13 @@
+# doc-diff-harness report
+# stats: match=3  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=15  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Thread.rakudoc:134
+--- program ---
+my $t = Thread.new(code => { for 1..5 -> $v { say $v }}, name => 'calc thread');
+say $t.Str;                           # OUTPUT: «Thread<3>(calc thread)␤»
+--- raku stdout ---
+Thread<4>(calc thread)
+--- mutsu stdout (exit 0) ---
+Thread<1>(calc thread)
+

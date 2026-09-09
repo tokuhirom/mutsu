@@ -1,0 +1,55 @@
+# doc-diff-harness report
+# stats: match=29  matches-doc=0  mismatch=3  mutsu-crash=0  no-oracle=13  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:595
+--- program ---
+my int $x = 2⁶³-1;
+say $x;             # OUTPUT: «9223372036854775807␤»
+say ++$x;           # OUTPUT: «-9223372036854775808␤»
+
+my uint8 $x;
+say $x;             # OUTPUT: «0␤»
+say $x -= 100;      # OUTPUT: «156␤»
+--- raku stdout ---
+9223372036854775807
+-9223372036854775808
+-9223372036854775808
+9223372036854775708
+--- mutsu stdout (exit 0) ---
+9223372036854775807
+9223372036854775808
+0
+156
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:609
+--- program ---
+say Buf.new(1000, 2000, 3000).List; # OUTPUT: «(232 208 184)␤»
+say my uint8 @a = 1000, 2000, 3000; # OUTPUT: «232 208 184␤»
+--- raku stdout ---
+(232 208 184)
+[232 208 184]
+--- mutsu stdout (exit 0) ---
+(232 208 184)
+[1000 2000 3000]
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/numerics.rakudoc:751
+--- program ---
+# !!WRONG!! Might be non-atomic on some systems
+my int $x;
+await ^100 .map: { start $x⚛++ };
+say $x; # OUTPUT: «98␤»
+
+# RIGHT! The use of `atomicint` type guarantees operation is atomic
+my atomicint $x;
+await ^100 .map: { start $x⚛++ };
+say $x; # OUTPUT: «100␤»
+--- raku stdout ---
+100
+200
+--- mutsu stdout (exit 0) ---
+100
+100
+

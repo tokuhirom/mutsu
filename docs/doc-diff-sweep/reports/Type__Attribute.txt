@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=15  mismatch=1  mutsu-crash=0  no-oracle=27  raku-drift=1  skipped-marker=1  skipped-nondet=0
+# stats: match=15  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=27  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Attribute.rakudoc:186
@@ -27,7 +27,7 @@ Any
 []
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Attribute.rakudoc:418
+[2] output-mismatch  raku-doc/doc/Type/Attribute.rakudoc:418
 --- program ---
 class Hangout {
     has $.table;

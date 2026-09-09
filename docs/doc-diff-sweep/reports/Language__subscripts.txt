@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=28  mismatch=2  mutsu-crash=0  no-oracle=85  raku-drift=1  skipped-marker=3  skipped-nondet=3
+# stats: match=28  matches-doc=1  mismatch=2  mutsu-crash=0  no-oracle=85  skipped-marker=3  skipped-nondet=3  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:51
@@ -21,6 +21,7 @@ B+
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Language/subscripts.rakudoc:225
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my %color = kiwi => "green", banana => "yellow", cherry => "red";
 say %color{"cherry", "kiwi"};  # OUTPUT: «(red green)␤»
@@ -29,28 +30,9 @@ say %color{*};                 # OUTPUT: «(red yellow green)␤»
 --- raku stdout ---
 (red green)
 (red green)
+(red green yellow)
+--- mutsu stdout (exit 0) ---
+(red green)
+(red green)
 (red yellow green)
---- mutsu stdout (exit 0) ---
-(red green)
-(red green)
-(yellow red green)
-
-==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Language/subscripts.rakudoc:336
---- program ---
-my %bag := (orange => 1, apple => 3).Bag;
-say %bag<>;    # OUTPUT: «Bag(apple(3) orange)␤»
-say %bag{};    # OUTPUT: «Bag(apple(3) orange)␤»
-say %bag{*};   # OUTPUT: «(1 3)␤»
-say %bag{()};  # OUTPUT: «()␤»
---- raku stdout ---
-Bag(apple(3) orange)
-Bag(apple(3) orange)
-(3 1)
-()
---- mutsu stdout (exit 0) ---
-Bag(apple(3) orange)
-Bag(apple(3) orange)
-(1 3)
-()
 

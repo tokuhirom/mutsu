@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=10  mismatch=2  mutsu-crash=0  no-oracle=15  raku-drift=2  skipped-marker=1  skipped-nondet=3
+# stats: match=10  matches-doc=0  mismatch=4  mutsu-crash=0  no-oracle=15  skipped-marker=1  skipped-nondet=3  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Type/Iterator.rakudoc:69
+[1] output-mismatch  raku-doc/doc/Type/Iterator.rakudoc:69
 --- program ---
 .say for ["foo",IterationEnd, "baz"]; # OUTPUT: «foo␤»
 say ["foo",IterationEnd, "baz"].map: "«" ~ * ~ "»";
@@ -29,7 +29,7 @@ False
 True
 
 ==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Iterator.rakudoc:277
+[3] output-mismatch  raku-doc/doc/Type/Iterator.rakudoc:277
 --- program ---
 class DNA does Iterable does Iterator {
     has $.chain;
@@ -66,7 +66,7 @@ say @dna-array; # OUTPUT: «[(A A G) (C C T)]␤»
 --- raku stdout ---
 [(A A G) (C C T) (A A G) (C C T)]
 --- mutsu stdout (exit 0) ---
-[(A A G) (C C T)]
+[DNA()]
 
 ==============================================================================
 [4] output-mismatch  raku-doc/doc/Type/Iterator.rakudoc:115

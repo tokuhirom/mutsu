@@ -1,43 +1,8 @@
 # doc-diff-harness report
-# stats: match=24  mismatch=2  mutsu-crash=0  no-oracle=14  raku-drift=0  skipped-marker=31  skipped-nondet=0
+# stats: match=24  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=14  skipped-marker=31  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:387
---- program ---
-my @elems = <neutronium hydrogen helium lithium>;
-for @elems.kv -> $i, $e {
-    say "Elem no. $i is $e"
-}
-
-my @symbols = <n H He Li>;
-my %elem-for-symbol;
-%elem-for-symbol{@symbols} = @elems;
-
-# Note that the iteration order will differ from Python
-for %elem-for-symbol.kv -> $symbol, $element {
-    say "Symbol '$symbol' stands for $element";
-}
---- raku stdout ---
-Elem no. 0 is neutronium
-Elem no. 1 is hydrogen
-Elem no. 2 is helium
-Elem no. 3 is lithium
-Symbol 'n' stands for neutronium
-Symbol 'Li' stands for lithium
-Symbol 'H' stands for hydrogen
-Symbol 'He' stands for helium
---- mutsu stdout (exit 0) ---
-Elem no. 0 is neutronium
-Elem no. 1 is hydrogen
-Elem no. 2 is helium
-Elem no. 3 is lithium
-Symbol 'H' stands for hydrogen
-Symbol 'He' stands for helium
-Symbol 'Li' stands for lithium
-Symbol 'n' stands for neutronium
-
-==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:541
+[1] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:541
 --- program ---
 say ( { $_[0] + $_[1] } for (3,9) X (2,10) );      # OUTPUT: «(5 13 11 19)␤»
 say ( -> (\i, \j) { i + j } for (3,9) X (2,10) );  # OUTPUT: «(5 13 11 19)␤»

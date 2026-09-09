@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=13  mismatch=1  mutsu-crash=1  no-oracle=20  raku-drift=0  skipped-marker=5  skipped-nondet=1
+# stats: match=13  matches-doc=0  mismatch=1  mutsu-crash=1  no-oracle=20  skipped-marker=5  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:387
@@ -44,29 +44,7 @@ grammar HTTPRequest {
         # Several internet protocols (such as HTTP, RF 2616) mandate
         # the use of ASCII CR+LF (0x0D 0x0A) to terminate lines at
         # the protocol level (even though, in practice, some applications
-        # tolerate a single LF).
-        # Raku, Raku grammars and strings (Str) adhere to Unicode
-        # conformance. Thus, CR+LF cannot be expressed unambiguously
-        # as \r\n in in Raku grammars or strings (Str), as Unicode
-        # conformance requires \r\n to be interpreted as \n alone.
-        \x[0d] \x[0a]
-    }
-    token ns { # network space
-        # <ws> would consume, e.g., newlines, and \h (and \s) would accept
-        # more codepoints than just ASCII single space and the tab character.
-        [ ' ' | <[\t]> ]*
-    }
-}
-
-my $crlf = "\x[0d]\x[0a]";
-my $header = "GOT /index.html HTTP/1.1{$crlf}Host: docs.raku.org{$crlf}{$crlf}body";
-my $m = HTTPRequest.parse($header);
-say "type(\"$m.<type>\")={$m.<type>.invalid}";
-# OUTPUT: type("GOT ")=True
-say "path(\"$m.<path>\")={$m.<path>.invalid}";
-# OUTPUT: path("/index.html")=False
-say "field(\"$m.<field>[0]\")={$m.<field>[0].invalid}";
-# OUTPUT: field("Host: docs.raku.org")=False
+... [truncated by doc-diff-harness: 23 more line(s) of 63]
 --- raku stdout ---
 type("GOT ")=True
 path("/index.html")=False
@@ -111,9 +89,9 @@ say Digifier.parse('255 435 777', actions => Devanagari.new).made;
 
 --- mutsu stderr ---
 Use of Nil in string context
-  in sub digit at tmp/ddh/prog-1341052.raku line 11
-  in block <unit> at tmp/ddh/prog-1341052.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-11483.raku line 11
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11483.raku line 16
 X::Assignment::RO: cannot assign through .tail on non-instance
-  in sub digit at tmp/ddh/prog-1341052.raku line 11
-  in block <unit> at tmp/ddh/prog-1341052.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-11483.raku line 11
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11483.raku line 16
 

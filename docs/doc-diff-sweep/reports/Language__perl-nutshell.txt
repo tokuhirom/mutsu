@@ -1,0 +1,15 @@
+# doc-diff-harness report
+# stats: match=21  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=66  skipped-marker=84  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Language/perl-nutshell.rakudoc:1771
+--- program ---
+no strict;
+# Raku
+say [ :$foo, :$bar, :@baz ].raku;
+# OUTPUT: «["foo" => 42, "bar" => 44, "baz" => [16, 32, 64, "Hike!"]]␤»
+--- raku stdout ---
+[:foo(Any), :bar(Any), :baz([])]
+--- mutsu stdout (exit 0) ---
+[:foo(Nil), :bar(Nil), :baz([])]
+

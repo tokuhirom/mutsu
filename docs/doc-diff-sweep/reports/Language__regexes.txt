@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=126  mismatch=1  mutsu-crash=0  no-oracle=115  raku-drift=0  skipped-marker=19  skipped-nondet=0
+# stats: match=125  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=115  skipped-marker=19  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2623

@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=79  mismatch=5  mutsu-crash=1  no-oracle=84  raku-drift=4  skipped-marker=2  skipped-nondet=5
+# stats: match=80  matches-doc=2  mismatch=4  mutsu-crash=1  no-oracle=84  skipped-marker=2  skipped-nondet=5  skipped-oracle-nondet=4
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1307
@@ -37,7 +37,7 @@ say (1..3).Seq.snitch.map(*+2);     # OUTPUT: «(1 2 3)␤(3 4 5)␤»
 1..5
 (1 2 3 4 5)
 Callable expected
-  in block <unit> at tmp/ddh/prog-1351604.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24942.raku line 5
 
 ==============================================================================
 [3] output-mismatch  raku-doc/doc/Type/Any.rakudoc:311
@@ -52,7 +52,8 @@ say [[1, 2, 3], [(4, 5), 6, 7]]».List.flat; # OUTPUT: «(1 2 3 4 5 6 7)␤»
 (1 2 3 (4 5) 6 7)
 
 ==============================================================================
-[4] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:617
+[4] output-mismatch  raku-doc/doc/Type/Any.rakudoc:617
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 <a b c a b c>.minpairs.raku.put; # OUTPUT: «(0 => "a", 3 => "a").Seq␤»
 %(:42a, :75b).minpairs.raku.put; # OUTPUT: «(:a(42),).Seq␤»
@@ -64,7 +65,8 @@ say [[1, 2, 3], [(4, 5), 6, 7]]».List.flat; # OUTPUT: «(1 2 3 4 5 6 7)␤»
 (:a(42),).Seq
 
 ==============================================================================
-[5] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:628
+[5] output-mismatch  raku-doc/doc/Type/Any.rakudoc:628
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 <a b c a b c>.maxpairs.raku.put; # OUTPUT: «(2 => "c", 5 => "c").Seq␤»
 %(:42a, :75b).maxpairs.raku.put; # OUTPUT: «(:b(75),).Seq␤»
@@ -74,55 +76,4 @@ say [[1, 2, 3], [(4, 5), 6, 7]]».List.flat; # OUTPUT: «(1 2 3 4 5 6 7)␤»
 --- mutsu stdout (exit 0) ---
 (2 => "c", 5 => "c").Seq
 (:b(75),).Seq
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Type/Any.rakudoc:639
---- program ---
-my $setty = Set(<Þor Oðin Freija>);
-say $setty.keys; # OUTPUT: «(Þor Oðin Freija)␤»
---- raku stdout ---
-(Þor Oðin Freija)
---- mutsu stdout (exit 0) ---
-(Oðin Þor Freija)
-
-==============================================================================
-[7] output-mismatch  raku-doc/doc/Type/Any.rakudoc:908
---- program ---
-say <a b c>.permutations;
-# OUTPUT: «((a b c) (a c b) (b a c) (b c a) (c a b) (c b a))␤»
-say set(1,2).permutations;
-# OUTPUT: «((2 => True 1 => True) (1 => True 2 => True))␤»
---- raku stdout ---
-((a b c) (a c b) (b a c) (b c a) (c a b) (c b a))
-((2 => True 1 => True) (1 => True 2 => True))
---- mutsu stdout (exit 0) ---
-((a b c) (a c b) (b a c) (b c a) (c a b) (c b a))
-((1 => True 2 => True) (2 => True 1 => True))
-
-==============================================================================
-[8] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:1093
---- program ---
-<1 2 2 3 3 3>.Bag.pairs.say;# OUTPUT: «(1 => 1 3 => 3 2 => 2)␤»
---- raku stdout ---
-(2 => 2 1 => 1 3 => 3)
---- mutsu stdout (exit 0) ---
-(3 => 3 2 => 2 1 => 1)
-
-==============================================================================
-[9] raku-drift-from-doc  raku-doc/doc/Type/Any.rakudoc:1110
---- program ---
-%(s => 1, t=> 2, u => 3).antipairs.say ;# OUTPUT: «(2 => t 1 => s 3 => u)␤»
---- raku stdout ---
-(3 => u 1 => s 2 => t)
---- mutsu stdout (exit 0) ---
-(1 => s 2 => t 3 => u)
-
-==============================================================================
-[10] output-mismatch  raku-doc/doc/Type/Any.rakudoc:1122
---- program ---
-"aaabbcccc".comb.Bag.invert.say; # OUTPUT: «(4 => c 3 => a 2 => b)␤»
---- raku stdout ---
-(4 => c 3 => a 2 => b)
---- mutsu stdout (exit 0) ---
-(3 => a 2 => b 4 => c)
 

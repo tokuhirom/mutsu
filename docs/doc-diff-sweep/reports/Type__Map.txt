@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=13  mismatch=1  mutsu-crash=0  no-oracle=20  raku-drift=2  skipped-marker=0  skipped-nondet=0
+# stats: match=11  matches-doc=1  mismatch=2  mutsu-crash=0  no-oracle=20  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=3
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Map.rakudoc:18
@@ -9,29 +9,20 @@ say %e.keys;    # can print «a b␤» or «b a␤»
 say %e.values;  # prints «1 2␤» if the previous line
                 # printed «a b␤», «2 1␤» otherwise
 --- raku stdout ---
-(a b)
-(1 2)
---- mutsu stdout (exit 0) ---
 (b a)
 (2 1)
+--- mutsu stdout (exit 0) ---
+(a b)
+(1 2)
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Map.rakudoc:140
+[2] output-mismatch  raku-doc/doc/Type/Map.rakudoc:122
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my $m = Map.new('a' => (2, 3), 'b' => 17);
-say $m.pairs; # OUTPUT: «(a => (2 3) b => 17)␤»
+say $m.keys; # OUTPUT: «(a b)␤»
 --- raku stdout ---
-(b => 17 a => (2 3))
+(b a)
 --- mutsu stdout (exit 0) ---
-(a => (2 3) b => 17)
-
-==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Map.rakudoc:153
---- program ---
-my $m = Map.new('a' => (2, 3), 'b' => 17);
-say $m.antipairs;                        # OUTPUT: «((2 3) => a 17 => b)␤»
---- raku stdout ---
-(17 => b (2 3) => a)
---- mutsu stdout (exit 0) ---
-((2 3) => a 17 => b)
+(a b)
 

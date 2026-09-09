@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=7  mismatch=1  mutsu-crash=1  no-oracle=15  raku-drift=3  skipped-marker=0  skipped-nondet=2
+# stats: match=7  matches-doc=0  mismatch=2  mutsu-crash=1  no-oracle=15  skipped-marker=0  skipped-nondet=2  skipped-oracle-nondet=2
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Code.rakudoc:195
@@ -15,43 +15,10 @@ say Food.^lookup('ingredients').line;  # OUTPUT: «1␤»
 --- mutsu stderr ---
 No such method 'line' for invocant of type 'Method'
 Did you mean 'clone'?
-  in block <unit> at tmp/ddh/prog-1356094.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29425.raku line 3
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:140
---- program ---
-my $single = \'a';         # a single argument Capture
-my $plural = \('a', 42);   # a two argument Capture
-my &block = { say $^a };   # a Block object, that is a subclass of Code, taking one argument
-say &block.cando($single); # OUTPUT: «(-> $a { #`(Block|94212856419136) ... })␤»
-say &block.cando($plural); # OUTPUT: «()␤»
---- raku stdout ---
-(-> $a { #`(Block|4101465543312) ... })
-()
---- mutsu stdout (exit 0) ---
-()
-()
-
-==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:153
---- program ---
-sub marine() { }
-say ~&marine;
-# OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
-say &marine.Str;
-# OUTPUT: «Sub object coerced to string (please use .gist or .raku to do that)␤marine␤»
-say &marine.raku; # OUTPUT: «sub marine { #`(Sub|94280758332168) ... }␤»
---- raku stdout ---
-marine
-marine
-sub marine { #`(Sub|2620814909848) ... }
---- mutsu stdout (exit 0) ---
-marine
-marine
-sub marine { #`(Sub|16) ... }
-
-==============================================================================
-[4] output-mismatch  raku-doc/doc/Type/Code.rakudoc:166
+[2] output-mismatch  raku-doc/doc/Type/Code.rakudoc:166
 --- program ---
 say &infix:<+>.file;   # OUTPUT: «SETTING::src/core.c/Numeric.rakumod␤»
 --- raku stdout ---
@@ -60,7 +27,7 @@ SETTING::src/core.c/Numeric.rakumod
 Nil
 
 ==============================================================================
-[5] raku-drift-from-doc  raku-doc/doc/Type/Code.rakudoc:175
+[3] output-mismatch  raku-doc/doc/Type/Code.rakudoc:175
 --- program ---
 say &infix:<+>.line;   # OUTPUT: «208␤»
 --- raku stdout ---
