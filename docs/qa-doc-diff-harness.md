@@ -7,18 +7,53 @@ disagree.
 
 ## How it works
 
-- **Oracle = `raku`.** A block is compared *only* when raku itself runs it cleanly
-  (exit 0, no compile `SORRY`, non-empty stdout). This naturally filters out doc
-  fragments, intentional-error snippets, and non-runnable examples — no hand-curation
-  needed. Run the harness with **system `raku`**, never mutsu, so the oracle is
-  independent of the code under test.
+- **Oracle = `raku`, in three modes.** What raku itself does with a block decides how
+  the block is compared:
+
+  | raku does | mode | what is compared |
+  |---|---|---|
+  | exits 0, prints something | **stdout parity** | stdout |
+  | fails at **run** time | **error parity** | the failure: does mutsu fail, and with the same message |
+  | exits 0, prints nothing | **silent parity** | mutsu must also exit 0 quietly |
+  | fails at **compile** time (`===SORRY!===`), or times out | *no oracle* | nothing — a fragment, not an example |
+
+  Run the harness with **system `raku`**, never mutsu, so the oracle is independent of
+  the code under test.
+
+  Only stdout parity existed until 2026-09-09. That left **3916 of the corpus's 7768
+  blocks (50%) never compared at all**, because "raku did not exit 0 with output" was
+  read as "not a runnable example" when it usually meant "an example that
+  deliberately fails" — the entire `Type/X*.rakudoc` corpus among them. The two new
+  modes are what PLAN.md §6 calls *error / exception parity*. The compile-error and
+  timeout cases are what the gate was really for, and they still skip.
+
+  Error parity ranks its findings by what the divergence means, because they are not
+  equally interesting:
+
+  - **`mutsu-accepts`** — raku refuses the program, mutsu runs it and exits 0. A
+    *semantic* divergence: mutsu is silently accepting something invalid. Highest
+    signal in the whole harness.
+  - **`mutsu-hangs`** — raku fails, mutsu hits the timeout.
+  - **`error-mismatch`** — both fail, with different messages. Usually about wording
+    or the `X::` type (see #7750).
+  - **`mutsu-error-on-silent-success`** / **`mutsu-extra-output`** — the silent-parity
+    twins: raku succeeds quietly, mutsu dies or chatters.
+
+  Messages are compared **without the backtrace beneath them** — frame text is
+  implementation detail that would never match — and without compile-time warnings,
+  which raku prints ahead of the exception and mutsu does not.
+
+  `--/error-parity` restores the old stdout-only behaviour. It is roughly 2x faster,
+  because the new modes run the oracle twice on blocks that used to cost one run.
 - **Corpus = `raku-doc`.** Extracts explicit `=begin code`/`=end code` and `=for code`
   blocks (honouring `:preamble<...>` and `:skip-test`) plus 4-space indented code
   blocks. `raku-doc` is one corpus among several (see PLAN.md §8) — the same runner
   works on any set of `.rakudoc` files or a real-module corpus.
 - **Noise control.**
-  - Non-deterministic examples (`rand`/`.pick`/`.roll`/`now`/`Supply`/…) and explicit
-    `# ERROR` examples are skipped by heuristic.
+  - Non-deterministic examples (`rand`/`.pick`/`.roll`/`now`/`Supply`/…) are skipped by
+    heuristic — a first pass only; the load-bearing policy is the oracle-twice gate
+    below. Explicit `# ERROR` examples used to be skipped here too, which threw away
+    the very blocks error parity exists to compare; they are now let through.
   - **The oracle is run twice and the block is dropped unless raku agrees with
     itself.** This is the whole nondeterminism policy, and it deliberately replaces
     growing the pattern list above: no list can practically enumerate unordered
@@ -39,16 +74,19 @@ disagree.
 
 ```
 raku scripts/doc-diff-harness.raku [--mutsu=PATH] [--timeout=N] [--limit=N]
-                                   [--report=FILE] [FILES-OR-DIRS ...]
+                                   [--report=FILE] [--/error-parity] [FILES-OR-DIRS ...]
 ```
 
 Defaults: `--mutsu=target/debug/mutsu`, `--timeout=10`, corpus =
-`raku-doc/doc/Type` + `raku-doc/doc/Language`, report = `tmp/doc-diff-report.txt`.
+`raku-doc/doc/Type` + `raku-doc/doc/Language`, report = `tmp/doc-diff-report.txt`,
+error parity **on** (`--/error-parity` to disable).
 The debug and release binaries produce identical output, so the debug build is fine
 for correctness triage (only speed differs).
 
-The report groups findings by kind (`output-mismatch`, `mutsu-error`), each with the
-exact program, raku stdout, and mutsu stdout/stderr — i.e. a ready-made minimal repro.
+The report groups findings by kind (`output-mismatch`, `mutsu-error`, and the
+error-parity kinds above), each with the exact program, the oracle's output — raku's
+**stderr** for an error-parity finding, since that is what is being compared — and
+mutsu's stdout/stderr — i.e. a ready-made minimal repro.
 Each captured section is capped at 40 lines with an explicit truncation marker, so one
 runaway example cannot bury a sweep.
 
@@ -69,9 +107,11 @@ scripts/doc-diff-sweep.sh [-j N] [-o OUTDIR] [-m MUTSU] [ROOT ...]
 Defaults: `-j8`, `-o tmp/sweep`, `-m target/debug/mutsu`, corpus = Type +
 Language. Outputs `OUTDIR/reports/<file>.txt` (per file), `OUTDIR/progress.txt`
 (one stats line per file), and `OUTDIR/summary.txt` (corpus totals + files
-ranked by `mismatch + crash`, high-signal first). Always re-verify a finding
-directly before treating it as a real bug — the harness can only compare what a
-doc block actually prints.
+ranked by `mismatch + crash + err`, high-signal first). `mism` and `crash` keep
+their pre-2026-09-09 meaning so their counts stay comparable across sweeps; the
+error/silent-parity findings are the separate `err` column. Always re-verify a
+finding directly before treating it as a real bug — the harness can only compare
+what a doc block actually does.
 
 ## First run (2026-07-18, 8 core Type files: Str/Array/List/Hash/Num/Rat/Range/Map)
 
