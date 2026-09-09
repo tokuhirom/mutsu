@@ -604,8 +604,11 @@ earlier ones.
   pointy-block parameters do not — the `signature`/`parameter`/`simple_parameter` helpers thread a
   `type_setting` flag to add it. Boundary (explicit `RuntimeError`): traits, `multi`, `is export`,
   operator subs (associativity/precedence), alternate signatures, and anonymous
-  `sub { }` (deferred). Parameters reuse the slice-3 plain-positional boundary (typed/named/slurpy/
-  `where`/… still error).
+  `sub { }` (deferred). Plain positional and array-destructuring sub-signatures are handled
+  (2026-09-09, issue #7685): `Parameter.sub-signature` is a recursive `Signature`, and the lowerer
+  rebuilds `ParamDef.sub_signature` so the existing binder executes the same destructuring. Named
+  aliases, capture sub-signatures, type captures, and array-shape metadata remain separate
+  boundaries.
 - **Routine return types (2026-08-22, both directions).** raku models the two spellings with
   different nodes and mutsu's internal AST keeps them apart, so the converter never guesses:
   `sub f(--> Int)` → `signature => Signature(parameters => …, returns => Type::Simple(Name))`

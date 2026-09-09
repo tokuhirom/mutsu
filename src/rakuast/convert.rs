@@ -2136,13 +2136,12 @@ fn signature(
     })
 }
 
-/// One `Parameter`. Only plain positional params (name + optional default) are
-/// modelled; anything richer (typed, named, slurpy, `where`, sub-signature,
-/// traits, optional-marker, invocant, shaped) is the coverage boundary.
+/// One `Parameter`. Positional sub-signatures are represented recursively as
+/// `sub-signature => Signature`; richer capture forms remain the coverage
+/// boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
     if pd.onearg
         || pd.literal_value.is_some()
-        || pd.sub_signature.is_some()
         || !pd.traits.is_empty()
         || pd.optional_marker
         || pd.is_invocant
@@ -2152,29 +2151,45 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     {
         return Err(unsupported("non-trivial signature parameter"));
     }
+    // Named aliases (`:s(:$sort)`) and capture parameters also use the
+    // internal `sub_signature` slot, but RakuAST represents those with fields
+    // other than `sub-signature`. Keep this slice to ordinary positional and
+    // array-destructuring parameters whose target is preserved by mutsu.
+    if pd.sub_signature.is_some()
+        && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless || pd.name.starts_with("__"))
+    {
+        return Err(unsupported("non-positional signature sub-signature"));
+    }
     let (sigil, desigil) = split_sigil(&pd.name);
-    if pd.slurpy || pd.double_slurpy {
+    let mut node = if pd.slurpy || pd.double_slurpy {
         // A typed or where-constrained slurpy carries richer shape; defer.
         if pd.type_constraint.is_some() || pd.where_constraint.is_some() {
             return Err(unsupported("typed slurpy parameter"));
         }
-        return slurpy_parameter(sigil, desigil, pd.double_slurpy);
-    }
-    if pd.named {
+        slurpy_parameter(sigil, desigil, pd.double_slurpy)?
+    } else if pd.named {
         // A typed/defaulted/where-constrained named param carries richer shape.
         if pd.type_constraint.is_some() || pd.default.is_some() || pd.where_constraint.is_some() {
             return Err(unsupported("typed/defaulted named parameter"));
         }
-        return named_parameter(sigil, desigil, type_setting);
+        named_parameter(sigil, desigil, type_setting)?
+    } else {
+        simple_parameter(
+            sigil,
+            desigil,
+            pd.type_constraint.as_deref(),
+            pd.default.as_ref(),
+            type_setting,
+            pd.where_constraint.as_deref(),
+        )?
+    };
+    if let Some(sub_params) = &pd.sub_signature {
+        node.fields.push(node_field(
+            Some("sub-signature"),
+            signature(sub_params, type_setting, None)?,
+        ));
     }
-    simple_parameter(
-        sigil,
-        desigil,
-        pd.type_constraint.as_deref(),
-        pd.default.as_ref(),
-        type_setting,
-        pd.where_constraint.as_deref(),
-    )
+    Ok(node)
 }
 
 /// A slurpy parameter `*@a` / `**@a` -> `Parameter(target => …, slurpy =>

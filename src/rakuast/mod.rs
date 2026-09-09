@@ -770,7 +770,7 @@ pub fn construct(
             RakuAstClass::ParameterTargetVar,
             "RakuAST::Parameter.new",
         )?;
-        let mut fields = Vec::with_capacity(5);
+        let mut fields = Vec::with_capacity(6);
         if let Some(type_node) = named_arg(args, "type") {
             require_rakuast_type(&type_node, "RakuAST::Parameter.new")?;
             fields.push(RakuAstField {
@@ -832,6 +832,17 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("slurpy"),
                 value: RakuAstFieldValue::Node(slurpy),
+            });
+        }
+        if let Some(sub_signature) = named_arg(args, "sub-signature") {
+            require_rakuast_class(
+                &sub_signature,
+                RakuAstClass::Signature,
+                "RakuAST::Parameter.new",
+            )?;
+            fields.push(RakuAstField {
+                name: Some("sub-signature"),
+                value: RakuAstFieldValue::Node(sub_signature),
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
@@ -1236,7 +1247,14 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         MetaInfixHyper => &["dwim-left", "infix", "dwim-right"],
         TraitReturns | TraitOf => &["type"],
         Parameter => &[
-            "type", "names", "target", "optional", "default", "where", "slurpy",
+            "type",
+            "names",
+            "target",
+            "optional",
+            "default",
+            "where",
+            "slurpy",
+            "sub-signature",
         ],
         ParameterTargetVar => &["name"],
         VarDeclarationSimple => &["sigil", "desigilname", "initializer"],
