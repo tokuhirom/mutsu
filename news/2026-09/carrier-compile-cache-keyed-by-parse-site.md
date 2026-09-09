@@ -83,3 +83,13 @@ Closing that needs the losing side under about 1 millisecond, which means the
 other half of the cost: env copy-on-write deep copies that scale with the size of
 the program (7,253 env entries copied per DATA frame, ~17,000 per `body-blob`).
 See [#7667](https://github.com/tokuhirom/mutsu/issues/7667).
+
+**Update:** that 1 ms budget turned out not to be mutsu's to meet. The race is a
+test-harness defect — the checks run in `start` blocks and call `ok` from there,
+and `Test` is not thread-safe — reported upstream as
+[croservices/cro-http#217](https://github.com/croservices/cro-http/pull/217),
+which records each request's results into a `Promise` and reports them from the
+main thread in request order. The work above stands on its own (a `whenever`
+callback should not recompile per value, and a cache should not be keyed by an
+identity that is fresh per call), but it should not be read as a down payment on
+a race that is being removed at its source.
