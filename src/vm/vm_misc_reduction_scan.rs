@@ -339,7 +339,7 @@ impl Interpreter {
                 if self.get_our_var(&qualified).is_some() || current_env.contains_key(&qualified) {
                     continue;
                 }
-                self.package_lexicals
+                crate::runtime::cow_table_mut(&mut self.package_lexicals)
                     .entry(name.clone())
                     .or_default()
                     .insert(bare, v.clone());

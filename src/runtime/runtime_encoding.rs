@@ -86,7 +86,7 @@ impl Interpreter {
     pub(crate) fn register_encoding(&mut self, entry: EncodingEntry) -> Result<(), String> {
         // Check for conflicts
         let name_fc = entry.name.to_lowercase();
-        for existing in &self.encoding_registry {
+        for existing in self.encoding_registry.iter() {
             if existing.name.to_lowercase() == name_fc {
                 return Err(entry.name.clone());
             }
@@ -100,7 +100,7 @@ impl Interpreter {
         }
         for alt in &entry.alternative_names {
             let alt_fc = alt.to_lowercase();
-            for existing in &self.encoding_registry {
+            for existing in self.encoding_registry.iter() {
                 if existing.name.to_lowercase() == alt_fc {
                     return Err(alt.clone());
                 }
@@ -113,16 +113,16 @@ impl Interpreter {
                 }
             }
         }
-        self.encoding_registry.push(entry);
+        crate::runtime::cow_table_mut(&mut self.encoding_registry).push(entry);
         Ok(())
     }
 
     pub(crate) fn suppress_name(&mut self, name: &str) {
-        self.suppressed_names.insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.suppressed_names).insert(name.to_string());
     }
 
     pub(crate) fn unsuppress_name(&mut self, name: &str) {
-        self.suppressed_names.remove(name);
+        crate::runtime::cow_table_mut(&mut self.suppressed_names).remove(name);
     }
 
     /// Record that `name` is the short name of a type declared inside a class
@@ -130,7 +130,7 @@ impl Interpreter {
     /// even after `unsuppress_name` clears the suppression (see
     /// `class_scoped_short_names`).
     pub(crate) fn register_class_scoped_short_name(&mut self, name: &str) {
-        self.class_scoped_short_names.insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.class_scoped_short_names).insert(name.to_string());
     }
 
     /// Push a new lexical class scope frame.
@@ -155,7 +155,7 @@ impl Interpreter {
     pub(crate) fn pop_lexical_class_scope(&mut self) {
         if let Some(names) = self.lexical_class_scopes.pop() {
             for name in names {
-                self.suppressed_names.insert(name);
+                crate::runtime::cow_table_mut(&mut self.suppressed_names).insert(name);
             }
         }
         if let Some(owned) = self.lexical_class_pending_scopes.pop() {
@@ -328,13 +328,13 @@ impl Interpreter {
         let owner = crate::symbol::Symbol::intern(name);
         self.registry_mut().clear_user_methods_for_owner(owner);
         self.registry_mut().sync_accessor_entries(owner);
-        self.suppressed_names.remove(name);
+        crate::runtime::cow_table_mut(&mut self.suppressed_names).remove(name);
     }
 
     /// Mark a fully-qualified name as `my`-scoped within its parent package.
     /// Items in this set are excluded from the parent package's stash.
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
-        self.my_scoped_package_items.insert(fq_name);
+        crate::runtime::cow_table_mut(&mut self.my_scoped_package_items).insert(fq_name);
     }
 
     /// Mark a fully-qualified name as explicitly `our`-scoped, overriding any
@@ -343,8 +343,8 @@ impl Interpreter {
     /// `our proto sub` publishes the name while each bare `multi` candidate
     /// would otherwise mark it lexical.
     pub(crate) fn mark_our_scoped_package_item(&mut self, fq_name: String) {
-        self.my_scoped_package_items.remove(&fq_name);
-        self.our_scoped_package_items.insert(fq_name);
+        crate::runtime::cow_table_mut(&mut self.my_scoped_package_items).remove(&fq_name);
+        crate::runtime::cow_table_mut(&mut self.our_scoped_package_items).insert(fq_name);
     }
 
     /// Check if a fully-qualified name is `my`-scoped within its parent package.
@@ -385,7 +385,7 @@ impl Interpreter {
             }) = self.env.get(name).map(Value::view)
             && prev_type.resolve() != enum_type
         {
-            self.poisoned_enum_aliases
+            crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases)
                 .insert(name.to_string(), enum_type.to_string());
         }
         if let Some(scope) = self.enum_scope_names.last_mut() {
@@ -403,7 +403,7 @@ impl Interpreter {
     pub(crate) fn pop_enum_scope(&mut self) {
         if let Some(names) = self.enum_scope_names.pop() {
             for name in names {
-                self.poisoned_enum_aliases.remove(&name);
+                crate::runtime::cow_table_mut(&mut self.poisoned_enum_aliases).remove(&name);
             }
         }
     }
@@ -496,7 +496,7 @@ impl Interpreter {
         let at = self
             .default_site_repo_position()
             .unwrap_or(self.lib_paths.len());
-        self.lib_paths.insert(at, path);
+        crate::runtime::cow_table_mut(&mut self.lib_paths).insert(at, path);
     }
 
     /// Index of the entry `add_default_site_repo` registered, if it is still in
@@ -513,7 +513,7 @@ impl Interpreter {
     /// repositories, and within one statement the last-listed path ends up first.
     pub fn prepend_lib_path(&mut self, path: String) {
         if !path.is_empty() {
-            self.lib_paths.insert(0, path);
+            crate::runtime::cow_table_mut(&mut self.lib_paths).insert(0, path);
         }
     }
 }

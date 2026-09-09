@@ -719,8 +719,7 @@ impl Interpreter {
             // lexically scoped to it (and to any EVAL unit nested inside it).
             let unit = self.current_unit;
             let is_new = !self.user_declared_infix_ops.contains_key(name);
-            let files = self
-                .user_declared_infix_ops
+            let files = crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
                 .entry(name.to_string())
                 .or_default();
             // An entry that is already permissive (empty == exported) stays
@@ -762,7 +761,8 @@ impl Interpreter {
                 // import alias. `reinstate_module_functions` needs the distinction
                 // to put it back after a scope rollback — see
                 // `prelude_registered_functions`.
-                self.prelude_registered_functions.insert(global_key);
+                crate::runtime::cow_table_mut(&mut self.prelude_registered_functions)
+                    .insert(global_key);
                 // ...and record WHICH compunit this copy was spliced into, before
                 // the idempotence check below can swallow it. The registration is
                 // process-global so that a method body under any package can reach
@@ -770,7 +770,7 @@ impl Interpreter {
                 // `use NativeCall`, so resolution consults this set — see
                 // `prelude_declaring_units` / `prelude_visible_here`.
                 let unit = self.declaring_unit_sym();
-                self.prelude_declaring_units
+                crate::runtime::cow_table_mut(&mut self.prelude_declaring_units)
                     .entry(global_key)
                     .or_default()
                     .insert(unit);
@@ -781,7 +781,7 @@ impl Interpreter {
             // every compunit's bodies can reach it. This is about the NAME, so
             // a `multi` prelude needs it too — its candidates live under
             // `GLOBAL::name/N`, but the name they answer to is the same one.
-            self.prelude_sub_names.insert(Symbol::intern(name));
+            crate::runtime::cow_table_mut(&mut self.prelude_sub_names).insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.
@@ -1172,7 +1172,8 @@ impl Interpreter {
                 if new_def.is_stub
                     && let Some(fp) = site_fingerprint
                 {
-                    self.registered_stub_decl_sites.insert((single_key_sym, fp));
+                    crate::runtime::cow_table_mut(&mut self.registered_stub_decl_sites)
+                        .insert((single_key_sym, fp));
                 }
                 let callable_key =
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
@@ -1304,11 +1305,11 @@ impl Interpreter {
             self.fn_resolve_gen += 1;
         }
         if let Some(assoc) = associativity {
-            self.operator_assoc.insert(name.to_string(), assoc.clone());
-            self.operator_assoc.insert(
-                format!("{}::{}", self.current_package(), name),
-                assoc.clone(),
-            );
+            crate::runtime::cow_table_mut(&mut self.operator_assoc)
+                .insert(name.to_string(), assoc.clone());
+            let qualified = format!("{}::{}", self.current_package(), name);
+            crate::runtime::cow_table_mut(&mut self.operator_assoc)
+                .insert(qualified, assoc.clone());
         }
         if multi {
             let arity = if def.param_defs.is_empty() && !params.is_empty() {
@@ -1384,7 +1385,8 @@ impl Interpreter {
                 // declaration re-arriving, not a new conflicting stub (see
                 // `registered_stub_decl_sites`).
                 if arc.is_stub {
-                    self.registered_stub_decl_sites.insert((fq_sym, fp));
+                    crate::runtime::cow_table_mut(&mut self.registered_stub_decl_sites)
+                        .insert((fq_sym, fp));
                 }
                 // Cache the derived definition so a later re-install of this exact
                 // simple single sub reuses the `Arc` instead of re-deriving it (the
@@ -1428,8 +1430,8 @@ impl Interpreter {
                 .copied()
                 .collect();
             for key in keys {
-                self.prelude_registered_functions.insert(key);
-                self.prelude_declaring_units
+                crate::runtime::cow_table_mut(&mut self.prelude_registered_functions).insert(key);
+                crate::runtime::cow_table_mut(&mut self.prelude_declaring_units)
                     .entry(key)
                     .or_default()
                     .insert(unit);
@@ -1526,7 +1528,7 @@ impl Interpreter {
             // (`generate_usage_from_candidates`) even for a body-less
             // plan-derived def (ADR-0019 C6e-3).
             if let Some(fp) = hidden_from_usage_fp {
-                self.main_hidden_from_usage.insert(fp);
+                crate::runtime::cow_table_mut(&mut self.main_hidden_from_usage).insert(fp);
             }
             for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
                 !t.starts_with("__")

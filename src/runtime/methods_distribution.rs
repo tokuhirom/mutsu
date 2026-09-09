@@ -272,7 +272,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let bin_key = format!("bin/{script_name}");
         // Collect candidate script paths from the known lib_paths
-        let lib_paths_snapshot: Vec<String> = self.lib_paths.clone();
+        let lib_paths_snapshot: Vec<String> = (*self.lib_paths).clone();
         for p in &lib_paths_snapshot {
             if let Some(prefix) = p.strip_prefix("inst#") {
                 // Installation repo: scripts are stored as {prefix}/bin/{hash_id}
@@ -304,7 +304,8 @@ impl Interpreter {
                                 let sources_dir =
                                     prefix_path.join("sources").to_string_lossy().to_string();
                                 if !self.lib_paths.contains(&sources_dir) {
-                                    self.lib_paths.push(format!("inst#{prefix}"));
+                                    crate::runtime::cow_table_mut(&mut self.lib_paths)
+                                        .push(format!("inst#{prefix}"));
                                 }
                                 return self.load_and_run_script(&script_path);
                             }
@@ -346,7 +347,7 @@ impl Interpreter {
         if let Some(bin_parent) = script_path.parent().and_then(|p| p.parent()) {
             let inst_path = format!("inst#{}", bin_parent.to_string_lossy());
             if !self.lib_paths.contains(&inst_path) {
-                self.lib_paths.push(inst_path);
+                crate::runtime::cow_table_mut(&mut self.lib_paths).push(inst_path);
             }
         }
         // Parse the script

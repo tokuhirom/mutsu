@@ -287,13 +287,13 @@ impl Interpreter {
                         // per-composition anonymous type object to rename
                         // instead, when the caller wants a scoped rename rather
                         // than a global one.
-                        self.type_metadata
+                        crate::runtime::cow_table_mut(&mut self.type_metadata)
                             .entry(resolved)
                             .or_default()
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
                     ValueView::Instance { class_name, .. } => {
-                        self.type_metadata
+                        crate::runtime::cow_table_mut(&mut self.type_metadata)
                             .entry(class_name.resolve())
                             .or_default()
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
@@ -319,7 +319,7 @@ impl Interpreter {
                 } else {
                     Value::str(args[1].to_string_value())
                 };
-                self.type_metadata
+                crate::runtime::cow_table_mut(&mut self.type_metadata)
                     .entry(name)
                     .or_default()
                     .insert(key, stored.clone());
@@ -332,7 +332,7 @@ impl Interpreter {
             // (`Documented.WHY`, via `dispatch_why`).
             "set_why" if args.len() == 2 => {
                 let name = self.mop_receiver_owner(&args[0]);
-                self.type_metadata
+                crate::runtime::cow_table_mut(&mut self.type_metadata)
                     .entry(name)
                     .or_default()
                     .insert("__set_why__".to_string(), args[1].clone());
@@ -1210,7 +1210,7 @@ impl Interpreter {
                 };
                 let condition = args[1].clone();
                 let calculator = args[2].clone();
-                self.method_fallbacks
+                crate::runtime::cow_table_mut(&mut self.method_fallbacks)
                     .entry(class_name)
                     .or_default()
                     .push((condition, calculator));

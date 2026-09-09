@@ -173,7 +173,7 @@ impl Interpreter {
     pub(crate) fn note_type_body_written_lexicals(&mut self, code: &CompiledCode) {
         for sym in &code.type_body_written_lexicals {
             let name = sym.resolve();
-            self.type_body_written_lexicals
+            crate::runtime::cow_table_mut(&mut self.type_body_written_lexicals)
                 .insert(name.trim_start_matches('$').to_string());
         }
     }
@@ -197,6 +197,16 @@ impl Interpreter {
         self.clone_for_thread_excluding(&std::collections::HashSet::new(), None)
     }
 
+    /// The workhorse behind every thread clone.
+    ///
+    /// Most of what this builds is cheap, and deliberately so: the program-global
+    /// symbol tables it carries over are `Arc<...>` copy-on-write shares (see the
+    /// note on [`Interpreter`]), so cloning them is a refcount bump rather than a
+    /// deep copy of every `String` key in the program. Before that, a spawn cost
+    /// grew with the size of the loaded program instead of with the work: with
+    /// Cro's stack loaded, the identical `Promise(supply { whenever ... })` that
+    /// `Cro::MessageWithBody.body-blob` builds cost 5x what it costs in a bare
+    /// program, purely because there were more modules to copy tables for.
     fn clone_for_thread_excluding(
         &mut self,
         captured_scalars: &std::collections::HashSet<String>,

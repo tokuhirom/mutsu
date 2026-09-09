@@ -1125,7 +1125,8 @@ impl Interpreter {
                         } else {
                             crate::parser::set_current_language_version(&saved_language_version);
                         }
-                        self.loaded_modules.insert(short_name_str.clone());
+                        crate::runtime::cow_table_mut(&mut self.loaded_modules)
+                            .insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
                         attrs.insert("short-name".to_string(), Value::str(short_name_str));

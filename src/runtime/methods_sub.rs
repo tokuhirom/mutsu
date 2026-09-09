@@ -945,7 +945,7 @@ impl Interpreter {
                         old_id
                     } else {
                         // Sub was redefined — clear old wrap chain and mappings
-                        self.wrap_chains.remove(&old_id);
+                        crate::runtime::cow_table_mut(&mut self.wrap_chains).remove(&old_id);
                         self.wrap_sub_names.remove(&old_id);
                         self.wrap_name_to_sub.remove(&func_name);
                         data.id
@@ -958,10 +958,10 @@ impl Interpreter {
             };
             // Store the callable_id for this wrap chain
             if !func_name.is_empty() {
-                self.wrap_callable_ids
+                crate::runtime::cow_table_mut(&mut self.wrap_callable_ids)
                     .insert(func_name.clone(), current_callable_id);
             }
-            self.wrap_chains
+            crate::runtime::cow_table_mut(&mut self.wrap_chains)
                 .entry(sub_id)
                 .or_default()
                 .push((handle_id, wrapper));
@@ -1048,7 +1048,9 @@ impl Interpreter {
                     )));
                 }
                 // Pop the outermost wrapper
-                if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
+                if let Some(chain) =
+                    crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id)
+                {
                     chain.pop();
                     if chain.is_empty() {
                         self.cleanup_wrap_name_entries(sub_id);
@@ -1066,7 +1068,7 @@ impl Interpreter {
                     "Cannot unwrap routine: invalid wrap handle",
                 )));
             };
-            let chain = self.wrap_chains.get_mut(&sub_id);
+            let chain = crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id);
             if let Some(chain) = chain {
                 let before_len = chain.len();
                 chain.retain(|(hid, _)| *hid != handle_id);

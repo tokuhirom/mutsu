@@ -18,7 +18,7 @@ impl Interpreter {
         // this used to — inverts that chain, so an installed module shadowed an
         // explicit `-I` path, which is the one thing the flag exists to prevent.
         let mut had_plain_lib_path = false;
-        for base in &self.lib_paths {
+        for base in self.lib_paths.iter() {
             if let Some(prefix) = base.strip_prefix("inst#") {
                 if let Some(found) = self.resolve_in_inst_repo(prefix, module) {
                     return Some(found);
@@ -94,7 +94,7 @@ impl Interpreter {
         // candidates last so an explicit `-I`/`MUTSULIB`/project-local module or
         // an `mzef`-installed (site-repo) version always shadows the bundled copy
         // (BATTERIES.md §3/§6).
-        for base in &self.bundled_lib_paths {
+        for base in self.bundled_lib_paths.iter() {
             let base_path = Path::new(base.as_str());
             for ext in &extensions {
                 let filename = format!("{}{}", base_name, ext);
@@ -268,7 +268,7 @@ impl Interpreter {
     /// battery like OO::Monitors registers its EXPORTHOW::DECLARE declarator
     /// keyword during the scan of `use OO::Monitors`.
     pub(crate) fn parser_scan_lib_paths(&self) -> Vec<String> {
-        let mut paths = self.lib_paths.clone();
+        let mut paths = (*self.lib_paths).clone();
         paths.extend(self.bundled_lib_paths.iter().cloned());
         paths
     }
@@ -568,7 +568,7 @@ impl Interpreter {
     /// For a module loaded from an inst# installation repo, find the distribution JSON
     /// and build a distribution Value. Returns None if the module is not from an inst# repo.
     fn detect_inst_distribution(&self, module: &str) -> Option<Value> {
-        for base in &self.lib_paths {
+        for base in self.lib_paths.iter() {
             // Skip plain directories rather than giving up on the whole search:
             // `-I` paths normally sit in front of the site repository, so bailing
             // out at the first non-`inst#` entry meant this never looked at the
@@ -747,13 +747,14 @@ impl Interpreter {
             self.current_distribution_frame_floor = self.routine_stack_len();
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
-            self.package_distributions
+            crate::runtime::cow_table_mut(&mut self.package_distributions)
                 .insert(module.to_string(), dist.clone());
             // Also record under the current runtime package (typically GLOBAL
             // for unit modules) since the interpreter's current_package may not
             // match the module name during function body evaluation.
-            self.package_distributions
-                .insert(self.current_package(), dist.clone());
+            let cur_pkg = self.current_package();
+            crate::runtime::cow_table_mut(&mut self.package_distributions)
+                .insert(cur_pkg, dist.clone());
         }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
@@ -762,7 +763,7 @@ impl Interpreter {
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
         // Track operator subs exported by this module so EVAL can see them.
         for name in Self::extract_module_exported_operator_names(&stmts) {
-            self.imported_operator_names.insert(name);
+            crate::runtime::cow_table_mut(&mut self.imported_operator_names).insert(name);
         }
         // Validate any `package EXPORTHOW { ... }` directives before running the
         // module: a member named `<directive>::<declarator>` must use a known
@@ -786,7 +787,7 @@ impl Interpreter {
             if let Some(name) = unit_name.as_deref() {
                 let source = source_path.to_string_lossy();
                 let unit = self.unit_of_source(Some(&source));
-                self.unit_module_packages
+                crate::runtime::cow_table_mut(&mut self.unit_module_packages)
                     .insert(unit, crate::symbol::Symbol::intern(name));
             }
             let pushed_unit = if let Some(name) = unit_name.clone() {
@@ -975,7 +976,7 @@ impl Interpreter {
                     } else {
                         value.into_container_ref()
                     };
-                    self.unit_lexicals
+                    crate::runtime::cow_table_mut(&mut self.unit_lexicals)
                         .entry(unit.to_string())
                         .or_default()
                         .insert(name.clone(), cell);
@@ -1087,8 +1088,7 @@ impl Interpreter {
                 .filter(|(short, qualified)| short != qualified && !Self::is_builtin_type(short))
                 .collect();
             if !aliases.is_empty() {
-                let entry = self
-                    .package_type_aliases
+                let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                     .entry(importer_package.clone())
                     .or_default();
                 for (short, qualified) in aliases {
@@ -1106,7 +1106,7 @@ impl Interpreter {
             let mut owners: Vec<String> = new_types.clone();
             if let Some(dist) = &module_dist {
                 for name in &owners {
-                    self.package_distributions
+                    crate::runtime::cow_table_mut(&mut self.package_distributions)
                         .entry(name.clone())
                         .or_insert_with(|| dist.clone());
                 }
@@ -1115,7 +1115,7 @@ impl Interpreter {
             for owner in owners {
                 let class_static_names = self.class_body_static_names.get(&owner);
                 if !module_type_aliases.is_empty() {
-                    self.package_type_aliases
+                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                         .entry(owner.clone())
                         .or_default()
                         .extend(
@@ -1124,7 +1124,7 @@ impl Interpreter {
                                 .map(|(k, v)| (k.clone(), v.clone())),
                         );
                 }
-                self.module_scope_lexicals
+                crate::runtime::cow_table_mut(&mut self.module_scope_lexicals)
                     .entry(owner.clone())
                     .or_default()
                     .extend(
@@ -1136,7 +1136,10 @@ impl Interpreter {
                             })
                             .map(|(k, v)| (k.clone(), v.clone())),
                     );
-                let imported_names = self.module_imported_lexical_names.entry(owner).or_default();
+                let imported_names =
+                    crate::runtime::cow_table_mut(&mut self.module_imported_lexical_names)
+                        .entry(owner)
+                        .or_default();
                 for name in &imported_lexical_names {
                     imported_names.entry(name.clone()).or_insert(true);
                 }

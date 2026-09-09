@@ -759,7 +759,7 @@ impl Interpreter {
                 let type_name = args[0].to_string_value();
                 let key = args[1].to_string_value();
                 let value = args[2].clone();
-                self.type_metadata
+                crate::runtime::cow_table_mut(&mut self.type_metadata)
                     .entry(type_name)
                     .or_default()
                     .insert(key, value);

@@ -119,7 +119,7 @@ impl Interpreter {
         self.clear_private_zeroarg_method_cache();
         // Mark this as a user-declared class so its collected attribute list is
         // authoritative for accessor resolution (undeclared `.name` -> NotFound).
-        self.user_declared_classes.insert(name.to_string());
+        crate::runtime::cow_table_mut(&mut self.user_declared_classes).insert(name.to_string());
         let ClassDeclModifiers {
             class_is_rw,
             is_hidden,
@@ -281,7 +281,7 @@ impl Interpreter {
         // the declaring unit so those evaluations can still see this file's
         // private top-level routines.
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        self.class_declaring_units
+        crate::runtime::cow_table_mut(&mut self.class_declaring_units)
             .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, parents)?;
         Ok(deferred_custom_traits)

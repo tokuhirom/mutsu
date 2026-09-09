@@ -482,7 +482,8 @@ impl Interpreter {
                 // the innermost named routine frame is one of these subs, so a
                 // plain `my sub` sharing a captured variable's name keeps using
                 // its own live env capture.
-                self.escaped_our_sub_names.insert(resolved_name.clone());
+                crate::runtime::cow_table_mut(&mut self.escaped_our_sub_names)
+                    .insert(resolved_name.clone());
                 let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
                 for name in names {
                     if let Some(cell) = self.env().get(&name).cloned()
@@ -692,14 +693,14 @@ impl Interpreter {
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
-                    self.unit_lexicals
+                    crate::runtime::cow_table_mut(&mut self.unit_lexicals)
                         .entry(unit_key.clone())
                         .or_default()
                         .insert(name, cell);
                     captured_any = true;
                 }
                 if captured_any {
-                    self.mainline_lexical_subs
+                    crate::runtime::cow_table_mut(&mut self.mainline_lexical_subs)
                         .insert(resolved_name.clone(), unit_key);
                 }
             }
@@ -1066,10 +1067,10 @@ impl Interpreter {
             // `nativecast`ed handle carries only the short class name.
             let short = Self::native_struct_class_name(class_name);
             if short != class_name {
-                self.native_call_specs
+                crate::runtime::cow_table_mut(&mut self.native_call_specs)
                     .insert(Self::native_method_key(&short, name), spec.clone());
             }
-            self.native_call_specs
+            crate::runtime::cow_table_mut(&mut self.native_call_specs)
                 .insert(Self::native_method_key(class_name, name), spec);
             return Ok(());
         }
@@ -1083,9 +1084,9 @@ impl Interpreter {
         // `resolve_native_call_spec` can walk `bare_name_packages()` and find
         // this declaration at its own scope even when `pkg == "GLOBAL"`.
         let pkg = self.current_package();
-        self.native_call_specs
+        crate::runtime::cow_table_mut(&mut self.native_call_specs)
             .insert(format!("{pkg}::{name}"), spec.clone());
-        self.native_call_specs.insert(name.to_string(), spec);
+        crate::runtime::cow_table_mut(&mut self.native_call_specs).insert(name.to_string(), spec);
         Ok(())
     }
 

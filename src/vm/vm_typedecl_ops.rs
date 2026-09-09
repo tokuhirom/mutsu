@@ -518,7 +518,7 @@ impl Interpreter {
                             Value::package(Symbol::intern(&storage_name))
                         });
                     } else {
-                        self.package_type_aliases
+                        crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                             .entry(parent)
                             .or_default()
                             .entry(short)
@@ -925,7 +925,7 @@ impl Interpreter {
                 // would break every `when Pair` in the process). Mirrors the same
                 // guard on the class path above.
                 if !short.is_empty() && short != qualified_name && !Self::is_builtin_type(&short) {
-                    self.package_type_aliases
+                    crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                         .entry(parent)
                         .or_default()
                         .entry(short)

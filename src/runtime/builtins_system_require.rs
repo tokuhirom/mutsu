@@ -60,7 +60,7 @@ impl Interpreter {
         if direct.exists() {
             return Some(direct);
         }
-        for base in &self.lib_paths {
+        for base in self.lib_paths.iter() {
             let candidate = Path::new(base).join(file);
             if candidate.exists() {
                 return Some(candidate);
@@ -653,7 +653,7 @@ impl Interpreter {
             }
             self.require_load_from_file(&file, module_name.as_deref())?;
             if let Some(module) = module_name.as_ref() {
-                self.loaded_modules.insert(module.clone());
+                crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.clone());
             }
         } else if let Some(module) = module_name.as_ref() {
             // For `require`, force a full reload if the module was previously loaded
@@ -667,7 +667,7 @@ impl Interpreter {
                     .keys()
                     .any(|k| k.resolve().starts_with(&prefix))
             {
-                self.loaded_modules.remove(module);
+                crate::runtime::cow_table_mut(&mut self.loaded_modules).remove(module);
             }
             let saved = std::mem::replace(&mut self.require_propagates_missing_module, true);
             let result = self.use_module(module);

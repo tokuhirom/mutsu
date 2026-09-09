@@ -2728,7 +2728,9 @@ impl Interpreter {
                 .and_then(|v| v.as_int().map(|i| i as u64));
             if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
                 let mut removed = false;
-                if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
+                if let Some(chain) =
+                    crate::runtime::cow_table_mut(&mut self.wrap_chains).get_mut(&sub_id)
+                {
                     let before = chain.len();
                     chain.retain(|(hid, _)| *hid != handle_id);
                     removed = chain.len() != before;

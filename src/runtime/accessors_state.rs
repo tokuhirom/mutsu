@@ -140,7 +140,8 @@ impl Interpreter {
         code: &crate::opcode::CompiledCode,
     ) {
         for sym in &code.needs_cell_escaping_our_sub {
-            self.escaping_our_lexical_names.insert(sym.resolve());
+            crate::runtime::cow_table_mut(&mut self.escaping_our_lexical_names)
+                .insert(sym.resolve());
         }
         for nested in &code.closure_compiled_codes {
             self.collect_escaping_our_lexical_names(nested);

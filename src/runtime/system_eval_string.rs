@@ -149,7 +149,7 @@ impl Interpreter {
         // Also include operators imported via `use Module` at runtime. This
         // captures prefix/infix/postfix operators declared with `is export`
         // in loaded modules, without exposing non-exported subs.
-        for name in &self.imported_operator_names {
+        for name in self.imported_operator_names.iter() {
             seen.insert(name.clone());
         }
         let mut names: Vec<String> = seen.into_iter().collect();
@@ -159,7 +159,7 @@ impl Interpreter {
 
     pub(crate) fn collect_operator_assoc_map(&self) -> HashMap<String, String> {
         let mut assoc = HashMap::new();
-        for (key, value) in &self.operator_assoc {
+        for (key, value) in self.operator_assoc.iter() {
             let name = if let Some(pos) = key.rfind("::") {
                 &key[pos + 2..]
             } else {

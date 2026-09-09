@@ -24,8 +24,8 @@ pub(crate) struct SubtestDeclSnapshot {
     class_trusts: FxHashMap<String, Vec<String>>,
     roles: FxHashMap<String, RoleDef>,
     subsets: FxHashMap<String, SubsetDef>,
-    loaded_modules: HashSet<String>,
-    type_metadata: HashMap<String, HashMap<String, Value>>,
+    loaded_modules: std::sync::Arc<HashSet<String>>,
+    type_metadata: std::sync::Arc<HashMap<String, HashMap<String, Value>>>,
 }
 
 impl Interpreter {
@@ -78,8 +78,10 @@ impl Interpreter {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.loaded_modules = loaded_modules;
         // Merge type_metadata: preserve entries added during the subtest
-        for (key, val) in std::mem::take(&mut self.type_metadata) {
-            type_metadata.entry(key).or_insert(val);
+        let during = std::mem::take(&mut self.type_metadata);
+        let merged = std::sync::Arc::make_mut(&mut type_metadata);
+        for (key, val) in during.iter() {
+            merged.entry(key.clone()).or_insert_with(|| val.clone());
         }
         self.type_metadata = type_metadata;
     }
