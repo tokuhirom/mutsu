@@ -2767,6 +2767,9 @@ impl Interpreter {
                 let id = match value.view() {
                     ValueView::Array(data, _) => Some(crate::gc::Gc::as_ptr(&data) as usize),
                     ValueView::Hash(data) => Some(crate::gc::Gc::as_ptr(&data) as usize),
+                    // A `:=`-bound element holds a cell, and a cycle can close
+                    // through one, so cells have an identity of their own.
+                    ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
                     _ => None,
                 };
                 if let Some(id) = id
@@ -2792,6 +2795,26 @@ impl Interpreter {
                         collection_contains_instance_seen(k, seen, depth + 1)
                             || collection_contains_instance_seen(v, seen, depth + 1)
                     }
+                    // An element assigned from a scalar arrives ITEMIZED
+                    // (`my @h = $c` compiles an `ItemizeVar`), so the instance
+                    // that needs dispatch sits one `Scalar` down. Without this
+                    // the probe answered `false` for `my @h = SomeArraySubclass
+                    // .new(1,2)` and `@h.gist` fell through to the generic
+                    // stringifying fallback, which rendered the element as
+                    // `SA()`. The builtins-side twin (`gist_route` in
+                    // `dispatch_core_repr`) has always looked through both, which
+                    // is why the native probe correctly declined while this one
+                    // then declined to take over.
+                    ValueView::Scalar(inner) => {
+                        collection_contains_instance_seen(inner, seen, depth + 1)
+                    }
+                    // Clone the contents out and drop the guard before
+                    // recursing: `gist_item` holds this very lock across its own
+                    // recursion, so a cell reached twice would deadlock.
+                    ValueView::ContainerRef(cell) => {
+                        let inner = cell.lock().unwrap().clone();
+                        collection_contains_instance_seen(&inner, seen, depth + 1)
+                    }
                     _ => false,
                 }
             }
@@ -2807,6 +2830,19 @@ impl Interpreter {
                 }
                 match value.view() {
                     ValueView::Nil => "Nil".to_string(),
+                    // `.gist` drops the itemization sigil, so an itemized
+                    // element (`$(...)`, and every element `my @h = $x`
+                    // produces) gists like its inner value -- the same rule the
+                    // pure renderer's `gist_item` twin carries.
+                    ValueView::Scalar(inner) => gist_item(interp, inner),
+                    // Clone the contents out and drop the guard before
+                    // recursing: a cycle can close through a cell
+                    // (`my @e; @e.push(@e)`), and holding the lock across the
+                    // recursion deadlocks instead of recursing.
+                    ValueView::ContainerRef(cell) => {
+                        let inner = cell.lock().unwrap().clone();
+                        gist_item(interp, &inner)
+                    }
                     ValueView::Array(items, kind) => {
                         // Shaped arrays join their rows with a newline, like
                         // the pure fast path (`say my @a[2,2]` is one row per

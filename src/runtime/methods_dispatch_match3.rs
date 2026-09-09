@@ -722,6 +722,12 @@ impl Interpreter {
             // Decontainerize a `ContainerRef` element (grep rw alias / `:=`-bound
             // slot) so a cell-wrapped Instance still gets its user-defined `.Str`.
             let v = v.deref_container();
+            // Look through itemization too: an element assigned from a scalar
+            // arrives itemized (`my @h = $x` compiles an `ItemizeVar`), and
+            // `.join` stringifies each element with `.Str`, whose dispatch
+            // deconts its invocant. Without this `my @h = $c` (an `is Array`
+            // subclass instance) joined to the `SA()` fallback.
+            let v = v.descalarize().clone();
             if matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
                 let s = match self.call_method_with_values(v.clone(), "Str", vec![]) {
                     Ok(s) => s,

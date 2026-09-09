@@ -57,10 +57,18 @@ impl crate::Interpreter {
 
     fn element_needs_interpreter(item: &Value) -> bool {
         let item = item.deref_container();
+        // An element assigned from a scalar arrives ITEMIZED (`my @h = $x`
+        // compiles an `ItemizeVar`), so an `Instance` element sits one `Scalar`
+        // down. `.Str` on a list calls `.Str` on each element and a method call
+        // deconts its invocant, so the itemization is looked through here for
+        // the same reason the cell above is. Without it `my @h = $c` (with `$c`
+        // an `is Array` subclass instance) reported "no interpreter needed" and
+        // the pure renderer printed the `SA()` fallback for the element.
+        let item = item.descalarize();
         matches!(
             item.view(),
             ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Proxy { .. }
-        ) || Self::list_str_needs_interpreter(&item)
+        ) || Self::list_str_needs_interpreter(item)
     }
 
     /// Replace every `Instance` element with the string its class's `Str`
@@ -114,11 +122,16 @@ impl crate::Interpreter {
             } else {
                 item
             };
+            // Look through itemization for the same reason
+            // `element_needs_interpreter` does -- the probe and the resolver
+            // must agree on what an element *is*, or a list the probe accepted
+            // would fall through this loop unchanged.
+            let inner = item.descalarize();
             if matches!(
-                item.view(),
+                inner.view(),
                 ValueView::Instance { .. } | ValueView::Mixin(..)
             ) {
-                let s = self.call_method_with_values(item.clone(), "Str", vec![])?;
+                let s = self.call_method_with_values(inner.clone(), "Str", vec![])?;
                 out.push(Value::str(s.to_string_value()));
             } else if Self::list_str_needs_interpreter(&item) {
                 out.push(self.resolve_list_element_stringifiers(&item)?);
