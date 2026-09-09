@@ -629,6 +629,7 @@ impl Interpreter {
             // side writes the registry, the deep clone (and its drop) never happens.
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
+            numeric_bridge_probe: Default::default(),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
             skip_postcircumfix_overload: false,

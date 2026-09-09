@@ -341,10 +341,16 @@ impl Interpreter {
                     "gist" | "Str" | "Stringy" | "raku" | "perl"
                 );
                 let render_overridden = is_pure_render && self.has_user_method(&cn, &method_name);
+                // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
+                // is a property of the receiver's CLASS, not of the call, so
+                // it is memoized per class symbol. Asked inline it made two
+                // full `type_matches_value` walks -- each over the class MRO
+                // *and* the transitive closure of its composed roles -- 52% of
+                // a `Buf.push` loop. The memo is keyed on the registry write
+                // generation, bumped by the registry's sole write path, so no
+                // enumeration of mutation sites can go stale (#7712).
                 if (!is_pure_render || render_overridden)
-                    && (self.type_matches_value("Real", target)
-                        || self.type_matches_value("Numeric", target)
-                        || self.has_user_method(&cn, "Bridge"))
+                    && self.instance_needs_numeric_bridge(class_name, target)
                 {
                     return None;
                 }
