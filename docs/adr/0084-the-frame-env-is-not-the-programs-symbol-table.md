@@ -196,6 +196,18 @@ env deep copy on that path is worth about 0.5 ms. This ADR is worth doing for th
 correctness divergences and for the general "cost scales with program size"
 property; the race needs that and more.
 
+**And that ~1 ms budget is not mutsu's to meet.** The race is a defect in the
+test harness — it calls `ok` from `start` blocks, and `Test` is not thread-safe —
+reported upstream as
+[croservices/cro-http#217](https://github.com/croservices/cro-http/pull/217),
+which has each request record its check results into a `Promise` and reports them
+from the main thread in request order. With that in, there is no race for an
+interpreter to win: the bound becomes the test's own `Promise.in(5)` timeout,
+which mutsu clears by two orders of magnitude. So **do not start this campaign,
+or any other, on the premise that a HTTP/2 body path must get 3x faster.** Its
+justification is §1.4 and §1.2 — the correctness divergences and the fact that
+identical code costs 5x more once modules are loaded.
+
 ## 7. Implementation status
 
 Not started, tracked by
