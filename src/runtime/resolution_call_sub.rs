@@ -1246,7 +1246,11 @@ impl Interpreter {
             };
             let finalized =
                 self.finalize_return_with_spec(result, effective_return_spec.as_deref());
-            let fetch_rw = data.is_rw && !data.is_raw;
+            // Only a plain `sub`/`method` decontainerizes its return value, so
+            // only there is a `Proxy` result FETCHed at the call. `is raw` /
+            // `is rw` routines and non-Routine blocks hand the container back
+            // as-is, and the FETCH happens at the next use (#7748).
+            let fetch_rw = !data.returns_container();
             return finalized.and_then(|v| {
                 let v = if let ValueView::LazyList(list) = v.view() {
                     let mut env = list.env.clone();

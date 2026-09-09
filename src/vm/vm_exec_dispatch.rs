@@ -1697,6 +1697,51 @@ impl Interpreter {
                             .push((name.clone(), resolved_source));
                     }
                 }
+                // A name that currently denotes a `Proxy` takes a plain `=`
+                // through its STORE instead of being rebound — the same rule
+                // `exec_set_local_op_inner` applies to a slot-held `Proxy`. A
+                // closure or a named sub that captured a `:=`-bound `Proxy`
+                // reaches its assignment HERE, by name, never through a local
+                // slot, so without this the write silently vanished: `my $p :=
+                // Proxy.new(...); my $b = { $p = 2 }; $b()` left the backing
+                // store untouched and still reported success (#7748).
+                //
+                // It has to run before BOTH write-throughs below — the
+                // compunit-lexical store and the generic `ContainerRef` one —
+                // since each would replace the boxed `Proxy` with the plain
+                // value, which is exactly the rebinding a `=` must not do. The
+                // captured lexical can sit in either store, so both are asked.
+                // `fresh_binding_decl` (hoisted here from the write-throughs,
+                // which read it too) is the exclusion they already state: an
+                // expression-position `my` of the same name declares a NEW
+                // variable rather than writing the captured `Proxy`.
+                //
+                // Tag probes first (`is_proxy_value` / `is_container_ref`), so
+                // an ordinary store pays no clone and cannot materialize a lazy
+                // `Match` merely to learn it is not a `Proxy`.
+                let fresh_binding_decl =
+                    self.vardecl_context().get() && code.expr_declared_syms.contains(&name_sym);
+                if !is_rebind && !raw_mode && !is_bind_ctx && !fresh_binding_decl {
+                    let proxy_val = match self
+                        .unit_lexical_slot(&name)
+                        .or_else(|| self.env().get(&name))
+                    {
+                        Some(v) if v.is_proxy_value() => Some(v.clone()),
+                        Some(v) if v.is_container_ref() => {
+                            let inner = v.deref_container();
+                            inner.is_proxy_value().then_some(inner)
+                        }
+                        _ => None,
+                    };
+                    if let Some(proxy_val) = proxy_val
+                        && let ValueView::Proxy { storer, .. } = proxy_val.view()
+                        && !storer.is_nil()
+                    {
+                        loan_env!(self, assign_proxy_lvalue(proxy_val.clone(), val))?;
+                        *ip += 1;
+                        return Ok(());
+                    }
+                }
                 // ADR-0024: a mainline named sub's write to one of its OWN
                 // captured lexicals must route through the shared cell in
                 // `unit_lexicals[MAINLINE_UNIT_KEY]`, checked BEFORE the
@@ -1734,8 +1779,6 @@ impl Interpreter {
                 // the OTHER `expr_declared_syms`-based protections (capture
                 // filter, free-var-write drain) ever run for it — this check is
                 // the one that does.
-                let fresh_binding_decl = self.vardecl_context().get()
-                    && code.expr_declared_syms.contains(&Symbol::intern(&name));
                 // Write through ContainerRef: update inner value for env-based variables.
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
                 if !is_rebind && !raw_mode {

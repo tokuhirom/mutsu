@@ -569,6 +569,9 @@ impl Compiler {
                 && !Self::body_uses_legacy_args(body),
             is_rw,
             is_raw,
+            // ADR-0067's third rw-capability fact, computed here because a
+            // compiled routine keeps no body AST to re-derive it from.
+            uses_return_rw: crate::opcode::body_uses_return_rw(body),
             is_cached,
             param_local_slots: None,
             params_fill_frame: false,

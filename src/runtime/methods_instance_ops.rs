@@ -1547,7 +1547,8 @@ impl Interpreter {
                 {
                     let result = result?;
                     let updated = attributes.to_map();
-                    if !self.in_lvalue_assignment
+                    if result.is_proxy_value()
+                        && self.should_fetch_returned_proxy(&class_name.resolve(), method)
                         && let ValueView::Proxy { fetcher, .. } = result.view()
                     {
                         return self.proxy_fetch(
@@ -1570,7 +1571,8 @@ impl Interpreter {
                 )?;
                 attributes.commit_attrs(updated.clone());
                 // Auto-FETCH if the method returned a Proxy
-                if !self.in_lvalue_assignment
+                if result.is_proxy_value()
+                    && self.should_fetch_returned_proxy(&class_name.resolve(), method)
                     && let ValueView::Proxy { fetcher, .. } = result.view()
                 {
                     return self.proxy_fetch(

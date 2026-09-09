@@ -432,7 +432,9 @@ impl Interpreter {
                             if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
                                 cell.commit_attrs(m.clone());
                             }
-                            if !self.in_lvalue_assignment
+                            if result.is_proxy_value()
+                                && !self.in_lvalue_assignment
+                                && !Self::method_is_rw_capable(&method_def)
                                 && let ValueView::Proxy { fetcher, .. } = result.view()
                             {
                                 // Without a `:=` adjustment the returned map is
