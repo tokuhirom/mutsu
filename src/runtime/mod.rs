@@ -444,6 +444,7 @@ mod class_dispatch;
 mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
+mod compunit_scope;
 mod ctor_phase_plan;
 mod nqp_ops;
 mod nqp_ops_builtin;
@@ -2035,6 +2036,23 @@ pub struct Interpreter {
     /// unable to resolve the helper its own body calls, since `loaded_modules`
     /// still claimed it was loaded and the later real `use` short-circuited.
     prelude_registered_functions: HashSet<Symbol>,
+    /// For each prelude key in `prelude_registered_functions`, the compilation
+    /// units the declaration was actually spliced into (`?FILE` at registration
+    /// time; `main_unit()` for the main script).
+    ///
+    /// The registration is process-global by design — a prelude routine has to
+    /// be callable by bare name from a method body running under any package
+    /// (see `NATIVECALL_SUB_PRELUDES`) — but its *visibility* is not: rakudo
+    /// exports these from `NativeCall.rakumod`, so a compunit that never
+    /// mentioned NativeCall must not see them. Without this, one module's
+    /// `use NativeCall` made `&nativecast` resolvable from every scope in the
+    /// process, including the script that merely `use`d that module two levels
+    /// up (GH #7612).
+    ///
+    /// A splice happens per compunit and is idempotent (the first registration
+    /// wins, later ones return `Unchanged`), so this set is what records the
+    /// later ones. `prelude_visible_here` reads it.
+    prelude_declaring_units: HashMap<Symbol, HashSet<Symbol>>,
     /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
     /// loaded module declared with `our`, keyed by module name.
     ///

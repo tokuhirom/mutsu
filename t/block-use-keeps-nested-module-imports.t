@@ -13,13 +13,15 @@
 # holds because the module-body delta is taken BEFORE `import_module`, so an
 # alias installed for the IMPORTING scope is never in the retained set.
 #
-# The opposite edge -- that the nested module's import is also visible to the
-# USING scope, where rakudo hides it -- is pre-existing and tracked as GH #7612;
-# it reproduces with no block at all, so it is deliberately not asserted here.
+# The opposite edge -- that the nested module's import was also visible to the
+# USING scope, where rakudo hides it -- was GH #7612, fixed by scoping the
+# prelude splice to the compunits it was spliced into. It is asserted at the
+# bottom of this file, and covered in full by
+# `t/nested-module-native-prelude-not-visible-to-user.t`.
 use lib $?FILE.IO.parent.add('lib').Str;
 use Test;
 
-plan 4;
+plan 5;
 
 {
     use BlockUseNestedOuter;
@@ -52,3 +54,10 @@ nok defined(::('&leaf-probe')),
     use BlockUseNestedInner;
 }
 is outer-probe(), 'visible', 'the chain still resolves after a repeated block-scoped use';
+
+# GH #7612: the same chain must NOT make the helper visible HERE. The splice
+# gate is a source-text check over this file's code, so the name is assembled
+# at runtime -- spelling it plainly would inject the prelude into this compunit
+# and legitimately declare it.
+nok defined(::('&native' ~ 'cast')),
+    "the nested module's own prelude splice stays invisible to the using scope";

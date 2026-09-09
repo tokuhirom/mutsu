@@ -104,12 +104,14 @@ impl Interpreter {
         let cur_pkg = self.current_package();
         // Innermost package first, then each enclosing one, ending at GLOBAL.
         for pkg in self.bare_name_packages() {
-            if let Some(def) = self
-                .registry()
-                .functions
-                .get(&Symbol::intern(&format!("{}::{}", pkg, name)))
-                .cloned()
-            {
+            let key = Symbol::intern(&format!("{}::{}", pkg, name));
+            if let Some(def) = self.registry().functions.get(&key).cloned() {
+                // A prelude splice is registered under `GLOBAL::` for every
+                // package to reach, but is lexical to the compunits it was
+                // spliced into — see `prelude_visible_here`.
+                if !self.prelude_visible_here(key) {
+                    continue;
+                }
                 return Some(def);
             }
         }

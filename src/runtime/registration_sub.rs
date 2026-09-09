@@ -754,6 +754,17 @@ impl Interpreter {
             // to put it back after a scope rollback — see
             // `prelude_registered_functions`.
             self.prelude_registered_functions.insert(global_key);
+            // ...and record WHICH compunit this copy was spliced into, before
+            // the idempotence check below can swallow it. The registration is
+            // process-global so that a method body under any package can reach
+            // the helper, but rakudo scopes these names to the compunits that
+            // `use NativeCall`, so resolution consults this set — see
+            // `prelude_declaring_units` / `prelude_visible_here`.
+            let unit = self.declaring_unit_sym();
+            self.prelude_declaring_units
+                .entry(global_key)
+                .or_default()
+                .insert(unit);
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
             // one wins and the rest are no-ops rather than redeclarations.

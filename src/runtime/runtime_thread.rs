@@ -644,6 +644,7 @@ impl Interpreter {
             loaded_modules: self.loaded_modules.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
             prelude_registered_functions: self.prelude_registered_functions.clone(),
+            prelude_declaring_units: self.prelude_declaring_units.clone(),
             module_package_globals: self.module_package_globals.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
             cur_repo: self.cur_repo.clone(),
