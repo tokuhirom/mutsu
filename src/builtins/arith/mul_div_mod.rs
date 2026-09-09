@@ -319,22 +319,23 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
     }
     {
         // Integer `%` by zero reports the dividend and `using %`, like Rakudo
-        // (`Attempt to divide 7 by zero using %`).
+        // (`Attempt to divide 7 by zero using %`). Like `div`, this is a soft
+        // Failure (returned, not thrown) — it only dies when sunk or demanded.
         let mod_div0 = |dividend: &Value| {
-            RuntimeError::numeric_divide_by_zero_full(Some(dividend.clone()), Some("%"))
+            RuntimeError::divide_by_zero_failure(Some(dividend.clone()), Some("%"))
         };
         Ok(match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(0)) => {
-                return Err(mod_div0(&Value::int(a)));
+                return Ok(mod_div0(&Value::int(a)));
             }
             (ValueView::BigInt(a), ValueView::Int(0)) => {
-                return Err(mod_div0(&Value::from_bigint((**a).clone())));
+                return Ok(mod_div0(&Value::from_bigint((**a).clone())));
             }
             (ValueView::Int(a), ValueView::BigInt(b)) if b.is_zero() => {
-                return Err(mod_div0(&Value::int(a)));
+                return Ok(mod_div0(&Value::int(a)));
             }
             (ValueView::BigInt(a), ValueView::BigInt(b)) if b.is_zero() => {
-                return Err(mod_div0(&Value::from_bigint((**a).clone())));
+                return Ok(mod_div0(&Value::from_bigint((**a).clone())));
             }
             (ValueView::Int(a), ValueView::Int(b)) => {
                 Value::int(num_integer::Integer::mod_floor(&a, &b))
@@ -364,6 +365,12 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
                 ));
             }
             (ValueView::Int(a), ValueView::Num(b)) => Value::num(float_mod_floor(a as f64, b)),
+            (ValueView::Num(a), ValueView::Int(0)) => {
+                return Ok(RuntimeError::divide_by_zero_failure(
+                    Some(Value::num(a)),
+                    Some("%"),
+                ));
+            }
             (ValueView::Num(a), ValueView::Int(b)) => Value::num(float_mod_floor(a, b as f64)),
             _ => Value::int(0),
         })
