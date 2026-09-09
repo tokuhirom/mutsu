@@ -470,8 +470,13 @@ impl Interpreter {
         }
     }
 
-    /// Create an X::TypeCheck::Return exception
-    fn throw_type_check_return(&self, expected: &str, got: &Value) -> RuntimeError {
+    /// Create an X::TypeCheck::Return exception.
+    ///
+    /// Shared with the positional-light call path, which enforces a fast return
+    /// type itself: raising a bare `RuntimeError` there made
+    /// `throws-like ..., X::TypeCheck::Return` fail whenever a routine with a
+    /// return type reached that path (roast/S02-types/type.t, #7573).
+    pub(crate) fn throw_type_check_return(&self, expected: &str, got: &Value) -> RuntimeError {
         let got_type = Self::display_type_name(got);
         let got_gist = Self::display_gist(got);
         let msg = format!(

@@ -112,6 +112,34 @@ impl Interpreter {
         sym
     }
 
+    /// The env key a routine's registration clone id is stored under,
+    /// `__mutsu_callable_id::<package>::<name>`, memoized per
+    /// `(package, name)` symbol pair exactly like [`Self::type_meta_key_sym`].
+    ///
+    /// Every named compiled call probes this key on entry
+    /// (`call_compiled_function_named_inner`), and building it cost a `format!`
+    /// of a ~40-byte string — a heap allocation, the formatting machinery, and
+    /// then a hash of those 40 bytes to intern it — per call, for a mapping
+    /// that is fixed for the life of the routine (#7573).
+    pub(crate) fn callable_id_key_for_syms(package_sym: Symbol, name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static CALLABLE_ID_KEYS: std::cell::RefCell<
+                rustc_hash::FxHashMap<(Symbol, Symbol), Symbol>,
+            > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        let pair = (package_sym, name_sym);
+        if let Some(sym) = CALLABLE_ID_KEYS.with(|c| c.borrow().get(&pair).copied()) {
+            return sym;
+        }
+        let sym = package_sym.with_str(|pkg| {
+            name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_callable_id::{pkg}::{name}")))
+        });
+        CALLABLE_ID_KEYS.with(|c| {
+            c.borrow_mut().insert(pair, sym);
+        });
+        sym
+    }
+
     /// The env key for `name`'s placeholder-parameter twin, `^<name>`, as a
     /// pre-interned `Symbol`, memoized per name symbol exactly like
     /// [`Self::type_meta_key_sym`] (the mapping never changes).

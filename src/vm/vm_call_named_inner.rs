@@ -103,10 +103,14 @@ impl Interpreter {
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {
-            let callable_key = format!("__mutsu_callable_id::{fn_package}::{fn_name}");
+            // Memoized per (package, name) symbol pair: the key is fixed for
+            // the routine, and the `format!` + intern of its ~40-byte string
+            // used to run on every named call (#7573).
+            let callable_key =
+                crate::runtime::Interpreter::callable_id_key_for_syms(fn_package_sym, fn_name_sym);
             let resolved_callable_id = self
                 .env()
-                .get(&callable_key)
+                .get_sym(callable_key)
                 .and_then(|v| match v.view() {
                     ValueView::Int(i) => Some(i),
                     _ => None,

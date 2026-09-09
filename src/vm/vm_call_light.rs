@@ -53,19 +53,6 @@ fn positional_light_type_error(
     RuntimeError::typed("X::TypeCheck::Argument", attrs)
 }
 
-/// Build the error for a positional-light routine whose return value failed
-/// the declared return type. `#[cold]` for the same reason as
-/// [`positional_light_arity_error`].
-#[cold]
-#[inline(never)]
-fn positional_light_return_type_error(rt: &str, got: &Value) -> RuntimeError {
-    RuntimeError::new(format!(
-        "Type check failed for return value; expected {}, got {}",
-        rt,
-        runtime::value_type_name(got)
-    ))
-}
-
 impl Interpreter {
     /// Slice-taking wrapper over [`Self::call_compiled_function_positional_light_at`]
     /// for the cold call sites that already hold an owned argument vector
@@ -734,7 +721,10 @@ impl Interpreter {
                 _ => Self::light_return_type_check(check_val, rt),
             };
             if !passed {
-                return Err(positional_light_return_type_error(rt, check_val));
+                // The SAME typed `X::TypeCheck::Return` the general return-value
+                // path raises. A bare `RuntimeError` here was invisible to
+                // `throws-like ..., X::TypeCheck::Return` (#7573).
+                return Err(self.throw_type_check_return(rt, check_val));
             }
         }
 
@@ -865,7 +855,7 @@ impl Interpreter {
             // in the by-name form: an `IntStr` satisfies both `Int` and `Str`.
             ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
             // A bare type object satisfies a smiley-less nominal constraint of
-            // its own name (`Int` for `Int $a`), and any of `Any`/`Mu`/`Cool`.
+            // its own name (`Int` for `Int $a`), and `Any`/`Mu`.
             // Interning is injective, so the `Symbol` compare is exactly the
             // by-name form's `sym.resolve() == type_name`.
             ValueView::Package(sym) => kind == T::Wild || sym == name_sym,
@@ -874,7 +864,7 @@ impl Interpreter {
             ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
             ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
-            // Every other value shape satisfies only `Any`/`Mu`/`Cool` -- the
+            // Every other value shape satisfies only `Any`/`Mu` -- the
             // by-name form's `_` arm compares `value_type_name(val)` against a
             // name that, on this path, is always one of the five concrete
             // types above, so it can only be false.
@@ -920,7 +910,7 @@ impl Interpreter {
         }
         match val.view() {
             // A `Failure` passes any return type; any other instance satisfies
-            // only `Any`/`Mu`/`Cool`, exactly as `fast_type_check`'s `_` arm
+            // only `Any`/`Mu`, exactly as `fast_type_check`'s `_` arm
             // does (`value_type_name` can never equal one of the five concrete
             // type names for an instance).
             ValueView::Instance { class_name, .. } => {
@@ -959,13 +949,15 @@ impl Interpreter {
         // full `bind_function_args_values` path, which enforces the smiley
         // correctly. Only the true bare form reaches here, and it must accept
         // the matching type object (`is { sub a(Int $a) { $a }; a Int }(),
-        // Int`, roast/S06-parameters/smiley.t). `Any`/`Mu`/`Cool` are handled
+        // Int`, roast/S06-parameters/smiley.t). `Any`/`Mu` are handled
         // by their own `=> true` arm below (they accept every value,
         // defined or not, including a type object of any name) rather than
         // this by-name match — a bare-word `Str` passed to an `Any $a` param
-        // must not be rejected just because `"Str" != "Any"`.
+        // must not be rejected just because `"Str" != "Any"`. `Cool` is NOT
+        // one of them: a user class instance does not do `Cool`, so it is not
+        // a fast type name at all and never reaches here (#7573).
         if let ValueView::Package(sym) = val.view()
-            && !matches!(type_name, "Any" | "Mu" | "Cool")
+            && !matches!(type_name, "Any" | "Mu")
         {
             return sym.resolve() == type_name;
         }
@@ -975,7 +967,7 @@ impl Interpreter {
             "Num" => matches!(val.view(), ValueView::Num(_)),
             "Bool" => matches!(val.view(), ValueView::Bool(_)),
             "Rat" => matches!(val.view(), ValueView::Rat(_, _)),
-            "Any" | "Mu" | "Cool" => true,
+            "Any" | "Mu" => true,
             _ => {
                 let actual = runtime::value_type_name(val);
                 actual == type_name

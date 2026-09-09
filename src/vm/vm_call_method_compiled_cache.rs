@@ -33,6 +33,41 @@ const LITERAL_NATIVE_KEY: &str = "__mutsu_key_literal_native";
 /// distinct buckets.
 const ENUM_MEMBER_KEY: &str = "__mutsu_key_enum_member";
 
+/// The reserved marker names above, plus the three native type names a literal
+/// argument keys as, interned ONCE per process instead of on every use.
+///
+/// `multi_arg_type_keys` runs on every multi call — twice, since the callsite
+/// resolution and `resolve_function_multi_cached` each build the key — and
+/// emitted up to three of these per argument. Each was a `Symbol::intern` of a
+/// compile-time constant: a thread-local borrow plus a hash of a ~25-byte
+/// string, for an answer that can never change. Measured on a 200 000-iteration
+/// `multi sub m(Mu $c, $d = '')` loop, `multi_arg_type_keys` interned 12 names
+/// per call, 8 of them from this fixed set (#7573).
+mod key_syms {
+    use crate::symbol::Symbol;
+
+    macro_rules! key_sym {
+        ($($f:ident => $s:expr;)*) => {$(
+            #[inline(always)]
+            pub(super) fn $f() -> Symbol {
+                static CELL: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+                *CELL.get_or_init(|| Symbol::intern($s))
+            }
+        )*};
+    }
+
+    key_sym! {
+        callsite_line_marker => super::CALLSITE_LINE_MARKER_KEY;
+        undefined_arg => super::UNDEFINED_ARG_KEY;
+        declared_type => super::DECLARED_TYPE_KEY;
+        literal_native => super::LITERAL_NATIVE_KEY;
+        enum_member => super::ENUM_MEMBER_KEY;
+        native_int => "int";
+        native_num => "num";
+        native_str => "str";
+    }
+}
+
 impl Interpreter {
     pub(crate) fn refresh_method_caches_for_generation(&mut self) {
         let generation = self.registry().method_generation;
@@ -98,7 +133,7 @@ impl Interpreter {
             let a = match raw.view() {
                 ValueView::VarRef { name, value, .. } => {
                     if let Some(tc) = name.with_str(|n| self.var_type_constraint(n)) {
-                        keys.push(crate::symbol::Symbol::intern(DECLARED_TYPE_KEY));
+                        keys.push(key_syms::declared_type());
                         keys.push(crate::symbol::Symbol::intern(&tc));
                     }
                     value.clone()
@@ -115,14 +150,14 @@ impl Interpreter {
                     if pos_idx < 32
                         && self.literal_native_args & (1 << pos_idx) != 0
                         && let Some(nt) = match raw.view() {
-                            ValueView::Int(_) => Some("int"),
-                            ValueView::Num(_) => Some("num"),
-                            ValueView::Str(_) => Some("str"),
+                            ValueView::Int(_) => Some(key_syms::native_int()),
+                            ValueView::Num(_) => Some(key_syms::native_num()),
+                            ValueView::Str(_) => Some(key_syms::native_str()),
                             _ => None,
                         }
                     {
-                        keys.push(crate::symbol::Symbol::intern(LITERAL_NATIVE_KEY));
-                        keys.push(crate::symbol::Symbol::intern(nt));
+                        keys.push(key_syms::literal_native());
+                        keys.push(nt);
                     }
                     raw.clone()
                 }
@@ -150,7 +185,7 @@ impl Interpreter {
                     // interned `"Type::Member"` string: no per-call `format!`,
                     // and no way for the pair to be read as the plain type name
                     // of some other argument.
-                    keys.push(crate::symbol::Symbol::intern(ENUM_MEMBER_KEY));
+                    keys.push(key_syms::enum_member());
                     keys.push(enum_type);
                     k
                 }
@@ -169,7 +204,7 @@ impl Interpreter {
                 // subset / smiley / coercion) makes the whole name un-cacheable in
                 // `func_multi_dispatch_type_cacheable` before this key is used.
                 _ if Self::is_callsite_line_marker(a) => {
-                    crate::symbol::Symbol::intern(CALLSITE_LINE_MARKER_KEY)
+                    key_syms::callsite_line_marker()
                 }
                 ValueView::Junction { .. }
                 | ValueView::Mixin(..)
@@ -199,7 +234,7 @@ impl Interpreter {
             // the views it would have to lock through (`ContainerRef`, `Mixin`)
             // already returned `None` above.
             if !crate::runtime::types::value_is_defined(a) {
-                keys.push(crate::symbol::Symbol::intern(UNDEFINED_ARG_KEY));
+                keys.push(key_syms::undefined_arg());
             }
         }
         Some(keys)
@@ -448,7 +483,7 @@ impl Interpreter {
             // the second is served the first's candidate
             // (`t/multi-method-invocant-definedness.t`).
             if !crate::runtime::types::value_is_defined(target) {
-                arg_keys.insert(0, crate::symbol::Symbol::intern(UNDEFINED_ARG_KEY));
+                arg_keys.insert(0, key_syms::undefined_arg());
             }
             let mkey = (class_sym, method_sym, arg_keys);
             if let Some(hit) = self.multi_resolve_cache.get(&mkey) {

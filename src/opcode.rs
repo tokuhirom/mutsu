@@ -8742,7 +8742,14 @@ pub(crate) enum FastParamType {
     Num,
     Bool,
     Rat,
-    /// `Any` / `Mu` / `Cool`: satisfied by every value.
+    /// `Any` / `Mu`: satisfied by every value.
+    ///
+    /// `Cool` is deliberately NOT here. It is a real type: a user class
+    /// instance does not do `Cool`, so treating it as a wildcard made
+    /// `sub f(Cool $c)` accept anything (`t/light-call-type-check-tags.t`
+    /// pins the rejection). A `Cool` constraint is therefore not a fast type
+    /// at all -- it leaves the light paths and is enforced by the general
+    /// binder, which consults the class MRO (#7573).
     Wild,
 }
 
@@ -8757,7 +8764,7 @@ impl FastParamType {
             "Num" => Self::Num,
             "Bool" => Self::Bool,
             "Rat" => Self::Rat,
-            "Any" | "Mu" | "Cool" => Self::Wild,
+            "Any" | "Mu" => Self::Wild,
             _ => return None,
         })
     }
