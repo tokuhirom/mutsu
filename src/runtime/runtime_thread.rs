@@ -572,6 +572,7 @@ impl Interpreter {
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             unit_private_routines: self.unit_private_routines.clone(),
             unit_private_names: self.unit_private_names.clone(),
+            class_declaring_units: self.class_declaring_units.clone(),
             prelude_sub_names: self.prelude_sub_names.clone(),
             current_unit: self.current_unit,
             closures_created: 0,

@@ -1744,6 +1744,12 @@ pub struct Interpreter {
     /// resolution is unit-dependent and therefore must bypass the name-keyed
     /// resolution caches (which are not keyed by unit).
     pub(crate) unit_private_names: HashSet<Symbol>,
+    /// The compilation unit that declared each user class. Attribute defaults
+    /// run later, while constructing an instance from an arbitrary caller, so
+    /// they need the same unit anchor as the class body to resolve compunit-
+    /// private routines. Method parameter defaults use this metadata before the
+    /// method's routine frame exists as well.
+    pub(crate) class_declaring_units: HashMap<String, Symbol>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them

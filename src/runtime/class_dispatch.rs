@@ -615,6 +615,8 @@ impl Interpreter {
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
         crate::alloc_scope_end!(_sc_cc);
         crate::alloc_scope_named!(_sc_call, "resolved-method-celled:call");
+        let saved_unit = self.current_unit;
+        self.current_unit = self.unit_of_source(method_def.source_file.as_deref());
         let call_result = self.call_compiled_method(
             receiver_class_name,
             owner_class,
@@ -626,6 +628,12 @@ impl Interpreter {
             invocant,
             fns_ref,
         );
+        // Parameter defaults are evaluated while binding, before the method
+        // routine frame is pushed. Anchor that phase to the method's defining
+        // compunit so its file-private helpers remain visible across modules.
+        // The method body itself already records the same source file on its
+        // routine frame; this only covers the pre-frame bind phase.
+        self.current_unit = saved_unit;
         crate::alloc_scope_end!(_sc_call);
         // MERGE the saved sibling writes (e.g. a sibling BUILD's captured-outer
         // write queued for the outer `.new` caller to drain, #3620) with the
