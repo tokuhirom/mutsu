@@ -2943,6 +2943,17 @@ impl Compiler {
                         succeed_boundary: false,
                     })
                 });
+                // `given`/`with` bodies are blocks too. Keep their own
+                // `let`/`temp` saves inside the topicalizer, so a `with`
+                // branch resolves a save before execution continues after the
+                // enclosing `if`.
+                let needs_value = Self::has_real_let_deep(body);
+                let let_frame = Self::has_let_deep(body).then(|| {
+                    self.code.emit(OpCode::LetBlock {
+                        body_end: 0,
+                        value_on_stack: needs_value,
+                    })
+                });
                 let saved_scope =
                     (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
                 if Self::has_block_leave_worthy_phasers(body) {
@@ -2978,10 +2989,19 @@ impl Compiler {
                     // sink-context warning, same as raku) and `do given`
                     // expression context (the value still comes through
                     // correctly, via the separate `Push`-mode path).
-                    self.compile_phaser_block_scope(body, PhaserBlockResult::Discard);
+                    self.compile_phaser_block_scope(
+                        body,
+                        if needs_value {
+                            PhaserBlockResult::Push
+                        } else {
+                            PhaserBlockResult::Discard
+                        },
+                    );
                 } else if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
-                    self.code.emit(OpCode::Pop);
+                    if !needs_value {
+                        self.code.emit(OpCode::Pop);
+                    }
                 } else {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
@@ -2993,6 +3013,9 @@ impl Compiler {
                             self.compile_stmt(s);
                         }
                     }
+                }
+                if let Some(idx) = let_frame {
+                    self.code.patch_let_block_end(idx);
                 }
                 if let Some(saved) = saved_scope {
                     self.pop_dynamic_scope_lexical(saved);

@@ -148,7 +148,7 @@ impl Compiler {
                     self.emit_inlined_body_placeholder_binds(body, ArgSupply::Topic);
                 }
                 let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
-                self.compile_block_inline(body);
+                self.compile_if_value_branch(body, |c| c.compile_block_inline(body));
                 self.code.patch_body_end(given_idx);
             }
             Stmt::Assign { name, expr, .. } => {

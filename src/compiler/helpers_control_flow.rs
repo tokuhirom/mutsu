@@ -342,11 +342,13 @@ impl Compiler {
         // Value position changes nothing about the branch being a block literal
         // re-cloned per execution — see `OpCode::ResetStateLocals`.
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
-        if Self::has_block_enter_leave_phasers(then_branch) {
-            self.compile_phaser_block_scope(then_branch, PhaserBlockResult::Push);
-        } else {
-            self.compile_stmts_value(then_branch);
-        }
+        self.compile_if_value_branch(then_branch, |c| {
+            if Self::has_block_enter_leave_phasers(then_branch) {
+                c.compile_phaser_block_scope(then_branch, PhaserBlockResult::Push);
+            } else {
+                c.compile_stmts_value(then_branch);
+            }
+        });
         self.patch_nested_block_state_reset(then_state_reset);
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
@@ -359,11 +361,13 @@ impl Compiler {
             self.code.emit(OpCode::LoadConst(empty_idx));
         } else {
             let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
-            if Self::has_block_enter_leave_phasers(else_branch) {
-                self.compile_phaser_block_scope(else_branch, PhaserBlockResult::Push);
-            } else {
-                self.compile_stmts_value(else_branch);
-            }
+            self.compile_if_value_branch(else_branch, |c| {
+                if Self::has_block_enter_leave_phasers(else_branch) {
+                    c.compile_phaser_block_scope(else_branch, PhaserBlockResult::Push);
+                } else {
+                    c.compile_stmts_value(else_branch);
+                }
+            });
             self.patch_nested_block_state_reset(else_state_reset);
         }
         self.code.patch_jump(jump_end);
@@ -510,6 +514,51 @@ impl Compiler {
         self.code.patch_block_local_body_end(idx);
     }
 
+    /// Compile an `if`/`unless`/`else` branch whose block-local declarations
+    /// coexist with a `let`/`temp` save. The block-local scope remains the
+    /// outer scope so its declaration cleanup still runs after the save frame.
+    pub(super) fn compile_block_local_branch_with_let(&mut self, stmts: &[Stmt]) {
+        let needs_value = Self::has_real_let_deep(stmts);
+        let idx = self.code.emit(OpCode::BlockLocalScope {
+            body_end: 0,
+            succeed_boundary: true,
+        });
+        self.in_scope_restored_body(|c| {
+            let let_idx = c.code.emit(OpCode::LetBlock {
+                body_end: 0,
+                value_on_stack: needs_value,
+            });
+            if needs_value {
+                c.compile_body_with_implicit_try_value(stmts);
+            } else {
+                c.compile_body_with_implicit_try(stmts);
+            }
+            c.code.patch_let_block_end(let_idx);
+            if needs_value {
+                // Keep the block-local scope stack-balanced after the frame
+                // has inspected the branch's value.
+                c.code.emit(OpCode::Pop);
+            }
+        });
+        self.code.patch_block_local_body_end(idx);
+    }
+
+    /// Bracket an if-branch value with the save frame owned by the branch.
+    /// `body` supplies the position-specific branch lowering while the frame
+    /// consistently reads the value stack, preserving the enclosing topic.
+    pub(super) fn compile_if_value_branch(&mut self, stmts: &[Stmt], body: impl FnOnce(&mut Self)) {
+        let let_frame = Self::has_let_deep(stmts).then(|| {
+            self.code.emit(OpCode::LetBlock {
+                body_end: 0,
+                value_on_stack: true,
+            })
+        });
+        body(self);
+        if let Some(idx) = let_frame {
+            self.code.patch_let_block_end(idx);
+        }
+    }
+
     /// Compile a loop body (`while`/`until`/C-style `loop`/`repeat`/`for`) as a
     /// scope whose env is restored on exit. The loop opcodes bracket the body
     /// with `push_loop_local_scope`/`pop_loop_local_scope`, which is exactly the
@@ -631,13 +680,8 @@ impl Compiler {
             // one case. Deliberately `has_block_leave_worthy_phasers`, not
             // `has_block_enter_leave_phasers` — see that function's doc.
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
-        } else if Self::body_mutates_topic(stmts) {
-            self.synthetic_block_body = true;
-            self.compile_stmt(&Stmt::Block(stmts.to_vec()));
-        } else if Self::branch_declares_block_local(stmts) {
-            self.compile_block_local_branch(stmts);
         } else {
-            self.compile_body_with_implicit_try(stmts);
+            self.compile_if_statement_branch(stmts);
         }
     }
 
