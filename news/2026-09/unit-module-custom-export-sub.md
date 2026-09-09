@@ -122,3 +122,27 @@ Pinned by `t/unit-module-export-sub.t`, `t/multi-candidate-dispatcher.t`,
 Items 2 and 4 of #7555 were fixed earlier (#7653, #7663) and item 3 is tracked
 separately as [#7667](https://github.com/tokuhirom/mutsu/issues/7667); this
 closes the last one.
+
+## A fifth bug the gate surfaced: calling an enum value
+
+`Log::Async`'s `16-imports2.rakutest` was on the bundled-library whitelist and
+started failing under the change above — but it had been passing for the wrong
+reason. Its `sub EXPORT` reads `@*ARGS`, and the re-run used to see the
+*importer's* copy: mutsu matched the module's `--log=` branch against the test's
+`--level=trace` (with a `Use of Nil in string context` warning), which left
+`$level` a `WhateverCode`. Running the hook in the module's own scope — what
+rakudo does — makes `$level` the plain enum value rakudo produces there, and
+the test then calls it.
+
+Rakudo answers that call: `Lv::DEBUG(1)` is the same coercion as `Lv(1)`, both
+giving `Lv::TRACE`, and an undefined value when the enum holds no such value.
+mutsu implemented only the type-object half. `vm_call_on_value` already routes
+an invoked `Package` to the bare-name call path — "invoking a type object is a
+coercion, not a `CALL-ME` call" — but an enum *value* is a `ValueView::Enum`,
+matched neither that arm nor the `Instance | Package` one, and fell through to
+the `CALL-ME` fallback. Pinned by `t/enum-value-call-coercion.t`.
+
+One divergence is left untouched because it predates this and belongs to the
+shared coercion helper, not to the new arm: `Lv('DEBUG')` answers `Lv::DEBUG` in
+mutsu where rakudo answers `Nil`. The value form now agrees with the type form,
+which is the property that matters here.
