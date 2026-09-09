@@ -86,6 +86,7 @@ impl Interpreter {
                 || super::resolution_map_grep::sub_is_call_carrier(&data)
             {
                 // Fall through to call_sub_value path for complex cases
+                let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
                 let mut result = Vec::new();
                 let arity = if !data.params.is_empty() {
                     let effective = data
@@ -135,6 +136,7 @@ impl Interpreter {
                         let v =
                             self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
                         if arity == 1
+                            && !keeps_outer_topic
                             && let Some(mutated) = self.env.get(topic_key).cloned()
                         {
                             list_items[i] = mutated;
