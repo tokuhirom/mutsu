@@ -644,6 +644,15 @@ impl Interpreter {
             }
         };
 
+        // Placeholder parameters (`{ $^x = ... }`) are readonly aliases in
+        // Raku, just like ordinary non-rw scalar parameters. They use the
+        // legacy parameter binder, so the ordinary ParamDef readonly marking
+        // does not see them. Mark at the call site while this call's readonly
+        // frame is active; putting a MarkReadonly in the body would leak from
+        // native map/grep/first loops that execute the body without a call
+        // frame.
+        self.mark_placeholder_params_readonly(&data.params);
+
         // A plain `$`-sigiled single pointy-block parameter (`-> $v { }`,
         // `cc.pointy_alias_param`) reached `bind_function_args_values`'s
         // legacy path above (empty `param_defs`), which carries no trait

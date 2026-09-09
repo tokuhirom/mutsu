@@ -1,6 +1,6 @@
 # ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
 
-- Status: Accepted (P1-P4 landed; P5's scope half landed, its value half deferred — see Phase 5)
+- Status: Accepted (P1-P4 landed; P5's scope half landed, its value half deferred; P6 landed — see Phase 6)
 - Date: 2026-08-20
 - Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
   (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`).
@@ -624,6 +624,19 @@ not a real `Mu` either — it is one null per declared placeholder, which is wha
      role body for now. Recorded in
      `todo/deep/role-body-placeholder-mu-supply.md` and pinned (both the
      divergence and the arity fix) in `t/placeholder-scope-rejecting.t`.
+6. **Readonly placeholder parameters (A6, #7556): LANDED (2026-09-09).**
+   A scalar placeholder parameter such as `$^x` is a non-`rw` alias and must
+   reject assignment just like an ordinary non-`rw` scalar parameter. The
+   shallow placeholder collector now also inspects statement assignment
+   targets, so a block whose only use is `{ $^x = 9 }` still gets the implicit
+   `^x` parameter. The VM marks scalar caret/named placeholder parameters at
+   each closure call site while the call's readonly frame is active; the
+   native map/grep/first fast paths apply the same mark inside their existing
+   readonly guards. This keeps the mark scoped to one invocation and avoids a
+   body `MarkReadonly` prologue leaking through `run_reuse`.
+   `t/placeholder-block-readonly.t` pins direct calls plus map, grep, and first
+   fast loops, and `news/2026-09/placeholder-block-params-readonly.md` records
+   the user-visible change.
 
 ## Verification
 

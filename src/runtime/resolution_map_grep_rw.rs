@@ -376,6 +376,7 @@ impl Interpreter {
                     // same isolation `call_compiled_closure_with_topic` does.
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    vm.mark_placeholder_params_readonly(&data.params);
                     super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
@@ -725,6 +726,7 @@ impl Interpreter {
                         // leak permanently (see `mark_readonly_sym_with`).
                         let _readonly_guard =
                             crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                        vm.mark_placeholder_params_readonly(&data.params);
                         super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
                         match vm.run_reuse(&code, &compiled_fns) {
                             Ok(()) => {

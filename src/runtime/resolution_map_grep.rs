@@ -715,6 +715,7 @@ impl Interpreter {
                     // `resolution_map_grep_rw.rs`).
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
@@ -1035,6 +1036,7 @@ impl Interpreter {
                     // permanently (see the sibling comment in the grep loop).
                     let _readonly_guard =
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                    vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
