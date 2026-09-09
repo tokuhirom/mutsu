@@ -276,6 +276,13 @@ impl Interpreter {
             is_hoisted_shell,
         )?;
         self.finalize_class_registration(name, parents, class_def, &snapshot)?;
+        // Construction-time attribute defaults and BUILD parameter defaults
+        // execute after this declaration, often from another compunit. Keep
+        // the declaring unit so those evaluations can still see this file's
+        // private top-level routines.
+        let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
+        self.class_declaring_units
+            .insert(name.to_string(), declaring_unit);
         self.install_class_exporthow(name, parents)?;
         Ok(deferred_custom_traits)
     }

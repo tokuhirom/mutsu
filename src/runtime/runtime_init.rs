@@ -2941,6 +2941,7 @@ impl Interpreter {
             user_declared_infix_ops: HashMap::new(),
             unit_private_routines: HashMap::new(),
             unit_private_names: HashSet::new(),
+            class_declaring_units: HashMap::new(),
             prelude_sub_names: HashSet::new(),
             current_unit: crate::runtime::main_unit(),
             closures_created: 0,
