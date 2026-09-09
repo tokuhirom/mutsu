@@ -699,6 +699,17 @@ impl Interpreter {
             .last()
             .cloned()
             .unwrap_or_else(|| self.current_package());
+        // #7797: which COMPUNIT (not package) is doing the importing, captured
+        // before anything below switches `?FILE`/`current_unit` to this load's
+        // own module. `executing_unit_sym` is the same accessor
+        // `prelude_visible_here` uses for the analogous prelude-splice gate --
+        // it reads the routine-frame `def_file` if one is on the stack, and
+        // otherwise the ambient `?FILE`, which at this exact point still names
+        // whichever compunit's `use`/`need`/`require` triggered this load (a
+        // nested `use` reached from inside another module's own mainline sees
+        // THAT module's `?FILE`, already switched by ITS load_module_inner
+        // call before its body started running).
+        let importer_unit = self.executing_unit_sym();
         // Snapshot the `use` args (set by `exec_use_module_op`) before running
         // the module body: a transitive `use` inside the body would otherwise
         // overwrite the field. Handed to the module's `sub EXPORT`, if any.
@@ -772,6 +783,10 @@ impl Interpreter {
         let mut module_scope_names: HashMap<String, Value> = HashMap::new();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
+        // Hoisted above the `should_skip_runtime_for_use_only_module` branch
+        // (#7797) so the package-visibility bookkeeping after that branch can
+        // read it too, for a use-only module that skips the branch entirely.
+        let unit_name = Self::detect_unit_package_name(&stmts);
         if !Self::should_skip_runtime_for_use_only_module(&stmts) {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
@@ -783,7 +798,6 @@ impl Interpreter {
             // If the module file is a `unit module X` (or unit package/class),
             // record X so that `register_exported_sub` can mirror exports into
             // `unit_module_exported_subs` for tag validation.
-            let unit_name = Self::detect_unit_package_name(&stmts);
             if let Some(name) = unit_name.as_deref() {
                 let source = source_path.to_string_lossy();
                 let unit = self.unit_of_source(Some(&source));
@@ -1059,6 +1073,39 @@ impl Interpreter {
             )
             .cloned()
             .collect();
+        // #7797: record that `importer_unit` may reference this load's own
+        // top-level package(s) qualified (`Module::whatever`), but NOT a
+        // package reached only through one of ITS `use` statements —
+        // `owned_types`' filter just below already draws exactly that line
+        // for bare-name aliasing, so this reuses it rather than re-deriving
+        // "which of `new_types` belongs to this load" a second way.
+        // Coarse first-`::`-segment granularity, matching the existing
+        // `!key.contains("::")` bare-name gates (#7743/#7764/#7787): a
+        // `unit module A::B` grants `"A"`, not the full `"A::B"`.
+        fn top_segment(s: &str) -> &str {
+            s.split_once("::").map_or(s, |(top, _)| top)
+        }
+        let module_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
+        let mut granted_packages: HashSet<&str> = HashSet::new();
+        granted_packages.insert(top_segment(module));
+        if let Some(name) = unit_name.as_deref() {
+            granted_packages.insert(top_segment(name));
+        }
+        for qualified in &new_types {
+            if *qualified == module || qualified.starts_with(&format!("{module}::")) {
+                granted_packages.insert(top_segment(qualified));
+            }
+        }
+        {
+            let declaring = crate::runtime::cow_table_mut(&mut self.package_declaring_units);
+            for pkg in &granted_packages {
+                declaring.entry(pkg.to_string()).or_insert(module_unit);
+            }
+        }
+        crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
+            .entry(importer_unit)
+            .or_default()
+            .extend(granted_packages.iter().map(|s| s.to_string()));
         // Make each newly-declared class/role's bare short name resolvable from
         // the IMPORTER's own package/class too, not just from the declaring
         // module's own package-ancestor chain. An ordinary `use Foo::Native;`

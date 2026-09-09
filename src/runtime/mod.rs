@@ -1841,6 +1841,27 @@ pub struct Interpreter {
     /// private routines. Method parameter defaults use this metadata before the
     /// method's routine frame exists as well.
     pub(crate) class_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// #7797: the compunit that declared each `use`/`need`/`require`d
+    /// top-level package, keyed by the first `::`-segment of the `use`
+    /// argument (or the module's own `unit module` name — the two normally
+    /// agree). A package NOT in this map has no known foreign declaring
+    /// compunit, so `Interpreter::qualified_name_visible_here` treats a
+    /// reference to it as permissive (same-compunit `package Foo { }`
+    /// blocks, and a script's own top-level `unit module`, never populate
+    /// this table, so they are never mistakenly gated).
+    pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
+    /// #7797: for a compunit that successfully `use`d/`need`d/`require`d a
+    /// module, the top-level package names (same first-segment granularity
+    /// as `package_declaring_units`) it is therefore entitled to reference
+    /// package-qualified — e.g. `use OuterConst;` grants `"OuterConst"`, but
+    /// NOT `"InnerConst"` even though `OuterConst.rakumod` itself `use`d
+    /// `InnerConst`: rakudo installs a `use`d package into the *importing*
+    /// compunit's `MY::` only, so visibility does not transit through a
+    /// second `use`. `Interpreter::qualified_name_visible_here` walks the
+    /// `EVAL` parent chain (`eval_unit_parent`) from the executing unit
+    /// consulting this table, exactly as `prelude_visible_here` does for
+    /// prelude splices.
+    pub(crate) compunit_visible_packages: std::sync::Arc<HashMap<Symbol, HashSet<String>>>,
     /// Routines installed by a prelude spliced into a host compunit
     /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
     /// They deliberately live under `GLOBAL` for every compunit that uses them

@@ -2945,6 +2945,8 @@ impl Interpreter {
             unit_private_routines: Default::default(),
             unit_private_names: Default::default(),
             class_declaring_units: Default::default(),
+            package_declaring_units: Default::default(),
+            compunit_visible_packages: Default::default(),
             prelude_sub_names: Default::default(),
             current_unit: crate::runtime::main_unit(),
             closures_created: 0,

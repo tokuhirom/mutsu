@@ -136,6 +136,71 @@ impl Interpreter {
         }
     }
 
+    /// Whether a package-qualified name (`Pkg::name`) written in source is
+    /// visible from the code that is running right now (#7797).
+    ///
+    /// mutsu's package symbols (`our`-scoped constants/vars, classes, roles,
+    /// enums) live in process-global stores keyed by their qualified name,
+    /// with no notion of who may see an entry. Rakudo instead installs a
+    /// `use`d package into the importing compunit's `MY::`, so a compunit
+    /// that never `use`d `Pkg` — even one that reaches it transitively,
+    /// through a module it DID `use` — has no path to `Pkg::anything` at
+    /// all. This reconstructs that rule on top of the flat stores:
+    /// `package_declaring_units` says which compunit a top-level package
+    /// belongs to, and `compunit_visible_packages` says which packages a
+    /// given compunit earned visibility to by `use`/`need`/`require`ing
+    /// them directly (see `Interpreter::load_module_inner`).
+    ///
+    /// A name with no `::` is not this gate's concern (the three earlier
+    /// visibility slices — #7743, #7764, #7791 — already handle a *bare*
+    /// name). A `::`-name whose leading segment names no *known* foreign
+    /// package (nothing ever `use`d it into `package_declaring_units`) is
+    /// left permissive: that covers a same-compunit `package Foo { }`
+    /// block and a script's own top-level `unit module Foo`, neither of
+    /// which goes through `load_module_inner` and so never earns an entry
+    /// there — deliberately, since both are visible to their own compunit
+    /// unconditionally and this gate only ever RESTRICTS cross-compunit
+    /// reach, never a compunit's view of its own declarations.
+    pub(crate) fn qualified_name_visible_here(&self, name: &str) -> bool {
+        let Some((top, _)) = name.split_once("::") else {
+            return true;
+        };
+        if self.package_declaring_units.is_empty() {
+            return true;
+        }
+        let Some(&declaring_unit) = self.package_declaring_units.get(top) else {
+            return true;
+        };
+        self.package_visible_in_unit_chain(self.executing_unit_sym(), top, declaring_unit)
+            || self.package_visible_in_unit_chain(self.current_unit, top, declaring_unit)
+    }
+
+    /// Whether `top` (a package `declaring_unit` owns) is visible from
+    /// `start`, or any unit `start` was `EVAL`ed inside of — the same
+    /// EVAL-parent walk as [`Self::unit_chain_contains`], but consulting
+    /// `compunit_visible_packages` (keyed by unit, holding a *set of package
+    /// names*) instead of a flat `HashSet<Symbol>`, plus the unconditional
+    /// self-visibility check `unit_chain_contains` has no equivalent for: a
+    /// compunit always sees a package it declares itself.
+    fn package_visible_in_unit_chain(&self, start: Symbol, top: &str, declaring_unit: Symbol) -> bool {
+        let mut unit = Some(start);
+        for _ in 0..64 {
+            let Some(sym) = unit else { return false };
+            if sym == declaring_unit {
+                return true;
+            }
+            if self
+                .compunit_visible_packages
+                .get(&sym)
+                .is_some_and(|granted| granted.contains(top))
+            {
+                return true;
+            }
+            unit = crate::runtime::eval_unit_parent(sym);
+        }
+        false
+    }
+
     /// Whether `start`, or any unit it was `EVAL`ed inside of, is in `units`.
     ///
     /// `EVAL` compiles in its caller's lexical scope, so a declaration made by

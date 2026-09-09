@@ -583,6 +583,8 @@ impl Interpreter {
             unit_private_routines: self.unit_private_routines.clone(),
             unit_private_names: self.unit_private_names.clone(),
             class_declaring_units: self.class_declaring_units.clone(),
+            package_declaring_units: self.package_declaring_units.clone(),
+            compunit_visible_packages: self.compunit_visible_packages.clone(),
             prelude_sub_names: self.prelude_sub_names.clone(),
             current_unit: self.current_unit,
             closures_created: 0,
