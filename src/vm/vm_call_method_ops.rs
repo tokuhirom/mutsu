@@ -709,6 +709,13 @@ impl Interpreter {
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        if method == "raku"
+            && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
+            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
+        {
+            self.stack.push(Value::str(rendered));
+            return Ok(());
+        }
         if method == "BIND-KEY"
             && args.len() == 2
             && matches!(

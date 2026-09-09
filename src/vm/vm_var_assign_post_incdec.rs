@@ -462,7 +462,20 @@ impl Interpreter {
         // arms, and `%h<k>++` silently did nothing. The write side is handled
         // separately, at the in-place writeback below.
         let container_raw = container.clone();
-        let container = container.map(|c| c.deref_container());
+        let container = container.map(|c| {
+            // A scalar assignment from an aggregate preserves the shared
+            // `ContainerRef` inside the Scalar wrapper.  The element logic
+            // below needs the aggregate for classification and reading, so
+            // unwrap that one additional Scalar layer before dereferencing the
+            // shared cell.
+            if let ValueView::Scalar(inner) = c.view()
+                && inner.is_container_ref()
+            {
+                inner.deref_container()
+            } else {
+                c.deref_container()
+            }
+        });
         // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
         // against the container's length before using it as the key — otherwise
         // the raw closure stringifies to a bogus key and the increment is lost.
@@ -931,7 +944,7 @@ impl Interpreter {
             Some(s) => self.locals.get(s),
             None => self.env().get(&name),
         }
-        .and_then(|v| match v.view() {
+        .and_then(|v| match v.descalarize().view() {
             ValueView::ContainerRef(cell) => Some(cell.clone()),
             _ => None,
         });

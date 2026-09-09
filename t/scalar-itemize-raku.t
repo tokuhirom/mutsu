@@ -6,7 +6,7 @@ use Test;
 # Binds (`:=`), `constant`, and sigilless declarations install the value
 # itself (no Scalar container) and must NOT itemize.
 
-plan 26;
+plan 37;
 
 # --- plain scalar assignment itemizes ---
 {
@@ -79,6 +79,34 @@ plan 26;
     is ($c >>[&infix:<+>]<< $c).raku, '(2, 4, 6)', 'hyper func op on bound scalars';
     is ($c >>[&infix:<+>]<< $c).raku, '(2, 4, 6)', 'writeback does not itemize a bound scalar';
     is $c.raku, '(1, 2, 3)', 'bound scalar keeps its bare List after hyper func op';
+}
+
+# --- a scalar holding a shared Array keeps its itemization marker ---
+{
+    class ScalarArraySubclass is Array { }
+    class ScalarHashSubclass is Hash { }
+
+    my @source = 1, 2;
+    my $held = @source;
+    is $held.raku, '$[1, 2]', 'a scalar-held Array renders the $ marker';
+    is $held.WHAT.gist, '(Array)', 'the scalar-held Array keeps its type';
+    ok $held === @source, 'the scalar-held Array is still the same container';
+    my @items = $held, 3;
+    is @items.elems, 2, 'the scalar-held Array stays one item in list context';
+    $held[0] = 9;
+    is @source.raku, '[9, 2]', 'element assignment still writes through the share';
+    is $($held).raku, '$[9, 2]', 'explicit itemization keeps the $ marker';
+    my $bound := @source;
+    is $bound.raku, '[9, 2]', 'a bound scalar renders the bare Array';
+
+    my $array_subclass = ScalarArraySubclass.new(1, 2);
+    is $array_subclass.raku, '$[1, 2]', 'an Array subclass in a scalar gets the $ marker';
+    is $array_subclass.elems, 2, 'an itemized Array subclass still delegates methods';
+    my $hash_subclass = ScalarHashSubclass.new(a => 1);
+    is $hash_subclass.raku, '${:a(1)}', 'a Hash subclass in a scalar gets the $ marker';
+    my %hash_source = a => 1;
+    my $held_hash = %hash_source;
+    is $held_hash.raku, '${:a(1)}', 'a scalar-held Hash renders the $ marker';
 }
 
 done-testing;

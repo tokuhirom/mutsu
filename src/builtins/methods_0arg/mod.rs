@@ -390,7 +390,12 @@ pub(crate) fn native_method_0arg(
         if method == "raku" || method == "perl" {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
-        return native_method_0arg(inner, method_sym);
+        let inner = if inner.is_container_ref() {
+            inner.deref_container()
+        } else {
+            inner.clone()
+        };
+        return native_method_0arg(&inner, method_sym);
     }
 
     // `.dynamic` on a container VALUE — a literal `[1,2,3]`/`{a=>1}`, or an

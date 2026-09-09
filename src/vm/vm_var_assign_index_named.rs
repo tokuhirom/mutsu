@@ -3930,6 +3930,15 @@ impl Interpreter {
         for _ in 0..MAX_DESCENT {
             let cell = match unsafe { &*current }.view() {
                 ValueView::ContainerRef(cell) => cell.clone(),
+                // A scalar assignment from an array/hash variable preserves
+                // the itemized Scalar wrapper around the shared cell. Index
+                // assignment must still descend through that wrapper so
+                // `$scalar[0] = value` writes the aliased aggregate rather
+                // than detaching a new one-element value.
+                ValueView::Scalar(inner) if inner.is_container_ref() => match inner.view() {
+                    ValueView::ContainerRef(cell) => cell.clone(),
+                    _ => return current,
+                },
                 _ => return current,
             };
             if first_cell.is_none() {
