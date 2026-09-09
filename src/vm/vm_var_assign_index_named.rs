@@ -3371,6 +3371,19 @@ impl Interpreter {
                 }
             }
         }
+        // A `*-1`-style INNER subscript (`@a[*-1]<k> = v`) resolves against the
+        // container that level indexes -- here the root variable itself, since
+        // the inner level is the first subscript applied to it. Without this the
+        // unresolved `WhateverCode` was stringified straight into a key, so the
+        // write landed in a garbage slot and a later read of the real one
+        // returned Any. (The outer subscript already had this resolution, just
+        // below; only the inner one was missing.)
+        let inner_idx = if matches!(inner_idx.view(), ValueView::Sub(_)) {
+            let root = self.env().get(&var_name).cloned();
+            self.resolve_whatever_index_for_target(inner_idx, root.as_ref())
+        } else {
+            inner_idx
+        };
         let inner_key = inner_idx.to_string_value();
         // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
         // resolved against the inner container's current length before it becomes
@@ -4128,6 +4141,31 @@ impl Interpreter {
         ))
     }
 
+    /// Step one subscript level down a container **by value**, for the
+    /// read-only pre-pass that resolves `*-1`-style subscripts in
+    /// [`Interpreter::exec_index_assign_deep_nested_op`]. Returns `None` when
+    /// that level does not exist (or is not a container), which the caller
+    /// treats as "length 0".
+    fn subscript_peek_step(container: &Value, key: &str, is_positional: bool) -> Option<Value> {
+        let container = container.deref_container();
+        match container.view() {
+            ValueView::Array(items, ..) if is_positional => key
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| items.get(i).cloned()),
+            ValueView::Seq(items) if is_positional => key
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| items.get(i).cloned()),
+            ValueView::Slip(items) if is_positional => key
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| items.get(i).cloned()),
+            ValueView::Hash(map) => map.get(key).cloned(),
+            _ => None,
+        }
+    }
+
     pub(super) fn exec_index_assign_deep_nested_op(
         &mut self,
         code: &CompiledCode,
@@ -4217,6 +4255,45 @@ impl Interpreter {
             return Ok(());
         }
 
+        // Extract positional flags from constant
+        let flags_val = code.constants[positional_flags_idx as usize].clone();
+        let positional_flags: Vec<bool> = if let ValueView::Array(arr, _) = flags_val.view() {
+            arr.iter()
+                .map(|v| matches!(v.view(), ValueView::Bool(true)))
+                .collect()
+        } else {
+            vec![true; depth]
+        };
+
+        // A `*-1`-style subscript resolves against the container the level it
+        // sits at indexes -- which, for every level but the first, is only known
+        // by walking down to it. Do that walk here, read-only and by value:
+        // resolving a `WhateverCode` evaluates its body, and that must not run
+        // while the raw-pointer walk below holds a `*mut Value` into the
+        // environment. A level that does not exist yet resolves against length
+        // 0, which is what its autovivified empty container would give anyway.
+        // Without this the unresolved `WhateverCode` was stringified straight
+        // into a key at every level, so `@a[*-1]<h><y> = v` wrote into a garbage
+        // slot and the assignment was silently lost.
+        if indices_val
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Sub(_)))
+        {
+            let mut cur = self.env().get(&var_name).cloned();
+            for level in 0..depth {
+                if matches!(indices_val[level].view(), ValueView::Sub(_)) {
+                    indices_val[level] = self.resolve_whatever_index_for_target(
+                        indices_val[level].clone(),
+                        cur.as_ref(),
+                    );
+                }
+                let key = indices_val[level].to_string_value();
+                cur = cur
+                    .as_ref()
+                    .and_then(|c| Self::subscript_peek_step(c, &key, positional_flags[level]));
+            }
+        }
+
         let indices: Vec<String> = indices_val.iter().map(|v| v.to_string_value()).collect();
         let val = raw_val_for_junction;
 
@@ -4245,16 +4322,6 @@ impl Interpreter {
             val
         } else {
             val.itemize_for_element_store()
-        };
-
-        // Extract positional flags from constant
-        let flags_val = code.constants[positional_flags_idx as usize].clone();
-        let positional_flags: Vec<bool> = if let ValueView::Array(arr, _) = flags_val.view() {
-            arr.iter()
-                .map(|v| matches!(v.view(), ValueView::Bool(true)))
-                .collect()
-        } else {
-            vec![true; depth]
         };
 
         // Invalidate local cache for the variable
