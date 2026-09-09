@@ -937,7 +937,14 @@ impl Interpreter {
             // its lvalue return, on this recompile path exactly as on the
             // compiled one (`compile_routine_closure_body`'s `is_rw`).
             self.pending_eval_rw_tail = data.is_rw || data.is_raw;
-            let body_result = self.eval_block_value_cached(&data.body, data.id);
+            // Keyed by the body's PARSE SITE, not by `data.id`: that is
+            // `next_instance_id()`, a fresh number per `Sub` value, so a block
+            // instantiated more than once from one literal could never hit the
+            // cache and left an unreachable entry behind each time. Every
+            // instantiation shares the pool-owned body `Arc`
+            // (`CompiledCode::closure_body_arc`), which is the identity the
+            // compiled chunk actually depends on. See `CarrierCacheKey`.
+            let body_result = self.eval_block_value_cached_for_site(&data.body);
             self.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;

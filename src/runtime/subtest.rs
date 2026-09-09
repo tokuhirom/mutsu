@@ -161,22 +161,42 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    fn split_whenever_body_phasers(body: &[Stmt]) -> (Vec<Stmt>, Vec<Vec<Stmt>>, Vec<Vec<Stmt>>) {
+    fn split_whenever_body_phasers(body: &[Stmt]) -> super::WheneverBodySplit {
         let mut main = Vec::new();
         let mut last = Vec::new();
         let mut quit = Vec::new();
         for stmt in body {
             if let Stmt::Phaser { kind, body, .. } = stmt {
                 match kind {
-                    PhaserKind::Last => last.push(body.clone()),
-                    PhaserKind::Quit => quit.push(body.clone()),
+                    PhaserKind::Last => last.push(std::sync::Arc::new(body.clone())),
+                    PhaserKind::Quit => quit.push(std::sync::Arc::new(body.clone())),
                     _ => main.push(stmt.clone()),
                 }
             } else {
                 main.push(stmt.clone());
             }
         }
-        (main, last, quit)
+        (std::sync::Arc::new(main), last, quit)
+    }
+
+    /// [`Self::split_whenever_body_phasers`], memoized per parse site.
+    ///
+    /// The split is a pure function of the body, so every registration from one
+    /// `whenever` literal can share one set of `Arc`s -- which is both an
+    /// O(body) AST clone saved per registration and what lets the callback
+    /// `Sub` carry a *stable* body identity, so the carrier compile cache can
+    /// serve it. See [`super::WheneverBodySplit`].
+    fn whenever_body_split(
+        &mut self,
+        body: &std::sync::Arc<Vec<Stmt>>,
+    ) -> super::WheneverBodySplit {
+        let key = super::WheneverBodyKey(std::sync::Arc::clone(body));
+        if let Some(hit) = self.whenever_body_splits.get(&key) {
+            return hit.clone();
+        }
+        let split = Self::split_whenever_body_phasers(body);
+        self.whenever_body_splits.insert(key, split.clone());
+        split
     }
 
     pub(crate) fn begin_subtest(&mut self) -> SubtestContext {
@@ -363,7 +383,7 @@ impl Interpreter {
         yields_value: bool,
         param: &Option<String>,
         param_type: &Option<String>,
-        body: &[Stmt],
+        body: &std::sync::Arc<Vec<Stmt>>,
         owned_lexicals: &[Symbol],
     ) -> Result<Value, RuntimeError> {
         let whenever_id = crate::runtime::native_methods::next_whenever_id();
@@ -417,7 +437,7 @@ impl Interpreter {
             ));
         }
 
-        let (main_body, last_bodies, quit_bodies) = Self::split_whenever_body_phasers(body);
+        let (main_body, last_bodies, quit_bodies) = self.whenever_body_split(body);
         // The `supply` block this `whenever` is written in — its body is what is
         // running right now, so this is unambiguous. Stamped onto every callback
         // below so dispatch can re-establish it as the innermost active emitter

@@ -177,7 +177,7 @@ impl Interpreter {
         let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
         let param_type = param_type_idx.map(|idx| Self::const_str(code, idx).to_string());
         let stmt = &code.stmt_pool[body_idx as usize];
-        if let Stmt::Block(body) = stmt {
+        if let Stmt::Block(_) = stmt {
             // Box captured-and-mutated lexicals the whenever body reads into
             // shared ContainerRef cells BEFORE run_whenever_with_value clones
             // the env for the callback closures below: those closures are
@@ -264,6 +264,13 @@ impl Interpreter {
                 }
                 self.share_supply_block_lexicals(code);
             }
+            // The POOL-OWNED body `Arc`, not the borrowed slice: it is built
+            // once per `stmt_pool` slot, so every registration from this
+            // `whenever` literal shares it. That identity is what lets the
+            // phaser split and the compiled chunk be reused across
+            // registrations instead of rebuilt per value (see
+            // `WheneverBodySplit` and `CarrierCacheKey`).
+            let body_arc = code.closure_body_arc(body_idx as usize);
             let tap = loan_env!(
                 self,
                 run_whenever_with_value(
@@ -271,7 +278,7 @@ impl Interpreter {
                     yields_value,
                     &param,
                     &param_type,
-                    body,
+                    &body_arc,
                     &owned_lexicals
                 )
             )?;
