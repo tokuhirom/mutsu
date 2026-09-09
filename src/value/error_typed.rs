@@ -554,20 +554,34 @@ impl RuntimeError {
         should_be_concrete: bool,
         param_is_invocant: bool,
     ) -> Self {
-        let kind = if should_be_concrete {
-            "an object instance"
+        let (kind, actual_kind, hint) = if should_be_concrete {
+            ("an object instance", "a type object", ".new")
         } else {
-            "a type object"
+            ("a type object", "an object instance", "multi")
         };
-        let actual_kind = if should_be_concrete {
-            "a type object"
+        let display_param = if param.starts_with(['$', '@', '%', '&']) {
+            param.to_string()
         } else {
-            "an object instance"
+            format!("${}", param)
         };
-        let msg = format!(
-            "Invocant of method '{}' must be {} of type\n'{}', not {} of type '{}'.  Did you forget a '.new'?",
-            routine, kind, expected, actual_kind, got
-        );
+        let msg = if param_is_invocant {
+            if should_be_concrete {
+                format!(
+                    "Invocant of method '{}' must be {} of type\n'{}', not {} of type '{}'. Did you forget a '{}'?",
+                    routine, kind, expected, actual_kind, got, hint
+                )
+            } else {
+                format!(
+                    "Invocant of method '{}' must be a type object of type '{}', not an object\ninstance of type '{}'. Did you forget a '{}'?",
+                    routine, expected, got, hint
+                )
+            }
+        } else {
+            format!(
+                "Parameter '{}' of routine '{}' must be {} of\ntype '{}', not {} of type '{}'. Did you forget a '.new'?",
+                display_param, routine, kind, expected, actual_kind, got
+            )
+        };
         let mut attrs = HashMap::new();
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
@@ -774,6 +788,46 @@ but got '{}' ({}) as a value without a container.",
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), value.clone());
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
+    /// X::TypeCheck::Binding::Parameter for a `where` constraint. Raku exposes
+    /// the anonymous predicate as the expected value and includes the bound
+    /// value's gist in the one-line runtime message.
+    pub(crate) fn typecheck_binding_parameter_where(param: &str, value: &Value) -> Self {
+        let got = crate::runtime::utils::got_type_name(value);
+        let msg = format!(
+            "Constraint type check failed in binding to parameter '{}'; expected anonymous constraint to be met but got {} ({})",
+            param,
+            got,
+            crate::builtins::methods_0arg::raku_repr::raku_value(value),
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str(param.to_string()));
+        attrs.insert(
+            "expected".to_string(),
+            Value::str("anonymous constraint".to_string()),
+        );
+        attrs.insert("got".to_string(), value.clone());
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        Self::typed("X::TypeCheck::Binding::Parameter", attrs)
+    }
+
+    /// X::TypeCheck::Binding::Parameter for a callable signature mismatch.
+    pub(crate) fn typecheck_binding_parameter_signature(
+        param: &str,
+        expected: &str,
+        got: &str,
+    ) -> Self {
+        let msg = format!(
+            "Signature constraint check failed in binding to parameter '{}'; expected {} but got {}",
+            param, expected, got
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("parameter".to_string(), Value::str(param.to_string()));
+        attrs.insert("expected".to_string(), Value::str(expected.to_string()));
+        attrs.insert("got".to_string(), Value::str(got.to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }

@@ -1,0 +1,1 @@
+Runtime parameter binding failures now retain their `X::TypeCheck::Binding::Parameter` or `X::Parameter::InvalidConcreteness` exception and Raku-compatible message instead of being wrapped in a compile-time call diagnostic. Callable signature checks, `PositionalBindFailover`, and `:U`/`:D` invocant hints now follow the same runtime binding path.
