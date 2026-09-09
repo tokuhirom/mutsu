@@ -1,0 +1,61 @@
+# doc-diff-harness report
+# stats: match=0  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=5  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:13
+--- program ---
+say $*RAKU.compiler; # OUTPUT: «rakudo (2020.02.16.g.28.bd.4247.a)␤»
+--- raku stdout ---
+rakudo (2026.07)
+--- mutsu stdout (exit 0) ---
+mutsu (0.23.0)
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:58
+--- program ---
+say $*RAKU.compiler.verbose-config; # OUTPUT: «distro::auth=https://www.opensuse.org/␤distro::desc=2018-05-06T09:19:17.571307+02:00␤» ... And the rest of the configuration
+--- raku stdout ---
+Raku::can-language-versions=1 2 2.PREVIEW 2.TEST 2.TESTDEPR 3 3.PREVIEW
+Raku::codename=
+Raku::implementation=Rakudo
+Raku::language-revision=2
+Raku::language-revisions=1	mods	
+2	mods	PREVIEW	
+TEST	
+TESTDEPR	deprecate	1
+3	mods	PREVIEW	require	1
+require	PREVIEW
+Raku::prefix=/__w/1/source/rakudo-2026.07/install
+Raku::prev-setting-name=CORE.c	CORE.c
+CORE.d	CORE.d
+CORE.e	CORE.e
+NULL.c	NULL.c
+NULL.d	CORE.c
+NULL.e	CORE.d
+Raku::release-number=
+Raku::source-digest=4be5fd7d8e99180ff03033586766d5d4e1f4e770
+Raku::static-nqp-home=
+Raku::static-rakudo-home=
+Raku::version=2026.07
+distro::auth=https://www.ubuntu.com/
+distro::desc=Ubuntu 24.04.4 LTS
+distro::is-win=False
+distro::name=ubuntu
+distro::path-sep=:
+distro::release=24.04
+distro::signature=
+distro::version=24.04.4.LTS.Noble.Numbat
+kernel::arch=x86_64
+kernel::archname=x86_64-linux
+kernel::auth=unknown
+kernel::bits=64
+kernel::desc=
+kernel::hardware=x86_64
+kernel::name=linux
+kernel::release=6.18.44-fc-v24
+kernel::signature=
+kernel::version=1.SMP.PREEMPT_DYNAMIC.0
+... [truncated by doc-diff-harness: 175 more line(s) of 215]
+--- mutsu stdout (exit 0) ---
+{Raku => {auth => github.com/tokuhirom, implementation => mutsu, language-revision => 6.d, version => 0.23.0}, distro => {auth => unknown, desc => Ubuntu 24.04.4 LTS, is-win => False, name => linux, path-sep => :, release => 6.18.44-fc-v24, version => 6.18}, kernel => {arch => x86_64, bits => 64, hardware => x86_64, hostname => vm, name => linux, release => 6.18.44-fc-v24, version => 6.18}, mutsu => {id => mutsu-0.23.0, target-arch => x86_64, target-family => unix, target-os => linux, version => 0.23.0}}
+

@@ -1,0 +1,117 @@
+# doc-diff-harness report
+# stats: match=17  matches-doc=0  mismatch=6  mutsu-crash=0  no-oracle=31  skipped-marker=1  skipped-nondet=2  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:75
+--- program ---
+(my $f1 = 'foo'.IO).spurt: "A\nB\nC\n";
+(my $f2 = 'bar'.IO).spurt: "D\nE\n";
+with IO::CatHandle.new: $f1, $f2 {
+    # .chomp is True by default:
+    (.get xx 2).raku.say; # OUTPUT: «("A", "B").Seq␤»
+
+    .chomp = False;
+    (.get xx 3).raku.say; # OUTPUT: «("C\n", "D\n", "E\n").Seq␤»
+    .close
+}
+--- raku stdout ---
+("A", "B").Seq
+("C\n", "D\n", "E\n").Seq
+--- mutsu stdout (exit 0) ---
+("A", "B")
+("C\n", "D\n", "E\n")
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:98
+--- program ---
+(my $f1 = 'foo'.IO).spurt: "A\nB\nC";
+(my $f2 = 'bar'.IO).spurt: "DxEx";
+with IO::CatHandle.new: $f1, $f2 {
+    # .nl-in is ["\n", "\r\n"] by default:
+    (.get xx 2).raku.say; # OUTPUT: «("A", "B").Seq␤»
+
+    .nl-in = 'x';
+    (.get xx 3).raku.say; # OUTPUT: «("C", "D", "E").Seq␤»
+    .close
+}
+--- raku stdout ---
+("A", "B").Seq
+("C", "D", "E").Seq
+--- mutsu stdout (exit 0) ---
+("A", "B")
+("C", "D", "E")
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:162
+--- program ---
+(my $f1 = 'foo'.IO).spurt: 'I ♥ Raku';
+(my $f2 = 'bar'.IO).spurt: 'meow';
+with IO::CatHandle.new: $f1, $f2 {
+    # .encoding is 'utf8' by default:
+    .readchars(5).say; # OUTPUT: «I ♥ R␤»
+
+    .encoding: Nil; # switch to binary mode
+    .slurp.say; # OUTPUT: «Buf[uint8]:0x<6B 75 6D 65 6F 77>␤»
+}
+--- raku stdout ---
+I ♥ R
+Buf[uint8]:0x<6B 75 6D 65 6F 77>
+--- mutsu stdout (exit 0) ---
+I ♥ R
+akumeow
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:548
+--- program ---
+(my $f1 = 'foo'.IO).spurt: 'foo';
+(my $f2 = 'bar'.IO).spurt: 'bar';
+
+with IO::CatHandle.new: $f1, $f2 {
+    .get.say;                     # OUTPUT: «foo␤»
+    .seek: -2, SeekFromCurrent;
+    .readchars(2).say;            # OUTPUT: «oo␤»
+    .seek: 1000, SeekFromCurrent; # this doesn't switch to second handle!
+    .readchars(3).say;            # OUTPUT: «bar␤»
+    try .seek: -4;                # this won't seek to previous handle!
+    say ~$!;                      # OUTPUT: «Failed to seek in filehandle: 22␤»
+}
+--- raku stdout ---
+foo
+oo
+bar
+Failed to seek in filehandle: 22
+--- mutsu stdout (exit 0) ---
+foo
+oo
+bar
+Cannot seek to a negative position
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:595
+--- program ---
+(my $f1 = 'foo'.IO).spurt: 'foo';
+(my $f2 = 'bar'.IO).spurt: 'bar';
+
+IO::CatHandle.new(      $f1, $f2).slurp.say; # OUTPUT: «foobar␤»
+IO::CatHandle.new(:bin, $f1, $f2).slurp.say; # OUTPUT: «Buf[uint8]:0x<66 6f 6f 62 61 72>␤»
+IO::CatHandle.new                .slurp.say; # OUTPUT: «Nil␤»
+--- raku stdout ---
+foobar
+Buf[uint8]:0x<66 6F 6F 62 61 72>
+Nil
+--- mutsu stdout (exit 0) ---
+foobar
+Buf[uint8]:0x<66 6F 6F 62 61 72>
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:688
+--- program ---
+(my $f1 = 'foo'.IO).spurt: 'foo bar';
+(my $f2 = 'bar'.IO).spurt: 'meow';
+IO::CatHandle.new($f1, $f2).words.raku.say;
+# OUTPUT: «("foo", "bar", "meow").Seq␤»
+--- raku stdout ---
+("foo", "bar", "meow").Seq
+--- mutsu stdout (exit 0) ---
+("foo", "barmeow").Seq
+

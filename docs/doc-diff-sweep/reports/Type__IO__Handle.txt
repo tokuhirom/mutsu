@@ -1,36 +1,8 @@
 # doc-diff-harness report
-# stats: match=5  mismatch=2  mutsu-crash=0  no-oracle=61  raku-drift=1  skipped-marker=5  skipped-nondet=2
+# stats: match=10  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=57  skipped-marker=5  skipped-nondet=2  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:169
---- program ---
-$*IN.get.say;              # Read one line from the standard input
-
-my $fh = open 'filename';
-$fh.get.say;               # Read one line from a file
-$fh.close;
-
-say get;                   # Read one line from $*ARGFILES
---- raku stdout ---
-Nil
-Nil
-Nil
---- mutsu stdout (exit 0) ---
-Nil
-Nil
-get
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/IO/Handle.rakudoc:385
---- program ---
-say lines( "/proc/$*PID/statm".IO ); # OUTPUT: «(58455 31863 8304 2 0 29705 0)␤»
---- raku stdout ---
-(300138 42406 12368 2 0 264553 0)
---- mutsu stdout (exit 0) ---
-(101145 11655 10459 13120 0 66063 0)
-
-==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:959
+[1] output-mismatch  raku-doc/doc/Type/IO/Handle.rakudoc:959
 --- program ---
 class IO::Store is IO::Handle {
     has @.lines = [];

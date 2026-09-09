@@ -1,0 +1,20 @@
+# doc-diff-harness report
+# stats: match=6  matches-doc=1  mismatch=1  mutsu-crash=0  no-oracle=4  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Bag.rakudoc:66
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
+--- program ---
+my $n = ("a" => 0, "b" => 1, "c" => 2, "c" => 2).Bag;
+say $n.keys.raku;        # OUTPUT: «("b", "c").Seq␤»
+say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
+say $n.values.raku;      # OUTPUT: «(1, 4).Seq␤»
+--- raku stdout ---
+("c", "b").Seq
+((Str) (Str))
+(4, 1).Seq
+--- mutsu stdout (exit 0) ---
+("b", "c").Seq
+((Str) (Str))
+(1, 4).Seq
+

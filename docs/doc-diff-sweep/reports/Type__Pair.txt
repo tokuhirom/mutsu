@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=24  mismatch=0  mutsu-crash=1  no-oracle=22  raku-drift=0  skipped-marker=1  skipped-nondet=0
+# stats: match=23  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=22  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Pair.rakudoc:61

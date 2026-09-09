@@ -1,0 +1,65 @@
+# doc-diff-harness report
+# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=7  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/ForeignCode.rakudoc:18
+--- program ---
+sub does-nothing(){};
+say $_.name ~ ' → ' ~ $_.^name for &does-nothing.^methods;
+# OUTPUT: «<anon> → ForeignCode␤<anon> → ForeignCode␤soft → Method␤…»
+--- raku stdout ---
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+<anon> → ForeignCode
+candidates → Method
+cando → Method
+multi → Method
+soft → Method
+is-wrapped → Method
+wrap → Method
+unwrap → Method
+package → Method
+leave → Method
+iterator → Method
+IS-SETTING-ONLY → Method+{is-implementation-detail}
+prec → Method
+op_props → Method+{is-implementation-detail}
+precedence → Method
+... [truncated by doc-diff-harness: 65 more line(s) of 105]
+--- mutsu stdout (exit 0) ---
+name → Method
+signature → Method
+arity → Method
+count → Method
+of → Method
+returns → Method
+line → Method
+file → Method
+Bool → Method
+Str → Method
+gist → Method
+raku → Method
+

@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=0  mutsu-crash=1  no-oracle=2  raku-drift=0  skipped-marker=0  skipped-nondet=0
+# stats: match=0  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=2  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Type/Proxy.rakudoc:17
@@ -20,5 +20,5 @@ say $doubled;       # OUTPUT: «8␤»
 
 --- mutsu stderr ---
 Cannot assign to an immutable value
-  in block <unit> at tmp/ddh/prog-1370851.raku line 8
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14825.raku line 8
 

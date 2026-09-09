@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=5  mismatch=1  mutsu-crash=0  no-oracle=17  raku-drift=0  skipped-marker=0  skipped-nondet=0
+# stats: match=5  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=17  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Exception.rakudoc:78
@@ -11,13 +11,13 @@ CATCH { default { say .backtrace.full } };
 --- raku stdout ---
   in method throw at SETTING::src/core.c/Exception.rakumod line 65
   in sub die at SETTING::src/core.c/control.rakumod line 253
-  in sub f at tmp/ddh/prog-1358252.raku line 1
-  in sub g at tmp/ddh/prog-1358252.raku line 2
-  in block <unit> at tmp/ddh/prog-1358252.raku line 3
+  in sub f at /home/user/mutsu/tmp/ddh/prog-32086.raku line 1
+  in sub g at /home/user/mutsu/tmp/ddh/prog-32086.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32086.raku line 3
 --- mutsu stdout (exit 0) ---
-  in sub throw at tmp/ddh/prog-1358252.raku line 1
-  in sub die at tmp/ddh/prog-1358252.raku line 1
-  in sub f at tmp/ddh/prog-1358252.raku line 1
-  in sub g at tmp/ddh/prog-1358252.raku line 2
-  in block <unit> at tmp/ddh/prog-1358252.raku line 3
+  in sub throw at /home/user/mutsu/tmp/ddh/prog-32086.raku line 1
+  in sub die at /home/user/mutsu/tmp/ddh/prog-32086.raku line 1
+  in sub f at /home/user/mutsu/tmp/ddh/prog-32086.raku line 1
+  in sub g at /home/user/mutsu/tmp/ddh/prog-32086.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32086.raku line 3
 

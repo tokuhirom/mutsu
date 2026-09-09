@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=15  mismatch=1  mutsu-crash=0  no-oracle=14  raku-drift=1  skipped-marker=0  skipped-nondet=18
+# stats: match=15  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=14  skipped-marker=0  skipped-nondet=18  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Language/concurrency.rakudoc:85
+[1] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:85
 --- program ---
 my $promise1 = Promise.new();
 my $promise2 = $promise1.then(-> $v { say "Handled but : "; say $v.result});
@@ -12,19 +12,19 @@ say $promise2.cause;        # OUTPUT: «Handled but : ␤First Result␤»
 --- raku stdout ---
 Handled but : 
 Tried to get the result of a broken Promise
-  in block  at tmp/ddh/prog-1339477.raku line 2
+  in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
 
 Original exception:
     First Result
-      in block  at tmp/ddh/prog-1339477.raku line 2
+      in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
 --- mutsu stdout (exit 0) ---
 Handled but : 
 Tried to get the result of a broken Promise
-  in block <unit> at tmp/ddh/prog-1339477.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
 
 Original exception:
     First Result
-      in block <unit> at tmp/ddh/prog-1339477.raku line 2
+      in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 2
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Language/concurrency.rakudoc:124
@@ -34,8 +34,8 @@ try $promise.result;
 say $promise.cause;
 --- raku stdout ---
 Broken Promise
-  in block  at tmp/ddh/prog-1339477.raku line 1
+  in block  at /home/user/mutsu/tmp/ddh/prog-8410.raku line 1
 --- mutsu stdout (exit 0) ---
 Broken Promise
-  in block <unit> at tmp/ddh/prog-1339477.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8410.raku line 1
 

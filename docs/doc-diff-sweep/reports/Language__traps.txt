@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=96  mismatch=2  mutsu-crash=0  no-oracle=43  raku-drift=2  skipped-marker=16  skipped-nondet=8
+# stats: match=96  matches-doc=0  mismatch=3  mutsu-crash=0  no-oracle=43  skipped-marker=16  skipped-nondet=8  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Language/traps.rakudoc:63
+[1] output-mismatch  raku-doc/doc/Language/traps.rakudoc:63
 --- program ---
 my %h is default(Nil) = a => Nil;
 say %h; # OUTPUT: «Hash %h = {:a(Nil)}␤»
@@ -12,23 +12,7 @@ say %h; # OUTPUT: «Hash %h = {:a(Nil)}␤»
 {a => (Any)}
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Language/traps.rakudoc:784
---- program ---
-my $set = <a b c>.Set;
-.say for $set.list; # OUTPUT: «a => True␤c => True␤b => True␤»
-# OUTPUT: «a => True␤c => True␤b => True␤»
-# OUTPUT: «c => True␤b => True␤a => True␤»
---- raku stdout ---
-c => True
-b => True
-a => True
---- mutsu stdout (exit 0) ---
-b => True
-a => True
-c => True
-
-==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/traps.rakudoc:858
+[2] output-mismatch  raku-doc/doc/Language/traps.rakudoc:858
 --- program ---
 say join ", ", ("az", *.succ ... "bc");
 # OUTPUT: «az, ba, bb, bc␤»
@@ -38,7 +22,7 @@ az, ba, bb, bc
 az
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/traps.rakudoc:1076
+[3] output-mismatch  raku-doc/doc/Language/traps.rakudoc:1076
 --- program ---
 for 'x' ~~ m:g/./ { say 'yes' }  # OUTPUT: «yes␤»
 for 'x' ~~ /(.)/  { say 'yes' }  # OUTPUT: «yes␤»

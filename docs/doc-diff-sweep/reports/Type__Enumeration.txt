@@ -1,0 +1,37 @@
+# doc-diff-harness report
+# stats: match=5  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=18  skipped-marker=1  skipped-nondet=5  skipped-oracle-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:205
+--- program ---
+enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
+say cool.Int;           # OUTPUT: «42␤»
+say almost-pi.Int;      # OUTPUT: «3␤»
+try say sqrt-n-one.Int;
+say $!.message if $!;   # OUTPUT: «Cannot convert 0+1i to Int: imaginary part not zero␤»
+--- raku stdout ---
+42
+3
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '<HERE>i' (indicated by <HERE>)
+--- mutsu stdout (exit 0) ---
+42
+3
+0
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:220
+--- program ---
+enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
+say cool.Real;           # OUTPUT: «42␤»
+say almost-pi.Real;      # OUTPUT: «3.14␤»
+try say sqrt-n-one.Real;
+say $!.message if $!;    # OUTPUT: «Cannot convert 0+1i to Real: imaginary part not zero␤»
+--- raku stdout ---
+42
+3.14
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '<HERE>i' (indicated by <HERE>)
+--- mutsu stdout (exit 0) ---
+42
+3.14
+0+1i
+

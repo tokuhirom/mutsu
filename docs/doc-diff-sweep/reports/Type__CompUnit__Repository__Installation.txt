@@ -1,0 +1,25 @@
+# doc-diff-harness report
+# stats: match=0  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=13  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc:71
+--- program ---
+# assuming Zef is installed to the default location...
+my $repo = CompUnit::RepositoryRegistry.repository-for-name("site");
+
+say $repo.files('bin/zef', :ver<419.0+>).head.<name>              // "Nada"; # OUTPUT: «Nada␤»
+say $repo.files('resources/config.txt', :ver<419.0+>).head.<name> // "Nada"; # OUTPUT: «Nada␤»
+
+say $repo.files('bin/zef', :ver<0.4.0+>).head.<name>;                        # OUTPUT: «zef␤»
+say $repo.files('resources/config.txt', :ver<0.4.0+>).head.<name>;           # OUTPUT: «zef␤»
+--- raku stdout ---
+Nada
+Nada
+zef
+Nil
+--- mutsu stdout (exit 0) ---
+Nada
+Nada
+Nil
+Nil
+

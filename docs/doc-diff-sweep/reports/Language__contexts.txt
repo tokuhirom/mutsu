@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=18  mismatch=1  mutsu-crash=0  no-oracle=3  raku-drift=1  skipped-marker=0  skipped-nondet=0
+# stats: match=18  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=3  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/contexts.rakudoc:45
@@ -14,13 +14,4 @@ foo; # OUTPUT: «sink called␤»
 sink called
 --- mutsu stdout (exit 0) ---
 
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Language/contexts.rakudoc:130
---- program ---
-say [~] [ 3, 5+6i, Set(<a b c>), [1,2,3] ]; # OUTPUT: «35+6ic a b1 2 3␤»
---- raku stdout ---
-35+6ib a c1 2 3
---- mutsu stdout (exit 0) ---
-35+6ia b c1 2 3
 

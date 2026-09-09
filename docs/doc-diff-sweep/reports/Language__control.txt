@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=72  mismatch=1  mutsu-crash=1  no-oracle=17  raku-drift=1  skipped-marker=9  skipped-nondet=10
+# stats: match=72  matches-doc=0  mismatch=1  mutsu-crash=1  no-oracle=17  skipped-marker=9  skipped-nondet=10  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] mutsu-error  raku-doc/doc/Language/control.rakudoc:48
@@ -16,39 +16,12 @@ then here.
 not here
 --- mutsu stderr ---
 Useless use of constant integer 0 in sink context
-    at /home/tokuhirom/work/mutsu-roast/tmp/ddh/prog-1339511.raku:3
+    at /home/user/mutsu/tmp/ddh/prog-9075.raku:3
 Died
-  in block <unit> at tmp/ddh/prog-1339511.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9075.raku line 3
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Language/control.rakudoc:570
---- program ---
-my @foo = 1..3;
-for @foo.kv -> $idx, $val { say "$idx: $val" }
-my %hash = <a b c> Z=> 1,2,3;
-for %hash.kv -> $key, $val { say "$key => $val" }
-for 1, 1.1, 2, 2.1 { say "$^x < $^y" }  # OUTPUT: «1 < 1.1␤2 < 2.1␤»
---- raku stdout ---
-0: 1
-1: 2
-2: 3
-c => 3
-b => 2
-a => 1
-1 < 1.1
-2 < 2.1
---- mutsu stdout (exit 0) ---
-0: 1
-1: 2
-2: 3
-b => 2
-a => 1
-c => 3
-1 < 1.1
-2 < 2.1
-
-==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/control.rakudoc:1368
+[2] output-mismatch  raku-doc/doc/Language/control.rakudoc:1368
 --- program ---
 sub s(){ my $a = 41; return $a };
 say ++s();

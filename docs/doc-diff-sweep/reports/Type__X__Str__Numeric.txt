@@ -1,0 +1,15 @@
+# doc-diff-harness report
+# stats: match=0  matches-doc=1  mismatch=1  mutsu-crash=0  no-oracle=4  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/X/Str/Numeric.rakudoc:14
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
+--- program ---
+say +"42 answers";
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Str::Numeric: Cannot convert string to number: trailing characters after number in '42⏏ answers' (indicated by ⏏)␤»
+--- raku stdout ---
+X::Str::Numeric: Cannot convert string to number: trailing characters after number in '42<HERE> answers' (indicated by <HERE>)
+--- mutsu stdout (exit 0) ---
+X::Str::Numeric: Cannot convert string to number: trailing characters after number in '42⏏ answers' (indicated by ⏏)
+

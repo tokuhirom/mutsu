@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=1  mismatch=2  mutsu-crash=0  no-oracle=4  raku-drift=0  skipped-marker=3  skipped-nondet=1
+# stats: match=1  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=4  skipped-marker=3  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/perl-var.rakudoc:198
@@ -19,16 +19,16 @@ for $*KERNEL, $*DISTRO, $*VM -> $what {
 # release 2017.11 named moar by The MoarVM Team
 --- raku stdout ---
 Kernel
-release 202607241434.1787955023.24.04.38.a.419.f.SMP.PREEMPT_DYNAMIC.Fri.A named linux by unknown
+release 1.SMP.PREEMPT_DYNAMIC.0 named linux by unknown
 Distro
-release 24.04.LTS named pop by https://pop.system76.com
+release 24.04.4.LTS.Noble.Numbat named ubuntu by https://www.ubuntu.com/
 VM
 release 2026.07 named moar by The MoarVM Team
 --- mutsu stdout (exit 0) ---
 Kernel
-release 7.1 named linux by unknown
+release 6.18 named linux by unknown
 Distro
-release 7.1 named linux by unknown
+release 6.18 named linux by unknown
 VM
 release 0.1.0 named mutsu by github.com/tokuhirom
 
@@ -38,14 +38,14 @@ release 0.1.0 named mutsu by github.com/tokuhirom
 # Print out a list of compunit repositories
 .say for $*REPO.repo-chain;
 --- raku stdout ---
-inst#/home/tokuhirom/.raku
-inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.07/share/perl6/site
-inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.07/share/perl6/vendor
-inst#/home/tokuhirom/.local/share/mise/installs/raku/2026.07/share/perl6/core
+inst#/root/.raku
+inst#/root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/site
+inst#/root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/vendor
+inst#/root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core
 ap#
 nqp#
 perl5#
 --- mutsu stdout (exit 0) ---
 file#.
-inst#/home/tokuhirom/.local/share/mutsu/repo/site
+inst#/root/.local/share/mutsu/repo/site
 

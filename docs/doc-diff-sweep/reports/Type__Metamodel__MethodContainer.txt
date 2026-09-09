@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=0  mismatch=1  mutsu-crash=0  no-oracle=5  raku-drift=2  skipped-marker=0  skipped-nondet=0
+# stats: match=0  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=5  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:15
+[1] output-mismatch  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:15
 --- program ---
 say .name for Int.^methods(:all);
 
@@ -51,7 +51,7 @@ asin
 cos
 acos
 tan
-... [339 more lines truncated by the commit step; re-run the sweep to see them in full]
+... [truncated by doc-diff-harness: 339 more line(s) of 379]
 --- mutsu stdout (exit 0) ---
 abs
 ceiling
@@ -93,7 +93,8 @@ print
 note
 so
 not
-... [46 more lines truncated by the commit step; re-run the sweep to see them in full]
+... [truncated by doc-diff-harness: 45 more line(s) of 85]
+
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:40
 --- program ---
@@ -109,19 +110,4 @@ say A.^methods(:all);               # x infinite defined ...
 --- mutsu stdout (exit 0) ---
 (x)
 (x serial hash say put print note so not defined WHAT WHERE HOW WHY iterator flat eager lazy map grep first sort reverse unique repeated squish head tail skip min max minmax elems end keys values kv pairs antipairs classify categorize join pick roll sum reduce produce rotor batch Bool Str gist raku Numeric Int DEFINITE WHICH clone new)
-
-==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc:73
---- program ---
-say 2.5.^lookup("sqrt").raku;      # OUTPUT: «method sqrt (Rat $: *%_) ...␤»
-say Str.^lookup("BUILD").raku;     # OUTPUT: «submethod BUILD (Str $: :$value = "", *%_ --> Nil) ...␤»
-say Int.^lookup("does-not-exist"); # OUTPUT: «(Mu)␤»
---- raku stdout ---
-proto method sqrt (Cool $:: *%_) {*}
-submethod BUILD (Str $:: Str(Any) :$value = "", *%_ --> Nil) { #`(Submethod|2271092929488) ... }
-(Mu)
---- mutsu stdout (exit 0) ---
-Method.new
-Mu
-(Mu)
 

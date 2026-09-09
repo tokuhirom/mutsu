@@ -1,23 +1,8 @@
 # doc-diff-harness report
-# stats: match=1  mismatch=1  mutsu-crash=0  no-oracle=1  raku-drift=2  skipped-marker=3  skipped-nondet=18
+# stats: match=1  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=1  skipped-marker=3  skipped-nondet=18  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Backtrace.rakudoc:15
---- program ---
-sub zipi { { { die "Something bad happened" }() }() };
-try {
-    zipi;
-}
-if ($!) {
-    say $!.backtrace[*-1].raku;
-}
---- raku stdout ---
-Backtrace::Frame.new(file => "tmp/ddh/prog-1353530.raku", line => 6, code => ->  { #`(Block|3698577923600) ... }, subname => "<unit>")
---- mutsu stdout (exit 0) ---
-Backtrace::Frame.new(file => "tmp/ddh/prog-1353530.raku", line => 2, code => sub <unit> ($arg0) { #`(Sub|0) ... }, subname => "<unit>")
-
-==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Type/Backtrace.rakudoc:72
+[1] output-mismatch  raku-doc/doc/Type/Backtrace.rakudoc:72
 --- program ---
 sub zipi { { { die "Something bad happened" }() }() };
 try zipi;
@@ -31,14 +16,14 @@ say $!.backtrace.next-interesting-index( :named ); #  OUTPUT: «4␤»
 2
 
 ==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Type/Backtrace.rakudoc:96
+[2] output-mismatch  raku-doc/doc/Type/Backtrace.rakudoc:96
 --- program ---
 sub zipi { { { die "Something bad happened" }() }() };
 try zipi;
 say $!.backtrace.nice( :oneline ) if $!;
 # OUTPUT: «  in sub zipi at /tmp/... line 1␤␤»
 --- raku stdout ---
-  in sub zipi at tmp/ddh/prog-1353530.raku line 1
+  in sub zipi at /home/user/mutsu/tmp/ddh/prog-27031.raku line 1
 --- mutsu stdout (exit 0) ---
-  in block <unit> at tmp/ddh/prog-1353530.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27031.raku line 2
 

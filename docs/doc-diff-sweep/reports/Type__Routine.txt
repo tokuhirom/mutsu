@@ -1,0 +1,16 @@
+# doc-diff-harness report
+# stats: match=10  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=26  skipped-marker=6  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Routine.rakudoc:58
+--- program ---
+multi foo ($, $) {};
+say &foo.multi;             # OUTPUT: «False␤»
+say &foo.candidates».multi; # OUTPUT: «(True)␤»
+--- raku stdout ---
+0
+(True)
+--- mutsu stdout (exit 0) ---
+False
+(False)
+

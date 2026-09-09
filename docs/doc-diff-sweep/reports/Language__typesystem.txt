@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=42  mismatch=1  mutsu-crash=0  no-oracle=16  raku-drift=2  skipped-marker=4  skipped-nondet=0
+# stats: match=41  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=16  skipped-marker=4  skipped-nondet=0  skipped-oracle-nondet=2
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:657
@@ -45,29 +45,7 @@ say [(75kg).^name, N(75kg).^name];
 [Int+{SI-kilogram} Rat+{SI-Newton}]
 
 ==============================================================================
-[2] raku-drift-from-doc  raku-doc/doc/Language/typesystem.rakudoc:564
---- program ---
-role Serialize {
-    method to-string { self.Str }
-    method to-number { self.Num }
-}
-
-class A does Serialize {}
-class B does Serialize {}
-
-my Serialize @list;
-@list.push: A.new;
-@list.push: B.new;
-
-say @list».to-string;
-# OUTPUT: «[A<57192848> B<57192880>]␤»
---- raku stdout ---
-(A<5065736342240> B<5065736342912>)
---- mutsu stdout (exit 0) ---
-[A() B()]
-
-==============================================================================
-[3] raku-drift-from-doc  raku-doc/doc/Language/typesystem.rakudoc:644
+[2] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:644
 --- program ---
 role R[$p = fail("Please provide a parameter to role R")] {};
 my $i = 1 does R;
@@ -77,8 +55,8 @@ CATCH { default { say .^name, ': ', .Str} }
 X::Role::Instantiation: Could not instantiate role 'R' because it died with X::AdHoc; exception details:
 
     Please provide a parameter to role R
-      in sub  at tmp/ddh/prog-1349121.raku line 1
-      in block <unit> at tmp/ddh/prog-1349121.raku line 2
+      in sub  at /home/user/mutsu/tmp/ddh/prog-22840.raku line 1
+      in block <unit> at /home/user/mutsu/tmp/ddh/prog-22840.raku line 2
 --- mutsu stdout (exit 0) ---
 X::Role::Instantiation: Could not instantiate role 'R' because it died with X::AdHoc; exception details:
 

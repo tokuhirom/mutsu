@@ -1,0 +1,36 @@
+# doc-diff-harness report
+# stats: match=67  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=75  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Str.rakudoc:647
+--- program ---
+say "abc".comb.raku;                 # OUTPUT: «("a", "b", "c").Seq␤»
+say "abc".comb(:match).raku;         # OUTPUT: «(｢a｣ ｢b｣ ｢c｣)␤»
+say 'abcdefghijk'.comb(3).raku;      # OUTPUT: «("abc", "def", "ghi", "jk").Seq␤»
+say 'abcdefghijk'.comb(3, 2).raku;   # OUTPUT: «("abc", "def").Seq␤»
+say comb(/\w/, "a;b;c").raku;        # OUTPUT: «("a", "b", "c").Seq␤»
+say comb(/\N/, "a;b;c").raku;        # OUTPUT: «("a", ";", "b", ";", "c").Seq␤»
+say comb(/\w/, "a;b;c", 2).raku;     # OUTPUT: «("a", "b").Seq␤»
+say comb(/\w\;\w/, "a;b;c", 2).raku; # OUTPUT: «("a;b",).Seq␤»
+say comb(/.<(.)>/, "<>[]()").raku;   # OUTPUT: «(">", "]", ")").Seq␤»
+--- raku stdout ---
+("a", "b", "c").Seq
+("a", "b", "c").Seq
+("abc", "def", "ghi", "jk").Seq
+("abc", "def").Seq
+("a", "b", "c").Seq
+("a", ";", "b", ";", "c").Seq
+("a", "b").Seq
+("a;b",).Seq
+(">", "]", ")").Seq
+--- mutsu stdout (exit 0) ---
+("a", "b", "c").Seq
+("a", "b", "c").Seq
+("abc", "def", "ghi", "jk").Seq
+("abc", "def").Seq
+("a", "b", "c").Seq
+("a", ";", "b", ";", "c").Seq
+("a", "b").Seq
+("a;b",).Seq
+("<>", "[]", "()").Seq
+

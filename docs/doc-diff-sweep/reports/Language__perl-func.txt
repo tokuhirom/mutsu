@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=7  mismatch=2  mutsu-crash=0  no-oracle=17  raku-drift=0  skipped-marker=1  skipped-nondet=1
+# stats: match=7  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=17  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2281

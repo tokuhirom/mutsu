@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: match=8  mismatch=2  mutsu-crash=0  no-oracle=17  raku-drift=2  skipped-marker=0  skipped-nondet=0
+# stats: match=8  matches-doc=0  mismatch=4  mutsu-crash=0  no-oracle=17  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:162
+[1] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:162
 --- program ---
 say $*CWD;                                   # OUTPUT: «"C:\Users\camelia".IO␤»
 
@@ -18,20 +18,20 @@ say IO::Spec::Win32.rel2abs: '/foo/', 'bar'; # OUTPUT: «C:\foo␤»
 say IO::Spec::Win32.rel2abs: 'foo/../../', 'bar';
 # OUTPUT: «C:\Users\camelia\bar\foo\..\..␤»
 --- raku stdout ---
-"/home/tokuhirom/work/mutsu-roast".IO
-\home\tokuhirom\work\mutsu-roast\foo
-\home\tokuhirom\work\mutsu-roast
-\home\tokuhirom\work\mutsu-roast\foo\..\..
+"/home/user/mutsu/tmp/ddh/run-3062".IO
+\home\user\mutsu\tmp\ddh\run-3062\foo
+\home\user\mutsu\tmp\ddh\run-3062
+\home\user\mutsu\tmp\ddh\run-3062\foo\..\..
 \foo
-\home\tokuhirom\work\mutsu-roast\bar\foo
+\home\user\mutsu\tmp\ddh\run-3062\bar\foo
 \bar
 \foo
-\home\tokuhirom\work\mutsu-roast\bar\foo\..\..
+\home\user\mutsu\tmp\ddh\run-3062\bar\foo\..\..
 --- mutsu stdout (exit 0) ---
-"/home/tokuhirom/work/mutsu-roast".IO
-\home\tokuhirom\work\mutsu-roast\foo
-\home\tokuhirom\work\mutsu-roast
-\home\tokuhirom\work\mutsu-roast\foo\..\..
+"/home/user/mutsu/tmp/ddh/run-3062".IO
+\home\user\mutsu\tmp\ddh\run-3062\foo
+\home\user\mutsu\tmp\ddh\run-3062
+\home\user\mutsu\tmp\ddh\run-3062\foo\..\..
 \foo
 bar\foo
 \bar
@@ -119,7 +119,7 @@ IO::Spec::Win32.splitpath('').raku.say;
 ("", "", "")
 
 ==============================================================================
-[4] raku-drift-from-doc  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:126
+[4] output-mismatch  raku-doc/doc/Type/IO/Spec/Win32.rakudoc:126
 --- program ---
 IO::Spec::Win32.join('C:', '/some/dir', 'foo.txt').say;
 # OUTPUT: «C:/some/dir\and/more␤»

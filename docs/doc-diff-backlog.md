@@ -25,7 +25,7 @@ signal.
 harness false positive" below), file it as an issue immediately** on
 `tokuhirom/mutsu`, labelled `todo:ticket` (or `todo:deep` for high-blast-radius
 ones) per `docs/issue-workflow.md`, and add a row to
-[Ticketed](#ticketed-open--linked-to-todo) below linking the doc location to that
+[Ticketed](#ticketed-open) below linking the doc location to that
 issue. This is what keeps this backlog and the issue queue in sync — a finding
 sitting only in a sweep report, or only in an issue with no cross-link, is easy to
 lose track of.
@@ -58,85 +58,41 @@ means the corpus has more such examples, not that mutsu got worse.
 
 ## Corpus snapshot
 
-- **Date:** 2026-09-07b (full re-sweep) · debug `mutsu` at `dccfd1737` (main,
-  through PR #7508) · `raku` v2026.07
-- **444 files scanned · 60 have `mism`/`crash` signal** (plus 35 more that have
-  only `drift` findings and therefore do **not** appear in the survey table —
-  see the warning below)
-- **match = 2402 · output-mismatch = 59 · mutsu-crash = 28 · raku-drift = 114**
-- High-signal total (mismatch + crash) = **87**, down from **108** on 2026-09-06
-  (mismatch 74 → 59, crash 34 → 28, signal files 66 → 60), **296** on
-  2026-08-22 and **361** on 2026-07-22. `match` rose 2376 → 2402 over the last
-  day: the blocks are not disappearing from the corpus, they are being answered
-  correctly.
+- **Date:** 2026-09-09 (full re-sweep) · debug `mutsu` at `a44bd28` (main,
+  through PR #7740) · `raku` v2026.07
+- **443 files scanned · 80 have `mism`/`crash` signal**
+- **match = 2409 · output-mismatch = 129 · mutsu-crash = 21 · oracle-nondet = 59**
+- High-signal total (mismatch + crash) = **150**.
 
-### ⚠ `raku-drift` was NOT a "not a mutsu bug" bucket — measured 2026-09-07b (bucket retired by #7590)
+**The mismatch count is not comparable to the pre-#7590 sweeps, and the rise is
+not a regression.** Until 2026-09-07b a third bucket, `raku-drift-from-doc`,
+absorbed every divergence whose doc annotation raku itself no longer matched;
+#7590 retired it because it was only ever reachable *after* mutsu already
+differed from raku (67 of its 114 blocks were confirmed real mutsu bugs against
+5 the name fit). Those findings now land in `output-mismatch` where they belong.
+The honest comparison is against the *sum* of the old buckets:
 
-**Read this before using the survey table to pick work.** The harness bucketing
-(`scripts/doc-diff-harness.raku:72-93`) is:
+| sweep | match | mismatch | crash | drift | nondet dropped |
+|---|---:|---:|---:|---:|---:|
+| 2026-09-06 | 2376 | 74 | 34 | 119 | — |
+| 2026-09-07b | 2402 | 59 | 28 | 114 | — |
+| **2026-09-09** | **2409** | **129** | **21** | *(retired)* | **59** |
 
-```
-if mutsu output == raku output   -> match
-elsif mutsu exited non-zero      -> mutsu-error
-else                             -> if raku output != the doc's `# OUTPUT:` -> raku-drift-from-doc
-                                    else                                     -> output-mismatch
-```
+So: `match` up again (2402 → 2409), crashes down (28 → 21), and the 59
+`oracle-nondet` blocks are the noise the twice-run oracle gate now drops
+instead of reporting — the noise floor, not findings. A rising `nondet` count
+means the corpus has more unreproducible examples, not that mutsu got worse.
 
-The `raku-drift` branch is **only reachable once mutsu already differs from
-raku**. Every block in it is a mutsu-vs-oracle divergence. All 114 were
-classified on 2026-09-07b (62 re-run directly):
+**Read a report, not this table, to pick work.** The survey at the bottom ranks
+files by `mism + crash`; the per-file minimal repros are committed under
+[doc-diff-sweep/reports/](doc-diff-sweep/reports/) (only signal files are kept,
+captured output capped at 40 lines per section by the harness). Re-run the
+sweep into `tmp/` when you need a truncated block in full.
 
-| verdict | count | share |
-|---|---|---|
-| **REAL** — deterministic mutsu-vs-raku divergence | **67** | 59% |
-| NONDET-only — the entire diff is a token no run reproduces | 33 | 29% |
-| ENV-only | 9 | 8% |
-| MUTSU-MATCHES-DOC — what the bucket name describes | 5 | 4% |
+**Always re-verify a finding directly before treating it as a real bug** — and
+always re-sweep on current `main`, since a report goes stale as soon as a fix
+lands.
 
-So the previous guidance here — "version skew, not mutsu bugs — lowest
-priority" — was **deprioritizing 67 confirmed real divergences**, a larger pool
-than the 87 the survey table ranks. The doc's `# OUTPUT:` annotation is a
-*provenance* signal being used as a *priority* signal.
-
-**Two structural consequences:**
-
-1. **37% of the drift bucket (42 blocks) is pure harness noise**, present
-   because the doc froze a token raku itself cannot reproduce twice: unordered
-   iteration order (27 — `Set`/`Bag`/`Mix`/`*Hash`/`Map`/`Hash.kv`/enum
-   `.keys`), object addresses and `WHICH` ids (13), a thread id, one racy
-   example. Verified: five `raku -e 'say (bag <a b c>).kv.join(",")'` runs give
-   five orders; a deterministic control is byte-identical 5/5. **Nine real
-   mutsu bugs were hiding under that noise**, including
-   [code-object-renders-as-nothing-inside-a-list](../todo/tickets/code-object-renders-as-nothing-inside-a-list.md)
-   (`my &b = { $^a }; say (&b,)` → mutsu `()`, raku shows the block — a
-   one-element list printing as empty).
-2. **61 of the 114 drift findings, across 35 files, appear nowhere in this
-   document**, because the survey table ranks by `mism + crash` and a
-   drift-only file scores 0. Largest: `Language/signatures` (6),
-   `Type/BagHash` (5), `Type/MixHash` (3), `Type/Enumeration` (3),
-   `Language/numerics` (3), `Language/list` (3).
-
-Both are tracked in
-[doc-diff-harness-has-no-output-cap-or-nondeterminism-gate](../todo/tickets/doc-diff-harness-has-no-output-cap-or-nondeterminism-gate.md).
-The robust fix for the noise is one line of policy — **run the oracle twice and
-drop blocks whose raku output is not reproducible** — not a pattern list.
-
-### ⚠ The harness does not cap captured output
-
-A single doc example can produce a multi-megabyte report, and the refresh recipe
-in [doc-diff-sweep/README.md](doc-diff-sweep/README.md) commits it verbatim.
-On this sweep, `Type/IO/Path.rakudoc:509` (a `sub MAIN` that recursively
-`.dir`-walks the working directory, so it enumerated `.git/` and `tmp/`)
-produced a **131 492-line, 8.4 MB** report, and `Language/ipc.rakudoc:34`
-captured a full git log at 1.6 MB. The committed copy under
-[doc-diff-sweep/](doc-diff-sweep/) was truncated to 40 lines per captured
-section (11 MB → 412 KB); a `... [N more lines truncated]` marker shows where.
-**Re-run the sweep into `tmp/` to see any truncated block in full.**
-
-### Previous snapshot (2026-09-06, for the delta above)
-
-- 444 files scanned · 66 have signal · debug `mutsu` at `5885101fc` + PR #7380
-- match = 2376 · output-mismatch = 74 · mutsu-crash = 34 · raku-drift = 119
 ## Triaged
 
 ### Resolved (will drop from the next sweep)
@@ -168,6 +124,11 @@ section (11 MB → 412 KB); a `... [N more lines truncated]` marker shows where.
   `__mutsu_str_value` attribute, the string twin of the existing
   `__mutsu_array_storage`/`__mutsu_int_value` payloads —
   [news](../news/2026-08/str-subclass-loses-native-stringify.md).
+  **Over-claimed: the 2026-09-09 sweep still reports this line.** The fix landed
+  on the `Mu.new` path only, and the doc's example reaches the payload through
+  `self.bless(value => $str)` — `~S.new(value => "abc")` is `abc` in mutsu,
+  `~S.bless(value => "abc")` is `S()`. Now filed as
+  [#7759](https://github.com/tokuhirom/mutsu/issues/7759).
 - `nativecall.rakudoc:598` — `Pointer[T].deref` was missing on a `--> Pointer[T]`
   native return (and SEGFAULTed for `Pointer[Str]` even where it existed);
   `.deref` is now `nativecast(.of, self)` as in Rakudo. See
@@ -290,64 +251,75 @@ section (11 MB → 412 KB); a `... [N more lines truncated]` marker shows where.
   full exact-weight storage rework (the "FatRat-vs-Rat repr tag" class below), not
   a construction fix.
 
-### Ticketed (open — linked to todo/)
+### Ticketed (open)
 
-Confirmed-real findings that have a filed issue but are not yet fixed. When the
-issue is resolved, write it up in `news/` (per `docs/issue-workflow.md`) and
-delete the row here.
+Confirmed-real findings with a filed issue, not yet fixed. When the issue is
+resolved, write it up in `news/` (per `docs/issue-workflow.md`) and delete the
+row here.
 
-> **The 2026-08-22 rounds' table was removed on 2026-09-07b: every one of its 25
-> ticket links was dead** — all 25 tickets had been fixed and their files deleted
-> (spot-checked against the deleting commits: `Fix named Pair handling in Hash
-> push`, `make return-rw call results assignable`, `preserve Win32 path
-> separators`, `preserve captures across regex alternation`, `implement repl
-> routine`, …). The rows were left in place long after the work landed, which is
-> exactly the drift this backlog is prone to. Read `git log -- docs/doc-diff-backlog.md`
-> for the historical table.
+> The three rows filed from the 2026-09-07b sweep are **all fixed and closed**
+> as of 2026-09-08: `Language/traps:858`'s lazy-Seq-into-a-slurpy half
+> ([#7591](https://github.com/tokuhirom/mutsu/issues/7591), PR #7600),
+> `Language/objects:1397`'s negative-range slice hang
+> ([#7578](https://github.com/tokuhirom/mutsu/issues/7578), PR #7597), and
+> `Type/Code:140`'s code-object-in-a-list rendering
+> ([#7587](https://github.com/tokuhirom/mutsu/issues/7587), PR #7649). The
+> harness ticket [#7590](https://github.com/tokuhirom/mutsu/issues/7590) is
+> fixed too - this sweep is the first run with its output cap and oracle-nondet
+> gate.
 
-#### Filed from the 2026-09-07b sweep
+#### Filed from the 2026-09-09 sweep
 
-| file:line | one-line summary | ticket |
+Each was reduced and re-run against `raku` v2026.07 before filing.
+
+| file:line | one-line summary | issue |
 |---|---|---|
-| `Language/traps.rakudoc:858` | a lazy Seq (`.map`/`.grep`/`...`/`gather`) passed to a user `*@a` slurpy arrives **empty**; the `.grep` face is a **regression bisected to PR #7501** | [lazy-seq-argument-vanishes-into-a-user-slurpy.md](../todo/tickets/lazy-seq-argument-vanishes-into-a-user-slurpy.md) |
-| `Language/objects.rakudoc:1397` | `@a[0 .. $n]` **hangs forever** when `$n` holds a negative value (raku: `()`) | [array-slice-with-a-runtime-empty-reversed-range-hangs.md](../todo/tickets/array-slice-with-a-runtime-empty-reversed-range-hangs.md) |
-| `Type/Code.rakudoc:140` | a `Block` inside a list renders as the empty string, so a one-element list prints as `()` | [code-object-renders-as-nothing-inside-a-list.md](../todo/tickets/code-object-renders-as-nothing-inside-a-list.md) |
-| *(harness itself)* | no output cap, and `raku-drift` used as a priority bucket when it only ever contains mutsu-vs-oracle divergences | [#7590](https://github.com/tokuhirom/mutsu/issues/7590) — **fixed** |
+| `Language/math:185` | a FatRat addition **panics the process** (`attempt to add with overflow`, `add_sub.rs:168` narrows FatRat parts to `i64`) | [#7746](https://github.com/tokuhirom/mutsu/issues/7746) |
+| `Language/structures:258` | a `but`-mixin on a Hash **silently loses the hash's contents** on the next store; the `%`-assign form corrupts the keys outright | [#7747](https://github.com/tokuhirom/mutsu/issues/7747) |
+| `Type/Proxy:17` | `Proxy.new(FETCH/STORE)` bound to a name is not assignable — the documented type is unusable (`todo:deep`) | [#7748](https://github.com/tokuhirom/mutsu/issues/7748) |
+| `Type/Pair:61` | adjacent colonpairs (`:a1:b2:c3`) stop parsing after the first one | [#7749](https://github.com/tokuhirom/mutsu/issues/7749) |
+| `Language/signatures:35,262,274,329` | runtime binding failures carry the compile-time "will never work with declared signature" wrapper, and one throws the wrong `X::` type | [#7750](https://github.com/tokuhirom/mutsu/issues/7750) |
+| `Type/PositionalBindFailover:34` | `does PositionalBindFailover` is ignored, so such an object cannot bind to `@a` | [#7751](https://github.com/tokuhirom/mutsu/issues/7751) |
+| `Language/experimental:144` | `%%` / `%` by zero throw eagerly where raku returns a soft `Failure` (`div` already does the right thing) | [#7752](https://github.com/tokuhirom/mutsu/issues/7752) |
+| `Language/traps:858` | a `...` sequence passed straight to a builtin listop collapses: `join` sees one element, `sum` sees none | [#7753](https://github.com/tokuhirom/mutsu/issues/7753) |
+| `Language/numerics:595` | native integer increment does not wrap — `my int $x = 2**63-1; ++$x` promotes to a big `Int` | [#7754](https://github.com/tokuhirom/mutsu/issues/7754) |
+| `Type/Junction:325`, `Type/List:351` | junctions do not flatten through infix `~`, and do not autothread out of a list into `join` | [#7755](https://github.com/tokuhirom/mutsu/issues/7755) |
+| `Type/IO/CatHandle:162,595,688` | binary mode via `.encoding: Nil` ignored, `.words` merges across the handle boundary, empty-cat `.slurp` prints nothing instead of `Nil` | [#7756](https://github.com/tokuhirom/mutsu/issues/7756) |
+| `Type/Metamodel/Mixins:18,63` | a parametric role with **named** parameters never matches (`role R[:$v]`) | [#7757](https://github.com/tokuhirom/mutsu/issues/7757) |
+| `Type/Sub:78` | a sub-signature on a **named** parameter is ignored — every sub-parameter gets the whole array | [#7758](https://github.com/tokuhirom/mutsu/issues/7758) |
+| `Language/objects:1067` | `.bless(value => …)` does not fill a `Str` subclass's payload (only `.new` does), so the instance stringifies as `S()` | [#7759](https://github.com/tokuhirom/mutsu/issues/7759) |
 
-#### Triaged real, not yet filed (2026-09-07b)
+#### Triaged real, not yet filed (2026-09-09)
 
-Every row below was **re-run against `raku` v2026.07 and reduced** during the
-2026-09-07b triage; they are confirmed-real, not candidates. They are recorded
-here rather than filed one-by-one so the sweep's verification work is not lost.
-The minimal repro for each is in the committed report under
-[doc-diff-sweep/reports/](doc-diff-sweep/reports/). **File a ticket when you pick
-one up**, and move its row to the table above.
-
-Grouped by the cluster the triage identified, since several share a mechanism:
+Re-run and confirmed during this sweep's triage but not filed one-by-one, so
+the verification work is not lost. **File a ticket when you pick one up**, and
+move its row above. The minimal repro for each is in the committed report under
+[doc-diff-sweep/reports/](doc-diff-sweep/reports/).
 
 | cluster | rows | shape |
 |---|---|---|
-| **Role mixins lose the base value's identity** | `Language/objects:1457` (`(<a b> but R).^name` → `Array+{R}`, raku `List+{R}`), `Language/perl-func:2281` (`join` over `@o but R` → `MIX`, raku `3>2>1`), `Language/perl-func:2310` (a mixin-supplied `sink` is never dispatched), `Language/objects:1067` (`class S is Str {}; ~S.bless(value=>"abc")` → `S()`, raku `abc`) | the built-in payload is unreachable from the mixed/derived object |
-| **Role parameterization and `does` adverbs** | `Type/Metamodel/Mixins:18` (`role R[:$v]` binds the whole `Pair`), `:63` (`$c does R :value("hi")` → "Useless use … in sink context") | the argument passed at mixin time is not routed to the role's parameter/attribute |
-| **Grammar non-capturing subrules** | `Language/grammars:289` (`<.lit>` never fires the action method, nor a grammar method of that name) | `<.name>` matches but its side effects are skipped; the capturing `<lit>` form is correct |
-| **Itemization depth** | `Type/Any:311` (`my $x = [(4,5),6,7]; $x.List.raku` → `($(4, 5), 6, 7)`), `Type/Any:1307` (`.tree(1)` itemizes one level too deep) | an extra `$(...)` exactly one level down; `.tree` with no arg and `.tree(2)` are correct |
-| **Soft-failure numerics** | `Language/experimental:144` (`my $f = 6 %% 0` throws; raku returns a `Failure`), and the `%` twin | worth sweeping the other divisors while in there |
-| **IO handle plumbing** | `Type/IO/Handle:169` (bare `get` parses as the bareword string `"get"`), `:959` (`$PROCESS::OUT = open(...)` does not redirect; `$*OUT =:= $PROCESS::OUT` is `False`), `Type/independent-routines:473` (`.tell` after `readchars` on UTF-8 is 6 vs raku's 7) | |
-| **`IO::Spec` / filetest tables** | `Type/IO/Spec/Win32:190` and `:251` (`split`/`splitpath` edge cases, pure string work), `Type/IO/Path:561` (`"/".IO ~~ :rw` → `True`; mutsu's own `.rw` says `False`) | small table-completion jobs |
-| **Introspection / MOP surface** | `Type/Code:195` (an auto-generated accessor `Method` has no `.line`), `Language/structures:458` (`Metamodel::ClassHOW.^can("uc")` → 0), `Type/Code:166` (`&infix:<+>.file` → `Nil`) | the metaobject exists but carries no source/inherited-method metadata |
-| **Standalone** | `Language/grammars:387` (`"$a.[1]"` / `"$h.<k>"` emitted literally in interpolation), `Language/control:48` (a bare block before an infix must be a **term**, not a call — `{ ... } or die` dies), `Type/Iterator:115` (`IterationEnd.^name` → `Str`), `:88` (`$c =:= C` → `True` through a scalar container), `Language/subscripts:51` (object-keyed `Mix`/`Set` lookup always misses — but see `which-keyed-quanthash-not-worth-campaign`), `Language/py-nutshell:541` (`-> (\i, \j)` binds `i` to the imaginary unit), `Language/perl-var:198` (`$*DISTRO` is a copy of `$*KERNEL`), `Language/structures:233` (`$Undeclared::thing` → `Nil`, raku `(Any)`), `Type/Any:1549` (`&dd.WHAT` → `Nil`), `Language/experimental:78/93/104` (macros unimplemented), `Language/traps:1076` (`for "x" ~~ /(.)/ {...}` iterates nothing) | |
+| **Mixins lose the base value's identity** | `Language/objects:1457` (`(<a b> but R).^name` → `Array+{R}`, raku `List+{R}`), `Language/perl-func:2281`, `:2310` | the built-in payload is unreachable from the mixed/derived object |
+| **Itemization depth** | `Type/Any:1307` (`.tree(1).flat.elems` → 2, raku 6), `Type/Any:311` (`».List.flat` keeps one level of nesting) | an extra level exactly one deep; `.tree` with no arg and `.tree(2)` are correct |
+| **MOP metadata** | `Type/Code:195` (an auto-generated accessor `Method` has no `.line`), `Type/Code:166` (`&infix:<+>.file` → `Nil`), `Language/structures:458` (`ClassHOW.can("uc")` finds 1 candidate, raku 2), `Type/Metamodel/ConcreteRoleHOW:26` (`.^compose` missing), `Type/Metamodel/MethodContainer:15,40` | the metaobject exists but carries no source / inherited-method metadata |
+| **Macros unimplemented** | `Language/experimental:78,93,104`, `Type/X/TypeCheck/Splice:30` | `use experimental :macros` — `quasi` does not parse at all |
+| **Custom iterator protocol** | `Type/Iterator:277` (a class doing `Iterable`+`Iterator` binds as itself), `Type/Iterable:52`, `Type/Iterator:69` (`IterationEnd` in a list does not stop iteration), `:115` (`IterationEnd.raku` is `"IterationEnd"`), `:88` (`=:= IterationEnd` through a container) | see the deferred cluster below |
+| **Grammar action side effects** | `Language/grammars:289` (`<.lit>` never fires the action method), `:387` (`"$a.[1]"` / `"$h.<k>"` emitted literally in interpolation) | the capturing `<lit>` form is correct |
+| **Transcendental accuracy** | `Type/Cool:433` (`atanh(0.5)` → `...548`, raku `...549`), `:535` (`log10(1001)`), `:422` (`tanh(atanh(0.5))` → `0.49999999999999994`, raku `0.5000000000000001`) | last-ulp; mutsu evidently derives these rather than calling libm |
+| **Standalone** | `Language/control:48` (a bare block before an infix must be a term — `{ ... } or die` dies), `Language/traps:63` (`%h is default(Nil)` stores `(Any)` for an explicit `Nil`), `Language/traps:1076` (`for "x" ~~ /(.)/ {...}` iterates nothing), `Type/List:417` (`(1..∞).List.gist` → `1..Inf`, raku `(...)`), `Type/Any:1549` (`.snitch(&dd)` → "Callable expected"), `Type/Format:58` (`Format.directives` missing), `Type/independent-routines:1429` (`append`/`push` with a Hash → "Unknown call"), `:473` (`.readchars` + `SeekFromCurrent` mixes bytes and characters), `:312` (`indir` + a lazy `gather` yields `()`), `Language/haskell-to-p6:475` (the reduction metaoperator over a user sub), `Language/py-nutshell:541`, `Language/perl-var:198` (`$*DISTRO` is a copy of `$*KERNEL`), `Language/subscripts:51` | |
 
-Plus the **67 REAL findings inside the `raku-drift` bucket** described in the
-Corpus snapshot above — notably native-`int` `++` not wrapping, `...` sequences
-falling from `Int` to `Num` past 2⁶³, junctions not autothreading in list-element
-or subscript position, `<( )>` capture markers ignored under `:g`/`comb`, and
-binding failures reporting a compile-time "will never work with declared
-signature" message where raku names the parameter and constraint.
+**Environment noise, not findings.** `Language/variables:1719,1725,1737,1745,1756`
+compare `$*DISTRO` / `$*VM` / `$*RAKU.compiler.version` against the reference
+build, and `Type/independent-routines:148` needs an interactive REPL. They will
+diverge on every run by construction. `Language/variables:868` is a
+concurrency-interleaving example whose oracle happened to reproduce twice.
 
 **Known harness false positive (not ticketed):** any block whose expected output
 embeds an unordered-container iteration order, an object address, a `WHICH` id,
-or a thread id. See the Corpus snapshot — this is 37% of the drift bucket and the
-fix is the oracle-twice gate, not a pattern list.
+or a thread id. The twice-run oracle gate drops most of these (59 this sweep);
+the survivors are ones raku happened to reproduce, e.g.
+`Language/structures:108` (`<a b c d>.Hash.kv`) and `Type/List:695`
+(`.Capture.keys`).
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §6 and the ADRs (the old §8.5 pointer was stale):
@@ -467,7 +439,7 @@ intentionally deferred; see PLAN.md §6 and the ADRs (the old §8.5 pointer was 
 
 ### Untriaged
 Everything in the survey below not listed above. The per-file minimal repros for the
-2026-09-07b sweep are committed under [doc-diff-sweep/reports/](doc-diff-sweep/reports/)
+2026-09-09 sweep are committed under [doc-diff-sweep/reports/](doc-diff-sweep/reports/)
 (captured output truncated to 40 lines per section) — read those first; re-run
 `scripts/doc-diff-sweep.sh` into `tmp/sweep/` only when you need a truncated block in
 full or the tree has moved. Re-verify each block against `raku` before writing a fix.
@@ -475,76 +447,89 @@ full or the tree has moved. Re-verify each block against `raku` before writing a
 ## Survey — files with divergences (high-signal first)
 
 `mism` = output-mismatch · `crash` = mutsu exited non-zero where raku succeeded ·
-`drift` = the retired `raku-drift-from-doc` bucket, as this (2026-09-07b) sweep
-recorded it — **not low priority**: 59% of it is confirmed-real mutsu divergence
-(see the ⚠ section under Corpus snapshot). #7590 removed that bucket; a summary
-produced after it has a `nondet` column instead, counting blocks dropped because
-raku disagreed with itself — the noise floor, not findings.
+`nondet` = blocks dropped because the **oracle** disagreed with itself across two
+runs (the noise floor, not findings). Regenerated from
+[doc-diff-sweep/summary.txt](doc-diff-sweep/summary.txt) on every sweep.
 
-**This table under-reports.** It ranks by `mism + crash`, so a file whose only
-findings are `drift` scores 0 and does not appear at all — that is **61 findings
-across 35 files** on this sweep, including `Language/signatures` (6) and
-`Type/BagHash` (5). Read `doc-diff-sweep/summary.txt` and `progress.txt` for the
-full picture until the harness ticket lands.
-| file (under raku-doc/doc/) | mism | crash | drift |
+| file (under raku-doc/doc/) | mism | crash | nondet |
 |---|---:|---:|---:|
-| Type/Any.rakudoc | 5 | 1 | 4 |
+| Type/IO/CatHandle.rakudoc | 6 | 0 | 0 |
+| Language/variables.rakudoc | 6 | 0 | 0 |
+| Language/signatures.rakudoc | 5 | 0 | 1 |
+| Language/objects.rakudoc | 5 | 0 | 0 |
+| Type/Any.rakudoc | 4 | 1 | 4 |
+| Type/independent-routines.rakudoc | 4 | 0 | 0 |
+| Type/Junction.rakudoc | 4 | 0 | 0 |
+| Type/Iterator.rakudoc | 4 | 0 | 0 |
+| Type/IO/Spec/Win32.rakudoc | 4 | 0 | 0 |
+| Type/Cool.rakudoc | 4 | 0 | 0 |
+| Language/structures.rakudoc | 3 | 1 | 3 |
 | Language/experimental.rakudoc | 0 | 4 | 0 |
-| Language/objects.rakudoc | 2 | 1 | 2 |
-| Type/IO/Path.rakudoc | 2 | 1 | 1 |
-| Type/Iterator.rakudoc | 2 | 0 | 2 |
-| Type/IO/Spec/Win32.rakudoc | 2 | 0 | 2 |
-| Type/independent-routines.rakudoc | 2 | 0 | 2 |
-| Language/traps.rakudoc | 2 | 0 | 2 |
-| Type/IO/Handle.rakudoc | 2 | 0 | 1 |
+| Language/traps.rakudoc | 3 | 0 | 1 |
+| Type/List.rakudoc | 3 | 0 | 0 |
+| Language/numerics.rakudoc | 3 | 0 | 0 |
+| Language/list.rakudoc | 3 | 0 | 0 |
+| Type/Code.rakudoc | 2 | 1 | 2 |
+| Type/Map.rakudoc | 2 | 0 | 3 |
+| Type/BagHash.rakudoc | 2 | 0 | 3 |
+| Type/Hash.rakudoc | 2 | 0 | 2 |
+| Language/typesystem.rakudoc | 2 | 0 | 2 |
+| Type/Metamodel/MethodContainer.rakudoc | 2 | 0 | 1 |
+| Type/Enumeration.rakudoc | 2 | 0 | 1 |
+| Type/Backtrace.rakudoc | 2 | 0 | 1 |
 | Language/subscripts.rakudoc | 2 | 0 | 1 |
-| Type/Lock/Async.rakudoc | 2 | 0 | 0 |
-| Language/py-nutshell.rakudoc | 2 | 0 | 0 |
+| Type/Compiler.rakudoc | 2 | 0 | 0 |
+| Type/CallFrame.rakudoc | 2 | 0 | 0 |
+| Type/Attribute.rakudoc | 2 | 0 | 0 |
 | Language/perl-var.rakudoc | 2 | 0 | 0 |
 | Language/perl-func.rakudoc | 2 | 0 | 0 |
-| Type/Code.rakudoc | 1 | 1 | 3 |
-| Language/structures.rakudoc | 1 | 1 | 3 |
+| Language/concurrency.rakudoc | 2 | 0 | 0 |
 | Language/control.rakudoc | 1 | 1 | 1 |
 | Language/grammars.rakudoc | 1 | 1 | 0 |
 | Type/Metamodel/Mixins.rakudoc | 0 | 2 | 0 |
-| Language/variables.rakudoc | 1 | 0 | 4 |
-| Type/Junction.rakudoc | 1 | 0 | 3 |
-| Type/Metamodel/MethodContainer.rakudoc | 1 | 0 | 2 |
-| Type/Map.rakudoc | 1 | 0 | 2 |
-| Type/Backtrace.rakudoc | 1 | 0 | 2 |
-| Language/typesystem.rakudoc | 1 | 0 | 2 |
-| Type/Sub.rakudoc | 1 | 0 | 1 |
-| Type/Hash.rakudoc | 1 | 0 | 1 |
-| Type/CallFrame.rakudoc | 1 | 0 | 1 |
-| Type/Baggy.rakudoc | 1 | 0 | 1 |
-| Type/Attribute.rakudoc | 1 | 0 | 1 |
-| Language/syntax.rakudoc | 1 | 0 | 1 |
-| Language/functions.rakudoc | 1 | 0 | 1 |
+| Type/Baggy.rakudoc | 1 | 0 | 2 |
+| Type/IO/Spec/Unix.rakudoc | 1 | 0 | 1 |
+| Type/IO/Handle.rakudoc | 1 | 0 | 1 |
+| Type/Bag.rakudoc | 1 | 0 | 1 |
+| Language/regexes.rakudoc | 1 | 0 | 1 |
+| Language/py-nutshell.rakudoc | 1 | 0 | 1 |
 | Language/contexts.rakudoc | 1 | 0 | 1 |
-| Language/concurrency.rakudoc | 1 | 0 | 1 |
+| Language/containers.rakudoc | 1 | 0 | 1 |
+| Type/X/Str/Numeric.rakudoc | 1 | 0 | 0 |
+| Type/X/Numeric/Real.rakudoc | 1 | 0 | 0 |
+| Type/X/Numeric/DivideByZero.rakudoc | 1 | 0 | 0 |
+| Type/X/Assignment/RO.rakudoc | 1 | 0 | 0 |
+| Type/Whatever.rakudoc | 1 | 0 | 0 |
+| Type/Thread.rakudoc | 1 | 0 | 0 |
+| Type/Str.rakudoc | 1 | 0 | 0 |
 | Type/Sequence.rakudoc | 1 | 0 | 0 |
+| Type/Seq.rakudoc | 1 | 0 | 0 |
+| Type/Routine.rakudoc | 1 | 0 | 0 |
+| Type/Promise.rakudoc | 1 | 0 | 0 |
+| Type/Positional.rakudoc | 1 | 0 | 0 |
+| Type/Nil.rakudoc | 1 | 0 | 0 |
+| Type/Metamodel/Primitives.rakudoc | 1 | 0 | 0 |
 | Type/Lock/ConditionVariable.rakudoc | 1 | 0 | 0 |
 | Type/Iterable.rakudoc | 1 | 0 | 0 |
+| Type/Int.rakudoc | 1 | 0 | 0 |
 | Type/IO/Path/Parts.rakudoc | 1 | 0 | 0 |
+| Type/IO/Path.rakudoc | 1 | 0 | 0 |
+| Type/ForeignCode.rakudoc | 1 | 0 | 0 |
 | Type/Failure.rakudoc | 1 | 0 | 0 |
 | Type/Exception.rakudoc | 1 | 0 | 0 |
-| Language/regexes.rakudoc | 1 | 0 | 0 |
-| Language/nativetypes.rakudoc | 1 | 0 | 0 |
-| Language/js-nutshell.rakudoc | 1 | 0 | 0 |
-| Language/hashmap.rakudoc | 1 | 0 | 0 |
+| Type/CompUnit/Repository/Installation.rakudoc | 1 | 0 | 0 |
+| Language/syntax.rakudoc | 1 | 0 | 0 |
+| Language/perl-nutshell.rakudoc | 1 | 0 | 0 |
+| Language/io.rakudoc | 1 | 0 | 0 |
+| Language/functions.rakudoc | 1 | 0 | 0 |
 | Language/classtut.rakudoc | 1 | 0 | 0 |
-| Type/Cool.rakudoc | 0 | 1 | 5 |
+| Type/Sub.rakudoc | 0 | 1 | 1 |
+| Type/Pair.rakudoc | 0 | 1 | 1 |
 | Type/X/TypeCheck/Splice.rakudoc | 0 | 1 | 0 |
 | Type/Proxy.rakudoc | 0 | 1 | 0 |
 | Type/PositionalBindFailover.rakudoc | 0 | 1 | 0 |
-| Type/Pair.rakudoc | 0 | 1 | 0 |
-| Type/Metamodel/Stashing.rakudoc | 0 | 1 | 0 |
 | Type/Metamodel/ConcreteRoleHOW.rakudoc | 0 | 1 | 0 |
-| Type/IO/Notification/Change.rakudoc | 0 | 1 | 0 |
 | Type/Format.rakudoc | 0 | 1 | 0 |
 | Language/optut.rakudoc | 0 | 1 | 0 |
-| Language/nativecall.rakudoc | 0 | 1 | 0 |
 | Language/math.rakudoc | 0 | 1 | 0 |
-| Language/ipc.rakudoc | 0 | 1 | 0 |
 | Language/haskell-to-p6.rakudoc | 0 | 1 | 0 |
-| Language/faq.rakudoc | 0 | 1 | 0 |

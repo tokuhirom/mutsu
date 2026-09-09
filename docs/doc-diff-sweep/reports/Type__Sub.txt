@@ -1,29 +1,8 @@
 # doc-diff-harness report
-# stats: match=3  mismatch=1  mutsu-crash=0  no-oracle=1  raku-drift=1  skipped-marker=0  skipped-nondet=0
+# stats: match=3  matches-doc=0  mismatch=0  mutsu-crash=1  no-oracle=1  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] raku-drift-from-doc  raku-doc/doc/Type/Sub.rakudoc:65
---- program ---
-say 'start';
-multi trait_mod:<is>(Sub $s, :$foo){
-    say "⟨is foo⟩ has been called with ⟨$foo⟩ on {$s.WHICH}";
-}
-sub bar() is foo<oi‽> {
-    say 'bar has been called'
-}
-bar();
-# OUTPUT: «⟨is foo⟩ has been called with ⟨oi‽⟩ on Sub|47563000␤start␤bar has been called␤»
---- raku stdout ---
-⟨is foo⟩ has been called with ⟨oi‽⟩ on Sub|5407604098320
-start
-bar has been called
---- mutsu stdout (exit 0) ---
-start
-⟨is foo⟩ has been called with ⟨True⟩ on Sub|19
-bar has been called
-
-==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Sub.rakudoc:78
+[1] mutsu-error  raku-doc/doc/Type/Sub.rakudoc:78
 --- program ---
 multi trait_mod:<is>(Variable $a, :@foo [$firstpos, *@restpos, :$named, *%restnameds]) {
     say [$firstpos, @restpos, $named, %restnameds]
@@ -32,6 +11,10 @@ my $x is foo[1,2,3,:named<a>, :2b, :3c] = 1
 # OUTPUT: «[1 [2 3] a {b => 2, c => 3}]␤»
 --- raku stdout ---
 [1 [2 3] a {b => 2, c => 3}]
---- mutsu stdout (exit 0) ---
-[[1 2 3 named => a b => 2 c => 3] [] [1 2 3 named => a b => 2 c => 3] {}]
+--- mutsu stdout (exit 1) ---
+
+--- mutsu stderr ---
+Variable '@restpos' is not declared
+  in sub trait_mod:<is> at /home/user/mutsu/tmp/ddh/prog-17906.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17906.raku line 1
 
