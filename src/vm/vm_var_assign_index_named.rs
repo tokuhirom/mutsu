@@ -856,28 +856,36 @@ impl Interpreter {
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             ),
-            ValueView::Range(a, b) if expand_range || finite_positional_range(b) => {
+            ValueView::Range(a, b)
+                if (expand_range && b != i64::MAX) || finite_positional_range(b) =>
+            {
                 let items: Vec<Value> = (a..=b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExcl(a, b) if expand_range || finite_positional_range(b) => {
+            ValueView::RangeExcl(a, b)
+                if (expand_range && b != i64::MAX) || finite_positional_range(b) =>
+            {
                 let items: Vec<Value> = (a..b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExclStart(a, b) if expand_range || finite_positional_range(b) => {
+            ValueView::RangeExclStart(a, b)
+                if (expand_range && b != i64::MAX) || finite_positional_range(b) =>
+            {
                 let items: Vec<Value> = ((a + 1)..=b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::List,
                 )
             }
-            ValueView::RangeExclBoth(a, b) if expand_range || finite_positional_range(b) => {
+            ValueView::RangeExclBoth(a, b)
+                if (expand_range && b != i64::MAX) || finite_positional_range(b) =>
+            {
                 let items: Vec<Value> = ((a + 1)..b).map(Value::int).collect();
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
@@ -887,7 +895,9 @@ impl Interpreter {
             // Non-integer (e.g. string) ranges: `%h{'x'..'z'} = ...` is a hash
             // slice over the enumerated keys `x`, `y`, `z`, not a single
             // stringified `"x y z"` key. Expand via the range's own list.
-            ValueView::GenericRange { .. } if expand_range => {
+            ValueView::GenericRange { .. }
+                if expand_range && !crate::runtime::utils::subscript_range_end_unbounded(&idx) =>
+            {
                 let items = crate::runtime::utils::value_to_list(&idx);
                 Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
@@ -1683,6 +1693,7 @@ impl Interpreter {
                     // one contributes the element's undefined value). That list,
                     // not the raw RHS, is the assignment's rvalue in raku.
                     let mut assigned_values: Vec<Value> = Vec::new();
+                    let empty_slice = keys.is_empty();
                     if is_shaped {
                         if bind_mode && is_bound_index {
                             return Err(RuntimeError::assignment_ro(None));
@@ -1783,6 +1794,8 @@ impl Interpreter {
                         nested
                     } else if idx_is_single_element && idx_is_scalar_subscript {
                         Self::itemize_value(val)
+                    } else if empty_slice {
+                        Value::array(Vec::new())
                     } else if !assigned_values.is_empty() {
                         Value::array(assigned_values)
                     } else {
