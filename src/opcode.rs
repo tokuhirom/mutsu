@@ -4889,6 +4889,16 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
+    /// True if *this* chunk (or any closure literal nested in it) can reach a
+    /// lexical by a name the compile-time free-variable scan cannot see, so a
+    /// closure created from it must capture the WHOLE visible env rather than
+    /// the filtered upvalue set. Computed by
+    /// [`Self::scan_reflective_name_access`].
+    ///
+    /// The process-global [`REFLECTIVE_NAME_ACCESS_SEEN`] latch answers the
+    /// same question for the *program*; this answers it for one chunk, which
+    /// is what `capture_closure_env` actually needs. Set during `finalize`.
+    pub(crate) needs_reflective_capture: bool,
     /// True if this code directly calls `callsame`/`nextsame`/`callwith`/
     /// `nextwith`. Set during `emit()`. The compiled method fast paths
     /// (`call_compiled_method`/`call_compiled_method_fast`) push a
@@ -5373,6 +5383,7 @@ impl CompiledCode {
             reads_topic: false,
             has_once: false,
             uses_callframe: false,
+            needs_reflective_capture: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
             source_line: None,
@@ -6253,14 +6264,23 @@ impl CompiledCode {
 
     /// Scan this code's ops for reflective by-name access to a caller frame's
     /// lexicals (`CALLER::`/`OUTER::`, symbolic deref, pseudo-stash, indirect
-    /// code lookup, `EVAL`/`EVALFILE`) and set the process-global
-    /// [`REFLECTIVE_NAME_ACCESS_SEEN`] flag. Runs unconditionally at finalize
-    /// (before the `needs_env_sync` early returns) so the flag covers loop/block
-    /// frames and zero-local frames too. Monotonic: only ever sets `true`.
-    pub(crate) fn scan_reflective_name_access(&self) {
-        if REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed) {
-            return;
-        }
+    /// code lookup, `EVAL`/`EVALFILE`), setting both the process-global
+    /// [`REFLECTIVE_NAME_ACCESS_SEEN`] flag and this chunk's own
+    /// [`Self::needs_reflective_capture`]. Runs unconditionally at finalize
+    /// (before the `needs_env_sync` early returns) so both cover loop/block
+    /// frames and zero-local frames too. Both are monotonic: only ever set
+    /// `true`.
+    ///
+    /// The global flag says "somewhere in this *program* a lexical may be
+    /// reached by a dynamic name"; the per-chunk flag says it of one chunk.
+    /// `capture_closure_env` needs the second: with the global latch alone, a
+    /// single `EVAL` anywhere — including inside a module the program never
+    /// calls into, e.g. upstream `Test.rakumod`'s `throws-like` — made EVERY
+    /// closure in the process capture the whole visible env by name, so both
+    /// the creation-time flatten and the per-call capture merge became linear
+    /// in the importing scope's size (#7565).
+    pub(crate) fn scan_reflective_name_access(&mut self) {
+        let mut own_reflective = false;
         for op in &self.ops {
             let reflective = match op {
                 OpCode::GetCallerVar { .. }
@@ -6299,10 +6319,67 @@ impl CompiledCode {
                 _ => false,
             };
             if reflective {
-                REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
-                return;
+                own_reflective = true;
+                break;
             }
         }
+        if own_reflective {
+            REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
+        }
+        self.needs_reflective_capture |= own_reflective || self.chunk_reflective_capture_traits();
+    }
+
+    /// The per-chunk half of [`Self::scan_reflective_name_access`]: everything
+    /// beyond this chunk's own reflective ops that still forces a whole-env
+    /// capture. Deliberately wider than the global latch's op scan, because a
+    /// missed case here is a silently truncated lexical view rather than the
+    /// merely-conservative over-set the global flag can afford.
+    fn chunk_reflective_capture_traits(&self) -> bool {
+        // A `callframe`/`callframes` observer reads its caller frame's
+        // lexicals by name (`callframe.my<$x>`), which no free-var scan sees.
+        if self.uses_callframe {
+            return true;
+        }
+        // `gather`/`whenever` stash their body in `stmt_pool` and run it by
+        // name against the live env, so it is not in `closure_compiled_codes`
+        // and the nested scan below cannot see which lexicals it reads.
+        if self.ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::MakeGather(..) | OpCode::WheneverScope { .. } | OpCode::PackageScope { .. }
+            )
+        }) {
+            return true;
+        }
+        // Constant-pool scan, the same sound over-approximation `reads_topic`
+        // uses: it catches the reflective spellings that do NOT compile to one
+        // of the ops above — `$code.EVAL` and `&::($n)` as method calls, a
+        // pseudo-stash named through a string, an `EVAL` reached from a body
+        // this chunk only stashes. A stray literal of the same text costs one
+        // chunk its filtered capture, which is conservative, never wrong.
+        const REFLECTIVE_NAMES: [&str; 11] = [
+            "EVAL",
+            "EVALFILE",
+            "CALLER",
+            "CALLERS",
+            "OUTER",
+            "LEXICAL",
+            "DYNAMIC",
+            "MY",
+            "UNIT",
+            "SETTING",
+            "callframe",
+        ];
+        if self.constants.iter().any(
+            |c| matches!(c.view(), ValueView::Str(s) if REFLECTIVE_NAMES.contains(&s.as_str())),
+        ) {
+            return true;
+        }
+        // A closure literal nested here captures from an env this chunk's own
+        // frame supplies, so its need is this chunk's need too.
+        self.closure_compiled_codes
+            .iter()
+            .any(|c| c.needs_reflective_capture)
     }
 
     /// The constant-pool index naming the variable an op reads/writes by name,

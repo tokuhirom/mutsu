@@ -145,7 +145,7 @@ thread_local! {
     /// merge/dispatch paths ask about a name. Same validity argument as
     /// `RESOLVE_CACHE`: ids are append-only and a symbol's string never
     /// changes, so a computed answer is good for the life of the process.
-    static FLAG_CACHE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    static FLAG_CACHE: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Pure, string-derived properties of a symbol, computed once per symbol.
@@ -163,20 +163,20 @@ pub(crate) mod flags {
     /// `<name>`) — the names scoped per *routine*, which a return merge must
     /// never copy back into the caller. Mirrors
     /// `crate::runtime::utils::is_routine_scoped_implicit_var`.
-    pub(crate) const ROUTINE_SCOPED_IMPLICIT: u8 = 1 << 0;
+    pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
     /// A per-call-site index-rw / call-result temporary. Mirrors
     /// `crate::runtime::utils::is_index_rw_call_temp`.
-    pub(crate) const INDEX_RW_CALL_TEMP: u8 = 1 << 1;
+    pub(crate) const INDEX_RW_CALL_TEMP: u16 = 1 << 1;
     /// A `__mutsu_type::<name>` typed-lexical metadata key.
-    pub(crate) const TYPE_META: u8 = 1 << 2;
+    pub(crate) const TYPE_META: u16 = 1 << 2;
     /// An `nqp::<op>` routine name: a compiler-known primitive in a reserved
     /// namespace no user routine can be declared in, so a call op carrying
     /// this name dispatches straight to the op table
     /// (`Interpreter::exec_nqp_call_op`).
-    pub(crate) const NQP_OP: u8 = 1 << 3;
+    pub(crate) const NQP_OP: u16 = 1 << 3;
     /// A *plain user lexical* env key. Mirrors
     /// `crate::env::is_plain_user_lexical`.
-    pub(crate) const PLAIN_USER_LEXICAL: u8 = 1 << 4;
+    pub(crate) const PLAIN_USER_LEXICAL: u16 = 1 << 4;
     /// An attribute-twigil env key (`!x`, `@!x`, `%.x`). Mirrors
     /// `crate::env::is_attr_twigil_env_key`.
     ///
@@ -185,7 +185,7 @@ pub(crate) mod flags {
     /// the symbol to a `&str` and re-scanning the bytes twice per key. Fusing
     /// them into the memoized byte makes the filter one thread-local lookup
     /// instead of two plus two string scans.
-    pub(crate) const ATTR_TWIGIL_ENV_KEY: u8 = 1 << 5;
+    pub(crate) const ATTR_TWIGIL_ENV_KEY: u16 = 1 << 5;
     /// A *dynamic* variable's env key (`*x`, `$*OUT`, `@*ARGS`, `%*ENV`).
     /// Mirrors `crate::env::is_dynamic_var_env_key`.
     ///
@@ -196,10 +196,21 @@ pub(crate) mod flags {
     /// reflective latch has widened to a whole-env snapshot, walks hundreds of
     /// keys here per closure call, which put this one scan at ~11% of the whole
     /// program (#7565).
-    pub(crate) const DYNAMIC_VAR_ENV_KEY: u8 = 1 << 6;
-    /// Set once the byte has been computed (so a symbol with no flags is not
-    /// recomputed on every lookup).
-    pub(crate) const COMPUTED: u8 = 1 << 7;
+    pub(crate) const DYNAMIC_VAR_ENV_KEY: u16 = 1 << 6;
+    /// A `__mutsu_callable_id::<package>::<name>` routine-registration marker.
+    ///
+    /// One such key is installed per *named routine visible in the scope*, so a
+    /// file that imported a module with a broad export list carries dozens of
+    /// them — 55 of the 90 entries a closure captured after a bare `use Test`
+    /// (#7565). Every consumer reads the marker from the LIVE env at call time
+    /// (`sub_state_scope_id`, `registration_clone_id`, the call-eligibility
+    /// probe), so the closure capture does not need to carry it; the one place
+    /// that does — an escaping closure whose `use`-inside-`EVAL` scope has
+    /// already been popped — is served precisely by `capture_bare_callees`.
+    pub(crate) const CALLABLE_ID_META: u16 = 1 << 8;
+    /// Set once the flag word has been computed (so a symbol with no flags is
+    /// not recomputed on every lookup).
+    pub(crate) const COMPUTED: u16 = 1 << 15;
 }
 
 /// The `__mutsu_type::` prefix `flags::TYPE_META` marks. Kept next to the flag
@@ -209,7 +220,11 @@ pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
 /// The `nqp::` prefix `flags::NQP_OP` marks.
 pub(crate) const NQP_OP_PREFIX: &str = "nqp::";
 
-fn compute_flags(s: &str) -> u8 {
+/// The `__mutsu_callable_id::` prefix `flags::CALLABLE_ID_META` marks. Kept
+/// next to the flag so the two cannot drift.
+pub(crate) const CALLABLE_ID_META_PREFIX: &str = "__mutsu_callable_id::";
+
+fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if crate::runtime::utils::is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT;
@@ -222,6 +237,9 @@ fn compute_flags(s: &str) -> u8 {
     }
     if s.starts_with(NQP_OP_PREFIX) {
         f |= flags::NQP_OP;
+    }
+    if s.starts_with(CALLABLE_ID_META_PREFIX) {
+        f |= flags::CALLABLE_ID_META;
     }
     if crate::env::is_plain_user_lexical(s) {
         f |= flags::PLAIN_USER_LEXICAL;
@@ -446,13 +464,13 @@ impl Symbol {
         })
     }
 
-    /// This symbol's memoized [`flags`] byte — see that module for what the
+    /// This symbol's memoized [`flags`] word — see that module for what the
     /// bits mean and why the merge path needs them fused into one lookup.
     ///
     /// Computed on first ask and cached per thread. Test the result with the
     /// `flags::*` constants, e.g.
     /// `sym.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0`.
-    pub(crate) fn flags(self) -> u8 {
+    pub(crate) fn flags(self) -> u16 {
         let idx = self.0 as usize;
         if let Some(f) = FLAG_CACHE.with(|c| c.borrow().get(idx).copied())
             && f & flags::COMPUTED != 0
