@@ -1,0 +1,1 @@
+`start` blocks sunk without retaining their Promise now report unhandled worker exceptions when the broken Promise is discarded, while awaited and status-inspected Promises keep their existing behavior.

@@ -229,6 +229,14 @@ impl Trace for (Mutex<PromiseState>, Condvar) {
             state.waiters.clear();
         }
     }
+
+    fn finalize(&self) {
+        if let Ok(mut state) = self.0.lock()
+            && let Some((result, thread_id)) = state.take_unhandled_report()
+        {
+            super::value_async::report_unhandled_promise(&result, thread_id);
+        }
+    }
 }
 
 /// A channel node's `Value` edges are its buffered `queue`, its `failure`, and

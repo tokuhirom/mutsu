@@ -12,6 +12,53 @@ impl std::fmt::Debug for PromiseState {
     }
 }
 
+impl PromiseState {
+    pub(super) fn take_unhandled_report(&mut self) -> Option<(Value, i64)> {
+        if !self.report_unhandled
+            || self.status != "Broken"
+            || self.observed
+            || self.unhandled_reported
+        {
+            return None;
+        }
+        self.unhandled_reported = true;
+        Some((self.result.clone(), self.thread_id))
+    }
+}
+
+impl Drop for PromiseState {
+    fn drop(&mut self) {
+        if let Some((result, thread_id)) = self.take_unhandled_report() {
+            report_unhandled_promise(&result, thread_id);
+        }
+    }
+}
+
+pub(super) fn report_unhandled_promise(result: &Value, thread_id: i64) {
+    let (message, backtrace) = match result.view() {
+        ValueView::Instance { attributes, .. } => {
+            let attrs = attributes.as_map();
+            let message = attrs
+                .get("message")
+                .map(Value::to_string_value)
+                .unwrap_or_else(|| result.to_string_value());
+            let backtrace = attrs.get("backtrace").map(Value::to_string_value);
+            (message, backtrace)
+        }
+        _ => (result.to_string_value(), None),
+    };
+    eprintln!(
+        "Unhandled exception in code scheduled on thread {}",
+        thread_id
+    );
+    eprintln!("{message}");
+    if let Some(backtrace) = backtrace
+        && !backtrace.is_empty()
+    {
+        eprintln!("{backtrace}");
+    }
+}
+
 impl SharedPromise {
     /// This promise's never-reused `.WHICH` id. It replaces the inner
     /// allocation's ADDRESS, which is unique only among live objects:
@@ -39,6 +86,10 @@ impl SharedPromise {
                     thread_payload: None,
                     waiters: Vec::new(),
                     vow_taken: false,
+                    report_unhandled: false,
+                    observed: false,
+                    unhandled_reported: false,
+                    thread_id: 0,
                 }),
                 Condvar::new(),
             )),
@@ -59,6 +110,10 @@ impl SharedPromise {
                     thread_payload: None,
                     waiters: Vec::new(),
                     vow_taken: false,
+                    report_unhandled: false,
+                    observed: false,
+                    unhandled_reported: false,
+                    thread_id: 0,
                 }),
                 Condvar::new(),
             )),
@@ -89,6 +144,26 @@ impl SharedPromise {
     pub(crate) fn mark_vowed(&self) {
         let (lock, _) = &*self.inner;
         lock.lock().unwrap().vow_taken = true;
+    }
+
+    /// Mark a sunk `start` promise so a Broken result is reported if nobody
+    /// observes it before the last reference disappears.
+    pub(crate) fn mark_unhandled(&self) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().report_unhandled = true;
+    }
+
+    /// Mark the promise as observed by user code. This suppresses the
+    /// destruction-time diagnostic; `await`/`.result` still rethrow Broken
+    /// promises through their normal paths.
+    pub(crate) fn mark_observed(&self) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().observed = true;
+    }
+
+    pub(crate) fn set_thread_id(&self, thread_id: i64) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().thread_id = thread_id;
     }
 
     pub(crate) fn class_name(&self) -> Symbol {
@@ -254,6 +329,7 @@ impl SharedPromise {
     }
 
     pub(crate) fn wait(&self) -> (Value, String, String) {
+        self.mark_observed();
         // GC safepoint (§9.2a `await`): the await entry boundary, before the
         // state lock is taken (a collect here can run finalizers that touch
         // other promises/channels, so it must not hold this mutex).
