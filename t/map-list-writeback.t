@@ -6,7 +6,7 @@ use Test;
 # consumption time. A List literal remains immutable and is covered by the
 # ordinary map topic tests.
 
-plan 10;
+plan 12;
 
 my @a = 1, 2, 3;
 my $mapped = @a.list.map({ $_ = 7 });
@@ -37,3 +37,13 @@ throws-like {
 my $literal_array = [1, 2, 3];
 $literal_array.map({ $_ = 4 }).eager;
 is-deeply $literal_array, [4, 4, 4], 'a real Array map may assign to its elements';
+
+my @explicit = 1, 2, 3;
+@explicit.list.map(-> \x { x.Str }).eager;
+is-deeply @explicit, [1, 2, 3], 'an explicit map parameter does not write back the outer topic';
+
+my @nested = [["bar", "baz", "foo"]];
+for @nested -> $row {
+    $row.map(-> \x { x.Str }).eager;
+}
+is-deeply @nested, [["bar", "baz", "foo"]], 'nested Array maps preserve their source elements';
