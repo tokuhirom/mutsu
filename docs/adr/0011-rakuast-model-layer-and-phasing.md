@@ -607,8 +607,9 @@ earlier ones.
   `sub { }` (deferred). Plain positional and array-destructuring sub-signatures are handled
   (2026-09-09, issue #7685): `Parameter.sub-signature` is a recursive `Signature`, and the lowerer
   rebuilds `ParamDef.sub_signature` so the existing binder executes the same destructuring. Named
-  aliases, capture sub-signatures, type captures, and array-shape metadata remain separate
-  boundaries.
+  aliases, capture sub-signatures, and array-shape metadata remain separate boundaries. Basic
+  unconstrained type captures (`::T`) are handled (2026-09-09, issue #7694); smiley-constrained
+  and richer type-capture spellings remain deferred.
 - **Routine return types (2026-08-22, both directions).** raku models the two spellings with
   different nodes and mutsu's internal AST keeps them apart, so the converter never guesses:
   `sub f(--> Int)` → `signature => Signature(parameters => …, returns => Type::Simple(Name))`
@@ -750,6 +751,18 @@ earlier ones.
   (`to_string_value`) to the gist, so `.Str`/`~` also produce the constructor form. This is a
   harmless divergence (no existing code stringifies a RakuAST node, and the raku form embeds a
   non-deterministic address); revisit if/when `.gist` and `.Str` need to diverge.
+
+## Slice outcomes
+
+### 1. Basic type captures (2026-09-09, issue #7694)
+
+The existing `ParamDef.type_constraint` representation is sufficient for the
+basic `::T` form, so no parser or execution redesign was needed. The read and
+write directions now map it to `Parameter.type-captures` containing a
+`Type::Capture` node, preserving the measured Rakudo shape for positional,
+named, bare, and pointy-block parameters. Smiley-constrained captures such as
+`::T:D` still need additional representation if their distinction is to be
+preserved.
 
 ## References
 

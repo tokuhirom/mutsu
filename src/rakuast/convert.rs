@@ -2137,8 +2137,8 @@ fn signature(
 }
 
 /// One `Parameter`. Positional sub-signatures are represented recursively as
-/// `sub-signature => Signature`; richer capture forms remain the coverage
-/// boundary.
+/// `sub-signature => Signature`, and a basic `::T` type capture becomes the
+/// `type-captures` field. Richer capture forms remain the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
     if pd.onearg
         || pd.literal_value.is_some()
@@ -2160,6 +2160,41 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     {
         return Err(unsupported("non-positional signature sub-signature"));
     }
+    let type_capture = match pd.type_constraint.as_deref() {
+        Some(type_constraint) if type_constraint.starts_with("::") => {
+            Some(type_capture_node(type_constraint)?)
+        }
+        _ => None,
+    };
+    // A bare `::T` is represented internally by a synthetic parameter name,
+    // but RakuAST models it as a Parameter with no target. Keep the synthetic
+    // name only in the internal AST used by the existing binder.
+    if pd.name.starts_with("__type_capture__") {
+        let Some(type_capture) = type_capture else {
+            return Err(unsupported("type capture without a capture node"));
+        };
+        let mut fields = Vec::with_capacity(4);
+        if type_setting {
+            fields.push(node_field(Some("type"), type_setting_any()));
+        }
+        fields.push(type_captures_field(type_capture));
+        match &pd.default {
+            Some(default) => fields.push(node_field(Some("default"), convert_expr(default)?)),
+            None => fields.push(RakuAstField {
+                name: Some("optional"),
+                value: RakuAstFieldValue::Node(Value::truth(false)),
+            }),
+        }
+        return Ok(RakuAstNode {
+            class: RakuAstClass::Parameter,
+            fields,
+        });
+    }
+    let ordinary_type_constraint = if type_capture.is_some() {
+        None
+    } else {
+        pd.type_constraint.as_deref()
+    };
     let (sigil, desigil) = split_sigil(&pd.name);
     let mut node = if pd.slurpy || pd.double_slurpy {
         // A typed or where-constrained slurpy carries richer shape; defer.
@@ -2169,7 +2204,10 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         slurpy_parameter(sigil, desigil, pd.double_slurpy)?
     } else if pd.named {
         // A typed/defaulted/where-constrained named param carries richer shape.
-        if pd.type_constraint.is_some() || pd.default.is_some() || pd.where_constraint.is_some() {
+        if (pd.type_constraint.is_some() && type_capture.is_none())
+            || pd.default.is_some()
+            || pd.where_constraint.is_some()
+        {
             return Err(unsupported("typed/defaulted named parameter"));
         }
         named_parameter(sigil, desigil, type_setting)?
@@ -2177,12 +2215,21 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         simple_parameter(
             sigil,
             desigil,
-            pd.type_constraint.as_deref(),
+            ordinary_type_constraint,
             pd.default.as_ref(),
             type_setting,
             pd.where_constraint.as_deref(),
         )?
     };
+    if let Some(type_capture) = type_capture {
+        let target_index = node
+            .fields
+            .iter()
+            .position(|field| field.name == Some("target"))
+            .ok_or_else(|| unsupported("type capture without a parameter target"))?;
+        node.fields
+            .insert(target_index, type_captures_field(type_capture));
+    }
     if let Some(sub_params) = &pd.sub_signature {
         node.fields.push(node_field(
             Some("sub-signature"),
@@ -2190,6 +2237,33 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         ));
     }
     Ok(node)
+}
+
+/// A basic `::T` capture is represented by `Parameter.type-captures` rather
+/// than by the parameter's ordinary `type` node. Smiley-constrained and other
+/// richer capture spellings need more internal metadata and remain deferred.
+fn type_capture_node(type_constraint: &str) -> Result<RakuAstNode, RuntimeError> {
+    let Some(name) = type_constraint.strip_prefix("::") else {
+        return Err(unsupported("type capture"));
+    };
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+    {
+        return Err(unsupported("complex type capture"));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::TypeCapture,
+        fields: vec![node_field(None, name_from_identifier(name))],
+    })
+}
+
+fn type_captures_field(type_capture: RakuAstNode) -> RakuAstField {
+    RakuAstField {
+        name: Some("type-captures"),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(type_capture))]),
+    }
 }
 
 /// A slurpy parameter `*@a` / `**@a` -> `Parameter(target => …, slurpy =>

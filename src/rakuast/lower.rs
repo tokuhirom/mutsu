@@ -654,12 +654,44 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
     if parameter.class != RakuAstClass::Parameter {
         return Err(unsupported(owner));
     }
-    let target = named_child(parameter, "target")?;
-    if target.class != RakuAstClass::ParameterTargetVar {
+    let type_capture = if let Some(type_captures) = parameter
+        .fields
+        .iter()
+        .find(|f| f.name == Some("type-captures"))
+    {
+        let RakuAstFieldValue::List(items) = &type_captures.value else {
+            return Err(unsupported(owner));
+        };
+        let [type_capture] = items.as_slice() else {
+            return Err(unsupported(owner));
+        };
+        let ValueView::RakuAst(type_capture) = type_capture.view() else {
+            return Err(unsupported(owner));
+        };
+        if type_capture.class != RakuAstClass::TypeCapture {
+            return Err(unsupported(owner));
+        }
+        let name_node = named_child_or_positional(type_capture)?;
+        let name_value = positional_leaf(name_node)?;
+        let ValueView::Str(name) = name_value.view() else {
+            return Err(unsupported(owner));
+        };
+        Some(name.to_string())
+    } else {
+        None
+    };
+    let name = if let Some(target) = parameter.fields.iter().find(|f| f.name == Some("target")) {
+        let target = child_node(&target.value)?;
+        if target.class != RakuAstClass::ParameterTargetVar {
+            return Err(unsupported(owner));
+        }
+        let raw = leaf_str(target, "name")?;
+        raw.strip_prefix('$').map(str::to_string).unwrap_or(raw)
+    } else if let Some(type_capture) = &type_capture {
+        format!("__type_capture__{type_capture}")
+    } else {
         return Err(unsupported(owner));
-    }
-    let raw = leaf_str(target, "name")?;
-    let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
+    };
     let mut def = positional_param(&name);
     // A named parameter `:$x` carries a `names` list; it binds by name and is
     // optional by default.
@@ -716,6 +748,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         } else {
             return Err(unsupported(owner));
         }
+    }
+    if let Some(type_capture) = type_capture {
+        if def.type_constraint.is_some() {
+            return Err(unsupported(owner));
+        }
+        def.type_constraint = Some(format!("::{type_capture}"));
     }
     // `$y = EXPR` -> an optional positional with a default value.
     if let Some(d) = parameter.fields.iter().find(|f| f.name == Some("default")) {
