@@ -455,7 +455,33 @@ impl Interpreter {
         Ok(())
     }
 
-    /// [`Self::reify_map_grep_seq`] over a whole argument list.
+    /// Reify a not-yet-finished closure-based `...` sequence
+    /// (`(1, *+1 ... 4)`) before a **pure-value reader** touches it.
+    ///
+    /// `eval_sequence` defers a closure (`WhateverCode`-generated) sequence
+    /// whose value endpoint it has not yet reached to a `LazyList` carrying
+    /// only its eager prefix, because reaching the endpoint needs incremental
+    /// evaluation (see `Self::eval_sequence`'s "Defer an unfinished finite
+    /// closure sequence" comment) — that cache therefore starts out holding
+    /// FEWER elements than the finished sequence, not none, so the generic
+    /// "cache is empty -> not ready" guards `join_flat`/`flat_val` use for an
+    /// ordinary deferred `LazyList` silently treat the partial prefix as the
+    /// whole answer. `has_finite_closure_endpoint()` marks exactly this case
+    /// as safe to force to completion (unlike `... *`, which never reaches
+    /// this guard because it is genuinely infinite). A no-op for every other
+    /// value, including every other lazy flavour, whose streaming semantics
+    /// must not be forced at an argument boundary.
+    pub(crate) fn reify_closure_seq_endpoint(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        if let ValueView::LazyList(ll) = value.view()
+            && ll.has_finite_closure_endpoint()
+        {
+            self.force_lazy_list_vm(&ll)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::reify_map_grep_seq`] and [`Self::reify_closure_seq_endpoint`]
+    /// over a whole argument list.
     ///
     /// Looks through a `Pair`, because a NAMED argument's value is an argument
     /// too: zef's `Any.new(:specs($spec.values[0].map: {...}))` binds the
@@ -464,10 +490,12 @@ impl Interpreter {
     pub(crate) fn reify_map_grep_seq_args(&mut self, args: &[Value]) -> Result<(), RuntimeError> {
         for arg in args {
             self.reify_map_grep_seq(arg)?;
+            self.reify_closure_seq_endpoint(arg)?;
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
                     let v = v.clone();
                     self.reify_map_grep_seq(&v)?;
+                    self.reify_closure_seq_endpoint(&v)?;
                 }
                 _ => {}
             }

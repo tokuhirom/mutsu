@@ -18,7 +18,15 @@ impl Interpreter {
             return false;
         }
         match value.view() {
-            ValueView::LazyList(_) => true,
+            // A finite closure `...` sequence (`(1, *+1 ... 4)`) is stored as
+            // a `LazyList` only because reaching its endpoint needed
+            // incremental evaluation, not because it is actually unbounded —
+            // `is_genuinely_lazy()` is false for it once
+            // `reify_closure_seq_endpoint` has forced its cache, so it is
+            // eligible for `sort`/`classify`/QuantHash coercion just like an
+            // eager Seq. Every other `LazyList` flavour (an infinite range,
+            // `... *`, an unbounded `.map`/`.grep` pipe, ...) stays lazy here.
+            ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
             ValueView::GenericRange { start, end, .. } => {
                 Self::is_infinite_endpoint(start) || Self::is_infinite_endpoint(end)
