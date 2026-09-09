@@ -1,6 +1,8 @@
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::value_buf::{buf_attrs, buf_elems, buf_elems_or_empty, make_buf};
+use crate::value::value_buf::{
+    BufEnd, buf_attrs, buf_elems, buf_elems_or_empty, extend_buf_elems, make_buf,
+};
 
 impl Interpreter {
     pub(crate) fn assign_substr_rw(
@@ -313,19 +315,24 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let ValueView::Instance {
+        let (class_name_sym, orig_id, attrs_cell) = if let ValueView::Instance {
             class_name,
             attributes,
             id,
             ..
         } = target.view()
         {
-            (
-                class_name,
-                buf_elems_or_empty(&attributes),
-                id,
-                attributes.clone(),
-            )
+            // Blob is immutable. The rvalue path below and `buf_pop_shift_splice`
+            // both refuse here; this path used to let a named `Blob` be pushed
+            // to, which mutated it in place.
+            let cn = class_name.resolve();
+            if crate::runtime::utils::is_blob_like_class(&cn) {
+                return Err(RuntimeError::new(format!(
+                    "Cannot modify immutable {} with {}",
+                    cn, method
+                )));
+            }
+            (class_name, id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -348,24 +355,16 @@ impl Interpreter {
         }
         let new_items: Vec<Value> = Self::flatten_buf_args(args);
 
-        match method {
-            "append" | "push" => {
-                bytes.extend(new_items);
-            }
-            "prepend" | "unshift" => {
-                let mut combined = new_items;
-                combined.extend(bytes);
-                bytes = combined;
-            }
+        let end = match method {
+            "append" | "push" => BufEnd::Back,
+            "prepend" | "unshift" => BufEnd::Front,
             _ => unreachable!(),
-        }
-
-        let updated = Value::write_back_sharing(
-            &attrs_cell,
-            class_name_sym,
-            buf_attrs(class_name_sym, bytes),
-            orig_id,
-        );
+        };
+        // Encode and append only the *new* elements. Rebuilding the whole
+        // attribute map here (decode every existing byte to a boxed `Value`,
+        // extend, re-encode) made filling a buffer quadratic — see #7680.
+        extend_buf_elems(&attrs_cell, class_name_sym, &new_items, end);
+        let updated = Value::instance_sharing_cell(&attrs_cell, class_name_sym, orig_id);
         self.env.insert(target_var.to_string(), updated.clone());
         Ok(updated)
     }
