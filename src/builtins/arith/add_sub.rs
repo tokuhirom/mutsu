@@ -11,6 +11,7 @@ use super::temporal::{
 };
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
+use num_bigint::BigInt as NumBigInt;
 
 // ── Arithmetic operators ─────────────────────────────────────────────
 pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError> {
@@ -165,9 +166,24 @@ fn arith_add_coerced(l: Value, r: Value) -> Value {
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_rat {
             if has_fat_rat {
-                let n = an * bd + bn * ad;
-                let d = ad * bd;
-                make_fat_rat(n, d)
+                if let (Some(n), Some(d)) = (
+                    an.checked_mul(bd).and_then(|left| {
+                        bn.checked_mul(ad).and_then(|right| left.checked_add(right))
+                    }),
+                    ad.checked_mul(bd),
+                ) {
+                    make_fat_rat(n, d)
+                } else {
+                    let n = NumBigInt::from(an) * NumBigInt::from(bd)
+                        + NumBigInt::from(bn) * NumBigInt::from(ad);
+                    let d = NumBigInt::from(ad) * NumBigInt::from(bd);
+                    let result = make_big_fat_rat(n, d);
+                    if let ValueView::Rat(n, d) = result.view() {
+                        Value::fat_rat_raw(n, d)
+                    } else {
+                        result
+                    }
+                }
             } else {
                 rat_add_checked(an, ad, bn, bd)
             }
@@ -315,9 +331,24 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         if has_rat {
             if has_fat_rat {
-                let n = an * bd - bn * ad;
-                let d = ad * bd;
-                make_fat_rat(n, d)
+                if let (Some(n), Some(d)) = (
+                    an.checked_mul(bd).and_then(|left| {
+                        bn.checked_mul(ad).and_then(|right| left.checked_sub(right))
+                    }),
+                    ad.checked_mul(bd),
+                ) {
+                    make_fat_rat(n, d)
+                } else {
+                    let n = NumBigInt::from(an) * NumBigInt::from(bd)
+                        - NumBigInt::from(bn) * NumBigInt::from(ad);
+                    let d = NumBigInt::from(ad) * NumBigInt::from(bd);
+                    let result = make_big_fat_rat(n, d);
+                    if let ValueView::Rat(n, d) = result.view() {
+                        Value::fat_rat_raw(n, d)
+                    } else {
+                        result
+                    }
+                }
             } else {
                 rat_sub_checked(an, ad, bn, bd)
             }
