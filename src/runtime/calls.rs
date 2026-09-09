@@ -452,6 +452,67 @@ impl Interpreter {
         {
             return err;
         }
+        // Concreteness failures are already complete runtime exceptions. In
+        // particular, wrapping them would both change `.Str` and hide the
+        // `:U` invocant hint (`multi` versus `.new`). Ordinary sub calls do
+        // not have the routine name on the binder's context stack, so repair
+        // that one field here while the call site still knows `func_name`.
+        let concreteness = err.exception.as_ref().and_then(|ex| {
+            let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = ex.as_ref().view()
+            else {
+                return None;
+            };
+            if class_name.resolve() != "X::Parameter::InvalidConcreteness" {
+                return None;
+            }
+            let attrs = attributes.as_map();
+            Some((
+                attrs
+                    .get("expected")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default(),
+                attrs
+                    .get("got")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default(),
+                attrs
+                    .get("routine")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default(),
+                attrs
+                    .get("param")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default(),
+                attrs
+                    .get("should-be-concrete")
+                    .is_some_and(|v| matches!(v.view(), ValueView::Bool(true))),
+                attrs
+                    .get("param-is-invocant")
+                    .is_some_and(|v| matches!(v.view(), ValueView::Bool(true))),
+            ))
+        });
+        if let Some((expected, got, routine, param, should_be_concrete, param_is_invocant)) =
+            concreteness
+        {
+            if !param_is_invocant && routine == "<anon>" {
+                let hint = err.take_hint();
+                let mut fixed = RuntimeError::parameter_invalid_concreteness(
+                    &expected,
+                    &got,
+                    func_name,
+                    &param,
+                    should_be_concrete,
+                    false,
+                );
+                fixed.set_hint(hint);
+                return fixed;
+            }
+            return err;
+        }
         // A signature with a generic type capture (`sub c(::T $x, T $y, $z)`)
         // cannot be checked at compile time at all -- what `T` means is only
         // known once `$x` binds -- so rakudo reports a plain RUNTIME
@@ -504,6 +565,9 @@ impl Interpreter {
         let has_type_captures = param_defs
             .iter()
             .any(|pd| pd.name.starts_with("::") || pd.name == "__type_capture__");
+        let has_subsignature = param_defs
+            .iter()
+            .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some());
         let is_binding_param_exception = err.exception.as_ref().is_some_and(|ex| {
             if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                 class_name.resolve() == "X::TypeCheck::Binding::Parameter"
@@ -511,21 +575,35 @@ impl Interpreter {
                 false
             }
         });
+        let named_binding_failure = err
+            .message
+            .split_once("parameter '")
+            .and_then(|(_, rest)| rest.split_once('\''))
+            .is_some_and(|(param, _)| {
+                let key = param.strip_prefix(['$', '@', '%', '&']).unwrap_or(param);
+                args.iter().any(|arg| {
+                    matches!(
+                        arg.view(),
+                        ValueView::Pair(pair_key, _) if pair_key == key
+                    )
+                })
+            });
         let is_type_only_mismatch = (is_binding_param_exception
             || (err.exception.is_none()
                 && err
                     .message
                     .contains("X::TypeCheck::Binding::Parameter: Type check failed")))
             && !has_type_captures
-            // Only convert when ALL typed parameters are simple scalar types.
-            // Sigiled parameters (@, %, &) have container-level type constraints
-            // that should remain as binding errors.
-            && !param_defs.iter().any(|pd| {
-                pd.type_constraint.is_some()
-                    && (pd.name.starts_with('@')
-                        || pd.name.starts_with('%')
-                        || pd.name.starts_with('&'))
-            })
+            // Sigiled parameters such as `@a` and `%h` use container-level
+            // constraints (`Positional`/`Associative`), which are still simple
+            // enough for a statically visible positional call to receive the
+            // compile-time-style wrapper. Runtime where constraints, named
+            // colonpairs, and callable-signature checks have already been
+            // excluded above or use non-simple expected types.
+            // Named colon-pair arguments are bound at run time. Even a simple
+            // nominal type such as `Int :$i` must retain its binding exception
+            // rather than receive the static-call wrapper.
+            && !named_binding_failure
             // Gate on the *failing* parameter's expected type (parsed from the
             // error message), NOT on whether any param happens to be simple. A
             // call like `foo(Sub $c, Str $a); foo(-> {}, "a")` fails on the `Sub`
@@ -544,10 +622,27 @@ impl Interpreter {
                     // compile-time X::TypeCheck::Argument — it stays a runtime
                     // X::TypeCheck::Binding::Parameter.
                     Self::is_simple_argument_type(expected)
-                        && param_defs
+                        && (param_defs
                             .iter()
                             .any(|pd| pd.type_constraint.as_deref() == Some(expected))
+                            // The binder supplies these implicit constraints
+                            // for ordinary `@`/`%` parameters. A positional
+                            // call with a scalar therefore gets the same
+                            // compile-time-style diagnostic as an explicit
+                            // simple type constraint.
+                            || (!has_subsignature
+                                && expected == "Positional"
+                                && err.message.contains("parameter '@"))
+                            || (!has_subsignature
+                                && expected == "Associative"
+                                && err.message.contains("parameter '%")))
                 });
+        if !((is_arity_error || is_type_only_mismatch)
+            && (err.exception.is_none() || is_binding_param_exception))
+        {
+            err.set_hint(hint);
+            return err;
+        }
         if (is_arity_error || is_type_only_mismatch)
             && (err.exception.is_none() || is_binding_param_exception)
         {

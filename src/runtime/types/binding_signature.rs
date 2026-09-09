@@ -124,12 +124,9 @@ impl Interpreter {
             self.env.remove("_");
         }
         if !ok {
-            return Err(Self::parameter_binding_error(
-                format!(
-                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                    pd.name
-                ),
+            return Err(Self::parameter_where_binding_error(
                 pd,
+                &bound_val,
                 Some(&*self),
             ));
         }
@@ -178,6 +175,75 @@ impl Interpreter {
             Value::make_instance(Symbol::intern("X::TypeCheck::Binding::Parameter"), ex_attrs);
         err.exception = Some(Box::new(exception));
         err.with_parameter_object(pd, interp)
+    }
+
+    /// Build the runtime error used when an anonymous `where` predicate does
+    /// not accept its bound value. Keep this in the binder rather than in the
+    /// call-site formatter: the binder still has the actual value needed for
+    /// Raku's `got TYPE (gist)` text.
+    fn parameter_where_binding_error(
+        pd: &ParamDef,
+        value: &Value,
+        interp: Option<&Interpreter>,
+    ) -> RuntimeError {
+        RuntimeError::typecheck_binding_parameter_where(&param_display_name(pd), value)
+            .with_parameter_object(pd, interp)
+    }
+
+    /// Coerce a value which composes `PositionalBindFailover` before checking
+    /// an `@` parameter. Raku asks the value for an iterator and binds the
+    /// resulting cached List; this is deliberately part of signature binding
+    /// so it also applies to indirect calls and multi candidates.
+    fn coerce_positional_bind_failover(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        let iterator = self.call_method_with_values(value, "iterator", vec![])?;
+        let items = if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterator.view()
+            && class_name == "Iterator"
+        {
+            let all = match attributes.as_map().get("items").map(Value::view) {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                _ => Vec::new(),
+            };
+            let index = match attributes.as_map().get("index").map(Value::view) {
+                Some(ValueView::Int(i)) if i >= 0 => (i as usize).min(all.len()),
+                _ => 0,
+            };
+            all[index..].to_vec()
+        } else {
+            let mut items = Vec::new();
+            loop {
+                let item = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
+                if matches!(item.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                    || matches!(item.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
+                {
+                    break;
+                }
+                items.push(item);
+            }
+            items
+        };
+        Ok(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+            crate::value::ArrayKind::List,
+        ))
+    }
+
+    fn callable_signature_for_error(&self, value: &Value) -> String {
+        let (_, param_defs) = self.callable_signature(value);
+        Self::signature_constraint_for_error(&param_defs)
+    }
+
+    fn signature_constraint_for_error(param_defs: &[ParamDef]) -> String {
+        let mut defs = param_defs.to_vec();
+        for pd in &mut defs {
+            if pd.name == "__type_only__" {
+                pd.name = "__ANON_STATE__".to_string();
+            }
+        }
+        format!(":{}", Self::build_signature_string(&defs))
     }
 
     fn normalize_coercion_binding_error(
@@ -232,6 +298,15 @@ impl Interpreter {
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
     ) -> Result<Value, RuntimeError> {
+        let is_builtin_seq = matches!(value.view(), ValueView::Seq(..));
+        let is_positional_bind_failover =
+            is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
+        if pd.name.starts_with('@')
+            && is_positional_bind_failover
+            && (is_builtin_seq || !self.type_matches_value("Positional", &value))
+        {
+            value = self.coerce_positional_bind_failover(value)?;
+        }
         if let Some(constraint) = &pd.type_constraint
             && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
         {
@@ -1180,12 +1255,9 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                         if !ok {
-                            return Err(Self::parameter_binding_error(
-                                format!(
-                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                    pd.name
-                                ),
+                            return Err(Self::parameter_where_binding_error(
                                 pd,
+                                &capture_value,
                                 Some(&*self),
                             ));
                         }
@@ -1485,12 +1557,9 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                         if !ok {
-                            return Err(Self::parameter_binding_error(
-                                format!(
-                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                    pd.name
-                                ),
+                            return Err(Self::parameter_where_binding_error(
                                 pd,
+                                &slurpy_value,
                                 Some(&*self),
                             ));
                         }
@@ -1540,20 +1609,14 @@ impl Interpreter {
                         if let Some((sig_params, sig_ret)) = &pd.code_signature
                             && !code_signature_matches_value(self, sig_params, sig_ret, val)
                         {
-                            let mut err = RuntimeError::new(format!(
-                                "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
-                                pd.name,
-                                crate::runtime::value_type_name(val)
-                            ));
-                            let mut ex_attrs = std::collections::HashMap::new();
-                            ex_attrs
-                                .insert("message".to_string(), Value::str(err.message.to_string()));
-                            let exception = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                ex_attrs,
-                            );
-                            err.exception = Some(Box::new(exception));
-                            return Err(err);
+                            let expected = Self::signature_constraint_for_error(sig_params);
+                            let got = self.callable_signature_for_error(val);
+                            return Err(RuntimeError::typecheck_binding_parameter_signature(
+                                &param_display_name(pd),
+                                &expected,
+                                &got,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
                         }
                         // Slice 2d (named follow-up): an `@`/`%` *variable* passed by
                         // name to a plain readonly scalar `$` named param binds the
@@ -1775,19 +1838,14 @@ impl Interpreter {
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
                     {
-                        let mut err = RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
-                            pd.name,
-                            crate::runtime::value_type_name(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        let expected = Self::signature_constraint_for_error(sig_params);
+                        let got = self.callable_signature_for_error(&value);
+                        return Err(RuntimeError::typecheck_binding_parameter_signature(
+                            &param_display_name(pd),
+                            &expected,
+                            &got,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                     }
                     // A rename param `:min(:$minutes)` binds only its leaf
                     // variable (below); its own name is a caller key, not a body
@@ -2432,19 +2490,14 @@ impl Interpreter {
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
                     {
-                        let mut err = RuntimeError::new(format!(
-                            "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
-                            pd.name,
-                            crate::runtime::value_type_name(&value)
-                        ));
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(err.message.to_string()));
-                        let exception = Value::make_instance(
-                            Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                            ex_attrs,
-                        );
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
+                        let expected = Self::signature_constraint_for_error(sig_params);
+                        let got = self.callable_signature_for_error(&value);
+                        return Err(RuntimeError::typecheck_binding_parameter_signature(
+                            &param_display_name(pd),
+                            &expected,
+                            &got,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
                     }
                     if let Some(where_expr) = &pd.where_constraint {
                         let saved_param = if pd.name.is_empty() {
@@ -2496,12 +2549,9 @@ impl Interpreter {
                             }
                         }
                         if !ok {
-                            return Err(Self::parameter_binding_error(
-                                format!(
-                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                    pd.name
-                                ),
+                            return Err(Self::parameter_where_binding_error(
                                 pd,
+                                &value,
                                 Some(&*self),
                             ));
                         }
