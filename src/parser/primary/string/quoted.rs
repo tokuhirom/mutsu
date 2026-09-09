@@ -298,7 +298,7 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                     // leak, and a bare `$` is a `state` of THIS block (see
                     // `parse_interpolation_block`).
                     if let Some(block) =
-                        crate::parser::primary::string::parse_interpolation_block(block_src)
+                        crate::parser::primary::string::parse_interpolation_block(block_src)?
                     {
                         parts.push(block);
                     }
@@ -447,7 +447,7 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
                     // leak, and a bare `$` is a `state` of THIS block (see
                     // `parse_interpolation_block`).
                     if let Some(block) =
-                        crate::parser::primary::string::parse_interpolation_block(block_src)
+                        crate::parser::primary::string::parse_interpolation_block(block_src)?
                     {
                         parts.push(block);
                     }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
+use crate::parser::parse_result::PError;
 use crate::value::ValueView;
 
 use super::helpers::literal_str;
@@ -113,28 +114,32 @@ pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Opti
 /// its own block, so a bare `$` in it is a `state` of that block and its
 /// implicit declaration belongs inside the returned statement list, not hoisted
 /// into the enclosing routine.
-pub(in crate::parser::primary) fn parse_interpolation_block(block_src: &str) -> Option<Expr> {
+pub(in crate::parser::primary) fn parse_interpolation_block(
+    block_src: &str,
+) -> Result<Option<Expr>, PError> {
     crate::parser::stmt::simple::push_scope();
     let stmts = parse_interpolation_block_stmts(block_src);
     crate::parser::stmt::simple::pop_scope();
-    stmts.map(|stmts| Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))))
+    stmts.map(|stmts| stmts.map(|stmts| Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts)))))
 }
 
 /// [`parse_interpolation_block`]'s body, with the block's scope already pushed.
-fn parse_interpolation_block_stmts(block_src: &str) -> Option<Vec<crate::ast::Stmt>> {
-    let mut stmts = if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
-        && sr.trim().is_empty()
-    {
-        stmts
-    } else if let Ok((expr_rest, expr)) = expression(block_src)
-        && expr_rest.trim().is_empty()
-    {
-        vec![crate::ast::Stmt::Expr(expr)]
-    } else {
-        return None;
+fn parse_interpolation_block_stmts(
+    block_src: &str,
+) -> Result<Option<Vec<crate::ast::Stmt>>, PError> {
+    let mut stmts = match crate::parser::stmt::stmt_list_pub(block_src) {
+        Ok((sr, stmts)) if sr.trim().is_empty() => stmts,
+        Err(error) if error.is_fatal() => return Err(error),
+        _ => match expression(block_src) {
+            Ok((expr_rest, expr)) if expr_rest.trim().is_empty() => {
+                vec![crate::ast::Stmt::Expr(expr)]
+            }
+            Err(error) if error.is_fatal() => return Err(error),
+            _ => return Ok(None),
+        },
     };
     crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
-    Some(stmts)
+    Ok(Some(stmts))
 }
 
 /// [`parse_braced_closure_body`]'s body, run with the block's own lexical scope
