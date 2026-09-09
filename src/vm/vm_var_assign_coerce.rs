@@ -816,7 +816,15 @@ impl Interpreter {
             },
         };
         let container = Value::container_ref(cell.clone());
-        let itemized_container = Value::container_ref(cell).item();
+        // Compiler-generated temporaries are implementation details rather than
+        // user-visible scalar bindings. Keep their historical bare cell shape so
+        // internal binding paths such as `if $cond -> @items` still decontainerize
+        // the temporary before binding the pointy block's `@` parameter.
+        let itemized_container = if Self::name_is_itemize_exempt(&name) {
+            container.clone()
+        } else {
+            Value::container_ref(cell).item()
+        };
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
         // via the scalar.

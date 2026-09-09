@@ -34,6 +34,14 @@ impl Interpreter {
         let clean_args: Vec<Value> = clean_args
             .into_iter()
             .map(crate::runtime::types::unwrap_varref_value)
+            // A scalar assigned from an array/hash keeps an itemization
+            // wrapper for list and `.raku` contexts. A normal value argument
+            // still fetches the shared cell before the native serializer sees
+            // it, just as the pre-itemization representation did.
+            .map(|value| match value.view() {
+                ValueView::Scalar(inner) if inner.is_container_ref() => inner.deref_container(),
+                _ => value,
+            })
             .collect();
         match name {
             "to-json" => {
