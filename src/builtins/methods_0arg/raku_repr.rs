@@ -181,6 +181,19 @@ pub(crate) const RAKU_RAW_KEY: &str = "__mutsu_raku_raw";
 /// placeholder erased the element's Iterable-ness and the comma was dropped.
 pub(crate) const RAKU_RAW_ITERABLE_KEY: &str = "__mutsu_raku_raw_iterable";
 
+/// Marker attached to an Array/Hash subclass when a scalar assignment stores
+/// it in a `$` slot. The instance itself stays bare for normal type and method
+/// semantics; only the `.raku` renderer observes this marker.
+pub(crate) const RAKU_SCALAR_ITEMIZED_KEY: &str = "__mutsu_raku_scalar_itemized";
+
+pub(crate) fn raku_scalar_itemized(v: &Value) -> bool {
+    matches!(
+        v.view(),
+        ValueView::Instance { attributes, .. }
+            if attributes.contains_key(RAKU_SCALAR_ITEMIZED_KEY)
+    )
+}
+
 /// Wrap an already-rendered `.raku` fragment so `raku_value` emits it verbatim.
 pub(crate) fn raku_raw(rendered: String) -> Value {
     Value::pair(RAKU_RAW_KEY.to_string(), Value::str(rendered))
@@ -464,6 +477,17 @@ pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
                 format!("$({base})")
             }
         }
+        // An `is Array` / `is Hash` subclass is rendered through the
+        // interpreter-side dispatch placeholder. Preserve the fact that the
+        // placeholder came from an Iterable instance, so an explicit scalar
+        // container around it still prints the `$` marker.
+        ValueView::Pair(name, _) if name == RAKU_RAW_ITERABLE_KEY => {
+            if base.starts_with(['{', '[', '(']) {
+                format!("${base}")
+            } else {
+                format!("$({base})")
+            }
+        }
         ValueView::Seq(_) => format!("$({base})"),
         _ => base,
     }
@@ -505,6 +529,11 @@ fn raku_value_as_element(v: &Value) -> String {
             raku_value(&v.clone().with_hash_itemized(false))
         }
         ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => raku_value(inner),
+        // A scalar-held Array/Hash subclass is expanded to a raw `.raku`
+        // placeholder before the outer array is rendered. Real `@` elements
+        // decontainerize that wrapper, just as they do for an itemized native
+        // Array/Hash, so the placeholder must not reintroduce `$` here.
+        ValueView::Scalar(inner) if raku_raw_repr(inner).is_some() => raku_value(inner),
         // A `:=`-bound element holds a `ContainerRef` cell (ADR-0036's
         // element-cell promotion). Its contents are itemized like any other
         // stored element (ADR-0040 slices 1-2), so the de-itemization above

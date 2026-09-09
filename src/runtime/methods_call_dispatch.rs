@@ -329,6 +329,12 @@ impl Interpreter {
         // receiver by stringifying it, which is how `$v."$m"()` with `$m` =
         // `join` answered `R()` instead of `12` even though the call reached
         // this function's own tail.
+        if method == "raku"
+            && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
+            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
+        {
+            return Ok(Value::str(rendered));
+        }
         if self.delegates_to_array_storage(&target, method)
             && let ValueView::Instance { attributes, .. } = target.view()
         {
@@ -638,8 +644,23 @@ impl Interpreter {
                     crate::builtins::methods_0arg::raku_repr::raku_value(&target),
                 ));
             }
-            let inner = inner.clone();
+            // A scalar shared with an array/hash variable is represented as
+            // `Scalar(ContainerRef(cell))`: keep the outer wrapper for the
+            // renderer, but read through the cell for every ordinary method.
+            // Otherwise `$shared.elems` sees the wrapper as a one-element value
+            // and mutators such as `.push` fail to reach the backing container.
+            let inner = if inner.is_container_ref() {
+                inner.deref_container()
+            } else {
+                inner.clone()
+            };
             return self.call_method_with_values(inner, method, args);
+        }
+        if method == "raku"
+            && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
+            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
+        {
+            return Ok(Value::str(rendered));
         }
         // An itemized Array/List invocant is likewise a Scalar container:
         // method dispatch decontainerizes it (`$list.tail` reaches the last

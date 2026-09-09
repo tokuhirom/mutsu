@@ -649,6 +649,15 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        if method == "raku"
+            && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
+        {
+            let rendered = self
+                .raku_repr_with_dispatch(&target)
+                .unwrap_or_else(|| crate::builtins::methods_0arg::raku_repr::raku_value(&target));
+            self.stack.push(Value::str(rendered));
+            return Ok(());
+        }
         crate::alloc_scope_end!(_sc_cmm_args);
         let stash_target = if method == "BIND-KEY" && args.len() == 2 {
             match target.view() {

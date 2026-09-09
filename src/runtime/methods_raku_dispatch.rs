@@ -16,7 +16,8 @@
 
 use super::Interpreter;
 use crate::builtins::methods_0arg::raku_repr::{
-    needs_raku_dispatch, raku_leaf_is_iterable, raku_raw, raku_raw_iterable,
+    RAKU_SCALAR_ITEMIZED_KEY, needs_raku_dispatch, raku_leaf_is_iterable, raku_raw,
+    raku_raw_iterable, raku_scalar_itemized,
 };
 use crate::value::{ArrayData, HashData, RuntimeError, Value, ValueView};
 
@@ -137,6 +138,29 @@ pub(crate) fn container_needs_raku_dispatch(value: &Value) -> bool {
 }
 
 impl Interpreter {
+    fn raku_dispatch_target(value: &Value) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            id,
+        } = value.view()
+        else {
+            return value.clone();
+        };
+        if !attributes.contains_key(RAKU_SCALAR_ITEMIZED_KEY) {
+            return value.clone();
+        }
+        let mut attrs = attributes.to_map();
+        attrs.remove(RAKU_SCALAR_ITEMIZED_KEY);
+        Value::instance_parts(
+            class_name,
+            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                class_name, attrs, id, true,
+            )),
+            id,
+        )
+    }
+
     /// Rebuild `value` with every dispatch-needing leaf replaced by its
     /// interpreter-rendered `.raku` text. Containers are rebuilt in place with
     /// their kind/metadata preserved so the pure renderer still sees the same
@@ -167,7 +191,8 @@ impl Interpreter {
 
     fn expand_container(&mut self, value: &Value, active: &mut Vec<usize>, depth: usize) -> Value {
         if needs_raku_dispatch(value) {
-            return match self.dispatch_raku_leaf(value) {
+            let dispatch_target = Self::raku_dispatch_target(value);
+            return match self.dispatch_raku_leaf(&dispatch_target) {
                 // The placeholder has to remember whether the leaf was
                 // Iterable: the container splicing it back in applies raku's
                 // trailing-comma rule to a lone Iterable element, and the
@@ -356,6 +381,21 @@ impl Interpreter {
     /// The `.raku`/`.perl` text of a container holding a dispatch-needing leaf,
     /// or `None` when the pure renderer already handles the value on its own.
     pub(crate) fn raku_repr_with_dispatch(&mut self, target: &Value) -> Option<String> {
+        if raku_scalar_itemized(target) {
+            let dispatch_target = Self::raku_dispatch_target(target);
+            let rendered = self
+                .dispatch_raku_leaf(&dispatch_target)
+                .ok()?
+                .to_string_value();
+            let raw = if raku_leaf_is_iterable(target) {
+                raku_raw_iterable(rendered)
+            } else {
+                raku_raw(rendered)
+            };
+            return Some(crate::builtins::methods_0arg::raku_repr::raku_value(
+                &Value::scalar(raw),
+            ));
+        }
         if !container_needs_raku_dispatch(target) {
             return None;
         }

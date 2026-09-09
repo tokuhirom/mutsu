@@ -3,6 +3,17 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    fn deref_lvalue_value(mut value: Value) -> Value {
+        for _ in 0..256 {
+            match value.view() {
+                ValueView::ContainerRef(_) => value = value.deref_container(),
+                ValueView::Scalar(inner) => value = inner.clone(),
+                _ => return value,
+            }
+        }
+        value
+    }
+
     fn detached_lvalue_value(value: &Value) -> Value {
         match value.view() {
             ValueView::ContainerRef(cell) => {
@@ -121,12 +132,13 @@ impl Interpreter {
         // when `invocant_guard` above already locked this thread's one stripe.
         let attr_cell_addr = match current.view() {
             ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+            ValueView::Scalar(inner) if inner.is_container_ref() => match inner.view() {
+                ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize),
+                _ => None,
+            },
             _ => None,
         };
-        let current = match current.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
-            _ => current,
-        };
+        let current = Self::deref_lvalue_value(current);
         let _struct_guard = invocant_guard.or_else(|| {
             crate::value::container_lock::ContainerStructGuard::acquire_for(
                 attr_cell_addr,

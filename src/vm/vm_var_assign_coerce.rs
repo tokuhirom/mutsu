@@ -799,12 +799,24 @@ impl Interpreter {
         // value or already held by the source variable, else wrap the snapshot.
         let cell = match val.view() {
             ValueView::ContainerRef(arc) => arc.clone(),
+            // A scalar holding an array share is represented as
+            // `Scalar(ContainerRef(cell))` so its `.raku` keeps the `$`
+            // marker without changing the source array's own rendering.
+            // Chained `$r = $q` must nevertheless reuse that same cell.
+            ValueView::Scalar(inner) if inner.is_container_ref() => {
+                if let ValueView::ContainerRef(arc) = inner.view() {
+                    arc.clone()
+                } else {
+                    unreachable!("ContainerRef tag changed while extracting share cell")
+                }
+            }
             _ => match self.env().get(&resolved_source).map(Value::view) {
                 Some(ValueView::ContainerRef(arc)) => arc.clone(),
                 _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
             },
         };
-        let container = Value::container_ref(cell);
+        let container = Value::container_ref(cell.clone());
+        let itemized_container = Value::container_ref(cell).item();
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
         // via the scalar.
@@ -847,7 +859,7 @@ impl Interpreter {
             *self.locals.absolute_slot_mut(slot) = container.clone();
         }
         // Store the shared cell in the scalar target (itemized scalar).
-        self.locals[idx] = container.clone();
+        self.locals[idx] = itemized_container.clone();
         // Clear any stale bound-decont marker inherited from an earlier bind of
         // the same name (this `=` share is itemized, not a `:=` decont alias).
         self.update_bound_decont_marker(&name, false, &val);
@@ -855,7 +867,7 @@ impl Interpreter {
         self.env_mut()
             .insert(format!("__mutsu_array_share::{}", name), Value::TRUE);
         self.array_share_active = true;
-        self.set_env_with_main_alias(&name, container.clone());
+        self.set_env_with_main_alias(&name, itemized_container);
         self.flush_local_to_env(code, idx);
         Ok(())
     }

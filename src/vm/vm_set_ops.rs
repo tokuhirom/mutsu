@@ -149,6 +149,15 @@ impl Interpreter {
         // in raku -- `Set.new($[1, 2])` -- so membership by `.WHICH` has to see
         // the value exactly as it was stored.)
         let container = container.descalarize();
+        // A scalar-held aggregate share has both wrappers: the outer Scalar
+        // carries itemization and the inner ContainerRef carries aliasing.
+        // Membership must inspect the aggregate behind both, just as method
+        // dispatch and indexed mutation do.
+        let container = if container.is_container_ref() {
+            container.deref_container()
+        } else {
+            container.clone()
+        };
         // Set/Bag/Mix stores are `.WHICH`-keyed: membership is element
         // identity (`===`), so `<1> ∈ (1,).Set` is False (IntStr vs Int)
         // and `"1" ∈ (1,).Set` is False (Str vs Int) — matching Rakudo.
@@ -160,7 +169,7 @@ impl Interpreter {
             ValueView::Set(s, _) => s.contains(&key),
             ValueView::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
             ValueView::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
-            ValueView::Hash(h) => self.hash_contains(&h, needle, container),
+            ValueView::Hash(h) => self.hash_contains(&h, needle, &container),
             _ if container.as_list_items().is_some() => container
                 .as_list_items()
                 .unwrap()
@@ -170,7 +179,7 @@ impl Interpreter {
                 // So `42 ∈ < 42 >` is False (Int vs the IntStr allomorph) and
                 // `"1" ∈ (1,)` is False (Str vs Int) — matching Rakudo.
                 .any(|item| crate::runtime::utils::values_identical(item, needle)),
-            _ if container.is_range() => Self::range_contains(container, needle),
+            _ if container.is_range() => Self::range_contains(&container, needle),
             _ => false,
         }
     }

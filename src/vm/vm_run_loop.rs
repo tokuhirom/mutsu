@@ -1049,6 +1049,19 @@ impl Interpreter {
             | ValueView::RangeExclStart(..)
             | ValueView::RangeExclBoth(..)
             | ValueView::GenericRange { .. } => val.item(),
+            // Array/Hash subclasses keep their bare Instance representation so
+            // type checks, lvalue writes, and subclass delegation remain
+            // transparent. Record scalar itemization only as renderer metadata.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage")
+                    || attributes.contains_key("__mutsu_hash_storage") =>
+            {
+                attributes.insert(
+                    crate::builtins::methods_0arg::raku_repr::RAKU_SCALAR_ITEMIZED_KEY,
+                    Value::TRUE,
+                );
+                val
+            }
             // A `but`-mixed container keeps the itemization the `$` confers —
             // see the Mixin arm of `itemize_value`.
             ValueView::Mixin(inner, overrides) => Value::mixin_parts(
