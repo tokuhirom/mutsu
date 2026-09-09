@@ -266,6 +266,41 @@ impl Interpreter {
         def.is_rw || def.is_raw || crate::opcode::body_uses_return_rw(&def.body)
     }
 
+    /// [`Interpreter::method_is_rw_capable`] asked by NAME, for the dispatch
+    /// sites that no longer hold the resolved [`MethodDef`] (the invocant's
+    /// arguments have already been moved into the call by the time the result
+    /// is judged). Answers yes when *any* non-private candidate for `method`
+    /// anywhere in `class_name`'s MRO is rw-capable.
+    ///
+    /// Its one consumer is the "did this method return a `Proxy` that must
+    /// survive?" test, which runs only once a `Proxy` is actually in hand — so
+    /// the MRO walk is off every ordinary dispatch, and over-approximating a
+    /// multi whose candidates disagree about `is rw` costs nothing there.
+    pub(crate) fn class_method_is_rw_capable(&mut self, class_name: &str, method: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        mro.iter().any(|cn| {
+            self.registry()
+                .user_method_overloads(cn.as_str(), method)
+                .is_some_and(|defs| {
+                    defs.iter()
+                        .any(|d| !d.is_private && Self::method_is_rw_capable(d))
+                })
+        })
+    }
+
+    /// Whether a `Proxy` a just-finished method call produced must be FETCHed
+    /// here or handed back as a container.
+    ///
+    /// A plain `method` decontainerizes its return exactly as a plain `sub`
+    /// does, so the `Proxy` is resolved at the call. An rw-capable method
+    /// (ADR-0067: `is rw`, `is raw`, or an explicit `return-rw`) returns the
+    /// container instead, and the FETCH belongs at the next *use* — which is
+    /// what makes `my $s := $obj.slot; $s = 9` STORE through the `Proxy`
+    /// rather than die on an immutable value (#7748).
+    pub(crate) fn should_fetch_returned_proxy(&mut self, class_name: &str, method: &str) -> bool {
+        !self.in_lvalue_assignment && !self.class_method_is_rw_capable(class_name, method)
+    }
+
     /// The write half of `f() = value` once the routine has run: the routine
     /// handed back a container (ADR-0059) and `value` is stored through it, or
     /// it handed back a plain value and the assignment is `X::Assignment::RO`

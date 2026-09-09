@@ -8916,6 +8916,14 @@ pub(crate) struct CompiledFunction {
     pub(crate) is_cached: bool,
     /// When true, this sub is declared `is raw` and Proxy values should NOT be auto-FETCHed.
     pub(crate) is_raw: bool,
+    /// Whether the declared body spells an explicit `return-rw`. The third
+    /// input to [`CompiledFunction::returns_container`] — a routine that
+    /// returns through `return-rw` hands its caller a container without
+    /// carrying either trait (ADR-0067's `routine_is_rw_capable` reads the
+    /// same three facts off a `FunctionDef`). Computed once where the
+    /// declaration's body is still in hand; a compiled routine keeps no body
+    /// AST to re-derive it from.
+    pub(crate) uses_return_rw: bool,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -9030,6 +9038,27 @@ pub(crate) struct CompiledFunction {
 }
 
 impl CompiledFunction {
+    /// Whether this routine hands its return value back as a **container**
+    /// rather than decontainerizing it.
+    ///
+    /// Raku's rule: an ordinary `sub` decontainerizes what it returns, so a
+    /// `Proxy` built in its body reaches the caller already FETCHed; `is raw`,
+    /// `is rw` and an explicit `return-rw` each suppress that, so the caller
+    /// receives the `Proxy` itself and the FETCH happens at the next *use*.
+    /// Only `is raw` used to be tested here, which made `my $x := rw-sub()`
+    /// bind the FETCHed value and left the resulting name unassignable
+    /// (#7748).
+    ///
+    /// The same three facts ADR-0067's [`Interpreter::routine_is_rw_capable`]
+    /// reads off a `FunctionDef` — this is that oracle asked of a compiled
+    /// routine, which carries no body AST and so gets `uses_return_rw`
+    /// precomputed at declaration time.
+    ///
+    /// [`Interpreter::routine_is_rw_capable`]: crate::runtime::Interpreter::routine_is_rw_capable
+    pub(crate) fn returns_container(&self) -> bool {
+        self.is_raw || self.is_rw || self.uses_return_rw
+    }
+
     /// Stamp a compiled routine and its nested named-subs with their enclosing
     /// routine's source file. Nested bodies are compiled as part of the parent
     /// and otherwise have no independent source metadata.
@@ -9425,6 +9454,7 @@ mod compiled_fns_identity {
             is_rw: false,
             is_cached: false,
             is_raw: false,
+            uses_return_rw: false,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

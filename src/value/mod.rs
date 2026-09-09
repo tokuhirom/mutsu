@@ -964,6 +964,39 @@ pub struct SubData {
     pub(crate) captured_fatal_mode: bool,
 }
 
+impl SubData {
+    /// Whether calling this code object hands its return value back as a
+    /// **container** rather than decontainerizing it — i.e. whether a `Proxy`
+    /// it produced must reach the caller un-FETCHed.
+    ///
+    /// Only a plain `sub`/`method` decontainerizes. Three things put a code
+    /// object outside that class:
+    ///
+    /// - it is declared `is raw` or `is rw` (the rule
+    ///   [`crate::opcode::CompiledFunction::returns_container`] states for a
+    ///   compiled routine);
+    /// - it is not a `Routine` at all — a bare block (`{ ... }`) and a pointy
+    ///   block (`-> { ... }`) return raw;
+    /// - it is a routine whose traits this code object no longer carries. An
+    ///   anonymous `sub` is built from an `Expr::AnonSubParams`, and that AST
+    ///   variant records `is_rw` but has no field for `is_raw`, so
+    ///   `sub () is raw { Proxy.new(...) }` is indistinguishable here from a
+    ///   plain one. "Unknown" therefore answers *container*, which is what
+    ///   every shape but `is rw` already did before #7748; a declared routine
+    ///   (which does carry its own `CompiledFunction`) is answered exactly.
+    pub(crate) fn returns_container(&self) -> bool {
+        if self.is_raw || self.is_rw {
+            return true;
+        }
+        if self.is_bare_block || self.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine) {
+            return true;
+        }
+        self.compiled_routine
+            .as_ref()
+            .is_none_or(|cf| cf.returns_container())
+    }
+}
+
 fn gcd(mut a: i64, mut b: i64) -> i64 {
     a = a.wrapping_abs();
     b = b.wrapping_abs();

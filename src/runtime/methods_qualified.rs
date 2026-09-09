@@ -414,7 +414,8 @@ impl Interpreter {
                 Err(e) => return Some(Err(e)),
             };
             attributes.commit_attrs(updated);
-            if !self.in_lvalue_assignment
+            if result.is_proxy_value()
+                && self.should_fetch_returned_proxy(qualifier, actual_method)
                 && let ValueView::Proxy { fetcher, .. } = result.view()
             {
                 return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));

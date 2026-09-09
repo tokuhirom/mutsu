@@ -534,14 +534,14 @@ impl Interpreter {
             // finalizes the return-type spec; only the multi/samewith frames
             // (for callsame/nextsame) and the is-raw/rw Proxy tail stay here.
             if Self::def_module_single_sig_body_ok_ignoring_state(&def) {
-                let fold_is_rw = !def.is_raw;
+                let fold_is_rw = !Self::routine_is_rw_capable(&def);
                 let result = self.call_routine_def(&def, args.to_vec());
                 self.pop_samewith_context();
                 if pushed_dispatch {
                     self.multi_dispatch_stack.pop();
                 }
                 return result.and_then(|v| {
-                    let v = if def.is_raw {
+                    let v = if Self::routine_is_rw_capable(&def) {
                         // Mark Proxy as decontainerized so the VM's auto-FETCH
                         // doesn't strip it (mirrors the interpreter arm's tail).
                         if matches!(v.view(), ValueView::Proxy { .. }) {
@@ -560,7 +560,7 @@ impl Interpreter {
                 self.pop_samewith_context();
                 return Err(Self::reject_args_for_empty_sig(args));
             }
-            let routine_is_rw = !def.is_raw;
+            let routine_is_rw = !Self::routine_is_rw_capable(&def);
             let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
             let saved_env = self.env.clone();
             let saved_readonly = self.enter_readonly_frame();
@@ -766,7 +766,7 @@ impl Interpreter {
             let finalized =
                 self.finalize_return_with_spec(result, effective_return_spec.as_deref());
             return finalized.and_then(|v| {
-                let v = if def.is_raw {
+                let v = if Self::routine_is_rw_capable(&def) {
                     // Mark Proxy as decontainerized so the VM's auto-FETCH doesn't strip it
                     if matches!(v.view(), ValueView::Proxy { .. }) {
                         let (fetcher, storer, subclass, _) = v.into_proxy_parts().unwrap();

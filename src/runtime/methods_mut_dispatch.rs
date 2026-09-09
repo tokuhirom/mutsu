@@ -3068,7 +3068,8 @@ impl Interpreter {
                         target_var.to_string(),
                         Value::instance_sharing_cell(&attributes, class_name, target_id),
                     );
-                    if !self.in_lvalue_assignment
+                    if result.is_proxy_value()
+                        && self.should_fetch_returned_proxy(&class_name.resolve(), method)
                         && let ValueView::Proxy { fetcher, .. } = result.view()
                     {
                         return self.proxy_fetch(
@@ -3096,7 +3097,8 @@ impl Interpreter {
                     Value::instance_sharing_cell(&attributes, class_name, target_id),
                 );
                 // Auto-FETCH if the method returned a Proxy
-                if !self.in_lvalue_assignment
+                if result.is_proxy_value()
+                    && self.should_fetch_returned_proxy(&class_name.resolve(), method)
                     && let ValueView::Proxy { fetcher, .. } = result.view()
                 {
                     return self.proxy_fetch(

@@ -1362,8 +1362,11 @@ impl Interpreter {
             target
         };
 
+        // A plain `sub`/`method` decontainerizes its return, so a `Proxy` it
+        // produced is FETCHed here; `is raw` / `is rw` and every non-Routine
+        // block hand the container back untouched (#7748).
         let sub_is_rw = if let ValueView::Sub(data) = target.view() {
-            data.is_rw
+            !data.returns_container()
         } else {
             false
         };
@@ -1444,7 +1447,7 @@ impl Interpreter {
         }
         let result = if !target.is_nil() {
             let sub_is_rw = if let ValueView::Sub(data) = target.view() {
-                data.is_rw
+                !data.returns_container()
             } else {
                 false
             };
@@ -1462,7 +1465,7 @@ impl Interpreter {
         } else if !self.has_proto_cached(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
-            let cf_auto_fetch = !cf.is_raw;
+            let cf_auto_fetch = !cf.returns_container();
             let pkg = self.current_package().to_string();
             self.set_pending_call_arg_sources(arg_sources.clone());
             let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name);
@@ -1567,7 +1570,7 @@ impl Interpreter {
                         name_sym,
                     );
                     let result = result?;
-                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
                 // Try light call path for simple functions in tight loops.
                 // This avoids the expensive env clone/restore cycle.
@@ -1610,7 +1613,7 @@ impl Interpreter {
                     let result =
                         self.call_compiled_function_light(cf, &args, compiled_fns, name, name_sym);
                     let result = result?;
-                    return loan_env!(self, maybe_fetch_rw_proxy(result, true));
+                    return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
                 self.set_pending_call_arg_sources(arg_sources.clone());
                 let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(name, &args));
@@ -1630,7 +1633,7 @@ impl Interpreter {
                         .map(|def| def.package.resolve())
                         .unwrap_or_else(|| self.current_package().to_string())
                 };
-                let cf_auto_fetch = !cf.is_raw;
+                let cf_auto_fetch = !cf.returns_container();
                 let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, name);
                 self.set_pending_call_arg_sources(None);
                 self.pop_samewith_context();
@@ -1668,9 +1671,9 @@ impl Interpreter {
                     // `nextsame`/`callsame`/`callwith`/`samewith` from the selected
                     // candidate still work because compile_and_call_function_def pushes
                     // the same multi-dispatch + samewith frames the interpreter would.
-                    let is_raw = def.is_raw;
+                    let returns_container = Self::routine_is_rw_capable(&def);
                     let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                    loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
+                    loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                 } else if self.has_proto_cached(name)
                     && let Some(result) =
                         self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
@@ -1727,10 +1730,10 @@ impl Interpreter {
                         // `def_is_otf_compilable_multi_candidate`.
                         && Self::def_is_otf_compilable_multi_candidate(&def)
                     {
-                        let is_raw = def.is_raw;
+                        let returns_container = Self::routine_is_rw_capable(&def);
                         let result =
                             self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                        loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
+                        loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);
                         self.set_pending_call_arg_sources(arg_sources);
@@ -1776,7 +1779,10 @@ impl Interpreter {
                                 &pkg,
                                 name,
                             )?;
-                            return loan_env!(self, maybe_fetch_rw_proxy(result, !shared.is_raw));
+                            return loan_env!(
+                                self,
+                                maybe_fetch_rw_proxy(result, !shared.returns_container())
+                            );
                         }
                         let gate_ok = if is_builtin {
                             // Genuine builtin shadow: strict gate (no default —
@@ -1789,10 +1795,13 @@ impl Interpreter {
                             Self::def_is_otf_compilable_module_single(&def)
                         };
                         if gate_ok {
-                            let is_raw = def.is_raw;
+                            let returns_container = Self::routine_is_rw_capable(&def);
                             let result =
                                 self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                            return loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw));
+                            return loan_env!(
+                                self,
+                                maybe_fetch_rw_proxy(result, !returns_container)
+                            );
                         }
                     }
                     crate::vm::vm_stats::record_function_fallback(name);
@@ -1812,9 +1821,9 @@ impl Interpreter {
                 // code params (&foo), no where constraints, no closures.
                 && Self::def_is_otf_compilable(&def)
                 {
-                    let is_raw = def.is_raw;
+                    let returns_container = Self::routine_is_rw_capable(&def);
                     let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                    loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
+                    loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                 } else if let Some(result) = self.try_native_test_function(name, &args) {
                     // Dispatch Test functions straight to their typed handler (lever A).
                     result

@@ -60,7 +60,9 @@ plan 9;
 
 # --- scalar holding a Proxy ----------------------------------------------
 {
-    todo 'STORE through a Proxy bound in the parent does not reach the parent (PLAN.md §6)';
+    # Un-TODO'd with #7748: the write reaches the parent now. The assignment
+    # inside the `start` block resolves the captured `$p` by NAME, and that
+    # store path used to replace the container instead of running STORE.
     my $backing = 0;
     my $p := Proxy.new(FETCH => method () { $backing }, STORE => method ($v) { $backing = $v });
     await start { $p = 9 };

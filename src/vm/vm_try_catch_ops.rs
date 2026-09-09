@@ -175,6 +175,28 @@ impl Interpreter {
         // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
         // catchable exception routed to the CATCH handler, instead of crashing.
         let body_result = self.run_range_guarded(code, body_start, catch_begin, compiled_fns);
+        // A genuine `try` *evaluates* its value, so a `Proxy` the body produced
+        // is FETCHed inside the protected region: a throwing FETCH is caught
+        // here and the `try` yields Nil, exactly as rakudo does. The container
+        // itself still survives an untroubled FETCH -- in raku
+        // `my $p := try proxy-returning(); $p.VAR.^name` is `Proxy` -- so the
+        // probe discards its value and leaves the `Proxy` on the stack.
+        //
+        // Before #7748 an `is rw` routine FETCHed its `Proxy` return at the
+        // call, which hid the need for this: with the container now reaching
+        // the caller, `(try dying-fetch-proxy()).defined` would otherwise
+        // FETCH *outside* the `try` and escape it.
+        let body_result = body_result.and_then(|()| {
+            if traps
+                && self.stack.len() > saved_depth
+                && let Some(top) = self.stack.last()
+                && top.is_proxy_value()
+            {
+                let probe = top.clone();
+                self.auto_fetch_proxy(&probe)?;
+            }
+            Ok(())
+        });
         if has_control {
             self.control_handler_depth -= 1;
             self.control_handlers.pop();

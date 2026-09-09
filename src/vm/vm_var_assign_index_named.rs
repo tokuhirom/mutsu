@@ -3303,7 +3303,16 @@ impl Interpreter {
                 // discarded the container on this line, which is why an `is rw`
                 // accessor's location was never written through.
                 let returned = self.call_method_with_values(target, at, vec![inner_idx.clone()])?;
-                let inner = returned.deref_container();
+                // An `is rw` accessor hands its `Proxy` back as a container
+                // (#7748), so FETCH to reach the collection the OUTER subscript
+                // addresses. `deref_container` alone answers the `Proxy` itself,
+                // and every reader below (the instance probe, the element scan)
+                // would then miss.
+                let inner = if returned.is_proxy_value() {
+                    loan_env!(self, auto_fetch_proxy(&returned))?
+                } else {
+                    returned.deref_container()
+                };
                 // The inner collection is itself a user-defined instance: route
                 // the outermost write through its ASSIGN-POS/ASSIGN-KEY
                 // (`$obj<support><source> = v` with both levels custom
@@ -3328,6 +3337,27 @@ impl Interpreter {
                         )?;
                         self.stack.push(val);
                         return Ok(());
+                    }
+                    // No `ASSIGN-POS`/`ASSIGN-KEY`, but the inner instance may
+                    // still hand back a writable LOCATION from its own rw
+                    // accessor — an `is rw` `AT-POS` returning a `Proxy`, the
+                    // shape `$obj[i] = v` already writes through at one level.
+                    // Fusing the two levels (`$obj[i][j] = v`) used to drop the
+                    // write: nothing here descended past the inner collection.
+                    if let Some(at_outer) = self.object_subscript_accessor(&inner, outer_positional)
+                        && self.class_method_is_rw_capable(&icn, at_outer)
+                    {
+                        let location = self.call_method_with_values(
+                            inner.clone(),
+                            at_outer,
+                            vec![outer_idx.clone()],
+                        )?;
+                        if let Some(assigned) = self.assign_lvalue_container(&location, val.clone())
+                        {
+                            assigned?;
+                            self.stack.push(val);
+                            return Ok(());
+                        }
                     }
                 }
                 let idx_u = crate::runtime::to_int(&outer_idx) as usize;

@@ -672,7 +672,7 @@ impl Interpreter {
     ///   what an END phaser declared in a `unit module` does. Resolved only when the
     ///   qualifier IS the current package: an explicitly written `$Other::x` is a
     ///   package variable and must never reach a `my` lexical.
-    fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
+    pub(super) fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }

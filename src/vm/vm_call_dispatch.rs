@@ -306,6 +306,7 @@ impl Interpreter {
             empty_sig: def.empty_sig,
             is_rw: def.is_rw,
             is_raw: def.is_raw,
+            uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             is_cached: def.is_cached,
             param_local_slots: None,
             params_fill_frame: false,
