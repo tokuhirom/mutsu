@@ -262,7 +262,19 @@ impl Interpreter {
         // resolve with ITS OWN (usually absent) selectors, not the outer ones.
         let (module, dist_selectors) = Self::split_dist_selectors(module);
         let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
+        // `suppress_exports` is set for the whole duration of an enclosing
+        // `need` load (see `need_module`), so its own compunit's `is export`
+        // subs never get registered as importable. But an explicit `use`
+        // nested inside that compunit's body (e.g. `need CT;` where
+        // `CT.rakumod` itself says `use Test;`) must still register and
+        // import Test's exports normally -- otherwise CT's own methods can
+        // never resolve `diag` via `module_imported_lexical_names`, even
+        // though CT's own mainline genuinely imported it (#7805). `use`
+        // always wants ordinary export semantics regardless of an ambient
+        // `need`, so suspend the flag for exactly this nested load.
+        let saved_suppress_exports = std::mem::replace(&mut self.suppress_exports, false);
         let result = self.use_module_with_tags_inner(module, tags);
+        self.suppress_exports = saved_suppress_exports;
         self.pending_dist_selectors = saved;
         // `load_module` consumes `pending_use_export_args`; clear any residue
         // here so a native/pragma/already-loaded path (which never reaches
