@@ -99,6 +99,11 @@ fn resolver_method_by_name() -> &'static Mutex<HashMap<String, u64>> {
 // Dual-store (locals <-> env) sync cost. See docs/vm-dual-store.md.
 static CLONE_ENV: AtomicU64 = AtomicU64::new(0);
 static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
+/// Entries actually copied by those deep copies (the sum of the map's length at
+/// each one). The *count* alone cannot tell a copy of a 900-entry frame env from
+/// a copy of an empty scoped overlay, and only the former is a cost that grows
+/// with the size of the program; this is the number that does.
+static ENV_DEEP_COPY_ENTRIES: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
@@ -967,9 +972,10 @@ pub(crate) fn record_clone_env() {
 /// write inside a method body whose frame holds a clone of the env). This is
 /// the real cost the dual-store work targets, not `clone_env`.
 #[inline]
-pub(crate) fn record_env_deep_copy() {
+pub(crate) fn record_env_deep_copy(entries: usize) {
     if enabled() {
         ENV_DEEP_COPY.fetch_add(1, Ordering::Relaxed);
+        ENV_DEEP_COPY_ENTRIES.fetch_add(entries as u64, Ordering::Relaxed);
     }
 }
 
@@ -1089,10 +1095,11 @@ pub(crate) fn dump() {
     );
     let clone_env = CLONE_ENV.load(Ordering::Relaxed);
     let deep_copy = ENV_DEEP_COPY.load(Ordering::Relaxed);
+    let deep_copy_entries = ENV_DEEP_COPY_ENTRIES.load(Ordering::Relaxed);
     let env_flush = ENV_FLUSH.load(Ordering::Relaxed);
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots}"
+        "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_deep_copy_entries={deep_copy_entries} env_flushes={env_flush} slots_flushed={slots}"
     );
     let default_evals = PARAM_DEFAULT_EVALS.load(Ordering::Relaxed);
     let default_consts = PARAM_DEFAULT_CONSTS.load(Ordering::Relaxed);

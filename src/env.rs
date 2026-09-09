@@ -1137,7 +1137,7 @@ impl Env {
     #[inline]
     fn cow_mut(&mut self) -> &mut SymMap {
         if crate::vm::vm_stats::enabled() && Arc::strong_count(&self.inner) > 1 {
-            crate::vm::vm_stats::record_env_deep_copy();
+            crate::vm::vm_stats::record_env_deep_copy(self.inner.len());
         }
         Arc::make_mut(&mut self.inner)
     }

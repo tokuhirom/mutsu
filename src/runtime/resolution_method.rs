@@ -19,7 +19,18 @@ impl Interpreter {
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
     ) -> bool {
+        // Candidate matching is a *speculative* window: everything it binds
+        // (role type params, the method's captured lexical scope, `self`, type
+        // captures) is rolled back when it ends, and it can run for every
+        // candidate of a multi. Bind into a scoped overlay rather than into the
+        // frame's own env: a `saved_env` clone shares the env's `Arc`, so the
+        // first write used to `make_mut`-deep-copy the whole map -- 888 entries
+        // with Cro's module stack loaded, 547 times over a 20-frame HTTP/2 run,
+        // and it is the single biggest source of env deep copies on that path.
+        // The overlay starts empty, so the same writes are O(1) and the
+        // rollback is dropping a tier.
         let saved_env = self.env.clone();
+        self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
         // The passed-in class-level map goes first (it also carries nested
         // generic-class rename entries, not just type-param bindings — see
         // the identical comment in `call_compiled_method`,
