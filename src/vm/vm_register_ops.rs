@@ -1539,4 +1539,35 @@ impl Interpreter {
             }
         }
     }
+
+    /// Box a captured container of a `supply` emitter before its
+    /// captured environment is snapshotted. The emitter's body is a normal
+    /// compiled closure, but its `whenever` bodies are stashed AST and are
+    /// compiled later from the emitter's environment. A captured `@`/`%`
+    /// parameter therefore cannot rely on the ordinary slot-read path: the
+    /// later callback would otherwise resolve the name against the frame that
+    /// happens to dispatch it. Keep the operation supply-specific because the
+    /// general closure path deliberately boxes containers at declaration time,
+    /// not once per closure creation.
+    pub(super) fn box_supply_container_captures(
+        &mut self,
+        code: &CompiledCode,
+        cc: &Option<std::sync::Arc<CompiledCode>>,
+    ) {
+        let Some(cc) = cc else { return };
+        for (fv_i, sym) in cc.free_var_syms.iter().enumerate() {
+            let name = sym.resolve();
+            if !crate::env::is_plain_user_lexical(&name) || !name.starts_with(['@', '%']) {
+                continue;
+            }
+            let Some(idx) = Self::resolve_capture_slot(code, &cc.free_var_parent_slots, fv_i, *sym)
+            else {
+                continue;
+            };
+            // Keep an existing cell when another emitter in the same supply
+            // frame captures the binding; all callbacks must share that one
+            // per-invocation binding.
+            self.box_decl_local_container_cell(code, idx, false);
+        }
+    }
 }
