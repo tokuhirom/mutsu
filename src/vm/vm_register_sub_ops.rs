@@ -85,6 +85,12 @@ impl Interpreter {
             let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
+            if compiled_code
+                .as_ref()
+                .is_some_and(|cc| cc.is_supply_block_body)
+            {
+                self.box_supply_container_captures(code, &compiled_code);
+            }
             let owned_captures = self.compute_owned_captures(&compiled_code);
             let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
             let upvalues = self.capture_upvalues(code, &compiled_code);

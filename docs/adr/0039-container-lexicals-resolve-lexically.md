@@ -1154,3 +1154,31 @@ hence the mutating-hyper writeback is restricted to an `@`/`%` target.
 roast` are still not sufficient evidence for a change in this area — both were
 green for attempt 3 too. `scripts/battery-testsuite.sh` is, and it runs locally
 in about ten minutes.
+
+## 14. `supply whenever` captures container parameters per emitter (2026-09-09)
+
+Issue #7661 exposed a narrower consequence of the remaining container capture
+gap. In
+
+```raku
+sub wrap(Supply $p, @tag) {
+    supply whenever $p { emit @tag.join(",") ~ ":" ~ $_ }
+}
+```
+
+two nested calls with `@tag` values `A` and `B` produced `B:B:1` in mutsu,
+while Rakudo produced `B:A:1`. The scalar form already had the correct
+per-invocation cell.
+
+The `whenever` body is stashed as AST and compiled when the emitter dispatches
+it. The ordinary closure escape analysis consequently treats the generated
+supply emitter as a non-escaping call argument, so its `@`/`%` capture is not
+included in the general unvouched-container set. At the `MakeLambda` boundary
+for a supply emitter, mutsu now resolves its plain `@`/`%` free variables via
+the baked parent slots and boxes those bindings before the emitter environment
+is snapshotted. Each `supply` invocation therefore gets the correct
+`ContainerRef` for the later callback.
+
+This is a supply-specific repair for the issue's stashed-body path, not the
+completion of §4.2's second bullet. The remaining `compute_upvalues` and
+container `SetLocal` work still needs its own measurement and battery gate.
