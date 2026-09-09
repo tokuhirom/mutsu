@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 11;
 
 # A Raku block's value is not decontainerized, so a value-collecting `for`
 # whose body ends in a bare variable read gathers that variable's *container*.
@@ -27,7 +27,21 @@ plan 9;
     my $g = 1;
     my @v = do for 1..2 { $g };
     $g = 5;
-    is-deeply @v, [1, 1], 'the container is read when the list is built, not later';
+    is-deeply @v, [1, 1], 'an array assignment decontainerizes the collected cells';
+}
+
+{
+    my $g = 1;
+    my $s = do for 1..2 { $g };
+    $g = 5;
+    is-deeply $s, (5, 5), 'a scalar-bound collected List keeps the containers past the loop';
+}
+
+{
+    my $g = 1;
+    my $s := do for 1..2 { $g };
+    $g = 5;
+    is-deeply $s, (5, 5), 'a bound collected List keeps the containers past the loop';
 }
 
 {
