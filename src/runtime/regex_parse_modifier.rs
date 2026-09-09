@@ -593,7 +593,10 @@ impl Interpreter {
                             .cloned()
                             .or_else(|| self.env.get(&format!("${bare_name}")).cloned())
                             .unwrap_or(Value::NIL);
-                        let value = value.into_deref();
+                        // `@$scalar` explicitly asks for the aggregate held
+                        // by the scalar, so strip the item wrapper before
+                        // reading through a shared cell.
+                        let value = value.into_descalarized().into_deref();
                         let elements = match value.view() {
                             ValueView::Array(arr, _) => arr.as_ref().clone(),
                             ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
@@ -648,7 +651,10 @@ impl Interpreter {
                     // Slice 2a: a `=`-array-shared source (`my $r = @var`) promotes
                     // `@var` to a `ContainerRef` cell; deref it so the array
                     // interpolates as alternation instead of stringifying the cell.
-                    let value = value.into_deref();
+                    // A scalar assignment may preserve itemization as
+                    // `Scalar(ContainerRef(cell))`; bare `@name` needs the
+                    // aggregate behind that wrapper for alternation.
+                    let value = value.into_descalarized().into_deref();
                     let elements = match value.view() {
                         ValueView::Array(arr, _) => arr.as_ref().clone(),
                         ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
