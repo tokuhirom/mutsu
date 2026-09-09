@@ -484,7 +484,13 @@ the same function, that is a **neighbouring cluster this ADR does not close**:
 the per-call frame saves eight independent `Vec` fields, and locals is only the
 one that also allocates. Whether the same contiguous-frame treatment should
 swallow the other seven is a follow-on question, deliberately out of scope here
-so that Slice 2 measures one thing.
+so that Slice 2 measures one thing. **It has since been answered for five of the
+seven** — the per-call scope stacks — in
+[ADR-0078](0078-per-call-scope-stacks-are-windows-not-moved-vectors.md), which
+gives them the same base-index representation and measures `fib(22)` at −5.94%
+(JIT on) / −3.46% (off). The other two, `frame_authoritative` and `frame_owned`,
+are whole-set registers that consumers *assign* rather than push, so a base index
+means nothing for them and they keep their `mem::take`.
 
 Also visible: 20 871 `__rdl_alloc` calls for 57 312 calls — the pool misses
 about a third of the time even in `fib`'s tree recursion, where returns refill

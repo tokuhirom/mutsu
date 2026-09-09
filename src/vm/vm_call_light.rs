@@ -203,20 +203,20 @@ impl Interpreter {
         // scope and be restored (clobbered) at the caller's loop exit. Repro:
         // `sub f($n){ my $r=0; my @w=(1,); while @w.splice { f($n-1) if $n>0; $r+=10 }; $r }`
         // returned 0 instead of 10. Restored on every exit path.
-        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
-        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        let saved_loop_local_vars = self.loop_local_vars.push_frame();
+        let saved_loop_local_saved_env = self.loop_local_saved_env.push_frame();
         // ADR-0023: isolate the caller's active-loop-param stack the same way
         // (mirrors vm_call_fast.rs) — this path also bypasses
         // `with_nested_registers`.
-        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
-        let saved_active_loop_rw_param_names = std::mem::take(&mut self.active_loop_rw_param_names);
+        let saved_active_loop_param_names = self.active_loop_param_names.push_frame();
+        let saved_active_loop_rw_param_names = self.active_loop_rw_param_names.push_frame();
         // Isolate the caller's block-scope `my`-declaration tracking (mirrors the
         // loop-local isolation above). Without this, the callee's routine-level
         // `my $x` — which runs before the callee enters any of its own blocks —
         // registers in the *caller's* active `BlockScope` frame and gets reverted
         // to the pre-block value at the caller's block exit. Repro:
         // `sub f($n){ my $r=0; { $r=10; f($n-1) if $n>0 }; $r }` returned 0.
-        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
+        let saved_block_declared_vars = self.block_declared_vars.push_frame();
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / local env writes land in a
@@ -359,11 +359,15 @@ impl Interpreter {
                 }
             }
             self.locals.pop_frame(saved_locals_base);
-            self.loop_local_vars = saved_loop_local_vars;
-            self.loop_local_saved_env = saved_loop_local_saved_env;
-            self.active_loop_param_names = saved_active_loop_param_names;
-            self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-            self.block_declared_vars = saved_block_declared_vars;
+            self.loop_local_vars.pop_frame(saved_loop_local_vars);
+            self.loop_local_saved_env
+                .pop_frame(saved_loop_local_saved_env);
+            self.active_loop_param_names
+                .pop_frame(saved_active_loop_param_names);
+            self.active_loop_rw_param_names
+                .pop_frame(saved_active_loop_rw_param_names);
+            self.block_declared_vars
+                .pop_frame(saved_block_declared_vars);
             self.current_unit = saved_unit;
             let err = positional_light_type_error(
                 func_name,
@@ -644,11 +648,15 @@ impl Interpreter {
                 self.stack.truncate(saved_stack_depth.min(self.stack.len()));
                 self.cur_source_line = saved_line;
                 self.locals.pop_frame(saved_locals_base);
-                self.loop_local_vars = saved_loop_local_vars;
-                self.loop_local_saved_env = saved_loop_local_saved_env;
-                self.active_loop_param_names = saved_active_loop_param_names;
-                self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-                self.block_declared_vars = saved_block_declared_vars;
+                self.loop_local_vars.pop_frame(saved_loop_local_vars);
+                self.loop_local_saved_env
+                    .pop_frame(saved_loop_local_saved_env);
+                self.active_loop_param_names
+                    .pop_frame(saved_active_loop_param_names);
+                self.active_loop_rw_param_names
+                    .pop_frame(saved_active_loop_rw_param_names);
+                self.block_declared_vars
+                    .pop_frame(saved_block_declared_vars);
                 self.finish_positional_light_env(cf, caller_env);
                 self.leave_routine_package(saved_package);
                 self.current_unit = saved_unit;
@@ -694,11 +702,15 @@ impl Interpreter {
 
         self.cur_source_line = saved_line;
         self.locals.pop_frame(saved_locals_base);
-        self.loop_local_vars = saved_loop_local_vars;
-        self.loop_local_saved_env = saved_loop_local_saved_env;
-        self.active_loop_param_names = saved_active_loop_param_names;
-        self.active_loop_rw_param_names = saved_active_loop_rw_param_names.clone();
-        self.block_declared_vars = saved_block_declared_vars;
+        self.loop_local_vars.pop_frame(saved_loop_local_vars);
+        self.loop_local_saved_env
+            .pop_frame(saved_loop_local_saved_env);
+        self.active_loop_param_names
+            .pop_frame(saved_active_loop_param_names);
+        self.active_loop_rw_param_names
+            .pop_frame(saved_active_loop_rw_param_names);
+        self.block_declared_vars
+            .pop_frame(saved_block_declared_vars);
         // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
         // Restore the caller env and merge the overlay (the callee's own writes)

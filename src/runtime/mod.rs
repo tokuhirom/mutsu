@@ -585,6 +585,7 @@ pub(crate) mod native_infix_dispatch;
 mod native_io;
 pub(crate) mod raw_invocant;
 mod rw_arg_container;
+pub(crate) mod scope_stack;
 mod uncaught_render;
 pub(crate) use native_io::{path_is_executable, path_is_readable, path_is_writable};
 mod native_io_special;
@@ -717,6 +718,7 @@ pub(crate) use self::output_sink::{OutputSinkReadGuard, OutputSinkWriteGuard};
 pub(crate) use self::regex_types::*;
 pub(crate) use self::registration_class::ClassDeclModifiers;
 pub(crate) use self::registry::Registry;
+pub(crate) use self::scope_stack::ScopeStack;
 pub(crate) use self::tap_state::{TapState, TestState, TodoRange};
 
 pub(crate) use utils::*;
@@ -3596,7 +3598,7 @@ pub struct Interpreter {
     /// in the stored map and are not collected — so the accessor fallback still
     /// reads them.
     pub(crate) user_declared_classes: std::collections::HashSet<String>,
-    pub(crate) block_declared_vars: Vec<NameSet>,
+    pub(crate) block_declared_vars: ScopeStack<NameSet>,
     /// Local-frame slot indices of `given`/`with` pointy-topic parameters
     /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
     /// `Given`/`With` op still needs the slot's final value after its body
@@ -3632,11 +3634,11 @@ pub struct Interpreter {
     /// `exec_block_local_scope_op` (`None` until then) and consumed by
     /// `exec_given_op`'s writeback.
     pub(crate) given_pointy_captured: Vec<Option<Value>>,
-    pub(crate) loop_local_vars: Vec<NameSet>,
+    pub(crate) loop_local_vars: ScopeStack<NameSet>,
     /// Names currently bound as for-loop parameters in this frame chain, one
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
     /// env keys. Consulted by `block_captured_scalars` only; never persisted.
-    pub(crate) active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    pub(crate) active_loop_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
     /// Parallel to [`Self::active_loop_param_names`], for the parameters that
     /// **alias** rather than copy: the bare names the enclosing `for` loops
     /// currently bind as genuinely rw parameters (`is rw`, a `<->` block, a
@@ -3658,7 +3660,7 @@ pub struct Interpreter {
     /// one loop's `is rw` exempt an unrelated later loop's same-named *non-rw*
     /// parameter (measured: `t/for-loop-element-alias.t`'s per-iteration
     /// identity rows).
-    pub(crate) active_loop_rw_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    pub(crate) active_loop_rw_param_names: ScopeStack<rustc_hash::FxHashSet<String>>,
     /// Names of every `constant $name = ...` scalar ever declared in this run
     /// (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
     /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
@@ -3681,7 +3683,7 @@ pub struct Interpreter {
     /// as an env key, which is how `HTTP::HPACK`'s Huffman-table `my int $i`
     /// stayed visible process-wide and was later merged over an unrelated frame's
     /// loop variable.
-    pub(crate) loop_local_saved_env: Vec<HashMap<String, Option<Value>>>,
+    pub(crate) loop_local_saved_env: ScopeStack<HashMap<String, Option<Value>>>,
     pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
     /// Stack of captured ENTER-phaser values for blocks whose textually-last
