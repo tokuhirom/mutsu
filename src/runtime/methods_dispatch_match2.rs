@@ -623,11 +623,25 @@ impl Interpreter {
         // in `pull_seq_source`), which is rakudo's timing: a `die` in the
         // callback escapes a `try` that merely encloses the `.map` call, and
         // a plain side effect happens at first consumption rather than here.
+        // A real Array's elements are writable containers even when the Array
+        // reached this dispatcher through a value-producing expression such as
+        // `@a.list` or a scalar holding `[1, 2, 3]`. The named `@a.map` spelling
+        // already carries this source through `MapGrepMode::MapRw`; preserve
+        // the same source identity here so the deferred callback can publish
+        // its `$_` writeback at consumption time. Immutable List values stay on
+        // the plain `Map` path and retain their readonly-topic behavior.
+        let mode = match target.view() {
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray,
+            ) => crate::value::MapGrepMode::MapRw(target.clone()),
+            _ => crate::value::MapGrepMode::Map,
+        };
         Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
             items: std::sync::Arc::new(items),
             func: args.first().cloned(),
             fatal: self.fatal_mode,
-            mode: crate::value::MapGrepMode::Map,
+            mode,
         }))
     }
     /// Dispatch "min" and "max" methods.

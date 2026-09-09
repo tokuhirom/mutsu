@@ -27,8 +27,9 @@ use std::sync::{Arc, Mutex};
 pub(crate) enum MapGrepMode {
     /// `.map` over already-materialized items.
     Map,
-    /// `@a.map({ $_++ })`: Raku rw-binds `$_` to the source element, so the
-    /// callback's writes have to reach the container. The pull runs
+    /// A map over a real Array (`@a.map({ $_++ })`, or an Array reached through
+    /// `@a.list`/a scalar) rw-binds `$_` to the source element, so the callback's
+    /// writes have to reach the container. The pull runs
     /// `eval_map_over_items_rw` and publishes the write-back by mutating this
     /// container's `ArrayData` IN PLACE, which is frame-independent — the pull
     /// happens wherever the Seq is consumed, long after the frame whose `env`
