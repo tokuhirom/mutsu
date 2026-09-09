@@ -1291,7 +1291,9 @@ impl Interpreter {
             // leaves `prev == val == the live slot value` (a no-op pull anyway).
             && (package_index_lvalue
                 || match lvalue_writeback_pre {
-                    Some(Some(ref prev)) => !prev.same_variant(&val) || *prev != val,
+                    Some(Some(ref prev)) => {
+                        !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &val)
+                    }
                     _ => true,
                 })
         {
