@@ -2,10 +2,11 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
     if crate::runtime::native_types::is_native_int_type(constraint) {
         return true;
     }
-    // Handle parameterized types like Array[Int], Hash[Str], etc.
-    if let Some(base) = constraint.split('[').next()
-        && constraint.contains('[')
-        && constraint.ends_with(']')
+    // Handle parameterized types like Array[Int], Hash[Str], etc. `ends_with`
+    // is O(1) and rejects every unparameterized name, so it gates the `[` scan
+    // rather than following it (#7696).
+    if constraint.ends_with(']')
+        && let Some((base, _)) = crate::runtime::utils::split_once_bracket(constraint)
         && is_known_type_constraint(base)
     {
         return true;

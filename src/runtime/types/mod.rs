@@ -1011,8 +1011,13 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {
-        let open = constraint.find('[')?;
-        if open == 0 || !constraint.ends_with(']') {
+        // `ends_with` is O(1) and rejects every unparameterized name, so it
+        // runs before the `[` scan rather than after it (#7696).
+        if !constraint.ends_with(']') {
+            return None;
+        }
+        let open = constraint.as_bytes().iter().position(|&b| b == b'[')?;
+        if open == 0 {
             return None;
         }
         let base = &constraint[..open];

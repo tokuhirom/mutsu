@@ -10,8 +10,10 @@ fn is_failure_value(value: &Value) -> bool {
 /// Parse a coercion type like "Int()" or "Int(Rat)".
 /// Returns Some((target_type, optional_source_type)) if it's a coercion type.
 pub(crate) fn parse_coercion_type(constraint: &str) -> Option<(&str, Option<&str>)> {
-    if let Some(open) = constraint.find('(')
-        && constraint.ends_with(')')
+    // `ends_with` is O(1) and rejects every non-coercion name, so it gates the
+    // `(` scan rather than following it (#7696).
+    if constraint.ends_with(')')
+        && let Some(open) = constraint.as_bytes().iter().position(|&b| b == b'(')
     {
         let target = &constraint[..open];
         let source = &constraint[open + 1..constraint.len() - 1];

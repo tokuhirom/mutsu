@@ -1364,13 +1364,22 @@ impl Registry {
         parents
     }
 
-    pub(crate) fn composed_roles_seed(&self, mro: &[Symbol]) -> Vec<String> {
+    /// The base names of every role composed anywhere along `mro`, as interned
+    /// symbols.
+    ///
+    /// Returns `Symbol`s rather than `String`s so the role walks that consume
+    /// this can keep a `Copy` work stack and a `HashSet<Symbol>` of seen names:
+    /// the `String` seed plus a clone per `seen` insert was an allocation pair
+    /// per role per type check, on a path every instance method call runs
+    /// (#7696). Interning is a hash lookup and allocates only the first time a
+    /// given role name is seen in the process.
+    pub(crate) fn composed_roles_seed(&self, mro: &[Symbol]) -> Vec<Symbol> {
         let mut seed = Vec::new();
         for cn in mro {
             if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {
                 for cr in composed {
                     let base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
-                    seed.push(base.to_string());
+                    seed.push(Symbol::intern(base));
                 }
             }
         }

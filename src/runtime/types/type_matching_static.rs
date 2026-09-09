@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::runtime::utils::{has_bracket, has_double_colon, split_once_bracket};
+
 impl Interpreter {
     /// Whether `qualified`'s trailing component may stand in for the bare name
     /// `short` (see the "qualified name matching" bridge in [`Self::type_matches`]).
@@ -44,8 +46,8 @@ impl Interpreter {
         // true — a bare `CArray` value does not satisfy `CArray[uint8]` — and the
         // parameterized-vs-parameterized comparison is handled by the callers
         // that know how to match the inner types.)
-        if !constraint.contains('[')
-            && let Some((value_base, _)) = value_type.split_once('[')
+        if !has_bracket(constraint)
+            && let Some((value_base, _)) = split_once_bracket(value_type)
             && value_base == constraint
         {
             return true;
@@ -55,14 +57,21 @@ impl Interpreter {
         // check if the short name matches the last component of the qualified name.
         // This bridges a registration gap: a type declared under a `unit module`
         // is registered qualified but referred to bare inside that module.
-        if constraint.contains("::")
-            && !value_type.contains("::")
+        //
+        // `str::contains("::")` builds a two-way searcher per call; on these
+        // short names that setup is the whole cost, and `type_matches` asked
+        // for it three times per call. Hoisting the two answers into one byte
+        // scan each was 9% of a `Buf.push` loop (#7696).
+        let constraint_qualified = has_double_colon(constraint);
+        let value_type_qualified = has_double_colon(value_type);
+        if constraint_qualified
+            && !value_type_qualified
             && Self::short_name_bridges(constraint, value_type)
         {
             return true;
         }
-        if value_type.contains("::")
-            && !constraint.contains("::")
+        if value_type_qualified
+            && !constraint_qualified
             && Self::short_name_bridges(value_type, constraint)
         {
             return true;
