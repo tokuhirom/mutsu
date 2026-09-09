@@ -995,6 +995,23 @@ impl Interpreter {
             }
         }
 
+        // Invoking an enum *value* is the same coercion as invoking its enum
+        // type: rakudo answers `Lv::TRACE` for `Lv(1)` and for `Lv::DEBUG(1)`
+        // alike, and `Nil` when the enum has no such value. The type-object
+        // rule above already routes `Lv(1)` to the bare-name call path; a value
+        // reached through a variable landed on the `CALL-ME` fallback instead
+        // and died -- `Log::Async` hands its `$level` (an enum value whenever
+        // no CLI flag replaces it with a `* >= LEVEL` matcher) to a consumer
+        // that calls it.
+        if let ValueView::Enum { enum_type, .. } = target.view()
+            && !args.is_empty()
+        {
+            let name = enum_type.resolve();
+            if !self.class_has_method(&name, "CALL-ME") {
+                return self.call_function(&name, args);
+            }
+        }
+
         // Instance or Package (type object): CALL-ME -- try compiled method path first
         if matches!(
             target.view(),

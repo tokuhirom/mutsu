@@ -3807,10 +3807,31 @@ impl Compiler {
         // routine that stays callable from the consumer's scope (PLAN 8.22).
         // The compiler's own `current_package` is still switched by the
         // declaration itself, so this must not qualify anything here.
-        if let Some(name_idx) = self.unit_package_name_const(stmts) {
-            self.code.emit(OpCode::SetCurrentPackage { name_idx });
+        // Routines declared *textually above* the `unit module` line are not in
+        // the module: the declaration only packages "the rest of the scope", so
+        // what precedes it stays in the compilation unit's outer (GLOBAL)
+        // scope. That positional rule is the whole mechanism behind a custom
+        // `sub EXPORT`, which a module must declare above its `unit module`
+        // line for `use` to find it (`apply_module_export` looks up
+        // `GLOBAL::EXPORT`); hoisting the prefix under the package registered
+        // it as `Foo::EXPORT` and the export sub was silently never called.
+        let unit_split = self.unit_package_split(stmts);
+        let outer_prefix =
+            unit_split.is_some_and(|(pos, _)| Self::stmts_declare_routines(&stmts[..pos]));
+        match unit_split {
+            Some((pos, name_idx)) if outer_prefix => {
+                // The runtime package is still GLOBAL here, which is where the
+                // prefix's routines belong.
+                self.hoist_sub_decls(&stmts[..pos], false);
+                self.code.emit(OpCode::SetCurrentPackage { name_idx });
+                self.hoist_sub_decls(&stmts[pos..], false);
+            }
+            Some((_, name_idx)) => {
+                self.code.emit(OpCode::SetCurrentPackage { name_idx });
+                self.hoist_sub_decls(stmts, false);
+            }
+            None => self.hoist_sub_decls(stmts, false),
         }
-        self.hoist_sub_decls(stmts, false);
         // Pre-register declaration-only shells of class/role declarations so a
         // mainline statement that runs before the textual declaration can
         // already construct the type (Raku type declarations are compile-time;
@@ -3822,6 +3843,17 @@ impl Compiler {
         self.hoist_nested_our_subs(stmts);
         // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
         self.hoist_typed_var_decls(stmts);
+        // The remaining hoist passes above want the package, but the prefix
+        // statements themselves run outside it, so hand the runtime back to
+        // GLOBAL for them. The `unit` declaration emits its own
+        // `SetCurrentPackage` when execution reaches it, which closes the
+        // window again for everything that follows.
+        if outer_prefix {
+            let global_idx = self.code.add_constant(Value::str("GLOBAL".to_string()));
+            self.code.emit(OpCode::SetCurrentPackage {
+                name_idx: global_idx,
+            });
+        }
         // If the top-level body contains a CATCH or CONTROL block, wrap in
         // an implicit try so the phaser can observe exceptions / control
         // signals from the surrounding statements.

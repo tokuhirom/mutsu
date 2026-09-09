@@ -1,6 +1,7 @@
 use super::run::{
     IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE,
     NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
+    TRAIT_MOD_IS_NATIVECALL_PRELUDE,
 };
 use super::source_code_text::CodeText;
 use super::*;
@@ -188,6 +189,46 @@ impl Interpreter {
     /// collide with) a user-declared candidate of the same name, and that
     /// collision is exactly what proves the builtin is registered correctly
     /// (see `TRAIT_MOD_DOES_PRELUDE`'s doc comment).
+    /// Prepend NativeCall's `trait_mod:<is>` candidates (see
+    /// [`TRAIT_MOD_IS_NATIVECALL_PRELUDE`]) to a program that both uses
+    /// NativeCall and names `trait_mod:<is>` itself.
+    ///
+    /// Both halves of that gate matter. Without `use NativeCall` the candidates
+    /// do not exist in Rakudo either, so injecting them would be wrong. And
+    /// naming `trait_mod:<is>` is what tells this apart from the overwhelmingly
+    /// common case of a program that merely *declares* `is native` routines:
+    /// there the candidates are unobservable (mutsu applies those traits
+    /// natively), while their mere presence would flip
+    /// `has_proto`/`has_multi_candidates` and route every other unknown `is`
+    /// trait in the file through custom dispatch.
+    ///
+    /// A file that declares its own `trait_mod:<is>` keeps it: injecting
+    /// alongside it would be a redeclaration, and the user's handler is the one
+    /// that should win.
+    pub(super) fn inject_trait_mod_is_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
+        if !source.contains("trait_mod:<is>")
+            || !source.contains("NativeCall")
+            || Self::declares_toplevel_sub(stmts, "trait_mod:<is>")
+        {
+            return;
+        }
+        use std::sync::OnceLock;
+        static TRAIT_MOD_IS_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = TRAIT_MOD_IS_STMTS.get_or_init(|| {
+            let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_NATIVECALL_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default();
+            Self::mark_prelude_subs(&mut stmts);
+            stmts
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
     pub(super) fn inject_trait_mod_does_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
         if !source.contains("trait_mod:<does>") {
             return;

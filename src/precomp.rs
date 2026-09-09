@@ -100,7 +100,10 @@ fn interpreter_version() -> String {
     // so its third field serializes as an enum rather than a bool.
     // 11: `Expr::DoBlock` gained `origin: DoBlockOrigin` (GH-7635), so a
     // cached node from an older build deserializes a field short.
-    const CACHE_FORMAT_VERSION: u32 = 11;
+    // 12: `SerValue::Instance` gained `sig_info`, so a cached `Signature`
+    // literal now carries its structured parameter data instead of an id
+    // pointing at a side table the cache cannot reach.
+    const CACHE_FORMAT_VERSION: u32 = 12;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

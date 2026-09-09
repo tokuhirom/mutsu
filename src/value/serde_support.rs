@@ -98,6 +98,16 @@ enum SerValue {
         class_name: Symbol,
         attributes: HashMap<String, SerValue>,
         id: u64,
+        /// A `Signature`'s structured parameter data. It normally lives in a
+        /// process-global side table keyed by the instance id, which nothing in
+        /// a serialized value can reach: a `Signature` literal restored from
+        /// the precompilation cache came back with an id that no longer names
+        /// anything, and `extract_sig_info` fell through to its empty-params
+        /// legacy shape -- so `.signature ~~ :(Routine, :$native!)` was True on
+        /// a cold run and False on a warm one. Carrying the info alongside lets
+        /// the value be rebuilt whole, under a fresh id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sig_info: Option<crate::value::signature::SigInfo>,
     },
     Mixin(Box<SerValue>, HashMap<String, SerValue>),
     Capture {
@@ -285,10 +295,14 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.resolve(), sv)))
                 .collect();
+            let sig_info = (class_name == "Signature")
+                .then(|| crate::value::signature::lookup_sig_info(id))
+                .flatten();
             Ok(SerValue::Instance {
                 class_name,
                 attributes: ser_attrs?,
                 id,
+                sig_info,
             })
         }
         ValueView::Mixin(inner, overrides) => {
@@ -490,10 +504,21 @@ fn ser_to_value(sv: SerValue) -> Value {
             minus,
             text,
         }),
+        // A `Signature` that carried its structured info is rebuilt from that
+        // info rather than from the serialized attributes: `make_signature_value`
+        // derives every attribute from it and registers it under a *fresh* id,
+        // so the restored value is self-consistent and cannot collide with an
+        // unrelated instance that happens to hold the recorded id in this
+        // process.
+        SerValue::Instance {
+            sig_info: Some(info),
+            ..
+        } => crate::value::signature::make_signature_value(info, None),
         SerValue::Instance {
             class_name,
             attributes,
             id,
+            ..
         } => Value::from_repr(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(

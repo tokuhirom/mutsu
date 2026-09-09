@@ -8,7 +8,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Lightweight representation of a signature parameter for runtime use.
-#[derive(Debug, Clone, Default)]
+///
+/// Serializable so a `Signature` literal survives the precompilation cache:
+/// the structured data lives in a process-global side table keyed by the
+/// instance id ([`SIG_REGISTRY`]), which a cached AST cannot carry, so it
+/// travels with the serialized instance instead (see `value::serde_support`).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SigParam {
     pub(crate) name: String,
     pub(crate) type_constraint: Option<String>,
@@ -35,7 +40,7 @@ pub(crate) struct SigParam {
 }
 
 /// Complete signature info stored at runtime.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SigInfo {
     pub(crate) params: Vec<SigParam>,
     pub(crate) return_type: Option<String>,
