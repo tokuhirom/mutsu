@@ -59,7 +59,35 @@ including that case.
 
 ## Measurement
 
-METRICS_PLACEHOLDER
+`bench-fib` and `bench-tak` under callgrind, both configurations, baseline
+`713a254` vs this change. Retired instructions, not cycles — the ticket makes
+the point that a cycles-only measurement cannot evaluate a frame-size change,
+since the code being moved never executes in the benchmark.
+
+| | before | after | delta |
+| --- | ---: | ---: | ---: |
+| `bench-fib`, JIT on (Ir) | 1,307,305,478 | 1,253,274,914 | **-54,030,564 (-4.13%)** |
+| `bench-fib`, JIT off (Ir) | 2,628,236,003 | 2,574,200,776 | -54,035,227 (-2.06%) |
+| `bench-tak`, JIT on (Ir) | 1,606,543,292 | 1,572,899,489 | -33,643,803 (-2.09%) |
+| `bench-tak`, JIT off (Ir) | 2,625,283,996 | 2,591,644,274 | -33,639,722 (-1.28%) |
+| `vm_call_state_guard.rs` under the light call | 45,125,328 (3.45%) | 10,804,656 (0.86%) | -34,320,672 |
+| `scope_stack.rs` under the light call *(control)* | 26,693,856 | 26,693,856 | **0** |
+| light-call stack frame | 6 pushes + `0x358` = 904 B | 6 pushes + `0x308` = 824 B | -80 B |
+
+`scope_stack.rs` is the control the ticket asks for: it is the neighbouring row
+in the same profile, this change cannot touch it, and it comes back
+byte-identical — so the deltas above are the change, not run-to-run noise
+(callgrind's Ir is deterministic, but an identical control also rules out a
+different inlining decision moving work between rows).
+
+The two JIT configurations drop by the same absolute amount on each benchmark,
+which is what the change predicts: the guard is in the Rust dispatch path, not
+in a JIT-compiled body.
+
+The guard row does not account for the whole `bench-fib` saving (34.3M of
+54.0M). The rest is the same guard at the other dispatch sites
+(`vm_call_fast`, `vm_call_light_typed`, `vm_call_named_inner`, the method and
+closure paths) plus `consume_for_store` on the store path.
 
 ## What this does not fix
 
