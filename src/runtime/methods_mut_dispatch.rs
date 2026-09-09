@@ -444,6 +444,9 @@ impl Interpreter {
             {
                 return Ok(Value::package(Symbol::intern(&value_type)));
             }
+            if let Some(value_type) = self.mixin_container_role_value_type(&target) {
+                return Ok(value_type);
+            }
             // Embedded metadata first: it travels with the value, so it stays
             // correct when a recursive call clobbers the name-keyed constraint
             // store (`my @ret := Array[T].new` re-bound in an inner frame).

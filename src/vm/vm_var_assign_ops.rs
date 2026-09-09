@@ -104,6 +104,39 @@ impl Interpreter {
         };
         let (inner, mixins) = (inner.clone(), mixins.clone());
         let mut updated_mixins = (*mixins).clone();
+        // A role mixed into a Hash keeps the Hash as the Mixin's inner value.
+        // Handle ordinary associative stores before the role-attribute
+        // delegation below: the generic variable-assignment path only knows
+        // how to mutate an exact Hash, so without this arm it replaces the
+        // whole Mixin with a new one-entry Hash and silently drops every
+        // existing entry.
+        if range_slice.is_none()
+            && !matches!(
+                idx.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Whatever
+                    | ValueView::Junction { .. }
+            )
+            && let ValueView::Hash(hash) = inner.view()
+        {
+            let object_hash = hash.key_type.is_some();
+            let key = if object_hash {
+                crate::runtime::utils::value_which_key(idx)
+            } else if matches!(idx.view(), ValueView::Package(_)) {
+                self.coerce_type_object_hash_key(idx)?
+            } else {
+                idx.to_string_value()
+            };
+            inner.hash_assign_at(&key, Self::itemize_value(val.clone()));
+            return Ok(Some(target.clone()));
+        }
         // Refresh each `__mutsu_attr__` marker from the cell before mutating, so
         // an element write made directly inside a role method (`%!h<k> = 1`,
         // which goes to the cell) is not overwritten by a stale marker.
