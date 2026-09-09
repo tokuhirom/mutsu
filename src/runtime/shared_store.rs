@@ -52,6 +52,50 @@ fn atomic_lane_base_name(key: &str) -> Option<&str> {
         .or_else(|| key.strip_prefix("__mutsu_atomic_hash::"))
 }
 
+/// The `__mutsu_atomic_arr::<name>` / `__mutsu_atomic_hash::<name>` lane key
+/// for a container name, as a pre-interned `Symbol`, memoized per name symbol.
+///
+/// Once ANY atomic lane entry exists (see [`atomic_lane_entries_exist`]) the
+/// probe is armed for the rest of the process, and every `@`/`%` read and write
+/// built its lane key with `format!` — one heap allocation, the whole `core::fmt`
+/// machinery, and a matching free, per container access. A `start` block that
+/// pushes to a shared array arms it, so any concurrent program pays it: this
+/// key and the `^<name>` placeholder key built beside it were together ~1.5%
+/// of the RIPEMD profile in `format!` machinery alone (#7571). The
+/// `name -> key` mapping never changes, so it is memoized exactly like
+/// `Interpreter::type_meta_key_for_sym`.
+pub(crate) fn atomic_lane_key(name: &str, hash_lane: bool) -> crate::symbol::Symbol {
+    use crate::symbol::Symbol;
+    thread_local! {
+        static ARR_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+            const {
+                std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
+                    rustc_hash::FxBuildHasher,
+                ))
+            };
+        static HASH_KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+            const {
+                std::cell::RefCell::new(rustc_hash::FxHashMap::with_hasher(
+                    rustc_hash::FxBuildHasher,
+                ))
+            };
+    }
+    let name_sym = Symbol::intern(name);
+    let cache = if hash_lane { &HASH_KEYS } else { &ARR_KEYS };
+    if let Some(sym) = cache.with(|c| c.borrow().get(&name_sym).copied()) {
+        return sym;
+    }
+    let sym = if hash_lane {
+        Symbol::intern(&format!("__mutsu_atomic_hash::{name}"))
+    } else {
+        Symbol::intern(&format!("__mutsu_atomic_arr::{name}"))
+    };
+    cache.with(|c| {
+        c.borrow_mut().insert(name_sym, sym);
+    });
+    sym
+}
+
 /// Set once any atomic array/hash lane entry has been created anywhere in the
 /// process. It is never cleared: `remove` leaving it set only restores the old
 /// (always-probe) behaviour, which is correct, just slower.

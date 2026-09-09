@@ -1192,6 +1192,19 @@ impl Env {
         }
     }
 
+    /// [`Self::entry_or_insert_sym`] with the value produced only on a miss.
+    ///
+    /// The closure-call captured-env merge runs this once per captured entry —
+    /// ~45 per call on a body whose creating scope was wide — and the eager
+    /// `v.clone()` at the call site paid a GC refcount bump *and* the matching
+    /// drop for every entry the caller already had (#7571). The lazy form pays
+    /// the clone only where it is actually stored.
+    pub fn entry_or_insert_sym_with<F: FnOnce() -> Value>(&mut self, key: Symbol, f: F) {
+        if !self.contains_key_sym(key) {
+            self.insert_sym(key, f());
+        }
+    }
+
     /// Insert only if key is not present (lazy value).
     pub fn entry_or_insert_with<F: FnOnce() -> Value>(&mut self, key: String, f: F) {
         let sym = Symbol::intern(&key);
@@ -1206,8 +1219,8 @@ impl Env {
         self.cow_mut()
     }
 
-    /// Direct read access to the inner HashMap.
-    #[allow(dead_code)]
+    /// Direct read access to the inner HashMap (this env's OWN tier only — it
+    /// does NOT see the parent chain, unlike `get`/`contains_key_sym`).
     pub(crate) fn inner(&self) -> &SymMap {
         &self.inner
     }

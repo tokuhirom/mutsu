@@ -86,6 +86,13 @@ impl Interpreter {
         if self.running_frame_declares_local(name) {
             return None;
         }
+        // Every candidate built below ends in this name's own `<sigil><bare>`
+        // spelling, so a name no stored `our` variable carries under ANY package
+        // cannot match one — skip the whole chain walk (#7571). The index is
+        // append-only alongside `our_vars`, so a `false` here is authoritative.
+        if !self.our_var_unqualified_exists(name) {
+            return None;
+        }
         let cur = self.current_package();
         let frame = self.routine_stack().last();
         let candidates = [
@@ -110,9 +117,9 @@ impl Interpreter {
                 // `qualify_variable_name` does, so reads and writes reconstruct
                 // exactly the key the declaration stored.
                 if let Some(key) = Self::package_qualified_candidate(name, pkg)
-                    && self.get_our_var(&key).is_some()
+                    && self.get_our_var(key.as_str()).is_some()
                 {
-                    return Some(key);
+                    return Some(key.as_str().to_string());
                 }
                 match pkg.rsplit_once("::") {
                     Some((parent, _)) => pkg = parent,

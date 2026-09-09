@@ -312,9 +312,9 @@ impl MarkContextGuard {
 pub(crate) struct ThreadParamMaskGuard {
     /// Raw pointer into `thread_redeclared_vars`'s OWN `Box` allocation --
     /// never a pointer to `Interpreter` itself.
-    redeclared_cell: *const std::cell::RefCell<std::collections::HashSet<String>>,
+    redeclared_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
     /// Raw pointer into `thread_param_shadow_vars`'s OWN `Box` allocation.
-    shadow_cell: *const std::cell::RefCell<std::collections::HashSet<String>>,
+    shadow_cell: *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
     mask: crate::runtime::runtime_shared_vars::ThreadParamMask,
 }
 
@@ -328,9 +328,9 @@ impl ThreadParamMaskGuard {
         let mask = interp.mask_thread_redeclared_params(param_defs);
         ThreadParamMaskGuard {
             redeclared_cell: &*interp.thread_redeclared_vars
-                as *const std::cell::RefCell<std::collections::HashSet<String>>,
+                as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
             shadow_cell: &*interp.thread_param_shadow_vars
-                as *const std::cell::RefCell<std::collections::HashSet<String>>,
+                as *const std::cell::RefCell<rustc_hash::FxHashSet<String>>,
             mask,
         }
     }

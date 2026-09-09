@@ -140,6 +140,66 @@ impl Interpreter {
         sym
     }
 
+    /// The `__mutsu_sigilless_readonly::<name>` env key as a pre-interned
+    /// `Symbol`, memoized per name symbol like [`Self::type_meta_key_for_sym`].
+    ///
+    /// The closure exit-path writeback probes this key (and its two siblings
+    /// below) for EVERY free variable of the closure, once any sigilless/alias
+    /// or `state` metadata exists in the program — which a single `-> [$a, $b]`
+    /// destructuring parameter is enough to arm. At three `format!`s per free
+    /// variable per call that was the largest remaining `format!` site in the
+    /// RIPEMD profile (~3.2% of the run, plus its malloc/free pair) (#7571).
+    pub(crate) fn sigilless_readonly_key_for_sym(name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym = name_sym
+            .with_str(|name| Symbol::intern(&crate::runtime::utils::sigilless_readonly_key(name)));
+        KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
+    /// The `__mutsu_sigilless_alias::<name>` env key, memoized exactly like
+    /// [`Self::sigilless_readonly_key_for_sym`].
+    pub(crate) fn sigilless_alias_key_for_sym(name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym = name_sym
+            .with_str(|name| Symbol::intern(&crate::runtime::utils::sigilless_alias_key(name)));
+        KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
+    /// The `__mutsu_state_key::<name>` metadata key, memoized exactly like
+    /// [`Self::sigilless_readonly_key_for_sym`].
+    pub(crate) fn state_meta_key_for_sym(name_sym: Symbol) -> Symbol {
+        thread_local! {
+            static KEYS: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+                std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+        }
+        if let Some(sym) = KEYS.with(|c| c.borrow().get(&name_sym).copied()) {
+            return sym;
+        }
+        let sym = name_sym.with_str(|name| Symbol::intern(&format!("__mutsu_state_key::{name}")));
+        KEYS.with(|c| {
+            c.borrow_mut().insert(name_sym, sym);
+        });
+        sym
+    }
+
     /// The env key for `name`'s placeholder-parameter twin, `^<name>`, as a
     /// pre-interned `Symbol`, memoized per name symbol exactly like
     /// [`Self::type_meta_key_sym`] (the mapping never changes).

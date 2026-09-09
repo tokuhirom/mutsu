@@ -27,8 +27,8 @@ impl ThreadParamMask {
     /// panic unwind.
     pub(crate) fn unmask(
         &self,
-        redeclared_vars: &std::cell::RefCell<std::collections::HashSet<String>>,
-        shadow_vars: &std::cell::RefCell<std::collections::HashSet<String>>,
+        redeclared_vars: &std::cell::RefCell<rustc_hash::FxHashSet<String>>,
+        shadow_vars: &std::cell::RefCell<rustc_hash::FxHashSet<String>>,
     ) {
         {
             let mut redeclared_vars = redeclared_vars.borrow_mut();
@@ -554,16 +554,16 @@ impl Interpreter {
             // copy — the atomic copy is the authoritative source of truth
             // and must not be clobbered by stale local snapshots.
             if key.starts_with('@') {
-                let atomic_key = format!("__mutsu_atomic_arr::{key}");
-                if self.shared_vars.contains_key(&atomic_key) {
+                let atomic_key = crate::runtime::shared_store::atomic_lane_key(key, false);
+                if self.shared_vars.contains_key(atomic_key.as_str()) {
                     return;
                 }
             } else if key.starts_with('%') {
                 // Symmetric to the array case: a hash with an active atomic
                 // entry (concurrent element assignment) must not be clobbered
                 // by a stale local snapshot during env sync.
-                let atomic_key = format!("__mutsu_atomic_hash::{key}");
-                if self.shared_vars.contains_key(&atomic_key) {
+                let atomic_key = crate::runtime::shared_store::atomic_lane_key(key, true);
+                if self.shared_vars.contains_key(atomic_key.as_str()) {
                     return;
                 }
             }
@@ -894,12 +894,22 @@ impl Interpreter {
         self.shared_vars.remove(&name_key);
     }
 
+    /// ONE pass over `current_env`, not two.
+    ///
+    /// The second pass used to re-walk the same map for the same
+    /// `__mutsu_sigilless_alias::!` keys plus `__mutsu_predictive_seq_iter::`
+    /// ones. Both passes only ever READ `current_env` and WRITE `saved_env`
+    /// under per-key-disjoint names, so per-key order is all that matters and
+    /// fusing them is observationally identical — while halving the symbol
+    /// resolves this does on every closure return in a program that has any
+    /// sigilless/alias metadata at all (#7571).
     pub(crate) fn merge_sigilless_alias_writes(&self, saved_env: &mut Env, current_env: &Env) {
         for (key, alias) in current_env.iter() {
-            if !key.starts_with("__mutsu_sigilless_alias::") {
-                continue;
+            let attr_alias = key.starts_with("__mutsu_sigilless_alias::!");
+            if attr_alias || key.starts_with("__mutsu_predictive_seq_iter::") {
+                saved_env.insert_sym(*key, alias.clone());
             }
-            if !key.starts_with("__mutsu_sigilless_alias::!") {
+            if !attr_alias {
                 continue;
             }
             let ValueView::Str(alias_name) = alias.view() else {
@@ -916,7 +926,6 @@ impl Interpreter {
                 saved_env.insert(bare.to_string(), value);
                 continue;
             }
-            saved_env.insert_sym(*key, alias.clone());
             if let Some(value) = current_env.get(alias_name.as_str()).cloned() {
                 saved_env.insert(alias_name.to_string(), value);
                 continue;
@@ -926,13 +935,6 @@ impl Interpreter {
             {
                 saved_env.insert(bare_name.to_string(), value.clone());
                 saved_env.insert(alias_name.to_string(), value);
-            }
-        }
-        for (key, value) in current_env.iter() {
-            if key.starts_with("__mutsu_predictive_seq_iter::")
-                || key.starts_with("__mutsu_sigilless_alias::!")
-            {
-                saved_env.insert_sym(*key, value.clone());
             }
         }
     }

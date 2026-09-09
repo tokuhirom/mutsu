@@ -390,7 +390,7 @@ impl Interpreter {
                 // reason; do the same for the box-on-capture cell — don't overwrite,
                 // so the live dynamic binding stands.
                 if k.is_dynamic_var_env_key() {
-                    self.env_mut().entry_or_insert_sym(*k, v.clone());
+                    self.env_mut().entry_or_insert_sym_with(*k, || v.clone());
                 } else {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
@@ -438,7 +438,7 @@ impl Interpreter {
                 // non-routine blocks only.
                 self.env_mut().insert_sym(*k, v.clone());
             } else {
-                self.env_mut().entry_or_insert_sym(*k, v.clone());
+                self.env_mut().entry_or_insert_sym_with(*k, || v.clone());
             }
         }
         // `self` may live in a PARENT tier of the captured env: the loop above
@@ -557,7 +557,7 @@ impl Interpreter {
         // SubData here cloned params/env/captures per call, the single largest
         // allocation in closure-call setup.
         self.env_mut().insert_sym(
-            crate::symbol::Symbol::intern("&?BLOCK"),
+            crate::symbol::wk::block_var(),
             Value::weak_sub(crate::gc::Gc::downgrade(data)),
         );
         self.push_block(Value::sub_value(data.clone()));
@@ -581,7 +581,7 @@ impl Interpreter {
             // enclosing sub/method.
             self.push_block_routine_with_location(
                 data.package,
-                Symbol::intern("<pointy-block>"),
+                crate::symbol::wk::pointy_block(),
                 call_line,
                 call_file,
                 def_file,
@@ -595,10 +595,8 @@ impl Interpreter {
                 def_file,
             );
         }
-        self.env_mut().insert_sym(
-            crate::symbol::Symbol::intern("__mutsu_callable_id"),
-            Value::int(data.id as i64),
-        );
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::callable_id(), Value::int(data.id as i64));
 
         if data.empty_sig && !args.is_empty() {
             self.truncate_routine_stack(routine_base);
@@ -728,8 +726,7 @@ impl Interpreter {
                     }
                     _ => first.clone(),
                 };
-                self.env_mut()
-                    .insert_sym(crate::symbol::Symbol::intern("_"), topic);
+                self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
                 // raku binds a bare block's implicit `$_` to the argument
                 // itself: `{ $_ = 5 }(7)` is X::AdHoc "Cannot assign to an
                 // immutable value", while `{ $_ = 9 }($v)` / `(@a[0])` write
@@ -772,8 +769,7 @@ impl Interpreter {
             if !data.env.contains_key("_") {
                 let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
                 if let Some(topic) = caller_topic {
-                    self.env_mut()
-                        .insert_sym(crate::symbol::Symbol::intern("_"), topic);
+                    self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
                 }
             }
         }
@@ -801,7 +797,7 @@ impl Interpreter {
             && !data.param_defs.iter().any(|pd| pd.name == "_")
         {
             self.env_mut().insert_sym(
-                crate::symbol::Symbol::intern("_"),
+                crate::symbol::wk::topic(),
                 Value::package(crate::symbol::wk::any()),
             );
             // ...and that fresh `$_` is WRITABLE, whatever the caller's topic
@@ -829,7 +825,7 @@ impl Interpreter {
         // to observe.
         if cc.is_routine {
             self.env_mut()
-                .insert_sym(crate::symbol::Symbol::intern("!"), Value::NIL);
+                .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
         }
 
         // Explicit topic override (native `.map` over Pair-shaped elements). The
@@ -839,8 +835,8 @@ impl Interpreter {
         // it wins, and before the locals load so the slot picks it up.
         if let Some(topic) = explicit_topic {
             let env = self.env_mut();
-            env.insert("_".to_string(), topic.clone());
-            env.insert("$_".to_string(), topic.clone());
+            env.insert_sym(crate::symbol::wk::topic(), topic.clone());
+            env.insert_sym(crate::symbol::wk::topic_sigiled(), topic.clone());
             // A single simple positional param consumes the topic too (e.g.
             // `-> $p { $p.key }`, which the native map call site stores as
             // `params == ["p"]` with empty `param_defs`). The call site only
@@ -1475,16 +1471,21 @@ impl Interpreter {
                 .iter()
                 .map(|(_, source)| Symbol::intern(source))
                 .collect();
-            let captured_names: rustc_hash::FxHashSet<Symbol> = data.env.keys().copied().collect();
+            // The captured env's OWN tier, probed directly. `Env::keys()` is
+            // exactly this map's key set, so collecting it into a fresh
+            // `FxHashSet` per call (~45 entries on a body captured from a wide
+            // scope) allocated and rehashed the same answer this map already
+            // gives in O(1) (#7571).
+            let captured_names = data.env.inner();
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.
-            // `cc.locals_sym` is `cc.locals` pre-interned at compile time, so
-            // this avoids re-interning every local on every call.
-            let local_names: rustc_hash::FxHashSet<Symbol> =
-                cc.locals_sym.iter().copied().collect();
-            let underscore_sym = Symbol::intern("_");
-            let at_underscore_sym = Symbol::intern("@_");
+            // `cc.capture_local_set()` is that same set built ONCE per chunk
+            // behind a `OnceLock`, so this no longer allocates and rehashes a
+            // fresh `FxHashSet` on every closure call (#7571).
+            let local_names = cc.capture_local_set();
+            let underscore_sym = crate::symbol::wk::topic();
+            let at_underscore_sym = crate::symbol::wk::positional_slurpy();
             // `self` is the closure's own lexical invocant, force-installed at
             // entry (see the merge above); it is never a mutation the caller
             // must observe — `self` is read-only. Writing it back would leave
@@ -1493,7 +1494,7 @@ impl Interpreter {
             // would make the rest of that method run against the block's
             // object. That is how `DBDish::Connection.protect-connection`
             // called `self.unlock-connection` on the StatementHandle.
-            let self_sym = Symbol::intern("self");
+            let self_sym = crate::symbol::wk::self_();
             // Free variables the body did NOT touch. Their value in this frame is
             // the closure's *own captured binding*, force-installed at entry (see
             // the free-var overwrite in the merge above) — not a mutation the
@@ -1551,7 +1552,7 @@ impl Interpreter {
                         || cc.free_var_writes.contains(k)
                         || cc.free_var_container_writes.contains(k))
                     && (restored_env.contains_key_sym(*k)
-                        || captured_names.contains(k)
+                        || captured_names.contains_key(k)
                         || (meta_possible
                             && (k.starts_with("__mutsu_predictive_seq_iter::")
                                 || k.starts_with("__mutsu_sigilless_alias::!"))))
@@ -1571,13 +1572,13 @@ impl Interpreter {
                     // `$*x = ...` write-through is not in the set and still
                     // propagates to the declaring caller.
                     && !cc.dynamic_declared_sym.contains(k)
-                    && (!local_names.contains(k) || captured_names.contains(k))
+                    && (!local_names.contains(k) || captured_names.contains_key(k))
                 {
                     // Don't leak captured-only variables to callers that don't have
                     // them. This prevents independent closures from sharing state
                     // via the calling env (e.g. two closures from the same factory
                     // should have their own captured variable copies).
-                    if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
+                    if captured_names.contains_key(k) && !restored_env.contains_key_sym(*k) {
                         continue;
                     }
                     // A captured name the body never references (not a free var)
@@ -1604,7 +1605,7 @@ impl Interpreter {
                     // `$alias := $var` bound through a `lives-ok { ... }`-style
                     // nested chain from every later `$var = ...` write (see
                     // news/2026-08/attr-bind-source-write-tracked-through-nested-call-chain.md).
-                    if captured_names.contains(k)
+                    if captured_names.contains_key(k)
                         && !cc.free_var_syms.contains(k)
                         && !inline_control_written.contains(k)
                         && data.env.get_sym(*k).is_some_and(|captured| {
@@ -1660,14 +1661,23 @@ impl Interpreter {
         // `format!`s and the env-wide `merge_sigilless_alias_writes` scan.
         if meta_possible {
             for captured_sym in &cc.free_var_syms {
-                let captured_name = captured_sym.resolve();
-                let readonly_key = format!("__mutsu_sigilless_readonly::{}", captured_name);
-                if let Some(v) = self.env().get(&readonly_key).cloned() {
-                    restored_env.insert(readonly_key, v);
+                // Both keys are memoized per name symbol, so this probe costs a
+                // `Symbol -> Symbol` lookup instead of two `format!`s and their
+                // malloc/free pair per free variable per call (#7571).
+                //
+                // `insert_sym` skips `env::note_env_key`, which is sound here:
+                // a key only reaches the insert after `get_sym` FOUND it in a
+                // live env, so whoever created it already flipped the
+                // `CLOSURE_META_KEY_SEEN` / `SIGILLESS_READONLY_KEY_SEEN`
+                // latches — and this whole block is gated on the first of them
+                // being set (`meta_possible`) in the first place.
+                let readonly_key = Self::sigilless_readonly_key_for_sym(*captured_sym);
+                if let Some(v) = self.env().get_sym(readonly_key).cloned() {
+                    restored_env.insert_sym(readonly_key, v);
                 }
-                let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
-                if let Some(v) = self.env().get(&alias_key).cloned() {
-                    restored_env.insert(alias_key, v);
+                let alias_key = Self::sigilless_alias_key_for_sym(*captured_sym);
+                if let Some(v) = self.env().get_sym(alias_key).cloned() {
+                    restored_env.insert_sym(alias_key, v);
                     self.mark_sigilless_alias_seen();
                 }
             }
@@ -1685,8 +1695,8 @@ impl Interpreter {
             // maps the variable name to its state storage key (set by
             // StateVarInit in the declaring scope).
             for k in &cc.free_var_syms {
-                let meta_key = format!("__mutsu_state_key::{}", k);
-                let state_key = self.env().get(&meta_key).and_then(|v| match v.view() {
+                let meta_key = Self::state_meta_key_for_sym(*k);
+                let state_key = self.env().get_sym(meta_key).and_then(|v| match v.view() {
                     ValueView::Str(s) => Some(Self::state_key_from_display(&s)),
                     _ => None,
                 });
@@ -1700,10 +1710,17 @@ impl Interpreter {
 
         // Clean up variables that were declared locally in this closure but
         // not captured from an outer scope.
-        for local_name in cc.locals.iter() {
+        for (idx, local_name) in cc.locals.iter().enumerate() {
+            // `cc.local_sym(idx)` serves the name's Symbol from the chunk's
+            // pre-interned table, so this membership test costs a u32 hash
+            // instead of re-interning every local's *string* on every call —
+            // that intern was one of the hot path's largest `Symbol::intern`
+            // contributors (#7571).
             if !local_name.is_empty()
                 && !data.env.contains_key(local_name)
-                && !param_names.contains(&Symbol::intern(local_name))
+                && !cc
+                    .local_sym(idx)
+                    .is_some_and(|sym| param_names.contains(&sym))
                 && !local_name.starts_with("__mutsu_")
             {
                 restored_env.remove(local_name);
