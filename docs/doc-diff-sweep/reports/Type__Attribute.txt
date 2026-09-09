@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=15  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=27  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=15  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=21  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Attribute.rakudoc:186

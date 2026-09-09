@@ -1,0 +1,43 @@
+# doc-diff-harness report
+# stats: error-match=2  error-mismatch=2  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=5  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/testing.rakudoc:19
+--- program ---
+use Test; my ($meta,$relaxed-name); sub check-name($meta,:$relaxed-name){}
+ok check-name($meta, :$relaxed-name), "name has a hyphen rather than '::'"
+--- raku stderr (exit 1) ---
+# Failed test 'name has a hyphen rather than '::''
+# at /home/user/mutsu/tmp/ddh/prog-20646.raku line 2
+--- raku stdout ---
+not ok 1 - name has a hyphen rather than '::'
+--- mutsu stdout (exit 1) ---
+not ok 1 - name has a hyphen rather than '::'
+--- mutsu stderr ---
+# Failed test 'name has a hyphen rather than '::''
+# at /home/user/mutsu/tmp/ddh/prog-20646.raku line 2
+# You failed 1 test of 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/testing.rakudoc:25
+--- program ---
+use Test; my ($meta,$relaxed-name); sub check-name($meta,:$relaxed-name){}
+ok check-name($meta, :$relaxed-name), "name has a hyphen rather than '::'" \
+  or diag "\nTo use hyphen in name, pass :relaxed-name to check-name\n";
+--- raku stderr (exit 1) ---
+# Failed test 'name has a hyphen rather than '::''
+# at /home/user/mutsu/tmp/ddh/prog-20646.raku line 2
+# 
+# To use hyphen in name, pass :relaxed-name to check-name
+#
+--- raku stdout ---
+not ok 1 - name has a hyphen rather than '::'
+--- mutsu stdout (exit 1) ---
+not ok 1 - name has a hyphen rather than '::'
+# 
+To use hyphen in name, pass :relaxed-name to check-name
+--- mutsu stderr ---
+# Failed test 'name has a hyphen rather than '::''
+# at /home/user/mutsu/tmp/ddh/prog-20646.raku line 1
+# You failed 1 test of 1
+

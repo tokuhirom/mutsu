@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: match=12  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=18  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=12  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=12  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/Int.rakudoc:134
@@ -31,4 +31,13 @@ say @digits-in-base37.reverse                    # OUTPUT: «[4 32 4 15 36]␤»
 (120)
 (120)
 (4 32 4 15 36)
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Int.rakudoc:150
+--- program ---
+say 120.polymod(⅓);                            # ERROR
+--- raku stdout ---
+(120)
+--- mutsu stdout (exit 0) ---
+(0 360)
 

@@ -1,0 +1,21 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=14  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=11  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Capture.rakudoc:70
+--- program ---
+my $d;my $e; sub greet {...}
+say greet |$d;                # OUTPUT: «Mugen, 19␤»
+say greet |$e;                # OUTPUT: «Jin, 20␤»
+--- raku stderr (exit 1) ---
+Too many positionals passed; expected 0 arguments but got 1
+  in sub greet at /home/user/mutsu/tmp/ddh/prog-28556.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28556.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too many positionals passed; expected 0 arguments but got more
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28556.raku line 2
+

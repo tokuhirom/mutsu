@@ -1,8 +1,67 @@
 # doc-diff-harness report
-# stats: match=125  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=115  skipped-marker=19  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=0  match=126  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=43  silent-crash=2  silent-match=69  silent-noise=0  skipped-marker=19  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2623
+[1] mutsu-accepts  raku-doc/doc/Language/regexes.rakudoc:2014
+--- program ---
+#                      vvvvv
+my regex prefixed_int (Regex $prefix) {
+    $prefix     # First match the specified prefix
+    \d+           # Then digits
+}
+
+'inc123' ~~ / <prefixed_int: /i<alpha>+/ > /;      # Matches
+'inc456' ~~ / <prefixed_int: /d<alpha>+/ > /;      # Doesn't match
+'dec789' ~~ / <prefixed_int: 'dec'       > /;      # Dies (parameter type mismatch)
+--- raku stderr (exit 1) ---
+Type check failed in binding to parameter '$prefix'; expected Regex but got Str ("dec")
+  in regex prefixed_int at /home/user/mutsu/tmp/ddh/prog-15977.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15977.raku line 9
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] mutsu-error-on-silent-success  raku-doc/doc/Language/regexes.rakudoc:2029
+--- program ---
+my regex prefix_int ($prefix) {
+#   vvvvvvvvvvv
+    <{$prefix}>     # First match prefix (as a regex)
+    \d+             # Then match digits
+}
+
+'123'    ~~ / <prefix_int: /abc/ > /;      # Doesn't match
+'abc456' ~~ / <prefix_int: /abc/ > /;      # Matches
+'abc456' ~~ / <prefix_int: /def/ > /;      # Doesn't match
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Null regex not allowed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15977.raku line 7
+
+==============================================================================
+[3] mutsu-error-on-silent-success  raku-doc/doc/Language/regexes.rakudoc:3212
+--- program ---
+my regex numbers { \d* }
+
+'4247' ~~ /:ratchet <numbers>?  47/;  # OUTPUT: «Nil␤»
+'4247' ~~ /:ratchet <numbers>:? 47/;  # OUTPUT: «｢4247｣␤»
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Runtime error: Quantifier quantifies nothing
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/regexes.rakudoc:2623
 --- program ---
 grammar Demo {
     token ws {

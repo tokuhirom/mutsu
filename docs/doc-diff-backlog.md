@@ -58,36 +58,71 @@ means the corpus has more such examples, not that mutsu got worse.
 
 ## Corpus snapshot
 
-- **Date:** 2026-09-09 (full re-sweep) · debug `mutsu` at `a44bd28` (main,
-  through PR #7740) · `raku` v2026.07
-- **443 files scanned · 80 have `mism`/`crash` signal**
-- **match = 2409 · output-mismatch = 129 · mutsu-crash = 21 · oracle-nondet = 59**
-- High-signal total (mismatch + crash) = **150**.
+- **Date:** 2026-09-09b (full re-sweep, first run with error/silent parity) ·
+  debug `mutsu` at `a44bd28` · `raku` v2026.07
+- **443 files scanned · 148 have signal**
+- stdout parity: **match = 2416 · mismatch = 132 · crash = 22**
+- error parity: **same failure = 98 · different failure = 171 · mutsu-accepts = 70**
+- silent parity: **both quiet = 1009 · mutsu fails = 50 · mutsu chatters = 3**
+- dropped: oracle-nondet 60 · marker 837 · nondet heuristic 383 · no oracle 2537
 
-**The mismatch count is not comparable to the pre-#7590 sweeps, and the rise is
-not a regression.** Until 2026-09-07b a third bucket, `raku-drift-from-doc`,
-absorbed every divergence whose doc annotation raku itself no longer matched;
-#7590 retired it because it was only ever reachable *after* mutsu already
-differed from raku (67 of its 114 blocks were confirmed real mutsu bugs against
-5 the name fit). Those findings now land in `output-mismatch` where they belong.
-The honest comparison is against the *sum* of the old buckets:
+### The corpus is half again as large as it looked
 
-| sweep | match | mismatch | crash | drift | nondet dropped |
-|---|---:|---:|---:|---:|---:|
-| 2026-09-06 | 2376 | 74 | 34 | 119 | — |
-| 2026-09-07b | 2402 | 59 | 28 | 114 | — |
-| **2026-09-09** | **2409** | **129** | **21** | *(retired)* | **59** |
+The harness only ever compared blocks where **raku exits 0 with output**. On the
+2026-09-09 morning sweep that was 2559 of 7768 blocks; the other 3916 were
+counted as "no oracle", as if they were unrunnable fragments. Most were not:
+they were examples that **deliberately fail**, which is the whole point of the
+`Type/X*.rakudoc` corpus, or that succeed silently.
 
-So: `match` up again (2402 → 2409), crashes down (28 → 21), and the 59
-`oracle-nondet` blocks are the noise the twice-run oracle gate now drops
-instead of reporting — the noise floor, not findings. A rising `nondet` count
-means the corpus has more unreproducible examples, not that mutsu got worse.
+Comparing those too (see [qa-doc-diff-harness.md](qa-doc-diff-harness.md) for the
+three oracle modes) took the compared population from **2559 to 3971 blocks** and
+produced **294 findings that no previous sweep could see**, 70 of them
+`mutsu-accepts` — mutsu running to a clean exit a program raku refuses.
+
+| bucket | compared | findings |
+|---|---:|---:|
+| stdout parity (pre-existing) | 2570 | 154 |
+| **error parity** (new) | 339 | **241** |
+| **silent parity** (new) | 1062 | **53** |
+
+`mism` and `crash` keep their old meaning, so they stay comparable with earlier
+sweeps: 129 → 132 and 21 → 22, the small rise coming from `# ERROR`-marked blocks
+that the nondeterminism heuristic used to drop before the oracle ever ran.
+
+### Reading the two new buckets
+
+- **`mutsu-accepts` (70) is the highest-signal thing in this document.** raku
+  refuses the program; mutsu runs it and exits 0. That is a semantic divergence,
+  and it is invisible to any stdout comparison.
+- **`error-mismatch` (171) is mostly wording**, and largely one root cause:
+  [#7750](https://github.com/tokuhirom/mutsu/issues/7750), the compile-time
+  "will never work with declared signature" wrapper on runtime binding failures.
+  Do not file these one by one — fix the wrapper and re-sweep.
+- **`silent-crash` (50) is mixed.** 15 are the type synopsis line at the top of a
+  `Type/*.rakudoc` page (`role Baggy does QuantHash { }`), one root cause, now
+  [#7780](https://github.com/tokuhirom/mutsu/issues/7780); 5 are mutsu parse
+  errors on doc fragments raku happens to accept; the remaining 30 are ordinary
+  findings.
+
+### Comparability across sweeps
+
+| sweep | match | mismatch | crash | drift | error-parity | nondet dropped |
+|---|---:|---:|---:|---:|---:|---:|
+| 2026-09-06 | 2376 | 74 | 34 | 119 | — | — |
+| 2026-09-07b | 2402 | 59 | 28 | 114 | — | — |
+| 2026-09-09 | 2409 | 129 | 21 | *(retired)* | — | 59 |
+| **2026-09-09b** | **2416** | **132** | **22** | *(retired)* | **294** | **60** |
+
+Two bucket changes have moved these numbers for reasons that are not mutsu
+regressions, and both are one-time: #7590 retired `raku-drift-from-doc` (its
+findings moved into `mismatch`, which is why 59 → 129), and error/silent parity
+added a population that was never compared at all. Compare `match` and `crash`
+across the whole table; compare `mismatch` only from 2026-09-09 on.
 
 **Read a report, not this table, to pick work.** The survey at the bottom ranks
-files by `mism + crash`; the per-file minimal repros are committed under
+files by `mism + crash + err`; the per-file minimal repros are committed under
 [doc-diff-sweep/reports/](doc-diff-sweep/reports/) (only signal files are kept,
-captured output capped at 40 lines per section by the harness). Re-run the
-sweep into `tmp/` when you need a truncated block in full.
+captured output capped at 40 lines per section by the harness).
 
 **Always re-verify a finding directly before treating it as a real bug** — and
 always re-sweep on current `main`, since a report goes stale as soon as a fix
@@ -289,6 +324,25 @@ Each was reduced and re-run against `raku` v2026.07 before filing.
 | `Type/Sub:78` | a sub-signature on a **named** parameter is ignored — every sub-parameter gets the whole array | [#7758](https://github.com/tokuhirom/mutsu/issues/7758) |
 | `Language/objects:1067` | `.bless(value => …)` does not fill a `Str` subclass's payload (only `.new` does), so the instance stringifies as `S()` | [#7759](https://github.com/tokuhirom/mutsu/issues/7759) |
 
+#### Filed from the 2026-09-09b error/silent-parity sweep
+
+The first eleven findings from oracle modes no previous sweep had. Each was
+reduced and re-run against `raku` v2026.07 before filing.
+
+| file:line | one-line summary | issue |
+|---|---|---|
+| `Type/IO/Handle:139,478` | a method call on an **unhandled `Failure`** returns a value instead of rethrowing, so a failed `open` silently yields empty data | [#7770](https://github.com/tokuhirom/mutsu/issues/7770) |
+| `Type/Promise:81` | an exception thrown inside `start` is **swallowed** — the program exits 0 | [#7771](https://github.com/tokuhirom/mutsu/issues/7771) |
+| `Language/py-nutshell:582` | every instance answers a phantom `.name` method no class declared | [#7772](https://github.com/tokuhirom/mutsu/issues/7772) |
+| `Language/objects:48` + 7 `perl-nutshell` rows | a known method name on an **undefined** value returns `(Any)` instead of throwing | [#7773](https://github.com/tokuhirom/mutsu/issues/7773) |
+| `Language/traps:567`, `Language/list:604` | a typed-array parameter (`Int @a`) accepts an untyped `Array` | [#7774](https://github.com/tokuhirom/mutsu/issues/7774) |
+| `Language/subscripts:955,1138`, `Type/Positional:59`, `Type/Associative:19,98`, `Language/variables:73` | `my @a is Foo` accepts a non-container role, then ignores it | [#7775](https://github.com/tokuhirom/mutsu/issues/7775) |
+| `Type/X/IO/Chdir:14`, `Type/independent-routines:231,263,339` | `chdir` into a nonexistent directory succeeds when its parent exists | [#7776](https://github.com/tokuhirom/mutsu/issues/7776) |
+| `Type/Seq:208-235` | `.skip` silently ignores every argument after the first | [#7777](https://github.com/tokuhirom/mutsu/issues/7777) |
+| `Language/numerics:678,716` | native-type multi candidates are not distinguished: an `int` candidate takes an `Int`, two widths never look ambiguous | [#7778](https://github.com/tokuhirom/mutsu/issues/7778) |
+| `Type/Mu:211` | `.clone(:attr)` on a type object returns the type object instead of throwing | [#7779](https://github.com/tokuhirom/mutsu/issues/7779) |
+| 15 `Type/*:7` synopsis lines | the roles structuring the built-in hierarchy are undeclared: `QuantHash`, `Stringy`, `Systemic`, `Baggy`, `PositionalBindFailover`, `Blob[T]` | [#7780](https://github.com/tokuhirom/mutsu/issues/7780) |
+
 #### Triaged real, not yet filed (2026-09-09)
 
 Re-run and confirmed during this sweep's triage but not filed one-by-one, so
@@ -447,89 +501,162 @@ full or the tree has moved. Re-verify each block against `raku` before writing a
 ## Survey — files with divergences (high-signal first)
 
 `mism` = output-mismatch · `crash` = mutsu exited non-zero where raku succeeded ·
-`nondet` = blocks dropped because the **oracle** disagreed with itself across two
-runs (the noise floor, not findings). Regenerated from
+`err` = the error/silent-parity findings added on 2026-09-09b (`mutsu-accepts`,
+`error-mismatch`, `mutsu-hangs`, `mutsu-error-on-silent-success`,
+`mutsu-extra-output`) · `nondet` = blocks dropped because the **oracle** disagreed
+with itself across two runs (the noise floor, not findings).
+
+Ranked by `mism + crash + err`. `mism` and `crash` keep their pre-2026-09-09b
+meaning so their counts stay comparable with earlier sweeps. Regenerated from
 [doc-diff-sweep/summary.txt](doc-diff-sweep/summary.txt) on every sweep.
 
-| file (under raku-doc/doc/) | mism | crash | nondet |
-|---|---:|---:|---:|
-| Type/IO/CatHandle.rakudoc | 6 | 0 | 0 |
-| Language/variables.rakudoc | 6 | 0 | 0 |
-| Language/signatures.rakudoc | 5 | 0 | 1 |
-| Language/objects.rakudoc | 5 | 0 | 0 |
-| Type/Any.rakudoc | 4 | 1 | 4 |
-| Type/independent-routines.rakudoc | 4 | 0 | 0 |
-| Type/Junction.rakudoc | 4 | 0 | 0 |
-| Type/Iterator.rakudoc | 4 | 0 | 0 |
-| Type/IO/Spec/Win32.rakudoc | 4 | 0 | 0 |
-| Type/Cool.rakudoc | 4 | 0 | 0 |
-| Language/structures.rakudoc | 3 | 1 | 3 |
-| Language/experimental.rakudoc | 0 | 4 | 0 |
-| Language/traps.rakudoc | 3 | 0 | 1 |
-| Type/List.rakudoc | 3 | 0 | 0 |
-| Language/numerics.rakudoc | 3 | 0 | 0 |
-| Language/list.rakudoc | 3 | 0 | 0 |
-| Type/Code.rakudoc | 2 | 1 | 2 |
-| Type/Map.rakudoc | 2 | 0 | 3 |
-| Type/BagHash.rakudoc | 2 | 0 | 3 |
-| Type/Hash.rakudoc | 2 | 0 | 2 |
-| Language/typesystem.rakudoc | 2 | 0 | 2 |
-| Type/Metamodel/MethodContainer.rakudoc | 2 | 0 | 1 |
-| Type/Enumeration.rakudoc | 2 | 0 | 1 |
-| Type/Backtrace.rakudoc | 2 | 0 | 1 |
-| Language/subscripts.rakudoc | 2 | 0 | 1 |
-| Type/Compiler.rakudoc | 2 | 0 | 0 |
-| Type/CallFrame.rakudoc | 2 | 0 | 0 |
-| Type/Attribute.rakudoc | 2 | 0 | 0 |
-| Language/perl-var.rakudoc | 2 | 0 | 0 |
-| Language/perl-func.rakudoc | 2 | 0 | 0 |
-| Language/concurrency.rakudoc | 2 | 0 | 0 |
-| Language/control.rakudoc | 1 | 1 | 1 |
-| Language/grammars.rakudoc | 1 | 1 | 0 |
-| Type/Metamodel/Mixins.rakudoc | 0 | 2 | 0 |
-| Type/Baggy.rakudoc | 1 | 0 | 2 |
-| Type/IO/Spec/Unix.rakudoc | 1 | 0 | 1 |
-| Type/IO/Handle.rakudoc | 1 | 0 | 1 |
-| Type/Bag.rakudoc | 1 | 0 | 1 |
-| Language/regexes.rakudoc | 1 | 0 | 1 |
-| Language/py-nutshell.rakudoc | 1 | 0 | 1 |
-| Language/contexts.rakudoc | 1 | 0 | 1 |
-| Language/containers.rakudoc | 1 | 0 | 1 |
-| Type/X/Str/Numeric.rakudoc | 1 | 0 | 0 |
-| Type/X/Numeric/Real.rakudoc | 1 | 0 | 0 |
-| Type/X/Numeric/DivideByZero.rakudoc | 1 | 0 | 0 |
-| Type/X/Assignment/RO.rakudoc | 1 | 0 | 0 |
-| Type/Whatever.rakudoc | 1 | 0 | 0 |
-| Type/Thread.rakudoc | 1 | 0 | 0 |
-| Type/Str.rakudoc | 1 | 0 | 0 |
-| Type/Sequence.rakudoc | 1 | 0 | 0 |
-| Type/Seq.rakudoc | 1 | 0 | 0 |
-| Type/Routine.rakudoc | 1 | 0 | 0 |
-| Type/Promise.rakudoc | 1 | 0 | 0 |
-| Type/Positional.rakudoc | 1 | 0 | 0 |
-| Type/Nil.rakudoc | 1 | 0 | 0 |
-| Type/Metamodel/Primitives.rakudoc | 1 | 0 | 0 |
-| Type/Lock/ConditionVariable.rakudoc | 1 | 0 | 0 |
-| Type/Iterable.rakudoc | 1 | 0 | 0 |
-| Type/Int.rakudoc | 1 | 0 | 0 |
-| Type/IO/Path/Parts.rakudoc | 1 | 0 | 0 |
-| Type/IO/Path.rakudoc | 1 | 0 | 0 |
-| Type/ForeignCode.rakudoc | 1 | 0 | 0 |
-| Type/Failure.rakudoc | 1 | 0 | 0 |
-| Type/Exception.rakudoc | 1 | 0 | 0 |
-| Type/CompUnit/Repository/Installation.rakudoc | 1 | 0 | 0 |
-| Language/syntax.rakudoc | 1 | 0 | 0 |
-| Language/perl-nutshell.rakudoc | 1 | 0 | 0 |
-| Language/io.rakudoc | 1 | 0 | 0 |
-| Language/functions.rakudoc | 1 | 0 | 0 |
-| Language/classtut.rakudoc | 1 | 0 | 0 |
-| Type/Sub.rakudoc | 0 | 1 | 1 |
-| Type/Pair.rakudoc | 0 | 1 | 1 |
-| Type/X/TypeCheck/Splice.rakudoc | 0 | 1 | 0 |
-| Type/Proxy.rakudoc | 0 | 1 | 0 |
-| Type/PositionalBindFailover.rakudoc | 0 | 1 | 0 |
-| Type/Metamodel/ConcreteRoleHOW.rakudoc | 0 | 1 | 0 |
-| Type/Format.rakudoc | 0 | 1 | 0 |
-| Language/optut.rakudoc | 0 | 1 | 0 |
-| Language/math.rakudoc | 0 | 1 | 0 |
-| Language/haskell-to-p6.rakudoc | 0 | 1 | 0 |
+| file (under raku-doc/doc/) | mism | crash | err | nondet |
+|---|---:|---:|---:|---:|
+| Type/independent-routines.rakudoc | 4 | 0 | 17 | 1 |
+| Language/perl-nutshell.rakudoc | 1 | 0 | 18 | 0 |
+| Type/IO/Handle.rakudoc | 1 | 0 | 13 | 1 |
+| Type/IO/Path.rakudoc | 1 | 0 | 13 | 0 |
+| Language/signatures.rakudoc | 5 | 0 | 8 | 1 |
+| Language/traps.rakudoc | 3 | 0 | 10 | 1 |
+| Language/variables.rakudoc | 6 | 0 | 5 | 0 |
+| Type/Test.rakudoc | 0 | 0 | 11 | 3 |
+| Language/list.rakudoc | 3 | 0 | 6 | 0 |
+| Language/numerics.rakudoc | 3 | 0 | 5 | 0 |
+| Language/nativecall.rakudoc | 0 | 0 | 8 | 1 |
+| Type/Any.rakudoc | 5 | 1 | 1 | 4 |
+| Language/objects.rakudoc | 5 | 0 | 2 | 0 |
+| Language/structures.rakudoc | 2 | 1 | 4 | 4 |
+| Type/Seq.rakudoc | 1 | 0 | 6 | 0 |
+| Language/io.rakudoc | 1 | 0 | 6 | 0 |
+| Language/haskell-to-p6.rakudoc | 0 | 1 | 6 | 0 |
+| Language/rb-nutshell.rakudoc | 0 | 0 | 7 | 1 |
+| Language/create-cli.rakudoc | 0 | 0 | 7 | 0 |
+| Type/IO/CatHandle.rakudoc | 6 | 0 | 0 | 0 |
+| Type/List.rakudoc | 3 | 0 | 3 | 0 |
+| Language/control.rakudoc | 2 | 1 | 3 | 0 |
+| Language/subscripts.rakudoc | 1 | 0 | 5 | 2 |
+| Language/io-guide.rakudoc | 0 | 0 | 6 | 0 |
+| Type/Cool.rakudoc | 4 | 0 | 1 | 0 |
+| Language/grammars.rakudoc | 1 | 1 | 3 | 0 |
+| Language/experimental.rakudoc | 0 | 4 | 1 | 0 |
+| Language/faq.rakudoc | 0 | 1 | 4 | 0 |
+| Type/Junction.rakudoc | 4 | 0 | 0 | 0 |
+| Type/Iterator.rakudoc | 4 | 0 | 0 | 0 |
+| Type/IO/Spec/Win32.rakudoc | 4 | 0 | 0 | 0 |
+| Type/Code.rakudoc | 2 | 1 | 1 | 2 |
+| Language/perl-var.rakudoc | 2 | 0 | 2 | 0 |
+| Language/perl-func.rakudoc | 2 | 0 | 2 | 0 |
+| Language/regexes.rakudoc | 1 | 0 | 3 | 0 |
+| Type/atomicint.rakudoc | 0 | 0 | 4 | 0 |
+| Type/Map.rakudoc | 3 | 0 | 0 | 2 |
+| Language/typesystem.rakudoc | 2 | 0 | 1 | 2 |
+| Type/Enumeration.rakudoc | 2 | 0 | 1 | 1 |
+| Type/Compiler.rakudoc | 2 | 0 | 1 | 0 |
+| Language/concurrency.rakudoc | 2 | 0 | 1 | 0 |
+| Language/containers.rakudoc | 1 | 0 | 2 | 1 |
+| Type/Str.rakudoc | 1 | 0 | 2 | 0 |
+| Type/CompUnit/Repository/Installation.rakudoc | 1 | 0 | 2 | 0 |
+| Language/syntax.rakudoc | 1 | 0 | 2 | 0 |
+| Language/functions.rakudoc | 1 | 0 | 2 | 0 |
+| Language/using-modules/code.rakudoc | 0 | 0 | 3 | 2 |
+| Type/Match.rakudoc | 0 | 0 | 3 | 0 |
+| Language/grammar_tutorial.rakudoc | 0 | 0 | 3 | 0 |
+| Type/Hash.rakudoc | 2 | 0 | 0 | 2 |
+| Type/Metamodel/MethodContainer.rakudoc | 2 | 0 | 0 | 1 |
+| Type/Backtrace.rakudoc | 2 | 0 | 0 | 1 |
+| Type/Int.rakudoc | 2 | 0 | 0 | 0 |
+| Type/CallFrame.rakudoc | 2 | 0 | 0 | 0 |
+| Type/Attribute.rakudoc | 2 | 0 | 0 | 0 |
+| Type/Baggy.rakudoc | 1 | 0 | 1 | 2 |
+| Language/py-nutshell.rakudoc | 1 | 0 | 1 | 1 |
+| Language/contexts.rakudoc | 1 | 0 | 1 | 1 |
+| Type/Whatever.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Thread.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Sequence.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Routine.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Promise.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Proc/Async.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Positional.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Metamodel/Primitives.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Bag.rakudoc | 1 | 0 | 1 | 0 |
+| Language/classtut.rakudoc | 1 | 0 | 1 | 0 |
+| Type/Metamodel/Mixins.rakudoc | 0 | 2 | 0 | 0 |
+| Language/hashmap.rakudoc | 0 | 0 | 2 | 1 |
+| Type/Variable.rakudoc | 0 | 0 | 2 | 0 |
+| Type/Range.rakudoc | 0 | 0 | 2 | 0 |
+| Type/Proc.rakudoc | 0 | 0 | 2 | 0 |
+| Type/Grammar.rakudoc | 0 | 0 | 2 | 0 |
+| Type/ComplexStr.rakudoc | 0 | 0 | 2 | 0 |
+| Type/Associative.rakudoc | 0 | 0 | 2 | 0 |
+| Language/testing.rakudoc | 0 | 0 | 2 | 0 |
+| Language/quoting.rakudoc | 0 | 0 | 2 | 0 |
+| Language/perl-op.rakudoc | 0 | 0 | 2 | 0 |
+| Language/packages.rakudoc | 0 | 0 | 2 | 0 |
+| Type/BagHash.rakudoc | 1 | 0 | 0 | 3 |
+| Type/IO/Spec/Unix.rakudoc | 1 | 0 | 0 | 1 |
+| Type/X/Str/Numeric.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Proc/Async/TapBeforeSpawn.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Numeric/Real.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Numeric/DivideByZero.rakudoc | 1 | 0 | 0 | 0 |
+| Type/X/Assignment/RO.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Nil.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Lock/ConditionVariable.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Iterable.rakudoc | 1 | 0 | 0 | 0 |
+| Type/IO/Path/Parts.rakudoc | 1 | 0 | 0 | 0 |
+| Type/ForeignCode.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Failure.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Exception.rakudoc | 1 | 0 | 0 | 0 |
+| Type/Sub.rakudoc | 0 | 1 | 0 | 1 |
+| Type/X/TypeCheck/Splice.rakudoc | 0 | 1 | 0 | 0 |
+| Type/Proxy.rakudoc | 0 | 1 | 0 | 0 |
+| Type/PositionalBindFailover.rakudoc | 0 | 1 | 0 | 0 |
+| Type/Pair.rakudoc | 0 | 1 | 0 | 0 |
+| Type/Metamodel/ConcreteRoleHOW.rakudoc | 0 | 1 | 0 | 0 |
+| Type/Format.rakudoc | 0 | 1 | 0 | 0 |
+| Language/optut.rakudoc | 0 | 1 | 0 | 0 |
+| Language/math.rakudoc | 0 | 1 | 0 | 0 |
+| Type/SetHash.rakudoc | 0 | 0 | 1 | 3 |
+| Type/Setty.rakudoc | 0 | 0 | 1 | 2 |
+| Type/Mu.rakudoc | 0 | 0 | 1 | 2 |
+| Type/ValueObjAt.rakudoc | 0 | 0 | 1 | 1 |
+| Type/Set.rakudoc | 0 | 0 | 1 | 1 |
+| Language/nativetypes.rakudoc | 0 | 0 | 1 | 1 |
+| Type/utf8.rakudoc | 0 | 0 | 1 | 0 |
+| Type/X/Scheduler/CueInNaNSeconds.rakudoc | 0 | 0 | 1 | 0 |
+| Type/X/NYI.rakudoc | 0 | 0 | 1 | 0 |
+| Type/X/IO/Chdir.rakudoc | 0 | 0 | 1 | 0 |
+| Type/VM.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Telemetry.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Supply.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Rational.rakudoc | 0 | 0 | 1 | 0 |
+| Type/RatStr.rakudoc | 0 | 0 | 1 | 0 |
+| Type/RakuAST/Doc/Markup.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Raku.rakudoc | 0 | 0 | 1 | 0 |
+| Type/NumStr.rakudoc | 0 | 0 | 1 | 0 |
+| Type/NFKD.rakudoc | 0 | 0 | 1 | 0 |
+| Type/NFKC.rakudoc | 0 | 0 | 1 | 0 |
+| Type/NFD.rakudoc | 0 | 0 | 1 | 0 |
+| Type/NFC.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Mixy.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Metamodel/PackageHOW.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Metamodel/EnumHOW.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Metamodel/AttributeContainer.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Kernel.rakudoc | 0 | 0 | 1 | 0 |
+| Type/IntStr.rakudoc | 0 | 0 | 1 | 0 |
+| Type/IO/Socket/INET.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Distro.rakudoc | 0 | 0 | 1 | 0 |
+| Type/CompUnit/Repository/FileSystem.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Capture.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Cancellation.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Buf.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Bool.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Blob.rakudoc | 0 | 0 | 1 | 0 |
+| Type/Array.rakudoc | 0 | 0 | 1 | 0 |
+| Language/terms.rakudoc | 0 | 0 | 1 | 0 |
+| Language/phasers.rakudoc | 0 | 0 | 1 | 0 |
+| Language/operators.rakudoc | 0 | 0 | 1 | 0 |
+| Language/glossary.rakudoc | 0 | 0 | 1 | 0 |
+| Language/exceptions.rakudoc | 0 | 0 | 1 | 0 |
+| Language/distributions/configuration-structure.rakudoc | 0 | 0 | 1 | 0 |
+| Language/compilation.rakudoc | 0 | 0 | 1 | 0 |
+| Language/101-basics.rakudoc | 0 | 0 | 1 | 0 |

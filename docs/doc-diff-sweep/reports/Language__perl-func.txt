@@ -1,8 +1,38 @@
 # doc-diff-harness report
-# stats: match=7  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=17  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=3  error-mismatch=1  match=7  matches-doc=0  mismatch=2  mutsu-accepts=1  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=7  silent-noise=0  skipped-marker=1  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2281
+[1] mutsu-accepts  raku-doc/doc/Language/perl-func.rakudoc:507
+--- program ---
+no strict;
+%hash{$key}:exists;
+@array[$i]:exists;
+--- raku stderr (exit 1) ---
+Use of uninitialized value $key of type Any in string context.
+Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 2
+Unable to call postcircumfix @array[ (Any) ] with a type object
+Indexing requires a defined object
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] mutsu-hangs  raku-doc/doc/Language/perl-func.rakudoc:778
+--- program ---
+FOO: goto FOO; # Label.goto() not yet implemented. Sorry.
+--- raku stderr (exit 1) ---
+Label.goto() not yet implemented. Sorry.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11854.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 124) ---
+(none)
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2281
 --- program ---
 sub prettylist(*@origlist) {
     @origlist but role {
@@ -17,7 +47,7 @@ print join(">", prettylist(3, 2, 1)); # OUTPUT: «3>2>1»
 1<2<33<2<1
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2310
+[4] output-mismatch  raku-doc/doc/Language/perl-func.rakudoc:2310
 --- program ---
 multi increment($b is rw) {
     ($b + 1) does role { method sink { $b++ } }

@@ -1,0 +1,333 @@
+# doc-diff-harness report
+# stats: error-match=5  error-mismatch=9  match=21  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=38  silent-crash=0  silent-match=0  silent-noise=1  skipped-marker=2  skipped-nondet=2  skipped-oracle-nondet=3
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Test.rakudoc:172
+--- program ---
+use Test;
+is "foo\tbar", "foo\tbaz";   # expected: 'foo     baz'␤#      got: 'foo   bar'
+is "foo\tbar", "foo    bar"; # expected: "foo    bar"␤#      got: "foo\tbar"
+--- raku stderr (exit 2) ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 2
+# expected: 'foo	baz'
+#      got: 'foo	bar'
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+# expected: "foo    bar"
+#      got: "foo\tbar"
+--- raku stdout ---
+not ok 1 - 
+not ok 2 -
+--- mutsu stdout (exit 1) ---
+not ok 1 - 
+not ok 2 -
+--- mutsu stderr ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 2
+# expected: 'foo	baz'
+#      got: 'foo	bar'
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+# expected: 'foo    bar'
+#      got: 'foo	bar'
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/Test.rakudoc:228
+--- program ---
+use Test;
+my Numeric ($value, $expected, $abs-tol, $rel-tol) = ...
+
+is-approx $value, $expected;
+is-approx $value, $expected, 'test description';
+
+is-approx $value, $expected, $abs-tol;
+is-approx $value, $expected, $abs-tol, 'test description';
+
+is-approx $value, $expected, :$rel-tol;
+is-approx $value, $expected, :$rel-tol, 'test description';
+
+is-approx $value, $expected, :$abs-tol;
+is-approx $value, $expected, :$abs-tol, 'test description';
+
+is-approx $value, $expected, :$abs-tol, :$rel-tol;
+is-approx $value, $expected, :$abs-tol, :$rel-tol, 'test description';
+--- raku stderr (exit 1) ---
+No such method 'abs' for invocant of type 'Numeric'
+  in sub is-approx at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/AF2A6A64B72CC61FD1F649DFF0F8B3B790E2097B (Test) line 304
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19474.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+ok 1 -
+--- mutsu stderr ---
+True
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Type/Test.rakudoc:252
+--- program ---
+use Test;
+is-approx 3, 4, 2; # success
+is-approx 3, 6, 2; # fail
+
+is-approx 300, 302, 2; # success
+is-approx 300, 400, 2; # fail
+is-approx 300, 600, 2; # fail
+--- raku stderr (exit 3) ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+#     expected approximately: 6
+#                        got: 3
+# maximum absolute tolerance: 2
+# actual absolute difference: 3
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 6
+#     expected approximately: 400
+#                        got: 300
+# maximum absolute tolerance: 2
+# actual absolute difference: 100
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+#     expected approximately: 600
+#                        got: 300
+# maximum absolute tolerance: 2
+# actual absolute difference: 300
+--- raku stdout ---
+ok 1 - 
+not ok 2 - 
+ok 3 - 
+not ok 4 - 
+not ok 5 -
+--- mutsu stdout (exit 1) ---
+ok 1 - 
+not ok 2 - 
+ok 3 - 
+not ok 4 - 
+not ok 5 -
+--- mutsu stderr ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 6
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+# You failed 3 tests of 5
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Type/Test.rakudoc:272
+--- program ---
+use Test;
+is-approx 10, 10.5, :rel-tol<0.1>; # success
+is-approx 10, 11.5, :rel-tol<0.1>; # fail
+
+is-approx 100, 105, :rel-tol<0.1>; # success
+is-approx 100, 115, :rel-tol<0.1>; # fail
+--- raku stderr (exit 2) ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+#     expected approximately: 11.5
+#                        got: 10
+# maximum relative tolerance: 0.1
+# actual relative difference: 0.130435
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 6
+#     expected approximately: 115
+#                        got: 100
+# maximum relative tolerance: 0.1
+# actual relative difference: 0.130435
+--- raku stdout ---
+ok 1 - 
+not ok 2 - 
+ok 3 - 
+not ok 4 -
+--- mutsu stdout (exit 1) ---
+ok 1 - 
+not ok 2 - 
+ok 3 - 
+not ok 4 -
+--- mutsu stderr ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 6
+# You failed 2 tests of 4
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Type/Test.rakudoc:602
+--- program ---
+use Test;
+sub fails-not-throws { +"a" }
+# test passes, even though it's just a Failure and would not always throw:
+throws-like { fails-not-throws }, Exception;
+
+# test detects nothing thrown, because our Failure wasn't sunk or made fatal:
+throws-like { no fatal; my $ = fails-not-throws; Nil }, Exception;
+--- raku stderr (exit 1) ---
+    # Failed test 'code dies'
+    # at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+    # You failed 1 test of 2
+# Failed test 'did we throws-like Exception?'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+--- raku stdout ---
+# Subtest: did we throws-like Exception?
+    1..2
+    ok 1 - code dies
+    ok 2 - right exception type (Exception)
+ok 1 - did we throws-like Exception?
+# Subtest: did we throws-like Exception?
+    1..2
+    not ok 1 - code dies
+    ok 2 - # SKIP Code did not die, can not check exception
+not ok 2 - did we throws-like Exception?
+--- mutsu stdout (exit 1) ---
+# Subtest: did we throws-like Exception?
+    1..2
+    ok 1 - code dies
+    ok 2 - right exception type (Exception)
+ok 1 - did we throws-like Exception?
+# Subtest: did we throws-like Exception?
+    1..2
+    not ok 1 - code dies
+    not ok 2 - right exception type (Exception)
+not ok 2 - did we throws-like Exception?
+--- mutsu stderr ---
+    # Failed test 'code dies'
+    # at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+    # Failed test 'right exception type (Exception)'
+    # at /home/user/mutsu/tmp/ddh/prog-19474.raku line 7
+    # You failed 2 tests of 2
+# Failed test 'did we throws-like Exception?'
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Type/Test.rakudoc:615
+--- program ---
+use Test;
+throws-like { EVAL q[ fac("foo") ] }, X::TypeCheck::Argument;
+--- raku stderr (exit 1) ---
+    # Failed test 'right exception type (X::TypeCheck::Argument)'
+    # at NQP::src/HLL/Compiler.nqp line 534
+    # Expected: X::TypeCheck::Argument
+    # Got:      X::Undeclared::Symbols
+    # Exception message: Undeclared routine:
+    #     fac used at line 1. Did you mean 'fc'?
+    # 
+    # You failed 1 test of 2
+# Failed test 'did we throws-like X::TypeCheck::Argument?'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 2
+--- raku stdout ---
+# Subtest: did we throws-like X::TypeCheck::Argument?
+    1..2
+    ok 1 - code dies
+    not ok 2 - right exception type (X::TypeCheck::Argument)
+not ok 1 - did we throws-like X::TypeCheck::Argument?
+--- mutsu stdout (exit 1) ---
+# Subtest: did we throws-like X::TypeCheck::Argument?
+    1..2
+    ok 1 - code dies
+    not ok 2 - right exception type (X::TypeCheck::Argument)
+not ok 1 - did we throws-like X::TypeCheck::Argument?
+--- mutsu stderr ---
+    # Failed test 'right exception type (X::TypeCheck::Argument)'
+    # at /home/user/mutsu/tmp/ddh/prog-19474.raku line 1
+    # You failed 1 test of 2
+# Failed test 'did we throws-like X::TypeCheck::Argument?'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 1
+# You failed 1 test of 1
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Type/Test.rakudoc:666
+--- program ---
+use Test;
+subtest 'A bunch of tests', {
+    plan 42;
+    ...
+    ...
+}
+
+subtest {
+    plan 72;
+    ...
+    ...
+} => 'Another bunch of tests';
+--- raku stderr (exit 255) ---
+Stub code executed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19474.raku line 4
+--- raku stdout ---
+# Subtest: A bunch of tests
+    1..42
+    # You planned 42 tests, but ran 0
+--- mutsu stdout (exit 1) ---
+# Subtest: A bunch of tests
+    1..42
+    # You planned 42 tests, but ran 0
+not ok 1 - A bunch of tests
+# Subtest: 
+    1..0
+not ok 2 -
+--- mutsu stderr ---
+# Failed test 'A bunch of tests'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 1
+    # subtest died: Callable expected
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 1
+# You failed 2 tests of 2
+
+==============================================================================
+[8] mutsu-accepts  raku-doc/doc/Type/Test.rakudoc:725
+--- program ---
+use Test;
+sub num-forward-slashes($arg) { ... } ;
+
+if $*KERNEL ~~ 'linux' {
+    is num-forward-slashes("/a/b"),             2;
+    is num-forward-slashes("/a//b".IO.cleanup), 2;
+}
+else {
+    skip "Can't use forward slashes on Windows", 2;
+}
+--- raku stderr (exit 2) ---
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 5
+# expected: '2'
+#      got: (Failure)
+# Failed test at /home/user/mutsu/tmp/ddh/prog-19474.raku line 6
+# expected: '2'
+#      got: (Failure)
+--- raku stdout ---
+not ok 1 - 
+not ok 2 -
+--- mutsu stdout (exit 0) ---
+ok 1 - # SKIP Can't use forward slashes on Windows
+ok 2 - # SKIP Can't use forward slashes on Windows
+
+==============================================================================
+[9] error-mismatch  raku-doc/doc/Type/Test.rakudoc:777
+--- program ---
+use Test;
+my $has-db-connection;
+...
+$has-db-connection  or bail-out 'Must have database connection for testing';
+--- raku stderr (exit 1) ---
+Died with X::StubCode
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 255) ---
+Bail out! Must have database connection for testing
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Type/Test.rakudoc:798
+--- program ---
+use Test;
+pass "Actually, this test has passed";
+flunk "But this one hasn't passed";
+--- raku stderr (exit 1) ---
+# Failed test 'But this one hasn't passed'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+--- raku stdout ---
+ok 1 - Actually, this test has passed
+not ok 2 - But this one hasn't passed
+--- mutsu stdout (exit 1) ---
+ok 1 - Actually, this test has passed
+not ok 2 - But this one hasn't passed
+--- mutsu stderr ---
+# Failed test 'But this one hasn't passed'
+# at /home/user/mutsu/tmp/ddh/prog-19474.raku line 3
+# You failed 1 test of 2
+
+==============================================================================
+[11] mutsu-extra-output  raku-doc/doc/Type/Test.rakudoc:822
+--- program ---
+use Test;
+diag "Yay!  The tests got to here!";
+--- raku stderr (exit 0) ---
+# Yay!  The tests got to here!
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+# Yay!  The tests got to here!
+

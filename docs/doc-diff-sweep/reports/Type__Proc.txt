@@ -1,0 +1,36 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=4  matches-doc=0  mismatch=0  mutsu-accepts=2  mutsu-crash=0  no-oracle=8  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-accepts  raku-doc/doc/Type/Proc.rakudoc:50
+--- program ---
+shell 'exit 1'
+# OUTPUT: «(exit code 1) The spawned command 'exit 1' exited unsuccessfully (exit code: 1)␤»
+--- raku stderr (exit 1) ---
+The spawned command 'exit 1' exited unsuccessfully (exit code: 1, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14855.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Type/Proc.rakudoc:193
+--- program ---
+shell 'ls /qqq';
+# OUTPUT:
+# (exit code 1) ls: cannot access '/qqq': No such file or directory
+# The spawned command 'ls /qqq' exited unsuccessfully (exit code: 2)
+#   in block <unit> at /tmp/3169qXElwq line 1
+#
+--- raku stderr (exit 1) ---
+ls: cannot access '/qqq': No such file or directory
+The spawned command 'ls /qqq' exited unsuccessfully (exit code: 2, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14855.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+--- mutsu stderr ---
+ls: cannot access '/qqq': No such file or directory
+

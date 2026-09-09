@@ -1,0 +1,48 @@
+# doc-diff-harness report
+# stats: error-match=1  error-mismatch=0  match=1  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=19  silent-crash=1  silent-match=13  silent-noise=1  skipped-marker=13  skipped-nondet=1  skipped-oracle-nondet=2
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/using-modules/code.rakudoc:408
+--- program ---
+# lib/MakeQuestionable.rakumod
+sub EXPORT(::Questionable) {
+    my multi postfix:<?>(Questionable $_) { .so };
+    Map.new: '&postfix:<?>' => &postfix:<?>,
+}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Invalid typename 'Questionable' in parameter declaration.
+
+==============================================================================
+[2] mutsu-extra-output  raku-doc/doc/Language/using-modules/code.rakudoc:123
+--- program ---
+# *** WRONG: ***
+try require Foo;
+if ::('Foo') ~~ Failure { say "Failed to load Foo!"; }
+# *** WRONG: ***
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+Failed to load Foo!
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Language/using-modules/code.rakudoc:452
+--- program ---
+say URI::Escape::EXPORT::DEFAULT::.keys;
+# OUTPUT: «(&uri-escape &uri-unescape &uri_escape &uri_unescape)␤»
+my &escape-uri = URI::Escape::EXPORT::DEFAULT::<&uri_escape>;
+--- raku stderr (exit 1) ---
+Could not find symbol '&DEFAULT' in 'GLOBAL::URI::Escape::EXPORT'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22812.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+()
+

@@ -1,8 +1,22 @@
 # doc-diff-harness report
-# stats: match=3  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=15  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=3  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=13  silent-crash=1  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Thread.rakudoc:134
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Thread.rakudoc:90
+--- program ---
+Thread.yield;
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'yield' for invocant of type 'Thread'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19514.raku line 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Thread.rakudoc:134
 --- program ---
 my $t = Thread.new(code => { for 1..5 -> $v { say $v }}, name => 'calc thread');
 say $t.Str;                           # OUTPUT: «Thread<3>(calc thread)␤»

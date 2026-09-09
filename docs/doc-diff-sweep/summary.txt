@@ -1,83 +1,151 @@
-   6  mism=6   crash=0   nondet=0    raku-doc/doc/Type/IO/CatHandle.rakudoc
-   6  mism=6   crash=0   nondet=0    raku-doc/doc/Language/variables.rakudoc
-   5  mism=5   crash=0   nondet=1    raku-doc/doc/Language/signatures.rakudoc
-   5  mism=5   crash=0   nondet=0    raku-doc/doc/Language/objects.rakudoc
-   5  mism=4   crash=1   nondet=4    raku-doc/doc/Type/Any.rakudoc
-   4  mism=4   crash=0   nondet=0    raku-doc/doc/Type/independent-routines.rakudoc
-   4  mism=4   crash=0   nondet=0    raku-doc/doc/Type/Junction.rakudoc
-   4  mism=4   crash=0   nondet=0    raku-doc/doc/Type/Iterator.rakudoc
-   4  mism=4   crash=0   nondet=0    raku-doc/doc/Type/IO/Spec/Win32.rakudoc
-   4  mism=4   crash=0   nondet=0    raku-doc/doc/Type/Cool.rakudoc
-   4  mism=3   crash=1   nondet=3    raku-doc/doc/Language/structures.rakudoc
-   4  mism=0   crash=4   nondet=0    raku-doc/doc/Language/experimental.rakudoc
-   3  mism=3   crash=0   nondet=1    raku-doc/doc/Language/traps.rakudoc
-   3  mism=3   crash=0   nondet=0    raku-doc/doc/Type/List.rakudoc
-   3  mism=3   crash=0   nondet=0    raku-doc/doc/Language/numerics.rakudoc
-   3  mism=3   crash=0   nondet=0    raku-doc/doc/Language/list.rakudoc
-   3  mism=2   crash=1   nondet=2    raku-doc/doc/Type/Code.rakudoc
-   2  mism=2   crash=0   nondet=3    raku-doc/doc/Type/Map.rakudoc
-   2  mism=2   crash=0   nondet=3    raku-doc/doc/Type/BagHash.rakudoc
-   2  mism=2   crash=0   nondet=2    raku-doc/doc/Type/Hash.rakudoc
-   2  mism=2   crash=0   nondet=2    raku-doc/doc/Language/typesystem.rakudoc
-   2  mism=2   crash=0   nondet=1    raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc
-   2  mism=2   crash=0   nondet=1    raku-doc/doc/Type/Enumeration.rakudoc
-   2  mism=2   crash=0   nondet=1    raku-doc/doc/Type/Backtrace.rakudoc
-   2  mism=2   crash=0   nondet=1    raku-doc/doc/Language/subscripts.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Type/Compiler.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Type/CallFrame.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Type/Attribute.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Language/perl-var.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Language/perl-func.rakudoc
-   2  mism=2   crash=0   nondet=0    raku-doc/doc/Language/concurrency.rakudoc
-   2  mism=1   crash=1   nondet=1    raku-doc/doc/Language/control.rakudoc
-   2  mism=1   crash=1   nondet=0    raku-doc/doc/Language/grammars.rakudoc
-   2  mism=0   crash=2   nondet=0    raku-doc/doc/Type/Metamodel/Mixins.rakudoc
-   1  mism=1   crash=0   nondet=2    raku-doc/doc/Type/Baggy.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Type/IO/Spec/Unix.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Type/IO/Handle.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Type/Bag.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Language/regexes.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Language/py-nutshell.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Language/contexts.rakudoc
-   1  mism=1   crash=0   nondet=1    raku-doc/doc/Language/containers.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/X/Str/Numeric.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/X/Numeric/Real.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/X/Numeric/DivideByZero.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/X/Assignment/RO.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Whatever.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Thread.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Str.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Sequence.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Seq.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Routine.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Promise.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Positional.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Nil.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Metamodel/Primitives.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Lock/ConditionVariable.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Iterable.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Int.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/IO/Path/Parts.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/IO/Path.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/ForeignCode.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Failure.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/Exception.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Language/syntax.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Language/perl-nutshell.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Language/io.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Language/functions.rakudoc
-   1  mism=1   crash=0   nondet=0    raku-doc/doc/Language/classtut.rakudoc
-   1  mism=0   crash=1   nondet=1    raku-doc/doc/Type/Sub.rakudoc
-   1  mism=0   crash=1   nondet=1    raku-doc/doc/Type/Pair.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Type/X/TypeCheck/Splice.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Type/Proxy.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Type/PositionalBindFailover.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Type/Metamodel/ConcreteRoleHOW.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Type/Format.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Language/optut.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Language/math.rakudoc
-   1  mism=0   crash=1   nondet=0    raku-doc/doc/Language/haskell-to-p6.rakudoc
-match=2409  mismatch=129  crash=21  oracle-nondet=59
+  21  mism=4   crash=0   err=17  nondet=1    raku-doc/doc/Type/independent-routines.rakudoc
+  19  mism=1   crash=0   err=18  nondet=0    raku-doc/doc/Language/perl-nutshell.rakudoc
+  14  mism=1   crash=0   err=13  nondet=1    raku-doc/doc/Type/IO/Handle.rakudoc
+  14  mism=1   crash=0   err=13  nondet=0    raku-doc/doc/Type/IO/Path.rakudoc
+  13  mism=5   crash=0   err=8   nondet=1    raku-doc/doc/Language/signatures.rakudoc
+  13  mism=3   crash=0   err=10  nondet=1    raku-doc/doc/Language/traps.rakudoc
+  11  mism=6   crash=0   err=5   nondet=0    raku-doc/doc/Language/variables.rakudoc
+  11  mism=0   crash=0   err=11  nondet=3    raku-doc/doc/Type/Test.rakudoc
+   9  mism=3   crash=0   err=6   nondet=0    raku-doc/doc/Language/list.rakudoc
+   8  mism=3   crash=0   err=5   nondet=0    raku-doc/doc/Language/numerics.rakudoc
+   8  mism=0   crash=0   err=8   nondet=1    raku-doc/doc/Language/nativecall.rakudoc
+   7  mism=5   crash=1   err=1   nondet=4    raku-doc/doc/Type/Any.rakudoc
+   7  mism=5   crash=0   err=2   nondet=0    raku-doc/doc/Language/objects.rakudoc
+   7  mism=2   crash=1   err=4   nondet=4    raku-doc/doc/Language/structures.rakudoc
+   7  mism=1   crash=0   err=6   nondet=0    raku-doc/doc/Type/Seq.rakudoc
+   7  mism=1   crash=0   err=6   nondet=0    raku-doc/doc/Language/io.rakudoc
+   7  mism=0   crash=1   err=6   nondet=0    raku-doc/doc/Language/haskell-to-p6.rakudoc
+   7  mism=0   crash=0   err=7   nondet=1    raku-doc/doc/Language/rb-nutshell.rakudoc
+   7  mism=0   crash=0   err=7   nondet=0    raku-doc/doc/Language/create-cli.rakudoc
+   6  mism=6   crash=0   err=0   nondet=0    raku-doc/doc/Type/IO/CatHandle.rakudoc
+   6  mism=3   crash=0   err=3   nondet=0    raku-doc/doc/Type/List.rakudoc
+   6  mism=2   crash=1   err=3   nondet=0    raku-doc/doc/Language/control.rakudoc
+   6  mism=1   crash=0   err=5   nondet=2    raku-doc/doc/Language/subscripts.rakudoc
+   6  mism=0   crash=0   err=6   nondet=0    raku-doc/doc/Language/io-guide.rakudoc
+   5  mism=4   crash=0   err=1   nondet=0    raku-doc/doc/Type/Cool.rakudoc
+   5  mism=1   crash=1   err=3   nondet=0    raku-doc/doc/Language/grammars.rakudoc
+   5  mism=0   crash=4   err=1   nondet=0    raku-doc/doc/Language/experimental.rakudoc
+   5  mism=0   crash=1   err=4   nondet=0    raku-doc/doc/Language/faq.rakudoc
+   4  mism=4   crash=0   err=0   nondet=0    raku-doc/doc/Type/Junction.rakudoc
+   4  mism=4   crash=0   err=0   nondet=0    raku-doc/doc/Type/Iterator.rakudoc
+   4  mism=4   crash=0   err=0   nondet=0    raku-doc/doc/Type/IO/Spec/Win32.rakudoc
+   4  mism=2   crash=1   err=1   nondet=2    raku-doc/doc/Type/Code.rakudoc
+   4  mism=2   crash=0   err=2   nondet=0    raku-doc/doc/Language/perl-var.rakudoc
+   4  mism=2   crash=0   err=2   nondet=0    raku-doc/doc/Language/perl-func.rakudoc
+   4  mism=1   crash=0   err=3   nondet=0    raku-doc/doc/Language/regexes.rakudoc
+   4  mism=0   crash=0   err=4   nondet=0    raku-doc/doc/Type/atomicint.rakudoc
+   3  mism=3   crash=0   err=0   nondet=2    raku-doc/doc/Type/Map.rakudoc
+   3  mism=2   crash=0   err=1   nondet=2    raku-doc/doc/Language/typesystem.rakudoc
+   3  mism=2   crash=0   err=1   nondet=1    raku-doc/doc/Type/Enumeration.rakudoc
+   3  mism=2   crash=0   err=1   nondet=0    raku-doc/doc/Type/Compiler.rakudoc
+   3  mism=2   crash=0   err=1   nondet=0    raku-doc/doc/Language/concurrency.rakudoc
+   3  mism=1   crash=0   err=2   nondet=1    raku-doc/doc/Language/containers.rakudoc
+   3  mism=1   crash=0   err=2   nondet=0    raku-doc/doc/Type/Str.rakudoc
+   3  mism=1   crash=0   err=2   nondet=0    raku-doc/doc/Type/CompUnit/Repository/Installation.rakudoc
+   3  mism=1   crash=0   err=2   nondet=0    raku-doc/doc/Language/syntax.rakudoc
+   3  mism=1   crash=0   err=2   nondet=0    raku-doc/doc/Language/functions.rakudoc
+   3  mism=0   crash=0   err=3   nondet=2    raku-doc/doc/Language/using-modules/code.rakudoc
+   3  mism=0   crash=0   err=3   nondet=0    raku-doc/doc/Type/Match.rakudoc
+   3  mism=0   crash=0   err=3   nondet=0    raku-doc/doc/Language/grammar_tutorial.rakudoc
+   2  mism=2   crash=0   err=0   nondet=2    raku-doc/doc/Type/Hash.rakudoc
+   2  mism=2   crash=0   err=0   nondet=1    raku-doc/doc/Type/Metamodel/MethodContainer.rakudoc
+   2  mism=2   crash=0   err=0   nondet=1    raku-doc/doc/Type/Backtrace.rakudoc
+   2  mism=2   crash=0   err=0   nondet=0    raku-doc/doc/Type/Int.rakudoc
+   2  mism=2   crash=0   err=0   nondet=0    raku-doc/doc/Type/CallFrame.rakudoc
+   2  mism=2   crash=0   err=0   nondet=0    raku-doc/doc/Type/Attribute.rakudoc
+   2  mism=1   crash=0   err=1   nondet=2    raku-doc/doc/Type/Baggy.rakudoc
+   2  mism=1   crash=0   err=1   nondet=1    raku-doc/doc/Language/py-nutshell.rakudoc
+   2  mism=1   crash=0   err=1   nondet=1    raku-doc/doc/Language/contexts.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Whatever.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Thread.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Sequence.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Routine.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Promise.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Proc/Async.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Positional.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Metamodel/Primitives.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Type/Bag.rakudoc
+   2  mism=1   crash=0   err=1   nondet=0    raku-doc/doc/Language/classtut.rakudoc
+   2  mism=0   crash=2   err=0   nondet=0    raku-doc/doc/Type/Metamodel/Mixins.rakudoc
+   2  mism=0   crash=0   err=2   nondet=1    raku-doc/doc/Language/hashmap.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/Variable.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/Range.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/Proc.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/Grammar.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/ComplexStr.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Type/Associative.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Language/testing.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Language/quoting.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Language/perl-op.rakudoc
+   2  mism=0   crash=0   err=2   nondet=0    raku-doc/doc/Language/packages.rakudoc
+   1  mism=1   crash=0   err=0   nondet=3    raku-doc/doc/Type/BagHash.rakudoc
+   1  mism=1   crash=0   err=0   nondet=1    raku-doc/doc/Type/IO/Spec/Unix.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/X/Str/Numeric.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/X/Proc/Async/TapBeforeSpawn.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/X/Numeric/Real.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/X/Numeric/DivideByZero.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/X/Assignment/RO.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/Nil.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/Lock/ConditionVariable.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/Iterable.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/IO/Path/Parts.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/ForeignCode.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/Failure.rakudoc
+   1  mism=1   crash=0   err=0   nondet=0    raku-doc/doc/Type/Exception.rakudoc
+   1  mism=0   crash=1   err=0   nondet=1    raku-doc/doc/Type/Sub.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/X/TypeCheck/Splice.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/Proxy.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/PositionalBindFailover.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/Pair.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/Metamodel/ConcreteRoleHOW.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Type/Format.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Language/optut.rakudoc
+   1  mism=0   crash=1   err=0   nondet=0    raku-doc/doc/Language/math.rakudoc
+   1  mism=0   crash=0   err=1   nondet=3    raku-doc/doc/Type/SetHash.rakudoc
+   1  mism=0   crash=0   err=1   nondet=2    raku-doc/doc/Type/Setty.rakudoc
+   1  mism=0   crash=0   err=1   nondet=2    raku-doc/doc/Type/Mu.rakudoc
+   1  mism=0   crash=0   err=1   nondet=1    raku-doc/doc/Type/ValueObjAt.rakudoc
+   1  mism=0   crash=0   err=1   nondet=1    raku-doc/doc/Type/Set.rakudoc
+   1  mism=0   crash=0   err=1   nondet=1    raku-doc/doc/Language/nativetypes.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/utf8.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/X/Scheduler/CueInNaNSeconds.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/X/NYI.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/X/IO/Chdir.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/VM.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Telemetry.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Supply.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Rational.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/RatStr.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/RakuAST/Doc/Markup.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Raku.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/NumStr.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/NFKD.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/NFKC.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/NFD.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/NFC.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Mixy.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Metamodel/PackageHOW.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Metamodel/EnumHOW.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Metamodel/AttributeContainer.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Kernel.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/IntStr.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/IO/Socket/INET.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Distro.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/CompUnit/Repository/FileSystem.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Capture.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Cancellation.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Buf.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Bool.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Blob.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Type/Array.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/terms.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/phasers.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/operators.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/glossary.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/exceptions.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/distributions/configuration-structure.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/compilation.rakudoc
+   1  mism=0   crash=0   err=1   nondet=0    raku-doc/doc/Language/101-basics.rakudoc
+match=2416  mismatch=132  crash=22  error-parity=294  (of which mutsu-accepts=70)  oracle-nondet=60
 ==== corpus totals ====
 

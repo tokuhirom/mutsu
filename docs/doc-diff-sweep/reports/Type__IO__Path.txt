@@ -1,8 +1,210 @@
 # doc-diff-harness report
-# stats: match=26  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=75  skipped-marker=1  skipped-nondet=6  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=11  match=26  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=58  silent-crash=1  silent-match=4  silent-noise=0  skipped-marker=1  skipped-nondet=6  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:609
+[1] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:711
+--- program ---
+my %dict := bag 'my-file.txt'.IO.words;
+say "Most common words: ", %dict.sort(-*.value).head: 5;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-1745/my-file.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'my-file.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:734
+--- program ---
+say "The file contains ",
+  '50GB-file'.IO.lines.grep(*.contains: 'Raku').elems,
+  " lines that mention Raku";
+# OUTPUT: «The file contains 72 lines that mention Raku␤»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-1745/50GB-file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read '50GB-file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:829
+--- program ---
+'myfile'.IO.chmod(0o444);          # make a file read-only
+'somedir'.IO.chmod(0o777);         # set 0777 permissions on a directory
+--- raku stderr (exit 1) ---
+Failed to set the mode of '/home/user/mutsu/tmp/ddh/run-1745/myfile' to '0o444': Failed to set permissions on path: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to chmod 'myfile': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:836
+--- program ---
+'myfile'.IO.chmod:  '0444';        # BAD!!! (interpreted as mode 0o674)
+'myfile'.IO.chmod: '0o444';        # OK (an octal in a string)
+'myfile'.IO.chmod:  0o444;         # Also OK (an octal literal)
+--- raku stderr (exit 1) ---
+Failed to set the mode of '/home/user/mutsu/tmp/ddh/run-1745/myfile' to '0o674': Failed to set permissions on path: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to chmod 'myfile': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[5] mutsu-error-on-silent-success  raku-doc/doc/Type/IO/Path.rakudoc:970
+--- program ---
+say "success" if 'foo.txt'.IO.chown(:uid(137));
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'chown' for invocant of type 'IO::Path'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:1044
+--- program ---
+say ~"path/to/file".IO.mode;  # e.g. '0644'
+say +"path/to/file".IO.mode;  # e.g. 420, where sprintf('%04o', 420) eq '0644'
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-1745/path/to/file' while trying to do '.mode'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to find 'path/to/file' while trying to do '.mode'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:1051
+--- program ---
+"path/to/file1".IO.chmod("path/to/file2".IO.mode);  # will change the
+                                                    # permissions of file1
+                                                    # to be the same as file2
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-1745/path/to/file2' while trying to do '.mode'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Invalid mode: Failure()
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[8] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:1090
+--- program ---
+say "path/to/file".IO.inode;  # e.g. 9003678
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-1745/path/to/file' while trying to do '.inode'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'inode' for invocant of type 'IO::Path'
+Did you mean 'note'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[9] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:1101
+--- program ---
+say "path/to/file".IO.dev;  # e.g. 16777233
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-1745/path/to/file' while trying to do '.dev'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'dev' for invocant of type 'IO::Path'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:1112
+--- program ---
+say "path/to/file".IO.devtype;  # e.g. 0
+--- raku stderr (exit 1) ---
+Failed to find '/home/user/mutsu/tmp/ddh/run-1745/path/to/file' while trying to do '.devtype'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'devtype' for invocant of type 'IO::Path'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[11] mutsu-accepts  raku-doc/doc/Type/IO/Path.rakudoc:113
+--- program ---
+say "foo/../bar".IO.resolve(:completely) ~~ "bar".IO.resolve(:completely) # True
+--- raku stderr (exit 1) ---
+Failed to completely resolve IO::Path.new("foo/../bar", :SPEC(IO::Spec::Unix), :CWD("/home/user/mutsu/tmp/ddh/run-1745"))
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+False
+
+==============================================================================
+[12] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:476
+--- program ---
+dir('mydir', test => { .IO.d })
+--- raku stderr (exit 1) ---
+Failed to get the directory contents of '/home/user/mutsu/tmp/ddh/run-1745/mydir': Failed to open dir: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read dir 'mydir': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[13] error-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:480
+--- program ---
+dir('mydir', test => { "mydir/$_".IO.d })
+--- raku stderr (exit 1) ---
+Failed to get the directory contents of '/home/user/mutsu/tmp/ddh/run-1745/mydir': Failed to open dir: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read dir 'mydir': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1745.raku line 1
+
+==============================================================================
+[14] output-mismatch  raku-doc/doc/Type/IO/Path.rakudoc:609
 --- program ---
 say $*EXECUTABLE.IO.s; # OUTPUT: «467␤»
 --- raku stdout ---

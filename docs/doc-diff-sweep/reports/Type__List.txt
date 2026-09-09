@@ -1,8 +1,56 @@
 # doc-diff-harness report
-# stats: match=95  matches-doc=0  mismatch=3  mutsu-crash=0  no-oracle=55  skipped-marker=2  skipped-nondet=6  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=2  match=95  matches-doc=0  mismatch=3  mutsu-accepts=1  mutsu-crash=0  no-oracle=47  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=2  skipped-nondet=5  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/List.rakudoc:417
+[1] error-mismatch  raku-doc/doc/Type/List.rakudoc:29
+--- program ---
+(1, 2, 3).shift;      # Error Cannot call 'shift' on an immutable 'List'
+(1, 2, 3).unshift(0); # Error Cannot call 'unshift' on an immutable 'List'
+(1, 2, 3).push(4);    # Error Cannot call 'push' on an immutable 'List'
+(1, 2, 3).pop;        # Error Cannot call 'pop' on an immutable 'List'
+(1, 2, 3)[0]:delete;  # Error Cannot remove elements from a List
+(1, 2, 3)[0] := 0;    # Error Cannot use bind operator with this left-hand side
+(1, 2, 3)[0] = 0;     # Error Cannot modify an immutable Int
+--- raku stderr (exit 1) ---
+Cannot call 'shift' on an immutable 'List'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Runtime error: Cannot use bind operator with this left-hand side
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/List.rakudoc:43
+--- program ---
+my $a = 'z';
+my $list = ($a, $, 'b');
+
+say $list[0].VAR.^name; # OUTPUT: «Scalar␤», containerized
+say $list[1].VAR.^name; # OUTPUT: «Scalar␤», containerized
+say $list[2].VAR.^name; # OUTPUT: «Str␤», non-containerized
+
+$list[0] = 'a'; # OK!
+$list[1] = 'c'; # OK!
+$list[2] = 'd'; # Error: Cannot modify an immutable List
+--- raku stderr (exit 1) ---
+Cannot modify an immutable List ((a c b))
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 10
+--- raku stdout ---
+Scalar
+Scalar
+Str
+--- mutsu stdout (exit 1) ---
+Str
+Any
+Str
+--- mutsu stderr ---
+Cannot modify an immutable List ((a (Any) b))
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 8
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Type/List.rakudoc:417
 --- program ---
 put (1, 2, 3).gist;   # OUTPUT: «(1 2 3)␤»
 put (1..∞).List.gist; # OUTPUT: «(...)␤»
@@ -24,7 +72,19 @@ put (1..200).List.gist;
 (1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99 100 ...)
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/List.rakudoc:351
+[4] mutsu-accepts  raku-doc/doc/Type/List.rakudoc:874
+--- program ---
+sort;   # ERROR: «Must specify something to sort␤»
+--- raku stderr (exit 1) ---
+Must specify something to sort
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[5] output-mismatch  raku-doc/doc/Type/List.rakudoc:351
 --- program ---
 say ("a"|"b","c","d").join;     # OUTPUT: «any(acd,bcd)␤»
 --- raku stdout ---
@@ -33,7 +93,7 @@ any(acd, bcd)
 any(a, b)cd
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/List.rakudoc:695
+[6] output-mismatch  raku-doc/doc/Type/List.rakudoc:695
 --- program ---
 my $list = (7, 5, a => 2, b => 17);
 my $capture = $list.Capture;

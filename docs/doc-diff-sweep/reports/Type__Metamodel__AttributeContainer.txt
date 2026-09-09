@@ -1,0 +1,20 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Metamodel/AttributeContainer.rakudoc:47
+--- program ---
+class Point {}
+my $p = Point.new(x => 1, y => 2);
+$p.x = 42;
+--- raku stderr (exit 1) ---
+No such method 'x' for invocant of type 'Point'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10211.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No matching candidates for method: x
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10211.raku line 3
+

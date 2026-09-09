@@ -1,0 +1,40 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=34  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=11  skipped-nondet=1  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/quoting.rakudoc:317
+--- program ---
+sub niler {Nil};
+my Str $a = niler;
+say("$a.html", "sometext");
+say "alive"; # this line is dead code
+CONTROL { .die };
+--- raku stderr (exit 1) ---
+Use of uninitialized value element of type Str in string context.
+Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 5
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'die' for invocant of type 'CX::Warn'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 5
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Language/quoting.rakudoc:546
+--- program ---
+sub my-escaping-function { $^x }
+my $escaped = my-escaping-function(q:to/TERMINATOR/, language => 'html');
+Here are the contents of the heredoc.
+Potentially multiple lines.
+TERMINATOR
+--- raku stderr (exit 1) ---
+Unexpected named argument 'language' passed
+  in sub my-escaping-function at /home/user/mutsu/tmp/ddh/prog-14385.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+

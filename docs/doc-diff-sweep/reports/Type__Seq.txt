@@ -1,8 +1,25 @@
 # doc-diff-harness report
-# stats: match=8  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=17  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=1  match=8  matches-doc=0  mismatch=1  mutsu-accepts=5  mutsu-crash=0  no-oracle=10  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Seq.rakudoc:55
+[1] error-mismatch  raku-doc/doc/Type/Seq.rakudoc:44
+--- program ---
+for open('README.md').lines -> $line {
+    say $line;
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-17471/README.md: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-17471/README.md': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Seq.rakudoc:55
 --- program ---
 my @a = 1, 2, 3;
 my @b = <a b c>;
@@ -25,4 +42,84 @@ the Seq into an array)
 2 => b
 3 => c
 X::Seq::Consumed: The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:208
+--- program ---
+say (1..12).Seq.skip(2,3,4); # OUTPUT: «(3 4 5 10 11 12)␤»
+--- raku stderr (exit 1) ---
+Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D); none of these signatures matches:
+    ($:: *%_)
+    ($:: Whatever, *%_)
+    ($:: Callable:D $w, *%_)
+    ($:: Int(Any) $n, *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(3 4 5 6 7 8 9 10 11 12)
+
+==============================================================================
+[4] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:217
+--- program ---
+say (1..10).Seq.skip(2,3,1,2); # OUTPUT: «(3 4 5 7 8)␤»
+say (1..10).Seq.skip(2,3,1);   # OUTPUT: «(3 4 5 7 8 9 10)␤»
+--- raku stderr (exit 1) ---
+Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D, Int:D); none of these signatures matches:
+    ($:: *%_)
+    ($:: Whatever, *%_)
+    ($:: Callable:D $w, *%_)
+    ($:: Int(Any) $n, *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(3 4 5 6 7 8 9 10)
+(3 4 5 6 7 8 9 10)
+
+==============================================================================
+[5] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:224
+--- program ---
+say (1..10).Seq.skip(2,*);   # OUTPUT: «(3 4 5 6 7 8 9 10)␤»
+say (1..10).Seq.skip(2,3,*); # OUTPUT: «(3 4 5)␤»
+--- raku stderr (exit 1) ---
+Cannot resolve caller skip(Seq:D: Int:D, Whatever:D); none of these signatures matches:
+    ($:: *%_)
+    ($:: Whatever, *%_)
+    ($:: Callable:D $w, *%_)
+    ($:: Int(Any) $n, *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(3 4 5 6 7 8 9 10)
+(3 4 5 6 7 8 9 10)
+
+==============================================================================
+[6] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:230
+--- program ---
+say (1..10).Seq.skip(0,3,4); # OUTPUT: «(1 2 3 8 9 10)␤»
+--- raku stderr (exit 1) ---
+Cannot resolve caller skip(Seq:D: Int:D, Int:D, Int:D); none of these signatures matches:
+    ($:: *%_)
+    ($:: Whatever, *%_)
+    ($:: Callable:D $w, *%_)
+    ($:: Int(Any) $n, *%_)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(1 2 3 4 5 6 7 8 9 10)
+
+==============================================================================
+[7] mutsu-accepts  raku-doc/doc/Type/Seq.rakudoc:235
+--- program ---
+say (^20).Seq.skip(|(2,3) xx *); # OUTPUT: «(0 1 5 6 10 11 15 16)␤»
+--- raku stderr (exit 1) ---
+This type cannot unbox to a native integer: P6opaque, Failure
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17471.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19)
 

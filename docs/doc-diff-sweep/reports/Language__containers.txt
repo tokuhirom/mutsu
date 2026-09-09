@@ -1,8 +1,43 @@
 # doc-diff-harness report
-# stats: match=22  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=9  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=1  match=22  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=1  silent-match=6  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/containers.rakudoc:397
+[1] mutsu-error-on-silent-success  raku-doc/doc/Language/containers.rakudoc:121
+--- program ---
+sub f() {}
+my &g = sub {}
+sub caller(&c1, &c2){ c1, c2 }
+caller(&f, &g);
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Calling caller(Sub, Sub) will never work with declared signature (&c1, &c2)
+  Unexpected named argument '__callframe_line' passed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2475.raku line 4
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/containers.rakudoc:373
+--- program ---
+my Int:D $def = 3;
+say $def;   # OUTPUT: «3␤»
+$def = Int; # Typecheck failure
+--- raku stderr (exit 1) ---
+Type check failed in assignment to $def; expected Int:D but got Int (Int) (perhaps Nil was assigned to a :D which had no default?)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2475.raku line 3
+--- raku stdout ---
+3
+--- mutsu stdout (exit 1) ---
+3
+--- mutsu stderr ---
+Type check failed in assignment to $def; expected Int:D but got Int (Int)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2475.raku line 2
+
+==============================================================================
+[3] output-mismatch  raku-doc/doc/Language/containers.rakudoc:397
 --- program ---
 sub lucky(::T $type) {
     my T $c-value; # closure variable

@@ -1,0 +1,27 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=0  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=7  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=1  skipped-nondet=4  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Telemetry.rakudoc:148
+--- program ---
+my @t;use Telemetry;
+.<cpu wallclock>.say for periods(@t);
+
+# OUTPUT:
+# ====================
+# (164 / 160)
+# (23 / 21)
+# (17 / 17)
+# (15 / 16)
+# (29 / 28)
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Could not find Telemetry in:
+    (module repositories)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19259.raku line 1
+

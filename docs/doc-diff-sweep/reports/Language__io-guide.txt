@@ -1,0 +1,110 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=6  match=4  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=2  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:161
+--- program ---
+say 'my-file.txt'.IO.slurp;        # OUTPUT: «I ♥ Raku!␤»
+say 'my-file.txt'.IO.slurp: :bin;  # OUTPUT: «Buf[uint8]:0x<49 20 E2 99 A5 20 52 61 6B 75 21>␤»
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7198/my-file.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to slurp 'my-file.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:183
+--- program ---
+.say for '500-PetaByte-File.txt'.IO.lines.grep: *.contains: 'Raku';
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7198/500-PetaByte-File.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read '500-PetaByte-File.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:189
+--- program ---
+.say for '500-PetaByte-File.txt'.IO.words: 100
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7198/500-PetaByte-File.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read '500-PetaByte-File.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:211
+--- program ---
+given 'some-file.txt'.IO.open {
+    say .readchars: 8;  # OUTPUT: «I ♥ Raku␤»
+    .seek: 1, SeekFromCurrent;
+    say .readchars: 15;  # OUTPUT: «I ♥ Programming␤»
+    .close
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-7198/some-file.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 1
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-7198/some-file.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:297
+--- program ---
+my $path = 'foo'.IO;
+chdir 'bar';
+# WRONG!! .Str DOES NOT USE $.CWD!
+run <tar -cvvf archive.tar>, $path.Str;
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/home/user/mutsu/tmp/ddh/run-7198/bar': does not exist
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to chdir to 'bar': no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/io-guide.rakudoc:312
+--- program ---
+my $path = 'foo'.IO;
+chdir 'bar';
+# RIGHT!! .absolute does consider the value of $.CWD!
+run <tar -cvvf archive.tar>, $path.absolute;
+# Also good:
+run <tar -cvvf archive.tar>, $path.relative;
+--- raku stderr (exit 1) ---
+Failed to change the working directory to '/home/user/mutsu/tmp/ddh/run-7198/bar': does not exist
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to chdir to 'bar': no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7198.raku line 2
+

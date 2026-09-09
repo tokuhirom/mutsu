@@ -1,8 +1,25 @@
 # doc-diff-harness report
-# stats: match=96  matches-doc=0  mismatch=3  mutsu-crash=0  no-oracle=43  skipped-marker=16  skipped-nondet=8  skipped-oracle-nondet=1
+# stats: error-match=2  error-mismatch=7  match=96  matches-doc=0  mismatch=3  mutsu-accepts=2  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=15  silent-noise=1  skipped-marker=16  skipped-nondet=8  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/traps.rakudoc:63
+[1] error-mismatch  raku-doc/doc/Language/traps.rakudoc:43
+--- program ---
+# Good; file gets updated from 'config.txt' file on each script run:
+unit module Something::Or::Other;
+my $config-file := "config.txt".IO.slurp;
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-20967/config.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to slurp 'config.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 3
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/traps.rakudoc:63
 --- program ---
 my %h is default(Nil) = a => Nil;
 say %h; # OUTPUT: «Hash %h = {:a(Nil)}␤»
@@ -12,7 +29,23 @@ say %h; # OUTPUT: «Hash %h = {:a(Nil)}␤»
 {a => (Any)}
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/traps.rakudoc:858
+[3] mutsu-accepts  raku-doc/doc/Language/traps.rakudoc:567
+--- program ---
+sub bar(Int @a) { 42.say };
+bar([1, 2, 3]);             # expected Positional[Int] but got Array
+--- raku stderr (exit 1) ---
+Type check failed in binding to parameter '@a'; expected Positional[Int] but got Array ([1, 2, 3]). You have to pass an
+explicitly typed array, not one that just might happen to contain
+elements of the correct type.
+  in sub bar at /home/user/mutsu/tmp/ddh/prog-20967.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+42
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/traps.rakudoc:858
 --- program ---
 say join ", ", ("az", *.succ ... "bc");
 # OUTPUT: «az, ba, bb, bc␤»
@@ -22,7 +55,112 @@ az, ba, bb, bc
 az
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/traps.rakudoc:1076
+[5] error-mismatch  raku-doc/doc/Language/traps.rakudoc:1200
+--- program ---
+sub foo($a, :$b) { ... }
+foo(1, 'b' => 2); # FAIL: Too many positionals passed; expected 1 argument but got 2
+--- raku stderr (exit 1) ---
+Too many positionals passed; expected 1 argument but got 2
+  in sub foo at /home/user/mutsu/tmp/ddh/prog-20967.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too many positionals passed; expected 1 arguments but got 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+
+==============================================================================
+[6] mutsu-accepts  raku-doc/doc/Language/traps.rakudoc:1260
+--- program ---
+my @a = 1 xx 999999;
+my @b;
+@b.push: |@a; # OUTPUT: «Too many arguments in flattening array.␤  in block <unit> at <tmp> line 1␤␤»
+--- raku stderr (exit 1) ---
+Flattened array has 999999 elements, but argument lists are limited to 65535
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Language/traps.rakudoc:1543
+--- program ---
+try run("raku", "-e", "exit 42");
+say "still alive";
+# OUTPUT: «The spawned process exited unsuccessfully (exit code: 42)␤»
+--- raku stderr (exit 1) ---
+The spawned command 'raku' exited unsuccessfully (exit code: 42, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+The spawned command 'raku -e exit 42' exited unsuccessfully (exit code: 42, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 1
+
+==============================================================================
+[8] error-mismatch  raku-doc/doc/Language/traps.rakudoc:1939
+--- program ---
+my Blob @chunks;
+say ([~] @chunks).decode;
+# OUTPUT: «No such method 'decode' for invocant of type 'Str'. Did you mean 'encode'?␤…»
+--- raku stderr (exit 1) ---
+No such method 'decode' for string ''. Did you mean 'encode'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'decode' for invocant of type 'Str'
+Did you mean 'encode'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+
+==============================================================================
+[9] error-mismatch  raku-doc/doc/Language/traps.rakudoc:2028
+--- program ---
+my @a = <1 2 3>;
+say @a.grep( *.Int ~~ 2 );
+# OUTPUT: «Cannot use Bool as Matcher with '.grep'.  Did you mean to
+# use $_ inside a block?␤␤␤»
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    WhateverCode on LHS of smart-match does not curry the smart-match expression.
+    Try placing the WhateverCode expression on the RHS instead if results are not as expected.
+    at /home/user/mutsu/tmp/ddh/prog-20967.raku:2
+    ------> say @a.grep( *.Int ~~ 2 <HERE>);
+Cannot use Bool as Matcher with '.grep'.  Did you mean to use $_ inside a block?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Match::Bool
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+
+==============================================================================
+[10] error-mismatch  raku-doc/doc/Language/traps.rakudoc:2044
+--- program ---
+my @a = <1 2 3>;
+say @a.grep( 2 ~~ *.Int ); # OUTPUT: «(2)␤»
+--- raku stderr (exit 1) ---
+Cannot use Bool as Matcher with '.grep'.  Did you mean to use $_ inside a block?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Match::Bool
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 2
+
+==============================================================================
+[11] output-mismatch  raku-doc/doc/Language/traps.rakudoc:1076
 --- program ---
 for 'x' ~~ m:g/./ { say 'yes' }  # OUTPUT: «yes␤»
 for 'x' ~~ /(.)/  { say 'yes' }  # OUTPUT: «yes␤»
@@ -34,4 +172,49 @@ yes
 --- mutsu stdout (exit 0) ---
 yes
 yes
+
+==============================================================================
+[12] error-mismatch  raku-doc/doc/Language/traps.rakudoc:1646
+--- program ---
+my $file = ‘--my arbitrary filename’;
+run ‘touch’, ‘--’, $file;  # RIGHT
+run <touch -->, $file;     # RIGHT
+
+run «touch -- "$file"»;    # RIGHT but WRONG if you forget quotes
+run «touch -- $file»;      # WRONG; touches ‘--my’, ‘arbitrary’ and ‘filename’
+run ‘touch’, $file;        # WRONG; error from `touch`
+run «touch "$file"»;       # WRONG; error from `touch`
+--- raku stderr (exit 1) ---
+touch: unrecognized option '--my arbitrary filename'
+Try 'touch --help' for more information.
+The spawned command 'touch' exited unsuccessfully (exit code: 1, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 7
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+touch: unrecognized option '--my arbitrary filename'
+Try 'touch --help' for more information.
+The spawned command 'touch --my arbitrary filename' exited unsuccessfully (exit code: 1, signal: 0)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20967.raku line 7
+
+==============================================================================
+[13] mutsu-extra-output  raku-doc/doc/Language/traps.rakudoc:1989
+--- program ---
+<foo bar ber>.map: { $^a.comb.map: { $^b.say}}; # OUTPUT: «»
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+f
+o
+o
+b
+a
+r
+b
+e
+r
 

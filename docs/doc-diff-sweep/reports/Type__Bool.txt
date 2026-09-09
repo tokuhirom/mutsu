@@ -1,0 +1,30 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=5  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=9  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=0  skipped-nondet=4  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Bool.rakudoc:25
+--- program ---
+
+my $b = Bool.new( True );
+# when True on the right side returns
+# always True
+True  ~~ $b;     # True
+False ~~ $b;     # True
+
+$b = Bool.new( False );
+# when False on the right side
+# returns always False
+False ~~ $b;     # False
+True ~~ $b;      # False
+--- raku stderr (exit 1) ---
+Enum 'Bool' is insufficiently type-like to be instantiated. Did you
+mean 'class'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27309.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27309.raku line 2
+

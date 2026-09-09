@@ -1,0 +1,139 @@
+# doc-diff-harness report
+# stats: error-match=17  error-mismatch=6  match=4  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=10  silent-crash=0  silent-match=13  silent-noise=0  skipped-marker=58  skipped-nondet=1  skipped-oracle-nondet=1
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:302
+--- program ---
+sub some_func { ... };
+some_func(&say) # Raku passes function references the same way
+--- raku stderr (exit 1) ---
+Too many positionals passed; expected 0 arguments but got 1
+  in sub some_func at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Too many positionals passed; expected 0 arguments but got more
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 2
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:324
+--- program ---
+# Raku, declare a method with an explicit block argument
+sub f(&g:($)) {
+  g(2)
+}
+
+# Raku, invoke f, pass it a block with 1 argument
+# There are several other ways to do this
+f(-> $n { say "Hi {$n}" }); # Explicit argument
+f -> $n { say "Hi {$n}" };  # Explicit argument, no parenthesis
+
+# Additionally, if 'f' is a method on instance 'obj' you can use ':'
+# instead of parenthesis
+my $obj; ...;
+$obj.f(-> $n { say "Hi {$n}" });  # Explicit argument
+$obj.f: -> $n { say "Hi {$n}" };  # Explicit argument, no parenthesis
+--- raku stderr (exit 1) ---
+Stub code executed
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 13
+--- raku stdout ---
+Hi 2
+Hi 2
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Calling f(Block) will never work with declared signature (&g)
+  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&g'; expected Callable with matching signature, got Block
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 8
+
+==============================================================================
+[3] mutsu-accepts  raku-doc/doc/Language/rb-nutshell.rakudoc:372
+--- program ---
+sub foo($q, $r, $s) { ... };
+my @args = <a b c>;       # Raku
+foo(|@args);
+--- raku stderr (exit 1) ---
+Stub code executed
+  in sub foo at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:874
+--- program ---
+my @lines = "file".IO.lines;     # Raku, create an IO object from a string
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-14467/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+
+==============================================================================
+[5] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:890
+--- program ---
+# Raku
+for "file".IO.lines -> $line {
+    say $line
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-14467/file: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to read 'file': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 2
+
+==============================================================================
+[6] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:1046
+--- program ---
+&[+](5, 3)       # => 8, Raku, reference to infix addition operator
+&[+].^candidates # Raku, lists all signatures for the + operator
+--- raku stderr (exit 1) ---
+WARNINGS for /home/user/mutsu/tmp/ddh/prog-14467.raku:
+Useless use of "&" in expression "(5, 3)       # => 8, Raku, reference to infix addition operator\n&[+].^candidates" in sink context (line 2)
+No such method 'candidates' for invocant of type
+'Perl6::Metamodel::ClassHOW'. Did you mean
+'incorporate_multi_candidates'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): candidates
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 2
+
+==============================================================================
+[7] error-mismatch  raku-doc/doc/Language/rb-nutshell.rakudoc:1149
+--- program ---
+# Raku
+sub MAIN ( Int :$length where * > 0, :$filename = 'file.dat', Bool :$verbose ) {
+    say $length;
+    say $filename;
+    say 'Verbosity ', ($verbose ?? 'on' !! 'off');
+}
+--- raku stderr (exit 1) ---
+Use of uninitialized value of type Int in numeric context
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14467.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-14467.raku [--length=<value>] [--filename=<value>] [--verbose]
+

@@ -1,8 +1,22 @@
 # doc-diff-harness report
-# stats: match=0  matches-doc=0  mismatch=2  mutsu-crash=0  no-oracle=5  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=0  match=0  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=3  silent-crash=1  silent-match=0  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:13
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Compiler.rakudoc:7
+--- program ---
+class Compiler does Systemic {}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::InvalidType: Invalid typename 'Systemic'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29377.raku line 1
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:13
 --- program ---
 say $*RAKU.compiler; # OUTPUT: «rakudo (2020.02.16.g.28.bd.4247.a)␤»
 --- raku stdout ---
@@ -11,7 +25,7 @@ rakudo (2026.07)
 mutsu (0.23.0)
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:58
+[3] output-mismatch  raku-doc/doc/Type/Compiler.rakudoc:58
 --- program ---
 say $*RAKU.compiler.verbose-config; # OUTPUT: «distro::auth=https://www.opensuse.org/␤distro::desc=2018-05-06T09:19:17.571307+02:00␤» ... And the rest of the configuration
 --- raku stdout ---

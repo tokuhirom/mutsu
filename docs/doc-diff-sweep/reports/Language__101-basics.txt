@@ -1,0 +1,55 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=3  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=14  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=4  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/101-basics.rakudoc:29
+--- program ---
+use v6;
+
+# start by printing out the header.
+say "Tournament Results:\n";
+
+my $file  = open 'scores.txt'; # get filehandle and...
+my @names = $file.get.words;   # ... get players.
+
+my %matches;
+my %sets;
+
+for $file.lines -> $line {
+    next unless $line; # ignore any empty lines
+
+    my ($pairing, $result) = $line.split(' | ');
+    my ($p1, $p2)          = $pairing.words;
+    my ($r1, $r2)          = $result.split(':');
+
+    %sets{$p1} += $r1;
+    %sets{$p2} += $r2;
+
+    if $r1 > $r2 {
+        %matches{$p1}++;
+    } else {
+        %matches{$p2}++;
+    }
+}
+
+my @sorted = @names.sort({ %sets{$_} }).sort({ %matches{$_} }).reverse;
+
+for @sorted -> $n {
+    my $match-noun = %matches{$n} == 1 ?? 'match' !! 'matches';
+    my $set-noun   = %sets{$n} == 1 ?? 'set' !! 'sets';
+    say "$n has won %matches{$n} $match-noun and %sets{$n} $set-noun";
+}
+--- raku stderr (exit 1) ---
+Failed to open file /home/user/mutsu/tmp/ddh/run-2362/scores.txt: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2362.raku line 6
+
+Actually thrown at:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2362.raku line 7
+--- raku stdout ---
+Tournament Results:
+--- mutsu stdout (exit 1) ---
+Tournament Results:
+--- mutsu stderr ---
+Failed to open '/home/user/mutsu/tmp/ddh/run-2362/scores.txt': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2362.raku line 7
+

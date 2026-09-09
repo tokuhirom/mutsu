@@ -1,8 +1,83 @@
 # doc-diff-harness report
-# stats: match=13  matches-doc=0  mismatch=1  mutsu-crash=1  no-oracle=20  skipped-marker=5  skipped-nondet=1  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=3  match=13  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=1  no-oracle=10  silent-crash=0  silent-match=7  silent-noise=0  skipped-marker=5  skipped-nondet=1  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:387
+[1] error-mismatch  raku-doc/doc/Language/grammars.rakudoc:167
+--- program ---
+grammar Calculator {}; class Calculations {}
+grammar BetterCalculator is Calculator {
+    rule calc-op:sym<mult> { <num> '*' <num> }
+}
+
+class BetterCalculations is Calculations {
+    method calc-op:sym<mult> ($/) { make [*] $<num> }
+}
+
+say BetterCalculator.parse('2 * 3', actions => BetterCalculations).made;
+
+# OUTPUT: «6␤»
+--- raku stderr (exit 1) ---
+No such method 'TOP' for invocant of type 'BetterCalculator'. Did you
+mean 'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 10
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): parse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 10
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Language/grammars.rakudoc:323
+--- program ---
+grammar DigitMatcher{};
+say +DigitMatcher.subparse: '12७१७९०९', args => \(:full-unicode);
+# OUTPUT: «12717909␤»
+
+say +DigitMatcher.subparse: '12७१७९०९', args => \(:!full-unicode);
+# OUTPUT: «12␤»
+--- raku stderr (exit 1) ---
+No such method 'TOP' for invocant of type 'DigitMatcher'. Did you mean
+'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): subparse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+
+==============================================================================
+[3] error-mismatch  raku-doc/doc/Language/grammars.rakudoc:364
+--- program ---
+grammar GrammarAdvice{};
+say GrammarAdvice.subparse("use rules for significant whitespace by default");
+# OUTPUT: «use rules for significant whitespace by default␤»
+
+say GrammarAdvice.subparse("use tokens for insignificant whitespace by default");
+# OUTPUT: «use tokens for insignificant whitespace by default␤»
+
+say GrammarAdvice.subparse("use regexes for insignificant whitespace by default");
+# OUTPUT: «use regexes for insignificant whitespace by default␤»
+
+say GrammarAdvice.subparse("use regexes for significant whitespace by default");
+# OUTPUT: #<failed match>
+--- raku stderr (exit 1) ---
+No such method 'TOP' for invocant of type 'GrammarAdvice'. Did you mean
+'to'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::Method::NotFound: Unknown method value dispatch (fallback disabled): subparse
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 2
+
+==============================================================================
+[4] output-mismatch  raku-doc/doc/Language/grammars.rakudoc:387
 --- program ---
 grammar HTTPRequest {
     has Bool $.invalid;
@@ -64,7 +139,7 @@ Host: docs.raku.org
 body.<field>[0]")=
 
 ==============================================================================
-[2] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:289
+[5] mutsu-error  raku-doc/doc/Language/grammars.rakudoc:289
 --- program ---
 grammar Digifier {
     rule TOP {
@@ -89,9 +164,9 @@ say Digifier.parse('255 435 777', actions => Devanagari.new).made;
 
 --- mutsu stderr ---
 Use of Nil in string context
-  in sub digit at /home/user/mutsu/tmp/ddh/prog-11483.raku line 11
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11483.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-6155.raku line 11
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 16
 X::Assignment::RO: cannot assign through .tail on non-instance
-  in sub digit at /home/user/mutsu/tmp/ddh/prog-11483.raku line 11
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11483.raku line 16
+  in sub digit at /home/user/mutsu/tmp/ddh/prog-6155.raku line 11
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6155.raku line 16
 

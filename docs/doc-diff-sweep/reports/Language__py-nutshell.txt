@@ -1,8 +1,26 @@
 # doc-diff-harness report
-# stats: match=24  matches-doc=0  mismatch=1  mutsu-crash=0  no-oracle=14  skipped-marker=31  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=3  error-mismatch=0  match=24  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=9  silent-noise=0  skipped-marker=31  skipped-nondet=0  skipped-oracle-nondet=1
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:541
+[1] mutsu-accepts  raku-doc/doc/Language/py-nutshell.rakudoc:582
+--- program ---
+class Dog {}
+my $d = Dog.new(:name<Fido>); # or: Dog.new(name => 'Fido')
+my $e = Dog.new(:name<Buddy>);
+say $d.name;
+say $e.name;
+--- raku stderr (exit 1) ---
+No such method 'name' for invocant of type 'Dog'. Did you mean any of
+these: 'are', 'none', 'note', 'take'?
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14349.raku line 4
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+Fido
+Buddy
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Language/py-nutshell.rakudoc:541
 --- program ---
 say ( { $_[0] + $_[1] } for (3,9) X (2,10) );      # OUTPUT: «(5 13 11 19)␤»
 say ( -> (\i, \j) { i + j } for (3,9) X (2,10) );  # OUTPUT: «(5 13 11 19)␤»

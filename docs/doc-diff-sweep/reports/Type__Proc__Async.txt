@@ -1,0 +1,64 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=5  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=24  silent-crash=0  silent-match=3  silent-noise=0  skipped-marker=3  skipped-nondet=5  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Type/Proc/Async.rakudoc:102
+--- program ---
+my $prog = Proc::Async.new(:w, 'hexdump', '-C');
+my $promise = $prog.start;
+await $prog.write(Buf.new(12, 42));
+$prog.close-stdin;
+await $promise;
+--- raku stderr (exit 1) ---
+An operation first awaited:
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14990.raku line 3
+
+Died with the exception:
+    broken pipe
+      in block <unit> at /home/user/mutsu/tmp/ddh/prog-14990.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Failed to spawn 'hexdump': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14990.raku line 3
+
+==============================================================================
+[2] output-mismatch  raku-doc/doc/Type/Proc/Async.rakudoc:233
+--- program ---
+my $p = Proc::Async.new("cat", :in);
+my $h = "/etc/profile".IO.open;
+$p.bind-stdin($h);
+$p.start;
+--- raku stdout ---
+# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+# and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).
+
+if [ "${PS1-}" ]; then
+  if [ "${BASH-}" ] && [ "$BASH" != "/bin/sh" ]; then
+    # The file bash.bashrc already sets the default PS1.
+    # PS1='\h:\w\$ '
+    if [ -f /etc/bash.bashrc ]; then
+      . /etc/bash.bashrc
+    fi
+  else
+    if [ "$(id -u)" -eq 0 ]; then
+      PS1='# '
+    else
+      PS1='$ '
+    fi
+  fi
+fi
+
+if [ -d /etc/profile.d ]; then
+  for i in /etc/profile.d/*.sh; do
+    if [ -r $i ]; then
+      . $i
+    fi
+  done
+  unset i
+fi
+--- mutsu stdout (exit 0) ---
+
+

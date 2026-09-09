@@ -1,8 +1,85 @@
 # doc-diff-harness report
-# stats: match=52  matches-doc=0  mismatch=6  mutsu-crash=0  no-oracle=34  skipped-marker=13  skipped-nondet=4  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=1  match=52  matches-doc=0  mismatch=6  mutsu-accepts=2  mutsu-crash=0  no-oracle=8  silent-crash=2  silent-match=20  silent-noise=0  skipped-marker=13  skipped-nondet=4  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Language/variables.rakudoc:868
+[1] mutsu-accepts  raku-doc/doc/Language/variables.rakudoc:73
+--- program ---
+class FailHash {}
+my %h is FailHash = oranges => "round", bananas => "bendy";
+--- raku stderr (exit 1) ---
+Cannot modify an immutable FailHash (FailHash.new)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23528.raku line 2
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Language/variables.rakudoc:1172
+--- program ---
+use variables :D;
+my Int $x = 42;
+$x = Nil;
+# OUTPUT: «Type check failed in assignment to $x; expected type Int:D cannot be itself…»
+--- raku stderr (exit 1) ---
+Type check failed in assignment to $x; expected Int:D but got Int (Int) (perhaps Nil was assigned to a :D which had no default?)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23528.raku line 3
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[3] mutsu-error-on-silent-success  raku-doc/doc/Language/variables.rakudoc:1440
+--- program ---
+my $foo-IO = %?RESOURCES<images/foo.jpg>;          # gets an object you can slurp
+my $foo-IO = %?RESOURCES<images/foo.jpg>.open;     # gets an opened IO::Handle to work with
+--- raku stderr (exit 0) ---
+Potential difficulties:
+    Redeclaration of symbol '$foo-IO'.
+    at /home/user/mutsu/tmp/ddh/prog-23528.raku:2
+    ------> my $foo-IO<HERE> = %?RESOURCES<images/foo.jpg>.open;
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'open' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23528.raku line 2
+
+==============================================================================
+[4] error-mismatch  raku-doc/doc/Language/variables.rakudoc:1832
+--- program ---
+sub MAIN($a, :$b, UInt :$ehehe) {
+    say $*USAGE; # OUTPUT: «Usage:␤  my-script.raku [-a=<Int>] [-b=<Str>] [--<opts>=...]»
+}
+--- raku stderr (exit 2) ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-23528.raku [-b[=Any]] [--ehehe[=UInt]] <a>
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-23528.raku <a> [--b=<value>] [--ehehe=<value>]
+
+==============================================================================
+[5] mutsu-error-on-silent-success  raku-doc/doc/Language/variables.rakudoc:1938
+--- program ---
+INIT $*RAT-OVERFLOW = FatRat;
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Dynamic variable $*RAT-OVERFLOW not found
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23528.raku line 1
+
+==============================================================================
+[6] output-mismatch  raku-doc/doc/Language/variables.rakudoc:868
 --- program ---
 sub code(){ state $i = 0; say ++$i; $i };
 await
@@ -21,13 +98,14 @@ await
 6
 --- mutsu stdout (exit 0) ---
 1
-2
 3
+2
 4
 5
+6
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1719
+[7] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1719
 --- program ---
 say $*DISTRO; # OUTPUT: «debian (9.stretch)␤»
 --- raku stdout ---
@@ -36,7 +114,7 @@ ubuntu (24.04.4.LTS.Noble.Numbat)
 linux (6.18)
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1725
+[8] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1725
 --- program ---
 say $*DISTRO.raku;
 # OUTPUT: «Distro.new(release => "42.3", is-win => Bool::False,
@@ -49,7 +127,7 @@ Distro.new(release => "24.04", path-sep => ":", name => "ubuntu", auth => "https
 Distro.new(release => "6.18.44-fc-v24", path-sep => ":", name => "linux", auth => "unknown", version => v6.18, signature => Blob, desc => "Ubuntu 24.04.4 LTS")
 
 ==============================================================================
-[4] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1737
+[9] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1737
 --- program ---
 say $*VM.precomp-ext, " ", $*VM.precomp-target; # OUTPUT: «moarvm mbc␤»
 --- raku stdout ---
@@ -58,7 +136,7 @@ moarvm mbc
 mutsu mutsu
 
 ==============================================================================
-[5] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1745
+[10] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1745
 --- program ---
 say $*VM.config<versionmajor>, ".", $*VM.config<versionminor>;
 # OUTPUT: «2018.11␤»
@@ -68,7 +146,7 @@ say $*VM.config<versionmajor>, ".", $*VM.config<versionminor>;
 (Any).(Any)
 
 ==============================================================================
-[6] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1756
+[11] output-mismatch  raku-doc/doc/Language/variables.rakudoc:1756
 --- program ---
 say $*RAKU.compiler.version; # OUTPUT: «v2020.01␤»
 --- raku stdout ---

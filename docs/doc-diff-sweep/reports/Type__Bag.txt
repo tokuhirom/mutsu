@@ -1,20 +1,43 @@
 # doc-diff-harness report
-# stats: match=6  matches-doc=1  mismatch=1  mutsu-crash=0  no-oracle=4  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=1  match=7  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] output-mismatch  raku-doc/doc/Type/Bag.rakudoc:66
-note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
+[1] output-mismatch  raku-doc/doc/Type/Bag.rakudoc:53
 --- program ---
-my $n = ("a" => 0, "b" => 1, "c" => 2, "c" => 2).Bag;
-say $n.keys.raku;        # OUTPUT: «("b", "c").Seq␤»
-say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
-say $n.values.raku;      # OUTPUT: «(1, 4).Seq␤»
+my $n = bag "a" => 0, "b" => 1, "c" => 2, "c" => 2;
+say $n.keys.raku;        # OUTPUT: «(:c(2), :b(1), :a(0)).Seq␤»
+say $n.keys.map(&WHAT);  # OUTPUT: «((Pair) (Pair) (Pair))␤»
+say $n.values.raku;      # OUTPUT: «(2, 1, 1).Seq␤»
 --- raku stdout ---
-("c", "b").Seq
-((Str) (Str))
-(4, 1).Seq
+(:c(2), :b(1), :a(0)).Seq
+((Pair) (Pair) (Pair))
+(2, 1, 1).Seq
 --- mutsu stdout (exit 0) ---
-("b", "c").Seq
-((Str) (Str))
-(1, 4).Seq
+(:c(2), :a(0), :b(1)).Seq
+((Pair) (Pair) (Pair))
+(2, 1, 1).Seq
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/Bag.rakudoc:86
+--- program ---
+# only allow strings (Str) in the Bag
+my $breakfast = Bag[Str].new( <spam eggs spam spam bacon spam> );
+
+# only allow whole numbers (Int) in the Bag
+my $breakfast = Bag[Int].new( <spam eggs spam spam bacon spam> );
+# Type check failed in binding; expected Int but got Str ("spam")
+--- raku stderr (exit 1) ---
+Potential difficulties:
+    Redeclaration of symbol '$breakfast'.
+    at /home/user/mutsu/tmp/ddh/prog-26486.raku:5
+    ------> my $breakfast<HERE> = Bag[Int].new( <spam eggs spam spam ba
+Type check failed in binding; expected Int but got Str ("spam")
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-26486.raku line 5
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+Type check failed in binding; expected Int but got Str ("spam")
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-26486.raku line 5
 

@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=1  match=3  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=0  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=12  skipped-nondet=5  skipped-oracle-nondet=0
+
+==============================================================================
+[1] error-mismatch  raku-doc/doc/Language/phasers.rakudoc:105
+--- program ---
+our $h will enter { .rememberit() } will undo { .forgetit() };
+--- raku stderr (exit 1) ---
+No such method 'forgetit' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13428.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'rememberit' for invocant of type 'Any'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13428.raku line 1
+

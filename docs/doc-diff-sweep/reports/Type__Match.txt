@@ -1,0 +1,45 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=12  matches-doc=0  mismatch=0  mutsu-accepts=1  mutsu-crash=0  no-oracle=16  silent-crash=2  silent-match=3  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] mutsu-error-on-silent-success  raku-doc/doc/Type/Match.rakudoc:7
+--- program ---
+class Match is Capture is Cool does NQPMatchRole {}
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+X::InvalidType: Invalid typename 'NQPMatchRole'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8398.raku line 1
+
+==============================================================================
+[2] mutsu-accepts  raku-doc/doc/Type/Match.rakudoc:150
+--- program ---
+make("your payload here");
+--- raku stderr (exit 1) ---
+The make function expects $/ to contain a Match, but it contains Nil
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8398.raku line 1
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 0) ---
+(none)
+
+==============================================================================
+[3] mutsu-error-on-silent-success  raku-doc/doc/Type/Match.rakudoc:261
+--- program ---
+my Str $some-string = "Some foo";
+my Match $match = $some-string.match(/foo/);
+my $another-string = $match.replace-with("string"); # «Some string»
+--- raku stderr (exit 0) ---
+(none)
+--- raku stdout ---
+(none)
+--- mutsu stdout (exit 1) ---
+(none)
+--- mutsu stderr ---
+No such method 'replace-with' for invocant of type 'Match'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8398.raku line 3
+
