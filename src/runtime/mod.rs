@@ -3246,11 +3246,10 @@ pub struct Interpreter {
     /// Backs `vm_call_state_guard::MarkContextGuard`: the whole "mark
     /// context" one-shot flag family, packed into one `u16` bitfield plus the
     /// one non-`Copy` member (`array_share_source`) — see
-    /// [`crate::runtime::mark_context`] for the layout and for why the pack
+    /// `crate::runtime::mark_context` for the layout and for why the pack
     /// happened (#7738). Read a flag through its accessor
-    /// ([`Interpreter::bind_context`] et al.), which hands out a
-    /// [`MarkFlag`](crate::runtime::mark_context::MarkFlag) with the same
-    /// `get`/`set` API the separate `Cell<bool>` fields had.
+    /// (`Interpreter::bind_context` et al.), which hands out a `MarkFlag`
+    /// with the same `get`/`set` API the separate `Cell<bool>` fields had.
     ///
     /// It is `Box`-backed (a HEAP allocation separate from `Interpreter`'s
     /// own, not embedded directly in this struct) so the guard's `Drop` impl

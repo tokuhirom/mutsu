@@ -186,7 +186,7 @@ impl<'a> MarkFlag<'a> {
     }
 }
 
-/// The per-flag accessors. Each hands out a [`MarkFlag`] bound to its bit, so
+/// The per-flag accessors. Each hands out a `MarkFlag` bound to its bit, so
 /// a call site reads exactly as it did when every flag was its own
 /// `Box<Cell<bool>>` field: `self.vardecl_context().get()`,
 /// `self.bind_context().set(true)`.
@@ -247,7 +247,7 @@ impl crate::runtime::Interpreter {
     }
 
     /// The one non-`Copy` member of the family — see
-    /// [`MarkContextState::share_source`].
+    /// `MarkContextState::share_source`.
     #[inline]
     pub(crate) fn array_share_source(&self) -> &Cell<Option<String>> {
         &self.mark_ctx.share_source
