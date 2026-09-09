@@ -373,6 +373,35 @@ pub(crate) fn native_function_variadic(
                             }
                         }
                     }
+                    // A finite `LazyList` (e.g. a closure `...` sequence
+                    // whose finite endpoint `try_native_function` already
+                    // reified via `reify_closure_seq_endpoint`) sums its
+                    // cached elements like Array/Seq above. `!is_genuinely_lazy()`
+                    // excludes an infinite one (`1..Inf`, `... *`), whose
+                    // cache — if populated at all — is only ever a prefix:
+                    // summing that would silently answer a truncated total
+                    // instead of the `X::Cannot::Lazy` a strict consumer owes
+                    // it. An un-reified finite one (no cache yet) falls
+                    // through to the generic scalar arm below unchanged —
+                    // summing its whole value, not its elements, is wrong
+                    // too, but this function has no `&mut Interpreter` to
+                    // force it; the caller's pre-pass is what must guarantee
+                    // the cache is populated first.
+                    ValueView::LazyList(ll)
+                        if !ll.is_genuinely_lazy() && ll.cache.lock().unwrap().is_some() =>
+                    {
+                        let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                        for item in &cached {
+                            if has_num {
+                                total_f += item.to_f64();
+                            } else if let ValueView::Num(_) = item.view() {
+                                total_f = total as f64 + item.to_f64();
+                                has_num = true;
+                            } else {
+                                total += item.to_f64() as i64;
+                            }
+                        }
+                    }
                     _ => {
                         if has_num {
                             total_f += arg.to_f64();

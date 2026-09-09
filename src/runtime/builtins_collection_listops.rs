@@ -323,6 +323,19 @@ impl Interpreter {
                     | ValueView::GenericRange { .. } => {
                         items.extend(Self::value_to_list(arg));
                     }
+                    // A finite closure `...` sequence (already forced by
+                    // `try_native_function`'s pre-dispatch reification, and
+                    // already past the `is_lazy_for_coerce` guard above)
+                    // flattens its cached elements like Array/Seq. Any other
+                    // `LazyList` reaching here with no cache falls through to
+                    // pushing itself whole, same as before.
+                    ValueView::LazyList(ll) => {
+                        if let Some(cached) = ll.cache.lock().unwrap().clone() {
+                            items.extend(cached);
+                        } else {
+                            items.push(arg.clone());
+                        }
+                    }
                     _ => items.push(arg.clone()),
                 }
             }

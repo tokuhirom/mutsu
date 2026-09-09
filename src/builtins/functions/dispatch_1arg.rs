@@ -784,6 +784,23 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                     Value::seq(sorted)
                 }
+                // A finite closure `...` sequence, already forced by
+                // `try_native_function`'s pre-dispatch reification and
+                // already past the `is_lazy_for_coerce` guard `lazy_guard_error`
+                // ran above: sort its cached elements like Array/Seq. Any
+                // other (unforced or genuinely-lazy) `LazyList` falls through
+                // to `None` so the interpreter's `builtin_sort` handles it —
+                // unlike the arms above, it must NOT collapse to `Value::NIL`
+                // here, or a genuinely-lazy source would silently sort empty
+                // instead of throwing `X::Cannot::Lazy`.
+                ValueView::LazyList(ll) => match ll.cache.lock().unwrap().clone() {
+                    Some(cached) => {
+                        let mut sorted = cached;
+                        sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                        Value::seq(sorted)
+                    }
+                    None => return None,
+                },
                 _ => Value::NIL,
             }))
         }

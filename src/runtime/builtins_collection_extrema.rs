@@ -97,10 +97,22 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
 
-        // Flatten: if a single array/seq/list arg is provided, use its items
+        // Flatten: if a single array/seq/list arg is provided, use its items.
+        // `as_list_items` cannot cover `LazyList` (its cache lives behind a
+        // `Mutex`, so there is no `&[Value]` to borrow), so a finite one
+        // (e.g. a closure `...` sequence the caller already reified via
+        // `reify_closure_seq_endpoint`) is handled here instead, by cloning
+        // its cached elements. `!is_genuinely_lazy()` excludes an infinite
+        // one (`1..Inf`, `... *`) whose cache, if populated at all, is only
+        // ever a prefix — that stays a single candidate, same as before.
         let expanded: Vec<Value> = if args.len() == 1 {
             if let Some(items) = args[0].as_list_items() {
                 items.to_vec()
+            } else if let ValueView::LazyList(ll) = args[0].view()
+                && !ll.is_genuinely_lazy()
+                && let Some(cached) = ll.cache.lock().unwrap().clone()
+            {
+                cached
             } else {
                 args.to_vec()
             }
