@@ -236,6 +236,31 @@ impl Interpreter {
             .map(|f| format!("{}::{}", f.package, f.name))
     }
 
+    /// The compunit the frame `CALLER::` names belongs to — the same frame
+    /// `caller_frame_package` reads, resolved to a unit exactly the way
+    /// [`Self::executing_unit_sym`] resolves the *executing* one, but skipping
+    /// this routine's own frame first.
+    ///
+    /// With no caller frame at all (the routine holding `CALLER::` was called
+    /// straight from a mainline, which pushes no frame) this falls through to
+    /// the ambient `?FILE`, which is still that mainline's own file: an
+    /// ordinary call does not move `?FILE`, only a module load or a role body
+    /// does. That is the common shape for `Test.rakumod`'s `throws-like`, and
+    /// the answer it needs (#7836).
+    pub(crate) fn caller_frame_unit(&self) -> crate::symbol::Symbol {
+        let len = self.routine_stack.len();
+        if len >= 2 {
+            for frame in self.routine_stack[..len - 1].iter().rev() {
+                match frame.def_file {
+                    Some(file) => return self.unit_of_source_sym(Some(file)),
+                    None if frame.is_block => continue,
+                    None => break,
+                }
+            }
+        }
+        self.unit_of_source_sym(self.current_source_file_sym())
+    }
+
     /// The file the code currently executing was *defined* in — the module path
     /// for a routine that came from a `use`d module, the script otherwise.
     ///

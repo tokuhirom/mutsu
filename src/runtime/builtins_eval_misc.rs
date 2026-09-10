@@ -392,8 +392,25 @@ impl Interpreter {
         // unit is in scope for the EVAL'd code too -- and an operator declared
         // BY the EVAL'd code is scoped to the EVAL unit alone. Operator
         // visibility (`Interpreter::user_infix_override`) walks this chain.
+        //
+        // `context => $ctx` moves that enclosing scope to `$ctx`'s frame, and a
+        // compunit is part of a lexical scope just as much as the package
+        // already handled above: which modules a compunit `use`d is what
+        // decides the package-qualified names code written in it may use
+        // (#7797's `qualified_name_visible_here`). So the EVAL unit's parent is
+        // the context's compunit, not whichever one happens to be calling
+        // `EVAL`. Without this, `Test.rakumod`'s
+        // `throws-like 'Foo::bar()', ...` -- which passes `context =>
+        // CALLER::` precisely so the snippet compiles in the test file's scope
+        // -- had the snippet compiled as if `Test` itself had written it, and
+        // `Test` never `use`s the module under test, so every qualified name in
+        // a `throws-like` string went undeclared (#7836).
         let unit_sym = Symbol::intern(&unit_name);
-        crate::runtime::note_eval_unit_parent(unit_sym, self.current_unit);
+        let parent_unit = context_arg
+            .as_ref()
+            .and_then(Self::eval_context_unit)
+            .unwrap_or(self.current_unit);
+        crate::runtime::note_eval_unit_parent(unit_sym, parent_unit);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));

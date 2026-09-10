@@ -1053,6 +1053,7 @@ impl Interpreter {
             let original_env = self.env.clone();
             for phaser in phasers.iter().rev() {
                 let (body, captured_env, package) = (&phaser.body, &phaser.env, &phaser.package);
+                let unit = phaser.unit;
                 // Track which keys are being added from captured env
                 // (not already present) so we can remove them after.
                 let mut overlay_keys: Vec<String> = Vec::new();
@@ -1084,7 +1085,16 @@ impl Interpreter {
                 if *package != saved_package {
                     self.set_current_package(package.clone());
                 }
+                // Same reasoning as the package, for the compunit (#7836): a
+                // package-qualified name in the body is in scope by the rules
+                // of the compunit that DECLARED the phaser, and by exit time
+                // `current_unit` is back to the main one. Only observable for a
+                // module whose visibility never reached the main compunit --
+                // one `use`d from inside an `EVAL`, whose grant went to the
+                // ephemeral EVAL unit (`Test`'s `use-ok` does exactly that).
+                let saved_unit = std::mem::replace(&mut self.current_unit, unit);
                 let body_result = self.run_block(body);
+                self.current_unit = saved_unit;
                 self.set_current_package(saved_package);
                 if self.halted {
                     // This phaser called `exit`. Whatever status it asked for is

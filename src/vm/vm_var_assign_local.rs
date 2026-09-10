@@ -450,9 +450,11 @@ impl Interpreter {
         if let Some(depth) = Self::caller_stash_depth(name) {
             let origin = self.caller_frame_package();
             let origin_routine = self.caller_frame_enclosing_routine();
+            let origin_unit = self.caller_frame_unit();
             let stash = self.caller_stash_value(name, depth);
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
+            Self::stamp_stash_origin_unit(&stash, origin_unit);
             self.stack.push(stash);
             return;
         }
@@ -491,9 +493,11 @@ impl Interpreter {
             // by the time EVAL runs. Record it on the value itself.
             let origin = self.caller_frame_package();
             let origin_routine = self.caller_frame_enclosing_routine();
+            let origin_unit = self.caller_frame_unit();
             let stash = loan_env!(self, package_stash_value(kind));
             Self::stamp_stash_origin_package(&stash, &origin);
             Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
+            Self::stamp_stash_origin_unit(&stash, origin_unit);
             self.stack.push(stash);
             return;
         }

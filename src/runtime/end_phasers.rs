@@ -117,6 +117,11 @@ impl Interpreter {
         // of numbering them at parse time.
         let order = super::end_order::MAIN + super::end_order::slot(Some(end_index), 0);
         let slot = self.end_phasers.len();
+        // This path only ever installs the MAIN compunit's own ENDs (see
+        // `preregister_main_end_phasers`), so the declaring unit is simply the
+        // one being compiled right now. A module's END takes the
+        // `push_end_phaser_ordered` path instead.
+        let unit = self.declaring_unit_sym();
         // Seeded rather than cloned from the pre-run env: rakudo's END is a
         // closure that was never CLONED against a live frame, so every `my`/
         // `state` lexical it mentions reads as that container's *unassigned*
@@ -143,6 +148,7 @@ impl Interpreter {
             body,
             env,
             package,
+            unit,
             dead_keys,
             order,
             capture_seq: None,
@@ -185,11 +191,13 @@ impl Interpreter {
         };
         let captured_env = self.env.clone();
         let package = self.current_package();
+        let unit = self.declaring_unit_sym();
         let mark = self.end_phaser_capture_seq;
         self.end_phaser_capture_seq += 1;
         let phaser = &mut self.end_phasers[slot];
         phaser.env = captured_env;
         phaser.package = package;
+        phaser.unit = unit;
         // A fresh capture supersedes whatever the previous one froze.
         phaser.dead_keys = crate::runtime::NameSet::default();
         phaser.capture_seq = Some(mark);
@@ -207,6 +215,7 @@ impl Interpreter {
             body,
             env: captured_env,
             package,
+            unit: self.declaring_unit_sym(),
             dead_keys: crate::runtime::NameSet::default(),
             order,
             capture_seq: Some(mark),

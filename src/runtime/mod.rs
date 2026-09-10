@@ -1673,6 +1673,19 @@ pub(crate) struct EndPhaser {
     /// `current_package` has returned to GLOBAL — a phaser declared in a
     /// `unit module Foo` must still see `Foo`'s routines by their bare names.
     pub(crate) package: String,
+    /// The declaring compunit, for the same reason the package is recorded and
+    /// restored: at program exit `current_unit` is back to the main compunit,
+    /// but a package-qualified name written in an END body is in scope by the
+    /// rules of the compunit that *declared* it (#7797's
+    /// `qualified_name_visible_here`, whose strongest rule is "a compunit
+    /// always sees a package it declares itself").
+    ///
+    /// Only observable when the declaring module is not also visible from the
+    /// main compunit — a module `use`d from inside an `EVAL`, whose grant went
+    /// to the ephemeral EVAL unit. `Log::Async`'s `END { Log::Async.instance
+    /// ... }`, reached through `Test`'s `use-ok` (which EVALs `"use $module"`),
+    /// is exactly that, and took the whole exit sequence down with it (#7836).
+    pub(crate) unit: crate::symbol::Symbol,
     /// Keys whose declaring scope has since died. At exit the captured value is
     /// the only surviving one, so it must win over a live same-named variable
     /// in an enclosing scope — `{ my $a = 42; END { say $a } }` prints 42 even

@@ -127,6 +127,20 @@ impl Interpreter {
     /// `eval_context_routine` treats identically to "key not found".
     pub(crate) const STASH_ORIGIN_ROUTINE_ATTR: &str = "__mutsu_origin_routine";
 
+    /// Attribute a pseudo-stash carries to remember the *compunit* the frame it
+    /// was taken from belongs to. Same invisibility convention as
+    /// `STASH_ORIGIN_PACKAGE_ATTR`.
+    ///
+    /// `EVAL` compiles in its caller's lexical scope, which for a plain `EVAL`
+    /// is the compunit running it. `EVAL $code, context => $ctx` says that
+    /// scope is `$ctx`'s frame instead — and a compunit is part of a lexical
+    /// scope, not just a package: which modules it `use`d decides what
+    /// package-qualified names it may write (#7797's
+    /// `qualified_name_visible_here`). Without this, `Test.rakumod`'s
+    /// `throws-like 'Foo::bar()'` compiled the snippet as if `Test` had
+    /// written it, and `Test` never `use`d `Foo` (#7836).
+    pub(crate) const STASH_ORIGIN_UNIT_ATTR: &str = "__mutsu_origin_unit";
+
     /// Attribute carried by a `CALLER::...::` stash to identify the live caller
     /// frame whose lexical pad it reflects.  The visible `symbols` hash is a
     /// snapshot; mutating operations such as `BIND-KEY` need this depth to reach
@@ -161,6 +175,35 @@ impl Interpreter {
                 Self::STASH_ORIGIN_ROUTINE_ATTR.to_string(),
                 Value::str(origin.to_string()),
             );
+        }
+    }
+
+    /// Stamp the frame's compunit (see `caller_frame_unit`) onto a pseudo-stash
+    /// value, beside the package and control-flow identity the two functions
+    /// above record. See `STASH_ORIGIN_UNIT_ATTR`.
+    pub(crate) fn stamp_stash_origin_unit(stash: &Value, origin: crate::symbol::Symbol) {
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_ORIGIN_UNIT_ATTR.to_string(),
+                Value::str(origin.resolve().to_string()),
+            );
+        }
+    }
+
+    /// The compunit an `EVAL ..., context => $ctx` should compile inside, or
+    /// `None` when the context value carries no such stamp (any value that is
+    /// not a stamped pseudo-stash — a plain `Foo::` package stash, say).
+    pub(crate) fn eval_context_unit(ctx: &Value) -> Option<crate::symbol::Symbol> {
+        match ctx.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if is_stash_class_name(class_name.as_str()) => attributes
+                .as_map()
+                .get(Self::STASH_ORIGIN_UNIT_ATTR)
+                .map(|v| crate::symbol::Symbol::intern(&v.to_string_value())),
+            _ => None,
         }
     }
 
