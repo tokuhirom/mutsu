@@ -51,6 +51,13 @@ never charged to mutsu.
 `use`) · `blocked_dep` (its dependency closure cannot be resolved, so it runs on
 neither side) · `skipped`.
 
+## Where this is published
+
+`site/ecosystem.html` — searchable, one row per distribution, worst first —
+is generated from this tree by `scripts/gen-ecosystem-manifest.py` and deployed
+with the rest of the site by `.github/workflows/pages.yml`. It is a projection:
+these records stay the authority.
+
 ## Re-measuring
 
 ```sh

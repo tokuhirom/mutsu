@@ -133,6 +133,10 @@ def sweep_dist(name, index, opts, bundled) -> dict:
             "mutsu_commit": opts.mutsu_commit, "mutsu_version": opts.mutsu_version,
             "raku_version": opts.raku_version, "raku_backend": opts.raku_backend,
             "host": opts.host, "sandbox": "bwrap" if opts.sandbox else "none",
+            # How many chances each side got. A record measured at 1 has no
+            # flake protection, so it is weaker evidence than one at 3 -- say so
+            # in the record rather than leaving the reader to guess.
+            "attempts": opts.attempts,
             "harness": HARNESS,
         },
         "files": [],

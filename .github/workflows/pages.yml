@@ -26,6 +26,8 @@ on:
       - 'modules/**'                   # the batteries page lists these
       - 'scripts/bench-visualize.py'   # renders bench-trend.html
       - 'scripts/gen-batteries-manifest.py'
+      - 'ecosystem/**'                 # the ecosystem page is built from these
+      - 'scripts/gen-ecosystem-manifest.py'
       - '.github/workflows/pages.yml'
   # A successful tagged release publishes npm before the Release workflow
   # completes, so this deploy picks up the new `latest` package automatically.
@@ -74,6 +76,19 @@ jobs:
           python3 scripts/gen-batteries-manifest.py
           cat site/content/batteries.json | python3 -c \
             'import json,sys; print("bundled:", ", ".join(l["name"] for l in json.load(sys.stdin)["libraries"]))'
+
+      - name: Generate the ecosystem compatibility listing
+        # ecosystem.html answers "does my module work on mutsu?" from the parity
+        # ledger (ecosystem/dists/**.json), so like the batteries page it is
+        # generated rather than hand-written and cannot drift from the
+        # measurements. The chart is copied alongside it when a full sweep has
+        # produced one. Best-effort: a checkout with no records yet deploys the
+        # page with an "not measured yet" state rather than failing the deploy.
+        run: |
+          python3 scripts/gen-ecosystem-manifest.py || \
+            echo '{"distributions":[],"counts":{"green":0,"graded":0},"dist_parity":0,"file_parity":0,"measured":{}}' \
+              > site/content/ecosystem.json
+          cp ecosystem/history.svg site/history.svg 2>/dev/null || true
 
       - name: Record compatibility stats
         # The landing page headlines "N% of the official spec files pass". Count

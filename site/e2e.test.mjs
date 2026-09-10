@@ -253,6 +253,50 @@ try {
   await page.click('.lang-switch button[data-lang="en"]');
 
   /* =============================================================== *
+   * Ecosystem — "does my module work on mutsu?" (no WASM needed)
+   * =============================================================== */
+
+  console.log('Test: ecosystem page lists the measured distributions');
+  const ecoManifest = JSON.parse(readFileSync('site/content/ecosystem.json', 'utf8'));
+  await page.goto(`${BASE}/ecosystem.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Ecosystem',
+         'the ecosystem page is in the nav and marked current');
+  // The table renders at most a page's worth; the corpus is ~1600 rows and the
+  // filter is what the page is for.
+  const ecoExpected = Math.min(ecoManifest.distributions.length, 400);
+  assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoExpected,
+         `every measured distribution has a row (${ecoExpected})`);
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the ecosystem page does not scroll sideways');
+
+  if (ecoManifest.distributions.length) {
+    console.log('Test: ecosystem search narrows the table');
+    const first = ecoManifest.distributions[0].dist;
+    await page.fill('#eco-search', first);
+    await page.waitForFunction(
+      (n) => document.querySelectorAll('table.eco tbody tr.eco-row').length <= n,
+      ecoExpected, { timeout: 5000 });
+    const narrowed = await page.locator('table.eco tbody tr.eco-row').count();
+    assert(narrowed >= 1 && narrowed < ecoExpected + 1,
+           `searching for ${first} narrows the table to ${narrowed} row(s)`);
+    assert((await page.textContent('table.eco tbody tr td')).includes(first.split('::')[0]),
+           'and the match is the distribution searched for');
+    await page.fill('#eco-search', '');
+  }
+
+  console.log('Test: ecosystem page language switch');
+  const ecoEnTitle = await page.textContent('#page-title');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  assert(await page.textContent('#page-title') !== ecoEnTitle,
+         'switching to Japanese re-renders the heading');
+  assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoExpected,
+         'and the rows survive the re-render');
+  await page.click('.lang-switch button[data-lang="en"]');
+
+  /* =============================================================== *
    * Manual — mutsu's own user documentation (no WASM needed)
    * =============================================================== */
 
